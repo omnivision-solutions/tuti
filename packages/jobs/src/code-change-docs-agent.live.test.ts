@@ -25,7 +25,8 @@ const helpCenter: HelpCenterFixture = {
     not_in_a_collection: Object.entries(ARTICLES).map(([slug, [title]]) => ({ slug, title, state: "published" })),
     new_articles_waiting: [],
   },
-  articles: Object.keys(ARTICLES).map((slug) => ({ id: slug, slug, publishedAt: new Date() })),
+  articles: Object.keys(ARTICLES).map((slug) => ({ id: slug, slug, publishedAt: new Date(), collectionId: null })),
+  collections: [],
   run: async (context, call) => {
     if (call.name === "read_article") {
       const slug = (JSON.parse(call.arguments || "{}") as { slug?: string }).slug ?? "";

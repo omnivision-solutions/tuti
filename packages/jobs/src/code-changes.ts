@@ -26,7 +26,7 @@ import { landEdit } from "./article-layers";
 import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
 import { OutOfCredits } from "./credits";
-import { type Ask, asking, writeArticleEdit, writeNewArticle } from "./code-change-docs";
+import { type ArticlePlace, type Ask, asking, writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { askingWithTools, decideDocs } from "./docs-agent";
 import { closeTools, type ToolContext } from "./docs-agent-tools";
 import { portalOrigin, queueDeliveries, recordEvent } from "./events";
@@ -223,8 +223,8 @@ type Proposal = {
   payload?: Prisma.InputJsonValue;
   /** An article edit's document, and the text it was written on: saved into the article's unpublished changes (landEdit). */
   edit?: { writtenOn: Doc; doc: Doc };
-  /** For its writer, what the docs agent decided: what's wrong or missing in the article, or the new article and why. Not saved. */
-  brief?: string | { title: string; reason: string };
+  /** For its writer, what the docs agent decided: what's wrong or missing in the article, or the new article, why and where it goes. Not saved. */
+  brief?: string | { title: string; reason: string; place?: ArticlePlace };
 };
 
 /** Another edit changed one of the same sections of these articles while theirs were written: they're written again on top of it. */
@@ -273,7 +273,7 @@ async function analyse(
             .filter((article) => article.probability >= thresholds().NEW_ARTICLE.maybe)
             .sort((a, b) => b.probability - a.probability)
             .slice(0, 1)
-            .map((article) => ({ kind: "NEW_ARTICLE" as const, probability: article.probability, brief: { title: article.title, reason: article.reason } })),
+            .map((article) => ({ kind: "NEW_ARTICLE" as const, probability: article.probability, brief: { title: article.title, reason: article.reason, place: article.place } })),
         ]
       : [];
     if (!seen && proposals.length === 0) {
@@ -446,14 +446,16 @@ async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposa
     proposal.kind === "ARTICLE_EDIT"
       ? await writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, typeof brief === "string" ? brief : undefined)
       : proposal.kind === "NEW_ARTICLE"
-        ? await writeNewArticle(pr, summary, typeof brief === "object" ? brief : articles.map((article) => article.title), ask)
+        ? await writeNewArticle(pr, summary, typeof brief === "object" ? { title: brief.title, reason: brief.reason } : articles.map((article) => article.title), ask)
         : undefined;
   if (written === undefined) {
     return true;
   }
   if (written) {
     proposal.reason = written.reason;
-    proposal.payload = written.payload as unknown as Prisma.InputJsonValue;
+    // A new article's place, where the docs agent said (D5): its update carries it to the review and Approve.
+    const place = typeof brief === "object" ? brief.place : undefined;
+    proposal.payload = (place ? { ...written.payload, place } : written.payload) as unknown as Prisma.InputJsonValue;
     if ("writtenOn" in written) {
       proposal.edit = { writtenOn: written.writtenOn, doc: written.doc };
     }

@@ -14,6 +14,8 @@ import {
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { getCodeChangeTarget } from "@/server/operations/code-changes";
+import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { POST as webhook } from "./webhook/route";
@@ -262,6 +264,42 @@ describe("new articles", () => {
       ["CHANGELOG_LINE", 1],
       ["NEW_ARTICLE", 0.9],
     ]);
+  });
+
+  test("where it goes, as the agent said: its update's place, as the review shows it", async () => {
+    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+    resetCodeChangesSettings();
+    const placed = async (number: number, place: { collection: unknown; after: unknown }) => {
+      pullRequest(number);
+      model.decide(USERS);
+      model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, reason: "Themes are new.", ...place }]), undefined, `"merge-${number}"`);
+      model.reply(PROPOSALS, undefined, '"proposals"');
+      model.reply(draft("Use the dark theme"), undefined, '"article_needed"');
+      await merge(number);
+      const { id } = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number }, kind: "NEW_ARTICLE" }, select: { id: true } });
+      const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+      return (await call(getCodeChangeTarget, team, { type: "articles", id })).actions[0]!.place;
+    };
+    // In Settings, after the article on how the app looks.
+    expect(await placed(45, { collection: "settings", after: "appearance" })).toEqual({
+      collection: { slug: "settings", name: "Settings", icon: null },
+      newCollection: null,
+      afterArticle: { slug: "appearance", title: "Change how the app looks" },
+      first: false,
+    });
+    // First there (after: null); after an article that isn't there: last (after the collection's last one).
+    expect(await placed(46, { collection: "settings", after: null })).toMatchObject({ collection: { slug: "settings" }, afterArticle: null, first: true });
+    expect(await placed(47, { collection: "settings", after: "no-such-article" })).toMatchObject({ afterArticle: { slug: "themes-draft" }, first: false });
+    // A new collection, with its icon.
+    expect(await placed(48, { collection: { new: "Themes", icon: "palette" }, after: null })).toEqual({
+      collection: null,
+      newCollection: { name: "Themes", icon: "palette" },
+      afterArticle: null,
+      first: false,
+    });
+    // A collection there isn't, or a name no collection can have: no place (in no collection, as before).
+    expect(await placed(49, { collection: "no-such-collection", after: null })).toBeNull();
+    expect(await placed(50, { collection: { new: "   ", icon: "palette" }, after: null })).toBeNull();
   });
 
   test("another pull request's waiting new article is in the outline; analysed again, a pull request's own isn't, so it proposes it afresh", async () => {

@@ -1,8 +1,8 @@
 import { prisma } from "@tuti/db";
-import { type Ai, chat, type ChatMessage, codeChangesSettings, type Meter } from "@tuti/shared";
+import { type Ai, chat, type ChatMessage, codeChangesSettings, collectionName, type Meter } from "@tuti/shared";
 
 import { pullRequestState } from "./code-change-decisions";
-import { type Ask, replyJson } from "./code-change-docs";
+import { type ArticlePlace, type Ask, replyJson } from "./code-change-docs";
 import { docsAgentTools, runTool, type ToolContext } from "./docs-agent-tools";
 import type { PullRequestRead } from "./pull-request";
 
@@ -157,7 +157,10 @@ type Reply = {
 };
 
 export type DocsEdit = { articleId: string; problem: "wrong" | "missing"; probability: number; reason: string };
-export type DocsNewArticle = { title: string; probability: number; reason: string; collection: string | { new: string; icon: string } | null; after: string | null };
+/** A new article the agent decided is needed, and where it goes (D5's place; none when it named no collection there is, or could be). */
+export type DocsNewArticle = { title: string; probability: number; reason: string; place?: ArticlePlace };
+/** What the agent's slugs are read against: the help center's collections and articles (and drafts). */
+type HelpCenterIds = { articles: { id: string; slug: string; publishedAt: Date | null; collectionId: string | null }[]; collections: { id: string; slug: string }[] };
 export type DocsDecision = { summary: string; edits: DocsEdit[]; newArticles: DocsNewArticle[]; model: string };
 
 const probability = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : null);
@@ -168,7 +171,7 @@ const text = (value: unknown, max: number) => (typeof value === "string" ? value
  * is dropped: an edit lands in a published article's unpublished changes), one per article (the surest), "obsolete" as
  * "wrong"; each new article with a title. Items without a probability are dropped: it's the number the team is shown.
  */
-function readDecision(reply: Reply, model: string, articles: { id: string; slug: string; publishedAt: Date | null }[]): DocsDecision {
+function readDecision(reply: Reply, model: string, { articles, collections }: HelpCenterIds): DocsDecision {
   const published = new Map(articles.filter((a) => a.publishedAt).map((a) => [a.slug, a.id]));
   const edits = new Map<string, DocsEdit>();
   for (const edit of Array.isArray(reply.edits) ? reply.edits : []) {
@@ -184,16 +187,33 @@ function readDecision(reply: Reply, model: string, articles: { id: string; slug:
     if (!title || p === null) {
       return [];
     }
-    const place = n.collection as { new?: unknown; icon?: unknown } | string | null | undefined;
-    const collection =
-      typeof place === "string" ? place : place && typeof place === "object" && typeof place.new === "string" ? { new: place.new, icon: typeof place.icon === "string" ? place.icon : "" } : null;
-    return [{ title, probability: p, reason: text(n.reason, 500), collection, after: typeof n.after === "string" ? n.after : null }];
+    return [{ title, probability: p, reason: text(n.reason, 500), ...placeOf(n.collection, n.after, { articles, collections }) }];
   });
   return { summary: text(reply.summary, 1_000), edits: [...edits.values()], newArticles, model };
 }
 
+/**
+ * Where the agent put a new article, as D5's place: an existing collection by its slug, after the article it names there
+ * (null: first; one that isn't there: last), or a new collection with a name a collection can have (`collectionName`)
+ * and its icon (Approve leaves out one Lucide doesn't have). Anything else: no place (in no collection, as before).
+ */
+function placeOf(collection: unknown, after: unknown, { articles, collections }: HelpCenterIds): { place?: ArticlePlace } {
+  if (typeof collection === "string") {
+    const id = collections.find((c) => c.slug === collection)?.id;
+    if (!id) {
+      return {};
+    }
+    const inIt = articles.filter((a) => a.collectionId === id);
+    const followed = typeof after === "string" ? (inIt.find((a) => a.slug === after) ?? inIt.at(-1)) : undefined;
+    return { place: { collection: id, after: followed?.id ?? null } };
+  }
+  const made = collection as { new?: unknown; icon?: unknown } | null | undefined;
+  const name = collectionName.safeParse(made?.new);
+  return made && name.success ? { place: { newCollection: name.data, icon: typeof made.icon === "string" && made.icon.trim() ? made.icon.trim() : null } } : {};
+}
+
 /** A help center of its own, for the evaluation (code-change-docs-agent.live.test.ts): its outline, and what answers the tools. */
-export type HelpCenterFixture = { outline: unknown; articles: { id: string; slug: string; publishedAt: Date | null }[]; run: typeof runTool };
+export type HelpCenterFixture = HelpCenterIds & { outline: unknown; run: typeof runTool };
 
 /**
  * Decides what the merged pull request means for the help center (the agent with `decide`'s model), and double-checks a
@@ -207,7 +227,7 @@ export async function decideDocs(
   { codeChangeId, signal, fixture }: { codeChangeId?: string; signal?: AbortSignal; fixture?: HelpCenterFixture } = {},
 ): Promise<DocsDecision> {
   const { decide, redecide } = codeChangesSettings();
-  const { outline, articles } = fixture ?? (await helpCenterOutline(context.projectId, codeChangeId));
+  const { outline, ...ids } = fixture ?? (await helpCenterOutline(context.projectId, codeChangeId));
   const user = JSON.stringify(
     {
       pull_request: pullRequestState(pr),
@@ -236,7 +256,7 @@ export async function decideDocs(
     if (!reply || typeof reply !== "object") {
       throw new Error(`The docs agent (${model}) didn't answer with the JSON asked for`);
     }
-    return readDecision(reply, model, articles);
+    return readDecision(reply, model, ids);
   };
   const decided = await run(decide.model, decide.rounds);
   if (redecide.model !== "off" && decided.newArticles.some((n) => n.probability >= redecide.whenNewArticle)) {
