@@ -16,6 +16,22 @@ test("a team member switches projects, edits their account, signs out and back i
   await createProject(olive, "Acme", acme);
   await createProject(olive, "Globex", globex);
 
+  // Signed in, the sign-in and sign-up pages go straight to the app.
+  for (const page of ["/sign-in", "/sign-up"]) {
+    await olive.goto(`${APP_URL}${page}`);
+    await olive.waitForURL(/\/app\/e2e-/);
+  }
+  // The site's header leads to the app, with no Sign in.
+  await olive.goto(APP_URL);
+  await expect(olive.getByRole("banner").getByRole("link", { name: "Start free" })).toHaveAttribute("href", "/app");
+  await expect(olive.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(0);
+  await checkpoint(olive, "site-header-signed-in", { fullPage: false });
+  // Except after a password reset, which may be someone else's on this browser: its message and the form stay.
+  await olive.goto(`${APP_URL}/sign-in?reset=done`);
+  await expect(olive.getByText("Your password was changed. Sign in with the new one.")).toBeVisible();
+  await expect(olive.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await olive.goto(`${APP_URL}/app/${globex}`);
+
   // The sidebar's project switcher lists both projects.
   await olive.getByRole("button", { name: /Globex/ }).click();
   await expect(olive.getByRole("menuitem", { name: /Acme/ })).toBeVisible();
@@ -110,7 +126,7 @@ test("the strip asking to verify an email can be dismissed, and stays dismissed"
   await expect(olive.getByText("Not verified")).toBeVisible();
   await expect(olive.getByRole("main").getByRole("button", { name: "Resend email" })).toBeVisible();
   // Another account on the same browser has its own.
-  await olive.context().clearCookies({ name: /^tuti\./ });
+  await olive.context().clearCookies({ name: /(^|__Secure-)tuti\./ });
   await olive.goto("/sign-up");
   await fillSignUp(olive, "Otto Other", `e2e-${randomUUID()}@example.com`);
   await olive.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
@@ -118,7 +134,7 @@ test("the strip asking to verify an email can be dismissed, and stays dismissed"
   await expect(strip).toBeVisible();
   // Each account keeps its own: Otto dismisses his, and Olive's is still dismissed when she's back.
   await strip.getByRole("button", { name: "Dismiss" }).click();
-  await olive.context().clearCookies({ name: /^tuti\./ });
+  await olive.context().clearCookies({ name: /(^|__Secure-)tuti\./ });
   await olive.goto("/sign-in");
   await olive.getByLabel("Email").fill(olive.email);
   await olive.getByLabel("Password").fill("correct horse battery staple");
