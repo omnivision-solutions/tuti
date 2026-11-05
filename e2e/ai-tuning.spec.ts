@@ -114,13 +114,16 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await expect(owner.locator("summary", { hasText: "Advanced tuning" })).toBeFocused();
   await expect.poll(async () => (await stored(slug))["propose.edit.maybe"]).toBeUndefined();
   // A number typed with a leading zero is saved as the number: saving again records nothing.
+  // Each save waits for its own answer from the server (its action's POST), registered before its click.
+  const saved = () => owner.waitForResponse((response) => response.request().method() === "POST" && "next-action" in response.request().headers());
   await owner.getByRole("spinbutton", { name: "Lookups before deciding" }).fill("08");
+  const first = saved();
   await owner.getByRole("button", { name: "Save tuning" }).click();
-  await expect.poll(async () => (await stored(slug))["decide.rounds"]).toBe(8);
+  await first;
+  expect((await stored(slug))["decide.rounds"]).toBe(8);
   const before = await changedAt(slug);
-  // This save's own answer from the server (its action's POST), not an earlier save's toast.
-  const answered = owner.waitForResponse((response) => response.request().method() === "POST" && "next-action" in response.request().headers());
+  const second = saved();
   await owner.getByRole("button", { name: "Save tuning" }).click();
-  await answered;
+  await second;
   expect(await changedAt(slug)).toBe(before);
 });
