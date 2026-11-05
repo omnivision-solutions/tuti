@@ -3,7 +3,7 @@ import { gzipSync } from "node:zlib";
 import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { closeTools, runTool, type ToolContext } from "./docs-agent-tools";
+import { closeTools, docsAgentTools, runTool, type ToolContext } from "./docs-agent-tools";
 import { installationApi } from "./github-api";
 import { readRepository, type Repository, tarEntries } from "./repository";
 
@@ -218,4 +218,10 @@ test("bad arguments, an unknown tool and a missing repository come back as sente
   expect(await runTool({ projectId: "unused", repository: { unavailable: "it's over 200 MB" } }, { name: "list_files", arguments: "{}" })).toBe(
     "The repository isn't available (it's over 200 MB); work from the diff.",
   );
+});
+
+test("the tools' descriptions tell the model the limits it was given", () => {
+  const tools = docsAgentTools({ articles: 3, maxArticles: 5, fileChars: 1_000, searchLines: 10 });
+  const described = JSON.stringify(tools);
+  expect(described).toContain("How many (default 3, at most 5)");
 });

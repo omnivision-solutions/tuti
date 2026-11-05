@@ -42,7 +42,7 @@ export type ToolContext = { projectId: string; repository: Repository | { unavai
 
 /** The tools, in OpenAI's function-calling format. */
 export function docsAgentTools(limits: Partial<ToolLimits> = {}) {
-  const { fileChars, searchLines } = { ...TOOL_LIMITS, ...limits };
+  const { fileChars, searchLines, articles, maxArticles } = { ...TOOL_LIMITS, ...limits };
   const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[]) => ({
     type: "function" as const,
     function: { name, description, parameters: { type: "object", properties, required, additionalProperties: false } },
@@ -60,7 +60,7 @@ export function docsAgentTools(limits: Partial<ToolLimits> = {}) {
     tool(
       "search_articles",
       "The help center's articles and drafts nearest a query (by meaning): slug, title, state.",
-      { query: { type: "string" }, k: { type: "integer", description: `How many (default ${TOOL_LIMITS.articles}, at most ${TOOL_LIMITS.maxArticles})` } },
+      { query: { type: "string" }, k: { type: "integer", description: `How many (default ${articles}, at most ${maxArticles})` } },
       ["query"],
     ),
   ];
