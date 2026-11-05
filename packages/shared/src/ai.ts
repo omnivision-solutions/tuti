@@ -150,6 +150,15 @@ export async function listModels(): Promise<AiModelListing[]> {
  * doesn't list a chat model the server uses (AI_MODEL, a feature's, or Tuti's default). Never throws:
  * AI is optional.
  */
+/** An address as logs may show it: no user, password or query (any of them could be a credential). */
+export function shownAddress(address: string): string {
+  if (!URL.canParse(address)) {
+    return "an address that isn't a URL";
+  }
+  const url = new URL(address);
+  return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
+}
+
 export async function checkAiProvider(): Promise<void> {
   if (process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_BASE_URL) {
     log.warn(
@@ -181,11 +190,11 @@ export async function checkAiProvider(): Promise<void> {
   // OpenRouter lists its models to anyone; its /key answers only to a good key.
   const keyStatus = status === 200 && isOpenRouter(endpoint) ? ((await get("key"))?.status ?? 0) : status;
   if (keyStatus === 401 || keyStatus === 403) {
-    log.error(`The AI provider at ${endpoint.baseUrl} turned down ${endpoint.keyName} (${keyStatus}): the key looks wrong. AI features will fail until it's fixed.`);
+    log.error(`The AI provider at ${shownAddress(endpoint.baseUrl)} turned down ${endpoint.keyName} (${keyStatus}): the key looks wrong. AI features will fail until it's fixed.`);
     return;
   }
   if (!models || status !== 200) {
-    log.error(`Couldn't list the AI models at ${endpoint.baseUrl} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. AI features will fail until it's fixed.`);
+    log.error(`Couldn't list the AI models at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. AI features will fail until it's fixed.`);
     return;
   }
   if (chat.apiKey) {
@@ -194,7 +203,7 @@ export async function checkAiProvider(): Promise<void> {
     const missing = [...new Set(AI_FEATURES.map(defaultModel))].filter((id) => !listed.has(id));
     if (missing.length > 0) {
       log.error(
-        `The AI provider at ${endpoint.baseUrl} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
+        `The AI provider at ${shownAddress(endpoint.baseUrl)} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
       );
     }
   }

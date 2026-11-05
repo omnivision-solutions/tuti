@@ -1,7 +1,7 @@
 import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, decisionsMissing, openRouterFix } from "./ai";
+import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, decisionsMissing, openRouterFix, shownAddress } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { chatEndpoint, embeddingsEndpoint } from "./provider";
@@ -66,6 +66,11 @@ test("4. another key without a URL: the old meaning, embeddings on OpenAI and ch
 test("5. neither key: AI off", () => {
   env({ OPENAI_BASE_URL: "https://llm.example.com/v1", OPENROUTER_BASE_URL: "https://llm.example.com/v1" });
   expect(where()).toMatchObject({ ai: false, embed: false });
+});
+
+test("logs show an address without its user, password or query", () => {
+  expect(shownAddress("https://user:secret@llm.example.com/v1/?key=secret")).toBe("https://llm.example.com/v1");
+  expect(shownAddress("llm.example.com/v1")).toBe("an address that isn't a URL");
 });
 
 test("how to turn OpenRouter on names the variables this server reads", () => {
