@@ -4,12 +4,13 @@ import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { PasswordChangedAlert } from "@/components/password-reset-forms";
 import { safeRedirectPath } from "@/lib/redirects";
+import { socialProviders, socialSignInError } from "@/lib/social-sign-in";
 import { getSession } from "@/server/session";
 
 import { WithPitch } from "../with-pitch";
 
 export default async function SignInPage(props: PageProps<"/sign-in">) {
-  const { next, email, reset } = await props.searchParams;
+  const { next, email, reset, error, via } = await props.searchParams;
   const nextPath = typeof next === "string" ? safeRedirectPath(next, "") : "";
   // Prefilled from invite links (/invite/… → sign up with the invited address).
   const defaultEmail = typeof email === "string" ? email.slice(0, 320) : undefined;
@@ -24,6 +25,8 @@ export default async function SignInPage(props: PageProps<"/sign-in">) {
         {reset === "done" && <PasswordChangedAlert />}
         <AuthForm
           mode="sign-in"
+          social={socialProviders()}
+          socialError={socialSignInError(error, via, emailConfigured())}
           redirectTo="/app"
           next={nextPath || undefined}
           defaultEmail={defaultEmail}

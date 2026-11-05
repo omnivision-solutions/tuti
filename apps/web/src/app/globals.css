@@ -38,6 +38,9 @@
   --color-primary-hover: color-mix(in oklch, var(--primary) 88%, var(--primary-foreground));
   --color-sheen: oklch(1 0 0 / 25%);
   --color-unread: var(--unread);
+  --color-github: var(--github);
+  --color-github-hover: var(--github-hover);
+  --color-github-foreground: var(--github-foreground);
   --color-status-open: var(--status-open);
   --color-status-under-review: var(--status-under-review);
   --color-status-planned: var(--status-planned);
@@ -130,6 +133,10 @@
   --highlight-foreground: oklch(0.479 0.139 42.7);
   /* Something new to the reader (the widget's unread dots, like its launcher's); the same in dark mode. */
   --unread: oklch(0.705 0.187 47.6);
+  /* Continue with GitHub: GitHub's own dark grey (#24292f) under its white mark; the same in dark mode. */
+  --github: oklch(0.279 0.013 253);
+  --github-hover: oklch(0.338 0.015 252.3);
+  --github-foreground: oklch(1 0 0);
   /* A post status's dot (PostStatusBadge), so a list of mixed statuses can be scanned. */
   --status-open: oklch(0.66 0.012 58);
   --status-under-review: oklch(0.77 0.16 76);

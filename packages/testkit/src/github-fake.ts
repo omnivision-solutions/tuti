@@ -1,4 +1,4 @@
-import { createHmac, createVerify, generateKeyPairSync } from "node:crypto";
+import { createHmac, createVerify, generateKeyPairSync, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { gzipSync } from "node:zlib";
@@ -17,6 +17,9 @@ export type GithubFake = {
    */
   nextInstall(setupUrl: string, installation: FakeInstallation & { code: string }): void;
   // Also `POST /_fake/next-install {forwardedFor, setupUrl, id, account, repositories, code}`: for one browser, from other processes.
+  // And `POST /_fake/next-sign-in {forwardedFor, id, login, name, email, verified}`: who that browser is when it next
+  // signs in with GitHub (Continue with GitHub): the authorize page sends it back with a code for them, and
+  // /user and /user/emails (that email, primary) answer for its token.
   /**
    * A pull request the App can read with an installation token: the pull request, its commits, its
    * changed files (each file's `patch` is the diff; leave it out for one GitHub finds too big) and
@@ -60,6 +63,9 @@ export type FakeRepository = {
   failing?: string[];
 };
 
+/** A GitHub user signing in to Tuti with GitHub; `verified` (default true) is whether GitHub verified `email`. */
+export type FakeGithubSignIn = { id: number; login: string; name?: string; email: string; verified?: boolean };
+
 export type FakeInstallation = { id: number; account: string; type?: "Organization" | "User"; repositories?: { id: number; fullName: string }[] };
 
 /** The App's webhook secret in the fake's `env`, for signing deliveries from other processes (journeys). */
@@ -72,6 +78,8 @@ export async function startGithubFake(): Promise<GithubFake> {
   const pulls = new Map<string, FakePullRequest>();
   const repositories = new Map<string, FakeRepository>();
   const reads: string[] = [];
+  const signInsFor = new Map<string, FakeGithubSignIn>();
+  const signIns = new Map<string, FakeGithubSignIn>();
   let globalInstall: { setupUrl: string; id: number; code: string } | undefined;
   const installsFor = new Map<string, { setupUrl: string; id: number; code: string }>();
   // The App's key pair: the app signs JWTs with the private key, the fake checks them.
@@ -105,9 +113,27 @@ export async function startGithubFake(): Promise<GithubFake> {
         installsFor.set(next.forwardedFor, { setupUrl: next.setupUrl, id: next.id, code: next.code });
         return send(200, {});
       }
+      if (req.method === "POST" && url.pathname === "/_fake/next-sign-in") {
+        const { forwardedFor, ...person } = JSON.parse(raw) as FakeGithubSignIn & { forwardedFor: string };
+        signInsFor.set(forwardedFor, person);
+        return send(200, {});
+      }
       if (req.method === "POST" && url.pathname === "/login/oauth/access_token") {
-        const { code } = JSON.parse(raw || "{}") as { code?: string };
+        // Tuti's App flow posts JSON; sign-in (Better Auth) posts a form.
+        const { code } = (req.headers["content-type"]?.startsWith("application/json") ? JSON.parse(raw || "{}") : Object.fromEntries(new URLSearchParams(raw))) as {
+          code?: string;
+        };
+        if (code && signIns.has(code)) {
+          return send(200, { access_token: `signin-${code}`, token_type: "bearer", scope: "read:user,user:email" });
+        }
         return code && users.has(code) ? send(200, { access_token: `token-${code}` }) : send(200, { error: "bad_verification_code" });
+      }
+      const signedIn = signIns.get(/^Bearer signin-(.+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "");
+      if (req.method === "GET" && url.pathname === "/user" && signedIn) {
+        return send(200, { id: signedIn.id, login: signedIn.login, name: signedIn.name ?? null, avatar_url: `${base}/avatars/${signedIn.id}` });
+      }
+      if (req.method === "GET" && url.pathname === "/user/emails" && signedIn) {
+        return send(200, [{ email: signedIn.email, primary: true, verified: signedIn.verified ?? true, visibility: "private" }]);
       }
       const installationRepos = /^\/user\/installations\/(\d+)\/repositories$/.exec(url.pathname);
       if (req.method === "GET" && (url.pathname === "/user/installations" || installationRepos)) {
@@ -265,6 +291,16 @@ export async function startGithubFake(): Promise<GithubFake> {
       if (req.method === "GET" && /^\/apps\/[^/]+\/installations\/new$/.test(url.pathname) && install) {
         const back = new URL(install.setupUrl);
         back.search = new URLSearchParams({ installation_id: String(install.id), setup_action: "install" }).toString();
+        return redirect(back);
+      }
+      const signingIn = signInsFor.get(String(req.headers["x-forwarded-for"] ?? ""));
+      if (req.method === "GET" && url.pathname === "/login/oauth/authorize" && signingIn) {
+        const code = randomUUID();
+        signIns.set(code, signingIn);
+        signInsFor.delete(String(req.headers["x-forwarded-for"]));
+        const back = new URL(url.searchParams.get("redirect_uri") ?? "");
+        back.searchParams.set("code", code);
+        back.searchParams.set("state", url.searchParams.get("state") ?? "");
         return redirect(back);
       }
       if (req.method === "GET" && url.pathname === "/login/oauth/authorize" && install) {
