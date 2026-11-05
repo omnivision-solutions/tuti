@@ -103,7 +103,7 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
             {membership.role === "MEMBER" ? (
               "Ran with this project's tuning"
             ) : (
-              <Link href={`/app/${slug}/settings/ai-models`} className="hover:underline">
+              <Link href={`/app/${slug}/settings/ai-models/tuning`} className="hover:underline">
                 Ran with this project&apos;s tuning
               </Link>
             )}
