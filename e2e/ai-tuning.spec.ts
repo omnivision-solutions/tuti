@@ -7,6 +7,17 @@ import { checkpoints } from "./checkpoint";
 import { CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
+/** When the project's tuning was last changed, as stored. */
+async function changedAt(slug: string): Promise<number> {
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    return (await client.query(`SELECT "tuningUpdatedAt" AS at FROM project WHERE slug = $1`, [slug])).rows[0].at.getTime();
+  } finally {
+    await client.end();
+  }
+}
+
 /** The project's saved tuning as stored, or, given values, stored as the API would (any probability, not only whole percents). */
 async function stored(slug: string, values?: Record<string, number>): Promise<Record<string, unknown>> {
   const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
@@ -95,7 +106,19 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await owner.getByRole("button", { name: "Save tuning" }).click();
   await expect.poll(async () => (await stored(slug))["decide.rounds"]).toBe(7);
   expect((await stored(slug))["propose.edit.maybe"]).toBe(0.395);
-  await owner.getByRole("button", { name: "Reset Fix an article from" }).click();
+  // From the keyboard: once the Reset is saved (and its button gone), focus is on the section's heading, not the page.
+  await expect(owner.getByRole("button", { name: "Reset Fix an article from" })).toBeEnabled();
+  await owner.getByRole("button", { name: "Reset Fix an article from" }).focus();
+  await owner.keyboard.press("Enter");
   await expect(owner.getByText("Changed from 40%")).toHaveCount(0);
+  await expect(owner.locator("summary", { hasText: "Advanced tuning" })).toBeFocused();
   expect((await stored(slug))["propose.edit.maybe"]).toBeUndefined();
+  // A number typed with a leading zero is saved as the number: saving again records nothing.
+  await owner.getByRole("spinbutton", { name: "Lookups before deciding" }).fill("08");
+  await owner.getByRole("button", { name: "Save tuning" }).click();
+  await expect.poll(async () => (await stored(slug))["decide.rounds"]).toBe(8);
+  const before = await changedAt(slug);
+  await owner.getByRole("button", { name: "Save tuning" }).click();
+  await expect(owner.getByText("Advanced tuning saved").first()).toBeVisible();
+  expect(await changedAt(slug)).toBe(before);
 });

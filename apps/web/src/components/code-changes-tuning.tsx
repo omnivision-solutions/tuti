@@ -15,6 +15,12 @@ import type { CodeChangesTuning } from "@/server/operations/code-changes-tuning"
 type Value = CodeChangesTuning["values"][keyof CodeChangesTuning["values"]];
 
 /** A value as the page shows it: a probability in percent, a number with separators, an option capitalised. */
+/** A field's text against a value's: numbers as numbers ("06" is 6), options as text. */
+function same(text: string, value: string): boolean {
+  const typed = text.trim();
+  return typed === value || (typed !== "" && value !== "" && Number(typed) === Number(value));
+}
+
 function shown(value: Value["value"], range: Value["range"]): string {
   if (typeof value === "string") {
     return value.charAt(0).toUpperCase() + value.slice(1);
@@ -55,6 +61,9 @@ export function CodeChangesTuningSettings({
   // moves to the section's heading when the button it was on goes (Reset, Reset all).
   const heading = useRef<HTMLElement>(null);
   const form = useRef<HTMLFormElement>(null);
+  // Whether keyboard focus was in this section when the save started: a row's Reset is disabled while it saves (its
+  // fieldset), which drops focus to the page before the save returns.
+  const focused = useRef(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     // Reset ("$reset": the keys) saves only those, back to the server's (""). Save tuning sends only the fields that
     // differ from what's saved, so a page opened earlier doesn't undo another owner's values; one typed back to the
@@ -68,10 +77,11 @@ export function CodeChangesTuningSettings({
         if (resets.includes(key)) {
           changes.set(key, "");
         }
-      } else if (typeof sent === "string" && sent.trim() !== field(saved ?? fallback, range)) {
-        changes.set(key, saved !== null && sent.trim() === field(fallback, range) ? "" : sent.trim());
+      } else if (typeof sent === "string" && !same(sent, field(saved ?? fallback, range))) {
+        changes.set(key, saved !== null && same(sent, field(fallback, range)) ? "" : sent.trim());
       }
     }
+    focused.current ||= Boolean(heading.current?.parentElement?.contains(document.activeElement));
     const result = await saveCodeChangesTuning(projectSlug, prev, changes);
     if (!result.error) {
       for (const key of resets) {
@@ -82,14 +92,16 @@ export function CodeChangesTuningSettings({
         }
       }
       // Only from inside this section: someone who moved on during the save keeps their place.
-      if (heading.current?.parentElement?.contains(document.activeElement)) {
-        heading.current.focus({ preventScroll: true });
+      if (focused.current || heading.current?.parentElement?.contains(document.activeElement)) {
+        heading.current?.focus({ preventScroll: true });
       }
       toast.success("Advanced tuning saved");
     }
+    focused.current = false;
     return result;
   }, {});
   const reset = (keys: string[]) => {
+    focused.current = Boolean(heading.current?.parentElement?.contains(document.activeElement));
     const data = new FormData();
     for (const key of keys) {
       data.append("$reset", key);
