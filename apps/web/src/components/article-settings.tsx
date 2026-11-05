@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
+import { CollectionSelect } from "@/components/collection-select";
 import { type ArticlePlace, PlaceFields, useArticleEditor } from "@/components/docs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -68,22 +69,13 @@ function Place({
       <PlaceFields place={place} loaded={loaded} />
       <Field>
         <FieldLabel id="article-collection-label">Collection</FieldLabel>
-        <Select items={items} value={place.collection} onValueChange={(value) => onChange({ ...place, collection: value as string | null })}>
-          <SelectTrigger
-            className="w-full"
-            aria-labelledby="article-collection-label"
-            aria-describedby={published ? "article-collection-description" : undefined}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {items.map((item) => (
-              <SelectItem key={item.value ?? ""} value={item.value}>
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <CollectionSelect
+          items={items}
+          value={place.collection}
+          onChange={(collection) => onChange({ ...place, collection })}
+          labelledBy="article-collection-label"
+          describedBy={published ? "article-collection-description" : undefined}
+        />
         {published && <FieldDescription id="article-collection-description">A new collection goes live when you publish the changes.</FieldDescription>}
       </Field>
       <Toggle

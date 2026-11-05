@@ -34,6 +34,7 @@ export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, w
 export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, thresholds } from "./code-change-decisions";
+export { type ArticlePlace, draftPlace, placeWords } from "./code-change-docs";
 export { analysisOn, codeChange, writeChangelogLine } from "./code-changes";
 export { continueVerifyAll, NO_AI, RUN_STALE_MS, settleStale, verifyAllRunSelect, verifyAllsSettled, verifyAllStuck, WAITING_FIX, NO_REPOSITORY, type Statement, type Verdict, VERIFY_OFF } from "./verify";
 export { VERIFY_AFTER, verifyAfterEdit } from "./verify-decision";

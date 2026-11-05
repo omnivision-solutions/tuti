@@ -339,12 +339,16 @@ export function undoQuestion(update: Update & { number?: number | null }, all: U
     title: `Undo ${name}'s ${noun}?`,
     description:
       update.kind === "new_article"
-        ? "The draft is deleted."
+        ? draftUndone(update)
         : update.kind === "article_edit"
           ? "Its sections go back to what they said before it, in the published article and in any unpublished changes. Everything else stays."
           : undoWarning(update, all),
   };
 }
+
+/** "The draft is deleted.", and the collection approving made for it, when Undo removes that too. */
+const draftUndone = (update: Update) =>
+  update.undoRemovesCollection ? `The draft is deleted, and so is ${update.undoRemovesCollection}, the collection approving it made.` : "The draft is deleted.";
 
 function undoesOne(update: Update): string {
   switch (update.kind) {
@@ -363,7 +367,7 @@ function undoesOne(update: Update): string {
     case "article_edit":
       return "The article's previous version is published again.";
     case "new_article":
-      return "The draft is deleted.";
+      return draftUndone(update);
     default:
       return "The changelog line goes back to what it said.";
   }
@@ -614,3 +618,15 @@ export const publishFirst = (update: { kind: string; emails?: number } | null, o
  * the post, it refuses).
  */
 export const commentToApprove = (update: { kind: string }, text: string) => (update.kind === "resolves" || update.kind === "moves_forward" ? text : undefined);
+
+/** What the draft's collection picker was set to (`value`), on which draft and place (`against`, draftPick's). */
+export type DraftPick = { against: string; value: string | null };
+
+/**
+ * The collection a new article's draft goes into, by its picker: the team's pick while it was made on this draft and
+ * this place (`against`: another draft opened in the same page, or a new place after a refresh, start again) and the
+ * picker still offers it (`offered`: a collection deleted since isn't); otherwise the place as proposed (`proposed`).
+ */
+export function draftPick(picked: DraftPick, against: string, offered: (string | null)[], proposed: string | null): string | null {
+  return picked.against === against && offered.includes(picked.value) ? picked.value : proposed;
+}
