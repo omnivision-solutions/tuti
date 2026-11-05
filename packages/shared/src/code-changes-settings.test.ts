@@ -45,7 +45,7 @@ test("the defaults are the values Autopilot used before they were settings, and 
     redecide: { model: "anthropic/claude-sonnet-5.5", rounds: 12, whenNewArticle: 0.2 },
     write: { model: "anthropic/claude-sonnet-5.5", rounds: 10, maxTokens: 6_000 },
     tools: { listChars: 30_000, fileChars: 60_000, searchLines: 60, searchChars: 20_000, searchMs: 5_000, articleChars: 20_000, articles: 8, maxArticles: 20, embedMs: 30_000 },
-    limits: { timeoutMinutes: 10, callTimeoutSeconds: 120, archiveBytes: 50_000_000, readBytes: 1_000_000_000, fileBytes: 1_000_000, downloadMs: 120_000 },
+    limits: { timeoutMinutes: 10, callTimeoutSeconds: 120, concurrentAnalyses: 4, archiveBytes: 50_000_000, readBytes: 1_000_000_000, fileBytes: 1_000_000, downloadMs: 120_000 },
     verify: { after: 0.7 },
   });
 });

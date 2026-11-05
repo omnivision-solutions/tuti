@@ -140,6 +140,7 @@ export const CODE_CHANGES_SETTINGS = {
   limits: {
     timeoutMinutes: integer(10, 1, 60, "How long one pull request's analysis may take, in minutes; past it the analysis fails and is tried again"),
     callTimeoutSeconds: integer(120, 10, 900, "How long one request to the docs agent's models may take, in seconds"),
+    concurrentAnalyses: integer(4, 1, 20, "How many pull requests the worker analyses at once, on the whole server (retries included); the rest wait their turn. Each holds a worker slot for up to the analysis's time limit, and its repository in memory"),
     archiveBytes: integer(50_000_000, 1_000_000, 1_000_000_000, "The repository's text the docs agent may read, in bytes; over it, it works from the diff (and the analysis says so)"),
     readBytes: integer(1_000_000_000, 1_000_000, 10_000_000_000, "The repository's archive unpacked, everything in it, in bytes at most"),
     fileBytes: integer(1_000_000, 10_000, 100_000_000, "One file in the repository, in bytes at most; bigger ones are left out"),

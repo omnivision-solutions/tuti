@@ -153,6 +153,7 @@ setting is logged as a likely typo. The values in use are logged at start, the c
 | `CODE_CHANGES_TOOLS_EMBED_MS` | `30000` | a whole number from 1000 to 300000 | Search articles: how long one embeddings request may take, in milliseconds |
 | `CODE_CHANGES_LIMITS_TIMEOUT_MINUTES` | `10` | a whole number from 1 to 60 | How long one pull request's analysis may take, in minutes; past it the analysis fails and is tried again |
 | `CODE_CHANGES_LIMITS_CALL_TIMEOUT_SECONDS` | `120` | a whole number from 10 to 900 | How long one request to the docs agent's models may take, in seconds |
+| `CODE_CHANGES_LIMITS_CONCURRENT_ANALYSES` | `4` | a whole number from 1 to 20 | How many pull requests the worker analyses at once, on the whole server (retries included); the rest wait their turn. Each holds a worker slot for up to the analysis's time limit, and its repository in memory |
 | `CODE_CHANGES_LIMITS_ARCHIVE_BYTES` | `50000000` | a whole number from 1000000 to 1000000000 | The repository's text the docs agent may read, in bytes; over it, it works from the diff (and the analysis says so) |
 | `CODE_CHANGES_LIMITS_READ_BYTES` | `1000000000` | a whole number from 1000000 to 10000000000 | The repository's archive unpacked, everything in it, in bytes at most |
 | `CODE_CHANGES_LIMITS_FILE_BYTES` | `1000000` | a whole number from 10000 to 100000000 | One file in the repository, in bytes at most; bigger ones are left out |
