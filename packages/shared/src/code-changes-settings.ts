@@ -68,7 +68,11 @@ export const CODE_CHANGES_SETTINGS = {
     gate: probability(0.5, "The probability that users see the change, below which there's nothing to do"),
     resolves: odds("Resolving a post", 0.4, 0.75),
     movesForward: odds("Moving a post forward", 0.4, 0.75),
-    links: odds("Linking a post", 0.65, 0.85),
+    // Links aren't proposed for the team: one past autoLink is applied by itself, any other is dropped.
+    links: {
+      maybe: probability(0.65, "Linking a post: below this the pull request isn't linked to it at all (links are only applied by themselves, see `CODE_CHANGES_DECISIONS_AUTO_LINK`)"),
+      likely: probability(0.85, "Linking a post: an applied link is labelled likely from this probability"),
+    },
     autoLink: probability(0.95, 'A link Autopilot applies by itself from this probability (with "Link posts by itself" on); at least `CODE_CHANGES_DECISIONS_LINKS_MAYBE`'),
   },
   propose: {
