@@ -236,6 +236,14 @@ describe("images and files", () => {
     const linked = await convert("comment", `<p>See <a href="${image}">the screenshot</a></p>`);
     expect(linked.text).toBe("See the screenshot");
     expect(linked.leftOut).toEqual([{ kind: "image", url: image, reason: "unsupported" }]);
+
+    // A stored image linked to itself (its full size): copied once in a post, listed once in a comment.
+    const wrapped = `<p><a href="${image}"><img src="${image}" alt="shot"></a></p>`;
+    const { media: wrappedMedia, copied: wrappedCopies } = fakeMedia();
+    const inPost = await convert("post", wrapped, { media: wrappedMedia });
+    expect(wrappedCopies).toHaveLength(1);
+    expect(inPost.leftOut).toEqual([]);
+    expect((await convert("comment", wrapped)).leftOut).toEqual([{ kind: "image", url: image, reason: "unsupported" }]);
   });
 
   test("a file's name comes from Featurebase's storage key", () => {

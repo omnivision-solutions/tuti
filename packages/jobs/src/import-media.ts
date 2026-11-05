@@ -41,13 +41,16 @@ export function mediaImporter({ projectId, uploaderId, cache = new Map() }: { pr
     if (cached) {
       return cached;
     }
-    const copied = await copy(projectId, uploaderId, source);
-    cache.set(source.key, copied);
+    const { passing, ...copied } = await copy(projectId, uploaderId, source);
+    // A failure of our own (storage, processing) may pass: the next document tries again.
+    if (!passing) {
+      cache.set(source.key, copied);
+    }
     return copied;
   };
 }
 
-async function copy(projectId: string, uploaderId: string, { kind, url, name }: MediaSource): Promise<Copied> {
+async function copy(projectId: string, uploaderId: string, { kind, url, name }: MediaSource): Promise<Copied & { passing?: true }> {
   const storage = mediaStorage();
   if (!storage) {
     return { leftOut: "unsupported" };
@@ -98,7 +101,7 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     }
   } catch {
-    return await leaveOut("unreachable");
+    return { ...(await leaveOut("unreachable")), passing: true };
   }
   const { id, ...ready } = await prisma.media.update({
     where: { id: media.id },

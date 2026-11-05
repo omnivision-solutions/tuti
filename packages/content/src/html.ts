@@ -188,6 +188,11 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
       // Any other link into Featurebase's storage is presigned for an hour: listed as left out (an importer may bring
       // it in another way, as an attachment), its words kept.
       if (inAttachmentStorage(href)) {
+        // Linking an image or file (to its full size, say): the media inside is copied or listed below, once.
+        if (anchor.querySelector("img, file-preview-component")) {
+          anchor.replaceWith(...anchor.childNodes);
+          continue;
+        }
         leftOut.push({ kind: /\.(png|jpe?g|gif|webp)$/i.test(new URL(href).pathname) ? "image" : "file", url: href, reason: "unsupported" });
         anchor.replaceWith(...anchor.childNodes);
         continue;
