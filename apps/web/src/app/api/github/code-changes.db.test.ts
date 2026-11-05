@@ -1061,8 +1061,8 @@ describe("deciding", () => {
 
   test("the server's settings move the gate and the bar for linking by itself", async () => {
     await prisma.project.update({ where: { id: project.id }, data: { autoApplyLinks: true } });
-    // A lower bar: the settings page's link (70% sure) now goes by itself.
-    vi.stubEnv("CODE_CHANGES_DECISIONS_AUTO_LINK", "0.6");
+    // A lower bar (as low as keeping a link goes): the settings page's link (70% sure) now goes by itself.
+    vi.stubEnv("CODE_CHANGES_DECISIONS_AUTO_LINK", "0.65");
     resetCodeChangesSettings();
     github.pullRequest(repo, pullRequest(24));
     model.decide(USERS);

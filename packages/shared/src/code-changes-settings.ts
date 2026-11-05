@@ -69,7 +69,7 @@ export const CODE_CHANGES_SETTINGS = {
     resolves: odds("Resolving a post", 0.4, 0.75),
     movesForward: odds("Moving a post forward", 0.4, 0.75),
     links: odds("Linking a post", 0.65, 0.85),
-    autoLink: probability(0.95, 'A link Autopilot applies by itself from this probability (with "Link posts by itself" on)'),
+    autoLink: probability(0.95, 'A link Autopilot applies by itself from this probability (with "Link posts by itself" on); at least `CODE_CHANGES_DECISIONS_LINKS_MAYBE`'),
   },
   propose: {
     edit: odds("Editing an article", 0.4, 0.75),
@@ -156,6 +156,13 @@ export function readCodeChangesSettings<T extends Tree = typeof CODE_CHANGES_SET
     }
   };
   pairs(values, []);
+  // A link is only kept from links.maybe: a bar for linking by itself under it would never be reached.
+  const decisions = (values as { decisions?: { autoLink?: number; links?: { maybe?: number } } }).decisions;
+  if (decisions?.autoLink !== undefined && decisions.links?.maybe !== undefined && decisions.autoLink < decisions.links.maybe) {
+    errors.push(
+      `${settingName(["decisions", "autoLink"])} (${decisions.autoLink}) is below ${settingName(["decisions", "links", "maybe"])} (${decisions.links.maybe}): links under that aren't kept, so it must be at least that`,
+    );
+  }
   if (errors.length > 0) {
     throw new Error(`Autopilot's settings: ${errors.join("; ")}`);
   }

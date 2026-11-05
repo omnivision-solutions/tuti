@@ -89,6 +89,13 @@ test("a pair's maybe can't be above its likely", () => {
   expect(() => readCodeChangesSettings({ CODE_CHANGES_DECISIONS_RESOLVES_MAYBE: "0.75" })).not.toThrow();
 });
 
+test("linking by itself can't be set below the bar for keeping a link", () => {
+  expect(() => readCodeChangesSettings({ CODE_CHANGES_DECISIONS_AUTO_LINK: "0.6" })).toThrow(
+    "CODE_CHANGES_DECISIONS_AUTO_LINK (0.6) is below CODE_CHANGES_DECISIONS_LINKS_MAYBE (0.65)",
+  );
+  expect(() => readCodeChangesSettings({ CODE_CHANGES_DECISIONS_AUTO_LINK: "0.6", CODE_CHANGES_DECISIONS_LINKS_MAYBE: "0.6" })).not.toThrow();
+});
+
 test("start-up stops on a bad value, warns of a likely typo, and logs the values in use with the changed ones marked", () => {
   // Only this test's variables: none the machine running it may have set.
   for (const name of Object.keys(process.env).filter((name) => name.startsWith("CODE_CHANGES_") || name === "DECISION_MODEL")) {

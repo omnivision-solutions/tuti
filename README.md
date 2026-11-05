@@ -122,7 +122,7 @@ setting is logged as a likely typo. The values in use are logged at start, the c
 | `CODE_CHANGES_DECISIONS_MOVES_FORWARD_LIKELY` | `0.75` | a number from 0 to 1 | Moving a post forward: proposed as likely from this probability |
 | `CODE_CHANGES_DECISIONS_LINKS_MAYBE` | `0.65` | a number from 0 to 1 | Linking a post: proposed, as "maybe", from this probability |
 | `CODE_CHANGES_DECISIONS_LINKS_LIKELY` | `0.85` | a number from 0 to 1 | Linking a post: proposed as likely from this probability |
-| `CODE_CHANGES_DECISIONS_AUTO_LINK` | `0.95` | a number from 0 to 1 | A link Autopilot applies by itself from this probability (with "Link posts by itself" on) |
+| `CODE_CHANGES_DECISIONS_AUTO_LINK` | `0.95` | a number from 0 to 1 | A link Autopilot applies by itself from this probability (with "Link posts by itself" on); at least `CODE_CHANGES_DECISIONS_LINKS_MAYBE` |
 | `CODE_CHANGES_PROPOSE_EDIT_MAYBE` | `0.4` | a number from 0 to 1 | Editing an article: proposed, as "maybe", from this probability |
 | `CODE_CHANGES_PROPOSE_EDIT_LIKELY` | `0.75` | a number from 0 to 1 | Editing an article: proposed as likely from this probability |
 | `CODE_CHANGES_PROPOSE_NEW_ARTICLE_MAYBE` | `0.5` | a number from 0 to 1 | A new article: proposed, as "maybe", from this probability |
