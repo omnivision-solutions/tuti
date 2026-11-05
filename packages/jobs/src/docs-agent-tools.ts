@@ -182,8 +182,7 @@ async function searchCode(repository: Repository, pattern: string, limits: ToolL
     const lines = found.slice(0, limits.searchLines).map(([path, line, text]) => `${path}:${line}: ${text}`);
     const more = found.length > limits.searchLines ? `\n[more lines match; the first ${limits.searchLines} are shown]` : "";
     return cut(lines.join("\n"), limits.searchChars) + more;
-  } catch (error) {
-    return `Search failed: ${(error as Error).message}`;
+    // A worker that fails (it won't start, it runs out of memory) throws: the analysis fails and is retried.
   } finally {
     clearTimeout(timer);
     await worker.terminate();
