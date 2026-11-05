@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useActionState, useRef } from "react";
+import { type ReactNode, startTransition, useActionState, useRef } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -51,32 +51,36 @@ export function CodeChangesTuningSettings({
   notice: ReactNode;
 }) {
   const editable = owner && tuning.available;
-  // The form remounts with the saved values (its key) after a save: keyboard focus moves to the section's heading,
-  // which stays, instead of falling to the page.
+  // After a save the fields keep what's in them (no remount), so a value typed but not saved yet stays; keyboard focus
+  // moves to the section's heading when the button it was on goes (Reset, Reset all).
   const heading = useRef<HTMLElement>(null);
   const form = useRef<HTMLFormElement>(null);
-  // The fields Reset put back since the last save: cleared on Save even where the saved value already shows as the server's.
-  const resets = useRef(new Set<string>());
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    // Only what changed is sent, so a page opened earlier doesn't undo another owner's values. A saved value set back
-    // to the server's (by Reset, or typed) is cleared ("" sent), so it follows the server again.
-    const changed = new FormData();
+    // Reset ("$reset": the keys) saves only those, back to the server's (""). Save tuning sends only the fields that
+    // differ from what's saved, so a page opened earlier doesn't undo another owner's values; one typed back to the
+    // server's value is cleared, so it follows the server again.
+    const resets = formData.getAll("$reset").map(String);
+    const changes = new FormData();
     for (const { key } of rows) {
       const { saved, default: fallback, range } = tuning.values[key];
       const sent = formData.get(key);
-      if (typeof sent !== "string") {
-        continue;
-      }
-      const loaded = field(saved ?? fallback, range);
-      if (saved !== null && sent.trim() === field(fallback, range) && (resets.current.has(key) || sent.trim() !== loaded)) {
-        changed.set(key, "");
-      } else if (sent.trim() !== loaded) {
-        changed.set(key, sent.trim());
+      if (resets.length > 0) {
+        if (resets.includes(key)) {
+          changes.set(key, "");
+        }
+      } else if (typeof sent === "string" && sent.trim() !== field(saved ?? fallback, range)) {
+        changes.set(key, saved !== null && sent.trim() === field(fallback, range) ? "" : sent.trim());
       }
     }
-    const result = await saveCodeChangesTuning(projectSlug, prev, changed);
+    const result = await saveCodeChangesTuning(projectSlug, prev, changes);
     if (!result.error) {
-      resets.current.clear();
+      for (const key of resets) {
+        const input = form.current?.elements.namedItem(key);
+        const value = tuning.values[key as (typeof rows)[number]["key"]];
+        if (value && (input instanceof HTMLInputElement || input instanceof HTMLSelectElement)) {
+          input.value = field(value.default, value.range);
+        }
+      }
       // Only from inside this section: someone who moved on during the save keeps their place.
       if (heading.current?.parentElement?.contains(document.activeElement)) {
         heading.current.focus({ preventScroll: true });
@@ -85,15 +89,12 @@ export function CodeChangesTuningSettings({
     }
     return result;
   }, {});
-  // Reset: the field shows the server's value again; Save tuning saves it, with whatever else changed.
-  const reset = (keys: (typeof rows)[number]["key"][]) => {
+  const reset = (keys: string[]) => {
+    const data = new FormData();
     for (const key of keys) {
-      resets.current.add(key);
-      const input = form.current?.elements.namedItem(key);
-      if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement) {
-        input.value = field(tuning.values[key].default, tuning.values[key].range);
-      }
+      data.append("$reset", key);
     }
+    startTransition(() => action(data));
   };
   // A clamped value shows even when it lands on the default: what's saved isn't what's used.
   const overridden = (value: (typeof tuning.values)[keyof typeof tuning.values]) => value.saved !== null && (value.saved !== value.default || value.clamped);
@@ -113,7 +114,7 @@ export function CodeChangesTuningSettings({
           {tuning.available && !owner && " Only owners change these."}
         </p>
         {notice}
-        <form ref={form} {...keepingFields(action)} key={JSON.stringify(tuning.values)} className="flex flex-col gap-4">
+        <form ref={form} {...keepingFields(action)} className="flex flex-col gap-4">
           <fieldset disabled={!editable || pending} className="flex flex-col gap-4">
             {rows.map(({ key, label, tradeoff }) => {
               const value = tuning.values[key];

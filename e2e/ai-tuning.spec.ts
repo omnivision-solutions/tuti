@@ -56,18 +56,17 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await checkpoint(owner, "team-settings-ai-models-tuning-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
 
-  // Reset puts the server's value back in the field; Save tuning saves it, with another value typed meanwhile.
+  // Reset saves that value back to the server's at once; another value typed but not saved stays as typed.
   await owner.getByRole("spinbutton", { name: "Lookups before deciding" }).fill("6");
   await owner.getByRole("button", { name: "Reset Fix an article from" }).click();
-  await expect(owner.getByRole("spinbutton", { name: "Fix an article from" })).toHaveValue("40");
-  await expect(owner.getByRole("spinbutton", { name: "Lookups before deciding" })).toHaveValue("6");
-  await owner.getByRole("button", { name: "Save tuning" }).click();
   await expect(owner.getByText("Changed from 40%")).toHaveCount(0);
   await expect(owner.getByRole("spinbutton", { name: "Fix an article from" })).toHaveValue("40");
   await expect(owner.getByRole("spinbutton", { name: "Lookups before deciding" })).toHaveValue("6");
-  // Reset all, saved: nothing of the project's own is left.
-  await owner.getByRole("button", { name: "Reset all" }).click();
-  await owner.getByRole("button", { name: "Save tuning" }).click();
-  await expect(owner.getByRole("spinbutton", { name: "Lookups before deciding" })).not.toHaveValue("6");
   await expect(owner.getByRole("button", { name: "Reset all" })).toHaveCount(0);
+  // Saved, the 6 is the project's own; Reset all puts it back.
+  await owner.getByRole("button", { name: "Save tuning" }).click();
+  await expect(owner.getByRole("button", { name: "Reset all" })).toBeVisible();
+  await owner.getByRole("button", { name: "Reset all" }).click();
+  await expect(owner.getByRole("button", { name: "Reset all" })).toHaveCount(0);
+  await expect(owner.getByRole("spinbutton", { name: "Lookups before deciding" })).not.toHaveValue("6");
 });
