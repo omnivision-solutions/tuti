@@ -73,9 +73,6 @@ const ArticleEditorContext = createContext<{
   place: ArticlePlace;
   setPlace: (place: ArticlePlace) => void;
   collections: CollectionOption[];
-  /** Autopilot's edits its saves took out of the draft (dismissed, for good): Publish no longer shows or sends them. */
-  gone: string[];
-  addGone: (ids: string[]) => void;
 } | null>(null);
 
 /**
@@ -94,9 +91,7 @@ export function ArticleEditor({
 }) {
   const [pending, setPending] = useState(false);
   const [place, setPlace] = useState<ArticlePlace>({ collection: defaultCollection, showUpdatedDate: true });
-  const [gone, setGone] = useState<string[]>([]);
-  const addGone = (ids: string[]) => setGone((was) => [...was, ...ids]);
-  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections, gone, addGone }}>{children}</ArticleEditorContext>;
+  return <ArticleEditorContext value={{ pending, setPending, place, setPlace, collections }}>{children}</ArticleEditorContext>;
 }
 
 /**
@@ -184,8 +179,6 @@ export function ArticleForm({
     setSeenSaved(null);
     setOwn(null);
   }
-  // Publish (ArticleActions) leaves out Autopilot's edits a save took out.
-  const { addGone } = useArticleEditor();
   const [state, action, pending] = useActionState<ArticleSaveState, FormData>(async (prev, formData) => {
     const before = changes.current;
     const titleBefore = titleChanges.current;
@@ -218,10 +211,6 @@ export function ArticleForm({
         // Seen only as it's shown beside the text (NewestVersion below).
         setSeenSaved(next.show && result.saved.version ? result.saved.version : null);
         setOwn(next.own);
-      }
-      // Autopilot's edits this save took out: Publish no longer counts them.
-      if (result.saved?.gone.length) {
-        addGone(result.saved.gone);
       }
       toast.success("Saved");
     }
@@ -343,9 +332,8 @@ export function ArticleActions({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  // Less any the editor's saves took out since (they never come back), so the count is what goes live.
-  const editor = useContext(ArticleEditorContext);
-  const shown = autopilotEdits.filter((id) => !editor?.gone.includes(id));
+  // Every save refreshes the page (the action's refresh), so these are the edits waiting now, as shown.
+  const shown = autopilotEdits;
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
       // The edits shown: one landing since refuses it.

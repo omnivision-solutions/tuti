@@ -2,7 +2,7 @@
 
 import type { Doc, MediaUrls } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { editsInChanges, newestRevision } from "@tuti/jobs";
+import { newestRevision } from "@tuti/jobs";
 import { redirect } from "next/navigation";
 
 import type { Listing } from "@/lib/article-listing";
@@ -89,8 +89,6 @@ export type ArticleSaveState = FormState & {
     newVersion: boolean;
     title: string;
     version?: NewestVersion;
-    /** A draft's: Autopilot's edits that waited in it before the save and don't now (taken out by it): Publish leaves them out. */
-    gone: string[];
   };
 };
 
@@ -122,14 +120,10 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
       if (slug === null) {
         saved = (await call(createArticle, context, { ...input, title: input.title ?? "" })).slug;
       } else {
-        const before = await waitingInDraft(context.projectId, String(slug));
         const updated = await call(updateArticle, context, { slug: String(slug), ...input });
         saved = updated.slug;
         // (Its title as the newest has it: an editor whose own is different doesn't take that version up as its own.)
-        // A draft's waiting edits the save took out (dismissed, for good): Publish's dialog no longer counts them.
-        const after = before.length > 0 ? await waitingInDraft(context.projectId, updated.slug) : [];
-        const gone = before.filter((id) => !after.includes(id));
-        version = { revision: updated.revision, merged: updated.merged, newVersion: updated.newVersion, title: updated.changes?.title ?? updated.title, gone };
+        version = { revision: updated.revision, merged: updated.merged, newVersion: updated.newVersion, title: updated.changes?.title ?? updated.title };
         if (updated.merged && updated.newVersion && updated.revision) {
           // That revision's own text (a revision never changes): what the editor shows as seen.
           const row = await prisma.articleRevision.findUniqueOrThrow({
@@ -225,12 +219,6 @@ export async function publishArticle(projectSlug: string, slug: string, edits?: 
   return asTeam(projectSlug, DENIED, (context) =>
     call(publishOperation, context, { slug: String(slug), ...(Array.isArray(edits) && { edits: edits.map(String) }) }),
   );
-}
-
-/** The ids of Autopilot's edits waiting in draft `slug` (none for a published article, or one not there). */
-async function waitingInDraft(projectId: string, slug: string): Promise<string[]> {
-  const draft = await prisma.article.findFirst({ where: { projectId, slug, deletedAt: null, publishedAt: null }, select: { id: true } });
-  return draft ? (await editsInChanges(draft.id)).map((edit) => edit.actionId) : [];
 }
 
 /** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */
