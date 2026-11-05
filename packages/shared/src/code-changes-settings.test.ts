@@ -75,6 +75,9 @@ test("DECISION_MODEL still sets the decision model; CODE_CHANGES_DECISIONS_MODEL
   expect(readCodeChangesSettings({ DECISION_MODEL: "old/name" }).values.decisions.model).toBe("old/name");
   expect(readCodeChangesSettings({ DECISION_MODEL: "old/name", CODE_CHANGES_DECISIONS_MODEL: "new/name" }).values.decisions.model).toBe("new/name");
 
+  expect(readCodeChangesSettings({ DECISION_MODEL: "old/name" }).inUse.CODE_CHANGES_DECISIONS_MODEL).toBe("old/name (changed, from DECISION_MODEL; default nace-ai/drex-max)");
+  expect(() => readCodeChangesSettings({ DECISION_MODEL: "old name" })).toThrow('DECISION_MODEL is "old name": it must be a model id');
+
   vi.stubEnv("DECISION_MODEL", "old/name");
   expect(decisionModel()).toBe("old/name");
 });

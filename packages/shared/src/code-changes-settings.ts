@@ -126,17 +126,20 @@ export function readCodeChangesSettings<T extends Tree = typeof CODE_CHANGES_SET
   const errors: string[] = [];
   const inUse: Record<string, string> = {};
   const values = walk(tree, [], (leaf, name) => {
-    const raw = env[name]?.trim() || (leaf.alias && env[leaf.alias]?.trim()) || undefined;
-    if (raw === undefined) {
+    // The variable the value comes from: its own, else its old name (an alias), so a message names the one that's set.
+    const from = env[name]?.trim() ? name : leaf.alias && env[leaf.alias]?.trim() ? leaf.alias : undefined;
+    const raw = from && env[from]!.trim();
+    if (!from || !raw) {
       inUse[name] = String(leaf.default);
       return leaf.default;
     }
     const parsed = leaf.schema.safeParse(raw);
     if (!parsed.success) {
-      errors.push(`${name} is "${raw}": it must be ${leaf.range}`);
+      errors.push(`${from} is "${raw}": it must be ${leaf.range}`);
       return leaf.default;
     }
-    inUse[name] = parsed.data === leaf.default ? String(parsed.data) : `${String(parsed.data)} (changed; default ${String(leaf.default)})`;
+    const via = from === name ? "" : `, from ${from}`;
+    inUse[name] = parsed.data === leaf.default ? `${String(parsed.data)}${via}` : `${String(parsed.data)} (changed${via}; default ${String(leaf.default)})`;
     return parsed.data;
   }) as Values<T>;
   if (errors.length > 0) {
