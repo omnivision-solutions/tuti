@@ -208,8 +208,11 @@ export async function saveArticleSettings(projectSlug: string, slug: string, _st
   return result;
 }
 
-export async function publishArticle(projectSlug: string, slug: string): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) => call(publishOperation, context, { slug: String(slug) }));
+/** Publish a draft; `revision`: the version the page loaded (Autopilot's edits waiting in it go live only as shown). */
+export async function publishArticle(projectSlug: string, slug: string, revision?: string): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) =>
+    call(publishOperation, context, { slug: String(slug), ...(typeof revision === "string" && revision && { revision }) }),
+  );
 }
 
 /** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */

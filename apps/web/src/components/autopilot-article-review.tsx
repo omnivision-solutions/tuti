@@ -176,7 +176,12 @@ export function ArticleReview({
   };
   const approve = () =>
     startTransition(async () => {
-      const result = await applyCodeChange(projectSlug, waiting[0]!.id, revision ? { revision } : collection !== proposed ? { collection } : {});
+      // An article's edit: the version reviewed, and whether it was published then (unpublished since, it's refused).
+      const result = await applyCodeChange(
+        projectSlug,
+        waiting[0]!.id,
+        revision ? { revision, reviewedAs: onDraft ? "draft" : "published" } : collection !== proposed ? { collection } : {},
+      );
       went.current = !result.error;
       setAsking(null);
       if (result.error) {
@@ -184,7 +189,8 @@ export function ArticleReview({
         router.refresh();
         return;
       }
-      done(isNew ? "Draft created" : onDraft ? "Approved" : "Published");
+      // What happened, as the server says (not as the page loaded).
+      done(isNew ? "Draft created" : result.published ? "Published" : "Approved");
     });
   // Out of date: each pull request's analysed again (writing its edit on the newest text), or each dismissed.
   const stale = updates.filter((update) => outOfDate.includes(update.id));

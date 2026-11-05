@@ -319,6 +319,8 @@ export function ArticleActions({
   title,
   published,
   part,
+  revision = null,
+  autopilotEdits = 0,
 }: {
   projectSlug: string;
   slug: string;
@@ -326,13 +328,20 @@ export function ArticleActions({
   published: boolean;
   /** Delete (behind the top bar's "More actions"), or Publish / Unpublish (in the bar). */
   part: "delete" | "publish";
+  /** The version the page loaded: publishing a draft goes through only while it's the newest (Autopilot's edits in it go live as shown). */
+  revision?: string | null;
+  /** Autopilot's edits waiting in the draft: publishing it takes them live too. */
+  autopilotEdits?: number;
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
-      const result = await action(projectSlug, slug);
+      const result = await action(projectSlug, slug, revision ?? undefined);
       if (result.error) {
         toast.error(result.error);
+        // Changed since it loaded (an edit landed, a save): shown as it is now.
+        router.refresh();
       } else {
         toast.success(done);
       }
@@ -372,6 +381,10 @@ export function ArticleActions({
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
                 Anyone can read it in your portal&apos;s docs, and search engines can find it.
+                {autopilotEdits > 0 &&
+                  (autopilotEdits === 1
+                    ? " It includes 1 edit Autopilot suggested; it goes live too."
+                    : ` It includes ${autopilotEdits} edits Autopilot suggested; they go live too.`)}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

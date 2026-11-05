@@ -1252,12 +1252,13 @@ export const restoreArticle = defineOperation({
 
 export const publishArticle = defineOperation({
   name: "articles.publish",
-  summary: "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it",
+  summary:
+    "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. `revision`: only if its newest version (its id from articles.revisions) is still this one while Autopilot's edits wait in the draft (they go live with it); otherwise it's a 409 `changed`",
   method: "POST",
   path: "/articles/{slug}/publish",
   scope: "write",
   access: "team",
-  input: z.object({ slug }),
+  input: z.object({ slug, revision: z.string().min(1).max(100).optional() }),
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
@@ -1265,6 +1266,15 @@ export const publishArticle = defineOperation({
     // Only the first publish sets the date. Locked, so a draft's slug can't change as it's published.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
+      // Autopilot's edits waiting in the draft go live with it: only as the page showed them (an edit landing since, or
+      // a save, refuses it, and the page reloads to show them).
+      if (
+        input.revision !== undefined &&
+        (await editsInChanges(article.id, tx)).length > 0 &&
+        (await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } }))?.id !== input.revision
+      ) {
+        throw new OperationError(409, "changed", "The article changed since. Reload the page to review it.");
+      }
       const { count } = await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
       // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved. Counted
       // with it, the project's published articles must fit its plan (else nothing is written).

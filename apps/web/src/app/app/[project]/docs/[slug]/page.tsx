@@ -1,6 +1,7 @@
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
+import { editsInChanges } from "@tuti/jobs";
 import { aiProvider, articleVersionsNote } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -71,10 +72,12 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const edited = article.changes ?? article;
   const url = `${await portalAddress(slug)}/docs/${article.slug}`;
   const listing = article.listing.toLowerCase() as Listing;
-  const [collections, access, { plan }] = await Promise.all([
+  const [collections, access, { plan }, autopilotEdits] = await Promise.all([
     collectionOptions(membership.project.id),
     accessChoices(membership.project.id),
     prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } }),
+    // A draft's: Autopilot's edits waiting in its text, which publishing it takes live too.
+    article.publishedAt ? 0 : editsInChanges(article.id).then((edits) => edits.length),
   ]);
   // "Who can read" inherits from its collection (the published one: readers' access follows it), or (in none) from the first tab.
   const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
@@ -136,7 +139,15 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
               }}
             />
             <ArticleSaveButton />
-            <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="publish" />
+            <ArticleActions
+              projectSlug={slug}
+              slug={article.slug}
+              title={article.title}
+              published={article.publishedAt !== null}
+              part="publish"
+              revision={newest?.id ?? null}
+              autopilotEdits={autopilotEdits}
+            />
           </>
         }
         more={

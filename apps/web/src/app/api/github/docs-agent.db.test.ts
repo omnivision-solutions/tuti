@@ -13,6 +13,7 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChangeTarget, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { publishArticle, unpublishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -403,6 +404,37 @@ describe("edits to drafts", () => {
     await call(dismissCodeChangeAction, team(), { id: edit.id });
     expect(await editOf(56)).toMatchObject({ status: "DISMISSED" });
     expect((await draftOf()).body).toBe("Soon.");
+  });
+
+  test("published from Docs: only on the version the page loaded, Autopilot's edit in it going live and approved with it", async () => {
+    const before = await draftOf();
+    editing(88);
+    await merge(88);
+    const edit = await editOf(88);
+    // The version the page had loaded before the edit landed (the one the edit was written on).
+    const { basedOnId: older } = await prisma.articleRevision.findFirstOrThrow({ where: { codeChangeActionId: edit.id }, select: { basedOnId: true } });
+    await expect(call(publishArticle, team(), { slug: "themes-draft", revision: older! })).rejects.toMatchObject({ status: 409, code: "changed" });
+    expect(await draftOf()).toMatchObject({ id: before.id, publishedAt: null });
+    expect(await editOf(88)).toMatchObject({ status: "PENDING" });
+    // As the page shows it now: published, the edit approved with it.
+    const newest = await prisma.articleRevision.findFirstOrThrow({ where: { articleId: before.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } });
+    await call(publishArticle, team(), { slug: "themes-draft", revision: newest.id });
+    expect((await draftOf()).publishedAt).not.toBeNull();
+    expect(await editOf(88)).toMatchObject({ status: "APPLIED" });
+  });
+
+  test("an edit reviewed on a published article, unpublished since: Approve and publish is refused (nothing would be published)", async () => {
+    pullRequest(89);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.7, reason: "Its theme list is out of date." }]), undefined, '"merge-89"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(89);
+    const edit = await editOf(89);
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
+    await call(unpublishArticle, team(), { slug: "appearance" });
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision!, reviewedAs: "published" })).rejects.toMatchObject({ status: 409, code: "changed" });
+    expect(await editOf(89)).toMatchObject({ status: "PENDING" });
   });
 
   test("one to another pull request's new article waiting for the team is dropped (its text is fixed once proposed); the agent can still read it", async () => {

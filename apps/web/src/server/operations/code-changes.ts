@@ -1199,6 +1199,11 @@ export const applyCodeChangeAction = defineOperation({
     line: z.string().trim().min(1).max(300).optional(),
     /** For an article edit: only if the article's newest version (from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
     revision: z.string().min(1).max(100).optional(),
+    /**
+     * For an article edit: whether the article was published or a draft when reviewed (approving publishes the one,
+     * keeps the edit in the other). Unpublished or published since, it's a 409 `changed`.
+     */
+    reviewedAs: z.enum(["published", "draft"]).optional(),
     /** For a new article's draft: the collection to save it in instead of its `place` (its slug: last there; null: none). */
     collection: z.string().trim().min(1).max(80).nullable().optional(),
     publish: noPublish,
@@ -1229,7 +1234,7 @@ export const applyCodeChangeAction = defineOperation({
       throw new OperationError(409, "not_applicable", "This kind of action can't be applied yet");
     }
     if (action.kind === "ARTICLE_EDIT") {
-      return approveArticle(context, action, input.revision);
+      return approveArticle(context, action, input.revision, input.reviewedAs);
     }
     if (action.kind === "NEW_ARTICLE") {
       return applyDocs(context, action, input.collection);
@@ -1624,6 +1629,7 @@ async function approveArticle(
     article: (Prisma.ArticleGetPayload<{ select: typeof articleSelect }> & { id: string; deletedAt: Date | null }) | null;
   },
   revision: string | undefined,
+  reviewedAs?: "published" | "draft",
 ) {
   const { article } = action;
   if (!article || article.deletedAt) {
@@ -1669,7 +1675,8 @@ async function approveArticle(
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, context.projectId);
       const now = await tx.article.findUniqueOrThrow({ where: { id: article.id }, select: { publishedAt: true, deletedAt: true } });
-      if (now.deletedAt || now.publishedAt || (pinned !== null && (await newestRevision(article.id, tx)) !== pinned)) {
+      // Reviewed as published (Approve and publish), or published since: not this.
+      if (now.deletedAt || now.publishedAt || reviewedAs === "published" || (pinned !== null && (await newestRevision(article.id, tx)) !== pinned)) {
         throw changed;
       }
       await (claimed ? alone(tx, article.id) : undefined);
@@ -1681,6 +1688,10 @@ async function approveArticle(
       }
     });
   } else {
+    // Reviewed as a draft (Approve keeps it there): published since, approving would publish what wasn't asked.
+    if (reviewedAs === "draft") {
+      throw changed;
+    }
     try {
       await publishArticleChanges(context, { slug: article.slug, ...(pinned && { revision: pinned }) }, claimed ? alone : undefined);
     } catch (error) {
