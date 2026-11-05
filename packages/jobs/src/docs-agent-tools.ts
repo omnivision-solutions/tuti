@@ -14,6 +14,8 @@ import type { Repository } from "./repository";
  * The docs agent's read-only tools (docs/plan.md, Autopilot's docs agent): the repository at the pull request's merge
  * commit, and the project's help center. Each answer is text for the model, capped; a mistake (bad arguments, an
  * unknown tool, a missing file, an invalid or slow pattern) comes back as a short sentence it can act on, never a throw.
+ * A failure the model can't act on (the database, a worker that won't start) does throw, on purpose: the analysis fails
+ * and its job retries it, rather than the agent answering from a help center it only half read.
  */
 
 /** Each tool's caps. */
