@@ -1758,7 +1758,20 @@ async function placeFor(context: { actor: Actor; projectId: string }, place: Art
       return null;
     });
   const row = made && (await prisma.collection.findUnique({ where: { projectId_slug: { projectId: context.projectId, slug: made.slug } }, select: { id: true, slug: true } }));
-  return row ? { ...row, created: true, after: undefined } : null;
+  if (!row) {
+    return null;
+  }
+  // Two approvals at once can both miss the other's and make one each: the oldest wins, and the newer one goes again.
+  const oldest = await prisma.collection.findFirst({
+    where: { projectId: context.projectId, name: { equals: name, mode: "insensitive" } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, slug: true },
+  });
+  if (oldest && oldest.id !== row.id) {
+    await dropIfEmpty(prisma, row.id);
+    return { ...oldest, created: false, after: undefined };
+  }
+  return { ...row, created: true, after: undefined };
 }
 
 /** Removes collection `id` while nothing is in it: no live article, none whose unpublished changes move it there, no collection. */

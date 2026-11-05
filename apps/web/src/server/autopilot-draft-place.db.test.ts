@@ -102,6 +102,19 @@ test("a new collection someone made meanwhile under that name is used; Undo leav
   expect(await prisma.collection.count({ where: { projectId: project.id, name: "Exports" } })).toBe(1);
 });
 
+test("two approvals at once that both miss the other's new collection end with one: the older stays, the newer goes", async () => {
+  const first = await draft({ newCollection: "Exports", icon: null });
+  const second = await draft({ newCollection: "Exports", icon: null });
+  await approve(first.id);
+  // The second's lookup runs before the first's collection exists, as when both approve at once.
+  const findFirst = prisma.collection.findFirst.bind(prisma.collection);
+  vi.spyOn(prisma.collection, "findFirst").mockImplementationOnce((() => Promise.resolve(null)) as never).mockImplementation(findFirst as never);
+  await approve(second.id);
+  vi.restoreAllMocks();
+  const exports = await prisma.collection.findMany({ where: { projectId: project.id, name: "Exports" }, select: { id: true, _count: { select: { articles: true } } } });
+  expect(exports).toEqual([{ id: expect.any(String) as string, _count: { articles: 2 } }]);
+});
+
 test("Undo leaves the collection it made while a published article's unpublished changes move it there", async () => {
   const action = await draft({ newCollection: "Exports", icon: null });
   await approve(action.id);
@@ -164,7 +177,7 @@ test("a draft from before places (no place): in no collection, as before", async
 test("a failure finding its place leaves it waiting, nothing saved", async () => {
   const { id } = await billing();
   const action = await draft({ collection: id, after: null });
-  vi.spyOn(prisma.collection, "findUnique").mockRejectedValueOnce(new Error("database blip"));
+  vi.spyOn(prisma.collection, "findFirst").mockRejectedValueOnce(new Error("database blip"));
   await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
   expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
   expect(await prisma.article.count({ where: { projectId: project.id, title: "Export your data" } })).toBe(0);
