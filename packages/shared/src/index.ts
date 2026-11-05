@@ -3,6 +3,7 @@ export * from "./env";
 export * from "./ai";
 export * from "./chat";
 export * from "./code-changes-settings";
+export * from "./code-changes-tuning";
 export * from "./embeddings";
 export * from "./log";
 export * from "./usage";

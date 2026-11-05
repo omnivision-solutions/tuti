@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { z } from "zod";
 
 import { log } from "./log";
@@ -10,7 +12,8 @@ import { log } from "./log";
  * new leaf below: its variable, its check at start-up and its row in the README follow.
  */
 
-type Leaf<V> = { schema: z.ZodType<V>; default: V; range: string; meaning: string; alias?: string };
+/** A value: its check, default, range in words (and as numbers or options, for a project's Advanced tuning), and what it does. */
+type Leaf<V> = { schema: z.ZodType<V>; default: V; range: string; meaning: string; alias?: string; min?: number; max?: number; options?: readonly string[] };
 type Tree = { [key: string]: Tree | Leaf<unknown> };
 
 const probability = (value: number, meaning: string): Leaf<number> => ({
@@ -18,6 +21,8 @@ const probability = (value: number, meaning: string): Leaf<number> => ({
   default: value,
   range: "a number from 0 to 1",
   meaning,
+  min: 0,
+  max: 1,
 });
 
 const integer = (value: number, min: number, max: number, meaning: string): Leaf<number> => ({
@@ -25,6 +30,8 @@ const integer = (value: number, min: number, max: number, meaning: string): Leaf
   default: value,
   range: `a whole number from ${min} to ${max}`,
   meaning,
+  min,
+  max,
 });
 
 /** For a section that needs one (and for tests): one of a few named values. */
@@ -33,6 +40,7 @@ export const enumSetting = <const T extends readonly [string, ...string[]]>(valu
   default: value,
   range: `one of ${values.join(", ")}`,
   meaning,
+  options: values,
 });
 
 /** For a section that needs one (and for tests): true or false. */
@@ -48,6 +56,8 @@ const number = (value: number, min: number, max: number, meaning: string): Leaf<
   default: value,
   range: `a number from ${min} to ${max}`,
   meaning,
+  min,
+  max,
 });
 
 const model = (value: string, meaning: string, alias?: string, range = "a model id"): Leaf<string> => ({
@@ -252,9 +262,30 @@ export function readCodeChangesSettings<T extends Tree = typeof CODE_CHANGES_SET
 
 let cached: CodeChangesSettings | undefined;
 
-/** The settings in use, read from process.env once. */
-export function codeChangesSettings(): CodeChangesSettings {
+/** The server's settings, read from process.env once. */
+export function serverCodeChangesSettings(): CodeChangesSettings {
   return (cached ??= readCodeChangesSettings().values);
+}
+
+const analysing = new AsyncLocalStorage<CodeChangesSettings>();
+
+/**
+ * The settings in use: inside withCodeChangesSettings (a project's analysis, with its Advanced tuning), those; else the
+ * server's. So every step of an analysis reads the project's values without each one being handed them.
+ */
+export function codeChangesSettings(): CodeChangesSettings {
+  return analysing.getStore() ?? serverCodeChangesSettings();
+}
+
+/** Runs `fn` (and everything it starts) with `settings` as codeChangesSettings(). */
+export function withCodeChangesSettings<T>(settings: CodeChangesSettings, fn: () => T): T {
+  return analysing.run(settings, fn);
+}
+
+/** A leaf of the schema by its path ("decide.rounds"), for its range. */
+export function settingLeaf(path: string): Leaf<unknown> {
+  const leaf = path.split(".").reduce<Tree | Leaf<unknown>>((node, key) => (node as Tree)[key]!, CODE_CHANGES_SETTINGS as unknown as Tree);
+  return leaf as Leaf<unknown>;
 }
 
 /** For tests that change the variables: the next codeChangesSettings() reads them again. */

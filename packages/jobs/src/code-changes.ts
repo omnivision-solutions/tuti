@@ -1,6 +1,21 @@
 import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
-import { type Ai, codeChangesEnabled, codeChangesSettings, complete, decide, decisionModel, embed, type JobInput, log, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
+import {
+  type Ai,
+  codeChangesEnabled,
+  codeChangesSettings,
+  complete,
+  decide,
+  decisionModel,
+  embed,
+  type JobInput,
+  log,
+  planIncludes,
+  planNeeded,
+  toVectorLiteral,
+  tunedSettings,
+  withCodeChangesSettings,
+} from "@tuti/shared";
 import { z } from "zod";
 
 import {
@@ -21,7 +36,7 @@ import {
   pullRequestState,
   thresholds,
 } from "./code-change-decisions";
-import { aiFor } from "./ai-usage";
+import { aiFor, projectModels } from "./ai-usage";
 import { landEdit } from "./article-layers";
 import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
@@ -89,7 +104,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       url: true,
       title: true,
       state: true,
-      project: { select: { slug: true, analyseCodeChanges: true, plan: true } },
+      project: { select: { slug: true, analyseCodeChanges: true, plan: true, codeChangesTuning: true, aiModels: true } },
     },
   });
   if (!change) {
@@ -167,6 +182,28 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   } else {
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "" } });
   }
+  // The project's Advanced tuning over the server's settings (on its plan, inside the server's ranges), and the docs
+  // agent's models it picked (Settings → AI models): every step below reads them (codeChangesSettings()).
+  const tuning = tunedSettings(change.project.codeChangesTuning, change.project.plan);
+  const picked = projectModels(change.project.aiModels);
+  const settings = {
+    ...tuning.settings,
+    decide: { ...tuning.settings.decide, model: picked.code_changes_decide ?? tuning.settings.decide.model },
+    redecide: { ...tuning.settings.redecide, model: picked.code_changes_redecide ?? tuning.settings.redecide.model },
+  };
+  return withCodeChangesSettings(settings, () => analysePullRequest(change, repository, ai, input, log, lastTry, { values: tuning.values, tuned: tuning.tuned }));
+}
+
+/** codeChange's analysis, once every check passed, inside the project's settings. */
+async function analysePullRequest(
+  change: { id: string; projectId: string; repo: string; number: number; url: string; project: { slug: string } },
+  repository: { fullName: string; connection: { installationId: number } },
+  ai: Ai,
+  input: JobInput<"codeChange">,
+  log: JobLogger,
+  lastTry: boolean,
+  ranWith: Versions["settings"],
+): Promise<JobResult> {
   let failure = "GitHub didn't let Tuti read the pull request.";
   // One time limit for the whole analysis, the repository's download and every request included.
   const { docs, limits } = codeChangesSettings();
@@ -196,7 +233,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
       pr,
       input.pastGate,
       ai,
-      { signal: deadline, repository: code },
+      { signal: deadline, repository: code, ranWith },
     );
     log.info(`Code change ${change.id}: ${outcome.state === "READY" ? `${outcome.actions} proposed` : "nothing to do"}`);
     return { files: pr.files.length, read, ...outcome };
@@ -249,10 +286,10 @@ async function analyse(
   pr: PullRequestRead,
   pastGate: boolean,
   use: Ai,
-  { signal, repository }: { signal: AbortSignal; repository: Repository | { unavailable: string } | null },
+  { signal, repository, ranWith }: { signal: AbortSignal; repository: Repository | { unavailable: string } | null; ranWith: Versions["settings"] },
 ) {
   // Everything the analysis asks a model is the project's code changes' spend (`use`), written by the project's model for them.
-  const versions = { decider: decisionModel(), model: use.model };
+  const versions: Versions = { decider: decisionModel(), model: use.model, settings: ranWith };
   const gate = pastGate ? null : gateResult(await decide(pullRequestState(pr), GATE, { meter: use.meter }));
   // Users see it: the changelog hears about it, and its posts are decided.
   const seen = !gate || gate.users >= thresholds().gate;
@@ -376,7 +413,10 @@ async function analyse(
 }
 
 /** Nothing to do (the gate, and the docs agent if it ran, found nothing): saved so, and it leaves the changelog. */
-async function nothingToDo(change: { id: string; projectId: string; pullRequest: { url: string } }, reason: string, versions: { decider: string; model: string }) {
+/** What analysed a code change: the decision model, the writing model, and the Advanced tuning values it ran with. */
+type Versions = { decider: string; model: string; settings: { values: Record<string, string | number>; tuned: string[] } };
+
+async function nothingToDo(change: { id: string; projectId: string; pullRequest: { url: string } }, reason: string, versions: Versions) {
   await finish(change.id, { state: "NOTHING_TO_DO", reason, summary: "", why: "", ...versions }, []);
   await leaveChangelog(change);
   return { state: "NOTHING_TO_DO" as const, actions: 0, linked: 0, scheduled: 0 };
@@ -567,7 +607,7 @@ async function articleCandidates(projectId: string, vector: string): Promise<Art
  */
 async function finish(
   id: string,
-  data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string },
+  data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string; settings?: Versions["settings"] },
   proposals: Proposal[],
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
 ): Promise<{ waiting: number; linked: number; scheduled: number; landed: string[] }> {

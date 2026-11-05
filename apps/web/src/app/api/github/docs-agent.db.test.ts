@@ -489,3 +489,100 @@ describe("time limits", () => {
     expect(await actions(44)).toEqual([]);
   });
 });
+
+describe("a project's own models and Advanced tuning (D6)", () => {
+  const settled = (number: number) => prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number }, select: { settings: true } });
+  const EDIT_AT = (probability: number) => answer([{ slug: "appearance", problem: "missing", probability, reason: "It doesn't name the dark theme." }]);
+
+  test("its picked models decide (and the double-check is off), its tuning is used on Business, and the analysis keeps the values it ran with", async () => {
+    vi.stubEnv("PLANS", "on");
+    await prisma.project.update({
+      where: { id: project.id },
+      data: {
+        plan: "BUSINESS",
+        aiModels: { code_changes_decide: "acme/tiny", code_changes_redecide: "off" },
+        codeChangesTuning: { "decide.rounds": 1, "decide.reasoning": "high", "propose.edit.maybe": 0.3 },
+      },
+    });
+    pullRequest(60);
+    model.decide(USERS);
+    model.toolCalls([{ name: "read_article", arguments: '{"slug":"appearance"}' }], '"merge-60"');
+    // Its one round (the project's) is up: asked for its answer, with a new article no double-check looks at again.
+    model.reply(
+      answer(
+        [{ slug: "appearance", problem: "missing", probability: 0.35, reason: "It doesn't name the dark theme." }],
+        [{ title: "Use the dark theme", probability: 0.2, collection: "settings", after: null, reason: "Nothing covers themes." }],
+      ),
+      undefined,
+      '"merge-60"',
+    );
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(60);
+    const agent = agentRequests(60);
+    expect(agent.map((request) => request.model)).toEqual(["acme/tiny", "acme/tiny"]);
+    expect(agent[0]).toMatchObject({ reasoning: { effort: "high" } });
+    expect(agent[1]!.toolChoice).toBe("none");
+    // The edit at 0.35: past the project's 0.3, under the server's 0.4.
+    expect((await actions(60)).map((action) => [action.kind, action.probability])).toEqual([
+      ["CHANGELOG_LINE", 1],
+      ["ARTICLE_EDIT", 0.35],
+    ]);
+    expect((await settled(60)).settings).toEqual({
+      values: {
+        "propose.edit.maybe": 0.3,
+        "propose.newArticle.maybe": 0.5,
+        "redecide.whenNewArticle": 0.2,
+        "decide.rounds": 1,
+        "write.rounds": 10,
+        "decide.reasoning": "high",
+        "context.diffChars": 20_000,
+      },
+      tuned: ["propose.edit.maybe", "decide.rounds", "decide.reasoning"],
+    });
+  });
+
+  test("after a downgrade off Business the values are kept but not used (its models still are); back on Business, they're used again", async () => {
+    vi.stubEnv("PLANS", "on");
+    await prisma.project.update({
+      where: { id: project.id },
+      data: { plan: "PRO", aiModels: { code_changes_decide: "acme/tiny" }, codeChangesTuning: { "propose.edit.maybe": 0.3 } },
+    });
+    pullRequest(61);
+    model.decide(USERS);
+    model.reply(EDIT_AT(0.35), undefined, '"merge-61"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    await merge(61);
+    expect(agentRequests(61).map((request) => request.model)).toEqual(["acme/tiny"]);
+    expect((await actions(61)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
+    expect((await settled(61)).settings).toMatchObject({ values: { "propose.edit.maybe": 0.4 }, tuned: [] });
+
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+    pullRequest(62);
+    model.decide(USERS);
+    model.reply(EDIT_AT(0.35), undefined, '"merge-62"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(62);
+    expect((await actions(62)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE", "ARTICLE_EDIT"]);
+    expect((await settled(62)).settings).toMatchObject({ tuned: ["propose.edit.maybe"] });
+  });
+
+  test("a value past a range the server narrowed since is used at its end", async () => {
+    // The server's likely for edits is 0.6 now: a "from" past it would make every kept fix likely.
+    vi.stubEnv("CODE_CHANGES_PROPOSE_EDIT_LIKELY", "0.6");
+    resetCodeChangesSettings();
+    await prisma.project.update({ where: { id: project.id }, data: { codeChangesTuning: { "propose.edit.maybe": 0.9 } } });
+    pullRequest(63);
+    model.decide(USERS);
+    model.reply(EDIT_AT(0.65), undefined, '"merge-63"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(63);
+    expect((await actions(63)).map((action) => [action.kind, action.probability])).toEqual([
+      ["CHANGELOG_LINE", 1],
+      ["ARTICLE_EDIT", 0.65],
+    ]);
+    expect((await settled(63)).settings).toMatchObject({ values: { "propose.edit.maybe": 0.6 }, tuned: ["propose.edit.maybe"] });
+  });
+});
