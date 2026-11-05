@@ -588,6 +588,15 @@ describe("edits to a waiting new article, as it changes", () => {
       [76, false],
     ]);
     expect((await call(getCodeChangeTarget, team(), { type: "articles", id: waiting.id })).editedBy.map((by) => by.withdrawn)).toEqual([true, false]);
+    // 74 analysed again writes its draft afresh: the new one names 76's edit as on the earlier draft, not 75's withdrawn one.
+    model.decide(USERS);
+    model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-74"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Use the dark theme\n\n1. Open **Settings**, then **Appearance**." }), undefined, '"article_needed"');
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 74 } });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
+    const fresh = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 74 }, kind: "NEW_ARTICLE" }, select: { id: true } });
+    expect((await draftPayload(fresh.id)).editedBy.map((by) => by.number)).toEqual([76]);
   });
 
   test("the pull request that proposed it analysed again: its draft written afresh, the edit that was in the earlier one is named on it, never analysed again by itself; analysed again by the team, its chip goes", async () => {

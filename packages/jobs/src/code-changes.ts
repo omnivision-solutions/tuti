@@ -628,7 +628,8 @@ async function finish(
       ...new Map(
         (await tx.codeChangeAction.findMany({ where: { ...replaced, kind: "NEW_ARTICLE" }, select: { payload: true } }))
           .flatMap((draft) => editedByOf(draft.payload))
-          .filter((by) => by.codeChangeId !== id)
+          // Not one its pull request no longer suggests (withdrawn): there's nothing to write again.
+          .filter((by) => by.codeChangeId !== id && !by.withdrawn)
           .map((by) => [by.codeChangeId, { codeChangeId: by.codeChangeId, number: by.number, reason: by.reason, earlier: true }] as const),
       ).values(),
     ];
