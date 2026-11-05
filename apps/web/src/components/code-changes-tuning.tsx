@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, startTransition, useActionState, useRef } from "react";
+import { type ReactNode, useActionState, useRef } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -51,17 +51,23 @@ export function CodeChangesTuningSettings({
   notice: ReactNode;
 }) {
   const editable = owner && tuning.available;
-  // The form remounts with the saved values (its key), and Reset all goes once nothing is saved: keyboard focus
-  // moves to the section's heading, which stays, instead of falling to the page.
+  // The form remounts with the saved values (its key) after a save: keyboard focus moves to the section's heading,
+  // which stays, instead of falling to the page.
   const heading = useRef<HTMLElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    // Only what changed is sent, so a page opened earlier doesn't undo another owner's values.
+    // Only what changed is sent, so a page opened earlier doesn't undo another owner's values. A saved value set back
+    // to the server's is cleared ("" sent), so it follows the server again.
     const changed = new FormData();
     for (const { key } of rows) {
       const { saved, default: fallback, range } = tuning.values[key];
       const sent = formData.get(key);
-      if (typeof sent === "string" && sent.trim() !== field(saved ?? fallback, range)) {
+      if (typeof sent !== "string") {
+        continue;
+      }
+      if (saved !== null && sent.trim() === field(fallback, range)) {
+        changed.set(key, "");
+      } else if (sent.trim() !== field(saved ?? fallback, range)) {
         changed.set(key, sent.trim());
       }
     }
@@ -75,14 +81,14 @@ export function CodeChangesTuningSettings({
     }
     return result;
   }, {});
-  // Reset: the value goes back to the server's ("" sent). The form's other unsaved changes go with it, since the
-  // form remounts with the saved values afterwards.
-  const reset = (keys: string[]) => {
-    const data = form.current ? new FormData(form.current) : new FormData();
+  // Reset: the field shows the server's value again; Save tuning saves it, with whatever else changed.
+  const reset = (keys: (typeof rows)[number]["key"][]) => {
     for (const key of keys) {
-      data.set(key, "");
+      const input = form.current?.elements.namedItem(key);
+      if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement) {
+        input.value = field(tuning.values[key].default, tuning.values[key].range);
+      }
     }
-    startTransition(() => action(data));
   };
   // A clamped value shows even when it lands on the default: what's saved isn't what's used.
   const overridden = (value: (typeof tuning.values)[keyof typeof tuning.values]) => value.saved !== null && (value.saved !== value.default || value.clamped);

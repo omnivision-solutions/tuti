@@ -1072,7 +1072,7 @@ export const analyseCodeChange = defineOperation({
     // at once queue it once: already being analysed (while a run could still be going), nothing more is queued.
     const { count } = await prisma.codeChange.updateMany({
       where: { id: change.id, OR: [{ state: { not: "ANALYSING" } }, { updatedAt: { lt: new Date(Date.now() - RUN_STALE_MS) } }] },
-      data: { state: "ANALYSING", reason: "", settings: Prisma.DbNull },
+      data: { state: "ANALYSING", reason: "" },
     });
     if (count === 0) {
       return changeView(await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect }));
