@@ -11,10 +11,18 @@ test("Custom code hides its widget's launcher every way the loader takes, howeve
     '<script>window.TutiSettings = { display: "inline" };</script>',
     '<script>window.TutiSettings = { "display": "inline" };</script>',
     '<script>TutiSettings.display = "inline";</script>',
+    "<script src=https://app.example/widget.js data-display=inline></script>",
+    '<script>TutiSettings["display"] = "inline";</script>',
+    "<script>TutiSettings.display = `inline`;</script>",
   ]) {
     expect(hidesLauncher(html), html).toBe(true);
   }
-  for (const html of ['<script src="https://app.example/widget.js" data-project="acme" async></script>', '<script>window.TutiSettings = { display: "sidebar" };</script>']) {
+  for (const html of [
+    '<script src="https://app.example/widget.js" data-project="acme" async></script>',
+    '<script>window.TutiSettings = { display: "sidebar" };</script>',
+    // CSS of the team's own: not the widget's display.
+    "<style>.badge { display: inline; } .tag { display:inline-block }</style>",
+  ]) {
     expect(hidesLauncher(html), html).toBe(false);
   }
 });
