@@ -61,6 +61,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await checkpoint(owner, "settings-autopilot");
   const analysis = owner.getByRole("switch", { name: "Analyse merged pull requests" });
   await expect(analysis).toBeChecked();
+  // What it sends: the docs agent reads the repository and the help center on every merged pull request.
+  await expect(owner.getByText("the repository files Autopilot reads at its merge commit and your help center's articles and drafts", { exact: false })).toBeVisible();
   await analysis.click();
   await expect(owner.getByText("Autopilot off")).toBeVisible();
   await owner.reload();

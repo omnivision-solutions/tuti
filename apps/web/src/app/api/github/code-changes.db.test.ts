@@ -35,10 +35,9 @@ beforeAll(async () => {
 });
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
-  // AI on this server: the provider (and its decision model) and embeddings, all fakes.
-  // The classic pipeline (the decision model on the articles nearest the summary, the default), whose steps these tests
-  // script; docs-agent.db.test.ts has the docs agent's.
-  for (const [name, value] of Object.entries({ ...github.env, ...model.env, CODE_CHANGES_DOCS_PIPELINE: "classic" })) {
+  // AI on this server: the provider (and its decision model) and embeddings, all fakes. The docs agent's own steps are
+  // docs-agent.db.test.ts's; here it mostly finds nothing for the help center (noDocs).
+  for (const [name, value] of Object.entries({ ...github.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
   resetCodeChangesSettings();
@@ -110,12 +109,22 @@ const changes = () =>
 const readsOf = (number: number) => github.reads.filter((path) => path.startsWith(`/repos/${repo}/pulls/${number}`));
 
 const INTERNAL: FakeDecision = { audience: { users: 0.1, internal: 0.8, dependencies: 0.05, repository_docs: 0.05 } };
+
+/**
+ * The docs agent's answer, on every analysis (its request names the merge commit): these edits and new articles (none
+ * by default), and no summary of its own, so the summary is written as before.
+ */
+const docsAgent = ({ edits = [], newArticles = [] }: { edits?: unknown[]; newArticles?: unknown[] } = {}) =>
+  model.reply(JSON.stringify({ user_facing: 0.9, summary: "", facts: [], edits, new_articles: newArticles }), undefined, '"merge_commit"');
+/** The docs agent finds nothing for the help center. */
+const noDocs = () => docsAgent();
 const USERS: FakeDecision = { audience: { users: 0.9, internal: 0.05, dependencies: 0.03, repository_docs: 0.02 } };
 
 describe("reading", () => {
   test("a merged pull request becomes the project's code change: the App reads it, its commits and its files", async () => {
     github.pullRequest(repo, pullRequest(1));
     model.decide(INTERNAL);
+    noDocs();
     expect(await merge(1)).toBe(200);
     expect(await changes()).toEqual([
       {
@@ -148,6 +157,7 @@ describe("reading", () => {
   test("one code change per pull request, analysed once: a redelivery neither reads nor asks again", async () => {
     github.pullRequest(repo, pullRequest(2));
     model.decide(INTERNAL);
+    noDocs();
     await merge(2);
     const reads = readsOf(2).length;
     await merge(2);
@@ -173,6 +183,7 @@ describe("reading", () => {
     expect(await changes()).toEqual([expect.objectContaining({ state: "FAILED", reason: "GitHub didn't let Tuti read the pull request." })]);
     github.pullRequest(repo, pullRequest(3, { title: "Dark mode, renamed" }));
     model.decide(INTERNAL);
+    noDocs();
     expect(await merge(3)).toBe(200);
     expect(await changes()).toEqual([expect.objectContaining({ state: "NOTHING_TO_DO", title: "Dark mode, renamed" })]);
   });
@@ -184,6 +195,7 @@ describe("reading", () => {
     }
     github.pullRequest(repo, pullRequest(4));
     model.decide(INTERNAL);
+    noDocs();
     await merge(4);
     expect(lines.join("\n")).toContain("read 1 of 2 files");
     expect(lines.join("\n")).not.toContain("secret-diff-marker");
@@ -201,6 +213,7 @@ describe("reading", () => {
     await setCodeChangeAnalysis(project.slug, true);
     github.pullRequest(repo, pullRequest(6));
     model.decide(INTERNAL);
+    noDocs();
     await merge(6);
     expect((await changes()).map((change) => change.number)).toEqual([6]);
   });
@@ -256,16 +269,18 @@ describe("deciding", () => {
     article = await prisma.article.create({
       data: { projectId: project.id, slug: "appearance", title: "Change how the app looks", body: "The app has a light theme.", publishedAt: new Date() },
     });
-    await prisma.$executeRaw`INSERT INTO article_chunk (id, "articleId", "projectId", position, heading, text, model, "contentHash", embedding)
-      VALUES (${crypto.randomUUID()}, ${article.id}, ${project.id}, 0, '', 'The app has a light theme.', 'test', 'x', ${vector(0.95, 0.05)}::vector)`;
     openai.setVector(SUMMARY, [1, 0]);
   });
 
   const asked = () => model.decisions.filter((request) => "effect" in request.questions).map((request) => JSON.stringify(request.state));
+  /** The docs agent's edit to the article: wrong now, this sure. */
+  const agentEdit = (probability: number) => ({ slug: "appearance", problem: "wrong", probability, reason: "It says the app only has a light theme." });
   const unrelated = { effect: { resolves: 0, moves_forward: 0, related: 0, unrelated: 1 } };
 
-  test("past the gate: the nearest open posts and articles (and posts it names) are decided, and what passes is proposed", async () => {
+  test("past the gate: the nearest open posts (and posts it names) are decided, and what passes is proposed, with the docs agent's edit", async () => {
     github.pullRequest(repo, pullRequest(10, { body: "Adds a theme switch. Also tuti#6." }));
+    // The repository at its merge commit, for the docs agent.
+    github.repository(repo, { commit: "merge-10", files: { "src/theme.ts": "export const darkMode = true;" } });
     model.decide(USERS);
     model.reply(SUMMARY);
     model.decide({ effect: { resolves: 0.85, moves_forward: 0.1, related: 0.04, unrelated: 0.01 } }, '"title":"Dark mode"');
@@ -274,8 +289,8 @@ describe("deciding", () => {
     model.decide({ effect: { resolves: 0, moves_forward: 0, related: 0.05, unrelated: 0.95 } }, "CSV exports");
     model.decide(unrelated, "Mobile app");
     model.decide({ effect: { resolves: 0.1, moves_forward: 0.1, related: 0.1, unrelated: 0.7 } }, "Keyboard shortcuts");
-    model.decide({ effect: { wrong: 0.7, missing: 0.2, unaffected: 0.1 } }, '"article"');
-    model.decide({ needed: 0.3 }, "existing_articles");
+    // The docs agent: the article is wrong now (its slug, its probability); no new article.
+    docsAgent({ edits: [agentEdit(0.9)] });
     // Then the reasons, and the comment for the post it moves forward, for what passed (most likely first)…
     model.reply(
       JSON.stringify({
@@ -308,8 +323,9 @@ describe("deciding", () => {
       },
     });
     expect(change).toMatchObject({ state: "READY", summary: SUMMARY, why: "It ships the dark theme people asked for.", decider: "nace-ai/drex-max", model: "acme/tiny" });
-    // It wrote everything with it, and the decisions stayed with the decision model.
-    expect(new Set(model.requests.map((request) => request.model))).toEqual(new Set(["acme/tiny"]));
+    // It wrote everything with it; the decisions stayed with the decision model, and the docs agent's deciding with its own.
+    expect(new Set(model.requests.filter((request) => !request.user.includes('"merge_commit"')).map((request) => request.model))).toEqual(new Set(["acme/tiny"]));
+    expect(model.requests.filter((request) => request.user.includes('"merge_commit"')).map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5"]);
     const byProbability = <T extends { probability: number }>(list: T[]) => list.sort((a, b) => b.probability - a.probability);
     expect(byProbability(change.actions)).toEqual([
       // Users see it, so there's always the changelog line: written into the running draft by itself, never waiting.
@@ -326,7 +342,7 @@ describe("deciding", () => {
         kind: "ARTICLE_EDIT",
         postId: null,
         articleId: article.id,
-        probability: expect.closeTo(0.9) as number,
+        probability: 0.9,
         payload: {
           problem: "wrong",
           title: "Change how the app looks",
@@ -371,17 +387,19 @@ describe("deciding", () => {
     expect(await prisma.articleRevision.count({ where: { articleId: article.id, codeChangeActionId: edit.id } })).toBe(1);
 
     // The completed post was never asked about; the named one was, marked as named.
-    expect(asked()).toHaveLength(7);
+    expect(asked()).toHaveLength(6);
     expect(asked().some((state) => state.includes("High contrast mode"))).toBe(false);
     expect(asked().find((state) => state.includes("Keyboard shortcuts"))).toContain('"the_pull_request_names_this_post":true');
     expect(asked().find((state) => state.includes('"title":"Dark mode"'))).not.toContain("the_pull_request_names_this_post");
     // Every request asked for providers that don't keep or train on it.
     expect(model.decisions.every((request) => JSON.stringify(request.provider) === '{"data_collection":"deny"}')).toBe(true);
-    // Everything it asked is the project's code changes' spend: 9 decisions, the summary and 2 writers (the summary's embedding isn't recorded).
+    // Everything it asked is the project's code changes' spend: 7 decisions (the gate and 6 posts), the docs agent, the summary and 2
+    // writers (the summary's embedding isn't recorded).
     const spent = await prisma.aiUsage.groupBy({ by: ["feature", "kind"], where: { projectId: project.id }, _count: true });
-    expect(spent.map((row) => `${row.feature} ${row.kind} ${row._count}`).sort()).toEqual(["code_changes chat 3", "code_changes decision 9"]);
-    // The summary was written from the pull request, and is what found the candidates.
-    expect(model.requests[0]!.user).toContain("Dark mode 10");
+    expect(spent.map((row) => `${row.feature} ${row.kind} ${row._count}`).sort()).toEqual(["code_changes chat 4", "code_changes decision 7"]);
+    // The docs agent decided first; the summary (none from the agent) was written from the pull request, and is what found the posts.
+    expect(model.requests[0]!.user).toContain('"merge_commit": "merge-10"');
+    expect(model.requests[1]!.user).toContain("Dark mode 10");
     expect(openai.inputs.at(-1)).toBe(SUMMARY);
   });
 
@@ -391,6 +409,7 @@ describe("deciding", () => {
     await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
     github.pullRequest(repo, pullRequest(11));
     model.decide(INTERNAL);
+    noDocs();
     await merge(11);
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
     expect(receiver.received).toEqual([]);
@@ -401,8 +420,7 @@ describe("deciding", () => {
     for (let i = 0; i < 4; i++) {
       model.decide(unrelated, '"post"');
     }
-    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-    model.decide({ needed: 0.1 }, "existing_articles");
+    noDocs();
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
     expect(model.decisions.filter((request) => "audience" in request.questions)).toHaveLength(1);
@@ -438,8 +456,7 @@ describe("deciding", () => {
     for (let i = 0; i < 5; i++) {
       model.decide(unrelated, '"post"');
     }
-    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-    model.decide({ needed: 0.1 }, "existing_articles");
+    noDocs();
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
     expect(receiver.received).toHaveLength(1);
@@ -459,8 +476,7 @@ describe("deciding", () => {
       for (let i = 0; i < 4; i++) {
         model.decide(unrelated, '"post"');
       }
-      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-      model.decide({ needed: 0.1 }, "existing_articles");
+      noDocs();
       model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     };
     // Saving the event's deliveries fails, inside the transaction that saves the analysis.
@@ -494,13 +510,12 @@ describe("deciding", () => {
     github.pullRequest(repo, pullRequest(16));
     const analyse = (users: boolean) => {
       model.decide(users ? USERS : INTERNAL);
+      noDocs();
       if (users) {
         model.reply(SUMMARY);
         for (let i = 0; i < 5; i++) {
           model.decide(unrelated, '"post"');
         }
-        model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-        model.decide({ needed: 0.1 }, "existing_articles");
         model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
       }
     };
@@ -518,8 +533,7 @@ describe("deciding", () => {
     for (let i = 0; i < 5; i++) {
       model.decide(unrelated, '"post"');
     }
-    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-    model.decide({ needed: 0.1 }, "existing_articles");
+    noDocs();
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
     expect(await inDraft()).toBe(1);
@@ -531,6 +545,7 @@ describe("deciding", () => {
   test("analysed again to nothing to do, its parts come out under the project's lock (posts' updates change only under it)", async () => {
     github.pullRequest(repo, pullRequest(18));
     model.decide(INTERNAL);
+    noDocs();
     await merge(18);
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 18 } });
     // What each transaction does, in order: taking the project's lock, taking updates out.
@@ -571,6 +586,7 @@ describe("deciding", () => {
             ...rest,
           )) as never);
     model.decide(INTERNAL);
+    noDocs();
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
     expect((await prisma.codeChange.findUniqueOrThrow({ where: { id }, select: { state: true } })).state).toBe("NOTHING_TO_DO");
     // The one saving it (taking its updates out) took the lock first.
@@ -582,6 +598,7 @@ describe("deciding", () => {
   test("two writes of the changelog line at once record it once: the second waits for the first's claim, then finds it", async () => {
     github.pullRequest(repo, pullRequest(17));
     model.decide(INTERNAL);
+    noDocs();
     await merge(17);
     const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true, repo: true, number: true, url: true, title: true } });
     const { id, ...pr } = change;
@@ -625,8 +642,7 @@ describe("deciding", () => {
       for (let i = 0; i < 5; i++) {
         model.decide(unrelated, '"post"');
       }
-      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-      model.decide({ needed: 0.1 }, "existing_articles");
+      noDocs();
       model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     };
     model.decide(USERS);
@@ -647,6 +663,7 @@ describe("deciding", () => {
   test("the changelog line isn't written where its entry is published; another project's entry with the pull request doesn't count", async () => {
     github.pullRequest(repo, pullRequest(15));
     model.decide(INTERNAL);
+    noDocs();
     await merge(15);
     const { id, url } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
     const other = await createProject(await signUp("Otto Other"));
@@ -658,8 +675,7 @@ describe("deciding", () => {
       for (let i = 0; i < 5; i++) {
         model.decide(unrelated, '"post"');
       }
-      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-      model.decide({ needed: 0.1 }, "existing_articles");
+      noDocs();
       model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
       await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
     };
@@ -679,6 +695,7 @@ describe("deciding", () => {
   test('a failed "Analyse anyway", retried with the same input, still skips the gate', async () => {
     github.pullRequest(repo, pullRequest(14));
     model.decide(INTERNAL);
+    noDocs();
     await merge(14);
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
     // The summary fails: the code change is failed now, and Hatchet runs the job again.
@@ -689,8 +706,7 @@ describe("deciding", () => {
     for (let i = 0; i < 5; i++) {
       model.decide(unrelated, '"post"');
     }
-    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-    model.decide({ needed: 0.1 }, "existing_articles");
+    noDocs();
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
     expect(model.decisions.filter((request) => "audience" in request.questions)).toHaveLength(1);
@@ -707,8 +723,7 @@ describe("deciding", () => {
       model.decide({ effect: { resolves: 0.9, moves_forward: 0, related: 0, unrelated: 0.1 } }, "Reorganise the settings page");
       model.decide(unrelated, "CSV exports");
       model.decide(unrelated, "Mobile app");
-      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-      model.decide({ needed: 0.1 }, "existing_articles");
+      noDocs();
       model.reply(JSON.stringify({ why: "", proposals: {} }));
     };
     script(0.9);
@@ -745,8 +760,7 @@ describe("deciding", () => {
       for (const title of ["Dark mode", "Custom colour themes", "Reorganise the settings page", "CSV exports", "Mobile app"]) {
         model.decide(unrelated, `"title":"${title}"`);
       }
-      model.decide({ effect: { wrong: 0.8, missing: 0.1, unaffected: 0.1 } }, '"article"');
-      model.decide({ needed: 0.1 }, "existing_articles");
+      docsAgent({ edits: [agentEdit(0.9)] });
       for (const [text, during] of edits) {
         model.reply(JSON.stringify({ reason: "It says there's only a light theme.", sections: { "1": `## Light\n\n${text}` } }), during, '"problem"');
       }
@@ -785,8 +799,7 @@ describe("deciding", () => {
           for (const title of ["Custom colour themes", "Reorganise the settings page", "CSV exports", "Mobile app"]) {
             model.decide(unrelated, `"title":"${title}"`);
           }
-          model.decide({ effect: { wrong: 0.97, missing: 0.02, unaffected: 0.01 } }, '"article"');
-          model.decide({ needed: 0.1 }, "existing_articles");
+          docsAgent({ edits: [agentEdit(0.99)] });
           model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: { p2: { reason: "It ships a dark theme." } } }), undefined, '"proposals"');
           model.reply(JSON.stringify({ reason: "It says there's only a light theme.", sections: { "1": "## Light\n\nThe app has a light theme and a dark one." } }), undefined, '"problem"');
         };
@@ -832,8 +845,7 @@ describe("deciding", () => {
       for (let i = 0; i < 4; i++) {
         model.decide(unrelated, '"post"');
       }
-      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-      model.decide({ needed: 0.1 }, "existing_articles");
+      noDocs();
       model.reply(JSON.stringify({ why: "", changelog: "Themes", proposals: { p1: { reason: "Progress on themes.", comment } } }), undefined, '"proposals"');
     };
     const review = () => call(getCodeChangeTarget, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { type: "feedback", id: posts.themes!.id });
@@ -866,8 +878,7 @@ describe("deciding", () => {
       for (let i = 0; i < 4; i++) {
         model.decide(unrelated, '"post"');
       }
-      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-      model.decide({ needed: 0.1 }, "existing_articles");
+      noDocs();
       model.reply(JSON.stringify({ why: "", changelog: "Themes", proposals: sure === null ? {} : { p1: { reason: "Progress.", comment: "Dark is out." } } }), undefined, '"proposals"');
     };
     const part = (number: number) => prisma.codeChangeAction.findFirst({ where: { codeChange: { number }, postId: posts.themes!.id }, select: { status: true, waitReason: true } });
@@ -913,14 +924,16 @@ describe("deciding", () => {
     for (const title of ["Dark mode", "Custom colour themes", "Reorganise the settings page", "CSV exports", "Mobile app"]) {
       model.decide(unrelated, `"title":"${title}"`);
     }
-    model.decide({ effect: { wrong: 0.8, missing: 0.1, unaffected: 0.1 } }, '"article"');
-    model.decide({ needed: 0.9 }, "existing_articles");
+    // An edit and a new article, in no collection (the double-check off: docs-agent.db.test.ts has it).
+    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+    resetCodeChangesSettings();
+    docsAgent({ edits: [agentEdit(0.9)], newArticles: [{ title: "Use the dark theme", probability: 0.9, collection: null, after: null, reason: "Nothing covers themes." }] });
     // The edit loses the link: not proposed.
     model.reply(JSON.stringify({ reason: "Out of date", sections: { "1": "Pick a theme in Settings, now dark too." } }), undefined, '"problem"');
     model.reply(
       JSON.stringify({ title: "Use the dark theme", reason: "Nothing explains themes yet.", notes: "## Turn it on\n\n- Open **Settings**\n- Pick Dark" }),
       undefined,
-      '"existing_articles"',
+      '"article_needed"',
     );
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await merge(15);
@@ -955,8 +968,7 @@ describe("deciding", () => {
     for (const title of ["Dark mode", "Custom colour themes", "Reorganise the settings page", "CSV exports", "Mobile app"]) {
       model.decide(unrelated, `"title":"${title}"`);
     }
-    model.decide({ effect: { wrong: 0.8, missing: 0.1, unaffected: 0.1 } }, '"article"');
-    model.decide({ needed: 0.1 }, "existing_articles");
+    docsAgent({ edits: [agentEdit(0.9)] });
     model.reply(JSON.stringify({ reason: "Two themes now.", sections: { "1": "The app has a light theme and a dark one." } }), undefined, '"problem"');
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
   };
@@ -993,8 +1005,7 @@ describe("deciding", () => {
       model.decide({ effect: { resolves: 0, moves_forward: 0, related: 0.7, unrelated: 0.3 } }, "Reorganise the settings page");
       model.decide(unrelated, "CSV exports");
       model.decide(unrelated, "Mobile app");
-      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-      model.decide({ needed: 0.1 }, "existing_articles");
+      noDocs();
       model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     };
     const actionsOf = async (number: number) =>
@@ -1074,8 +1085,7 @@ describe("deciding", () => {
     model.decide({ effect: { resolves: 0, moves_forward: 0, related: 0.7, unrelated: 0.3 } }, "Reorganise the settings page");
     model.decide(unrelated, "CSV exports");
     model.decide(unrelated, "Mobile app");
-    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-    model.decide({ needed: 0.1 }, "existing_articles");
+    noDocs();
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await merge(24);
     expect(
@@ -1087,6 +1097,7 @@ describe("deciding", () => {
     resetCodeChangesSettings();
     github.pullRequest(repo, pullRequest(25));
     model.decide(USERS);
+    noDocs();
     await merge(25);
     expect(await changes()).toContainEqual(expect.objectContaining({ number: 25, state: "NOTHING_TO_DO" }));
   });
@@ -1099,8 +1110,7 @@ describe("deciding", () => {
     for (let i = 0; i < 4; i++) {
       model.decide(unrelated, '"post"');
     }
-    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-    model.decide({ needed: 0.1 }, "existing_articles");
+    noDocs();
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     // On as the analysis starts; off by the time it's saved (the project's row says off).
     const findUnique = prisma.project.findUnique.bind(prisma.project) as (...args: unknown[]) => Promise<unknown>;
@@ -1159,8 +1169,7 @@ describe("deciding", () => {
     for (let i = 0; i < 5; i++) {
       model.decide(unrelated, '"post"');
     }
-    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
-    model.decide({ needed: 0.1 }, "existing_articles");
+    noDocs();
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
     expect(await changes()).toEqual([expect.objectContaining({ state: "READY" })]);
@@ -1201,6 +1210,7 @@ describe("out of AI credits", () => {
     await expect(call(analyseCodeChange, team(), { id })).rejects.toMatchObject({ status: 402, code: "no_credits" });
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     model.decide(INTERNAL);
+    noDocs();
     expect(await call(analyseCodeChange, team(), { id })).toMatchObject({ state: "nothing_to_do" });
     expect(readsOf(40)).toHaveLength(3);
   });
@@ -1224,7 +1234,9 @@ describe("out of AI credits", () => {
     expect((await changes()).map((change) => change.state)).toEqual(["PAUSED", "PAUSED"]);
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     model.decide(INTERNAL, "Dark mode 43");
+    noDocs();
     model.decide(INTERNAL, "Dark mode 44");
+    noDocs();
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 2, failed: 0 });
     expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO", "NOTHING_TO_DO"]);
     // Nothing paused is left: none resumed, nothing asked.
@@ -1242,6 +1254,7 @@ describe("out of AI credits", () => {
     expect((await changes()).map((change) => change.state)).toEqual(["PAUSED"]);
     vi.stubEnv("JOBS_DRIVER", "inline");
     model.decide(INTERNAL, "Dark mode 47");
+    noDocs();
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
     expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO"]);
   });
@@ -1257,12 +1270,14 @@ describe("out of AI credits", () => {
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     let second: string | undefined;
     model.decide(USERS, "Dark mode 48");
+    // First: the summary's match is in the agent's request too.
+    noDocs();
     model.reply("Pick a dark theme in Settings.", async () => {
       second = (await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 49 }, select: { state: true } })).state;
     }, "Dark mode 48");
-    model.decide({ needed: 0.1 }, "existing_articles");
     model.reply(JSON.stringify({ why: "It ships a dark theme.", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     model.decide(INTERNAL, "Dark mode 49");
+    noDocs();
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 2, failed: 0 });
     expect(second).toBe("PAUSED");
   });
@@ -1274,6 +1289,7 @@ describe("out of AI credits", () => {
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     // One gate scripted: a second analysis would ask the fake an unscripted question (and fail afterEach).
     model.decide(INTERNAL, "Dark mode 50");
+    noDocs();
     const results = await Promise.all([call(resumeCodeChanges, team(), {}), call(resumeCodeChanges, team(), {})]);
     expect(model.decisions.filter((request) => JSON.stringify(request.state).includes("Dark mode 50"))).toHaveLength(1);
     // Only the one that analysed it counts it.
@@ -1291,6 +1307,7 @@ describe("out of AI credits", () => {
     expect((await changes()).map((change) => change.state)).toEqual(["PAUSED"]);
     vi.restoreAllMocks();
     model.decide(INTERNAL, "Dark mode 52");
+    noDocs();
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
     expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO"]);
   });
@@ -1305,6 +1322,7 @@ describe("out of AI credits", () => {
     // Enough for the first one's gate, then none.
     await grantCredits(project.id, "MANUAL", 0.000001, { days: null });
     model.decide(INTERNAL, "Dark mode 53");
+    noDocs();
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
     expect(Object.fromEntries((await changes()).map((change) => [change.number, change.state]))).toEqual({ 53: "NOTHING_TO_DO", 54: "PAUSED" });
   });
@@ -1321,6 +1339,7 @@ describe("out of AI credits", () => {
     expect(await retry()).toEqual({ skipped: true });
     vi.stubEnv("JOBS_DRIVER", "hatchet");
     model.decide(INTERNAL, "Dark mode 55");
+    noDocs();
     expect(await retry()).toMatchObject({ state: "NOTHING_TO_DO" });
   });
 
@@ -1341,6 +1360,7 @@ describe("out of AI credits", () => {
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     vi.spyOn(log, "error").mockImplementation(() => {});
     model.decide(INTERNAL, "Dark mode 45");
+    noDocs();
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 1 });
     const states = Object.fromEntries((await changes()).map((change) => [change.number, change.state]));
     expect(states).toEqual({ 45: "NOTHING_TO_DO", 46: "FAILED" });
@@ -1350,8 +1370,9 @@ describe("out of AI credits", () => {
     await grantCredits(project.id, "MANUAL", 0.000001, { days: null });
     github.pullRequest(repo, pullRequest(41));
     model.decide(USERS);
+    // First: the summary's match is in the agent's request too.
+    noDocs();
     model.reply("Pick a dark theme in Settings.", undefined, "Dark mode 41");
-    model.decide({ needed: 0.1 }, "existing_articles");
     model.reply(JSON.stringify({ why: "It ships a dark theme.", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     expect(await merge(41)).toBe(200);
     expect(await changes()).toEqual([expect.objectContaining({ number: 41, state: "READY" })]);
@@ -1369,6 +1390,7 @@ describe("plans", () => {
   test("Autopilot is on every plan: on the free plan, a merge is a code change", async () => {
     github.pullRequest(repo, pullRequest(50));
     model.decide(INTERNAL);
+    noDocs();
     expect(await merge(50)).toBe(200);
     expect(await changes()).toEqual([expect.objectContaining({ number: 50, state: "NOTHING_TO_DO" })]);
   });
@@ -1383,6 +1405,7 @@ describe("plans", () => {
     expect((await codeChangeList(project.id)).find((change) => change.number === 52)).toMatchObject({ reason: "Autopilot was on paid plans only then." });
     github.pullRequest(repo, pullRequest(52));
     model.decide(INTERNAL);
+    noDocs();
     expect(await call(resumeCodeChanges, { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id }, {})).toEqual({ resumed: 1, failed: 0 });
     expect(await changes()).toEqual([expect.objectContaining({ number: 52, state: "NOTHING_TO_DO" })]);
   });
@@ -1391,6 +1414,7 @@ describe("plans", () => {
     vi.stubEnv("PLANS", "");
     github.pullRequest(repo, pullRequest(53));
     model.decide(INTERNAL);
+    noDocs();
     expect(await merge(53)).toBe(200);
     expect(await changes()).toEqual([expect.objectContaining({ number: 53, state: "NOTHING_TO_DO" })]);
   });

@@ -3,30 +3,13 @@ import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
 import { type Ai, codeChangesEnabled, codeChangesSettings, complete, decide, decisionModel, embed, type JobInput, log, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
 import { z } from "zod";
 
-import {
-  ARTICLE_QUESTION,
-  type ArticleCandidate,
-  articleProposal,
-  articleState,
-  GATE,
-  gateResult,
-  namedPosts,
-  NEW_ARTICLE_QUESTION,
-  newArticleProposal,
-  newArticleState,
-  POST_QUESTION,
-  type PostCandidate,
-  postProposal,
-  postState,
-  pullRequestState,
-  thresholds,
-} from "./code-change-decisions";
+import { GATE, gateResult, namedPosts, POST_QUESTION, type PostCandidate, postProposal, postState, pullRequestState, thresholds } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
 import { landEdit } from "./article-layers";
 import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
 import { queueAutopilotNotices } from "./autopilot-email";
 import { OutOfCredits } from "./credits";
-import { type ArticlePlace, type Ask, asking, writeArticleEdit, writeNewArticle } from "./code-change-docs";
+import { type ArticlePlace, type Ask, writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { askingWithTools, decideDocs } from "./docs-agent";
 import { closeTools, type ToolContext } from "./docs-agent-tools";
 import { portalOrigin, queueDeliveries, recordEvent } from "./events";
@@ -169,7 +152,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   }
   let failure = "GitHub didn't let Tuti read the pull request.";
   // One time limit for the whole analysis, the repository's download and every request included.
-  const { docs, limits } = codeChangesSettings();
+  const { limits } = codeChangesSettings();
   const deadline = AbortSignal.timeout(limits.timeoutMinutes * 60_000);
   try {
     const api = await installationApi(repository.connection.installationId);
@@ -181,13 +164,10 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
     const read = pr.files.filter((file) => !file.left).length;
     log.info(`Code change ${change.id} (${change.repo}#${change.number}): read ${read} of ${pr.files.length} files, ${pr.diff.length} characters of diff`);
     // The docs agent reads the repository at the merge commit; without it, it works from the diff (and says so).
-    const code =
-      docs.pipeline !== "agent"
-        ? null
-        : pr.mergeCommit
-          ? await readRepository(api, repository.fullName, pr.mergeCommit)
-          : { unavailable: "GitHub didn't say which commit the pull request merged as" };
-    if (code && "unavailable" in code) {
+    const code = pr.mergeCommit
+      ? await readRepository(api, repository.fullName, pr.mergeCommit)
+      : { unavailable: "GitHub didn't say which commit the pull request merged as" };
+    if ("unavailable" in code) {
       log.info(`Code change ${change.id}: the docs agent works without the repository (${code.unavailable})`);
     }
     failure = "The AI provider didn't answer.";
@@ -210,9 +190,8 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger, 
   }
 }
 
-/** A few candidates per kind, so the decisions stay cheap. */
+/** A few posts to decide on, so the decisions stay cheap. */
 const POST_CANDIDATES = 5;
-const ARTICLE_CANDIDATES = 3;
 
 type Proposal = {
   kind: CodeChangeActionKind;
@@ -240,8 +219,7 @@ const EDIT_TRIES = 3;
 /**
  * The gate (does it change anything users see?), then the summary for users, the posts nearest it (and posts the pull
  * request names), a decision for each, and the proposals that pass their kind's threshold; the help center's edits and
- * new articles from the docs agent (docs-agent.ts), which runs on every merged pull request, or, with the classic
- * pipeline (`CODE_CHANGES_DOCS_PIPELINE`), from decisions on the articles nearest the summary. There's nothing to do
+ * new articles from the docs agent (docs-agent.ts), which runs on every merged pull request. There's nothing to do
  * only when the gate and the agent both find nothing. What's written for each proposal comes after (docs/plan.md).
  */
 async function analyse(
@@ -249,45 +227,38 @@ async function analyse(
   pr: PullRequestRead,
   pastGate: boolean,
   use: Ai,
-  { signal, repository }: { signal: AbortSignal; repository: Repository | { unavailable: string } | null },
+  { signal, repository }: { signal: AbortSignal; repository: Repository | { unavailable: string } },
 ) {
   // Everything the analysis asks a model is the project's code changes' spend (`use`), written by the project's model for them.
   const versions = { decider: decisionModel(), model: use.model };
   const gate = pastGate ? null : gateResult(await decide(pullRequestState(pr), GATE, { meter: use.meter }));
   // Users see it: the changelog hears about it, and its posts are decided.
   const seen = !gate || gate.users >= thresholds().gate;
-  if (!seen && !repository) {
-    return nothingToDo(change, gate!.reason, versions);
-  }
-  const tools: ToolContext | null = repository && { projectId: change.projectId, repository };
+  const tools: ToolContext = { projectId: change.projectId, repository };
   try {
-    const docs = tools ? await decideDocs(pr, tools, use.meter, { codeChangeId: change.id, signal }) : null;
-    const proposals: Proposal[] = docs
-      ? [
-          ...docs.edits
-            .filter((edit) => edit.probability >= thresholds().ARTICLE_EDIT.maybe)
-            .map((edit) => ({ kind: "ARTICLE_EDIT" as const, articleId: edit.articleId, probability: edit.probability, payload: { problem: edit.problem }, brief: edit.reason })),
-          // One new article per pull request, the surest, as saving an analysis keeps it (once the team decided one, it's
-          // never proposed again). ponytail: tell them apart by title if a pull request often needs two.
-          ...docs.newArticles
-            .filter((article) => article.probability >= thresholds().NEW_ARTICLE.maybe)
-            .sort((a, b) => b.probability - a.probability)
-            .slice(0, 1)
-            .map((article) => ({ kind: "NEW_ARTICLE" as const, probability: article.probability, brief: { title: article.title, reason: article.reason, place: article.place } })),
-        ]
-      : [];
+    const docs = await decideDocs(pr, tools, use.meter, { codeChangeId: change.id, signal });
+    const proposals: Proposal[] = [
+      ...docs.edits
+        .filter((edit) => edit.probability >= thresholds().ARTICLE_EDIT.maybe)
+        .map((edit) => ({ kind: "ARTICLE_EDIT" as const, articleId: edit.articleId, probability: edit.probability, payload: { problem: edit.problem }, brief: edit.reason })),
+      // One new article per pull request, the surest, as saving an analysis keeps it (once the team decided one, it's
+      // never proposed again). ponytail: tell them apart by title if a pull request often needs two.
+      ...docs.newArticles
+        .filter((article) => article.probability >= thresholds().NEW_ARTICLE.maybe)
+        .sort((a, b) => b.probability - a.probability)
+        .slice(0, 1)
+        .map((article) => ({ kind: "NEW_ARTICLE" as const, probability: article.probability, brief: { title: article.title, reason: article.reason, place: article.place } })),
+    ];
     if (!seen && proposals.length === 0) {
       return nothingToDo(change, gate!.reason, versions);
     }
-    const summary = docs?.summary || (await writeSummary(pr, use));
+    const summary = docs.summary || (await writeSummary(pr, use));
     let posts: PostCandidate[] = [];
-    let articles: ArticleCandidate[] = [];
     if (seen) {
       const [embedding] = await embed([summary]);
-      const vector = toVectorLiteral(embedding!);
       const portals = [...new Set([portalOrigin(change.slug), await portalAddress(change.slug)])];
       const named = namedPosts([pr.title, pr.body, ...pr.commits].join("\n"), portals);
-      [posts, articles] = await Promise.all([postCandidates(change.projectId, vector, named), docs ? [] : articleCandidates(change.projectId, vector)]);
+      posts = await postCandidates(change.projectId, toVectorLiteral(embedding!), named);
     }
 
     // A link is only applied by itself (sure enough, where the team lets it): it changes nothing customers see, so one
@@ -300,31 +271,14 @@ async function analyse(
           proposals.push({ ...proposal, postId: post.id });
         }
       }),
-      // The classic pipeline: the decision model on the articles nearest the summary.
-      ...articles.map(async (article) => {
-        const proposal = articleProposal(await decide(articleState(pr, summary, article), ARTICLE_QUESTION, { meter: use.meter }));
-        if (proposal) {
-          proposals.push({ kind: "ARTICLE_EDIT", articleId: article.id, probability: proposal.probability, payload: { problem: proposal.problem } });
-        }
-      }),
-      ...(seen && !docs
-        ? [
-            (async () => {
-              const probability = newArticleProposal(await decide(newArticleState(pr, summary, articles), NEW_ARTICLE_QUESTION, { meter: use.meter }));
-              if (probability !== null) {
-                proposals.push({ kind: "NEW_ARTICLE", probability });
-              }
-            })(),
-          ]
-        : []),
     ]);
     proposals.sort((a, b) => b.probability - a.probability);
     // The docs' edits and drafts are written now (by the agent, with its tools); one the model couldn't write usably isn't proposed.
-    const ask = tools ? askingWithTools(tools, use, signal) : asking(use);
+    const ask = askingWithTools(tools, use, signal);
     const [{ why, line }, written] = await Promise.all([
       // Why, the posts' reasons and the changelog line: only for what users see (the gate).
       seen ? writeProposals(pr, summary, proposals, posts, use) : { why: "", line: "" },
-      Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, articles, ask))),
+      Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, ask))),
     ]);
     let kept = proposals.filter((_, i) => written[i]);
     if (!seen && kept.length === 0) {
@@ -332,7 +286,7 @@ async function analyse(
     }
     // Past the time limit nothing is saved: the analysis fails, and is tried again.
     signal.throwIfAborted();
-    const withoutCode = repository && "unavailable" in repository ? `Autopilot couldn't read the repository (${repository.unavailable}), so it worked from the diff.` : "";
+    const withoutCode = "unavailable" in repository ? `Autopilot couldn't read the repository (${repository.unavailable}), so it worked from the diff.` : "";
     const told = [why, withoutCode].filter(Boolean).join(" ");
     let saved: Awaited<ReturnType<typeof finish>> | null = null;
     for (let tries = 1; !saved; tries++) {
@@ -348,7 +302,7 @@ async function analyse(
         }
         // Written again from the newest text, so neither edit is lost (one the model can't write usably isn't proposed).
         const again = kept.filter((proposal) => proposal.kind === "ARTICLE_EDIT" && error.articleIds.includes(proposal.articleId!));
-        const rewritten = await Promise.all(again.map((proposal) => writeDocs(pr, summary, proposal, articles, ask)));
+        const rewritten = await Promise.all(again.map((proposal) => writeDocs(pr, summary, proposal, ask)));
         kept = kept.filter((proposal) => !again.includes(proposal) || rewritten[again.indexOf(proposal)]);
       }
     }
@@ -369,13 +323,11 @@ async function analyse(
     return { state: "READY" as const, actions: waiting, linked, scheduled };
   } finally {
     // The tools' search worker ends with the analysis, whatever happened.
-    if (tools) {
-      await closeTools(tools);
-    }
+    await closeTools(tools);
   }
 }
 
-/** Nothing to do (the gate, and the docs agent if it ran, found nothing): saved so, and it leaves the changelog. */
+/** Nothing to do (the gate and the docs agent found nothing): saved so, and it leaves the changelog. */
 async function nothingToDo(change: { id: string; projectId: string; pullRequest: { url: string } }, reason: string, versions: { decider: string; model: string }) {
   await finish(change.id, { state: "NOTHING_TO_DO", reason, summary: "", why: "", ...versions }, []);
   await leaveChangelog(change);
@@ -440,13 +392,13 @@ export async function writeChangelogLine(projectId: string, codeChangeId: string
 const appOrigin = () => (process.env.APP_URL ? new URL(process.env.APP_URL).origin : "");
 
 /** Writes a docs proposal's edit or draft (and its reason) into it; false if it couldn't be written usably. Other kinds pass. */
-async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, articles: ArticleCandidate[], ask: Ask): Promise<boolean> {
+async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, ask: Ask): Promise<boolean> {
   const { brief } = proposal;
   const written =
     proposal.kind === "ARTICLE_EDIT"
-      ? await writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, typeof brief === "string" ? brief : undefined)
-      : proposal.kind === "NEW_ARTICLE"
-        ? await writeNewArticle(pr, summary, typeof brief === "object" ? { title: brief.title, reason: brief.reason } : articles.map((article) => article.title), ask)
+      ? await writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem, ask, brief as string)
+      : proposal.kind === "NEW_ARTICLE" && typeof brief === "object"
+        ? await writeNewArticle(pr, summary, { title: brief.title, reason: brief.reason }, ask)
         : undefined;
   if (written === undefined) {
     return true;
@@ -540,22 +492,6 @@ async function postCandidates(projectId: string, vector: string, named: number[]
     select: { id: true, number: true, title: true, body: true, status: true },
   });
   return posts.map((post) => ({ ...post, named: namedIds.has(post.id) }));
-}
-
-/** Published articles whose sections are nearest the summary. */
-async function articleCandidates(projectId: string, vector: string): Promise<ArticleCandidate[]> {
-  return prisma.$queryRaw<ArticleCandidate[]>`
-    SELECT a.id, a.title, a.body
-    FROM (
-      SELECT DISTINCT ON (c."articleId") c."articleId", c.embedding <=> ${vector}::vector AS distance
-      FROM article_chunk c
-      WHERE c."projectId" = ${projectId}
-      ORDER BY c."articleId", distance
-    ) best
-    JOIN article a ON a.id = best."articleId"
-    WHERE a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
-    ORDER BY best.distance
-    LIMIT ${ARTICLE_CANDIDATES}`;
 }
 
 /**

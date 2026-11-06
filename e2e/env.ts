@@ -52,8 +52,6 @@ export const serverEnv = {
   AI_MODEL_CODE_CHANGES: "",
   // Autopilot's settings at their defaults, whatever a local .env tries (every CODE_CHANGES_ variable, and the old name).
   ...Object.fromEntries(Object.keys(readCodeChangesSettings({}).inUse).map((name) => [name, ""])),
-  // Except the docs agent, off by default until its rollout: Autopilot's journeys script its answers.
-  CODE_CHANGES_DOCS_PIPELINE: "agent",
   DECISION_MODEL: "",
   // A cap on the models projects pick, like Tuti's cloud: the model fake's Sonnet ($15 per million output tokens) is the most it allows.
   AI_MODEL_MAX_PRICE: "15",

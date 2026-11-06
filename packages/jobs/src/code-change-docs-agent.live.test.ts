@@ -1,4 +1,4 @@
-import { codeChangesSettings } from "@tuti/shared";
+import { codeChangesSettings, decisionsAvailable } from "@tuti/shared";
 import { expect, test } from "vitest";
 
 import { thresholds } from "./code-change-decisions";
@@ -7,13 +7,14 @@ import { decideDocs, type HelpCenterFixture, outlineMarkdown } from "./docs-agen
 import { closeTools, runTool, type ToolContext } from "./docs-agent-tools";
 
 /**
- * The docs agent on the evaluation set (`pnpm test:live`, with OPENROUTER_API_KEY; CODE_CHANGES_DECIDE_MODEL and
+ * The docs agent on the evaluation set (`pnpm test:live`, with OPENAI_API_KEY; CODE_CHANGES_DECIDE_MODEL and
  * CODE_CHANGES_REDECIDE_MODEL for others than the defaults), for real: each case's pull request on its fixture
  * repository, with the tools, and the set's articles as the help center. Each kind of verdict must match what a team
  * member would expect, with the propose cutoffs in use. Without the key it's skipped: "not run", never "passed". Prints
  * the agent's answers, to tune the cutoffs or compare models.
  */
-const live = Boolean(process.env.OPENROUTER_API_KEY);
+// Chat with tools at OpenRouter (the default models are its ids), as the decisions evaluation beside it.
+const live = decisionsAvailable();
 
 /** The evaluation's spend isn't a project's. */
 const meter = async () => {};

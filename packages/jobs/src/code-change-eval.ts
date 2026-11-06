@@ -1,10 +1,10 @@
-import type { ArticleCandidate, PostCandidate } from "./code-change-decisions";
+import type { PostCandidate } from "./code-change-decisions";
 import type { PullRequestRead } from "./pull-request";
 import type { Repository } from "./repository";
 
 /**
- * The evaluation set for code changes' decisions (code-change-decisions.live.test.ts) and the docs agent's
- * (code-change-docs-agent.live.test.ts, each case on its fixture repository): merged pull
+ * The evaluation set for code changes' decisions, the gate and the posts (code-change-decisions.live.test.ts), and the
+ * docs agent's articles (code-change-docs-agent.live.test.ts, each case on its fixture repository): merged pull
  * requests of a made-up product (Pebble, a team task tracker), with posts and articles and the
  * proposals a careful team member would expect. Where a reasonable person could go either way, the
  * case accepts both. Add a case for every decision a team tells us was wrong.
@@ -57,7 +57,6 @@ export const post = (key: keyof typeof POSTS, named = false): PostCandidate => (
   status: "OPEN",
   named,
 });
-export const article = (key: keyof typeof ARTICLES): ArticleCandidate => ({ id: key, title: ARTICLES[key][0], body: ARTICLES[key][1] });
 
 const pr = (title: string, files: [string, string][], { body = "", labels = [] as string[], commits = [title] } = {}): PullRequestRead => ({
   title,

@@ -10,7 +10,7 @@ import type { PullRequestRead } from "./pull-request";
  * Autopilot's docs agent (docs/plan.md, Autopilot's docs agent): a model with read-only tools (the repository at the
  * merge commit, the help center) decides what a merged pull request means for the help center, in one answer; when it
  * proposes a new article, a stronger model decides again from scratch (the double-check) and its answer is used. The
- * write model, with the same tools, writes each edit and new article in the classic writers' reply (code-change-docs.ts).
+ * write model, with the same tools, writes each edit and new article in the writers' reply (code-change-docs.ts).
  */
 
 /** What the agent is told to keep in step, and how to decide: the product is the customer's, its users theirs. */
@@ -312,7 +312,7 @@ export async function decideDocs(
   return decided;
 }
 
-/** How the write model writes, with the same tools: the classic writer's prompt and reply (code-change-docs.ts), tools first. */
+/** How the write model writes, with the same tools: the writer's prompt and reply (code-change-docs.ts), tools first. */
 export const askingWithTools =
   (context: ToolContext, use: Ai, signal?: AbortSignal): Ask =>
   (system, user) => {
