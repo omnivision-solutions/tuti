@@ -413,14 +413,17 @@ test("Tuti.open({ ask }) opens the panel, and asks once its assistant says it's 
   // Not listening yet (loaded, maybe, but not hydrated): it waits, the latest only.
   loaded(page);
   page.Tuti.open({ ask: "x".repeat(400) });
-  page.Tuti.open({ ask: "Can I invite a guest?", turn: { question: "Pricing?", answer: { id: "a1" } } });
+  page.Tuti.open({ ask: true, turn: { question: "Pricing?", answer: { id: "a1" } } });
   expect(asked()).toEqual([]);
   page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget" });
-  expect(asked()).toEqual([[{ type: "tuti:ask", ask: "Can I invite a guest?", turn: { question: "Pricing?", answer: { id: "a1" } } }, "https://acme.tuti.example"]]);
+  expect(asked()).toEqual([[{ type: "tuti:ask", ask: "", turn: { question: "Pricing?", answer: { id: "a1" } } }, "https://acme.tuti.example"]]);
+  // A turn never comes with a question of its own: the question goes alone.
+  page.Tuti.open({ ask: "Can I invite a guest?", turn: { question: "Pricing?", answer: { id: "a1" } } });
+  expect(asked().at(-1)![0]).toEqual({ type: "tuti:ask", ask: "Can I invite a guest?", turn: null });
   // Listening: at once, where the panel is (no reload); true just opens the assistant; at most 300 characters.
   page.Tuti.open({ ask: true });
   page.Tuti.open({ ask: "y".repeat(400) });
-  expect(asked().slice(1).map(([data]) => (data as { ask: string }).ask)).toEqual(["", "y".repeat(300)]);
+  expect(asked().slice(2).map(([data]) => (data as { ask: string }).ask)).toEqual(["", "y".repeat(300)]);
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
 });
 

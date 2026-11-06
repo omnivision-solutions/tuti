@@ -640,7 +640,7 @@ export function widgetLoader(portalTemplate: string): string {
   var returnFocus;
 
   // Opens the panel, at a tab or a docs article if asked (otherwise where it was), or with its assistant asking
-  // \`ask\` (true: just open; over Home, the first time), after \`turn\` (a question and answer to follow up on);
+  // \`ask\` (true: just open, with \`turn\`, a question and answer to follow up on, if any; over Home, the first time);
   // closing it gives focus back to \`from\`.
   function open(options, from) {
     var article = options && typeof options.article === "string" ? options.article : "";
@@ -652,7 +652,8 @@ export function widgetLoader(portalTemplate: string): string {
     // Asked by message, never by reloading (nothing in the panel is lost, an answer still coming), once it's listening:
     // the latest ask waits for that.
     // Opened for something else, an ask still waiting isn't wanted any more.
-    pendingAsk = ask === null ? null : { type: ${JSON.stringify(WIDGET_ASK_MESSAGE)}, ask: ask, turn: options.turn && typeof options.turn === "object" ? options.turn : null };
+    // A turn comes only with \`ask: true\` (the portal's follow-up: the reader asks next), never with a question of its own.
+    pendingAsk = ask === null ? null : { type: ${JSON.stringify(WIDGET_ASK_MESSAGE)}, ask: ask, turn: options.ask === true && options.turn && typeof options.turn === "object" ? options.turn : null };
     if (pendingAsk && listening) sendAsk();
     var src = portal + "/widget" + (query || "");
     // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
