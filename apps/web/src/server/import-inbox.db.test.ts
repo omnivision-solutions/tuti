@@ -224,7 +224,7 @@ test("a snooze's time is its latest snooze, whatever order Featurebase sends the
 
 test("an image-only message whose image can't be brought keeps saying it had one, whatever the reason", async () => {
   // The user's last message is just an image Featurebase no longer has.
-  (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[4]!.bodyHtml = `<p><img src="${FAKE_FEATUREBASE_FILES}/gone.png?X-Amz-Signature=abc"></p>`;
+  (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[4]!.bodyHtml = `<p><img src="${FAKE_FEATUREBASE_FILES}gone.png?X-Amz-Signature=abc"></p>`;
   const done = await importInbox();
   expect(done.counts).toMatchObject({ attachments: { imported: 0, leftOut: { "that couldn't be fetched": 1 } } });
   const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
@@ -265,7 +265,7 @@ test("a link with bold words in it gets its address once, after all its words", 
 test("a part too long to be content keeps its text (cut as a received email's is) and its Featurebase files: the user's last message, it still needs a reply", async () => {
   const last = (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string; bodyMarkdown?: string }[])[4]!;
   // Junk entities too (one past Unicode's last code point), as pasted mail has.
-  last.bodyHtml = `<p>Fish &amp; chips &#99999999; &#x110000;</p><p>${"word ".repeat(50_000).trim()}</p><p><img src="${FAKE_FEATUREBASE_FILES}/shot.png?X-Amz-Expires=3600&amp;X-Amz-Signature=abc"></p>`;
+  last.bodyHtml = `<p>Fish &amp; chips &#99999999; &#x110000;</p><p>${"word ".repeat(50_000).trim()}</p><p><img src="${FAKE_FEATUREBASE_FILES}shot.png?X-Amz-Expires=3600&amp;X-Amz-Signature=abc"></p>`;
   delete last.bodyMarkdown;
   await importInbox();
   const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
@@ -337,7 +337,7 @@ test("without media storage, an image is left out of its message and counted; a 
     vi.stubEnv(name, "");
   }
   // The user's last message is just a screenshot, with no alt text.
-  (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[4]!.bodyHtml = `<p><img src="${FAKE_FEATUREBASE_FILES}/shot.png?X-Amz-Signature=abc"></p>`;
+  (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[4]!.bodyHtml = `<p><img src="${FAKE_FEATUREBASE_FILES}shot.png?X-Amz-Signature=abc"></p>`;
   const done = await importInbox();
   expect(done.counts).toMatchObject({ attachments: { imported: 0, leftOut: { "as this server has no media storage": 1 } } });
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(0);
