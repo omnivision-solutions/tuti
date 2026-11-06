@@ -234,6 +234,25 @@ export type FeaturebaseArticle = {
   updatedAt?: string | null;
 };
 
+/** A changelog entry (GET /v2/changelogs?state=all), in the default locale: its live version, if it has one. */
+export type FeaturebaseChangelog = {
+  id: string;
+  title?: string | null;
+  /** HTML. */
+  content?: string | null;
+  featuredImage?: string | null;
+  /** When it's dated (published). */
+  date?: string | null;
+  state?: "live" | "draft";
+  /** Who may see it: some segments only, when there are any; a category too, when it has roles. */
+  allowedSegmentIds?: string[] | null;
+  categories?: { id: string; name: string; roles?: string[] | null }[] | null;
+  emailSentToSubscribers?: boolean;
+  commentCount?: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
 /** Who wrote a conversation part: a contact (`customer`, `lead`: a contact id), an admin (an admin id), or someone else. */
 export type FeaturebasePartAuthor = { id?: string | null; type?: string | null; name?: string | null; email?: string | null };
 

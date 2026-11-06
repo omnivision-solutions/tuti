@@ -27,6 +27,8 @@ export type FeaturebaseFixtures = {
   /** Articles' drafts with changes not published (GET /v2/help_center/articles/{id}?state=draft), by id. */
   articleDrafts: Row[];
   conversations: Row[];
+  /** Changelog entries, live and drafts, as GET /v2/changelogs?state=all lists them (oldest first). */
+  changelogs: Row[];
 };
 
 /**
@@ -284,6 +286,7 @@ export const featurebaseFixtures = (): FeaturebaseFixtures => ({
     }),
   ],
   conversations: conversationFixtures(),
+  changelogs: changelogFixtures(),
 });
 
 const MIRA = { id: "65f000000000000000000001", name: "Mira Fenwick", email: "e2e-mira@example.com", profilePicture: null, type: "customer" };
@@ -402,6 +405,42 @@ function feedbackFixtures(): Pick<FeaturebaseFixtures, "boards" | "posts" | "com
   };
 }
 
+const changelog = (row: Row): Row => ({
+  object: "changelog",
+  content: "",
+  featuredImage: null,
+  state: "live",
+  allowedSegmentIds: [],
+  categories: [],
+  emailSentToSubscribers: false,
+  commentCount: 0,
+  createdAt: row.date,
+  updatedAt: row.date,
+  ...row,
+});
+
+/**
+ * The changelog: an entry with a cover, an image, a category and comments, emailed to subscribers; one improved; a draft;
+ * one only a segment sees.
+ */
+function changelogFixtures(): Row[] {
+  return [
+    changelog({
+      id: "65f0000000000000000000d1",
+      title: "Dark mode is here",
+      content: `<p>Easy on the eyes at night.</p><p><img src="${FAKE_FEATUREBASE_FILES}shot.png" alt="Dark mode"></p>`,
+      featuredImage: `${FAKE_FEATUREBASE_FILES}welcome.png`,
+      date: "2024-02-01T09:00:00.000Z",
+      categories: [{ id: "c1", name: "New" }],
+      emailSentToSubscribers: true,
+      commentCount: 2,
+    }),
+    changelog({ id: "65f0000000000000000000d2", title: "Faster exports", content: "<p>Exports take half the time.</p>", date: "2024-03-01T09:00:00.000Z", categories: [{ id: "c2", name: "Improvement" }] }),
+    changelog({ id: "65f0000000000000000000d3", title: "Single sign-on", content: "<p>Coming soon.</p>", date: "2024-03-05T09:00:00.000Z", state: "draft" }),
+    changelog({ id: "65f0000000000000000000d4", title: "For our beta group", content: "<p>Just for you.</p>", date: "2024-03-10T09:00:00.000Z", allowedSegmentIds: ["s1"] }),
+  ];
+}
+
 /**
  * Lists the fake serves, by path: paged ones as Featurebase pages them; unpaged ones (admins) in one; bare ones (boards)
  * as an array. `detail`: fields only one item's own GET has (a conversation's parts).
@@ -416,6 +455,7 @@ const LISTS: Record<string, { fixtures: Exclude<keyof FeaturebaseFixtures, "vote
   "/v2/help_center/collections": { fixtures: "collections", paged: true },
   "/v2/help_center/articles": { fixtures: "articles", paged: true },
   "/v2/conversations": { fixtures: "conversations", paged: true, detail: ["conversationParts"] },
+  "/v2/changelogs": { fixtures: "changelogs", paged: true },
 };
 const VOTERS = /^\/v2\/posts\/([^/]+)\/voters$/;
 
@@ -523,7 +563,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     if (list) {
       const detail = "detail" in list ? list.detail : undefined;
       const rows = (list.rows as (Row | null)[])
-        .filter((row) => list.rows !== fake.fixtures.articles || state === "all" || row?.state === state)
+        .filter((row) => (list.rows !== fake.fixtures.articles && list.rows !== fake.fixtures.changelogs) || state === "all" || row?.state === state)
         .map((row) => (row && detail ? Object.fromEntries(Object.entries(row).filter(([key]) => !detail.includes(key))) : row));
       if (!list.paged) {
         return send(200, "bare" in list ? rows : { object: "list", data: rows, nextCursor: null });

@@ -32,7 +32,6 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
   // Profile pictures too: copied last, so nothing waits for them.
   await expect(owner.getByRole("checkbox", { name: /^Profile pictures/ })).toBeChecked();
-  await expect(owner.getByText("Your team, contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase");
 
   // A key Featurebase refuses: said under the field, nothing started.
@@ -326,6 +325,46 @@ test("the help center comes across from Featurebase: the portal's docs have its 
   await checkpoint(visitor, "portal-imported-linked-article");
 });
 
+test("the changelog comes across from Featurebase: its entries on the portal at their dates, with their images; drafts and those only some people see aren't there", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.goto("/app/new");
+  await owner.getByLabel("Name").fill("Acme");
+  await owner.getByLabel("URL").fill(slug);
+  await owner.getByRole("button", { name: "Create project" }).click();
+  await owner.waitForURL(`**/app/${slug}/setup`);
+
+  // The changelog alone.
+  await owner.getByRole("radio", { name: /^Featurebase/ }).check();
+  await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
+  await expect(owner.getByText("Your updates, published at their dates (drafts stay drafts), with their images and categories. Nothing is emailed.")).toBeVisible();
+  await owner.getByRole("checkbox", { name: /^Team/ }).uncheck();
+  await owner.getByRole("checkbox", { name: /^Contacts/ }).uncheck();
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await checkpoint(owner, "setup-featurebase-changelog");
+  await owner.getByRole("button", { name: "Check the key and start" }).click();
+  const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
+  await expect(status).toContainText("Imported from Featurebase");
+  await expect(status).toContainText("3 changelog entries, 2 images in the changelog brought across.");
+  await expect(status).toContainText("1 changelog entry only some people see");
+  await expect(owner.getByRole("link", { name: "See changelog" })).toBeVisible();
+  await checkpoint(owner, "setup-changelog-imported");
+
+  // On the portal: the published entries, the newest first, with the image; the draft and the segment's one aren't there.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/changelog");
+  await expect(visitor.getByRole("heading", { name: "Faster exports" })).toBeVisible();
+  await expect(visitor.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
+  // Its cover, and the image in it.
+  await expect(visitor.getByRole("img", { name: "Dark mode is here", exact: true })).toBeVisible();
+  await expect(visitor.getByRole("img", { name: "Dark mode", exact: true })).toBeVisible();
+  await expect(visitor.getByText("Single sign-on")).toHaveCount(0);
+  await expect(visitor.getByText("For our beta group")).toHaveCount(0);
+  await checkpoint(visitor, "portal-changelog-imported");
+});
+
 test("the inbox comes across from Featurebase: its conversations with their messages, notes, images and statuses, history marked as imported", async ({ browser }, testInfo) => {
   // Setup, the import, then several Inbox pages (each with its list beside the conversation).
   test.setTimeout(60_000);
@@ -344,7 +383,6 @@ test("the inbox comes across from Featurebase: its conversations with their mess
   await owner.getByRole("checkbox", { name: /^Contacts/ }).uncheck();
   await owner.getByRole("checkbox", { name: /^Inbox/ }).check();
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
-  await expect(owner.getByText("Contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase-inbox");
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();

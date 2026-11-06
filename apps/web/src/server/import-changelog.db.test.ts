@@ -1,0 +1,101 @@
+import { prisma } from "@tuti/db";
+import { importsSettled } from "@tuti/jobs";
+import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+
+import { importSummary } from "@/lib/import-parts";
+import { getImport, startImport } from "@/server/operations/imports";
+import { call } from "@/server/operations/run";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
+
+/** Imports' changelog (docs/plan.md, Switching from Featurebase), against the Featurebase and S3 fakes. */
+
+let fake: FeaturebaseFake;
+let s3: S3Fake;
+let owner: TestUser;
+let project: Awaited<ReturnType<typeof createProject>>;
+
+beforeAll(async () => {
+  [fake, s3] = await Promise.all([startFeaturebaseFake(), startS3Fake()]);
+});
+afterAll(() => Promise.all([fake.close(), s3.close()]));
+afterEach(() => vi.unstubAllEnvs());
+beforeEach(async () => {
+  for (const [name, value] of Object.entries({ ...fake.env, ...s3.env, WEBHOOK_ALLOW_PRIVATE_URLS: "true" })) {
+    vi.stubEnv(name, value);
+  }
+  // A few to a page, so the list takes several.
+  Object.assign(fake, { fixtures: featurebaseFixtures(), pageSize: 2 });
+  fake.forbidden.clear();
+  owner = await signUp("Olive Owner");
+  project = await createProject(owner);
+  actAs(owner);
+});
+
+const asOwner = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+async function importChangelog() {
+  await call(startImport, asOwner(), { source: "featurebase", key: FAKE_FEATUREBASE_KEY, parts: ["changelog"] });
+  await importsSettled();
+  return (await call(getImport, asOwner(), {})).import!;
+}
+const entries = () =>
+  prisma.changelogEntry.findMany({
+    where: { projectId: project.id },
+    orderBy: { number: "asc" },
+    select: { number: true, title: true, body: true, content: true, tags: true, publishedAt: true, announced: true, coverId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true, createdById: true },
+  });
+
+test("the changelog comes across quietly: entries everyone sees in date order, published at their dates and drafts as drafts, with their images, cover and tags; one only some people see left out, comments counted", async () => {
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: "e2e-reader@example.com", token: "t", confirmedAt: new Date() } });
+  const emailed = mailbox.emails.length;
+  const done = await importChangelog();
+
+  expect(done).toMatchObject({ state: "done", error: null });
+  expect(done.counts).toEqual({
+    changelogEntries: { imported: 3, leftOut: { "only some people see": 1 } },
+    // The entry's image and its cover.
+    changelogImages: { imported: 2, leftOut: {} },
+    changelogComments: { imported: 0, leftOut: { "(Tuti's changelog has no comments)": 2 } },
+  });
+  expect(importSummary(done)).toBe("3 changelog entries, 2 images in the changelog brought across. Left out: 1 changelog entry only some people see; 2 comments on the changelog (Tuti's changelog has no comments).");
+
+  const [dark, exports, sso, ...rest] = await entries();
+  expect(rest).toEqual([]);
+  // Emailed in Featurebase: marked so here, so publishing it again doesn't email it twice. Never announced, nothing due.
+  expect(dark).toMatchObject({
+    number: 1,
+    title: "Dark mode is here",
+    body: expect.stringContaining("Easy on the eyes at night."),
+    tags: ["NEW"],
+    publishedAt: new Date("2024-02-01T09:00:00.000Z"),
+    subscribersEmailedAt: new Date("2024-02-01T09:00:00.000Z"),
+    subscribersEmailDueAt: null,
+    announced: false,
+    createdById: owner.id,
+  });
+  expect(dark!.coverId).not.toBeNull();
+  // Its image and cover copied into the project's media, the image in its content.
+  expect(JSON.stringify(dark!.content)).toContain('"type":"image"');
+  expect(await prisma.media.count({ where: { projectId: project.id, status: "READY" } })).toBe(2);
+  expect(exports).toMatchObject({ number: 2, title: "Faster exports", tags: ["IMPROVED"], publishedAt: new Date("2024-03-01T09:00:00.000Z"), subscribersEmailedAt: null });
+  expect(sso).toMatchObject({ number: 3, title: "Single sign-on", tags: [], publishedAt: null });
+  expect(mailbox.emails.length).toBe(emailed);
+});
+
+test("importing again brings nothing twice", async () => {
+  await importChangelog();
+  const before = await entries();
+  const again = await importChangelog();
+  expect(await entries()).toEqual(before);
+  expect(again.counts.changelogEntries).toEqual({ imported: 0, leftOut: { "already brought across earlier": 3, "only some people see": 1 } });
+});
+
+test("a key that can't read the changelog isn't accepted for it", async () => {
+  fake.forbidden.add("/v2/changelogs");
+  await expect(call(startImport, asOwner(), { source: "featurebase", key: FAKE_FEATUREBASE_KEY, parts: ["changelog"] })).rejects.toMatchObject({
+    status: 400,
+    code: "cant_read",
+    message: "This key can't read Changelog in Featurebase. Use a key that can, or leave Changelog out.",
+  });
+});

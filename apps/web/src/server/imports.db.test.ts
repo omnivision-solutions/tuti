@@ -64,7 +64,7 @@ test("a start is refused, nothing made, for an API key, a key Featurebase refuse
   const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
   expect(await refusal(call(startImport, key, { source: "featurebase", key: FAKE_FEATUREBASE_KEY, parts: ["contacts"] }))).toMatchObject({ status: 403, code: "people_only" });
   expect(await refusal(start({ key: "sk_wrong" }))).toEqual({ status: 400, code: "bad_key", message: "Featurebase didn't accept this API key. Check you copied all of it, or make a new one." });
-  expect(await refusal(start({ parts: ["changelog"] }))).toMatchObject({ status: 400, code: "invalid_input" });
+  expect(await refusal(start({ parts: ["roadmap"] }))).toMatchObject({ status: 400, code: "invalid_input" });
   expect(await refusal(start({ parts: ["feedback"] }))).toEqual({ status: 400, code: "needs_part", message: "Feedback needs Contacts: pick it too." });
   expect(await refusal(start({ parts: [] }))).toEqual({ status: 400, code: "invalid_input", message: "Pick what to bring" });
   fake.forbidden.add("/v2/contacts");
