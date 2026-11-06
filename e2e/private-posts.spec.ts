@@ -31,7 +31,8 @@ test("a board's posts are private to their author and the team; the team makes o
   await postFeedback(ada, "Export crashes on large files");
   await expect(ada.getByRole("listitem").filter({ hasText: "Export crashes on large files" })).toContainText("Private");
   await ada.getByRole("link", { name: "Export crashes on large files" }).click();
-  await expect(ada.getByRole("heading", { name: "Export crashes on large files" })).toBeVisible();
+  await ada.waitForURL("**/feedback/bug-reports/export-crashes-on-large-files-1");
+  await expect(ada.getByRole("heading", { name: "Export crashes on large files", level: 1 })).toBeVisible();
   await checkpoint(ada, "private-post-author");
   const postUrl = new URL(ada.url()).pathname;
 
@@ -44,14 +45,14 @@ test("a board's posts are private to their author and the team; the team makes o
   // The team sees it, and makes it public: its page says who sees it.
   await owner.goto(`/app/${slug}/p/1`);
   const visibility = owner.getByRole("combobox", { name: "Visibility" });
-  await expect(visibility).toHaveText("Private");
+  await expect(visibility).toContainText("Private");
   await expect(owner.getByText("Only the person who posted it and your team.")).toBeVisible();
   await checkpoint(owner, "team-post-private");
   await visibility.click();
   await owner.getByRole("option", { name: "Public" }).click();
   await expect(owner.getByText("Visibility: Public")).toBeVisible();
   expect((await visitor.goto(postUrl))?.status()).toBe(200);
-  await expect(visitor.getByRole("heading", { name: "Export crashes on large files" })).toBeVisible();
+  await expect(visitor.getByRole("heading", { name: "Export crashes on large files", level: 1 })).toBeVisible();
 
   // A Team only board: off the portal, and nobody else posts there.
   await owner.goto(`/app/${slug}/feedback/boards`);
