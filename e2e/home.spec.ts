@@ -146,14 +146,19 @@ test("a new project: Home leads with sample content and each setup step's action
   await expect(setup.getByRole("link", { name: "Invite" })).toHaveAttribute("href", `/app/${slug}/settings/team`);
   // Each button is read with its step.
   await expect(setup.getByRole("link", { name: "Connect" })).toHaveAccessibleDescription("Connect GitHub");
+  // A card per step, two to a row, each saying what it's for. Their buttons are outlines: Add sample content stays the page's one primary.
+  const widget = setup.getByRole("listitem").filter({ hasText: "Add the widget to your site" });
+  const github = setup.getByRole("listitem").filter({ hasText: "Connect GitHub" });
+  await expect(github).toContainText("Autopilot reads your merged pull requests to complete posts, update docs and draft the changelog.");
+  expect((await github.boundingBox())!.y).toBeCloseTo((await widget.boundingBox())!.y, 0);
+  await expect(setup.getByRole("link").and(owner.locator(".bg-primary"))).toHaveCount(0);
+  await expect(owner.getByRole("progressbar", { name: "Steps done" })).toHaveAttribute("aria-valuenow", "0");
   await checkpoint(owner, "home-new-project");
   await owner.setViewportSize({ width: 390, height: 844 });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  // On a phone too, each step's button sits at the end of its row.
-  const row = setup.getByRole("listitem").filter({ hasText: "Publish an article" });
-  const button = (await row.getByRole("link").boundingBox())!;
-  const item = (await row.boundingBox())!;
-  expect(button.x + button.width).toBeCloseTo(item.x + item.width, 0);
+  // On a phone, one card to a row, as wide as the list.
+  const card = (await setup.getByRole("listitem").filter({ hasText: "Publish an article" }).boundingBox())!;
+  expect(card.width).toBeCloseTo((await setup.boundingBox())!.width, 0);
   await checkpoint(owner, "home-new-project-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
 

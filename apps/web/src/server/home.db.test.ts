@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { FAKE_MODEL_KEY } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createPost } from "@/server/operations/create";
@@ -107,10 +108,14 @@ test("Get set up while steps are left, each as it's done; sample content offered
   expect([fresh.attention, fresh.started]).toEqual([[], false]);
   expect(fresh.setup!.map((step) => step.key)).not.toContain("github");
   expect(fresh.setup!.filter((step) => step.done).map((step) => step.key)).toEqual([]);
+  // Each says what it's for, in the project's own name where it's about the team's app.
+  expect(fresh.setup!.find((step) => step.key === "sso")!.description).toBe(`Users sign in with their ${project.name} account, so every post and message says who it's from.`);
   // Each step as it's done. A revoked invitation invites nobody.
   await prisma.invitation.create({ data: { projectId: project.id, email: "e2e-typo@example.com", tokenHash: "revoked", createdById: owner.id, expiresAt: new Date(Date.now() + DAY), revokedAt: new Date() } });
   await prisma.project.update({ where: { id: project.id }, data: { widgetSeenAt: new Date(), ssoSecret: "s3cret" } });
   expect((await home()).setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["widget", "sso"]);
+  // What's left first, done ones last.
+  expect((await home()).setup!.map((step) => step.key)).toEqual(["article", "team", "widget", "sso"]);
 
   // Sample content, a conversation marked spam, a draft article and the changelog's draft (as Autopilot
   // keeps from merged pull requests) aren't the project's own yet: still to start.
@@ -153,6 +158,12 @@ test("Get set up follows what the team picked after Create project; a project wi
   try {
     // Nothing picked (projects from before, or the step skipped): the five steps as they were.
     expect(await steps()).toEqual(["widget", "github", "sso", "article", "team"]);
+    // GitHub's step says what merged pull requests do here: only the changelog's draft without Autopilot, Autopilot's updates with it.
+    const github = async () => (await homeOverview(project.id, project.slug)).setup!.find((step) => step.key === "github")!.description;
+    expect(await github()).toBe("Your merged pull requests go into your changelog's next draft.");
+    vi.stubEnv("OPENAI_API_KEY", FAKE_MODEL_KEY);
+    vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");
+    expect(await github()).toBe("Autopilot reads your merged pull requests to complete posts, update docs and draft the changelog.");
 
     actAs(owner);
     expect(await setProjectUses(project.slug, ["support"])).toEqual({});
