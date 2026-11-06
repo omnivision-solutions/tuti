@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { changedSections, type Doc, fromPlainText, mergeSections, sameDoc, toPlainText } from "@tuti/content";
 import { type CodeChangeActionStatus, Prisma, prisma } from "@tuti/db";
 import { articleVersionsStored } from "@tuti/shared";
@@ -29,6 +31,37 @@ export { changedSections, mergeSections, sameDoc, sections, withSectionsOf } fro
 
 const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
 const versionSelect = { title: true, body: true, content: true, collectionId: true } as const;
+
+type Version = Prisma.ArticleRevisionGetPayload<{ select: typeof versionSelect }>;
+
+/** The article's published (or draft) version, and the one last saved: its unpublished changes if it has some. */
+export async function versions(tx: Prisma.TransactionClient, articleId: string): Promise<{ live: Version; saved: Version }> {
+  const { changes, ...live } = await tx.article.findUniqueOrThrow({
+    where: { id: articleId },
+    select: { ...versionSelect, changes: { select: versionSelect } },
+  });
+  return { live, saved: changes ?? live };
+}
+
+/**
+ * Records the article's version as last saved (its unpublished changes, if it has some) as a
+ * revision, unless it's the same as the newest one (a save that changed nothing), and lets the
+ * oldest go past the number stored for any plan (not those Autopilot's edits still need: pruneRevisions).
+ * Call it in the transaction that saved the article, with the project locked, so saves can't interleave.
+ */
+export async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null, sent?: Doc, at = new Date()) {
+  const article = (await versions(tx, articleId)).saved;
+  const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: versionSelect });
+  if (newest && isDeepStrictEqual(article, newest)) {
+    return;
+  }
+  // Timed here, after the lock, so revisions are in the order their saves were (an import's are dated as they were
+  // saved where it came from: `at`).
+  await tx.articleRevision.create({
+    data: { articleId, ...article, content: article.content ?? Prisma.DbNull, authorId, createdAt: at, ...(sent && { sentContent: sent }) },
+  });
+  await pruneRevisions(tx, articleId);
+}
 
 /** The article's newest revision's id (null: none yet), as articles.update orders them. */
 export const newestRevision = async (articleId: string, db: Prisma.TransactionClient = prisma) =>
