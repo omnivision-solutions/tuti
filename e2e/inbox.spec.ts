@@ -719,6 +719,37 @@ test("the team member's own action taking the open conversation out of its view 
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=closed$`));
   await expect(owner.getByText("No closed conversations yet.")).toBeVisible();
   await expect(views.getByRole("link", { name: "Closed 0" })).toBeFocused();
+
+  // Closed, but the team went to another page before it was done (its answer held here): back on it, it stays open.
+  await owner.goto(`/app/${slug}/inbox/1`);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+  });
+  await owner.getByRole("button", { name: "Close", exact: true }).click();
+  await owner.getByRole("link", { name: "Changelog", exact: true }).click();
+  release();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/changelog$`));
+  await owner.unroute("**/*");
+  await owner.goBack();
+  await expect(meta(owner)).toContainText("Closed · #1");
+  // Long enough for a move to the next one to have started.
+  await owner.waitForTimeout(1_000);
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+
+  // On a phone, where the list is hidden beside the conversation, focus goes to the title of the one that opens.
+  await api("/conversations", { email: "e2e-fourth@example.com", body: "A fourth question" });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox/2`);
+  await owner.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
+  await expect(owner.getByRole("heading", { level: 1, name: "A fourth question" })).toBeFocused();
 });
 
 test("the Inbox's views are one row of tabs above the list, where they stay as a conversation opens: too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
