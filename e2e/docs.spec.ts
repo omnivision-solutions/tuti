@@ -1675,12 +1675,12 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await unstoredAssistant.getByRole("button", { name: "Send" }).click();
   await expect(unstoredAssistant.getByText("I don't know")).toBeVisible();
   // A search's "Ask a follow-up" there too: its answer goes to the assistant with it, not through storage.
-  await unstored.goto(`/docs?${new URLSearchParams({ q: "Is there a dark mode?" })}`);
+  await unstored.goto(`/docs?${new URLSearchParams({ q: "Is there a light mode?" })}`);
   const unstoredAnswer = unstored.getByRole("region", { name: "AI answer" });
   await unstoredAnswer.getByRole("button", { name: "Ask AI" }).click();
   await expect(unstoredAnswer.getByText("I don't know")).toBeVisible();
   await unstoredAnswer.getByRole("button", { name: "Ask a follow-up" }).click();
-  await expect(unstoredAssistant.getByRole("log", { name: "Conversation" })).toContainText("Is there a dark mode?");
+  await expect(unstoredAssistant.getByRole("log", { name: "Conversation" })).toContainText("Is there a light mode?");
 
   // Asked on the search page (a link to /docs?q=), the answer can go on in the assistant: the same answer, not asked again.
   const ai = visitor.getByRole("region", { name: "AI answer" });
