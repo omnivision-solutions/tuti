@@ -2238,6 +2238,7 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(owner.getByText("Messages on")).toBeVisible();
   // Turning Messages on gave the project its support address, so the team's replies can be emailed too.
   await expect(owner.getByText(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`)).toBeVisible();
+  await checkpoint(owner, "support-settings-messages-on");
   // Someone the team's app already told Tuti about.
   const kim = `e2e-kim-${slug}@example.com`;
   const api = await apiFor(owner, slug);
