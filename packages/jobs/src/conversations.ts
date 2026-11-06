@@ -139,15 +139,18 @@ export async function pruneInboundEmails(): Promise<JobResult> {
 export const EMAIL_UNSEEN_AFTER_MS = 60_000;
 /** A run that died holds its claim this long before another run takes the messages again. */
 const CLAIM_FOR_MS = 10 * 60_000;
-const MAX_TRIES = 3;
+/** Tries to email a message; imported ones are saved with them used up (import-inbox.ts), which releases from before importId skip. */
+export const MAX_TRIES = 3;
 /** References keeps the thread's latest Message-IDs, as many as this. */
 const MAX_REFERENCES = 20;
 
-/** The team's messages still to email: unseen a minute on, not notes, not sent, with tries left, and nobody else sending them. */
+/** The team's messages still to email: unseen a minute on, not notes, not imported, not sent, with tries left, and nobody else sending them. */
 const unsent = (now: Date) => ({
   author: "TEAM" as const,
   note: false,
   seenAt: null,
+  // Imported from another tool (docs/plan.md, Switching from Featurebase): years-old replies are never emailed.
+  importId: null,
   emailStatus: null,
   emailAttempts: { lt: MAX_TRIES },
   createdAt: { lte: new Date(now.getTime() - EMAIL_UNSEEN_AFTER_MS) },

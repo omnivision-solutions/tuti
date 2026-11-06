@@ -50,6 +50,8 @@ export const unseenReplies = {
   author: "TEAM",
   note: false,
   seenAt: null,
+  // Imported from another tool: nobody gets a dot for history (docs/plan.md, Switching from Featurebase).
+  importId: null,
   OR: [
     { emailStatus: null },
     { emailStatus: { in: ["FAILED", "BOUNCED"] } },

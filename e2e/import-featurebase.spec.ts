@@ -23,7 +23,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
   await expect(owner.getByRole("link", { name: "Settings → API" })).toHaveAttribute("href", "https://auth.featurebase.app/login?redirect=/settings/api");
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
-  await expect(owner.getByText("Contacts and feedback come across for now: the help center and the inbox follow in a later version, and the changelog after them.")).toBeVisible();
+  await expect(owner.getByText("Contacts, feedback and the inbox come across for now: the help center follows in a later version, and the changelog after it.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase");
 
   // A key Featurebase refuses: said under the field, nothing started.
@@ -157,4 +157,75 @@ test("on a plan with a board limit, the setup step says before starting what hap
   await checkpoint(owner, "setup-featurebase-board-limit");
   await owner.getByRole("checkbox", { name: /^Feedback/ }).uncheck();
   await expect(note).toHaveCount(0);
+});
+
+test("the inbox comes across from Featurebase: its conversations with their messages, notes, images and statuses, history marked as imported", async ({ browser }, testInfo) => {
+  // Setup, the import, then several Inbox pages (each with its list beside the conversation).
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.goto("/app/new");
+  await owner.getByLabel("Name").fill("Acme");
+  await owner.getByLabel("URL").fill(slug);
+  await owner.getByRole("button", { name: "Create project" }).click();
+  await owner.waitForURL(`**/app/${slug}/setup`);
+  await owner.getByRole("radio", { name: /^Featurebase/ }).check();
+
+  // The inbox needs contacts: they're ticked with it.
+  await owner.getByRole("checkbox", { name: /^Contacts/ }).uncheck();
+  await owner.getByRole("checkbox", { name: /^Inbox/ }).check();
+  await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
+  await expect(owner.getByText("Contacts, feedback and the inbox come across for now: the help center follows in a later version, and the changelog after it.")).toBeVisible();
+  await checkpoint(owner, "setup-featurebase-inbox");
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await owner.getByRole("button", { name: "Check the key and start" }).click();
+  const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
+  await expect(status).toContainText("Imported from Featurebase");
+  await expect(status).toContainText("3 contacts, 4 conversations, 1 attachment brought across.");
+  await checkpoint(owner, "setup-featurebase-inbox-imported");
+
+  // The one where the user wrote last needs a reply; the snoozed and closed ones are in their views.
+  await owner.goto(`/app/${slug}/inbox`);
+  const views = owner.getByRole("navigation", { name: "Views" });
+  const rows = owner.getByRole("main").getByRole("listitem");
+  await expect(views.getByRole("link", { name: "Needs reply 1" })).toBeVisible();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Exporting to CSV");
+  await checkpoint(owner, "inbox-imported");
+
+  // Its messages as they were: the user's, the team's reply (seen, as Featurebase's read receipt said), a note, an image.
+  await rows.first().getByRole("link").click();
+  await owner.waitForURL(`**/app/${slug}/inbox/1`);
+  const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(messages).toHaveCount(4);
+  await expect(messages.nth(0)).toContainText("Can I export my data to CSV?");
+  await expect(messages.nth(1)).toContainText("Yes: Settings → Export. See the guide (https://docs.example.com/export).");
+  await expect(messages.nth(1)).toContainText("Seen");
+  await expect(messages.nth(2)).toContainText("Note · Olive Owner");
+  await expect(messages.nth(2)).toContainText("They're on the pro plan.");
+  await expect(messages.nth(3).getByRole("img", { name: "shot.png" })).toBeVisible();
+  await checkpoint(owner, "conversation-imported");
+
+  // Snoozed after the team's reply, which the user hadn't read: never emailed, so it says it was imported.
+  await owner.goto(`/app/${slug}/inbox`);
+  await views.getByRole("link", { name: /^Snoozed/ }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Invoice for October");
+  await rows.first().getByRole("link").click();
+  // Opened from the Snoozed view, which it keeps.
+  await owner.waitForURL(new RegExp(`/app/${slug}/inbox/2\\?view=snoozed$`));
+  await expect(messages).toHaveCount(2);
+  await expect(messages.nth(1)).toContainText("Sent again: it's in your inbox.");
+  await expect(messages.nth(1)).toContainText("Imported from Featurebase");
+  await expect(messages.nth(1)).not.toContainText("Emailed");
+  await checkpoint(owner, "conversation-imported-unread");
+
+  // Closed: the bot's and the one from two years ago (this server keeps every closed conversation).
+  await owner.goto(`/app/${slug}/inbox`);
+  await views.getByRole("link", { name: /^Closed/ }).click();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.filter({ hasText: "How do I reset my password?" })).toHaveCount(1);
+  await expect(rows.filter({ hasText: "Dark mode?" })).toHaveCount(1);
 });

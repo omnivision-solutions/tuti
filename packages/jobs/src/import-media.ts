@@ -112,7 +112,7 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
 }
 
 /** The file at `url`, or why not: refused, unreachable, or more than `maxBytes`. */
-async function download(url: string, maxBytes: number): Promise<Uint8Array | LeftOutReason> {
+export async function download(url: string, maxBytes: number): Promise<Uint8Array | LeftOutReason> {
   const signal = AbortSignal.timeout(TIMEOUT_MS);
   try {
     for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {

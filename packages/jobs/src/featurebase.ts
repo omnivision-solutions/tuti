@@ -16,6 +16,19 @@ export class FeaturebaseError extends Error {
   }
 }
 
+/**
+ * A file in Featurebase's own storage: its attachment host, or its API's own address (where the fake serves files).
+ * Imports bring only these across; other sites' images are left where they are, as inbound email leaves them.
+ */
+export function inFeaturebaseStorage(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return /(^|\.)featurebase-attachments\.com$/i.test(parsed.hostname) || parsed.origin === new URL(process.env.FEATUREBASE_API_URL || FEATUREBASE_URL).origin;
+  } catch {
+    return false;
+  }
+}
+
 /** A list's page, and where the next one starts (null: it was the last). */
 export type Page<T> = { items: T[]; next: string | null };
 
@@ -102,12 +115,12 @@ export function featurebase(key: string, { wait = pause, deadline = Infinity }: 
   }
 
   /**
-   * One page of a list (`cursor` null: the first), 100 at most; empty items (Featurebase sends null for some) left out.
+   * One page of a list (`cursor` null: the first), 100 at most (or `limit`); empty items (Featurebase sends null for some) left out.
    * The list goes on until Featurebase's cursor is null, as it documents, through empty pages too; a cursor that doesn't
    * move ends it, so a list can't loop.
    */
   async function page<T>(path: string, cursor: string | null, query: Record<string, string | number> = {}): Promise<Page<T>> {
-    const body = await get<{ data: (T | null)[]; nextCursor?: string | null }>(path, { ...query, limit: 100, cursor });
+    const body = await get<{ data: (T | null)[]; nextCursor?: string | null }>(path, { ...query, limit: query.limit ?? 100, cursor });
     const items = body.data.filter((item): item is T => item !== null);
     return { items, next: body.nextCursor && body.nextCursor !== cursor ? body.nextCursor : null };
   }
@@ -180,4 +193,35 @@ export type FeaturebaseComment = {
   inReview: boolean;
   isSpam: boolean;
   isDeleted: boolean;
+};
+
+/** Who wrote a conversation part: a contact (`customer`, `lead`: a contact id), an admin (an admin id), or someone else. */
+export type FeaturebasePartAuthor = { id?: string | null; type?: string | null; name?: string | null; email?: string | null };
+
+/** A part of a conversation (GET /v2/conversations/{id}): a message, a note, or an event (assign, status, …), by `partType`. */
+export type FeaturebasePart = {
+  id: string;
+  partType: string;
+  createdAt: string;
+  bodyHtml?: string | null;
+  bodyMarkdown?: string | null;
+  channel?: string | null;
+  author?: FeaturebasePartAuthor | null;
+  status?: string | null;
+};
+
+/** A conversation in Featurebase's inbox (GET /v2/conversations; its parts, the newest 500, only from GET /v2/conversations/{id}). */
+export type FeaturebaseConversation = {
+  id: string;
+  title?: string | null;
+  state: "open" | "closed" | "snoozed";
+  snoozedUntil?: string | null;
+  adminAssigneeId?: string | null;
+  participants?: { id: string; type: string }[] | null;
+  source?: { channel?: string | null; subject?: string | null; bodyHtml?: string | null; author?: FeaturebasePartAuthor | null } | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  lastActivityAt?: string | null;
+  readReceipts?: { id: string; userType: string; lastReadPartId: string }[] | null;
+  conversationParts?: FeaturebasePart[] | null;
 };

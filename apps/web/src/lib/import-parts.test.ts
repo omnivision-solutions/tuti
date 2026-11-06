@@ -28,6 +28,9 @@ test("an import's summary: what came across, what was left out and why, and why 
   const run = { state: "done", counts: { contacts: { imported: 3, leftOut: {} } }, error: null } as never;
   expect(importSummary(run)).toBe("3 contacts brought across.");
   expect(importSummary({ state: "running", counts: {}, error: null } as never)).toBe("Starting…");
+  // In the kinds' order, however the database ordered them.
+  const counts = { contacts: { imported: 3, leftOut: {} }, attachments: { imported: 1, leftOut: {} }, conversations: { imported: 4, leftOut: {} } };
+  expect(importSummary({ state: "done", counts, error: null } as never)).toBe("3 contacts, 4 conversations, 1 attachment brought across.");
   expect(importSummary({ state: "failed", counts: { contacts: { imported: 1, leftOut: { "without a name": 2 } } }, error: "Featurebase couldn't be reached." } as never)).toBe(
     "1 contact brought across. Left out: 2 contacts without a name. Featurebase couldn't be reached.",
   );

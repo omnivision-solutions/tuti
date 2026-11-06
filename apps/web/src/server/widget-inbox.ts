@@ -141,6 +141,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
       name: string | null;
       body: string;
       attachments: { id: string; filename: string; contentType: string; size: number; image: boolean; url: string | null }[];
+      /** Imported from another tool, attachments that weren't brought across (shown, so no message is an empty bubble). */
+      dropped: number;
       createdAt: Date;
     }[];
   }>
@@ -168,6 +170,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
         createdAt: true,
         authorUser: { select: { name: true } },
         attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
+        attachmentsDropped: true,
+        importId: true,
       },
     }),
     // Where its replies are emailed: the reply job's own rules (replyRecipient), so it never promises one that won't go.
@@ -187,6 +191,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
       name: m.author === "USER" ? null : (m.authorUser?.name ?? null),
       body: m.body,
       attachments: m.attachments.map((a) => links.get(a.id)!),
+      // A received email's files dropped for want of storage are the team's to know (its server), not the user's.
+      dropped: m.importId ? m.attachmentsDropped : 0,
       createdAt: m.createdAt,
     })),
   };

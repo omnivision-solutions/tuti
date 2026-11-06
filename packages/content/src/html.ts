@@ -58,6 +58,35 @@ const JUNK = "script, style, noscript, template, head, title, meta, link, base, 
 const KEPT = new Set(["href", "src", "alt", "colspan", "rowspan", "start", "data", "data-width", "data-align"]);
 /** Featurebase's own storage: links there are its attachments. */
 const ATTACHMENT_HOST = /(^|\.)featurebase-attachments\.com$/i;
+/** A window that runs and loads nothing: only parses. */
+const INERT = {
+  disableJavaScriptEvaluation: true,
+  disableJavaScriptFileLoading: true,
+  disableCSSFileLoading: true,
+  disableIframePageLoading: true,
+  disableComputedStyleRendering: true,
+};
+const BLOCKS = "p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote, pre";
+
+/**
+ * HTML's text (blocks and line breaks as new lines; scripts, styles and the like dropped) and the addresses its images
+ * show and its links point at, parsed: for HTML htmlToContent refuses (too long to be content).
+ */
+export async function htmlText(html: string): Promise<{ text: string; urls: string[] }> {
+  const window = new Window({ settings: INERT });
+  try {
+    const body = (window.document as unknown as Document).body;
+    body.innerHTML = html;
+    body.querySelectorAll(JUNK).forEach((element) => element.remove());
+    const urls = [...body.querySelectorAll("img[src], a[href]")].map((element) => element.getAttribute("src") ?? element.getAttribute("href")!);
+    body.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+    body.querySelectorAll(BLOCKS).forEach((block) => block.append("\n"));
+    const text = (body.textContent ?? "").replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    return { text, urls };
+  } finally {
+    await window.happyDOM.close();
+  }
+}
 
 /**
  * `html` as content of `profile`, its media copied. Images and files are copied one at a time, in order.
@@ -66,15 +95,7 @@ const ATTACHMENT_HOST = /(^|\.)featurebase-attachments\.com$/i;
  * never inside one holding the project lock.
  */
 export async function htmlToContent(profile: Profile, html: string, { media, link }: HtmlOptions = {}): Promise<HtmlContent | { error: string }> {
-  const window = new Window({
-    settings: {
-      disableJavaScriptEvaluation: true,
-      disableJavaScriptFileLoading: true,
-      disableCSSFileLoading: true,
-      disableIframePageLoading: true,
-      disableComputedStyleRendering: true,
-    },
-  });
+  const window = new Window({ settings: INERT });
   try {
     const document = window.document as unknown as Document;
     const body = document.body;
