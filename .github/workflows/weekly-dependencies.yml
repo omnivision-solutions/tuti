@@ -163,6 +163,11 @@ jobs:
             echo "The update contains a Claude credential or the hub's address; not publishing." >&2
             exit 1
           fi
+          # grep can't read inside binary hunks, and a dependency update needs none.
+          if grep -q '^GIT binary patch' "$RUNNER_TEMP/dependency-update/update.patch"; then
+            echo "The update contains a binary file; not publishing." >&2
+            exit 1
+          fi
           if [ -s "$RUNNER_TEMP/dependency-update/update.patch" ]; then
             test -s "$RUNNER_TEMP/dependency-update/pr.md"
             echo "changed=true" >> "$GITHUB_OUTPUT"
