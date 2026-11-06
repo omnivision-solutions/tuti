@@ -17,7 +17,8 @@ export function ArticleLink({ href, preview, children }: { href: string; preview
   }
   return (
     <PreviewCard.Root>
-      <PreviewCard.Trigger render={<Link href={href} />}>{children}</PreviewCard.Trigger>
+      {/* data-preview: this link has a card (journeys check a locked article's link has none). */}
+      <PreviewCard.Trigger render={<Link href={href} data-preview="" />}>{children}</PreviewCard.Trigger>
       <PreviewCard.Portal>
         {/* The popover's look (components/ui/popover.tsx). */}
         <PreviewCard.Positioner className="isolate z-50 outline-none" sideOffset={6} collisionPadding={16}>

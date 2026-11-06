@@ -7,9 +7,6 @@ import { portalUrl } from "@/lib/hosts";
 import { portalAddress } from "@/server/custom-domains";
 import { movedArticle, publishedArticle } from "@/server/docs-queries";
 
-/** How many of an article's links to other articles are looked up for a preview (a lookup each); the rest are plain links. */
-const MAX_PREVIEWS = 20;
-
 /**
  * How an article's links to the portal's own docs pages render (RichText's `link`), whichever of the portal's addresses they
  * name: in the same tab at `href` (null: the usual new-tab link), with a preview of an article this reader may open, where it
@@ -25,7 +22,9 @@ export async function articleLinks(
     const page = portalDocsLink(link, addresses);
     return page ? [[link, page] as const] : [];
   }));
-  const slugs = [...new Set([...pages.values()].map((page) => page.slug))].slice(0, MAX_PREVIEWS);
+  // ponytail: one indexed lookup per linked article (each cached for the request; the collections they need are shared):
+  // batch them through articleAt's access rules if index pages with hundreds of article links show up.
+  const slugs = [...new Set([...pages.values()].map((page) => page.slug))];
   const articles = new Map(
     await Promise.all(
       slugs.map(async (asked) => {

@@ -2253,11 +2253,10 @@ test("a link in an article to another of the portal's articles stays on the port
   await expect(body.getByRole("link", { name: "our status page" })).toHaveAttribute("target", "_blank");
   // An address that changed: the link goes where the article is now.
   await expect(body.getByRole("link", { name: "refunds", exact: true })).toHaveAttribute("href", "/docs/returns");
-  // One this reader may not open is a link here too, but with nothing of it shown (past the card's 600ms delay).
+  // One this reader may not open is a link here too, but without a card: nothing of it is shown.
   await expect(body.getByRole("link", { name: "what Pro adds" })).toHaveAttribute("href", `/docs/${pro.slug}`);
-  await body.getByRole("link", { name: "what Pro adds" }).hover();
-  await reader.waitForTimeout(1_000);
-  await expect(reader.locator('[data-slot="article-preview"]')).toHaveCount(0);
+  await expect(body.getByRole("link", { name: "what Pro adds" })).not.toHaveAttribute("data-preview");
+  await expect(link).toHaveAttribute("data-preview", "");
   // Pointed at, it previews the article: its collection, title and description.
   await link.hover();
   const card = reader.locator('[data-slot="article-preview"]');
