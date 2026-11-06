@@ -34,7 +34,7 @@ export const TUNING = {
   },
   "context.diffChars": {
     label: "Change shown up front",
-    tradeoff: "More: big changes understood at once, each request costs more. Less: cheaper; Autopilot looks up the rest for the docs, but what the changelog and posts hear about is decided from this much only.",
+    tradeoff: "More: big changes understood at once, each request costs more. Less: cheaper; Autopilot looks up the rest for the docs, but what the changelog and posts hear about is decided from this much only (20,000 characters at most).",
   },
 } as const;
 

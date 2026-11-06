@@ -137,7 +137,7 @@ setting is logged as a likely typo. The values in use are logged at start, the c
 | `CODE_CHANGES_PROPOSE_EDIT_LIKELY` | `0.75` | a number from 0 to 1 | Editing an article: proposed as likely from this probability |
 | `CODE_CHANGES_PROPOSE_NEW_ARTICLE_MAYBE` | `0.3` | a number from 0 to 1 | A new article: proposed, as "maybe", from this probability |
 | `CODE_CHANGES_PROPOSE_NEW_ARTICLE_LIKELY` | `0.8` | a number from 0 to 1 | A new article: proposed as likely from this probability |
-| `CODE_CHANGES_CONTEXT_DIFF_CHARS` | `20000` | a whole number from 1000 to 500000 | The pull request's diff the decision model and the docs agent read, in characters; files past it are only listed |
+| `CODE_CHANGES_CONTEXT_DIFF_CHARS` | `60000` | a whole number from 1000 to 500000 | The pull request's diff the docs agent and the writers read, in characters (the decision model at most 20,000 of it); files past it are only listed |
 | `CODE_CHANGES_CONTEXT_FILE_CHARS` | `6000` | a whole number from 500 to 500000 | One file's share of the diff at most, in characters |
 | `CODE_CHANGES_CONTEXT_BODY_CHARS` | `4000` | a whole number from 0 to 100000 | The pull request's description it reads, in characters |
 | `CODE_CHANGES_CONTEXT_OUTLINE_ARTICLES` | `1000` | a whole number from 50 to 20000 | The help center's articles and drafts the docs agent is shown at most (published ones first); it finds the rest with its search |

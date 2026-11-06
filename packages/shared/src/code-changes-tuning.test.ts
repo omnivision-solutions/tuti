@@ -12,7 +12,7 @@ test("a project's value wins, else the server's variable, else the default in co
   // Nothing saved: the server's (20), and the code's default where the server set nothing (diffChars).
   const none = tunedSettings({}, "BUSINESS", settings);
   expect(none.settings.decide.rounds).toBe(20);
-  expect(none.values["context.diffChars"]).toBe(20_000);
+  expect(none.values["context.diffChars"]).toBe(60_000);
   expect(none.tuned).toEqual([]);
 
   const own = tunedSettings({ "decide.rounds": 5, "decide.reasoning": "high", "propose.edit.maybe": 0.3, other: 1 }, "BUSINESS", settings);

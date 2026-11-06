@@ -166,6 +166,19 @@ describe("reading", () => {
     expect(model.decisions).toHaveLength(1);
   });
 
+  test("a big diff: the docs agent reads it whole (up to context.diffChars), the gate the decision model's 20,000 characters", async () => {
+    const files = Array.from({ length: 10 }, (_, i) => ({ filename: `src/part-${i}.ts`, patch: `@@ -0,0 +1 @@\n+${"x".repeat(5_000)}` }));
+    github.pullRequest(repo, pullRequest(3, { files }));
+    model.decide(INTERNAL);
+    noDocs();
+    await merge(3);
+    const gate = JSON.stringify(model.decisions[0]!.state);
+    expect(gate).toContain("--- src/part-2.ts");
+    expect(gate).not.toContain("--- src/part-9.ts");
+    expect(gate).toContain("[cut at 20,000 characters]");
+    expect(model.requests.find((request) => request.user.includes('"merge_commit"'))!.user).toContain("--- src/part-9.ts");
+  });
+
   test("on Hatchet a failed try with tries left is still analysing, saying where it stopped; only the last is failed", async () => {
     // GitHub doesn't know it: every read fails (inline, the merge's own run was the last try: failed).
     expect(await merge(77)).toBe(503);

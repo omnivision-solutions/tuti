@@ -1,7 +1,7 @@
 import { decide, type DecisionAnswer, decisionModel, decisionsAvailable } from "@tuti/shared";
 import { expect, test } from "vitest";
 
-import { GATE, gateResult, POST_QUESTION, postProposal, postState, pullRequestState, thresholds } from "./code-change-decisions";
+import { DECISION_DIFF_CHARS, GATE, gateResult, POST_QUESTION, postProposal, postState, pullRequestState, thresholds } from "./code-change-decisions";
 import { CASES, post } from "./code-change-eval";
 
 /**
@@ -38,7 +38,7 @@ test.skipIf(!live)(`code change decisions with ${decisionModel()}`, { timeout: 3
   const rows: Row[] = [];
   await Promise.all(
     CASES.map(async (c) => {
-      const gateAnswers = await decide(pullRequestState(c.pr), GATE, { meter });
+      const gateAnswers = await decide(pullRequestState(c.pr, DECISION_DIFF_CHARS), GATE, { meter });
       const gate = gateResult(gateAnswers);
       rows.push({ kind: "gate", name: c.name, expected: c.users, got: gate.users >= thresholds().gate, answers: odds(gateAnswers), right: c.users === gate.users >= thresholds().gate });
       const summary = c.summary ?? "";

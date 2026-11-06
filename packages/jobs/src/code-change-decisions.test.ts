@@ -1,7 +1,7 @@
 import { resetCodeChangesSettings } from "@tuti/shared";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { confidence, gateResult, namedPosts, postProposal, thresholds } from "./code-change-decisions";
+import { confidence, gateResult, namedPosts, postProposal, pullRequestState, thresholds } from "./code-change-decisions";
 
 const effect = (probabilities: Record<string, number>) => ({ effect: { type: "choice" as const, choice: "", probabilities } });
 
@@ -62,4 +62,13 @@ test("posts a pull request names: tuti#12, or a post's URL on one of the project
     "Not https://acme.tuti.so.evil.com/feedback/ideas/x-9 nor https://other.tuti.so/feedback/ideas/y-10.",
   ].join("\n");
   expect(namedPosts(text, ["https://acme.tuti.so", "https://acme.com/portal"]).sort((a, b) => a - b)).toEqual([3, 7, 8, 12]);
+});
+
+test("the decision model's copy of the diff: cut before the first file that doesn't fit, and says so", () => {
+  const part = (name: string) => `--- src/${name}.ts (modified, +1 -0)\n+${"x".repeat(40)}`;
+  const pr = { title: "T", body: "", labels: [], author: "", mergedAt: "", mergeCommit: null, commits: [], files: [], diff: [part("a"), part("b"), part("c")].join("\n") };
+  expect(pullRequestState(pr).diff).toBe(pr.diff);
+  expect(pullRequestState(pr, 150).diff).toBe(`${part("a")}\n${part("b")}\n[cut at 150 characters]`);
+  // One file bigger than the cap: its start.
+  expect(pullRequestState(pr, 30).diff).toBe(`${pr.diff.slice(0, 30)}\n[cut at 30 characters]`);
 });

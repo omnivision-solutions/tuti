@@ -129,10 +129,10 @@ export async function readPullRequest(api: GithubApi, repo: string, number: numb
     api.list<{ commit: { message: string } }>(`${base}/commits`, (page) => page as { commit: { message: string } }[], 3),
     api.list<GithubFile>(`${base}/files`, (page) => page as GithubFile[], 30),
   ]);
-  // The diff's cap (diffChars): decision models answer best under about 32 KB of text (Jev's long context mode beyond
-  // it is slower and less accurate), and the pull request's text and the post or article it's asked about need room too.
-  // ponytail: files past it are only listed; split a big one into several decisions if they turn out to matter. One
-  // file's share at most (fileChars), so a big one doesn't crowd out the rest.
+  // The diff's cap (diffChars): what the docs agent and the writers read up front, enough that a real change buried
+  // in a big diff (a lockfile, a reformat, generated code) is still in it; the decision model reads less of it
+  // (pullRequestState, DECISION_DIFF_CHARS). ponytail: files past it are only listed. One file's share at most
+  // (fileChars), so a big one doesn't crowd out the rest.
   const { diffChars, fileChars, bodyChars } = codeChangesSettings().context;
   const read: PullRequestRead = {
     title: pull.title,

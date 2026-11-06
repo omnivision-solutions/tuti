@@ -34,16 +34,31 @@ export function confidence(kind: ProposedKind, probability: number): "likely" | 
   return probability >= thresholds()[kind].likely ? "likely" : "maybe";
 }
 
-/** The pull request as the decision model sees it. */
-export function pullRequestState(pr: PullRequestRead) {
+/** The pull request as the models see it: the decision model with at most `DECISION_DIFF_CHARS` of its diff. */
+export function pullRequestState(pr: PullRequestRead, diffChars = Infinity) {
   return {
     title: pr.title,
     labels: pr.labels,
     description: pr.body,
     commits: pr.commits,
     files: pr.files.map((file) => `${file.path} (${file.status}${file.left ? `, not shown: ${file.left}` : ""})`),
-    diff: pr.diff,
+    diff: diffUpTo(pr.diff, diffChars),
   };
+}
+
+/**
+ * How much of the diff the decision model (the gate, the posts) is asked about: it answers best under about 32 KB of
+ * text, however much `context.diffChars` lets the docs agent and the writers read.
+ */
+export const DECISION_DIFF_CHARS = 20_000;
+
+/** The diff up to `max` characters, cut before the first file's part that doesn't fit (each starts "--- path ("). */
+function diffUpTo(diff: string, max: number) {
+  if (diff.length <= max) {
+    return diff;
+  }
+  const end = diff.lastIndexOf("\n--- ", max);
+  return `${diff.slice(0, end > 0 ? end : max)}\n[cut at ${max.toLocaleString("en")} characters]`;
 }
 
 export const GATE: Record<string, DecisionQuestion> = {
@@ -94,7 +109,7 @@ export type PostCandidate = { id: string; number: number; title: string; body: s
 
 export function postState(pr: PullRequestRead, summary: string, post: PostCandidate) {
   return {
-    pull_request: pullRequestState(pr),
+    pull_request: pullRequestState(pr, DECISION_DIFF_CHARS),
     summary_for_users: summary,
     post: { title: post.title, text: post.body.slice(0, 3_000), status: post.status.toLowerCase().replace("_", " ") },
     ...(post.named && { the_pull_request_names_this_post: true }),

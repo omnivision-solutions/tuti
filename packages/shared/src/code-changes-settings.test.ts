@@ -39,7 +39,7 @@ test("the defaults are the values Autopilot used before they were settings, and 
       autoLink: 0.95,
     },
     propose: { edit: { maybe: 0.5, likely: 0.75 }, newArticle: { maybe: 0.3, likely: 0.8 } },
-    context: { diffChars: 20_000, fileChars: 6_000, bodyChars: 4_000, outlineArticles: 1_000 },
+    context: { diffChars: 60_000, fileChars: 6_000, bodyChars: 4_000, outlineArticles: 1_000 },
     decide: { model: "anthropic/claude-haiku-5.5", rounds: 12, maxTokens: 6_000, temperature: 0, reasoning: "off" },
     redecide: { model: "anthropic/claude-sonnet-5.5", rounds: 12, whenNewArticle: 0.2 },
     write: { model: "anthropic/claude-sonnet-5.5", rounds: 10, maxTokens: 6_000 },

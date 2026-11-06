@@ -155,8 +155,10 @@ test("a big pull request: the diff stops at the cap, and the files after it are 
   });
   const read = await readPullRequest(await installationApi(42), "acme/app", 8);
   expect(read.files).toHaveLength(150);
-  expect(read.diff.length).toBeLessThanOrEqual(20_000 + 100);
-  expect(read.files.filter((file) => file.left === "size").length).toBeGreaterThan(140);
+  // 60,000 characters by default: about a dozen of the 5,000-character files.
+  expect(read.diff.length).toBeGreaterThan(55_000);
+  expect(read.diff.length).toBeLessThanOrEqual(60_000 + 100);
+  expect(read.files.filter((file) => file.left === "size").length).toBeGreaterThan(130);
 });
 
 test("the server's settings cap the diff, each file and the description", async () => {
