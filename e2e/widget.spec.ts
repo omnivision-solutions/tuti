@@ -733,6 +733,65 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(readerLauncher).toHaveCount(0);
 });
 
+test("a new message in the widget's Messages gets the AI's answer first, with Ask a person; turned off, it goes to the team", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const question = `How do I add a colleague to Acme ${slug}?`;
+  const body = "Owners and admins send invites from the Team page.";
+  await similar(question, `Inviting your team\n\n${body}`, 0.8);
+  const article = await api("/articles", { title: "Inviting your team", body });
+  await api(`/articles/${article.slug}/publish`, {});
+  await api("/support", { inbox: true }, "PATCH");
+
+  // A visitor writes in Messages: the AI answers from the docs first, with Ask a person right there (no thumbs-down needed).
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
+  await expect(widget.getByText("Ask anything: you'll get an answer right away, and a person if you need one.")).toBeVisible();
+  await expect(widget.getByRole("textbox", { name: "Your email" })).toHaveCount(0);
+  await nextModelReply(JSON.stringify({ answer: "Owners and admins send invites from the Team page.", sources: ["s1"] }), question);
+  await widget.getByRole("textbox", { name: "Message" }).fill(question);
+  await widget.getByRole("button", { name: "Send" }).click();
+  const ai = widget.getByRole("dialog", { name: "Assistant" }).getByRole("log", { name: "Conversation" });
+  await expect(ai.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
+  await expect(ai.getByRole("button", { name: "Ask a person" })).toBeVisible();
+  await checkpoint(visitor, "widget-messages-ai-first");
+
+  // Asking a person starts the conversation, with the question and the AI's answer.
+  await ai.getByRole("button", { name: "Ask a person" }).click();
+  const form = ai.getByRole("form", { name: "Ask a person" });
+  await form.getByRole("textbox", { name: "Your email" }).fill(`e2e-asker-${slug}@example.com`);
+  await nextModelReply("They want to invite a colleague.", question);
+  await form.getByRole("button", { name: "Send to the team" }).click();
+  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toBeVisible();
+  await ai.getByRole("link", { name: "Open Messages" }).click();
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(question);
+
+  // Turned off in Customize → Widget, a new message goes straight to the team.
+  await owner.goto(`/app/${slug}/customize/widget`);
+  const aiFirst = owner.getByRole("switch", { name: "Answer with AI first" });
+  await expect(aiFirst).toBeChecked();
+  await aiFirst.scrollIntoViewIfNeeded();
+  await checkpoint(owner, "customize-widget-ai-first", { fullPage: false });
+  await aiFirst.click();
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
+  await widget.getByRole("button", { name: "New message" }).click();
+  await widget.getByRole("textbox", { name: "Message" }).fill("Can I pay by invoice?");
+  await widget.getByRole("button", { name: "Send" }).click();
+  await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Can I pay by invoice?");
+  await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
+});
+
 test("someone signed in on the portal opens What's new in its widget: what's new to them stays marked while their visit is recorded", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

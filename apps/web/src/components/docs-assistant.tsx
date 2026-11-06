@@ -404,7 +404,8 @@ function AssistantReply({
         ) : (
           <p>Thanks for letting us know.</p>
         )}
-        {turn.rated === false && person}
+        {/* In the widget it's always there (Messages asks the AI first); on the portal, once they say it didn't help. */}
+        {(turn.rated === false || widget) && person}
       </div>
       <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />
     </div>

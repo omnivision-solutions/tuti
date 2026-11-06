@@ -52,6 +52,7 @@ export function WidgetSettings({
   hidden,
   onPortal,
   underSitePath,
+  aiFirst,
 }: {
   projectSlug: string;
   label: string;
@@ -69,6 +70,7 @@ export function WidgetSettings({
   onPortal: boolean;
   /** The portal is under a path of the team's site (Customize → Address), where it doesn't show the widget yet. */
   underSitePath: boolean;
+  aiFirst: boolean;
 }) {
   const [icon, setIcon] = useState(initialIcon);
   const iconChoices = useRef<HTMLDivElement>(null);
@@ -200,6 +202,12 @@ export function WidgetSettings({
                 <SwitchRow key={part} name={`show-${part}`} label={PARTS[part].label} description={PARTS[part].description} defaultChecked={!hidden.includes(part)} />
               ))}
             </fieldset>
+            <SwitchRow
+              name="aiFirst"
+              label="Answer with AI first"
+              description="A new message in Messages gets an answer from your docs right away, with Ask a person to send it to your team."
+              defaultChecked={aiFirst}
+            />
             <LinkRows
               name="link"
               item="Link"

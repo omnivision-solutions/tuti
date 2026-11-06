@@ -2,9 +2,10 @@
 
 import { cn } from "cn";
 import { ChevronLeftIcon, ChevronRightIcon, SquarePenIcon } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { AttachButton, type StartUpload, UploadList, useUploads } from "@/components/attachment-uploads";
+import { useDocsAssistant } from "@/components/docs-assistant-context";
 import { EmptyState } from "@/components/empty-state";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageText } from "@/components/inbox/message-text";
@@ -96,9 +97,10 @@ export function useVisitor(projectSlug: string): Visitor | null {
  * The widget's Messages tab: someone's conversations with the team. Signed in by the customer's
  * page (Tuti.identify) or on the portal itself (`portalSignedIn`); signed out, they give their
  * email to write, and the panel keeps a visitor token to show them their conversations. `team`
- * (their faces and when they usually reply) heads the list and the first message.
+ * (their faces and when they usually reply) heads the list and the first message. With `aiFirst` (Customize → Widget), a
+ * new message goes to the docs' assistant first (useAskFirst).
  */
-export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectSlug: string; portalSignedIn: boolean; team: ReactNode }) {
+export function WidgetMessages({ projectSlug, portalSignedIn, team, aiFirst = false }: { projectSlug: string; portalSignedIn: boolean; team: ReactNode; aiFirst?: boolean }) {
   const { signedIn, error, known: pageAnswered, pending: pageSigningIn } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const visitor = useVisitor(projectSlug);
   const token = signedIn?.token ?? null;
@@ -208,7 +210,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn, team }: { projectS
       {signingIn && <p className="text-sm text-muted-foreground">Signing you in…</p>}
       {/* No box of its own: a fieldset's content doesn't grow with it, and the conversation must, to keep its reply box at the bottom. */}
       <fieldset disabled={signingIn} className="contents">
-        {view}
+        <AiFirst value={aiFirst}>{view}</AiFirst>
       </fieldset>
     </div>
   );
@@ -682,6 +684,27 @@ function BackButton({ onBack }: { onBack: () => void }) {
 }
 
 /** Someone signed out, writing for the first time: their email, so the team can reply once they've left. */
+const AiFirstContext = createContext(false);
+const AiFirst = ({ value, children }: { value: boolean; children: ReactNode }) => <AiFirstContext value={value}>{children}</AiFirstContext>;
+
+/**
+ * With AI first: a new message without files is a question for the docs' assistant, which takes the panel with its answer
+ * and "Ask a person" (which starts the conversation, with the question and the answer). Null otherwise: it goes to the team.
+ */
+function useAskFirst() {
+  const assistant = useDocsAssistant();
+  if (!useContext(AiFirstContext) || !assistant) {
+    return null;
+  }
+  return (text: string, attachments: string[]) => {
+    if (attachments.length > 0) {
+      return false;
+    }
+    assistant.ask(text);
+    return true;
+  };
+}
+
 function FirstMessage({
   projectSlug,
   team,
@@ -694,11 +717,12 @@ function FirstMessage({
   /** It turned out they'd signed in on the portal meanwhile (no visitor token came back): the conversation is theirs. */
   onSignedIn: (number: number) => void;
 }) {
+  const askFirst = useAskFirst();
   return (
     <div className="flex flex-col gap-4">
       <TeamCard team={team} />
       <p className="text-sm text-muted-foreground">
-        Leave your email so the team can get back to you.{" "}
+        {askFirst ? "Ask anything: you'll get an answer right away, and a person if you need one." : "Leave your email so the team can get back to you."}{" "}
         <a href="/sign-in" target="_blank" rel="noreferrer" className="underline underline-offset-4">
           Sign in
         </a>{" "}
@@ -707,8 +731,12 @@ function FirstMessage({
       <Composer
         label="Message"
         placeholder="How can we help?"
-        email=""
+        // Asked first, the email comes with "Ask a person".
+        email={askFirst ? undefined : ""}
         send={async (text, email) => {
+          if (askFirst?.(text, [])) {
+            return {};
+          }
           const result = await widgetStartConversation(projectSlug, {}, text, email);
           if ("error" in result) {
             return result;
@@ -741,6 +769,7 @@ function NewConversation({
   onStarted: (number: number) => void;
   onNewVisitor: (number: number) => void;
 }) {
+  const askFirst = useAskFirst();
   return (
     <div className="flex flex-col gap-3">
       <BackButton onBack={onBack} />
@@ -750,6 +779,9 @@ function NewConversation({
         email={visitorEmail ?? undefined}
         upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
         send={async (text, email, attachments) => {
+          if (askFirst?.(text, attachments)) {
+            return {};
+          }
           const result = await widgetStartConversation(projectSlug, auth, text, visitorEmail === null ? undefined : email, attachments);
           if ("error" in result) {
             return result;

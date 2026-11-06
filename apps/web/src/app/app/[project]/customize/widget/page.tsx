@@ -71,6 +71,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
         onPortal={widget.onPortal}
         // Under a path of the team's site, or Tuti's own portal under the app's.
         underSitePath={!!mount || appPortalMount()?.slug === slug}
+        aiFirst={widget.aiFirst}
       />
     </CustomizeShell>
   );

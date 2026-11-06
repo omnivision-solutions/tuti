@@ -51,6 +51,11 @@ And the panel's **Home**:
   it still counts in `Tuti.unseen()`, for a dot of your own. With Feedback off, the
   docs' assistant doesn't offer "Post this as feedback"; with Messages off, it doesn't offer "Ask a
   person" either (here or on the portal), since the reply would show in Messages.
+- **Answer with AI first** (on by default): a new message in Messages goes to the docs' AI
+  first. The answer opens in the panel with **Ask a person**, which starts the conversation with
+  your team: their question, the AI's answer and a short summary for you. Only where your server
+  has AI answers and you've published articles; a message with files goes straight to your team.
+  Turned off, every new message goes to your team.
 - **Quick links**: up to 5 links (a label and an `https://` address) on the panel's Home,
   such as your status page or docs. They open in a new tab.
 

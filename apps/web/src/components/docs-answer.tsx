@@ -312,7 +312,8 @@ export function AskAPerson({
           maxLength={320}
           autoComplete="email"
           // Someone signed in (by the page, else on the portal) gets their own conversation, so their address is shown, not asked for.
-          value={signedInEmail || (typed ?? "")}
+          // Else the one they gave in Messages before, if any.
+          value={signedInEmail || (typed ?? visitor?.email ?? "")}
           readOnly={!!signedInEmail}
           onChange={(event) => setTyped(event.target.value)}
         />

@@ -172,7 +172,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             collection={typeof collection === "string" ? collection : undefined}
           />
         )}
-        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} />}
+        {/* AI first (Customize → Widget) where the assistant is here and has docs to answer from. */}
+        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} aiFirst={settings.aiFirst && !!assistant && hasDocs} />}
         {tab === "feedback" && (
           <Feedback slug={slug} projectId={project.id} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
         )}
@@ -400,7 +401,7 @@ async function Feedback({
  * Their conversations with the team: signed in on the portal itself, or by the customer's page (Tuti.identify).
  * Above them, who they're writing to: the team's faces and when they usually reply, as on Home.
  */
-async function Messages({ projectId, projectName, slug }: { projectId: string; projectName: string; slug: string }) {
+async function Messages({ projectId, projectName, slug, aiFirst }: { projectId: string; projectName: string; slug: string; aiFirst: boolean }) {
   const [session, faces, replyMs] = await Promise.all([getSession(), teamFaces(projectId), usualReplyMs(projectId)]);
   const team = (
     // Its card is WidgetMessages', with what to do next (New message) in it.
@@ -412,7 +413,7 @@ async function Messages({ projectId, projectName, slug }: { projectId: string; p
       </span>
     </section>
   );
-  return <WidgetMessages projectSlug={slug} portalSignedIn={!!session && (await canActIn(session.user.id, projectId))} team={team} />;
+  return <WidgetMessages projectSlug={slug} portalSignedIn={!!session && (await canActIn(session.user.id, projectId))} team={team} aiFirst={aiFirst} />;
 }
 
 /**
