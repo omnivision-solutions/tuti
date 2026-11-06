@@ -21,7 +21,10 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await owner.waitForURL(`**/app/${slug}/setup`);
   await expect(owner.getByText("Step 1 of 4")).toBeVisible();
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
-  await expect(owner.getByRole("link", { name: "Settings → API" })).toHaveAttribute("href", "https://auth.featurebase.app/login?redirect=/settings/api");
+  // Where the key is made, beside its field, in a new tab.
+  const keysLink = owner.getByRole("link", { name: /^Get your API key.*opens in a new tab/ });
+  await expect(keysLink).toHaveAttribute("href", "https://auth.featurebase.app/login?redirect=/settings/api");
+  await expect(keysLink).toHaveAttribute("target", "_blank");
   // Their team, as invitations to review and send, and Contacts, ticked to begin with.
   await expect(owner.getByRole("checkbox", { name: /^Team/ })).toBeChecked();
   await expect(owner.getByText("Your Featurebase team, as invitations you review and send. They join as members; owners can change roles in Team & roles.")).toBeVisible();
