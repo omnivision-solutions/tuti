@@ -66,7 +66,7 @@ function Chip({ label, pill, after, popup, part }: { label: string; pill: ReactN
         delay={300}
         aria-label={label}
         suppressHydrationWarning
-        className="relative z-10 inline-flex max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-full text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="inline-flex max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-full text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full border bg-background px-2 py-0.5 font-medium text-foreground hover:bg-accent">
           {pill}

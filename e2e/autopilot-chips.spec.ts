@@ -67,6 +67,23 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   // The one out of date isn't in the changes, and the page says so above them, with Write it again.
   await expect(owner.getByText("One of its edits was written on an earlier version of the article, so it isn't in the changes below.", { exact: false })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Write it again" })).toHaveCount(1);
+  // Scrolled under the app's header (a short window, so the page scrolls), a chip goes behind it, not over it.
+  await owner.setViewportSize({ width: 1280, height: 300 });
+  const underHeader = await chips
+    .getByRole("button", { name: /^PR #/ })
+    .first()
+    .evaluate((chip) => {
+      const header = document.querySelector("header")!;
+      window.scrollBy(0, chip.getBoundingClientRect().top - header.getBoundingClientRect().top - 4);
+      const { left, top, width, height } = chip.getBoundingClientRect();
+      // Top to bottom, as painted.
+      const stack = document.elementsFromPoint(left + width / 2, top + height / 2);
+      return { under: top + height / 2 < header.getBoundingClientRect().bottom, behind: stack.includes(header) && stack.indexOf(header) < stack.findIndex((element) => chip.contains(element)) };
+    });
+  expect(underHeader).toEqual({ under: true, behind: true });
+  await checkpoint(owner, "chips-under-header", { fullPage: false });
+  await owner.evaluate(() => window.scrollTo(0, 0));
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await checkpoint(owner, "chips-collapsed", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "chips-collapsed-dark", { fullPage: false });
