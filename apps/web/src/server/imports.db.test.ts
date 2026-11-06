@@ -68,6 +68,28 @@ test("a start is refused, nothing made, for an API key, a key Featurebase refuse
   expect(await prisma.dataImport.count({ where: { projectId: project.id } })).toBe(0);
 });
 
+test("an import with a part this worker doesn't have (a newer web started it mid-deploy) fails, its key cleared, rather than ending done without it", async () => {
+  const row = await prisma.dataImport.create({
+    data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts: ["contacts", "a-part-from-the-future"], step: "contacts" },
+  });
+  await handlers.importStep({ importId: row.id }, log);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+    state: "FAILED",
+    apiKey: null,
+    error: "Tuti was updating as it started. Start it again to go on: what came across already is skipped.",
+  });
+  expect(await prisma.ssoIdentity.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("a Featurebase that's slow or rate limited is said at once on starting, not waited out", async () => {
+  // Each answer asks for a minute's wait: the start doesn't wait, it says try again.
+  fake.failNext(429, 5, { "retry-after": "60" });
+  const began = Date.now();
+  expect(await refusal(start())).toMatchObject({ status: 502, code: "unavailable" });
+  expect(Date.now() - began).toBeLessThan(5_000);
+  expect(await prisma.dataImport.count({ where: { projectId: project.id } })).toBe(0);
+});
+
 test("Contacts come across as the project's users, page after page: their app's id, details, properties and company; the key is cleared at the end", async () => {
   fake.pageSize = 2;
   const started = await start();

@@ -174,6 +174,13 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
     return { skipped: true };
   }
   const claim = { id: row.id, state: "RUNNING", step: row.step, cursor: row.cursor } as const;
+  // A part this worker doesn't have (it's the release before the web that started the import, mid-deploy) fails it,
+  // never skipped: an import that ended "done" without it would say nothing of what it left behind.
+  const unknown = row.parts.find((part) => !IMPORT_PARTS[part]);
+  if (unknown) {
+    await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: `Tuti was updating as it started. ${AGAIN}`, finishedAt: new Date() } });
+    return { failed: true };
+  }
   let next: string | null = null;
   let saved: boolean;
   try {

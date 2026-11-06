@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
-import { FAKE_FEATUREBASE_KEY } from "@tuti/testkit";
+import { FAKE_FEATUREBASE_SLOW_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
@@ -34,16 +34,20 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(owner.getByText("Featurebase didn't accept this API key. Check you copied all of it, or make a new one.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase-bad-key");
 
-  // A good one: the import starts, and its progress shows here until it's done.
-  await key.fill(FAKE_FEATUREBASE_KEY);
+  // A good one (Featurebase answering slowly, so the import is still running when the page looks again): it starts,
+  // and its progress shows here until it's done.
+  await key.fill(FAKE_FEATUREBASE_SLOW_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
-  await expect(status).toContainText("Imported from Featurebase");
-  await expect(status).toContainText("3 contacts brought across.");
+  const continueLink = owner.getByRole("link", { name: "Continue" });
+  // Started, focus is on Continue, the way on; screen readers hear only that it's importing, not each page's count.
+  await expect(status).toHaveText("Importing from Featurebase");
+  await expect(continueLink).toBeFocused();
   // The key isn't left in the page.
-  await expect(key).toHaveValue("");
-  // Started, focus is on Continue, the way on.
-  await expect(owner.getByRole("link", { name: "Continue" })).toBeFocused();
+  await expect(key).toHaveCount(0);
+  // Done, Continue still has focus (one Continue, kept as the import ends), and the summary is said.
+  await expect(status).toHaveText("Imported from Featurebase. 3 contacts brought across.", { timeout: 15_000 });
+  await expect(continueLink).toBeFocused();
   await checkpoint(owner, "setup-featurebase-imported");
 
   // Setup goes on.

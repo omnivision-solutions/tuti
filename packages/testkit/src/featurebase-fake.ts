@@ -3,6 +3,8 @@ import type { AddressInfo } from "node:net";
 
 /** The API key the fake accepts; any other is refused (401), as Featurebase refuses a bad one. */
 export const FAKE_FEATUREBASE_KEY = "sk_fake_featurebase";
+/** A key the fake also takes whose pages of a list (100 at a time, as an import reads; not a start's checks) answer 4 seconds late: an import that's still running when the page looks again. */
+export const FAKE_FEATUREBASE_SLOW_KEY = "sk_fake_featurebase_slow";
 
 type Row = Record<string, unknown>;
 
@@ -86,8 +88,15 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
       return file ? res.writeHead(200, { "Content-Type": file.type }).end(file.body) : send(404, { message: "no such file" });
     }
     fake.requests.push(`${req.method} ${url.pathname}${url.search}`);
-    if (req.headers.authorization !== `Bearer ${FAKE_FEATUREBASE_KEY}`) {
+    const slow = req.headers.authorization === `Bearer ${FAKE_FEATUREBASE_SLOW_KEY}`;
+    if (req.headers.authorization !== `Bearer ${FAKE_FEATUREBASE_KEY}` && !slow) {
       return send(401, { success: false, message: "Invalid API key" });
+    }
+    if (slow && url.searchParams.get("limit") === "100" && !req.headers["x-fake-late"]) {
+      req.headers["x-fake-late"] = "1";
+      setTimeout(() => server.emit("request", req, res), 4_000);
+      fake.requests.pop();
+      return;
     }
     if (failing) {
       const { status, headers, body } = failing;

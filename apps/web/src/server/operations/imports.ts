@@ -73,6 +73,9 @@ export async function latestImport(projectId: string): Promise<ImportView | null
 const label = (part: ImportPart) => IMPORT_PARTS[part].label;
 
 /** Featurebase's answer to a check, as the form says it: `cant` is what a refusal (401, 403) means. */
+/** How long starting an import may spend asking Featurebase (the key, then each part's list). */
+export const START_CHECK_MS = 20_000;
+
 function refusal(error: unknown, cant: { code: string; message: string }): never {
   if (error instanceof FeaturebaseError && (error.status === 401 || error.status === 403)) {
     throw new OperationError(400, cant.code, cant.message);
@@ -110,7 +113,8 @@ export const startImport = defineOperation({
     if (latest?.state === "running") {
       return latest;
     }
-    const api = featurebase(input.key);
+    // Someone waits on "Checking the key…": a slow or rate-limited Featurebase is said at once, not waited out.
+    const api = featurebase(input.key, { deadline: Date.now() + START_CHECK_MS });
     await api.get("/admins").catch((error: unknown) =>
       refusal(error, { code: "bad_key", message: "Featurebase didn't accept this API key. Check you copied all of it, or make a new one." }),
     );
