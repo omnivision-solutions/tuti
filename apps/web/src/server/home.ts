@@ -5,6 +5,7 @@ import { treeOrder } from "@/lib/autopilot-words";
 import { autopilotTargets, emailedOnCompletion } from "@/server/operations/code-changes";
 import { awake } from "@/server/operations/conversations";
 import { failedSearchesSql, insightsSince } from "@/server/operations/docs-insights";
+import { supportDomain } from "@/server/inbound";
 import { hasOwnContent } from "@/server/sample-content";
 
 /** Home's numbers, what needs the team (by kind, oldest first), what's left to set up and the trending feedback. */
@@ -89,6 +90,7 @@ export async function homeOverview(projectId: string, slug: string) {
             invitations: { where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) }, sentAt: { not: null } } },
             articles: { where: { publishedAt: { not: null }, deletedAt: null, sample: false } },
             changelogEntries: { where: { publishedAt: { not: null }, sample: false } },
+            inboundEmails: true,
           },
         },
       },
@@ -183,6 +185,8 @@ export async function homeOverview(projectId: string, slug: string) {
   const uses = (...any: string[]) => picked.size === 0 || any.some((use) => picked.has(use));
   // Each with what it's for, in a line under its title: what the step gets a team using every part of Tuti, the same
   // whatever the server or the project has turned on (a product choice: most teams will use it all).
+  // Support is set up once its first email is in (the address forwarded), or once the inbox is on where the server takes no email.
+  const supportSet = setup.supportInbox && (setup._count.inboundEmails > 0 || supportDomain() === null);
   const steps = [
     { key: "widget", title: "Add the widget to your site", description: `Users give feedback, get help and see what's new right inside ${setup.name}.`, action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
     // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.
@@ -190,7 +194,7 @@ export async function homeOverview(projectId: string, slug: string) {
     // Who's posting and who's writing in, signed in from the team's own app.
     { key: "sso", title: "Set up single sign-on", description: `Users sign in with their ${setup.name} account, so every post and message says who it's from.`, action: "Set up", done: setup.ssoSecret !== null, href: `${base}/settings/sso`, shown: uses("feedback", "support") },
     // Steps of their own only once picked.
-    { key: "support", title: "Set up your support inbox", description: "Answer messages from the widget and your support email together, in one shared inbox.", action: "Set up", done: setup.supportInbox, href: `${base}/settings/support`, shown: picked.has("support") },
+    { key: "support", title: "Set up your support inbox", description: "Answer messages from the widget and your support email together, in one shared inbox.", action: "Set up", done: supportSet, waiting: setup.supportInbox && !supportSet ? "Waiting for your first email" : undefined, href: `${base}/settings/support`, shown: picked.has("support") },
     { key: "article", title: "Publish an article", description: "Start your help center, so people find answers before they write in.", action: "New article", done: setup._count.articles > 0, href: `${base}/docs/new`, shown: uses("docs") },
     { key: "changelog", title: "Publish an update", description: "Show users what shipped, on your portal and in the widget.", action: "New entry", done: setup._count.changelogEntries > 0, href: `${base}/changelog/new`, shown: picked.has("changelog") },
     { key: "team", title: "Invite your team", description: "Share triage and replies with your teammates.", action: "Invite", done: setup._count.team > 1 || setup._count.invitations > 0, href: `${base}/settings/team`, shown: true },

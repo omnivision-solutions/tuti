@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
-import { AppWindowIcon, BookOpenIcon, CheckCircle2Icon, GitMergeIcon, InboxIcon, KeyRoundIcon, type LucideIcon, MegaphoneIcon, UserPlusIcon } from "lucide-react";
+import { AppWindowIcon, BookOpenIcon, CheckCircle2Icon, ClockIcon, GitMergeIcon, InboxIcon, KeyRoundIcon, type LucideIcon, MegaphoneIcon, UserPlusIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -150,6 +150,13 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                     </div>
                     {/* The project's name is in some: a long one wraps rather than running out of the card. */}
                     <p className="text-sm wrap-anywhere text-muted-foreground">{step.description}</p>
+                    {/* Started, and waiting on something outside the app (the support inbox's first email). */}
+                    {step.waiting && (
+                      <p className="flex items-center gap-1.5 text-sm">
+                        <ClockIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                        {step.waiting}
+                      </p>
+                    )}
                     {/* Each step left to do with its own action, a button rather than a link in the text. */}
                     {!step.done && (
                       // Described by its step, which screen readers then read with it ("Connect", Connect GitHub).

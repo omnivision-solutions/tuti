@@ -175,10 +175,18 @@ test("Get set up follows what the team picked after Create project; a project wi
       action: "Set up",
     });
 
-    // Done as it's done: the inbox once it's on.
+    // Done once its first email is in: on, it waits for one; one arrives, done.
+    vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email.example");
+    const support = async () => (await homeOverview(project.id, project.slug)).setup!.find((step) => step.key === "support")!;
+    expect(await support()).toMatchObject({ done: false, waiting: undefined });
     await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
-    const inbox = await homeOverview(project.id, project.slug);
-    expect(inbox.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["support"]);
+    expect(await support()).toMatchObject({ done: false, waiting: "Waiting for your first email" });
+    await prisma.inboundEmail.create({ data: { projectId: project.id, recipient: "support@example.com", sender: "e2e-ada@example.com", dedupeKey: "first", size: 1 } });
+    expect(await support()).toMatchObject({ done: true, waiting: undefined });
+    // A server that takes no email: done once the inbox is on.
+    await prisma.inboundEmail.deleteMany({ where: { projectId: project.id } });
+    vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
+    expect(await support()).toMatchObject({ done: true, waiting: undefined });
 
     expect(await setProjectUses(project.slug, ["docs", "changelog", "docs"])).toEqual({});
     expect(await steps()).toEqual(["widget", "github", "article", "changelog", "team"]);
