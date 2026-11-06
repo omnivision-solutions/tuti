@@ -140,8 +140,14 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   ]);
   // Claims a failed or crashed try left unsent for people it won't email now (they unsubscribed, a private portal
   // that's the team's only): dropped, so the post isn't due again and again. A run still sending keeps its claim (not
-  // stale yet), so it can mark it sent.
-  await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() }, userId: { notIn: people.map((person) => person.id) } } });
+  // stale yet), so it can mark it sent. The few stale claims are read and checked here: no list of the whole audience
+  // goes into a query.
+  const audience = new Set(people.map((person) => person.id));
+  const stale = await prisma.shippedEmail.findMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } }, select: { userId: true } });
+  const gone = stale.map(({ userId }) => userId).filter((userId) => !audience.has(userId));
+  if (gone.length > 0) {
+    await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() }, userId: { in: gone } } });
+  }
 
   // The team's comment Autopilot's review posted with the completion (its update's `note`): quoted. Only that one,
   // never a comment that merely came before a completion by hand.

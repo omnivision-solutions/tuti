@@ -216,6 +216,21 @@ describe("when a post ships", () => {
     expect(await due(postId)).toBeNull();
   });
 
+  test("a voter whose send failed and who unsubscribed since doesn't keep the post due", async () => {
+    const [author, voter] = [await verified("Author"), await verified("Voter")];
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Saved views" });
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    mailbox.refuseNext(voter.email, { code: 421 });
+    await setStatus(post.number, "completed"); // the voter's send fails: their claim is left stale and unsent
+    expect(await due(postId)).not.toBeNull();
+    await prisma.emailOptOut.create({ data: { projectId: project.id, userId: voter.id } });
+    // Hatchet's retry: nobody's left to email, and the post isn't due any more.
+    await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+    expect(emailsTo(voter.email)).toEqual([]);
+    expect(await due(postId)).toBeNull();
+  });
+
   test("reopened while its emails go out (Undo, say), nobody else is emailed", async () => {
     const [author, voter] = [await verified("Author"), await verified("Voter")];
     const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Calendar sync" });
