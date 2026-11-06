@@ -54,11 +54,22 @@ export const groupCondition = z.preprocess(
 );
 export type GroupCondition = z.output<typeof groupCondition>;
 
-/** A group's conditions, all of which must match. */
+/** A group's conditions, all of which must match, or (`match` any) one of which. */
 export const groupConditions = z.array(groupCondition).max(MAX_CONDITIONS, `Up to ${MAX_CONDITIONS} conditions`);
+
+/** Whether all of a group's conditions must match, or any one of them, as the dialog names them. */
+export const MATCHES = { all: "All must match", any: "Any can match" } as const;
+export type Match = keyof typeof MATCHES;
+export const groupMatch = z.enum(["all", "any"]);
+
+/** Who's in a group: its conditions and whether all or any of them must match. */
+export type GroupRule = { match: Match; conditions: GroupCondition[] };
 
 /** A group's conditions as stored; anything unreadable is none, which lets nobody in. */
 export const storedConditions = (json: unknown): GroupCondition[] => groupConditions.safeParse(json).data ?? [];
+
+/** A group's rule as stored (ReaderGroup's `conditions` and `match`). */
+export const storedRule = (group: { conditions: unknown; match: Match }): GroupRule => ({ match: group.match, conditions: storedConditions(group.conditions) });
 
 /** A property's values as text: a list's items, or the one value (12 is "12", true is "true"); none when it's missing. */
 function valuesOf(properties: Properties, name: string): string[] {
@@ -71,15 +82,15 @@ function valuesOf(properties: Properties, name: string): string[] {
 }
 
 /**
- * Whether `properties` match all of `conditions`, of which there must be at least one. Values compare
+ * Whether `properties` match all of `conditions` (or, `match` any, one of them), of which there must be at least one. Values compare
  * as text, case and all; a list property matches when one of its items does ("is", "is any of",
  * "contains") or none does ("is not", "is none of", "excludes"). A missing property (or an empty
  * list) matches only the negative ones and "is not set". conditionsSql is the same in SQL.
  */
-export function conditionsMatch(conditions: GroupCondition[], properties: Properties): boolean {
+export function conditionsMatch({ match, conditions }: GroupRule, properties: Properties): boolean {
   return (
     conditions.length > 0 &&
-    conditions.every((condition) => {
+    conditions[match === "any" ? "some" : "every"]((condition) => {
       const actual = valuesOf(properties, condition.property);
       switch (condition.op) {
         case "is":
@@ -103,5 +114,5 @@ export function conditionsMatch(conditions: GroupCondition[], properties: Proper
   );
 }
 
-/** Whether one of the project's users, with these properties, is in a group with these conditions (at least one, all matching). */
-export const inGroup = (conditions: GroupCondition[], properties: Properties) => conditionsMatch(conditions, properties);
+/** Whether one of the project's users, with these properties, is in a group with this rule (at least one condition; all, or any, matching). */
+export const inGroup = (rule: GroupRule, properties: Properties) => conditionsMatch(rule, properties);

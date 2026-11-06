@@ -479,6 +479,14 @@ test("a group from conditions: readers whose properties match read its collectio
   await owner.getByRole("option", { name: "is not set" }).click();
   await expect(seats.getByLabel("Value")).toHaveCount(0);
   await expect(preview).toHaveText("No matching users");
+  // Any one of them, rather than all: Ada is on Pro, Bea has no seats.
+  await dialog.getByRole("combobox", { name: "Which must match" }).click();
+  await owner.getByRole("option", { name: "Any can match" }).click();
+  await expect(preview).toHaveText("2 matching users");
+  await checkpoint(owner, "team-settings-group-conditions-any", { fullPage: false });
+  await dialog.getByRole("combobox", { name: "Which must match" }).click();
+  await owner.getByRole("option", { name: "All must match" }).click();
+  await expect(preview).toHaveText("No matching users");
   await seats.getByRole("button", { name: "Remove condition" }).click();
   await expect(preview).toHaveText("1 matching user");
   await dialog.getByRole("button", { name: "Add group" }).click();

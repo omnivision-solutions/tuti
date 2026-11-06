@@ -222,12 +222,14 @@ test("Who's asking: each post's voters' total of the number property the team pi
   expect(await voterTotals(project.id, null, [sso.id])).toEqual(new Map());
 
   // Voted for by the paying ones: SSO and Quiet (Cora); by enterprise: SSO; by free: Exports. The tab counts follow.
-  const titles = async (group: GroupCondition[]) => (await teamPosts(project.id, parsePostFilters({}), { group })).posts.map((p) => p.title);
+  const titles = async (conditions: GroupCondition[], match: "all" | "any" = "all") =>
+    (await teamPosts(project.id, parsePostFilters({}), { group: { match, conditions } })).posts.map((p) => p.title);
   expect(await titles([{ property: "plan", op: "is_any_of", value: ["enterprise", "pro"] }])).toEqual(["Quiet", "SSO"]);
   expect(await titles([{ property: "plan", op: "is", value: "enterprise" }])).toEqual(["SSO"]);
   expect(await titles([{ property: "plan", op: "is", value: "free" }])).toEqual(["Exports"]);
-  expect((await teamPosts(project.id, parsePostFilters({ sort: "trending" }, TEAM_SORTS), { group: [{ property: "plan", op: "is", value: "free" }] })).posts.map((p) => p.title)).toEqual(["Exports"]);
-  expect((await teamPostCounts(project.id, { group: [{ property: "plan", op: "is", value: "free" }] })).all).toBe(1);
+  expect(await titles([{ property: "plan", op: "is", value: "enterprise" }, { property: "plan", op: "is", value: "free" }], "any")).toEqual(["Exports", "SSO"]);
+  expect((await teamPosts(project.id, parsePostFilters({ sort: "trending" }, TEAM_SORTS), { group: { match: "all", conditions: [{ property: "plan", op: "is", value: "free" }] } })).posts.map((p) => p.title)).toEqual(["Exports"]);
+  expect((await teamPostCounts(project.id, { group: { match: "all", conditions: [{ property: "plan", op: "is", value: "free" }] } })).all).toBe(1);
 });
 
 test("a post's voters: their company and number from the project's app, the biggest first, then the latest; the team as itself", async () => {

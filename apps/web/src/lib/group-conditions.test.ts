@@ -1,13 +1,13 @@
 import { expect, test } from "vitest";
 
 import { CONDITION_CASES } from "./group-conditions.cases";
-import { conditionsMatch, type GroupCondition, groupConditions, inGroup, storedConditions } from "./group-conditions";
+import { conditionsMatch, type GroupCondition, groupConditions, inGroup, storedConditions, storedRule } from "./group-conditions";
 
 const is = (property: string, value: string): GroupCondition => ({ property, op: "is", value });
 const isNot = (property: string, value: string): GroupCondition => ({ property, op: "is_not", value });
 
-test.each(CONDITION_CASES)("$name", ({ conditions, properties, matches }) => {
-  expect(conditionsMatch(conditions, properties)).toBe(matches);
+test.each(CONDITION_CASES)("$name", ({ rule, properties, matches }) => {
+  expect(conditionsMatch(rule, properties)).toBe(matches);
 });
 
 test("conditions as the API takes them: trimmed, any of a list without repeats, none for is set; the old names still read", () => {
@@ -36,11 +36,15 @@ test("conditions as the API takes them: trimmed, any of a list without repeats, 
   }
 });
 
-test("in a group: all its conditions match their properties, and a group without any has nobody", () => {
-  expect(inGroup([is("plan", "pro")], { plan: "pro" })).toBe(true);
-  expect(inGroup([is("plan", "pro")], { plan: "free" })).toBe(false);
-  expect(inGroup([isNot("plan", "free")], {})).toBe(true);
-  expect(inGroup([], { plan: "pro" })).toBe(false);
+const all = (...conditions: GroupCondition[]) => ({ match: "all" as const, conditions });
+
+test("in a group: all its conditions (or any one) match their properties, and a group without any has nobody", () => {
+  expect(inGroup(all(is("plan", "pro")), { plan: "pro" })).toBe(true);
+  expect(inGroup(all(is("plan", "pro")), { plan: "free" })).toBe(false);
+  expect(inGroup(all(isNot("plan", "free")), {})).toBe(true);
+  expect(inGroup(all(), { plan: "pro" })).toBe(false);
+  expect(inGroup(storedRule({ match: "any", conditions: [is("plan", "pro"), is("plan", "team")] }), { plan: "team" })).toBe(true);
+  expect(inGroup(storedRule({ match: "all", conditions: [is("plan", "pro"), is("plan", "team")] }), { plan: "team" })).toBe(false);
 });
 
 test("stored conditions that don't read are none, which lets nobody in", () => {

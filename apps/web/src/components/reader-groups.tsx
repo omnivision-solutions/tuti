@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
-import { type GroupCondition, LIST_OPERATORS, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS } from "@/lib/group-conditions";
+import { type GroupCondition, LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS } from "@/lib/group-conditions";
 import type { FormState } from "@/server/form-state";
 import { deleteGroup, type GroupPreview, previewGroup, saveGroup } from "@/server/groups";
 import type { GroupView } from "@/server/operations/groups";
@@ -56,7 +56,7 @@ export function ReaderGroups({ projectSlug, groups, properties }: { projectSlug:
             <ItemRow
               key={group.key}
               title={group.name}
-              meta={[group.conditions.map(conditionText).join(" and "), whoIsIn(group), group.description].filter(Boolean).join(" · ")}
+              meta={[group.conditions.map(conditionText).join(group.match === "any" ? " or " : " and "), whoIsIn(group), group.description].filter(Boolean).join(" · ")}
               actions={
                 <>
                   <GroupDialog projectSlug={projectSlug} properties={properties} group={group} />
@@ -105,6 +105,7 @@ const PREVIEW_DELAY_MS = 300;
 function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; properties: string[]; group?: GroupView }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<Row[]>(() => rowsOf(group));
+  const [match, setMatch] = useState<Match>(group?.match ?? "all");
   const [preview, setPreview] = useState<GroupPreview | { error: string } | null>(null);
   const latest = useRef(0);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
@@ -125,13 +126,13 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
       return;
     }
     const timer = setTimeout(async () => {
-      const result = await previewGroup(projectSlug, rows.map(conditionOf));
+      const result = await previewGroup(projectSlug, rows.map(conditionOf), match);
       if (query === latest.current) {
         setPreview(result);
       }
     }, PREVIEW_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [previewable, projectSlug, rows]);
+  }, [previewable, projectSlug, rows, match]);
 
   const change = (i: number, patch: Partial<Row>) => setRows((current) => current.map((row, j) => (j === i ? { ...row, ...patch } : row)));
   const shown = previewable ? preview : null;
@@ -143,6 +144,7 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
         // Each time it opens: the group as saved (or one empty condition, for a new one).
         if (next) {
           setRows(rowsOf(group));
+          setMatch(group?.match ?? "all");
           setPreview(null);
         }
         setOpen(next);
@@ -189,11 +191,22 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
                   />
                 </Field>
                 <div role="group" aria-labelledby={`group-conditions-${id}`} className="flex min-w-0 flex-col gap-3">
-                  <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2">
                     <span id={`group-conditions-${id}`} className="text-sm font-medium">
                       Conditions
                     </span>
-                    <span className="text-xs text-muted-foreground">All must match</span>
+                    <Select items={MATCHES} value={match} onValueChange={(next) => setMatch(next as Match)}>
+                      <SelectTrigger size="sm" className="w-auto" aria-label="Which must match">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(MATCHES) as Match[]).map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {MATCHES[m]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <datalist id={`group-properties-${id}`}>
                     {properties.map((name) => (
@@ -204,7 +217,7 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
                     <div key={i} className="flex flex-col gap-3">
                       {i > 0 && (
                         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground" aria-hidden>
-                          AND
+                          {match === "any" ? "OR" : "AND"}
                           <span className="h-px flex-1 bg-border" />
                         </div>
                       )}
@@ -272,6 +285,7 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
                     token&apos;s <code>groups</code> is the <code>groups</code> property.
                   </p>
                   <input type="hidden" name="conditions" value={JSON.stringify(rows.map(conditionOf))} />
+                  <input type="hidden" name="match" value={match} />
                 </div>
               </FieldGroup>
             </div>

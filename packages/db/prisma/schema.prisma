@@ -1741,6 +1741,12 @@ model Collection {
   @@map("collection")
 }
 
+/// Whether all of a reader group's conditions must match a user, or any one of them.
+enum GroupMatch {
+  all
+  any
+}
+
 /// A group of readers (Settings → Groups): the project's users whose properties match its conditions,
 /// worked out when they read. Docs tabs, collections and articles can be for some groups only.
 model ReaderGroup {
@@ -1750,8 +1756,9 @@ model ReaderGroup {
   /// collections name it (`/groups/{key}`, `groups` on collections.*).
   key         String
   name        String
-  /// Matched against the project's users' properties, all of them (lib/group-conditions.ts GroupCondition[]).
+  /// Matched against the project's users' properties, all of them or (`match` any) one (lib/group-conditions.ts GroupCondition[]).
   conditions  Json     @default("[]")
+  match       GroupMatch @default(all)
   /// The name a token's `groups` gave it before groups came only from conditions; cleared when its
   /// conditions change, and turned into one by a trigger when an instance from before writes it,
   /// while a deploy overlaps them. Goes, with the trigger, in a later migration.
