@@ -66,9 +66,13 @@ test("posts a pull request names: tuti#12, or a post's URL on one of the project
 
 test("the decision model's copy of the diff: cut before the first file that doesn't fit, and says so", () => {
   const part = (name: string) => `--- src/${name}.ts (modified, +1 -0)\n+${"x".repeat(40)}`;
-  const pr = { title: "T", body: "", labels: [], author: "", mergedAt: "", mergeCommit: null, commits: [], files: [], diff: [part("a"), part("b"), part("c")].join("\n") };
-  expect(pullRequestState(pr).diff).toBe(pr.diff);
-  expect(pullRequestState(pr, 150).diff).toBe(`${part("a")}\n${part("b")}\n[cut at 150 characters]`);
+  const files = ["a", "b", "c"].map((name) => ({ path: `src/${name}.ts`, status: "modified", additions: 1, deletions: 0 }));
+  const pr = { title: "T", body: "", labels: [], author: "", mergedAt: "", mergeCommit: null, commits: [], files, diff: [part("a"), part("b"), part("c")].join("\n") };
+  expect(pullRequestState(pr)).toMatchObject({ diff: pr.diff, files: ["src/a.ts (modified)", "src/b.ts (modified)", "src/c.ts (modified)"] });
+  expect(pullRequestState(pr, 150)).toMatchObject({
+    diff: `${part("a")}\n${part("b")}\n[cut at 150 characters]`,
+    files: ["src/a.ts (modified)", "src/b.ts (modified)", "src/c.ts (modified, not shown: size)"],
+  });
   // One file bigger than the cap: its start.
   expect(pullRequestState(pr, 30).diff).toBe(`${pr.diff.slice(0, 30)}\n[cut at 30 characters]`);
 });

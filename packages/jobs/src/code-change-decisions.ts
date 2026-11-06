@@ -36,13 +36,19 @@ export function confidence(kind: ProposedKind, probability: number): "likely" | 
 
 /** The pull request as the models see it: the decision model with at most `DECISION_DIFF_CHARS` of its diff. */
 export function pullRequestState(pr: PullRequestRead, diffChars = Infinity) {
+  const diff = diffUpTo(pr.diff, diffChars);
+  // A file the cut left out says so, as one past the reading's own cap does.
+  const cut = (path: string) => diff.length < pr.diff.length && !`\n${diff}`.includes(`\n--- ${path} (`);
   return {
     title: pr.title,
     labels: pr.labels,
     description: pr.body,
     commits: pr.commits,
-    files: pr.files.map((file) => `${file.path} (${file.status}${file.left ? `, not shown: ${file.left}` : ""})`),
-    diff: diffUpTo(pr.diff, diffChars),
+    files: pr.files.map((file) => {
+      const left = file.left ?? (cut(file.path) ? "size" : undefined);
+      return `${file.path} (${file.status}${left ? `, not shown: ${left}` : ""})`;
+    }),
+    diff,
   };
 }
 

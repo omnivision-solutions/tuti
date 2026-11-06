@@ -176,6 +176,9 @@ describe("reading", () => {
     expect(gate).toContain("--- src/part-2.ts");
     expect(gate).not.toContain("--- src/part-9.ts");
     expect(gate).toContain("[cut at 20,000 characters]");
+    // Its list of files says which ones it wasn't shown.
+    expect(gate).toContain('"src/part-2.ts (modified)"');
+    expect(gate).toContain('"src/part-9.ts (modified, not shown: size)"');
     expect(model.requests.find((request) => request.user.includes('"merge_commit"'))!.user).toContain("--- src/part-9.ts");
   });
 
