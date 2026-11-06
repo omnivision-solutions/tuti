@@ -86,7 +86,10 @@ export function widgetLoader(portalTemplate: string): string {
     console.error("Tuti widget: set data-project to your project's URL name, e.g. data-project=\\"acme\\"");
     return;
   }
-  var settings = window.TutiSettings || {};
+  var onPortal = script.hasAttribute("data-on-portal");
+  // The portal's own tag is set in Customize, never by the page's TutiSettings (the team's Custom code, which runs after
+  // hydration: its settings applying or not would depend on which loaded first).
+  var settings = onPortal ? {} : window.TutiSettings || {};
   var display = script.getAttribute("data-display") || settings.display || "launcher";
   if (display !== "launcher" && display !== "sidebar" && display !== "inline") {
     console.error("Tuti widget: display is one of launcher, sidebar or inline");
@@ -94,7 +97,6 @@ export function widgetLoader(portalTemplate: string): string {
   }
   var sidebar = display === "sidebar";
   var hideLauncher = display === "inline" || script.hasAttribute("data-hide-launcher") || settings.hideLauncher === true;
-  var onPortal = script.hasAttribute("data-on-portal");
   // On the portal, its value is the path the portal is under on the team's site (empty at its own address).
   var portalPath = onPortal ? script.getAttribute("data-on-portal") : "";
   if (!${BASE_PATTERN}.test(portalPath)) portalPath = "";

@@ -358,6 +358,16 @@ test("if the app doesn't answer, the button shows up after 3 seconds anyway", ()
   }
 });
 
+test("the portal's own tag doesn't take the page's TutiSettings (the team's Custom code's): its launcher shows", async () => {
+  const page = loadWidget({
+    attributes: { "data-on-portal": "" },
+    settings: { hideLauncher: true, display: "sidebar" },
+    before: (page) => Object.assign(page.window, { location: { origin: "https://help.acme.example" } }),
+  });
+  await settled();
+  expect(page.button).toBeDefined();
+});
+
 test("data-hide-launcher or TutiSettings.hideLauncher leaves the button out; Tuti.open() and Tuti.close() still work", async () => {
   for (const page of [loadWidget({ attributes: { "data-hide-launcher": "" } }), loadWidget({ settings: { hideLauncher: true } })]) {
     await settled();
