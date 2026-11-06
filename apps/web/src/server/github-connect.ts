@@ -42,12 +42,13 @@ export function authorizeRedirect(config: GithubConfig, project: { id: string; u
 }
 
 /**
- * Whether the browser says a page elsewhere sent it here: another site, or a portal (a subdomain,
- * so "same-site"). Connecting starts only from the app's own pages: elsewhere mustn't start it for
- * a signed-in admin, whose access on GitHub would then make the project's list. (GitHub's own
- * returns go to the Setup and Callback URLs; a typed address says "none", an old browser nothing.)
+ * Whether the browser doesn't say one of the app's own pages sent it here. Connecting starts only from
+ * the app's own pages (Connect GitHub, Reconnect): another site, a portal (a subdomain, "same-site"),
+ * or a link opened from a chat or mail app ("none") mustn't start it for a signed-in admin, whose
+ * access on GitHub would then make the project's list. A browser that sends no Sec-Fetch-Site (every
+ * current one does) can't connect. GitHub's own returns go to the Setup and Callback URLs.
  */
-export const crossSite = (request: Request) => !["same-origin", "none", null].includes(request.headers.get("sec-fetch-site"));
+export const crossSite = (request: Request) => request.headers.get("sec-fetch-site") !== "same-origin";
 
 /** Remembers the project for 15 minutes while the person installs the App on GitHub. */
 export function rememberInstall(response: NextResponse, projectId: string) {

@@ -53,6 +53,9 @@ const cookieOf = (response: Response, name: string) => {
   return `${name}=${decodeURIComponent(cookie.slice(name.length + 1))}`;
 };
 
+/** A request from one of the app's own pages, as Connect GitHub and Reconnect are. */
+const FROM_APP = { headers: { "sec-fetch-site": "same-origin" } };
+
 /**
  * The connect flow for an account that has the App already, as the browser goes through it:
  * Connect GitHub → GitHub's authorize page → our callback (`code`: whoever authorizes on GitHub)
@@ -60,7 +63,7 @@ const cookieOf = (response: Response, name: string) => {
  * callback connects it. Returns where it ends.
  */
 async function connect(projectSlug: string, installationId: number, code: string) {
-  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}`));
+  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}`, FROM_APP));
   if (!location(started).startsWith(`${github.url}/login/oauth/authorize`)) {
     return location(started);
   }
@@ -70,7 +73,7 @@ async function connect(projectSlug: string, installationId: number, code: string
   }
   const session = request.cookie;
   request.cookie = `${session}; ${cookieOf(listed, "tuti_github_accounts")}`;
-  const picked = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`));
+  const picked = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`, FROM_APP));
   request.cookie = session;
   if (!location(picked).startsWith(`${github.url}/login/oauth/authorize`)) {
     return location(picked);
@@ -83,7 +86,7 @@ async function connect(projectSlug: string, installationId: number, code: string
  * (`installation_id`) → GitHub's authorize page → our callback.
  */
 async function installAndConnect(projectSlug: string, installationId: number, code: string) {
-  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}&new=1`));
+  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}&new=1`, FROM_APP));
   if (!location(started).startsWith(github.url)) {
     return location(started);
   }
@@ -104,14 +107,14 @@ const connected = (projectId: string) => prisma.githubInstallation.findUnique({ 
 describe("connecting", () => {
   test("Connect GitHub offers the accounts the person has the app on; without any, it's on to installing it", async () => {
     github.user("code-0", []);
-    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`));
+    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`, FROM_APP));
     const listed = await callback(new Request(`${APP}/api/github/callback?code=code-0&state=${encodeURIComponent(stateOf(started))}`));
     expect(location(listed)).toBe(`${github.url}/apps/tuti-test/installations/new`);
     // The project is remembered for the Setup URL GitHub comes back to.
     expect(cookieOf(started, "tuti_github_install")).toBeTruthy();
 
     github.user("code-0", [{ id: 520, account: "acme" }, { id: 521, account: "olive", type: "User" }]);
-    const again = await install(new Request(`${APP}/api/github/install?project=${project.slug}`));
+    const again = await install(new Request(`${APP}/api/github/install?project=${project.slug}`, FROM_APP));
     const offered = await callback(new Request(`${APP}/api/github/callback?code=code-0&state=${encodeURIComponent(stateOf(again))}`));
     expect(location(offered)).toBe(`${APP}/app/${project.slug}/settings/integrations?github=choose`);
     expect(accountsFromCookie(cookieOf(offered, "tuti_github_accounts").slice("tuti_github_accounts=".length), project.id)).toEqual([
@@ -121,9 +124,9 @@ describe("connecting", () => {
     expect(await connected(project.id)).toBeNull();
     // Only an offered account can be picked, and only for this project.
     request.cookie = `${request.cookie}; ${cookieOf(offered, "tuti_github_accounts")}`;
-    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=999`)))).toMatch(/github=expired$/);
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=999`, FROM_APP)))).toMatch(/github=expired$/);
     const other = await createProject(owner);
-    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${other.slug}&installation=520`)))).toMatch(/github=expired$/);
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${other.slug}&installation=520`, FROM_APP)))).toMatch(/github=expired$/);
   });
 
   test("a first install comes back through the Setup URL and connects", async () => {
@@ -141,7 +144,7 @@ describe("connecting", () => {
   test("Switch account offers the accounts on the GitHub page, and connects the one picked", async () => {
     github.user("code-sw", [{ id: 540, account: "acme" }, { id: 541, account: "acme-labs" }]);
     await connect(project.slug, 540, "code-sw");
-    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`));
+    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`, FROM_APP));
     const offered = await callback(new Request(`${APP}/api/github/callback?code=code-sw&state=${encodeURIComponent(stateOf(started))}`));
     expect(location(offered)).toBe(`${APP}/app/${project.slug}/settings/integrations/github?github=choose`);
     expect(await connect(project.slug, 541, "code-sw")).toMatch(/github=connected$/);
@@ -308,7 +311,7 @@ describe("repositories", () => {
 
   /** "Reconnect": GitHub's authorization again for the account the project is on, as the person with `code`. */
   async function reconnect(projectSlug: string, installationId: number, code: string) {
-    const authorize = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`));
+    const authorize = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`, FROM_APP));
     return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(stateOf(authorize))}`)));
   }
 
@@ -340,17 +343,17 @@ describe("repositories", () => {
     expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
     expect(await included(project.id)).toEqual(["acme/mobile"]);
-    // Another site or a portal (a subdomain) can't start it (nor Connect GitHub) for a signed-in admin.
-    for (const site of ["cross-site", "same-site"]) {
-      const fromElsewhere = { headers: { "sec-fetch-site": site } };
+    // Another site, a portal (a subdomain), a link opened from a chat or mail app ("none") or a browser that
+    // doesn't say can't start it (nor Connect GitHub) for a signed-in admin.
+    for (const site of ["cross-site", "same-site", "none", undefined]) {
+      const fromElsewhere = { headers: site ? { "sec-fetch-site": site } : {} };
       expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, fromElsewhere)))).toMatch(/github=expired$/);
       expect(location(await install(new Request(`${APP}/api/github/install?project=${project.slug}`, fromElsewhere)))).toMatch(/github=expired$/);
     }
-    const fromApp = { headers: { "sec-fetch-site": "same-origin" } };
-    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, fromApp)))).toContain("/login/oauth/authorize");
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, FROM_APP)))).toContain("/login/oauth/authorize");
     // Reconnecting goes only to the project's own account, or one GitHub offered them.
     for (const other of ["799", "abc"]) {
-      expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=${other}`)))).toMatch(/github=expired$/);
+      expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=${other}`, FROM_APP)))).toMatch(/github=expired$/);
     }
   });
 
