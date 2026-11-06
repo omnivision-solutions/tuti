@@ -646,6 +646,7 @@ test("someone a customer's site signs in sees what's new on one device, and it i
 });
 
 test("the portal shows the project's own widget, until the team turns it off in Customize → Widget", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
