@@ -80,7 +80,9 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
   }
   const mine = { postId, userId, claimedAt: current };
   if (error) {
-    await prisma.shippedEmail.deleteMany({ where: mine });
+    // Released as stale, not deleted: still unsent, so another run finishing meanwhile doesn't take the post as done
+    // (and clear its due time, which the retry needs), and the retry takes it over.
+    await prisma.shippedEmail.updateMany({ where: mine, data: { claimedAt: new Date(0) } });
     return error;
   }
   // Sent: never released from here on. If saving this fails, the claim stays unsent and is
@@ -136,11 +138,10 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     ...post.comments.map((c) => c.authorId),
     ...post.subscriptions.map((s) => s.userId),
   ]);
-  if (people.length === 0) {
-    // Claims a crashed try left unsent won't be sent now (a private portal that's the team's only, say): dropped,
-    // so the post isn't due again and again. A run still sending keeps its claim (not stale yet), so it can mark it sent.
-    await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } } });
-  }
+  // Claims a failed or crashed try left unsent for people it won't email now (they unsubscribed, a private portal
+  // that's the team's only): dropped, so the post isn't due again and again. A run still sending keeps its claim (not
+  // stale yet), so it can mark it sent.
+  await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() }, userId: { notIn: people.map((person) => person.id) } } });
 
   // The team's comment Autopilot's review posted with the completion (its update's `note`): quoted. Only that one,
   // never a comment that merely came before a completion by hand.

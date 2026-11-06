@@ -197,6 +197,25 @@ describe("when a post ships", () => {
     expect([...emailsTo(author.email), ...emailsTo(voter.email)]).toEqual([]);
   });
 
+  test("a send that fails while another run finishes: the post stays due, and the retry emails that person", async () => {
+    const [author, voter] = [await verified("Author"), await verified("Voter")];
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Bulk edit" });
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    const log = { info: () => {}, warn: () => {} };
+    mailbox.refuseNext(voter.email, { code: 421 });
+    await setStatus(post.number, "completed"); // the voter's send fails; with inline jobs that's only logged
+    expect(emailsTo(author.email)).toHaveLength(1);
+    expect(emailsTo(voter.email)).toEqual([]);
+    // Another run finishing now finds an unsent claim: not done.
+    await prisma.post.updateMany({ where: { id: postId, shippedEmails: { none: { sentAt: null } } }, data: { shippedEmailsDueAt: null } });
+    expect(await due(postId)).not.toBeNull();
+    // Hatchet's retry.
+    expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 1 });
+    expect(emailsTo(voter.email)).toHaveLength(1);
+    expect(await due(postId)).toBeNull();
+  });
+
   test("reopened while its emails go out (Undo, say), nobody else is emailed", async () => {
     const [author, voter] = [await verified("Author"), await verified("Voter")];
     const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Calendar sync" });

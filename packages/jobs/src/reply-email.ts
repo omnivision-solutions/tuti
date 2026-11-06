@@ -66,7 +66,9 @@ async function whileClaimed(commentId: string, userId: string, claimedAt: Date, 
   }
   const mine = { commentId, userId, claimedAt: current };
   if (error) {
-    await prisma.replyEmail.deleteMany({ where: mine });
+    // Released as stale, not deleted: still unsent, so another run finishing meanwhile doesn't take the reply as done
+    // (and clear its due time, which the retry needs), and the retry takes it over.
+    await prisma.replyEmail.updateMany({ where: mine, data: { claimedAt: new Date(0) } });
     return error;
   }
   // Sent: never released from here on. If saving this fails, the claim stays unsent and is taken over later,
