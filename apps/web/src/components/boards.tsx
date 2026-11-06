@@ -287,27 +287,45 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
   );
 }
 
-/** Turns a board off (the team's alone, off the portal) or on again. */
-export function BoardOffButton({ projectSlug, boardId, name, off }: { projectSlug: string; boardId: string; name: string; off: boolean }) {
+/**
+ * Turns a board off (the team's alone, off the portal), asking first, or on again. `stuck`: the project is past its
+ * plan's board limit, so turning it on again would need an upgrade.
+ */
+export function BoardOffButton({ projectSlug, boardId, name, off, stuck }: { projectSlug: string; boardId: string; name: string; off: boolean; stuck: boolean }) {
   const [pending, startTransition] = useTransition();
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          const result = await setBoardOff(projectSlug, boardId, !off);
-          if (result.error) {
-            toast.error(result.error);
-          } else {
-            toast.success(off ? `${name} is on the portal` : `${name} is off the portal`);
-          }
-        })
+  const turn = () =>
+    startTransition(async () => {
+      const result = await setBoardOff(projectSlug, boardId, !off);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(off ? `${name} is on the portal` : `${name} is off the portal`);
       }
-    >
-      {off ? "Turn on" : "Turn off"}
-    </Button>
+    });
+  if (off) {
+    return (
+      <Button variant="ghost" size="sm" disabled={pending} onClick={turn}>
+        Turn on
+      </Button>
+    );
+  }
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>Turn off</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Turn off {name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            It leaves your portal, and only your team sees its posts, votes and comments.{" "}
+            {stuck ? "Your plan is past its board limit, so turning it on again needs an upgrade." : "You can turn it on again any time."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={turn}>Turn off</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

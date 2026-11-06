@@ -33,7 +33,9 @@ export function visiblePosts(viewer: PostViewer): Prisma.PostWhereInput {
   if (viewer.team) {
     return {};
   }
-  return { board: { off: false }, OR: [{ visibility: "PUBLIC" }, ...(viewer.userId ? [{ visibility: "PRIVATE" as const, authorId: viewer.userId }] : [])] };
+  // Only an OR, as callers spread it beside their own `board`: never a key of theirs.
+  const on = { board: { off: false } };
+  return { OR: [{ visibility: "PUBLIC", ...on }, ...(viewer.userId ? [{ visibility: "PRIVATE" as const, authorId: viewer.userId, ...on }] : [])] };
 }
 
 /** visiblePosts in SQL, for a post aliased `p`. */

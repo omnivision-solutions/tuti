@@ -21,7 +21,7 @@ import { createComment, createPost } from "./operations/create";
 import type { Actor } from "./operations/define";
 import { updatePost } from "./operations/manage";
 import { setSubscription, setVote } from "./operations/more";
-import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./operations/read";
+import { getPost, getRoadmap, listBoards, listComments, listPosts, roadmapColumns } from "./operations/read";
 import { call } from "./operations/run";
 import { firstBoardPath, portalHomePath } from "./portal-home";
 import { addSampleContent } from "./sample-content";
@@ -372,6 +372,8 @@ test("a board turned off is the team's: its posts, public ones too, are nobody e
   const { owner, bob, project, board, open, as, key } = await fixture();
   await prisma.board.update({ where: { id: board.id }, data: { off: true } });
   expect(numbers((await call(listPosts, as(bob), {})).posts)).toEqual([]);
+  // Named, too: a board filter of the caller's own never takes the off check's place.
+  expect(numbers((await call(listPosts, as(bob), { board: board.slug })).posts)).toEqual([]);
   expect(numbers((await call(listPosts, key, {})).posts)).toEqual([1, 2, 3]);
   await expect(call(getPost, as(bob), { number: 1 })).rejects.toMatchObject({ status: 404 });
   await expect(call(setVote, as(bob), { number: 1, voted: true })).rejects.toMatchObject({ status: 404 });
@@ -389,7 +391,12 @@ test("a board turned off is the team's: its posts, public ones too, are nobody e
   actAs(owner);
   expect(await page(PostPage({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-for-the-editor-1" }), searchParams: Promise.resolve({}) } as never))).not.toBe("404");
 
-  // Turned on again, its public post is everyone's once more.
+  // Turned on again, its public post is everyone's once more; and the roadmap's board filter still narrows to a board.
   await prisma.board.update({ where: { id: board.id }, data: { off: false } });
   expect(numbers((await call(listPosts, as(bob), {})).posts)).toEqual([1]);
+  const bugs = await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+  await prisma.post.create({ data: { projectId: project.id, boardId: bugs.id, authorId: owner.id, number: 4, title: "Crash on save", status: "PLANNED" } });
+  const viewer = { team: false, userId: bob.id };
+  expect(numbers((await roadmapColumns(project.id, viewer, { board: "bugs" }))[0]!)).toEqual([4]);
+  expect(numbers((await roadmapColumns(project.id, viewer, { board: board.slug }))[0]!)).toEqual([1]);
 });

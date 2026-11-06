@@ -51,7 +51,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     prisma.post.findUnique({
       where: { projectId_number: { projectId: project.id, number } },
       include: {
-        board: { select: { slug: true } },
+        board: { select: { slug: true, off: true } },
         author: { select: { name: true } },
         owner: { select: { id: true } },
         duplicateOf: { select: { number: true, title: true } },
@@ -242,7 +242,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               <MovePostSelect projectSlug={slug} postId={post.id} boardSlug={post.board.slug} boards={boards} className="w-full max-w-none" />
             </Property>
             <Property label="Visibility">
-              <PostVisibilitySelect projectSlug={slug} postId={post.id} visibility={post.visibility} />
+              <PostVisibilitySelect projectSlug={slug} postId={post.id} visibility={post.visibility} boardOff={post.board.off} />
             </Property>
             <Property label="Owner">
               <PostOwnerSelect projectSlug={slug} postId={post.id} ownerId={post.owner?.id ?? null} team={team.map((m) => ({ id: m.userId, name: m.user.name }))} />

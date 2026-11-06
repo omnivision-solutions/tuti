@@ -26,7 +26,7 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await owner.goto(`/app/${slug}/boards`);
   await owner.waitForURL(`**/app/${slug}/feedback/boards`);
   // A new project starts with one board, which can't be deleted while it's the only one.
-  const row = (name: string) => owner.getByRole("listitem").filter({ hasText: name });
+  const row = (name: string) => owner.getByRole("main").getByRole("listitem").filter({ hasText: name });
   // Each row says what it counts: the posts Feedback lists (merged duplicates aside), and the open ones as the portal counts them.
   await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 2 posts · 1 open");
   await expect(row("Feature requests").getByRole("button", { name: "Delete" })).toHaveCount(0);
@@ -105,6 +105,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
 
   // Turned off, a board is the team's alone: Off in the list, gone from the portal; turned on, it's back.
   await row("Bug reports").getByRole("button", { name: "Turn off" }).click();
+  await expect(owner.getByRole("alertdialog")).toContainText("You can turn it on again any time.");
+  await owner.getByRole("alertdialog").getByRole("button", { name: "Turn off" }).click();
   await expect(owner.getByText("Bug reports is off the portal")).toBeVisible();
   await expect(row("Bug reports")).toContainText("Off");
   await checkpoint(owner, "team-board-off");

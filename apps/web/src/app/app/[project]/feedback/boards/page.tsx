@@ -55,7 +55,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
   // A project past its plan's limit (after a downgrade) keeps its boards; it just can't add more. Boards turned off
   // (an import's past the limit) don't count, and turn on while there's room.
   const limit = boardLimit(plan);
-  const full = limit !== null && boards.filter((board) => !board.off).length >= limit;
+  const on = boards.filter((board) => !board.off).length;
+  const full = limit !== null && on >= limit;
   const someOff = boards.some((board) => board.off);
 
   return (
@@ -115,7 +116,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                   isAdmin && (
                     <>
                       <EditBoardDialog projectSlug={project.slug} board={board} />
-                      {(!board.off || !full) && <BoardOffButton projectSlug={project.slug} boardId={board.id} name={board.name} off={board.off} />}
+                      {(!board.off || !full) && <BoardOffButton projectSlug={project.slug} boardId={board.id} name={board.name} off={board.off} stuck={limit !== null && on > limit} />}
                       {count(board.id) === 0 && boards.length > 1 && (
                         <DeleteBoardButton projectSlug={project.slug} boardId={board.id} name={board.name} />
                       )}
