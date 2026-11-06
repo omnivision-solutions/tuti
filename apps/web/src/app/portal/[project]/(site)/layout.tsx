@@ -99,8 +99,10 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   // Ask AI (the header's search, "Still stuck?"): the widget's assistant, for readers, when the server has AI answers.
   const assistant = canRead && answersEnabled();
   // The project's own widget (Customize → Widget), and for Ask AI even where the team turned it off here (without its
-  // launcher). A copy the team's Custom code adds gives way to it (the loader sees this tag).
-  const widgetHere = project.widgetOnPortal || assistant;
+  // launcher). A copy the team's Custom code adds gives way to it (the loader sees this tag), except where it's off here:
+  // then theirs is the one, launcher and all (their own way of adding it), and Ask AI asks through it.
+  const teamAddsWidget = !!ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`);
+  const widgetHere = project.widgetOnPortal || (assistant && !teamAddsWidget);
 
   return (
     <PortalBaseProvider base={base} slug={slug}>

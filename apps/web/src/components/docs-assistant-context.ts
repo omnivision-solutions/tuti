@@ -16,5 +16,18 @@ export type DocsAssistant = {
 
 export const DocsAssistantContext = createContext<DocsAssistant | null>(null);
 
+/**
+ * Where the assistant is asked from, for the team's reporting and the reader's cookie: the portal itself where the panel is
+ * the portal's own (its page around it on the same origin, as the portal's tag puts it), else the widget on a customer's site.
+ */
+export function askedFrom(): "portal" | "widget" {
+  try {
+    return window.parent !== window && window.parent.location.origin === window.location.origin ? "portal" : "widget";
+  } catch {
+    // Another origin's page around it: reading its address isn't allowed.
+    return "widget";
+  }
+}
+
 /** The assistant, where the portal has one (AI answers on); null elsewhere (the widget). */
 export const useDocsAssistant = () => useContext(DocsAssistantContext);

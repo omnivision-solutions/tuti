@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { issueCertificate, publishTxt } from "./dns";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, signUp } from "./helpers";
 
 test("the team puts the portal on its own domain: adds it, verifies it with a TXT record, and people sign up and post there", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -140,6 +140,16 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(1);
   await onTuti.reload();
   await expect(onTuti.locator("script[data-on-portal]")).toHaveCount(1);
+  // With the portal's own turned off, the Custom code's is the one, launcher and all; the portal adds none of its own.
+  const api = await apiFor(owner, slug);
+  await api("/widget", { onPortal: false }, "PATCH");
+  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`);
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(0);
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(1);
+  await api("/widget", { onPortal: true }, "PATCH");
 
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(visitor).toHaveURL(`${domainUrl}/sign-in?next=%2Ffeedback%2Ffeature-requests`);

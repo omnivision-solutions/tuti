@@ -1739,6 +1739,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const aiConversation = (text: string) =>
     team.getByRole("list", { name: "AI conversations" }).getByRole("listitem").filter({ has: team.locator("summary", { hasText: text }) });
   await expect(aiConversation(question)).toContainText("Partly answered");
+  // Asked through the portal's own widget, it's the portal's question.
+  await expect(aiConversation(question)).toContainText("Portal");
   await expect(aiConversation(another)).toContainText("Not answered");
   await aiConversation(question).locator("summary").click();
   await expect(aiConversation(question).getByText(unrelated, { exact: true })).toBeVisible();

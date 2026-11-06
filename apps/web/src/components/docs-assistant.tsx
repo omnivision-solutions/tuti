@@ -5,7 +5,7 @@ import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnswerSources, AnswerText, AskAPerson } from "@/components/docs-answer";
-import { type DocsAssistant, DocsAssistantContext, useDocsAssistant } from "@/components/docs-assistant-context";
+import { askedFrom, type DocsAssistant, DocsAssistantContext, useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref, usePortalSlug } from "@/components/portal-base";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,7 +67,6 @@ export function DocsAssistantProvider({
   children: React.ReactNode;
 }) {
   const slug = usePortalSlug();
-  const from = "widget";
   const [open, setOpen] = useState(false);
   // What had focus when it opened, for it to go back to; in the widget's Messages that may be gone by then (sending went
   // back to the list), and the page's mark (data-assistant-return, its New message) takes it instead.
@@ -136,6 +135,7 @@ export function DocsAssistantProvider({
     async (turn: string, question: string, before: Turn[]) => {
       try {
         const followUpTo = lastAsked(before);
+        const from = askedFrom();
         const result = await askDocs(slug, question, from, followUpTo);
         // The conversation isn't theirs any more (a new reader cookie): asked afresh, as a new one.
         if (followUpTo && "code" in result && result.code === "not_found") {
@@ -150,7 +150,7 @@ export function DocsAssistantProvider({
         update(turn, { error: "Couldn't reach the assistant. Try again." });
       }
     },
-    [slug, from, update],
+    [slug, update],
   );
 
   const assistant = useMemo<DocsAssistant>(
