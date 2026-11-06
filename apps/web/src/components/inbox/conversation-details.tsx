@@ -1,7 +1,8 @@
 "use client";
 
 import { PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react";
-import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
+import { cn } from "cn";
+import { type ReactNode, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
@@ -30,22 +31,29 @@ export function ConversationDetails({ hidden, children }: { hidden: boolean; chi
 /**
  * Hides and shows the column beside the messages (`#conversation-details`), for every conversation in this browser. Only
  * where that column is there: its pane wide enough for it (`#conversation`'s grid, an @container), not where the person
- * is a sheet.
+ * is a sheet. `hidden`: the cookie, as the page read it.
+ *
+ * In its place from the first render, so the buttons beside it don't move as it comes: until it's known whether the
+ * column is there (null), it's guessed from the window (laptop width up, where the conversation's pane is beside the
+ * list); checked before the page is painted (a layout effect), so a conversation opened from the list never shows the
+ * guess, and the first page load only where the guess is wrong.
  */
-export function DetailsToggle() {
-  const hidden = useHidden(false);
-  const [beside, setBeside] = useState(false);
-  useEffect(() => {
+export function DetailsToggle({ hidden: server }: { hidden: boolean }) {
+  const hidden = useHidden(server);
+  const [beside, setBeside] = useState<boolean | null>(null);
+  useLayoutEffect(() => {
     const conversation = document.getElementById("conversation");
     const layout = conversation?.firstElementChild;
     if (!conversation || !layout) {
       return;
     }
-    const observer = new ResizeObserver(() => setBeside(getComputedStyle(layout).display === "grid"));
+    const check = () => setBeside(getComputedStyle(layout).display === "grid");
+    check();
+    const observer = new ResizeObserver(check);
     observer.observe(conversation);
     return () => observer.disconnect();
   }, []);
-  if (!beside) {
+  if (beside === false) {
     return null;
   }
   const label = hidden ? "Show details" : "Hide details";
@@ -53,6 +61,7 @@ export function DetailsToggle() {
     <Button
       variant="ghost"
       size="icon-sm"
+      className={cn(beside === null && "max-lg:hidden")}
       aria-label={label}
       title={label}
       aria-expanded={!hidden}

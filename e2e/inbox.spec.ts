@@ -694,6 +694,8 @@ test("the details beside a conversation hide for every conversation, after a rel
   // Hidden as the server sends it, before any script runs: no flash of the column on load.
   const html = await (await owner.request.get(`/app/${slug}/inbox/2`)).text();
   expect(html).toContain('data-details="hidden"');
+  // Its toggle is in that page too, so Assign, Snooze and Close don't move as the page's scripts start.
+  expect(html).toMatch(/<button[^>]*aria-label="Show details"/);
   await expect(about).toBeHidden();
 
   // Shown again, as it was.

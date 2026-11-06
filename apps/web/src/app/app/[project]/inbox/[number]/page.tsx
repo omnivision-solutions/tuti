@@ -196,7 +196,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           actions={
             <>
               {actions}
-              <DetailsToggle />
+              <DetailsToggle hidden={detailsHidden} />
             </>
           }
           more={
