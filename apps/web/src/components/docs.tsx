@@ -398,7 +398,7 @@ export function ArticleActions({
       }}
     >
       <AlertDialogTrigger
-        render={<Button variant={published ? "outline" : "default"} disabled={pending} />}
+        render={<Button variant={published ? "outline" : "default"} disabled={pending} focusableWhenDisabled />}
         onClick={(event) => {
           if (!published && unsaved) {
             event.preventBaseUIHandler();
