@@ -99,17 +99,18 @@ Docker: `pnpm install --frozen-lockfile && pnpm build`, then `pnpm --filter @tut
 | `BETTER_AUTH_SECRET` | Random secret for sessions: `openssl rand -base64 32` |
 | `HATCHET_CLIENT_TOKEN` | Hatchet API token (web and worker), or set `JOBS_DRIVER=inline` instead |
 | `OPENAI_API_KEY` | Optional: AI (chat and embeddings), web and worker. An OpenRouter key (`sk-or-…`) needs nothing else; without `OPENAI_BASE_URL`, any other key is used for embeddings only, on OpenAI. At start-up the server checks the key and address and logs what looks wrong |
-| `OPENAI_BASE_URL` | Optional: the AI provider's OpenAI-compatible address, `https://openrouter.ai/api/v1` by default. Embeddings need OpenAI's `text-embedding-3-small` there (OpenAI serves it, and OpenRouter as `openai/text-embedding-3-small`); the start-up check says when the provider doesn't. Autopilot and Verify need OpenRouter's Decisions API, which only OpenRouter has: they're on at `openrouter.ai` or with an OpenRouter key (`sk-or-…`, e.g. through a proxy in front of OpenRouter), and off with another provider's key elsewhere, which the server logs at start-up. `OPENROUTER_API_KEY` and `OPENROUTER_BASE_URL`, the old names for chat, still work for one release, with a warning at start-up |
+| `OPENAI_BASE_URL` | Optional: the AI provider's OpenAI-compatible address, `https://openrouter.ai/api/v1` by default. Embeddings need OpenAI's `text-embedding-3-small` there (OpenAI serves it, and OpenRouter as `openai/text-embedding-3-small`); the start-up check says when the provider doesn't. Autopilot and Verify need OpenRouter's Decisions API, which only OpenRouter has: they're on at `openrouter.ai` or with an OpenRouter key (`sk-or-…`, e.g. through a proxy in front of OpenRouter), and off with another provider's key elsewhere, which the server logs at start-up |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email (sign-up verification, invites) over any SMTP provider (Resend, SES, Postmark, your own server…). `EMAIL_FROM` is required with `SMTP_HOST`. Port 587 by default; some hosts block 465. Without `SMTP_HOST` emails are written to the log |
 | `TRUSTED_IP_HEADER` | Optional: the header your proxy sets to the visitor's IP address (e.g. `cf-connecting-ip` behind Cloudflare), for a per-visitor limit on emailed sign-in and password reset links. Only a keyed hash of the address is stored, for an hour. Without it there's no per-visitor limit |
 
 Every app's `.env.example` lists its variables; the web app refuses to start without the
 required ones. Put the app behind a proxy that passes `Host` and `X-Forwarded-*` headers.
 
-**Upgrading (AI settings).** One provider now serves chat and embeddings. A server with
-`OPENROUTER_API_KEY` works as before (with a warning; move to `OPENAI_API_KEY`). A server with
+**Upgrading (AI settings).** One provider now serves chat and embeddings. `OPENROUTER_API_KEY`
+and `OPENROUTER_BASE_URL` are no longer read (the server warns at start-up if they're set): put the
+key in `OPENAI_API_KEY`, and a provider other than OpenRouter's address in `OPENAI_BASE_URL`. A server with
 only an OpenAI key in `OPENAI_API_KEY` keeps embeddings on OpenAI and chat off. A server that set
-`OPENAI_BASE_URL` for embeddings alone, without `OPENROUTER_API_KEY`, now sends chat there too: that
+`OPENAI_BASE_URL` for embeddings alone now sends chat there too: that
 endpoint must serve `AI_MODEL` (or Tuti's default), and the server logs at start-up which model it
 doesn't list. Autopilot and Verify stay off there: they need OpenRouter's Decisions API.
 

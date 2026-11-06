@@ -1,7 +1,7 @@
 import { FAKE_MODEL_KEY, type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, codeChangesFix, codeChangesOff, decisionsMissing, openRouterFix, shownAddress } from "./ai";
+import { aiEnabled, aiProvider, checkAiProvider, codeChangesEnabled, codeChangesFix, codeChangesOff, decisionsMissing, shownAddress } from "./ai";
 import { embeddingModelId, embeddingsEnabled } from "./embeddings";
 import { log } from "./log";
 import { resetCodeChangesSettings } from "./code-changes-settings";
@@ -35,25 +35,14 @@ const where = () => ({
   embed: embeddingsEnabled(),
 });
 
-test("1. OPENROUTER_API_KEY set: as before, chat on OpenRouter's settings, embeddings on OpenAI's", () => {
-  env({ OPENROUTER_API_KEY: "sk-or-old" });
-  expect(where()).toEqual({ chat: ["sk-or-old", OPENROUTER], embeddings: [undefined, OPENAI, "text-embedding-3-small"], ai: true, embed: false });
-  env({ OPENROUTER_BASE_URL: "https://llm.example.com/v1/", OPENAI_API_KEY: "sk-proj-old" });
-  expect(where()).toEqual({ chat: ["sk-or-old", "https://llm.example.com/v1"], embeddings: ["sk-proj-old", OPENAI, "text-embedding-3-small"], ai: true, embed: true });
-  // Both names' URLs set: each kind keeps its own (embeddings at Azure, a local server…, as before).
-  env({ OPENAI_BASE_URL: "https://embed.example.com/v1" });
-  expect(where().embeddings).toEqual(["sk-proj-old", "https://embed.example.com/v1", "text-embedding-3-small"]);
+test("the old names (OPENROUTER_API_KEY, OPENROUTER_BASE_URL) aren't read: AI stays off, or on OPENAI_API_KEY's settings", () => {
+  env({ OPENROUTER_API_KEY: "sk-or-old", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
+  expect(where()).toMatchObject({ ai: false, embed: false });
+  env({ OPENAI_API_KEY: "sk-or-v1-new" });
+  expect(where()).toEqual({ chat: ["sk-or-v1-new", OPENROUTER], embeddings: ["sk-or-v1-new", OPENROUTER, "openai/text-embedding-3-small"], ai: true, embed: true });
 });
 
-test("1, mixed: with OPENROUTER_API_KEY and an OpenRouter key in OPENAI_API_KEY, embeddings go to OpenRouter (OPENAI_BASE_URL still wins)", () => {
-  env({ OPENROUTER_API_KEY: "sk-or-old", OPENAI_API_KEY: "sk-or-v1-new" });
-  expect(where()).toEqual({ chat: ["sk-or-old", OPENROUTER], embeddings: ["sk-or-v1-new", OPENROUTER, "openai/text-embedding-3-small"], ai: true, embed: true });
-  env({ OPENAI_BASE_URL: "http://localhost:8080/v1" });
-  // An OpenRouter key at another address: a proxy in front of OpenRouter, so OpenRouter's model id.
-  expect(where().embeddings).toEqual(["sk-or-v1-new", "http://localhost:8080/v1", "openai/text-embedding-3-small"]);
-});
-
-test("2. OPENAI_BASE_URL set: chat, embeddings and decisions all there, with OPENAI_API_KEY", () => {
+test("1. OPENAI_BASE_URL set: chat, embeddings and decisions all there, with OPENAI_API_KEY", () => {
   env({ OPENAI_API_KEY: "sk-any", OPENAI_BASE_URL: "https://llm.example.com/v1" });
   expect(where()).toEqual({ chat: ["sk-any", "https://llm.example.com/v1"], embeddings: ["sk-any", "https://llm.example.com/v1", "text-embedding-3-small"], ai: true, embed: true });
   // OpenRouter's address: its id for the model.
@@ -61,18 +50,18 @@ test("2. OPENAI_BASE_URL set: chat, embeddings and decisions all there, with OPE
   expect(where()).toEqual({ chat: ["sk-any", OPENROUTER], embeddings: ["sk-any", OPENROUTER, "openai/text-embedding-3-small"], ai: true, embed: true });
 });
 
-test("3. an OpenRouter key without a URL: everything on OpenRouter", () => {
+test("2. an OpenRouter key without a URL: everything on OpenRouter", () => {
   env({ OPENAI_API_KEY: "sk-or-v1-new" });
   expect(where()).toEqual({ chat: ["sk-or-v1-new", OPENROUTER], embeddings: ["sk-or-v1-new", OPENROUTER, "openai/text-embedding-3-small"], ai: true, embed: true });
 });
 
-test("4. another key without a URL: the old meaning, embeddings on OpenAI and chat off (the key never goes elsewhere)", () => {
+test("3. another key without a URL: the old meaning, embeddings on OpenAI and chat off (the key never goes elsewhere)", () => {
   env({ OPENAI_API_KEY: "sk-proj-embeddings" });
   expect(where()).toEqual({ chat: [undefined, OPENAI], embeddings: ["sk-proj-embeddings", OPENAI, "text-embedding-3-small"], ai: false, embed: true });
 });
 
-test("5. neither key: AI off", () => {
-  env({ OPENAI_BASE_URL: "https://llm.example.com/v1", OPENROUTER_BASE_URL: "https://llm.example.com/v1" });
+test("4. no key: AI off", () => {
+  env({ OPENAI_BASE_URL: "https://llm.example.com/v1" });
   expect(where()).toMatchObject({ ai: false, embed: false });
 });
 
@@ -84,30 +73,17 @@ test("logs show an address without its user, password or query", () => {
   expect(shownAddress("user:token@llm.example.com/v1")).toBe("an address that isn't a URL");
 });
 
-test("what Autopilot and Verify still need: embeddings, when an old OpenRouter-only setup has the rest", () => {
-  env({ OPENROUTER_API_KEY: "sk-or-old" });
-  expect(codeChangesEnabled()).toBe(false);
-  expect(codeChangesFix()).toBe("a key for embeddings in OPENAI_API_KEY (an OpenRouter or OpenAI key; see .env.example)");
-  env({ OPENAI_API_KEY: "sk-proj-other", OPENAI_BASE_URL: "https://llm.example.com/v1", OPENROUTER_API_KEY: "" });
+test("what Autopilot and Verify still need: an OpenRouter key", () => {
+  env({ OPENAI_API_KEY: "sk-proj-other", OPENAI_BASE_URL: "https://llm.example.com/v1" });
   expect(codeChangesFix()).toBe("an OpenRouter key in OPENAI_API_KEY, with OPENAI_BASE_URL unset (see .env.example)");
 });
 
-test("why Autopilot and Verify are off: no AI, no Decisions API, no embeddings; on, no reason", () => {
+test("why Autopilot and Verify are off: no AI, no Decisions API; on, no reason", () => {
   expect(codeChangesOff()).toBe("AI isn't set up on this server");
   env({ OPENAI_API_KEY: "azure-key", OPENAI_BASE_URL: "https://acme.openai.azure.com/openai/v1" });
   expect(codeChangesOff()).toBe("this server's AI provider doesn't have OpenRouter's Decisions API");
-  env({ OPENAI_API_KEY: "", OPENAI_BASE_URL: "", OPENROUTER_API_KEY: "sk-or-old" });
-  expect(codeChangesOff()).toBe("this server has no key for embeddings (OPENAI_API_KEY)");
-  env({ OPENROUTER_API_KEY: "", OPENAI_API_KEY: "sk-or-v1-new" });
+  env({ OPENAI_API_KEY: "sk-or-v1-new", OPENAI_BASE_URL: "" });
   expect(codeChangesOff()).toBeNull();
-});
-
-test("how to turn OpenRouter on names the variables this server reads", () => {
-  env({ OPENAI_API_KEY: "sk-proj-other", OPENAI_BASE_URL: "https://llm.example.com/v1" });
-  expect(openRouterFix()).toBe("an OpenRouter key in OPENAI_API_KEY, with OPENAI_BASE_URL unset (see .env.example)");
-  // The old names, while they're set, win: the hint says to change those.
-  env({ OPENROUTER_API_KEY: "sk-proj-other", OPENROUTER_BASE_URL: "https://llm.example.com/v1" });
-  expect(openRouterFix()).toBe("an OpenRouter key in OPENROUTER_API_KEY, with OPENROUTER_BASE_URL unset (see .env.example)");
 });
 
 test("an address that isn't a URL: nothing throws, and start-up says which variable to fix", async () => {
@@ -123,7 +99,7 @@ test("an address that isn't a URL: nothing throws, and start-up says which varia
   expect(error).toHaveBeenCalledWith("OPENAI_BASE_URL isn't a URL (it needs https://…): AI won't work until it's fixed");
 });
 
-test("start-up: the deprecated names and the embeddings-only key each get a warning; a good endpoint logs nothing else", async () => {
+test("start-up: the old names and the embeddings-only key each get a warning; a good endpoint logs nothing else", async () => {
   const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
   await checkAiProvider();
@@ -133,11 +109,21 @@ test("start-up: the deprecated names and the embeddings-only key each get a warn
   await checkAiProvider();
   expect([warn.mock.calls, error.mock.calls]).toEqual([[], []]);
 
-  env({ OPENROUTER_API_KEY: FAKE_MODEL_KEY, OPENROUTER_BASE_URL: model.url, OPENAI_API_KEY: "" });
+  // Left over beside a working setup: one line, and the setup still works.
+  env({ OPENROUTER_API_KEY: FAKE_MODEL_KEY, OPENROUTER_BASE_URL: model.url });
   await checkAiProvider();
-  expect(warn).toHaveBeenCalledOnce();
-  expect(warn.mock.calls[0]![0]).toMatch(/OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated.*set OPENAI_API_KEY/);
-  expect(error).not.toHaveBeenCalled();
+  expect([warn.mock.calls, error.mock.calls]).toEqual([
+    [["OPENROUTER_API_KEY and OPENROUTER_BASE_URL are no longer read: set OPENAI_API_KEY (an OpenRouter key, or another OpenAI-compatible provider's with OPENAI_BASE_URL) instead."]],
+    [],
+  ]);
+  expect(codeChangesEnabled()).toBe(true);
+
+  // Alone, the same line (AI is off, and it says why).
+  warn.mockClear();
+  env({ OPENAI_API_KEY: "", OPENAI_BASE_URL: "" });
+  await checkAiProvider();
+  expect(warn.mock.calls.map(([message]) => String(message))).toEqual([expect.stringMatching(/^OPENROUTER_API_KEY and OPENROUTER_BASE_URL are no longer read/)]);
+  expect(aiEnabled()).toBe(false);
 
   warn.mockClear();
   env({ OPENROUTER_API_KEY: "", OPENROUTER_BASE_URL: "", OPENAI_API_KEY: "sk-proj-embeddings", OPENAI_BASE_URL: "" });
@@ -145,18 +131,6 @@ test("start-up: the deprecated names and the embeddings-only key each get a warn
   await checkAiProvider();
   expect(warn).toHaveBeenCalledOnce();
   expect(warn.mock.calls[0]![0]).toMatch(/embeddings only.*set OPENAI_BASE_URL/);
-});
-
-test("start-up: an old setup's embeddings key is checked too, apart from chat's", async () => {
-  const error = vi.spyOn(log, "error").mockImplementation(() => {});
-  vi.spyOn(log, "warn").mockImplementation(() => {});
-  env({ OPENROUTER_API_KEY: "sk-or-good", OPENAI_API_KEY: "sk-proj-revoked" });
-  // OpenRouter's models and key answer; OpenAI turns the embeddings key down.
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => new Response('{"data":[]}', { status: String(url).startsWith(OPENAI) ? 401 : 200 }));
-  await checkAiProvider();
-  expect(error.mock.calls.map(([message]) => String(message)).filter((message) => /turned down/.test(message))).toEqual([
-    "The AI provider at https://api.openai.com turned down OPENAI_API_KEY for embeddings (401): the key looks wrong. Search by meaning and duplicates will fail until it's fixed.",
-  ]);
 });
 
 test("start-up: a provider that serves the chat model but not the embedding model says so, once", async () => {
@@ -190,9 +164,9 @@ test("start-up: an embeddings failure says what the provider said (out of credit
 test("start-up: an address fetch refuses (credentials in it) is never logged as written", async () => {
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
   vi.spyOn(log, "warn").mockImplementation(() => {});
-  env({ OPENROUTER_API_KEY: "sk-or-good", OPENAI_API_KEY: "sk-proj-x", OPENAI_BASE_URL: "https://user:token@embed-gw.example/v1" });
+  env({ OPENAI_API_KEY: "sk-proj-x", OPENAI_BASE_URL: "https://user:token@embed-gw.example/v1" });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
-    if (String(url).includes("embed-gw")) throw new TypeError(`Request cannot be constructed from a URL that includes credentials: ${String(url)}`);
+    if (String(url).endsWith("/embeddings")) throw new TypeError(`Request cannot be constructed from a URL that includes credentials: ${String(url)}`);
     return new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"}]}');
   });
   await checkAiProvider();
@@ -201,56 +175,10 @@ test("start-up: an address fetch refuses (credentials in it) is never logged as 
   expect(logged.join()).not.toContain("token");
 });
 
-test("start-up: the old address left without its key is ignored, and the log says so", async () => {
-  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
-  vi.spyOn(log, "error").mockImplementation(() => {});
-  env({ OPENAI_API_KEY: "sk-or-v1-new", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"}]}'));
-  await checkAiProvider();
-  expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(expect.stringMatching(/^OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY/));
-});
-
-test("start-up: the old address left with no key at all says AI is off, not where requests go", async () => {
-  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
-  env({ OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
-  await checkAiProvider();
-  expect(warn.mock.calls.map(([message]) => String(message))).toEqual([
-    "OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: AI is off (no OPENAI_API_KEY). To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.",
-  ]);
-});
-
-test("start-up: an old setup with another key at another address is told what to do for a gateway and for another provider", async () => {
-  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
-  vi.spyOn(log, "error").mockImplementation(() => {});
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"id":"anthropic/claude-haiku-5.5"},{"id":"anthropic/claude-sonnet-5.5"}]}'));
-  env({ OPENROUTER_API_KEY: "sk-litellm-gateway", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
-  await checkAiProvider();
-  const said = warn.mock.calls.map(([message]) => String(message));
-  expect(said).toContainEqual(expect.stringMatching(/If OPENROUTER_BASE_URL is a gateway in front of OpenRouter .* keep them for now.*If it's another provider, move to OPENAI_API_KEY/));
-  // A key that isn't OpenRouter's at OpenRouter's own address (mistyped, say) gets the plain advice to move.
-  warn.mockClear();
-  env({ OPENROUTER_API_KEY: "typo-key", OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1" });
-  await checkAiProvider();
-  expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(expect.stringMatching(/^OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated and will stop working/));
-});
-
-test("start-up: with an OpenAI key, a leftover old address doesn't hide why chat is off", async () => {
-  const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
-  vi.spyOn(log, "error").mockImplementation(() => {});
-  env({ OPENAI_API_KEY: "sk-proj-embeddings", OPENROUTER_BASE_URL: "https://llm-gw.example/v1" });
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response('{"data":[{"index":0,"embedding":[1]}]}'));
-  await checkAiProvider();
-  const said = warn.mock.calls.map(([message]) => String(message));
-  expect(said).toContainEqual(
-    "OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: chat is off, and embeddings go to https://api.openai.com. To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.",
-  );
-  expect(said).toContainEqual(expect.stringMatching(/embeddings only.*chat is off/));
-});
-
 test("start-up: an embeddings key that may embed but not list models (OpenAI's restricted keys) is fine", async () => {
   const error = vi.spyOn(log, "error").mockImplementation(() => {});
   vi.spyOn(log, "warn").mockImplementation(() => {});
-  env({ OPENROUTER_API_KEY: "sk-or-good", OPENAI_API_KEY: "sk-proj-restricted" });
+  env({ OPENAI_API_KEY: "sk-proj-restricted" });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
     const at = String(url);
     if (at === `${OPENAI}/models`) return new Response('{"error":{"message":"Missing scopes: api.model.read"}}', { status: 403 });
@@ -326,12 +254,9 @@ test("Autopilot and Verify (codeChangesEnabled) are on only with OpenRouter's De
   expect(codeChangesEnabled()).toBe(true);
   env(model.env);
   expect(codeChangesEnabled()).toBe(true);
-  // The deprecated names: the same, by OPENROUTER_*.
-  env({ OPENROUTER_API_KEY: "or-old", OPENAI_API_KEY: "sk-proj-old", OPENAI_BASE_URL: "" });
-  expect(codeChangesEnabled()).toBe(true);
-  // An old setup's own gateway, whatever its key: OpenRouter behind it, as before this release.
-  env({ OPENROUTER_API_KEY: "sk-litellm-gateway", OPENROUTER_BASE_URL: "https://llm-gw.example.com/v1" });
-  expect(codeChangesEnabled()).toBe(true);
+  // Another key at another address is another provider, whatever's behind it: off.
+  env({ OPENAI_API_KEY: "sk-litellm-gateway", OPENAI_BASE_URL: "https://llm-gw.example.com/v1" });
+  expect(codeChangesEnabled()).toBe(false);
 });
 
 test("start-up: an endpoint without the Decisions API says once that Autopilot and Verify need it", async () => {

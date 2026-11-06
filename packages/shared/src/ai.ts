@@ -49,12 +49,9 @@ export function decisionsMissing(): boolean {
   return aiEnabled() && !decisionsAvailable();
 }
 
-/**
- * What Autopilot and Verify still need on this server, in words: OpenRouter (for the Decisions API), or, with that
- * working, embeddings (only an old setup can lack them: OPENROUTER_API_KEY without OPENAI_API_KEY).
- */
+/** What Autopilot and Verify still need on this server, in words: OpenRouter, for the Decisions API. */
 export function codeChangesFix(): string {
-  return aiEnabled() && decisionsAvailable() && !embeddingsEnabled() ? "a key for embeddings in OPENAI_API_KEY (an OpenRouter or OpenAI key; see .env.example)" : openRouterFix();
+  return "an OpenRouter key in OPENAI_API_KEY, with OPENAI_BASE_URL unset (see .env.example)";
 }
 
 /** Why Autopilot and Verify are off on this server, as a phrase ("… while <it>"), or null when they're on. */
@@ -65,13 +62,7 @@ export function codeChangesOff(): string | null {
   if (!aiEnabled()) {
     return "AI isn't set up on this server";
   }
-  return decisionsAvailable() ? "this server has no key for embeddings (OPENAI_API_KEY)" : "this server's AI provider doesn't have OpenRouter's Decisions API";
-}
-
-/** How to turn OpenRouter on, naming the variables this server reads (the old OPENROUTER_ ones while they're set). */
-export function openRouterFix(): string {
-  const { keyName, urlName } = chatEndpoint();
-  return `an OpenRouter key in ${keyName}, with ${urlName} unset (see .env.example)`;
+  return "this server's AI provider doesn't have OpenRouter's Decisions API";
 }
 
 /** What an AI request is for: each feature has its own default model, and a project can pick another. */
@@ -188,11 +179,11 @@ async function checkEndpoint(endpoint: ReturnType<typeof chatEndpoint>): Promise
   // OpenRouter lists its models to anyone; its /key answers only to a good key.
   const keyStatus = status === 200 && isOpenRouter(endpoint) ? ((await get("key"))?.status ?? 0) : status;
   if (keyStatus === 401 || keyStatus === 403) {
-    log.error(`The AI provider at ${shownAddress(endpoint.baseUrl)} turned down ${endpoint.keyName} (${keyStatus}): the key looks wrong. AI features will fail until it's fixed.`);
+    log.error(`The AI provider at ${shownAddress(endpoint.baseUrl)} turned down OPENAI_API_KEY (${keyStatus}): the key looks wrong. AI features will fail until it's fixed.`);
     return null;
   }
   if (!models || status !== 200) {
-    log.error(`Couldn't list the AI models at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (${endpoint.urlName}) looks wrong. AI features will fail until it's fixed.`);
+    log.error(`Couldn't list the AI models at ${shownAddress(endpoint.baseUrl)} (${status || "no answer"}): the address (OPENAI_BASE_URL) looks wrong. AI features will fail until it's fixed.`);
     return null;
   }
   return models;
@@ -217,61 +208,36 @@ async function checkEmbeddings(endpoint: ReturnType<typeof embeddingsEndpoint>):
   const after = "Search by meaning and duplicates will fail until it's fixed.";
   log.error(
     status === 401 || status === 403
-      ? `The AI provider at ${at} turned down ${endpoint.keyName} for embeddings (${status}): the key looks wrong. ${after}`
+      ? `The AI provider at ${at} turned down OPENAI_API_KEY for embeddings (${status}): the key looks wrong. ${after}`
       : status === 0
         ? // fetch's own error can quote the whole address, credentials included: never logged.
-          `Couldn't reach ${at} to embed: check the address (${endpoint.urlName}). ${after}`
+          `Couldn't reach ${at} to embed: check the address (OPENAI_BASE_URL). ${after}`
         : `Embedding at ${at} failed (${status}): ${said}. Tuti asks for ${embeddingModelId(endpoint)}, OpenAI's ${EMBEDDING_MODEL}. ${after}`,
   );
 }
 
 export async function checkAiProvider(): Promise<void> {
-  if (process.env.OPENROUTER_BASE_URL && !process.env.OPENROUTER_API_KEY) {
-    // Half moved: without its key the old address is ignored, so requests go elsewhere than it says.
-    // Where requests really go, as resolved: chat's address, or (chat off) embeddings'.
-    const going = aiEnabled()
-      ? `requests go to ${shownAddress(chatEndpoint().baseUrl)}`
-      : embeddingsEndpoint().apiKey
-        ? `chat is off, and embeddings go to ${shownAddress(embeddingsEndpoint().baseUrl)}`
-        : "AI is off (no OPENAI_API_KEY)";
-    log.warn(
-      `OPENROUTER_BASE_URL is set but ignored without OPENROUTER_API_KEY: ${going}. To keep using that address, set OPENAI_BASE_URL to it and remove OPENROUTER_BASE_URL.`,
-    );
-  } else if (
-    process.env.OPENROUTER_API_KEY &&
-    !process.env.OPENROUTER_API_KEY.startsWith("sk-or-") &&
-    webAddress(process.env.OPENROUTER_BASE_URL ?? "") &&
-    webAddress(process.env.OPENROUTER_BASE_URL ?? "")!.hostname !== "openrouter.ai"
-  ) {
-    // Another key at another address: a gateway in front of OpenRouter, or another provider. Tuti can't tell which, so
-    // it says what to do for each (the new names can't tell a gateway fronts OpenRouter until a setting says so).
-    log.warn(
-      "OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated. If OPENROUTER_BASE_URL is a gateway in front of OpenRouter with its own key, keep them for now: the new names can't tell OpenRouter is behind it, so Autopilot, Verify and asking providers not to keep prompts would stop (a later release adds a setting for it). If it's another provider, move to OPENAI_API_KEY and OPENAI_BASE_URL: Autopilot and Verify need OpenRouter and are off there.",
-    );
-  } else if (process.env.OPENROUTER_API_KEY) {
-    log.warn(
-      "OPENROUTER_API_KEY and OPENROUTER_BASE_URL are deprecated and will stop working in a later release: set OPENAI_API_KEY (an OpenRouter key, or another OpenAI-compatible provider's with OPENAI_BASE_URL) instead. Chat, embeddings and decisions then all go through it.",
-    );
+  // The old names (one release, until OPENAI_API_KEY replaced them) are no longer read: one line, so their AI being off has a reason.
+  if (process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_BASE_URL) {
+    log.warn("OPENROUTER_API_KEY and OPENROUTER_BASE_URL are no longer read: set OPENAI_API_KEY (an OpenRouter key, or another OpenAI-compatible provider's with OPENAI_BASE_URL) instead.");
   }
-  // Apart from the above: a leftover old address mustn't hide why chat is off.
   if (aiSetup() === "openai-embeddings-only") {
     log.warn(
       "OPENAI_API_KEY is used for embeddings only, on OpenAI; chat is off. To use one provider for everything, set OPENAI_BASE_URL (e.g. https://openrouter.ai/api/v1 with an OpenRouter key).",
     );
   }
+  // Chat and embeddings share one address.
   const chat = chatEndpoint();
-  for (const endpoint of [chat, embeddingsEndpoint()]) {
-    if (endpoint.apiKey && !webAddress(endpoint.baseUrl)) {
-      log.error(`${endpoint.urlName} isn't a URL (it needs https://…): AI won't work until it's fixed`);
-      return;
-    }
+  const embeddings = embeddingsEndpoint();
+  if (embeddings.apiKey && !webAddress(embeddings.baseUrl)) {
+    log.error(`OPENAI_BASE_URL isn't a URL (it needs https://…): AI won't work until it's fixed`);
+    return;
   }
   if (chat.apiKey && !decisionsAvailable()) {
     log.warn(`Autopilot and Verify need OpenRouter's Decisions API; ${webAddress(chat.baseUrl)!.hostname} doesn't have it`);
   }
-  // Chat's endpoint (with the models it lists), and embeddings' where they go elsewhere (an old setup's OpenAI key, say).
+  // Chat's endpoint (with the models it lists), and embeddings' (alone when chat is off).
   const models = chat.apiKey ? await checkEndpoint(chat) : null;
-  const embeddings = embeddingsEndpoint();
   // Embeddings too, even at chat's endpoint: a provider may not serve the embedding model. Not when chat's same
   // endpoint was just turned down: that error has been said once.
   const same = embeddings.apiKey === chat.apiKey && embeddings.baseUrl === chat.baseUrl;
