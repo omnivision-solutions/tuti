@@ -93,6 +93,12 @@ test("the reply's images are in the email to voters, at lasting links", async ()
     expect(email!.html.match(/The night theme/g)).toEqual(["The night theme"]);
     expect(email!.html).toContain(`/media/${image.id}/`);
     expect(email!.html).toContain('alt="The night theme"');
+    // The reply quoted beside a left border; one that's only an image has no empty quote above it.
+    expect(email!.html).toContain("border-left");
+    await call(createComment, as(owner.id), { number: post.number, content: { type: "doc", content: [content.content[1]!] }, emailVoters: true });
+    const [, only] = emailsTo(voter.email);
+    expect(only!.html).toContain(`/media/${image.id}/`);
+    expect(only!.html).not.toContain("border-left");
   } finally {
     vi.unstubAllEnvs();
     await s3.close();

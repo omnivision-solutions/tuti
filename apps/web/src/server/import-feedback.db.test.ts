@@ -189,6 +189,17 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   expect(await prisma.webhookDelivery.count({ where: { webhook: { projectId: project.id } } })).toBe(0);
 });
 
+test("a comment that's only an image comes across with it", async () => {
+  const [first] = fake.fixtures.comments;
+  fake.fixtures.comments = [{ ...structuredClone(first!), content: `<p><img src="${fake.url}/files/shot.png"></p>` }];
+  await importFeedback();
+  const { import: done } = await call(getImport, asOwner(), {});
+  expect(done!.counts).toMatchObject({ comments: { imported: 1, leftOut: {} }, images: { imported: 2 } });
+  const [only] = await prisma.comment.findMany({ where: { projectId: project.id }, select: { body: true, content: true } });
+  expect(only!.body.trim()).toBe("");
+  expect(JSON.stringify(only!.content)).toContain('"type":"image"');
+});
+
 test("a page run twice, at once or again later, and a second import, bring nothing twice", async () => {
   const started = await importFeedback();
   const before = await made();
