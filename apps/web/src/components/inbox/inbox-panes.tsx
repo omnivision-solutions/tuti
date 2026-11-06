@@ -193,6 +193,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         <ListKeys
           place={`${slug}:${view}`}
           open={open}
+          none={inboxHref(slug, view)}
           aria-label="Conversations"
           // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
           className="p-6 lg:relative lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-3"

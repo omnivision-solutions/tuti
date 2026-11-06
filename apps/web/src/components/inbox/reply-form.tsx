@@ -2,8 +2,10 @@
 
 import { FileTextIcon, SparklesIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
 
 import { AttachButton, type Upload, UploadList, useUploads } from "@/components/attachment-uploads";
+import { actOn } from "@/components/inbox/list-keys";
 import { InsertArticleDialog, type InsertableArticle } from "@/components/inbox/insert-article";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
@@ -35,6 +37,7 @@ export function ReplyForm({
   draftWithAi = "off",
   articles = false,
   seen,
+  emailWaits,
 }: {
   projectSlug: string;
   /** Who's signed in: their drafts are theirs. */
@@ -48,6 +51,8 @@ export function ReplyForm({
   draftWithAi?: "on" | "paused" | "off";
   /** "Insert article": shown when the project has published articles a link can go to. */
   articles?: boolean;
+  /** Why a reply sent now isn't emailed yet (the project's email paused, or capped for today), said as it's sent. */
+  emailWaits?: string;
 }) {
   const [kind, setKind] = useState<Kind>("reply");
   // The tab they're on now, for a draft that finishes after they've moved.
@@ -157,6 +162,8 @@ export function ReplyForm({
       const sending = kind;
       const text = drafts[sending];
       const attached = files.ids;
+      // Answered (waiting on them now) or closed, it may leave the view: the next one opens.
+      const moved = actOn(number);
       const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen);
       setError(result.error);
       setNotice(result.notice);
@@ -164,6 +171,12 @@ export function ReplyForm({
         // Only what was sent: anything added meanwhile stays. (Still here: a row opened meanwhile waits for the reply.)
         setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
         files.sent(attached);
+        // Said as it goes: out of the view, the next conversation opens in its place (with why it isn't emailed yet,
+        // which its message says too).
+        if (sending === "reply") {
+          toast.success("Sent", { description: emailWaits });
+        }
+        moved();
       }
     });
 
