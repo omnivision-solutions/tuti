@@ -188,7 +188,8 @@ export async function homeOverview(projectId: string, slug: string) {
   const uses = (...any: string[]) => picked.size === 0 || any.some((use) => picked.has(use));
   // Each with what it's for, in a line under its title: what the step gets a team using every part of Tuti, the same
   // whatever the server or the project has turned on (a product choice: most teams will use it all).
-  // Support is set up once its first email is in (the address forwarded), or once the inbox is on where the server takes no email.
+  // Support is set up once its first email is in (any, a test or a forwarding confirmation too), or once the inbox is on where
+  // the server takes no email.
   const supportSet = setup.supportInbox && (firstEmail.found || supportDomain() === null);
   const steps = [
     { key: "widget", title: "Add the widget to your site", description: `Users give feedback, get help and see what's new right inside ${setup.name}.`, action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
