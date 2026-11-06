@@ -137,19 +137,19 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
     let folded = pastLimit.has(board.id);
     // One deleted since is made again.
     if (!id || !existing.some((b) => b.id === id)) {
-      await tx.importedRecord.deleteMany({ where: { projectId: job.projectId, source: job.source, kind: { in: ["board", "board-past-limit"] }, externalId: board.id } });
+      await tx.importedRecord.deleteMany({ where: { projectId: job.projectId, source: job.source, kind: { in: ["board", "board-past-limit", "board-made-private"] }, externalId: board.id } });
       folded = false;
       here = false;
       const name = board.name.trim().slice(0, 60) || "Feedback";
       const same = existing.find((b) => sameName(b.name, name));
       const words = boardWords(board);
+      // Made Private by this import (Featurebase's posts there were their author's), not by the team: see visibilityFor.
+      let madePrivate = Boolean(boardVisibility(board).postVisibility);
       if (same) {
         id = same.id;
         await tx.board.update({ where: { id }, data: words });
-        // Only their author's in Featurebase: Private here too, unless the team keeps it closer already (Team only).
-        if (boardVisibility(board).postVisibility) {
-          await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } });
-        }
+        // Only their author's in Featurebase: Private here too, unless the team chose already (Private or Team only).
+        madePrivate &&= (await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } })).count > 0;
       } else if (spare || limit === null || existing.length < limit) {
         const slugged = titleSlug(name, "board").slice(0, 36).replace(/-+$/, "");
         const base = slugged.length >= 2 ? slugged : "board";
@@ -180,8 +180,12 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
       } else {
         id = last ?? existing.at(-1)!.id;
         folded = true;
+        madePrivate = false;
       }
       await remember(tx, job, "board", board.id, id);
+      if (madePrivate) {
+        await remember(tx, job, "board-made-private", board.id, id);
+      }
       if (folded) {
         await remember(tx, job, "board-past-limit", board.id, id);
       }
@@ -323,10 +327,14 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
       );
       // Boards Private only because a Featurebase board's posts were its author's: another board's posts folded into one
       // (past the plan's limit) were everyone's in Featurebase, and stay so.
-      const privateFromImport = new Set(boards.filter((board) => boardVisibility(board).postVisibility).map((board) => boardIds.get(board.id)));
+      const privateFromImport = new Set((await recorded(tx, job, "board-made-private", boards.map((board) => board.id))).values());
       const visibilityFor = (post: FeaturebasePost) => {
         const source = byId.get(post.boardId);
         const target = boardIds.get(post.boardId)!;
+        // A board the team keeps to itself keeps every post so.
+        if (visibilityOf.get(target) === "TEAM") {
+          return "TEAM" as const;
+        }
         if (post.access?.userIds?.length || (source && boardVisibility(source).postVisibility)) {
           return "PRIVATE" as const;
         }

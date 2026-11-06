@@ -246,6 +246,25 @@ test("past the plan's board limit, posts everyone saw folded into a board made P
   expect(posts.find((post) => post.title === "Export fails on Safari")).toEqual({ title: "Export fails on Safari", visibility: "PRIVATE" });
 });
 
+test("a board the team made Private or Team only keeps its choice: posts folded into it stay Private, an author-only post on a Team only board stays the team's", async () => {
+  vi.stubEnv("PLANS", "on");
+  // The team's own Bugs board, Private before the import: Featurebase's Bugs (author-only) matches it by name.
+  await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs", postVisibility: "PRIVATE" } });
+  fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
+  const ideas = structuredClone(fake.fixtures.boards.find((board) => board.name === "Bugs")!);
+  Object.assign(ideas, { id: "65f0000000000000000000b5", name: "Ideas", localization: { name: { en: "Ideas" } }, postDefaults: { visibility: "public" } });
+  fake.fixtures.boards.push(ideas);
+  fake.fixtures.posts.push({ ...structuredClone(fake.fixtures.posts[0]!), id: "65f0000000000000000000pa", boardId: ideas.id, title: "Offline mode", createdAt: "2024-04-01T10:00:00.000Z" });
+  await importFeedback();
+  expect(await prisma.post.findFirst({ where: { projectId: project.id, title: "Offline mode" }, select: { visibility: true, board: { select: { name: true } } } })).toEqual({ visibility: "PRIVATE", board: { name: "Bugs" } });
+
+  // Team only: the author-only post on it is the team's.
+  project = await createProject(owner);
+  await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs", postVisibility: "TEAM" } });
+  await importFeedback();
+  expect(await prisma.post.findFirst({ where: { projectId: project.id, title: "Only for one customer" }, select: { visibility: true } })).toEqual({ visibility: "TEAM" });
+});
+
 test("a page run twice, at once or again later, and a second import, bring nothing twice", async () => {
   const started = await importFeedback();
   const before = await made();
