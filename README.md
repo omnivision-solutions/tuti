@@ -41,7 +41,7 @@ the web app instead, so small installs and tests don't need Hatchet.
 
 Requirements:
 
-- Node 22.12+ and pnpm (`corepack enable`)
+- Node 22.18+ and pnpm (`corepack enable`)
 - PostgreSQL (tested with 17) with the [pgvector](https://github.com/pgvector/pgvector) extension available.
   pgvector isn't a trusted extension, so a superuser must run `CREATE EXTENSION vector;` in
   the database once before the first migration (`pg_trgm`, also used, the migrations enable

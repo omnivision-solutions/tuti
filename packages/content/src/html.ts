@@ -66,6 +66,8 @@ const INERT = {
   enableIframePageLoading: false,
   disableComputedStyleRendering: true,
 } satisfies IOptionalBrowserSettings;
+/** A window for untrusted HTML: it parses, and runs and loads nothing. Close it when done. */
+export const inertWindow = () => new Window({ settings: INERT });
 const BLOCKS = "p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote, pre";
 
 /**
@@ -73,7 +75,7 @@ const BLOCKS = "p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote, pre";
  * show and its links point at, parsed: for HTML htmlToContent refuses (too long to be content).
  */
 export async function htmlText(html: string): Promise<{ text: string; urls: string[] }> {
-  const window = new Window({ settings: INERT });
+  const window = inertWindow();
   try {
     const body = (window.document as unknown as Document).body;
     body.innerHTML = html;
@@ -95,7 +97,7 @@ export async function htmlText(html: string): Promise<{ text: string; urls: stri
  * never inside one holding the project lock.
  */
 export async function htmlToContent(profile: Profile, html: string, { media, link }: HtmlOptions = {}): Promise<HtmlContent | { error: string }> {
-  const window = new Window({ settings: INERT });
+  const window = inertWindow();
   try {
     const document = window.document as unknown as Document;
     const body = document.body;

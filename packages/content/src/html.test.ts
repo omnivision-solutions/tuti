@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, test } from "vitest";
 
 import { type Doc, parseDoc } from "./document";
-import { fileName, htmlText, htmlToContent, type HtmlOptions, type MediaSource } from "./html";
+import { fileName, htmlToContent, type HtmlOptions, inertWindow, type MediaSource } from "./html";
 import type { Profile } from "./profiles";
 
 /** Invented media ids, one per source key, as an importer would make them. */
@@ -313,19 +313,15 @@ test("parsing imported HTML requests nothing: no stylesheet, iframe or script it
     response.end("");
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const window = inertWindow();
   try {
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const html = `<link rel="stylesheet" href="${origin}/style.css"><iframe src="${origin}/frame"></iframe><script src="${origin}/script.js"></script><p>Hi</p>`;
-    await htmlText(html);
-    // The window stays open while images are copied: time for anything the HTML started to arrive.
-    const { media } = fakeMedia();
-    const slowMedia: HtmlOptions["media"] = async (source) => {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      return media!(source);
-    };
-    await htmlToContent("article", `${html}<img src="https://example.com/a.png">`, { media: slowMedia });
+    window.document.body.innerHTML = `<link rel="stylesheet" href="${origin}/style.css"><iframe src="${origin}/frame"></iframe><script src="${origin}/script.js"></script><p>Hi</p>`;
+    // Resolves once every load the HTML started has finished: a request it made has reached the server.
+    await window.happyDOM.waitUntilComplete();
     expect(requested).toEqual([]);
   } finally {
+    await window.happyDOM.close();
     server.close();
   }
 });
