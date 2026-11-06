@@ -112,7 +112,7 @@ export function ImportDetails({ projectSlug, run, invitations }: { projectSlug: 
   return (
     <Dialog>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>{run.state === "running" ? "View progress" : "View details"}</DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{importTitle(run)}</DialogTitle>
           {importNote(run) && <DialogDescription>{importNote(run)}</DialogDescription>}
