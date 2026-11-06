@@ -163,7 +163,7 @@ test("Get set up follows what the team picked after Create project; a project wi
     expect(await github()).toBe("Your merged pull requests go into your changelog's next draft.");
     vi.stubEnv("OPENAI_API_KEY", FAKE_MODEL_KEY);
     vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");
-    expect(await github()).toBe("Autopilot reads your merged pull requests to complete posts, update docs and draft the changelog.");
+    expect(await github()).toBe("Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog.");
 
     actAs(owner);
     expect(await setProjectUses(project.slug, ["support"])).toEqual({});

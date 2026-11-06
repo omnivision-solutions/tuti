@@ -188,7 +188,7 @@ export async function homeOverview(projectId: string, slug: string) {
     // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.
     { key: "github", title: "Connect GitHub", // Without Autopilot (no AI, or no Decisions API) merged pull requests only go into the changelog's draft.
       description: codeChangesEnabled()
-        ? "Autopilot reads your merged pull requests to complete posts, update docs and draft the changelog."
+        ? "Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog."
         : "Your merged pull requests go into your changelog's next draft.", action: "Connect", done: setup.githubInstallation !== null, href: `${base}/settings/integrations`, shown: githubConfig() !== null && uses("feedback", "docs", "changelog") },
     // Who's posting and who's writing in, signed in from the team's own app.
     { key: "sso", title: "Set up single sign-on", description: `Users sign in with their ${setup.name} account, so every post and message says who it's from.`, action: "Set up", done: setup.ssoSecret !== null, href: `${base}/settings/sso`, shown: uses("feedback", "support") },

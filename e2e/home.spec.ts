@@ -149,7 +149,7 @@ test("a new project: Home leads with sample content and each setup step's action
   // A card per step, two to a row, each saying what it's for. Their buttons are outlines: Add sample content stays the page's one primary.
   const widget = setup.getByRole("listitem").filter({ hasText: "Add the widget to your site" });
   const github = setup.getByRole("listitem").filter({ hasText: "Connect GitHub" });
-  await expect(github).toContainText("Autopilot reads your merged pull requests to complete posts, update docs and draft the changelog.");
+  await expect(github).toContainText("Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog.");
   expect((await github.boundingBox())!.y).toBeCloseTo((await widget.boundingBox())!.y, 0);
   await expect(setup.getByRole("link").and(owner.locator(".bg-primary"))).toHaveCount(0);
   await expect(owner.getByRole("progressbar", { name: "Steps done" })).toHaveAttribute("aria-valuenow", "0");
