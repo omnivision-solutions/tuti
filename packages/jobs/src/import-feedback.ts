@@ -1,7 +1,7 @@
 import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason, type MediaImporter } from "@tuti/content/html";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type PostStatus, type Prisma, prisma } from "@tuti/db";
-import { boardLimit, embeddingsEnabled } from "@tuti/shared";
+import { boardLimit, embeddingsEnabled, log } from "@tuti/shared";
 import { titleSlug } from "@tuti/shared/post-urls";
 import { mediaStorage } from "@tuti/shared/storage";
 
@@ -26,9 +26,9 @@ const NOTHING: StepPage["save"] = async () => {};
  * at most `posts` posts and `avatars` avatars; past `softMs` from its start no more of them are begun (what's begun but
  * not done is left for the next page); past `hardMs` the first one's remaining images are left out, as ones that
  * couldn't be fetched (each fetch takes 30 seconds at most), so one post with many slow images can't hold the import
- * up for good. Tests shorten them.
+ * up for good. `now` is the page's clock. Tests shorten them, and drive the clock.
  */
-export const FEEDBACK_PAGE = { posts: 25, avatars: 20, softMs: 120_000, hardMs: 210_000 };
+export const FEEDBACK_PAGE = { posts: 25, avatars: 20, softMs: 120_000, hardMs: 210_000, now: () => Date.now() };
 
 /** Media begun past the page's soft limit: left, with what it's in, to the next page. */
 class Later extends Error {}
@@ -39,7 +39,7 @@ function timedImporter(job: ImportJob, begun: number, first: () => boolean): Med
   return (
     media &&
     (async (source) => {
-      const elapsed = Date.now() - begun;
+      const elapsed = FEEDBACK_PAGE.now() - begun;
       if (!first() && elapsed > FEEDBACK_PAGE.softMs) {
         throw new Later();
       }
@@ -101,7 +101,9 @@ function boardWords(board: FeaturebaseBoard) {
 
 /**
  * The project's board for each Featurebase board everyone sees: one of the same name (a new project's Feature requests),
- * else a new one while the plan has room (boardLimit), else the last one imported, which takes its posts. Remembered,
+ * else a new one while the plan has room (boardLimit), else the last one imported, which takes its posts. A new
+ * project's untouched board (its only one, without posts, matched by none and no import's) becomes the first one made,
+ * renamed, so it costs the plan no slot. Remembered,
  * so every page (and a later import) puts them in the same place; one that went into another board for want of room
  * is remembered so too (`board-past-limit`), not guessed from sharing a board (two of the same name do, with room).
  * `count`: counted (the step's first page). Under the page's project lock (imports.ts `locked`), as boards made in
@@ -114,6 +116,15 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
   const existing = await tx.board.findMany({ where: { projectId: job.projectId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, name: true, slug: true } });
   const { plan } = await tx.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { plan: true } });
   const limit = boardLimit(plan);
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const only = existing.length === 1 ? existing[0]! : undefined;
+  let spare =
+    only &&
+    !visible.some((board) => sameName(board.name.slice(0, 60), only.name)) &&
+    (await tx.post.count({ where: { boardId: only.id } })) === 0 &&
+    (await tx.importedRecord.count({ where: { projectId: job.projectId, source: job.source, kind: "board", localId: only.id } })) === 0
+      ? only
+      : undefined;
   let last: string | undefined;
   for (const board of visible) {
     let id = known.get(board.id);
@@ -126,23 +137,30 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
       folded = false;
       here = false;
       const name = board.name.trim().slice(0, 60) || "Feedback";
-      const same = existing.find((b) => b.name.trim().toLowerCase() === name.toLowerCase());
+      const same = existing.find((b) => sameName(b.name, name));
       const words = boardWords(board);
       if (same) {
         id = same.id;
         await tx.board.update({ where: { id }, data: words });
-      } else if (limit === null || existing.length < limit) {
+      } else if (spare || limit === null || existing.length < limit) {
         const slugged = titleSlug(name, "board").slice(0, 36).replace(/-+$/, "");
         const base = slugged.length >= 2 ? slugged : "board";
         let slug = base;
-        for (let n = 2; existing.some((b) => b.slug === slug); n++) {
+        for (let n = 2; existing.some((b) => b !== spare && b.slug === slug); n++) {
           slug = `${base}-${n}`;
         }
         // As a board made in the app: taking a slug that redirected to another board ends that redirect.
         await tx.boardRedirect.deleteMany({ where: { projectId: job.projectId, slug } });
-        const created = await tx.board.create({ data: { projectId: job.projectId, name, slug, ...words }, select: { id: true, name: true, slug: true } });
-        existing.push(created);
-        id = created.id;
+        if (spare) {
+          await tx.board.update({ where: { id: spare.id }, data: { name, slug, ...words } });
+          Object.assign(spare, { name, slug });
+          id = spare.id;
+          spare = undefined;
+        } else {
+          const created = await tx.board.create({ data: { projectId: job.projectId, name, slug, ...words }, select: { id: true, name: true, slug: true } });
+          existing.push(created);
+          id = created.id;
+        }
       } else {
         id = last ?? existing.at(-1)!.id;
         folded = true;
@@ -217,12 +235,18 @@ async function authorOf(tx: Tx, job: ImportJob, author: FeaturebaseAuthor, conta
   }
   const externalId = author?.id ? `featurebase:${author.id}` : `featurebase:guest:${of}`;
   // Made once: their name isn't changed by what a later post says.
-  const [known] = await tx.$queryRaw<{ userId: string }[]>`SELECT "userId" FROM sso_identity WHERE "projectId" = ${job.projectId} AND "externalId" = ${externalId}`;
+  const known = await guestUser(tx, job, externalId);
   if (known) {
-    return known.userId;
+    return known;
   }
   const { userIds } = await syncUsersIn(tx, job.projectId, [{ externalId, name: author?.name?.trim() || "Anonymous" }]);
   return userIds.get(externalId)!;
+}
+
+/** The project's user for a guest (or a contact Featurebase no longer has) authorOf made, if it made one. */
+async function guestUser(tx: Tx, job: ImportJob, externalId: string): Promise<string | undefined> {
+  const [known] = await tx.$queryRaw<{ userId: string }[]>`SELECT "userId" FROM sso_identity WHERE "projectId" = ${job.projectId} AND "externalId" = ${externalId}`;
+  return known?.userId;
 }
 
 /** Where the posts step got to: Featurebase's page (its cursor) and the last of its posts done (null: none yet). */
@@ -235,7 +259,7 @@ type PostsAt = { page: string | null; after: { id: string; createdAt: string } |
  * votes and comments already.
  */
 async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
-  const begun = Date.now();
+  const begun = FEEDBACK_PAGE.now();
   const at = cursor ? (JSON.parse(cursor) as PostsAt) : { page: null, after: null };
   const boards = await job.featurebase.get<FeaturebaseBoard[]>("/boards");
   const { items, next } = await job.featurebase.page<FeaturebasePost>("/posts", at.page, { sortBy: "createdAt", sortOrder: "asc" });
@@ -253,7 +277,7 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
   let done = 0;
   const media = timedImporter(job, begun, () => done === 0);
   for (const post of window) {
-    if (done > 0 && Date.now() - begun > FEEDBACK_PAGE.softMs) {
+    if (done > 0 && FEEDBACK_PAGE.now() - begun > FEEDBACK_PAGE.softMs) {
       break;
     }
     if (fresh(post)) {
@@ -382,6 +406,11 @@ async function votesPage(job: ImportJob, cursor: string | null): Promise<StepPag
         for (const voter of posted ? voters : []) {
           const userId =
             voter.type === "admin" ? (await adminMember(tx, job, voter.id, voter)).userId : voter.type === "customer" || voter.type === "lead" ? users.get(voter.id) : undefined;
+          // A guest (or someone Featurebase no longer has) among their own post's voters: the author's vote, made and
+          // counted with the post.
+          if (!userId && voter.id && (await guestUser(tx, job, `featurebase:${voter.id}`)) === post!.authorId) {
+            continue;
+          }
           if (!userId) {
             tally(job.counts, "votes", voter.type === "customer" || voter.type === "lead" ? "by people Featurebase no longer has" : "by guests");
             continue;
@@ -483,7 +512,7 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
  * storage, the links stay as they are.
  */
 async function avatarsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
-  const begun = Date.now();
+  const begun = FEEDBACK_PAGE.now();
   const copies: { user: { id: string; image: string }; copy: Awaited<ReturnType<MediaImporter>> }[] = [];
   const media = timedImporter(job, begun, () => copies.length === 0);
   if (!media || !mediaStorage()) {
@@ -520,7 +549,11 @@ async function avatarsPage(job: ImportJob, cursor: string | null): Promise<StepP
   };
 }
 
-/** The imported posts embedded for duplicates, as the post-created job would (without its other work), 100 at a time. */
+/**
+ * The imported posts embedded for duplicates, as the post-created job would (without its other work), 100 at a time.
+ * Duplicate detection is a nicety: an embedding provider failing ends this step, logged, never the import that brought
+ * everything (the posts are embedded once they're edited, or by the backfill, scripts/backfill-embeddings.ts).
+ */
 async function embeddingsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   if (!embeddingsEnabled()) {
     return { next: null, save: NOTHING };
@@ -531,7 +564,12 @@ async function embeddingsPage(job: ImportJob, cursor: string | null): Promise<St
     take: 100,
     select: { externalId: true, localId: true },
   });
-  await embedPosts(await prisma.post.findMany({ where: { projectId: job.projectId, id: { in: records.map((record) => record.localId) } }, select: { id: true, projectId: true, title: true, body: true } }));
+  try {
+    await embedPosts(await prisma.post.findMany({ where: { projectId: job.projectId, id: { in: records.map((record) => record.localId) } }, select: { id: true, projectId: true, title: true, body: true } }));
+  } catch (error) {
+    log.warn(`Import ${job.id}: embedding its posts for duplicates failed, so they're left unembedded`, { error });
+    return { next: null, save: NOTHING };
+  }
   return { next: records.length === 100 ? records.at(-1)!.externalId : null, save: NOTHING };
 }
 

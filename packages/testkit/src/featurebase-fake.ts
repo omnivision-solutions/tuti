@@ -67,6 +67,7 @@ const TOBIAS = { id: "65f000000000000000000002", name: "Tobias Quill", email: "e
 const JUNO = { id: "65f000000000000000000003", name: "Juno Park", email: null, profilePicture: null, type: "lead" };
 const OLIVE = { id: "65f0000000000000000000a1", name: "Olive Owner", email: "e2e-featurebase-owner@example.com", profilePicture: null, type: "admin" };
 const FERN = { id: "65f0000000000000000000a2", name: "Fern Former", email: "e2e-featurebase-former@example.com", profilePicture: null, type: "admin" };
+const ANOTHER_VISITOR = { id: "65f0000000000000000000g2", name: "Another visitor", email: null, profilePicture: null, type: "guest" };
 const OPEN_ACCESS = { adminOnly: false, allowedRoles: [], deniedRoles: [], segments: [] };
 const board = (id: string, name: string, access: Row = {}, words: Row = {}) => ({
   object: "board",
@@ -118,7 +119,7 @@ const voter = (person: Row, createdAt: string) => ({ object: "contact", ...perso
  * Made-up feedback: five boards (one with the new project's board's name and its own words, one only admins see, one
  * for a segment, one some roles can't see); posts in date order with statuses by name and by type, an ETA, an image, an admin's and a guest's,
  * and four left out (on a hidden board, waiting for moderation, hidden from the portal, for one person); their voters
- * (the author among them, as Featurebase counts them; a voter made after the post; an admin; a guest); and comments:
+ * (the author among them, as Featurebase counts them, a guest author too; a voter made after the post; an admin; a guest); and comments:
  * a public one with an image, a reply, the team's private one, a user's private one, and ones left out (spam,
  * deleted, waiting for moderation, on a left-out post), and a changelog's.
  */
@@ -147,7 +148,7 @@ function feedbackFixtures(): Pick<FeaturebaseFixtures, "boards" | "posts" | "com
       post("65f0000000000000000000p7", "65f0000000000000000000b4", "Beta feature", JUNO, "2024-02-06T10:00:00.000Z"),
       post("65f0000000000000000000p8", "65f0000000000000000000b2", "Sync with calendars", JUNO, "2024-03-01T10:00:00.000Z", { status: status("Rejected", "canceled") }),
       post("65f0000000000000000000p9", "65f0000000000000000000b1", "Keyboard shortcuts", { id: null, name: "Visitor", email: null, profilePicture: null, type: "guest" }, "2024-03-05T10:00:00.000Z"),
-      post("65f0000000000000000000pb", "65f0000000000000000000b1", "Export to PDF", { id: null, name: "Another visitor", email: null, profilePicture: null, type: "guest" }, "2024-03-06T10:00:00.000Z"),
+      post("65f0000000000000000000pb", "65f0000000000000000000b1", "Export to PDF", ANOTHER_VISITOR, "2024-03-06T10:00:00.000Z"),
     ],
     voters: {
       "65f0000000000000000000p1": [
@@ -159,6 +160,8 @@ function feedbackFixtures(): Pick<FeaturebaseFixtures, "boards" | "posts" | "com
       "65f0000000000000000000p2": [voter(FERN, "2023-01-01T00:00:00.000Z"), voter(JUNO, "2023-07-01T00:00:00.000Z")],
       "65f0000000000000000000p3": [voter(OLIVE, "2023-01-01T00:00:00.000Z")],
       "65f0000000000000000000p8": [voter(JUNO, "2023-07-01T00:00:00.000Z")],
+      // A guest among their own post's voters, as Featurebase counts the author.
+      "65f0000000000000000000pb": [voter(ANOTHER_VISITOR, "2024-03-06T10:00:00.000Z")],
     },
     comments: [
       comment("65f0000000000000000000c1", "65f0000000000000000000p1", TOBIAS, `<p>Yes please!</p><img src="${FAKE_FEATUREBASE_FILES}whiteboard.png">`, "2024-01-11T09:00:00.000Z"),

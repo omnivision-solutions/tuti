@@ -5,6 +5,7 @@ import { FEEDBACK_PAGE, handlers, importsSettled } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+import { importSummary } from "@/lib/import-parts";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -90,12 +91,14 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
     boards: { imported: 2, leftOut: { "only some people see": 3 } },
     posts: { imported: 5, leftOut: { "only some people see": 3, "hidden from the portal": 1, "waiting for moderation": 1 } },
     images: { imported: 1, leftOut: { "in comments, which have none in Tuti": 1 } },
-    // Each author's own (5), and the others' (3).
+    // Each author's own (5), a guest author's among them, and the others' (3); only the guest who isn't the author left out.
     votes: { imported: 8, leftOut: { "by guests": 1 } },
     comments: { imported: 3, leftOut: { "private but not by the team": 1, "deleted or spam": 2, "waiting for moderation": 1, "on posts left out": 1 } },
     notes: { imported: 1, leftOut: {} },
     avatars: { imported: 1, leftOut: {} },
   });
+  expect(importSummary(done!)).toContain("8 votes");
+  expect(importSummary(done!)).toContain("1 vote by guests;");
 
   // The new project's board is Featurebase's of the same name, with its words; the other is made; hidden ones aren't.
   expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { name: true, slug: true, description: true, postButton: true, detailsPlaceholder: true } })).toEqual([
@@ -283,12 +286,27 @@ test("a page of Featurebase's with more posts than one of ours takes comes acros
 
 test("past a page's time, what's left of it goes to the next page; one post's images past its hard limit are left out", async () => {
   fake.fixtures.contacts[3]!.profilePicture = fake.fixtures.contacts[0]!.profilePicture;
-  // Nothing more begun once a page has done something: one post and one avatar a page.
-  FEEDBACK_PAGE.softMs = 0;
-  await importFeedback();
+  // The step each page ran, in order.
+  const pages: string[] = [];
+  const importStep = handlers.importStep;
+  handlers.importStep = async (input, log) => {
+    pages.push((await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } })).step);
+    return importStep(input, log);
+  };
+  // A clock that moves on each look: once a page has done something, it's past its soft limit.
+  let now = 0;
+  Object.assign(FEEDBACK_PAGE, { softMs: 0, now: () => ++now });
+  try {
+    await importFeedback();
+  } finally {
+    handlers.importStep = importStep;
+  }
   let counts = (await call(getImport, asOwner(), {})).import!.counts;
   expect(counts).toMatchObject({ posts: { imported: 5 }, images: { imported: 1 }, avatars: { imported: 2 } });
   expect(await prisma.user.count({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } } })).toBe(2);
+  // One post a page (Featurebase's 10, 2 to its page: 5 pages without the limit), one avatar a page (else 1).
+  expect(pages.filter((step) => step === "posts")).toHaveLength(10);
+  expect(pages.filter((step) => step === "avatars")).toHaveLength(2);
 
   // A page whose first post's images begin past its hard limit leaves them out.
   project = await createProject(owner);
@@ -296,6 +314,28 @@ test("past a page's time, what's left of it goes to the next page; one post's im
   await importFeedback();
   counts = (await call(getImport, asOwner(), {})).import!.counts;
   expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 1 } } });
+});
+
+test("a new project's untouched board becomes the first of Featurebase's, costing the plan no slot", async () => {
+  vi.stubEnv("PLANS", "on");
+  // No board named as the new project's: on the free plan (2) both of these come across, neither folded.
+  const ideas = fake.fixtures.boards[0]!;
+  Object.assign(ideas, { name: "Ideas", localization: { ...(ideas.localization as object), name: { en: "Ideas" } } });
+  await importFeedback();
+  expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 2, leftOut: { "only some people see": 3 } });
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, slug: true, postButton: true } })).toEqual([
+    { id: project.boards[0]!.id, name: "Ideas", slug: "ideas", postButton: "Share an idea" },
+    { id: expect.any(String), name: "Bugs", slug: "bugs", postButton: null },
+  ]);
+  expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Dark mode" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Ideas" } });
+});
+
+test("an embedding provider failing leaves the posts unembedded; the import still ends done, everything brought", async () => {
+  openai.failNext(500);
+  await importFeedback();
+  const { import: done } = await call(getImport, asOwner(), {});
+  expect(done).toMatchObject({ state: "done", error: null, counts: { posts: { imported: 5 }, comments: { imported: 3 }, avatars: { imported: 1 } } });
+  expect(await prisma.postEmbedding.count({ where: { projectId: project.id } })).toBe(0);
 });
 
 test("a key that can't read the boards or the posts isn't accepted for Feedback", async () => {
