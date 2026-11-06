@@ -201,7 +201,13 @@ test("a stuck import goes on when it's looked at; one that hasn't moved for a da
 
 test("one that hasn't moved for a day is failed when it's looked at, not resumed: inline installs run no daily job", async () => {
   const stale = await running({ updatedAt: new Date(Date.now() - 25 * 60 * 60_000) });
-  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ id: stale.id, state: "failed", error: "It stopped moving for a day. Start it again to go on: what came across already is skipped." });
+  // With the step it stopped at, so its progress says where.
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({
+    id: stale.id,
+    state: "failed",
+    step: "contacts",
+    error: "It stopped moving for a day. Start it again to go on: what came across already is skipped.",
+  });
   await importsSettled();
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stale.id } })).toMatchObject({ state: "FAILED", apiKey: null });
   expect(await usersOf()).toEqual([]);

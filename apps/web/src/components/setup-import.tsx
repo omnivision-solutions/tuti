@@ -73,7 +73,7 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
                       <li
                         key={name}
                         aria-current={i === at ? "step" : undefined}
-                        className={cn("rounded-md border px-2 py-0.5 text-xs", i === at ? "border-primary/50 text-primary" : i < at ? "text-muted-foreground" : "text-muted-foreground/70")}
+                        className={cn("rounded-md border px-2 py-0.5 text-xs", i === at ? "border-primary/50 text-primary" : i < at ? "text-muted-foreground" : "border-dashed text-muted-foreground")}
                       >
                         {i < at && <CircleCheckIcon aria-hidden className="mr-1 inline size-3 text-primary" />}
                         {label}
