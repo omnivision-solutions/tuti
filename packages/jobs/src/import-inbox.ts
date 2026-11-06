@@ -35,6 +35,8 @@ const AGAIN = "again:";
 const DAY_MS = 86_400_000;
 /** Featurebase sends at most this many parts of a conversation, the newest: one with that many has lost its start. */
 const MAX_PARTS = 500;
+/** The part repeating the conversation's start comes about a second after it: one this much later isn't the start. */
+const OPENING_MS = 60_000;
 /** As the inbox's own attachments (apps/web server/attachments.ts MAX_FILE_BYTES). */
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
@@ -163,9 +165,10 @@ function kindOf(part: FeaturebasePart): { author: MessageAuthor; note: boolean }
 /** A conversation's messages, its person and its files (copied now), before the page's transaction. */
 async function readConversation(job: ImportJob, conversation: FeaturebaseConversation, copyUntil: number): Promise<Read> {
   const parts = [...(conversation.conversationParts ?? [])].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-  // The first part repeats the conversation's source; only once the start is cut off (the newest 500) is the source needed.
+  // The first part repeats the conversation's source. Featurebase sends the newest 500: only when that cut off the start
+  // (its oldest part well after the conversation began) is the source needed, and the conversation counted as cut.
   const source = conversation.source;
-  const cutShort = parts.length >= MAX_PARTS;
+  const cutShort = parts.length >= MAX_PARTS && Date.parse(parts[0]!.createdAt) - Date.parse(conversation.createdAt) > OPENING_MS;
   if (cutShort && source?.bodyHtml) {
     parts.unshift({ id: "source", partType: "user_msg", createdAt: conversation.createdAt, bodyHtml: source.bodyHtml, channel: source.channel, author: source.author });
   }
@@ -228,7 +231,9 @@ async function messageText(part: FeaturebasePart): Promise<{ body: string; urls:
   // bodyHtml: bodyMarkdown drops images' addresses.
   const content = await htmlToContent("post", part.bodyHtml ?? "");
   if ("error" in content) {
-    return { body: part.bodyMarkdown?.trim() ?? "", urls: [], media: false, unshown: 0 };
+    // Too long to be content, say: its text (bodyMarkdown, or the HTML's own) and its Featurebase files all the same.
+    const urls = [...new Set([...(part.bodyHtml ?? "").matchAll(/\b(?:src|href)="([^"]+)"/g)].map(([, url]) => decodeEntities(url!)).filter(inFeaturebaseStorage))];
+    return { body: part.bodyMarkdown?.trim() || htmlText(part.bodyHtml ?? ""), urls, media: urls.length > 0, unshown: 0 };
   }
   const urls = [...new Set(content.leftOut.map((item) => item.url).filter(inFeaturebaseStorage))];
   const outside = content.leftOut.filter((item) => !inFeaturebaseStorage(item.url));
@@ -240,11 +245,7 @@ async function messageText(part: FeaturebasePart): Promise<{ body: string; urls:
 
 /** The doc with each link's address after its words (unless they're the address) and list items marked, for plain text. */
 function readable(node: Node): Node {
-  const content = node.content?.map(readable);
-  if (node.type === "text") {
-    const href = node.marks?.find((mark) => mark.type === "link")?.attrs?.href as string | undefined;
-    return href && href.replace(/^mailto:/, "") !== node.text ? { ...node, text: `${node.text} (${href})` } : node;
-  }
+  const content = node.content && withAddresses(node.content.map(readable));
   if ((node.type === "bulletList" || node.type === "orderedList") && content) {
     const start = Number(node.attrs?.start ?? 1);
     const marked = content.map((item, i) => {
@@ -256,6 +257,41 @@ function readable(node: Node): Node {
   }
   return content ? { ...node, content } : node;
 }
+
+/** A link's address after its words, once per run of text nodes it marks (bold words inside it split it in nodes). */
+function withAddresses(nodes: Node[]): Node[] {
+  const hrefOf = (node: Node) => (node.type === "text" ? (node.marks?.find((mark) => mark.type === "link")?.attrs?.href as string | undefined) : undefined);
+  const out = [...nodes];
+  for (let i = 0; i < out.length; ) {
+    const href = hrefOf(out[i]!);
+    let end = i + 1;
+    while (href && end < out.length && hrefOf(out[end]!) === href) {
+      end++;
+    }
+    const words = out.slice(i, end).map((node) => node.text).join("");
+    if (href && href.replace(/^mailto:/, "") !== words) {
+      out[end - 1] = { ...out[end - 1]!, text: `${out[end - 1]!.text} (${href})` };
+    }
+    i = end;
+  }
+  return out;
+}
+
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+const decodeEntities = (text: string) =>
+  text.replace(/&(#x[\da-f]+|#\d+|\w+);/gi, (entity, name: string) =>
+    name[0] === "#" ? String.fromCodePoint(Number(name[1] === "x" || name[1] === "X" ? `0${name.slice(1)}` : name.slice(1))) : (ENTITIES[name.toLowerCase()] ?? entity),
+  );
+
+/**
+ * HTML's text, for what htmlToContent refuses (too long): blocks and line breaks as new lines, tags dropped.
+ * ponytail: a regex strip, not a parser; only for HTML too long to be content, where the words are what matter.
+ */
+const htmlText = (html: string) =>
+  decodeEntities(html.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, "").replace(/<(br|\/p|\/div|\/li|\/h\d)\b[^>]*>/gi, "\n").replace(/<[^>]*>/g, ""))
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
 /** Copies a file into the inbox's attachment storage (as a received email's), outside any transaction; or why not. */
 async function copyAttachment(job: ImportJob, url: string): Promise<StoredFile | { leftOut: LeftOutReason }> {
@@ -324,29 +360,33 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
     },
     select: { id: true },
   });
-  for (const m of messages) {
-    const message = await tx.conversationMessage.create({
-      data: {
-        projectId: job.projectId,
-        conversationId: id,
-        author: m.author,
-        authorId: m.author === "USER" ? (m.contactId && users.get(m.contactId)) || userId : m.admin ? admins.get(m.admin.id!)! : null,
-        channel: m.channel,
-        body: m.body,
-        note: m.note,
-        createdAt: m.createdAt,
-        seenAt: m.seenAt,
-        attachmentsDropped: m.dropped,
-        importId: job.id,
-        // The reply emails' tries used up: a worker from before importId skips it too, while a deploy overlaps.
-        ...(m.author === "TEAM" && { emailAttempts: MAX_TRIES }),
-      },
-      select: { id: true },
-    });
-    await tx.conversationAttachment.updateMany({ where: { id: { in: m.files.map((file) => file.id) }, messageId: null }, data: { messageId: message.id } });
-    if (m.files.length > 0) {
-      tally(job.counts, "attachments", null, m.files.length);
-    }
+  // One write for them all, ids made here so files go to theirs: a page's save under the lock stays short.
+  const rows = messages.map((m) => ({ m, id: randomUUID() }));
+  await tx.conversationMessage.createMany({
+    data: rows.map(({ m, id: messageId }) => ({
+      id: messageId,
+      projectId: job.projectId,
+      conversationId: id,
+      author: m.author,
+      authorId: m.author === "USER" ? (m.contactId && users.get(m.contactId)) || userId : m.admin ? admins.get(m.admin.id!)! : null,
+      channel: m.channel,
+      body: m.body,
+      note: m.note,
+      createdAt: m.createdAt,
+      seenAt: m.seenAt,
+      attachmentsDropped: m.dropped,
+      importId: job.id,
+      // The reply emails' tries used up: a worker from before importId skips it too, while a deploy overlaps.
+      emailAttempts: m.author === "TEAM" ? MAX_TRIES : 0,
+    })),
+  });
+  const files = rows.flatMap(({ m, id: messageId }) => m.files.map((file) => ({ file: file.id, messageId })));
+  if (files.length > 0) {
+    await tx.$executeRaw`
+      UPDATE conversation_attachment a SET "messageId" = f.message
+      FROM unnest(${files.map((f) => f.file)}::text[], ${files.map((f) => f.messageId)}::text[]) AS f(id, message)
+      WHERE a.id = f.id AND a."messageId" IS NULL`;
+    tally(job.counts, "attachments", null, files.length);
   }
   read.leftOut.forEach((reason) => tally(job.counts, "attachments", reason));
   if (read.cutShort) {

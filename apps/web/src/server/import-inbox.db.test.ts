@@ -230,16 +230,45 @@ test("an image-only message whose image can't be brought keeps saying it had one
   expect(open.messages.at(-1)).toMatchObject({ author: "USER", body: "", attachmentsDropped: 1 });
 });
 
-test("a conversation Featurebase cut to its newest 500 parts is counted: the messages before them are missing", async () => {
-  // The user's question, then 499 tag changes: Featurebase's 500, older ones not sent.
+test("a conversation Featurebase cut to its newest 500 parts is counted, its start from its source; one sent in full isn't, its start once", async () => {
   const conversation = fake.fixtures.conversations[2]!;
   const [question] = conversation.conversationParts as { createdAt: string }[];
-  const tags = Array.from({ length: 499 }, (_, i) => ({ object: "conversation_part", id: `t${i}`, partType: "tags", createdAt: new Date(Date.parse(question!.createdAt) + (i + 1) * 1000).toISOString() }));
-  conversation.conversationParts = [question, ...tags];
-  const done = await importInbox();
-  expect(done.counts).toMatchObject({
-    conversations: { imported: 3, leftOut: { "closed more than 365 days ago, past what Tuti keeps": 1, "whose messages before their newest 500 are missing: Featurebase gives no more": 1 } },
-  });
+  const tags = (from: number) => Array.from({ length: 499 }, (_, i) => ({ object: "conversation_part", id: `t${i}`, partType: "tags", createdAt: new Date(from + (i + 1) * 1000).toISOString() }));
+  const cut = "whose messages before their newest 500 are missing: Featurebase gives no more";
+  const start = Date.parse(question!.createdAt);
+  const messages = async () => (await conversations()).find((c) => c.subject === "How do I reset my password?")!.messages.map((m) => [m.author, m.body]);
+
+  // All of it: the question, then 499 tag changes. Exactly 500 parts, nothing missing.
+  conversation.conversationParts = [question, ...tags(start)];
+  const full = await importInbox();
+  expect(full.counts).toMatchObject({ conversations: { leftOut: expect.not.objectContaining({ [cut]: expect.anything() }) } });
+  expect(await messages()).toEqual([["USER", "How do I reset my password?\nIt says the link expired."]]);
+
+  // The newest 500, an hour on: the question isn't among them, so it comes from the conversation's source.
+  await prisma.conversation.deleteMany({ where: { projectId: project.id } });
+  await prisma.importedRecord.deleteMany({ where: { projectId: project.id, kind: "conversation" } });
+  conversation.conversationParts = [...tags(start + 60 * 60_000), { object: "conversation_part", id: "t499", partType: "tags", createdAt: new Date(start + 2 * 60 * 60_000).toISOString() }];
+  const cutShort = await importInbox();
+  expect(cutShort.counts).toMatchObject({ conversations: { leftOut: { [cut]: 1 } } });
+  expect(await messages()).toEqual([["USER", "How do I reset my password?\nIt says the link expired."]]);
+});
+
+test("a link with bold words in it gets its address once, after all its words", async () => {
+  (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[2]!.bodyHtml = '<p>See <a href="https://docs.example.com/export">the <strong>export</strong> guide</a>.</p>';
+  await importInbox();
+  const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  expect(open.messages[1]!.body).toBe("See the export guide (https://docs.example.com/export).");
+});
+
+test("a part too long to be content keeps its text and its Featurebase files: the user's last message, it still needs a reply", async () => {
+  const last = (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string; bodyMarkdown?: string }[])[4]!;
+  last.bodyHtml = `<p>${"word ".repeat(50_000).trim()}</p><p><img src="${FAKE_FEATUREBASE_FILES}/shot.png?X-Amz-Expires=3600&amp;X-Amz-Signature=abc"></p>`;
+  delete last.bodyMarkdown;
+  await importInbox();
+  const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  expect(open.status).toBe("OPEN");
+  const message = open.messages.at(-1)!;
+  expect([message.author, message.body.slice(0, 9), message.body.length, message.attachments.length]).toEqual(["USER", "word word", 249_999, 1]);
 });
 
 test("only files in Featurebase's storage come across: another site's image isn't fetched, as inbound email leaves remote images", async () => {
