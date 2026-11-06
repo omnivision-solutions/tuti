@@ -1292,11 +1292,14 @@ model ConversationMessage {
   seenAt             DateTime?
   /// Attachments it came with that couldn't be kept (the server has no media storage); shown on the message.
   attachmentsDropped Int            @default(0)
+  /// The import that brought it (docs/plan.md, Switching from Featurebase): never emailed, never an unread dot.
+  importId           String?
   createdAt          DateTime       @default(now())
 
   project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   conversation Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   authorUser   User?                    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  import       DataImport?              @relation(fields: [importId], references: [id], onDelete: SetNull)
   attachments  ConversationAttachment[]
 
   @@index([conversationId, createdAt])
@@ -2506,6 +2509,7 @@ model DataImport {
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   startedBy User?   @relation(fields: [startedById], references: [id], onDelete: SetNull)
+  messages  ConversationMessage[]
 
   @@index([projectId, createdAt])
   @@index([startedById])
