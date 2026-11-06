@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { issueCertificate, publishTxt } from "./dns";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, signUp } from "./helpers";
 
 test("the team puts the portal on its own domain: adds it, verifies it with a TXT record, and people sign up and post there", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -127,18 +127,50 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await visitor.goto("/feedback/feature-requests");
   await expect(visitor.locator("script[data-on-portal]")).toHaveCount(1);
 
-  // Custom code that adds the widget its own way (its options): the portal leaves its own tag out there, so theirs is the
-  // one that runs. On the Tuti address, where their code doesn't run, the portal's stays.
+  // Custom code that adds the widget its own way (here without its launcher): it gives way to the portal's own, which Ask AI
+  // and the reader's sign-in here need. One launcher, the portal's. On the Tuti address, where their code doesn't run, the
+  // portal's is there too.
   await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
   await owner.getByRole("button", { name: "Save changes" }).click();
   // Saved once it has nothing left to save (the first save's toast may still be up).
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await visitor.goto("/feedback/feature-requests");
-  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(visitor.locator('script[src$="/widget.js"]')).toHaveCount(1);
-  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(0);
+  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(1);
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(1);
   await onTuti.reload();
   await expect(onTuti.locator("script[data-on-portal]")).toHaveCount(1);
+  // With the portal's own turned off, Custom code's still gives way (Ask AI and sign-in need the portal's), and brings the
+  // portal's launcher back.
+  const api = await apiFor(owner, slug);
+  await api("/widget", { onPortal: false }, "PATCH");
+  await owner.goto(`/app/${slug}/customize/custom-code`);
+  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`);
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.locator("script[data-on-portal]")).not.toHaveAttribute("data-hide-launcher");
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(1);
+  // Its panel is the portal's, on this domain.
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${domainUrl}/widget`);
+  // Added without its launcher (data-hide-launcher), it brings none back.
+  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("data-hide-launcher", "");
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(0);
+  // Nor hidden through TutiSettings.
+  await owner
+    .getByLabel("Custom HTML")
+    .fill(`<script>window.TutiSettings = { hideLauncher: true };</script><script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`);
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("data-hide-launcher", "");
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(0);
+  await api("/widget", { onPortal: true }, "PATCH");
 
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(visitor).toHaveURL(`${domainUrl}/sign-in?next=%2Ffeedback%2Ffeature-requests`);

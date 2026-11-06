@@ -15,7 +15,7 @@ import { answerBlocks } from "@/lib/answer-text";
 import { askDocs, escalateDocs, rateDocsAnswer } from "@/server/docs-readers";
 import { widgetStartConversation } from "@/server/widget-inbox";
 import type { DocsAnswer as Answer } from "@/server/operations/docs-ask";
-import { useDocsAssistant } from "@/components/docs-assistant-context";
+import { askedFrom, useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref } from "@/components/portal-base";
 
 /**
@@ -68,7 +68,7 @@ export function DocsAnswer({
     <AskAPerson projectSlug={projectSlug} questionId={answer.id} question={question} defaultEmail={askAPerson.email} widget={widget} />
   );
 
-  // On the portal, the conversation can go on in the assistant (the widget has none).
+  // On the portal, the conversation can go on in the widget's assistant, from this answer (in the widget there is no such answer).
   const followUp = !widget && assistant && answer && (
     <div>
       <Button variant="outline" size="sm" onClick={() => assistant.continueWith(question, answer)}>
@@ -273,7 +273,7 @@ export function AskAPerson({
       const who = { token: signedIn?.token ?? null, visitor: signedIn ? null : (visitor?.token ?? null) };
       const note = String(form.get("note") ?? "");
       const result = questionId
-        ? await escalateDocs(projectSlug, questionId, email, note, widget ? "widget" : "portal", who)
+        ? await escalateDocs(projectSlug, questionId, email, note, widget ? askedFrom() : "portal", who)
         : await widgetStartConversation(projectSlug, who, [question, note.trim()].filter(Boolean).join("\n\n"), signedIn ? undefined : email);
       if ("error" in result && result.error) {
         setError(result.error);

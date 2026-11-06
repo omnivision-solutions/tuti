@@ -5,12 +5,14 @@ import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnswerSources, AnswerText, AskAPerson } from "@/components/docs-answer";
-import { type DocsAssistant, DocsAssistantContext, useDocsAssistant } from "@/components/docs-assistant-context";
+import { askedFrom, type DocsAssistant, DocsAssistantContext, useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref, usePortalSlug } from "@/components/portal-base";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useWidgetSignIn } from "@/components/widget-feedback";
+import { MAX_QUESTION } from "@/lib/widget-docs";
+import { WIDGET_ASK_MESSAGE, WIDGET_ASK_READY_MESSAGE } from "@/lib/widget-messages";
 import { askDocs, rateDocsAnswer } from "@/server/docs-readers";
 import type { DocsAnswer } from "@/server/operations/docs-ask";
 
@@ -43,21 +45,18 @@ function storedTurns(slug: string, viewer: string): Turn[] {
 const lastAsked = (turns: Turn[]) => turns.findLast((turn) => turn.answer)?.answer?.id;
 
 /**
- * The portal's docs assistant: AI answers as a conversation, in a panel (the whole screen on phones).
- * Asking from the search box ("Ask AI") or the header's button opens it; each question follows up on
- * the ones before (docs.ask's `followUpTo`: the server reads the earlier turns, the browser only names
- * the last). Answers come with their sources and a thumbs up or down; "I don't know" with posting it
- * as feedback (`feedbackPath`: the first board's) and, when the team takes questions by email, asking a
- * person (`askAPerson`). The trash clears the conversation; the next question starts a new one.
- * In the widget (`widget`), it takes the panel: questions count as the widget's, sources open in the
- * panel's Docs tab, and "Post this as feedback" opens its Feedback tab (`feedbackPath` "/widget?tab=feedback").
+ * The widget's docs assistant, the one place AI answers are a conversation (the portal's Ask AI opens it too: Tuti.open({ ask })).
+ * It takes the panel. Its Help center's "Ask AI", Messages' AI first, and the page around the panel (by message, once this
+ * says it's listening: a question, or none to just open it, after a question and answer from elsewhere to follow up on) open it. Each question follows up on the ones before (docs.ask's `followUpTo`: the server reads the earlier turns,
+ * the browser only names the last). Answers come with their sources (opening in the panel's Help center) and a thumbs up or down,
+ * "I don't know" with posting it as feedback (`feedbackPath`, the Feedback tab), and each with Ask a person (`askAPerson`). The
+ * trash clears the conversation; the next question starts a new one.
  */
 export function DocsAssistantProvider({
   projectName,
   viewer,
   feedbackPath,
   askAPerson,
-  widget = false,
   children,
 }: {
   projectName: string;
@@ -65,11 +64,9 @@ export function DocsAssistantProvider({
   viewer: string | null;
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
-  widget?: boolean;
   children: React.ReactNode;
 }) {
   const slug = usePortalSlug();
-  const from = widget ? "widget" : "portal";
   const [open, setOpen] = useState(false);
   // What had focus when it opened, for it to go back to; in the widget's Messages that may be gone by then (sending went
   // back to the list), and the page's mark (data-assistant-return, its New message) takes it instead.
@@ -88,7 +85,7 @@ export function DocsAssistantProvider({
   if (open && !opened) {
     setOpened(true);
   }
-  const { signedIn } = useWidgetSignIn(slug, widget && !viewer && opened);
+  const { signedIn } = useWidgetSignIn(slug, !viewer && opened);
   const reader = viewer ?? (signedIn ? `widget:${signedIn.id}` : "anonymous");
   const key = storageKey(slug, reader);
   const [turns, setTurns] = useState<Turn[]>(() => storedTurns(slug, reader));
@@ -138,6 +135,7 @@ export function DocsAssistantProvider({
     async (turn: string, question: string, before: Turn[]) => {
       try {
         const followUpTo = lastAsked(before);
+        const from = askedFrom();
         const result = await askDocs(slug, question, from, followUpTo);
         // The conversation isn't theirs any more (a new reader cookie): asked afresh, as a new one.
         if (followUpTo && "code" in result && result.code === "not_found") {
@@ -152,7 +150,7 @@ export function DocsAssistantProvider({
         update(turn, { error: "Couldn't reach the assistant. Try again." });
       }
     },
-    [slug, from, update],
+    [slug, update],
   );
 
   const assistant = useMemo<DocsAssistant>(
@@ -178,6 +176,47 @@ export function DocsAssistantProvider({
     [run, show],
   );
 
+  // Asked by the page around the panel (Tuti.open({ ask }), the portal's Ask AI): by message, once it hears this is listening.
+  // A question and answer from elsewhere (a search's "Ask a follow-up") come first, to follow up on.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: unknown; ask?: unknown; turn?: unknown } | null;
+      if (event.source !== window.parent || data?.type !== WIDGET_ASK_MESSAGE || typeof data.ask !== "string") {
+        return;
+      }
+      // Only a turn shaped as an answer is (the page's, so nothing it couldn't show itself), or the conversation would break.
+      const turn = data.turn as { question?: unknown; answer?: Partial<Record<keyof DocsAnswer, unknown>> } | null | undefined;
+      const answered = turn?.answer;
+      if (
+        typeof turn?.question === "string" &&
+        answered &&
+        typeof answered.id === "string" &&
+        typeof answered.status === "string" &&
+        Array.isArray(answered.sources) &&
+        (typeof answered.answer === "string" || answered.answer === null || answered.answer === undefined)
+      ) {
+        const { question, answer } = turn as { question: string; answer: DocsAnswer };
+        setTurns((all) => (all.some((each) => each.answer?.id === answer.id) ? all : [...all, { key: crypto.randomUUID(), question, answer }]));
+      }
+      if (data.ask.trim()) {
+        assistant.ask(data.ask.slice(0, MAX_QUESTION));
+      } else {
+        assistant.open();
+      }
+    };
+    window.addEventListener("message", onMessage);
+    // Saying which page, so the loader doesn't take it from one it has replaced; and that it's stopped, as the page goes.
+    const stopped = () => window.parent.postMessage({ type: WIDGET_ASK_READY_MESSAGE, listening: false }, "*");
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: WIDGET_ASK_READY_MESSAGE, href: window.location.href }, "*");
+      window.addEventListener("pagehide", stopped);
+    }
+    return () => {
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("pagehide", stopped);
+    };
+  }, [assistant]);
+
   const retry = (turn: Turn) => {
     const before = turn.fresh ? [] : turnsRef.current.slice(0, turnsRef.current.findIndex((each) => each.key === turn.key));
     update(turn.key, { answer: undefined, error: undefined });
@@ -198,7 +237,6 @@ export function DocsAssistantProvider({
             turns={turns}
             feedbackPath={feedbackPath}
             askAPerson={askAPerson}
-            widget={widget}
             onAsk={assistant.ask}
             onRetry={retry}
             onRated={(turn, helpful) => update(turn.key, { rated: helpful })}
@@ -217,7 +255,6 @@ function AssistantPanel({
   turns,
   feedbackPath,
   askAPerson,
-  widget,
   onAsk,
   onRetry,
   onRated,
@@ -229,7 +266,6 @@ function AssistantPanel({
   turns: Turn[];
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
-  widget: boolean;
   onAsk: (question: string) => void;
   onRetry: (turn: Turn) => void;
   onRated: (turn: Turn, helpful: boolean) => void;
@@ -282,7 +318,6 @@ function AssistantPanel({
               turn={turn}
               feedbackPath={feedbackPath}
               askAPerson={askAPerson}
-              widget={widget}
               onRetry={() => onRetry(turn)}
               onRated={(helpful) => onRated(turn, helpful)}
               onEscalated={() => onEscalated(turn)}
@@ -315,7 +350,6 @@ function AssistantReply({
   turn,
   feedbackPath,
   askAPerson,
-  widget,
   onRetry,
   onRated,
   onEscalated,
@@ -324,7 +358,6 @@ function AssistantReply({
   turn: Turn;
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
-  widget: boolean;
   onRetry: () => void;
   onRated: (helpful: boolean) => void;
   onEscalated: () => void;
@@ -347,8 +380,8 @@ function AssistantReply({
             </Button>
           </>
         )}
-        {/* In the widget, where Messages asks the AI first, the team is still a way through: the question as it was, unanswered. */}
-        {widget && askAPerson && (
+        {/* Where Messages asks the AI first, the team is still a way through: the question as it was, unanswered. */}
+        {askAPerson && (
           <AskAPerson
             projectSlug={slug}
             questionId={null}
@@ -377,14 +410,14 @@ function AssistantReply({
       questionId={answer.id}
       question={turn.question}
       defaultEmail={askAPerson.email}
-      widget={widget}
+      widget
       sent={turn.escalated}
       onSent={onEscalated}
       onLeave={onLeave}
     />
   );
-  // In the widget, an article opens in the panel's Docs tab (the portal's page is a link away from there).
-  const sourceHref = widget ? (article: string) => at(`/widget?${new URLSearchParams({ tab: "docs", article })}`) : undefined;
+  // An article opens in the panel's Help center (the portal's page is a link away from there).
+  const sourceHref = (article: string) => at(`/widget?${new URLSearchParams({ tab: "docs", article })}`);
   if (answer.status === "failed") {
     return (
       <div className="flex flex-col items-start gap-2 text-sm">
@@ -394,8 +427,7 @@ function AssistantReply({
             Try again
           </Button>
         )}
-        {/* In the widget, where Messages asks the AI first; the portal's assistant is as it was. */}
-        {widget && person}
+        {person}
         {answer.sources.length > 0 && <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />}
       </div>
     );
@@ -456,8 +488,8 @@ function AssistantReply({
         ) : (
           <p>Thanks for letting us know.</p>
         )}
-        {/* In the widget it's always there (Messages asks the AI first); on the portal, once they say it didn't help. */}
-        {(turn.rated === false || widget) && person}
+        {/* Always there: Messages asks the AI first, and the team is a way through. */}
+        {person}
       </div>
       <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />
     </div>

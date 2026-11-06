@@ -193,6 +193,8 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
         return new FakeElement(tag, page);
       },
       createTextNode: (text: string) => ({ nodeValue: text }),
+      // The portal's own tag, which a copy elsewhere gives way to: none on these pages.
+      querySelector: () => null,
       querySelectorAll: (selector: string) => {
         const name = /^\[([\w-]+)\]$/.exec(selector)![1]!;
         const all = (element: FakeElement): FakeElement[] =>
@@ -356,6 +358,16 @@ test("if the app doesn't answer, the button shows up after 3 seconds anyway", ()
   }
 });
 
+test("the portal's own tag doesn't take the page's TutiSettings (the team's Custom code's): its launcher shows", async () => {
+  const page = loadWidget({
+    attributes: { "data-on-portal": "" },
+    settings: { hideLauncher: true, display: "sidebar" },
+    before: (page) => Object.assign(page.window, { location: { origin: "https://help.acme.example" } }),
+  });
+  await settled();
+  expect(page.button).toBeDefined();
+});
+
 test("data-hide-launcher or TutiSettings.hideLauncher leaves the button out; Tuti.open() and Tuti.close() still work", async () => {
   for (const page of [loadWidget({ attributes: { "data-hide-launcher": "" } }), loadWidget({ settings: { hideLauncher: true } })]) {
     await settled();
@@ -400,6 +412,83 @@ test("the portal's own tag under a path of the team's site: the panel is under t
   for (const value of ["help", "//evil.example", "/help/", "/Help", "/help?x=1"]) {
     expect(at(value)).toBe("https://acme.example/widget?tab=docs");
   }
+});
+
+test("Tuti.open({ ask }) opens the panel, and asks once its assistant says it's listening: the latest ask, with its turn", () => {
+  const page = loadWidget({});
+  const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
+  page.Tuti.open({ ask: "How do I invite people?" });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
+  // Not listening yet (loaded, maybe, but not hydrated): it waits, the latest only.
+  loaded(page);
+  page.Tuti.open({ ask: "x".repeat(400) });
+  page.Tuti.open({ ask: true, turn: { question: "Pricing?", answer: { id: "a1" } } });
+  expect(asked()).toEqual([]);
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget" });
+  expect(asked()).toEqual([[{ type: "tuti:ask", ask: "", turn: { question: "Pricing?", answer: { id: "a1" } } }, "https://acme.tuti.example"]]);
+  // A turn never comes with a question of its own: the question goes alone.
+  page.Tuti.open({ ask: "Can I invite a guest?", turn: { question: "Pricing?", answer: { id: "a1" } } });
+  expect(asked().at(-1)![0]).toEqual({ type: "tuti:ask", ask: "Can I invite a guest?", turn: null });
+  // Listening: at once, where the panel is (no reload); true just opens the assistant; at most 300 characters.
+  page.Tuti.open({ ask: true });
+  page.Tuti.open({ ask: "y".repeat(400) });
+  expect(asked().slice(2).map(([data]) => (data as { ask: string }).ask)).toEqual(["", "y".repeat(300)]);
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
+});
+
+test("an ask while the panel loads another page waits for that page to listen, not the one on its way out, even if it says so", () => {
+  const page = loadWidget({});
+  const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
+  page.Tuti.open({ article: "billing" });
+  loaded(page);
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=docs&article=billing" });
+  page.Tuti.open({ article: "refunds" });
+  page.Tuti.open({ ask: "How do refunds work?" });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs&article=refunds");
+  // The page on its way out, still saying it's listening.
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=docs&article=billing" });
+  expect(asked()).toEqual([]);
+  // The new page, its address as the browser writes it (a default port).
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example:443/widget?tab=docs&article=refunds" });
+  expect(asked().map(([data]) => (data as { ask: string }).ask)).toEqual(["How do refunds work?"]);
+});
+
+test("an ask still waiting for the panel is dropped once it's closed, or opened for something else", () => {
+  const page = loadWidget({});
+  const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
+  page.Tuti.open({ ask: "How do I export?" });
+  page.Tuti.close();
+  page.Tuti.open({ ask: "And import?" });
+  page.Tuti.open({ tab: "messages" });
+  loaded(page);
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=messages" });
+  expect(asked()).toEqual([]);
+});
+
+test("a panel that went to another page itself (before it was ready, say) still takes asks once its new page listens", () => {
+  const page = loadWidget({});
+  const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
+  page.Tuti.open();
+  loaded(page);
+  // Its page goes, and another (a tab, the Help center's search) loads in its place, at an address of its own.
+  page.message(frameWindow(), { type: "tuti:ask-ready", listening: false });
+  page.Tuti.open({ ask: "How do I export?" });
+  expect(asked()).toEqual([]);
+  loaded(page);
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=docs&q=export" });
+  expect(asked().map(([data]) => (data as { ask: string }).ask)).toEqual(["How do I export?"]);
+});
+
+test("on a Tuti portal's page, another copy (the team's Custom code) gives way to the portal's own tag, whichever runs first", () => {
+  const page = loadWidget({
+    before: (page) => Object.assign(page.document, { querySelector: (selector: string) => (selector === "script[data-on-portal]" ? {} : null) }),
+  });
+  expect(page.window.Tuti).toBeUndefined();
+  expect((page.window as { __tutiWidget?: boolean }).__tutiWidget).toBeUndefined();
 });
 
 test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; unknown tabs are reported", async () => {

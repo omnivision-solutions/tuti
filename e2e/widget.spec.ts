@@ -646,6 +646,7 @@ test("someone a customer's site signs in sees what's new on one device, and it i
 });
 
 test("the portal shows the project's own widget, until the team turns it off in Customize → Widget", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -654,24 +655,51 @@ test("the portal shows the project's own widget, until the team turns it off in 
   // On by default: the launcher on the portal's pages opens the panel. Its script tag is in the page as sent.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/");
-  const script = visitor.locator('script[src$="/widget.js"][data-project]');
+  const script = visitor.locator('script[src*="/widget.js"][data-on-portal]');
   await expect(script).toHaveCount(1);
   const launcher = visitor.getByRole("button", { name: "Feedback" });
   await launcher.click();
   await expect(visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" })).toBeVisible();
   await checkpoint(visitor, "portal-widget-open");
-  // The portal's own sheets go over an open panel: the docs' assistant, opened beside it, takes clicks where the panel is.
+  // The portal's Ask AI is the widget's assistant: the panel opens with it (its box ready to type in), already open or not.
   const api = await apiFor(owner, slug);
   const article = await api("/articles", { title: "Getting started", body: "Install the app." });
   await api(`/articles/${article.slug}/publish`, {});
   await visitor.goto(`/docs/${article.slug}`);
+  // `back`: where closing the panel gives focus (what opened it: the header's search, or the launcher when it was open already).
+  const askAI = async (back = visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ })) => {
+    await visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+    await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
+    const assistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+    await expect(assistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
+    // Once it has finished opening (a close mid-animation can be lost).
+    await expect(assistant).not.toHaveAttribute("data-starting-style");
+    await assistant.getByRole("button", { name: "Close the assistant" }).click();
+    await expect(assistant).toBeHidden();
+    // Closed, the panel gives focus back (from the search dialog, gone by then, to the header's search).
+    await visitor.keyboard.press("Escape");
+    await expect(visitor.locator("#tuti-widget")).toBeHidden();
+    await expect(back).toBeFocused();
+  };
+  await askAI();
+  await visitor.reload();
   await launcher.click();
-  await expect(visitor.locator("#tuti-widget")).toBeVisible();
-  await visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
-  await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
-  await visitor.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" }).click();
-  await expect(visitor.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" })).toBeFocused();
-  await visitor.getByRole("button", { name: "Close the assistant" }).click();
+  await askAI(launcher);
+  // A turn from the page that isn't shaped as an answer is left out, and the assistant still opens.
+  await launcher.click();
+  await visitor.evaluate(() =>
+    (document.querySelector("#tuti-widget iframe") as HTMLIFrameElement).contentWindow!.postMessage(
+      { type: "tuti:ask", ask: "", turn: { question: "Not an answer", answer: { id: "x" } } },
+      "*",
+    ),
+  );
+  const injected = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+  await expect(injected.getByRole("textbox", { name: "Ask a question" })).toBeVisible();
+  await expect(injected.getByRole("log", { name: "Conversation" })).not.toContainText("Not an answer");
+  await expect(injected).not.toHaveAttribute("data-starting-style");
+  await injected.getByRole("button", { name: "Close the assistant" }).click();
+  await visitor.keyboard.press("Escape");
+  await expect(visitor.locator("#tuti-widget")).toBeHidden();
   // On phones the page ends clear of the launcher (5.5rem); wider, it doesn't need to.
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "88px");
@@ -697,8 +725,97 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await visitor.reload();
   await expect(visitor.getByRole("banner")).toBeVisible();
-  await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
+  // Its script stays, without the launcher, for Ask AI; on phones the page needs no room for one.
+  await expect(script).toHaveAttribute("data-hide-launcher", "");
+  await askAI();
+  // Without the widget after all (its script didn't load), Ask AI is the docs' search, with its AI answer.
+  const unloaded = await newPerson(browser, portalUrl(slug));
+  await unloaded.route("**/widget.js*", (route) => route.abort());
+  await unloaded.goto(`/docs/${article.slug}`);
+  await unloaded.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+  await unloaded.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).fill("How do I install it?");
+  await unloaded.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
+  await unloaded.waitForURL(`${portalUrl(slug)}/docs?q=How+do+I+install+it%3F`);
+  await unloaded.context().close();
+  // So too when it failed while the page was still loading (its events gone by before anyone asked): once 5 seconds have
+  // passed (the page's clock, run on).
+  const stillLoading = await newPerson(browser, portalUrl(slug));
+  await stillLoading.clock.install();
+  await stillLoading.route("**/widget.js*", (route) => route.abort());
+  await stillLoading.addInitScript(() => Object.defineProperty(document, "readyState", { get: () => "interactive" }));
+  await stillLoading.goto(`/docs/${article.slug}`);
+  const stuckAskAI = stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" });
+  await stuckAskAI.click();
+  await stillLoading.clock.runFor(5_100);
+  await stillLoading.waitForURL(`${portalUrl(slug)}/docs`);
+  // Gone on to another page meanwhile, the reader stays there.
+  await stillLoading.goto(`/docs/${article.slug}`);
+  await stuckAskAI.click();
+  await stillLoading.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
+  await stillLoading.waitForURL(`${portalUrl(slug)}/roadmap`);
+  await stillLoading.clock.runFor(6_000);
+  await expect(stillLoading.getByRole("heading", { name: "Roadmap" })).toBeVisible();
+  expect(stillLoading.url()).toBe(`${portalUrl(slug)}/roadmap`);
+  // A search's "Ask a follow-up" leaves the reader on the search, with its answer: they're where the fallback would take them.
+  const searched = `${portalUrl(slug)}/docs?${new URLSearchParams({ q: "Is there a dark mode?" })}`;
+  await stillLoading.goto(searched);
+  const answer = stillLoading.getByRole("region", { name: "AI answer" });
+  await answer.getByRole("button", { name: "Ask AI" }).click();
+  await expect(answer.getByText("I don't know")).toBeVisible();
+  await answer.getByRole("button", { name: "Ask a follow-up" }).click();
+  await stillLoading.clock.runFor(6_000);
+  await expect(answer.getByText("I don't know")).toBeVisible();
+  expect(stillLoading.url()).toBe(searched);
+  await stillLoading.context().close();
+  // Asked twice while the widget is still loading: only the latest is asked, once it's there.
+  const late = await newPerson(browser, portalUrl(slug));
+  await late.clock.install();
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await late.route("**/widget.js*", async (route) => {
+    await released;
+    await route.continue();
+  });
+  await late.addInitScript(() => {
+    type Open = (options: { ask?: unknown }) => void;
+    let tuti: { open: Open } | undefined;
+    Object.defineProperty(window, "Tuti", {
+      configurable: true,
+      get: () => tuti,
+      set: (value: { open: Open }) => {
+        tuti = { ...value, open: (options) => ((window as unknown as { asked: unknown[] }).asked.push(options.ask), value.open(options)) };
+      },
+    });
+    (window as unknown as { asked: unknown[] }).asked = [];
+  });
+  await late.goto(`/docs/${article.slug}`, { waitUntil: "domcontentloaded" });
+  for (const question of ["How do I install it?", "Does it work offline?"]) {
+    await late.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+    await late.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).fill(question);
+    await late.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
+    await expect(late.getByRole("dialog", { name: "Search or ask AI" })).toBeHidden();
+  }
+  release();
+  await expect
+    .poll(async () => {
+      await late.clock.runFor(200);
+      return late.evaluate(() => (window as unknown as { asked: unknown[] }).asked);
+    })
+    .toEqual(["Does it work offline?"]);
+  await late.context().close();
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
+  await visitor.setViewportSize({ width: 1280, height: 720 });
+  // Contacting the team ("Still stuck?" → Contact us, once the project answers messages) opens its Messages too.
+  await api("/support", { inbox: true }, "PATCH");
+  await visitor.reload();
+  await visitor.getByRole("region", { name: "Still stuck?" }).getByRole("link", { name: "Contact us" }).click();
+  await expect(
+    visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }),
+  ).toHaveAttribute("aria-current", "page");
+  await api("/support", { inbox: false }, "PATCH");
+  await visitor.reload();
 
   // Back on. Signing out on the portal (a client navigation) loads the page afresh: the launcher and panel the loader added
   // for the signed-in reader don't stay for whoever's next.

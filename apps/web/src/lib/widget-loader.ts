@@ -1,7 +1,10 @@
 import { BASE_PATTERN } from "./portal-base";
+import { MAX_QUESTION } from "./widget-docs";
 import { SLUG_PATTERN } from "./project-slugs";
 import { WIDGET_ICONS } from "./widget-icons";
 import {
+  WIDGET_ASK_MESSAGE,
+  WIDGET_ASK_READY_MESSAGE,
   WIDGET_CLOSABLE_MESSAGE,
   WIDGET_CLOSE_MESSAGE,
   WIDGET_IDENTIFY_MESSAGE,
@@ -54,8 +57,9 @@ import {
  * fresh SSO token (or a promise of one); it's called whenever the panel is ready
  * for one, and the token is sent only to the portal's origin.
  *
- * `Tuti.open()` opens the panel, `Tuti.open({ tab })` at a tab, and
- * `Tuti.open({ article: "<slug>" })` at a docs article, as does clicking any
+ * `Tuti.open()` opens the panel, `Tuti.open({ tab })` at a tab,
+ * `Tuti.open({ ask: "<question>" })` with the AI assistant answering it (over Home the first time; `ask: true`:
+ * the assistant as it was; the portal's Ask AI), and `Tuti.open({ article: "<slug>" })` at a docs article, as does clicking any
  * element with `data-tuti-article="<slug>"` (contextual help buttons; one listener
  * on the document, so elements added later work too). `Tuti.close()` closes it.
  *
@@ -72,15 +76,20 @@ import {
 export function widgetLoader(portalTemplate: string): string {
   return `(function () {
   "use strict";
-  if (window.__tutiWidget) return;
-  window.__tutiWidget = true;
   var script = document.currentScript;
+  // A Tuti portal's page has its own tag (data-on-portal), in the page as sent: another copy there (the team's Custom code)
+  // gives way to it, whichever runs first, so the portal's Ask AI and sign-in work.
+  if (window.__tutiWidget || (script && !script.hasAttribute("data-on-portal") && document.querySelector("script[data-on-portal]"))) return;
+  window.__tutiWidget = true;
   var slug = script && script.getAttribute("data-project");
   if (!slug || !${SLUG_PATTERN}.test(slug)) {
     console.error("Tuti widget: set data-project to your project's URL name, e.g. data-project=\\"acme\\"");
     return;
   }
-  var settings = window.TutiSettings || {};
+  var onPortal = script.hasAttribute("data-on-portal");
+  // The portal's own tag is set in Customize, never by the page's TutiSettings (the team's Custom code, which runs after
+  // hydration: its settings applying or not would depend on which loaded first).
+  var settings = onPortal ? {} : window.TutiSettings || {};
   var display = script.getAttribute("data-display") || settings.display || "launcher";
   if (display !== "launcher" && display !== "sidebar" && display !== "inline") {
     console.error("Tuti widget: display is one of launcher, sidebar or inline");
@@ -88,7 +97,6 @@ export function widgetLoader(portalTemplate: string): string {
   }
   var sidebar = display === "sidebar";
   var hideLauncher = display === "inline" || script.hasAttribute("data-hide-launcher") || settings.hideLauncher === true;
-  var onPortal = script.hasAttribute("data-on-portal");
   // On the portal, its value is the path the portal is under on the team's site (empty at its own address).
   var portalPath = onPortal ? script.getAttribute("data-on-portal") : "";
   if (!${BASE_PATTERN}.test(portalPath)) portalPath = "";
@@ -633,25 +641,43 @@ export function widgetLoader(portalTemplate: string): string {
   var frame;
   var returnFocus;
 
-  // Opens the panel, at a tab or a docs article if asked (otherwise where it was);
+  // Opens the panel, at a tab or a docs article if asked (otherwise where it was), or with its assistant asking
+  // \`ask\` (true: just open, with \`turn\`, a question and answer to follow up on, if any; over Home, the first time);
   // closing it gives focus back to \`from\`.
   function open(options, from) {
     var article = options && typeof options.article === "string" ? options.article : "";
-    var query = article ? "?tab=docs&article=" + encodeURIComponent(article) : tabQuery(options && options.tab);
+    var ask = options && (typeof options.ask === "string" || options.ask === true) ? (options.ask === true ? "" : options.ask.slice(0, ${MAX_QUESTION})) : null;
+    var query =
+      ask !== null ? (frame ? null : TABS.home)
+      : article ? "?tab=docs&article=" + encodeURIComponent(article)
+      : tabQuery(options && options.tab);
+    // Asked by message, never by reloading (nothing in the panel is lost, an answer still coming), once it's listening:
+    // the latest ask waits for that.
+    // Opened for something else, an ask still waiting isn't wanted any more.
+    // A turn comes only with \`ask: true\` (the portal's follow-up: the reader asks next), never with a question of its own.
+    pendingAsk = ask === null ? null : { type: ${JSON.stringify(WIDGET_ASK_MESSAGE)}, ask: ask, turn: options.ask === true && options.turn && typeof options.turn === "object" ? options.turn : null };
+    if (pendingAsk && listening) sendAsk();
     var src = portal + "/widget" + (query || "");
     // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
     if (!frame) {
       closable = false;
       frame = newFrame(src);
+      loading = src;
+      settled = false;
       // Named before it's in the page, so its first page has the name too.
       frame.name = ${JSON.stringify(WIDGET_PANEL_NAME)} + themed;
       panel.appendChild(frame);
       frame.addEventListener("load", function () {
         frameLoaded = true;
+        settled = true;
         release();
       });
     } else if (query !== null) {
       closable = false;
+      // Another page: an ask waits for that one to listen, not the one on its way out (which may still say it is).
+      listening = false;
+      loading = src;
+      settled = false;
       frame.src = src;
     }
     showStandIn();
@@ -670,6 +696,26 @@ export function widgetLoader(portalTemplate: string): string {
     frame.focus();
   }
 
+  // The ask waiting for the floating panel's assistant, sent once it's listening.
+  var listening = false;
+  var pendingAsk = null;
+  // The page the floating panel was last given: until a page has loaded in it since, only that one may say it's listening
+  // (not the one on its way out); after, whichever page it's on (it may have gone to another itself).
+  var loading = null;
+  var settled = false;
+  function sameAddress(a, b) {
+    try {
+      return new URL(a).href === new URL(b).href;
+    } catch (error) {
+      return false;
+    }
+  }
+  function sendAsk() {
+    if (!pendingAsk || !frame || !frame.contentWindow) return;
+    frame.contentWindow.postMessage(pendingAsk, origin);
+    pendingAsk = null;
+  }
+
   // The floating panel, whether it's on screen: only then does it count the team's replies as seen.
   function tellShown(shown) {
     if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SHOWN_MESSAGE)}, shown: shown }, origin);
@@ -677,6 +723,8 @@ export function widgetLoader(portalTemplate: string): string {
 
   // \`leaveFocus\`: closed for a modal of the page's, where focus goes instead.
   function close(leaveFocus) {
+    // Closed, nor is an ask still waiting for the panel.
+    pendingAsk = null;
     if (!opened) return;
     opened = false;
     animate(false);
@@ -770,8 +818,10 @@ export function widgetLoader(portalTemplate: string): string {
         ready = ready.then(function () { return checking; });
       }
     },
+    // \`returnFocus\` (the portal's own): where focus goes back to on closing, for a panel opened from a dialog of the page's.
     open: function (options) {
-      open(options, document.activeElement);
+      var back = options && options.returnFocus;
+      open(options, back && back.nodeType === 1 && document.contains(back) ? back : document.activeElement);
     },
     close: function () { close(); },
     // Light, dark or auto (the project's colour scheme), for sites that switch theirs without a reload.
@@ -841,6 +891,13 @@ export function widgetLoader(portalTemplate: string): string {
         // Up with its own Close, or going away (the next page may not have one).
         closable = event.data === ${JSON.stringify(WIDGET_CLOSABLE_MESSAGE)};
         showStandIn();
+      }
+    }
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_ASK_READY_MESSAGE)}) {
+      if (from === frame && event.data.listening === false) listening = false;
+      else if (from === frame && (settled || sameAddress(event.data.href, loading))) {
+        listening = true;
+        sendAsk();
       }
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {

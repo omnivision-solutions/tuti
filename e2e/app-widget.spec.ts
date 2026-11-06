@@ -19,7 +19,7 @@ test("Tuti's own widget in the team app signs people in with their account once 
 
   // Not on Customize, whose previews show the project's own widget: opened there, the app doesn't install it…
   const appLauncher = owner.locator('body > button[aria-controls="tuti-widget"]');
-  const script = owner.locator('script[src$="/widget.js"]');
+  const script = owner.locator('script[src*="/widget.js"]');
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   await owner.goto(`/app/${APP_WIDGET_SLUG}/customize/widget`);
   const previewLauncher = owner.getByRole("figure", { name: "Widget preview" }).getByRole("button", { name: "Launcher: Feedback" });

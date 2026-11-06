@@ -116,7 +116,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   // What's new isn't a tab: Home opens it (so does `?tab=whats-new`, from Tuti.open and inline mounts), with Home lit in the bar.
   const whatsNew = tabParam === "whats-new";
   const tab = tabs.find(({ tab }) => tab === tabParam)?.tab ?? "home";
-  // The docs' assistant, in the panel, when the server has AI answers (asked from the Docs tab).
+  // The docs' assistant, in the panel, when the server has AI answers (asked from the Help center, Messages, and the page
+  // around the panel: the portal's Ask AI).
   const session = answersEnabled() ? await getSession() : null;
   const assistant = answersEnabled()
     ? {
@@ -237,15 +238,9 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   );
 }
 
-/** The panel inside the docs' assistant (widget mode), where the server has AI answers. */
-function WithAssistant({ assistant, children }: { assistant: Omit<React.ComponentProps<typeof DocsAssistantProvider>, "children" | "widget"> | null; children: React.ReactNode }) {
-  return assistant ? (
-    <DocsAssistantProvider {...assistant} widget>
-      {children}
-    </DocsAssistantProvider>
-  ) : (
-    children
-  );
+/** The panel inside the docs' assistant, where the server has AI answers. */
+function WithAssistant({ assistant, children }: { assistant: Omit<React.ComponentProps<typeof DocsAssistantProvider>, "children"> | null; children: React.ReactNode }) {
+  return assistant ? <DocsAssistantProvider {...assistant}>{children}</DocsAssistantProvider> : children;
 }
 
 /**

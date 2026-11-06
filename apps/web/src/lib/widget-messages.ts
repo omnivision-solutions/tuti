@@ -26,6 +26,13 @@ export const WIDGET_SHOWN_MESSAGE = "tuti:shown";
 export const WIDGET_THEME_MESSAGE = "tuti:widget-theme";
 /** Panel → page: its page is listening for WIDGET_THEME_MESSAGE; a theme the site changed while it loaded is sent again. */
 export const WIDGET_THEME_ASK_MESSAGE = "tuti:widget-theme-ask";
+/**
+ * Loader → the panel: ask its assistant `ask` (empty: just open it), after `turn` (a question and its answer from elsewhere,
+ * to follow up on), sent once the panel says it's listening (WIDGET_ASK_READY_MESSAGE) (Tuti.open({ ask })).
+ */
+export const WIDGET_ASK_MESSAGE = "tuti:ask";
+/** Panel → loader: its assistant is listening for WIDGET_ASK_MESSAGE (each page of it, once it's ready; `href`, which page), or `listening: false` as its page goes. */
+export const WIDGET_ASK_READY_MESSAGE = "tuti:ask-ready";
 /** The name of an inline panel's iframe (its `window.name`): there's nothing to close. */
 export const WIDGET_INLINE_NAME = "tuti-inline";
 /** The floating panel's iframe. */

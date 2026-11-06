@@ -17,7 +17,7 @@ async function typeSearch(page: Page, query: string, where = page.getByRole("ban
   return box;
 }
 
-/** Opens the docs' assistant as it was, from the header's box (the one way into AI there): its dialog, before anything's typed. */
+/** Opens the docs' assistant as it was, from the header's box (the one way into AI there): the widget's, before anything's typed. */
 async function openAssistant(page: Page) {
   await page.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
   await page.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
@@ -1514,7 +1514,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const article = await api("/articles", { title: "Inviting your team", body });
   await api(`/articles/${article.slug}/publish`, {});
 
-  // The visitor searches, then asks the AI: in the box, asking comes first, and it asks in the assistant.
+  // The visitor searches, then asks the AI: in the box, asking comes first, and it asks in the widget's assistant (the
+  // portal's own widget, at Messages), which the portal has for it.
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
   await visitor.goto("/docs");
   await typeSearch(visitor, question);
@@ -1527,13 +1528,18 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     question,
   );
   await visitor.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
-  const assistant = visitor.getByRole("dialog", { name: "Assistant" });
+  const panel = visitor.frameLocator('iframe[title="Feedback"]');
+  const assistant = panel.getByRole("dialog", { name: "Assistant" });
   const conversation = assistant.getByRole("log", { name: "Conversation" });
   await expect(conversation).toContainText(question);
+  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${portalUrl(slug)}/widget`);
   await expect(conversation.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
   await expect(conversation.getByRole("listitem").filter({ hasText: "Each invite is good for 7 days" })).toBeVisible();
   const source = conversation.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
-  await expect(source).toHaveAttribute("href", "/docs/inviting-your-team");
+  await expect(source).toHaveAttribute("href", "/widget?tab=docs&article=inviting-your-team");
+  // The question went by message, never in the panel's address: going back or reloading it doesn't ask again.
+  const panelUrl = async () => (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!.url();
+  await expect.poll(panelUrl).toBe(`${portalUrl(slug)}/widget`);
   await checkpoint(visitor, "portal-docs-assistant-answer", { fullPage: false });
   const asked = (await modelRequests()).filter((request) => request.user.includes(question));
   expect(asked).toHaveLength(1);
@@ -1570,9 +1576,19 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await checkpoint(visitor, "portal-docs-assistant-follow-up-phone", { fullPage: false });
   await visitor.setViewportSize({ width: 1280, height: 720 });
 
-  // A source opens the article; the header's box opens the assistant again, as it was.
+  // Asked again from the header with the panel open: the same panel asks it, not reloaded, so the conversation stays.
+  const again = "Do invites expire?";
+  await similar(`${question}\n${followUp}\n${again}`, `Inviting your team\n\n${body}`, 0.8);
+  await nextModelReply(JSON.stringify({ answer: "Yes, after 7 days.", sources: ["s1"] }), again);
+  await typeSearch(visitor, again);
+  await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
+  await expect(conversation.getByText("Yes, after 7 days.")).toBeVisible();
+  await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
+  expect(await panelUrl()).toBe(`${portalUrl(slug)}/widget`);
+
+  // A source opens the article in the panel; the header's box opens the assistant again, as it was.
   await source.first().click();
-  await visitor.waitForURL(/\/docs\/inviting-your-team$/);
+  await expect(panel.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(assistant).toBeHidden();
   await openAssistant(visitor);
   await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
@@ -1598,11 +1614,11 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await checkpoint(visitor, "portal-docs-ai-no-answer", { fullPage: false });
   expect((await modelRequests()).filter((request) => request.user.includes(unrelated))).toEqual([]);
   await conversation.getByRole("link", { name: "Post this as feedback" }).last().click();
-  await visitor.waitForURL(/\/feedback\/feature-requests\?title=/);
-  await expect(visitor.getByLabel("Title")).toHaveValue(unrelated);
+  await expect(panel.getByLabel("Title")).toHaveValue(unrelated);
   await checkpoint(visitor, "portal-docs-ai-post-as-feedback");
-  await visitor.getByRole("button", { name: "Submit post" }).click();
-  await expect(visitor.getByText("Feedback posted")).toBeVisible();
+  await panel.getByRole("button", { name: "Submit post" }).click();
+  await expect(panel.getByText("Feedback posted")).toBeVisible();
+  await visitor.goto("/feedback/feature-requests");
   await expect(visitor.getByRole("link", { name: unrelated })).toBeVisible();
 
   // What the AI cost the project this month, in AI credits (Usage, on Settings → Billing; its old address lands there)…
@@ -1654,20 +1670,30 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   });
   await unstored.goto("/docs");
   await openAssistant(unstored);
-  await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" }).fill("Is there an API?");
-  await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("button", { name: "Send" }).click();
-  await expect(unstored.getByRole("dialog", { name: "Assistant" }).getByText("I don't know")).toBeVisible();
+  const unstoredAssistant = unstored.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+  await unstoredAssistant.getByRole("textbox", { name: "Ask a question" }).fill("Is there an API?");
+  await unstoredAssistant.getByRole("button", { name: "Send" }).click();
+  await expect(unstoredAssistant.getByText("I don't know")).toBeVisible();
+  // A search's "Ask a follow-up" there too: its answer goes to the assistant with it, not through storage.
+  await unstored.goto(`/docs?${new URLSearchParams({ q: "Is there a light mode?" })}`);
+  const unstoredAnswer = unstored.getByRole("region", { name: "AI answer" });
+  await unstoredAnswer.getByRole("button", { name: "Ask AI" }).click();
+  await expect(unstoredAnswer.getByText("I don't know")).toBeVisible();
+  await unstoredAnswer.getByRole("button", { name: "Ask a follow-up" }).click();
+  await expect(unstoredAssistant.getByRole("log", { name: "Conversation" })).toContainText("Is there a light mode?");
 
-  // Asked on the search page (a link to /docs?q=), the answer can go on in the assistant.
+  // Asked on the search page (a link to /docs?q=), the answer can go on in the assistant: the same answer, not asked again.
   const ai = visitor.getByRole("region", { name: "AI answer" });
   // Another question it can't answer.
   const another = "Is there a dark mode?";
   await visitor.goto(`/docs?${new URLSearchParams({ q: another })}`);
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
+  const answers = (await modelRequests()).length;
   await ai.getByRole("button", { name: "Ask a follow-up" }).click();
   await expect(conversation).toContainText(another);
   await expect(conversation.getByText("I don't know")).toBeVisible();
+  expect((await modelRequests()).length).toBe(answers);
   await assistant.getByRole("button", { name: "Close the assistant" }).click();
 
   // An off-limits topic: the fixed reply, without asking the model.
@@ -1713,6 +1739,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const aiConversation = (text: string) =>
     team.getByRole("list", { name: "AI conversations" }).getByRole("listitem").filter({ has: team.locator("summary", { hasText: text }) });
   await expect(aiConversation(question)).toContainText("Partly answered");
+  // Asked through the portal's own widget, it's the portal's question.
+  await expect(aiConversation(question)).toContainText("Portal");
   await expect(aiConversation(another)).toContainText("Not answered");
   await aiConversation(question).locator("summary").click();
   await expect(aiConversation(question).getByText(unrelated, { exact: true })).toBeVisible();
@@ -2160,10 +2188,13 @@ test("an article ends with the previous and next in reading order, related ones,
   await expect(stuck.getByRole("link")).toHaveCount(0);
   // "Was this helpful?" stays.
   await expect(main.getByRole("region", { name: "Was this helpful?" })).toBeVisible();
+  // Ask AI opens the widget's assistant.
   await stuck.getByRole("button", { name: "Ask AI" }).click();
-  await expect(visitor.getByRole("dialog", { name: "Assistant" })).toBeVisible();
-  await visitor.getByRole("button", { name: "Close the assistant" }).click();
-  await expect(visitor.getByRole("dialog", { name: "Assistant" })).toBeHidden();
+  const stuckAssistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+  await expect(stuckAssistant).toBeVisible();
+  await stuckAssistant.getByRole("button", { name: "Close the assistant" }).click();
+  await expect(stuckAssistant).toBeHidden();
+  await visitor.reload();
 
   // Once it answers messages (Messages in the widget, which gives it its support address), "Contact us": an email to
   // that address… (A server that receives no email has no address: the widget's Messages on a page of their own.)
