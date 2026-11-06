@@ -85,7 +85,16 @@ export function ListKeys({
     const current = list.querySelector<HTMLAnchorElement>('a[data-row-link][aria-current="page"]');
     current?.scrollIntoView({ block: "nearest" });
     if (opening) {
-      current?.focus({ preventScroll: true });
+      // Its row; none open (none left in the view), the view's tab. Where the list is hidden (a phone, a conversation
+      // open), the page's title: the button that had focus went away with the page it was on.
+      const to = current ?? document.querySelector<HTMLElement>('nav[aria-label="Views"] a[aria-current="page"]');
+      const title = document.querySelector<HTMLElement>("h1");
+      if (to?.checkVisibility()) {
+        to.focus({ preventScroll: true });
+      } else if (title) {
+        title.tabIndex = -1;
+        title.focus();
+      }
       opening = false;
     }
     const keep = () => places.set(place, list.scrollTop);
@@ -127,9 +136,12 @@ export function ListKeys({
       }
       const to = feedbackStep(now, from, number, 1) ?? now[0];
       const link = rowLinks(ref.current).find((link) => Number(link.dataset.rowLink) === to);
-      opening = link !== undefined;
+      opening = true;
       router.replace(link?.href ?? none, { scroll: false });
     };
+    // A list that's just come (another page): an action that finished as the last one went (the team moved on
+    // meanwhile) isn't this one's to act on.
+    acted = null;
     moveOn = go;
     return () => {
       if (moveOn === go) {

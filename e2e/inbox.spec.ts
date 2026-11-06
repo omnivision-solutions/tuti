@@ -693,6 +693,8 @@ test("the team member's own action taking the open conversation out of its view 
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await expect(row(1)).toBeFocused();
+  // Said as it goes, the conversation gone from the page.
+  await expect(owner.getByRole("region", { name: /Notifications/ })).toContainText("Sent");
 
   // In Unassigned, taken: it leaves Unassigned, the only one there, so the view's numbers show, nothing open.
   await views.getByRole("link", { name: "Unassigned 1" }).click();
@@ -704,6 +706,8 @@ test("the team member's own action taking the open conversation out of its view 
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=unassigned$`));
   await expect(owner.getByText("Every open conversation has someone on it.")).toBeVisible();
   await expect(owner.getByText("Waiting for a reply")).toBeVisible();
+  // The keyboard's focus on the view's tab, rather than lost with the button that had it.
+  await expect(views.getByRole("link", { name: "Unassigned 0" })).toBeFocused();
   await checkpoint(owner, "unassigned-none-left", { fullPage: false });
 
   // Reopened in Closed, it leaves Closed: the same.
@@ -714,6 +718,7 @@ test("the team member's own action taking the open conversation out of its view 
   await owner.getByRole("button", { name: "Reopen" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=closed$`));
   await expect(owner.getByText("No closed conversations yet.")).toBeVisible();
+  await expect(views.getByRole("link", { name: "Closed 0" })).toBeFocused();
 });
 
 test("the Inbox's views are one row of tabs above the list, where they stay as a conversation opens: too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
@@ -1341,6 +1346,8 @@ test("on a server selling plans, a new project's email is capped in its first we
   await owner.goto(`/app/${slug}/inbox/1`);
   await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
+  // Said as it's sent, as the page moves on.
+  await expect(owner.getByRole("region", { name: /Notifications/ })).toContainText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day");
   // Answered, it leaves Needs reply (none left there): it's in Waiting on user.
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);

@@ -131,6 +131,11 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const emailable = !conversation.spam && !!person.email;
   const waitsForPause = emailPaused && emailable;
   const capped = !emailPaused && emailable && (await cappedProjects()).includes(projectId);
+  const waits = waitsForPause
+    ? "Not emailed while your project's email is paused (Settings → Inbox and email)"
+    : capped
+      ? `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`
+      : undefined;
   const online =
     conversation.userId || conversation.visitorHash
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
@@ -249,7 +254,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                             <MessageText text={message.body} ugc={message.author === "USER"} />
                           </p>
                           <MessageAttachments attachments={message.attachments.map((a) => links.get(a.id)!)} dropped={message.attachmentsDropped} imported={!!message.importId} />
-                          {message.author === "TEAM" && !message.note && (message.seenAt || message.importId || message.emailStatus || waitsForPause || capped) && (
+                          {message.author === "TEAM" && !message.note && (message.seenAt || message.importId || message.emailStatus || waits) && (
                             <p className="text-xs text-muted-foreground">
                               {/* Imported history was never emailed: no email status for it (docs/plan.md, Switching from Featurebase). */}
                               {message.seenAt
@@ -258,9 +263,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                                   ? "Imported from Featurebase"
                                   : message.emailStatus
                                     ? EMAIL_STATUS[message.emailStatus](message.emailError)
-                                    : waitsForPause
-                                      ? "Not emailed while your project's email is paused (Settings → Inbox and email)"
-                                      : `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`}
+                                    : waits}
                             </p>
                           )}
                           {message.original && (
@@ -292,6 +295,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   // "Insert article": once there's an article they can be sent (what its search finds).
                   articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
                   seen={conversation.messages.at(-1)?.createdAt.toISOString()}
+                  emailWaits={waits}
                 />
               </div>
             </div>
