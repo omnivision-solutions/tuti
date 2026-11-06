@@ -224,6 +224,28 @@ test("a Featurebase board whose new posts only their author sees becomes a Priva
   expect((await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Feature requests" }, select: { postVisibility: true } })).postVisibility).toBe("PUBLIC");
 });
 
+test("a board matched by name whose Featurebase posts were only their author's becomes Private too", async () => {
+  fake.fixtures.boards.find((board) => board.name === "Feature requests")!.postDefaults = { visibility: "authorOnly" };
+  await importFeedback();
+  const requests = await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Feature requests" }, select: { id: true, postVisibility: true } });
+  // The new project's own board, matched by name.
+  expect(requests).toEqual({ id: project.boards[0]!.id, postVisibility: "PRIVATE" });
+});
+
+test("past the plan's board limit, posts everyone saw folded into a board made Private for its author-only posts stay public", async () => {
+  vi.stubEnv("PLANS", "on");
+  fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
+  // A third board everyone sees: the free plan has room for two, so its posts go into the last one, Bugs.
+  const ideas = structuredClone(fake.fixtures.boards.find((board) => board.name === "Bugs")!);
+  Object.assign(ideas, { id: "65f0000000000000000000b5", name: "Ideas", localization: { name: { en: "Ideas" } }, postDefaults: { visibility: "public" } });
+  fake.fixtures.boards.push(ideas);
+  fake.fixtures.posts.push({ ...structuredClone(fake.fixtures.posts[0]!), id: "65f0000000000000000000pa", boardId: ideas.id, title: "Offline mode", createdAt: "2024-04-01T10:00:00.000Z" });
+  await importFeedback();
+  const posts = await prisma.post.findMany({ where: { projectId: project.id, board: { name: "Bugs" } }, select: { title: true, visibility: true } });
+  expect(posts.find((post) => post.title === "Offline mode")).toEqual({ title: "Offline mode", visibility: "PUBLIC" });
+  expect(posts.find((post) => post.title === "Export fails on Safari")).toEqual({ title: "Export fails on Safari", visibility: "PRIVATE" });
+});
+
 test("a page run twice, at once or again later, and a second import, bring nothing twice", async () => {
   const started = await importFeedback();
   const before = await made();

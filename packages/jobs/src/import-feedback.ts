@@ -146,6 +146,10 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
       if (same) {
         id = same.id;
         await tx.board.update({ where: { id }, data: words });
+        // Only their author's in Featurebase: Private here too, unless the team keeps it closer already (Team only).
+        if (boardVisibility(board).postVisibility) {
+          await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } });
+        }
       } else if (spare || limit === null || existing.length < limit) {
         const slugged = titleSlug(name, "board").slice(0, 36).replace(/-+$/, "");
         const base = slugged.length >= 2 ? slugged : "board";
@@ -317,6 +321,17 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
       const visibilityOf = new Map(
         (await tx.board.findMany({ where: { id: { in: [...boardIds.values()] } }, select: { id: true, postVisibility: true } })).map((board) => [board.id, board.postVisibility]),
       );
+      // Boards Private only because a Featurebase board's posts were its author's: another board's posts folded into one
+      // (past the plan's limit) were everyone's in Featurebase, and stay so.
+      const privateFromImport = new Set(boards.filter((board) => boardVisibility(board).postVisibility).map((board) => boardIds.get(board.id)));
+      const visibilityFor = (post: FeaturebasePost) => {
+        const source = byId.get(post.boardId);
+        const target = boardIds.get(post.boardId)!;
+        if (post.access?.userIds?.length || (source && boardVisibility(source).postVisibility)) {
+          return "PRIVATE" as const;
+        }
+        return privateFromImport.has(target) && visibilityOf.get(target) === "PRIVATE" ? ("PUBLIC" as const) : visibilityOf.get(target);
+      };
       const users = await contacts.save(tx);
       const saved = await recorded(tx, job, "post", chunk.map((post) => post.id));
       for (const post of chunk) {
@@ -340,7 +355,7 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
             projectId: job.projectId,
             boardId: boardIds.get(post.boardId)!,
             // Featurebase's "only the author" (and whoever else it named): Private, its author and the team.
-            visibility: post.access?.userIds?.length ? "PRIVATE" : visibilityOf.get(boardIds.get(post.boardId)!),
+            visibility: visibilityFor(post),
             authorId,
             number,
             title: (post.title ?? "").trim().slice(0, 120) || "Untitled",
