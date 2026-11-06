@@ -650,6 +650,90 @@ test("the views, the list and the open conversation side by side, each scrolling
   await checkpoint(owner, "inbox-phone-list", { fullPage: false });
 });
 
+test("the details beside a conversation hide for every conversation, after a reload too, the messages taking their room; on a phone there's no toggle", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Can't export to CSV", body: "The export button does nothing." });
+  await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const posts = owner.getByRole("region", { name: "Linked posts" });
+  const about = owner.getByRole("complementary", { name: "About them" });
+  const messages = owner.getByRole("list", { name: "Messages" });
+  const hide = owner.getByRole("button", { name: "Hide details" });
+  const show = owner.getByRole("button", { name: "Show details" });
+
+  // Shown to start with, its toggle at the end of the header's actions.
+  await expect(posts).toBeVisible();
+  await expect(about).toBeVisible();
+  await expect(hide).toHaveAttribute("aria-expanded", "true");
+  const close = (await owner.getByRole("button", { name: "Close", exact: true }).boundingBox())!;
+  expect((await hide.boundingBox())!.x).toBeGreaterThan(close.x);
+  const width = (await messages.boundingBox())!.width;
+  await checkpoint(owner, "inbox-details-shown", { fullPage: false });
+
+  // Hidden: the messages and the reply box take the pane's whole width.
+  await hide.click();
+  await expect(posts).toBeHidden();
+  await expect(about).toBeHidden();
+  await expect(show).toHaveAttribute("aria-expanded", "false");
+  expect((await messages.boundingBox())!.width).toBeGreaterThan(width + 250);
+  await checkpoint(owner, "inbox-details-hidden", { fullPage: false });
+
+  // Still hidden in another conversation, and after a reload.
+  await owner.getByRole("region", { name: "Conversations", exact: true }).getByRole("link", { name: /discount for nonprofits/ }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await expect(show).toBeVisible();
+  await expect(about).toBeHidden();
+  await owner.reload();
+  await expect(show).toBeVisible();
+  await expect(posts).toBeHidden();
+  // Hidden as the server sends it, before any script runs: no flash of the column on load.
+  const html = await (await owner.request.get(`/app/${slug}/inbox/2`)).text();
+  expect(html).toContain('data-details="hidden"');
+  // Its toggle is in that page too, so Assign, Snooze and Close don't move as the page's scripts start.
+  expect(html).toMatch(/<button[^>]*aria-label="Show details"/);
+  await expect(about).toBeHidden();
+
+  // Shown again, as it was.
+  await show.click();
+  await expect(posts).toBeVisible();
+  await expect(about).toBeVisible();
+  await expect(hide).toBeVisible();
+  expect((await messages.boundingBox())!.width).toBeCloseTo(width, 0);
+
+  // As the page's scripts start, Close doesn't move: where it is in the page the server sends (no scripts) is where it
+  // stays, with the column beside the messages (1440px, and a tablet-wide 960px) and without it (1100px, the list taking
+  // the room), the toggle's room kept either way.
+  const serverOnly = await browser.newContext({ javaScriptEnabled: false, storageState: await owner.context().storageState() });
+  const plain = await serverOnly.newPage();
+  for (const width of [1440, 960, 1100]) {
+    await plain.setViewportSize({ width, height: 900 });
+    await plain.goto(`${APP_URL}/app/${slug}/inbox/1`);
+    const before = (await plain.getByRole("button", { name: "Close", exact: true }).boundingBox())!;
+    await owner.setViewportSize({ width, height: 900 });
+    await owner.goto(`/app/${slug}/inbox/1`);
+    // Checked once the scripts have run (React has taken over the toggle, its layout effect run in the same commit): at
+    // 1100px it's there but unseen.
+    const toggle = owner.locator('[aria-controls="conversation-details"]');
+    await expect.poll(() => toggle.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$")))).toBe(true);
+    await (width === 1100 ? expect(hide).toBeHidden() : expect(hide).toBeVisible());
+    expect((await owner.getByRole("button", { name: "Close", exact: true }).boundingBox())!.x).toBe(before.x);
+  }
+  await serverOnly.close();
+
+  // On a phone the person is a sheet: no toggle, in the menu or under the title.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(owner.getByRole("button", { name: "About Sam Smith" })).toBeVisible();
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await expect(owner.getByRole("button", { name: "Close", exact: true }).first()).toBeVisible();
+  await expect(owner.getByRole("button", { name: /(Hide|Show) details/ })).toHaveCount(0);
+});
+
 test("the Inbox's views are one row of tabs above the list, where they stay as a conversation opens: too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
