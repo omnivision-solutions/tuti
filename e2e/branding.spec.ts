@@ -140,6 +140,10 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(preview.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" })).toBeVisible();
   await owner.reload();
   await expect(owner.getByLabel("Header link 1 URL")).toHaveValue("https://docs.example.com");
+  // The sidebar's project switcher shows the logo instead of the project's initial (the light one, in light mode).
+  const switcher = owner.locator('[data-sidebar="header"]').getByRole("button", { name: /Acme/ });
+  await expect(switcher.locator("img").first()).toBeVisible();
+  await checkpoint(owner, "sidebar-project-logo", { fullPage: false });
 
   // "Powered by tuti" (in Branding now; its old address lands there): hiding the badge needs a licence for the
   // project; unticking it asks about one instead.

@@ -69,6 +69,9 @@ export type ProjectSummary = {
   name: string;
   role: TeamRole;
   portalUrl: string;
+  /** Its logo from Customize → Branding (one for dark mode too), else its initial shows. */
+  logo: string | null;
+  logoDark: string | null;
   openConversations: number;
   /** Posts waiting for triage (Open). */
   toTriage: number;
@@ -237,6 +240,25 @@ function projectNav(project: ProjectSummary): NavItem[][] {
   ];
 }
 
+/** The project's logo in a square (each in its own mode, if it has a dark one), or its initial. */
+function ProjectMark({ project, className }: { project: ProjectSummary; className: string }) {
+  if (!project.logo) {
+    return (
+      <div className={cn("flex shrink-0 items-center justify-center bg-sidebar-primary font-semibold text-sidebar-primary-foreground", className)}>
+        {project.name.slice(0, 1).toUpperCase()}
+      </div>
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
+  const image = (src: string, mode?: string) => <img src={src} alt="" className={cn("shrink-0 object-contain", className, mode)} />;
+  return (
+    <>
+      {image(project.logo, project.logoDark ? "dark:hidden" : undefined)}
+      {project.logoDark && image(project.logoDark, "hidden dark:block")}
+    </>
+  );
+}
+
 function ProjectSwitcher({ projects, current }: { projects: ProjectSummary[]; current: ProjectSummary | null }) {
   const { isMobile } = useSidebar();
 
@@ -262,9 +284,7 @@ function ProjectSwitcher({ projects, current }: { projects: ProjectSummary[]; cu
           <DropdownMenuTrigger
             render={<SidebarMenuButton size="lg" className="data-popup-open:bg-sidebar-accent" />}
           >
-            <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">
-              {current.name.slice(0, 1).toUpperCase()}
-            </div>
+            <ProjectMark project={current} className="size-8 rounded-lg text-sm" />
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{current.name}</span>
               <span className="truncate text-xs text-muted-foreground">{portalLabel(current.portalUrl)}</span>
@@ -289,9 +309,7 @@ function ProjectSwitcher({ projects, current }: { projects: ProjectSummary[]; cu
               <DropdownMenuLabel className="text-xs text-muted-foreground">Projects</DropdownMenuLabel>
               {projects.map((project) => (
                 <DropdownMenuItem key={project.slug} render={<Link href={`/app/${project.slug}`} />}>
-                  <div className="flex size-6 items-center justify-center rounded-md border text-xs font-semibold">
-                    {project.name.slice(0, 1).toUpperCase()}
-                  </div>
+                  <ProjectMark project={project} className="size-6 rounded-md text-xs" />
                   <span className="truncate">{project.name}</span>
                   {project.slug === current.slug && <span className="ml-auto text-xs text-muted-foreground">Current</span>}
                 </DropdownMenuItem>

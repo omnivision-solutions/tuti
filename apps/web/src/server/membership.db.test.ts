@@ -1,9 +1,12 @@
+import { imageKey } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { startS3Fake } from "@tuti/testkit";
+import { expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
 
 import { listMyProjects } from "./membership";
+import { lastingMediaUrl } from "./media-urls";
 
 test("each project counts where work waits: open conversations, posts to triage, Autopilot's posts and articles to review", async () => {
   const owner = await signUp("Owner");
@@ -49,4 +52,23 @@ test("each project counts where work waits: open conversations, posts to triage,
 
   const [mine] = await listMyProjects(owner.id);
   expect(mine).toMatchObject({ slug: project.slug, openConversations: 1, toTriage: 2, changesWaiting: 3 });
+});
+
+test("each project's logos from Customize → Branding, for the project switcher; none without one", async () => {
+  const s3 = await startS3Fake();
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
+  try {
+    const owner = await signUp("Owner");
+    const project = await createProject(owner);
+    expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: null, logoDark: null });
+
+    const logo = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width: 600, height: 200 } });
+    await prisma.project.update({ where: { id: project.id }, data: { brandLogoId: logo.id } });
+    expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: lastingMediaUrl(imageKey(logo.id, 480)), logoDark: null });
+  } finally {
+    vi.unstubAllEnvs();
+    await s3.close();
+  }
 });
