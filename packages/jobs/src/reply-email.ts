@@ -27,16 +27,17 @@ const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
  */
 async function claim(commentId: string, userId: string, visibility: PostVisibility): Promise<Date | null> {
   return prisma.$transaction(async (tx) => {
-    // The reply's row locked, so a resume that drops a pause's emails waits for this claim, or this claim sees it; its
-    // post's too, so a visibility change since the audience was read fails the run (its retry reads who may see it now).
-    const [comment] = await tx.$queryRaw<{ due: Date | null; postId: string; visibility: PostVisibility }[]>`
-      SELECT c."votersEmailDueAt" AS due, p.id AS "postId", p.visibility FROM comment c JOIN post p ON p.id = c."postId"
-      WHERE c.id = ${commentId} FOR UPDATE OF c, p`;
-    if (!comment?.due) {
+    // Its post's row held first (as a merge locks posts, then their comments): a visibility change since the audience
+    // was read fails the run (its retry reads who may see it now), and one made meanwhile waits for this claim.
+    const [post] = await tx.$queryRaw<{ id: string; visibility: PostVisibility }[]>`
+      SELECT id, visibility FROM post WHERE id = (SELECT "postId" FROM comment WHERE id = ${commentId}) FOR SHARE`;
+    // The reply's row locked, so a resume that drops a pause's emails waits for this claim, or this claim sees it.
+    const [comment] = await tx.$queryRaw<{ due: Date | null }[]>`SELECT "votersEmailDueAt" AS due FROM comment WHERE id = ${commentId} FOR UPDATE`;
+    if (!comment?.due || !post) {
       return null;
     }
-    if (comment.visibility !== visibility) {
-      throw visibilityChanged(comment.postId);
+    if (post.visibility !== visibility) {
+      throw visibilityChanged(post.id);
     }
     const claimedAt = new Date();
     const { count } = await tx.replyEmail.createMany({ data: [{ commentId, userId, claimedAt }], skipDuplicates: true });

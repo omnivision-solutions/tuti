@@ -87,7 +87,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                     {board.name}
                   </Link>
                 }
-                badges={<VisibilityBadge visibility={board.postVisibility} />}
+                badges={<VisibilityBadge visibility={board.postVisibility} of="board" />}
                 meta={
                   <>
                     <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="hover:underline">
