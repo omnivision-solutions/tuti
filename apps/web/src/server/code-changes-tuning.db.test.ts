@@ -134,7 +134,7 @@ test("a saved value outside a range the server narrowed since is shown clamped",
   resetCodeChangesSettings();
   expect((await call(getCodeChangesTuning, as(owner), {})).values["propose.edit.maybe"]).toEqual({
     value: 0.6,
-    default: 0.4,
+    default: 0.5,
     saved: 0.6,
     clamped: true,
     range: { kind: "probability", min: 0, max: 0.6 },

@@ -93,8 +93,9 @@ export const CODE_CHANGES_SETTINGS = {
     autoLink: probability(0.95, 'A link Autopilot applies by itself from this probability (with "Link posts by itself" on); at least `CODE_CHANGES_DECISIONS_LINKS_MAYBE`'),
   },
   propose: {
-    edit: odds("Editing an article", 0.4, 0.75),
-    newArticle: odds("A new article", 0.5, 0.8),
+    // Chosen for the docs agent on the evaluation set.
+    edit: odds("Editing an article", 0.5, 0.75),
+    newArticle: odds("A new article", 0.3, 0.8),
   },
   context: {
     diffChars: integer(20_000, 1_000, 500_000, "The pull request's diff the decision model and the docs agent read, in characters; files past it are only listed"),
@@ -102,14 +103,7 @@ export const CODE_CHANGES_SETTINGS = {
     bodyChars: integer(4_000, 0, 100_000, "The pull request's description it reads, in characters"),
     outlineArticles: integer(1_000, 50, 20_000, "The help center's articles and drafts the docs agent is shown at most (published ones first); it finds the rest with its search"),
   },
-  docs: {
-    pipeline: enumSetting(
-      ["agent", "classic"],
-      "classic",
-      "How Autopilot finds the help center's edits and new articles: `classic`, the decision model on the three articles nearest the summary; `agent`, the docs agent with read-only tools (the repository at the merge commit, the help center), which costs more per merged pull request. `classic` until the agent is checked against the evaluation and its rollout approved",
-    ),
-  },
-  // The docs agent's steps (the agent pipeline): decide, double-check new articles, write.
+  // The docs agent's steps: decide, double-check new articles, write.
   decide: {
     model: model("anthropic/claude-haiku-5.5", "The docs agent's model: with the tools, it decides what each merged pull request means for the help center (which articles to fix, which new ones it needs) in one answer"),
     rounds: integer(12, 1, 50, "Its rounds of tool calls at most, before it must answer"),
@@ -130,7 +124,7 @@ export const CODE_CHANGES_SETTINGS = {
   write: {
     model: model(
       "anthropic/claude-sonnet-5.5",
-      "With the agent pipeline: the model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `AI_MODEL_CODE_CHANGES`, then `AI_MODEL`, then this (with `classic`, Tuti's default model)",
+      "The model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `AI_MODEL_CODE_CHANGES`, then `AI_MODEL`, then this",
     ),
     rounds: integer(10, 1, 50, "Its rounds of tool calls at most, for each edit or new article"),
     maxTokens: integer(6_000, 500, 64_000, "The most it writes in one reply, in tokens"),

@@ -1,27 +1,14 @@
 import { decide, type DecisionAnswer, decisionModel, decisionsAvailable } from "@tuti/shared";
 import { expect, test } from "vitest";
 
-import {
-  ARTICLE_QUESTION,
-  articleProposal,
-  articleState,
-  GATE,
-  gateResult,
-  NEW_ARTICLE_QUESTION,
-  newArticleProposal,
-  newArticleState,
-  POST_QUESTION,
-  postProposal,
-  postState,
-  pullRequestState,
-  thresholds,
-} from "./code-change-decisions";
-import { article, CASES, post } from "./code-change-eval";
+import { GATE, gateResult, POST_QUESTION, postProposal, postState, pullRequestState, thresholds } from "./code-change-decisions";
+import { CASES, post } from "./code-change-eval";
 
 /**
  * The evaluation set against the real decision model (`pnpm test:live`, with OPENAI_API_KEY, an OpenRouter key;
- * CODE_CHANGES_DECISIONS_MODEL for another than the default): each kind of decision, with today's thresholds, must match what a team member
- * would expect. Without the keys it's skipped: "not run", never "passed". Prints the model's answers
+ * CODE_CHANGES_DECISIONS_MODEL for another than the default): each kind of decision it makes (the gate and the posts;
+ * the help center's are the docs agent's, code-change-docs-agent.live.test.ts), with today's thresholds, must match what
+ * a team member would expect. Without the keys it's skipped: "not run", never "passed". Prints the model's answers
  * for each decision (proposed or not), to tune the thresholds or compare decision models.
  */
 // It asks the decision model, so only where the Decisions API is (OpenRouter): skipped anywhere else.
@@ -55,34 +42,19 @@ test.skipIf(!live)(`code change decisions with ${decisionModel()}`, { timeout: 3
       const gate = gateResult(gateAnswers);
       rows.push({ kind: "gate", name: c.name, expected: c.users, got: gate.users >= thresholds().gate, answers: odds(gateAnswers), right: c.users === gate.users >= thresholds().gate });
       const summary = c.summary ?? "";
-      const articles = (c.articles ?? []).map((a) => article(a.article));
-      await Promise.all([
-        ...(c.posts ?? []).map(async (p) => {
+      await Promise.all(
+        (c.posts ?? []).map(async (p) => {
           const answers = await decide(postState(c.pr, summary, post(p.post, p.named)), POST_QUESTION, { meter });
           const proposal = postProposal(answers);
           rows.push({ kind: "post", name: `${c.name}: ${p.post}`, expected: p.expect, got: proposal?.kind ?? null, answers: odds(answers), right: allowed(p.expect, proposal?.kind ?? null) });
         }),
-        ...(c.articles ?? []).map(async (a) => {
-          const answers = await decide(articleState(c.pr, summary, article(a.article)), ARTICLE_QUESTION, { meter });
-          const got = articleProposal(answers) ? "ARTICLE_EDIT" : null;
-          rows.push({ kind: "article", name: `${c.name}: ${a.article}`, expected: a.expect, got, answers: odds(answers), right: allowed(a.expect, got) });
-        }),
-        ...(c.newArticle === undefined
-          ? []
-          : [
-              (async () => {
-                const answers = await decide(newArticleState(c.pr, summary, articles), NEW_ARTICLE_QUESTION, { meter });
-                const got = newArticleProposal(answers) !== null;
-                rows.push({ kind: "new article", name: c.name, expected: c.newArticle, got, answers: odds(answers), right: allowed(c.newArticle!, got) });
-              })(),
-            ]),
-      ]);
+      );
     }),
   );
   rows.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
   console.table(rows.map(({ right, ...row }) => ({ ...row, right: right ? "✓" : "✗" })));
   const accuracy = Object.fromEntries(
-    ["gate", "post", "article", "new article"].map((kind) => {
+    ["gate", "post"].map((kind) => {
       const of = rows.filter((row) => row.kind === kind);
       return [kind, of.filter((row) => row.right).length / of.length];
     }),

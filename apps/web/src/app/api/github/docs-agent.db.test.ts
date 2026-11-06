@@ -12,7 +12,20 @@ import {
 } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { analyseCodeChange, getCodeChange, getCodeChangeTarget } from "@/server/operations/code-changes";
+import { publishCodeChangesNow } from "@/server/code-changes";
+import { publishArticle as publishFromDocs } from "@/server/docs";
+import {
+  analyseCodeChange,
+  applyCodeChangeAction,
+  dismissCodeChangeAction,
+  getCodeChange,
+  getCodeChangeTarget,
+  publishCodeChangeActionNow,
+  runDueAutopilot,
+  undoCodeChangeAction,
+  waitingUpdates,
+} from "@/server/operations/code-changes";
+import { publishArticle, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -26,10 +39,10 @@ vi.mock("../../../../../../packages/jobs/src/docs-agent-tools", async (original)
 });
 
 /**
- * Autopilot's docs agent (docs/plan.md, D4), the agent pipeline (`CODE_CHANGES_DOCS_PIPELINE=agent`; off by default): the gate and the posts stay with the decision model;
- * the agent, with read-only tools, decides the help center's edits and new articles; a stronger model double-checks a
- * new article; the write model writes each with the same tools, in the classic writers' reply. (code-changes.db.test.ts
- * has the classic pipeline.)
+ * Autopilot's docs agent (docs/plan.md, D4): the gate and the posts stay with the decision model; the agent, with
+ * read-only tools, decides the help center's edits and new articles; a stronger model double-checks a new article; the
+ * write model writes each with the same tools, in the writers' reply. (code-changes.db.test.ts has the rest of an
+ * analysis: the gate, posts, the changelog line, saving it again.)
  */
 let github: GithubFake;
 let model: ModelFake;
@@ -47,7 +60,7 @@ beforeAll(async () => {
 });
 afterAll(() => Promise.all([github.close(), model.close(), openai.close()]));
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...github.env, ...model.env, CODE_CHANGES_DOCS_PIPELINE: "agent" })) {
+  for (const [name, value] of Object.entries({ ...github.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
   resetCodeChangesSettings();
@@ -124,8 +137,15 @@ const actions = (number: number) =>
 const change = (number: number) => prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number }, select: { state: true, reason: true, summary: true, why: true, model: true } });
 const EDIT = JSON.stringify({ reason: "It says there's only a light theme.", overview: "It names Dark beside Light.", sections: { "1": "The app has a light theme and a dark one: pick it in **Settings**." } });
 const PROPOSALS = JSON.stringify({ why: "It adds a dark theme.", changelog: "A dark theme, in Settings", proposals: {} });
+/** The help center's outline (Markdown) in the agent's first message. */
+const OUTLINE = "each with its slug):\n\n";
+const outlineOf = (request: ModelRequest) => request.user.slice(request.user.indexOf(OUTLINE) + OUTLINE.length).split("\n");
+const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 
 test("a merged pull request: the agent reads the code and the article, and its edits are proposed with its own probabilities, past the cutoffs; the write model writes with the tools", async () => {
+  // Deleted, and sample content: not in the outline, and never edited.
+  await prisma.article.create({ data: { projectId: project.id, slug: "old-themes", title: "Old themes", body: "Light only.", publishedAt: null, deletedAt: new Date() } });
+  await prisma.article.create({ data: { projectId: project.id, slug: "sample-guide", title: "A sample guide", body: "Light only.", publishedAt: new Date(), sample: true } });
   pullRequest(30);
   model.decide(USERS);
   model.toolCalls(
@@ -139,9 +159,10 @@ test("a merged pull request: the agent reads the code and the article, and its e
   model.reply(
     answer([
       { slug: "appearance", problem: "obsolete", probability: 0.8, reason: "It says the app only has a light theme." },
-      // A draft can't take an edit (it lands in a published article's unpublished changes), nor can a slug that isn't there;
-      // and an edit needs a verdict it knows (wrong, missing or obsolete): one it isn't sure of isn't its to guess.
-      { slug: "themes-draft", problem: "missing", probability: 0.9, reason: "Its draft could mention it." },
+      // A deleted article, sample content or a slug that isn't there can't take an edit; and an edit needs a verdict it
+      // knows (wrong, missing or obsolete): one it isn't sure of isn't its to guess.
+      { slug: "old-themes", problem: "wrong", probability: 0.9, reason: "It says light only." },
+      { slug: "sample-guide", problem: "wrong", probability: 0.9, reason: "It says light only." },
       { slug: "no-such-article", problem: "wrong", probability: 0.9, reason: "Made up." },
       { slug: "appearance", problem: "unsure", probability: 0.95, reason: "Not a verdict." },
     ]),
@@ -167,27 +188,14 @@ test("a merged pull request: the agent reads the code and the article, and its e
   expect(toolNames(agent[0]!)).toEqual(["list_files", "read_file", "search_code", "read_article", "search_articles"]);
   expect(agent[0]).toMatchObject({ maxTokens: 6_000, temperature: 0 });
   expect(agent[0]!.system).toContain("Readers of the help center are the product's users");
-  const outline = (JSON.parse(agent[0]!.user) as { help_center: unknown }).help_center;
-  expect(outline).toEqual({
-    collections: [
-      {
-        slug: "settings",
-        name: "Settings",
-        articles: [
-          { slug: "appearance", title: "Change how the app looks", state: "published" },
-          { slug: "themes-draft", title: "Themes (draft)", state: "draft" },
-        ],
-      },
-    ],
-    not_in_a_collection: [],
-    new_articles_waiting: [],
-  });
+  // In Markdown: each collection a heading with its slug, its articles and drafts under it.
+  expect(outlineOf(agent[0]!)).toEqual(["## Settings (settings)", "- Change how the app looks (appearance)", "- Themes (draft) (themes-draft, draft)"]);
   const answered = agent[2]!.messages.filter((message) => message.role === "tool").map((message) => String(message.content));
   expect(answered[0]).toContain('options={["Light", "Dark"]}');
   expect(answered[1]).toContain("src/settings/appearance.tsx:1:");
   expect(answered[2]).toContain("The app has a light theme.");
   expect(github.reads).toContain(`/repos/${repo}/tarball/merge-30`);
-  // The writer: the write model, the same tools, the classic writer's prompt and what the agent found.
+  // The writer: the write model, the same tools, the writer's prompt and what the agent found.
   const writer = model.requests.find((request) => request.user.includes('"problem"'))!;
   expect(writer.model).toBe("anthropic/claude-sonnet-5.5");
   expect(toolNames(writer)).toContain("read_file");
@@ -210,7 +218,7 @@ describe("the double-check", () => {
     const agent = agentRequests(31);
     expect(agent.map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5", "anthropic/claude-sonnet-5.5"]);
     expect(agent[1]!.messages).toEqual(agent[0]!.messages);
-    // The double-check's answer: its new article (its number), and its edit under the cutoff (0.4) dropped.
+    // The double-check's answer: its new article (its number), and its edit under the edit cutoff dropped.
     expect(await actions(31)).toEqual([
       expect.objectContaining({ kind: "CHANGELOG_LINE" }),
       expect.objectContaining({ kind: "NEW_ARTICLE", probability: 0.85, reason: "Themes are new.", payload: expect.objectContaining({ title: "Use the dark theme" }) as unknown }),
@@ -232,7 +240,7 @@ describe("the double-check", () => {
     resetCodeChangesSettings();
     pullRequest(33);
     model.decide(USERS);
-    model.reply(answer([], [{ ...NEW, probability: 0.45 }]), undefined, '"merge-33"');
+    model.reply(answer([], [{ ...NEW, probability: 0.25 }]), undefined, '"merge-33"');
     model.reply(PROPOSALS, undefined, '"proposals"');
     await merge(33);
     expect(agentRequests(33).map((request) => request.model)).toEqual(["anthropic/claude-haiku-5.5"]);
@@ -251,12 +259,11 @@ test("a big help center: the outline lists the published articles first, up to i
   model.reply(answer(), undefined, '"merge-52"');
   model.reply(PROPOSALS, undefined, '"proposals"');
   await merge(52);
-  const outline = (JSON.parse(agentRequests(52)[0]!.user) as { help_center: { collections: { articles: { slug: string }[] }[]; not_in_a_collection: unknown[]; not_listed?: string } })
-    .help_center;
+  const outline = outlineOf(agentRequests(52)[0]!);
   // 51 published and a draft: 50 shown, the draft (and one published article) left to search.
-  expect(outline.collections[0]!.articles.map((a) => a.slug)).toEqual(["appearance"]);
-  expect(outline.not_in_a_collection).toHaveLength(49);
-  expect(outline.not_listed).toBe("2 more articles and drafts aren't listed here: find them with search_articles");
+  expect(outline.slice(0, 3)).toEqual(["## Settings (settings)", "- Change how the app looks (appearance)", "## Not in a collection"]);
+  expect(outline.filter((line) => line.startsWith("- Guide "))).toHaveLength(49);
+  expect(outline.at(-1)).toBe("2 more articles and drafts aren't listed here: find them with search_articles.");
 });
 
 describe("new articles", () => {
@@ -335,7 +342,11 @@ describe("new articles", () => {
     };
     proposing(42);
     await merge(42);
-    const waiting = (number: number) => (JSON.parse(agentRequests(number).at(-1)!.user) as { help_center: { new_articles_waiting: string[] } }).help_center.new_articles_waiting;
+    const waiting = (number: number) => {
+      const outline = outlineOf(agentRequests(number).at(-1)!);
+      const at = outline.indexOf("## New articles waiting for the team's approval");
+      return at === -1 ? [] : outline.slice(at + 1);
+    };
     expect(waiting(42)).toEqual([]);
     // Another pull request hears of it.
     pullRequest(43);
@@ -343,13 +354,197 @@ describe("new articles", () => {
     model.reply(answer(), undefined, '"merge-43"');
     model.reply(PROPOSALS, undefined, '"proposals"');
     await merge(43);
-    expect(waiting(43)).toEqual(["Use the dark theme"]);
+    const proposed = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 42 }, kind: "NEW_ARTICLE" }, select: { id: true } });
+    expect(waiting(43)).toEqual([`- Use the dark theme (new:${proposed.id})`]);
     // Analysed again ("Analyse again"), it doesn't: its draft is proposed again, not lost.
     proposing(42);
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 42 } });
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: false, resume: false });
     expect(waiting(42)).toEqual([]);
     expect((await actions(42)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE", "NEW_ARTICLE"]);
+  });
+});
+
+describe("edits to drafts", () => {
+  const DRAFT_EDIT = JSON.stringify({ reason: "It doesn't name the themes.", overview: "It names Light and Dark.", sections: { "1": "Soon: pick Light or Dark in **Settings**." } });
+  const draftOf = () => prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "themes-draft" }, select: { id: true, body: true, publishedAt: true } });
+  const editing = (number: number) => {
+    pullRequest(number);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "themes-draft", problem: "missing", probability: 0.8, reason: "Its draft doesn't name the themes." }]), undefined, `"merge-${number}"`);
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(DRAFT_EDIT, undefined, '"problem"');
+  };
+  const editOf = async (number: number) =>
+    prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number }, kind: "ARTICLE_EDIT" }, select: { id: true, status: true, articleId: true } });
+
+  test("one is kept: it lands in the draft's text, the review shows it, Approve keeps it there (still a draft), and Undo takes it out", async () => {
+    // Sure enough to go out by itself on a published article: on a draft it waits for the team, saying why.
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 50 } });
+    editing(55);
+    await merge(55);
+    const draft = await draftOf();
+    const edit = await editOf(55);
+    expect(edit).toMatchObject({ status: "PENDING", articleId: draft.id });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: edit.id }, select: { waitReason: true } })).waitReason).toBe("Its article is a draft");
+    // In the draft's text, as the team's saves on a draft are: no unpublished changes, nothing published.
+    expect(draft).toMatchObject({ body: "Soon: pick Light or Dark in Settings.", publishedAt: null });
+    expect(await prisma.articleChanges.count({ where: { articleId: draft.id } })).toBe(0);
+
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: draft.id });
+    expect(review).toMatchObject({ changesReaders: true, teammateEdit: false });
+    expect(review.actions[0]!.article).toMatchObject({ slug: "themes-draft", draft: true });
+
+    expect(await call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision!, reviewedAs: "draft" })).toMatchObject({ status: "applied", published: false });
+    expect(await editOf(55)).toMatchObject({ status: "APPLIED" });
+    expect(await draftOf()).toMatchObject({ body: "Soon: pick Light or Dark in Settings.", publishedAt: null });
+    // Approved, not published: the review says so, and Undo is offered.
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: draft.id })).actions[0]).toMatchObject({ status: "applied", unpublished: true, canUndo: true });
+
+    await call(undoCodeChangeAction, team(), { id: edit.id });
+    expect(await editOf(55)).toMatchObject({ status: "UNDONE" });
+    expect(await draftOf()).toMatchObject({ body: "Soon.", publishedAt: null });
+  });
+
+  test("the team writing on in the draft after an edit landed: its review says the team's edit is in it too", async () => {
+    editing(57);
+    await merge(57);
+    const draft = await draftOf();
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: draft.id })).teammateEdit).toBe(false);
+    // A teammate's save: a paragraph more in its text.
+    const doc = (await prisma.article.findUniqueOrThrow({ where: { id: draft.id }, select: { content: true } })).content as { type: string; content: object[] };
+    expect(doc).not.toBeNull();
+    const more = { ...doc, content: [...doc.content, { type: "paragraph", content: [{ type: "text", text: "Switch at sunset." }] }] };
+    await prisma.article.update({ where: { id: draft.id }, data: { content: more, body: `${draft.body}\n\nSwitch at sunset.` } });
+    expect((await call(getCodeChangeTarget, team(), { type: "articles", id: draft.id })).teammateEdit).toBe(true);
+  });
+
+  test("approving from the list never takes one (only its review approves an edit on a draft); approved without the review, the 409 says how", async () => {
+    editing(93);
+    await merge(93);
+    const edit = await editOf(93);
+    // As sure as can be: the list would approve an edit this sure on a published article.
+    await prisma.codeChangeAction.update({ where: { id: edit.id }, data: { probability: 0.99 } });
+    const { id: changeId } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 93 }, select: { id: true } });
+    expect((await waitingUpdates(project.id, [changeId])).get(changeId)!.likely).toEqual([]);
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id })).rejects.toMatchObject({
+      status: 409,
+      code: "draft",
+      message: "Its article is a draft: approve it on its review",
+    });
+    // Said reviewed as a draft, but without the version reviewed: refused too.
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id, reviewedAs: "draft" })).rejects.toMatchObject({ status: 409, code: "revision_required" });
+    expect(await editOf(93)).toMatchObject({ status: "PENDING" });
+  });
+
+  test("Dismiss takes it out of the draft; a version saved since the review refuses Approve", async () => {
+    editing(56);
+    await merge(56);
+    const edit = await editOf(56);
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: edit.articleId! });
+    await prisma.articleRevision.create({ data: { articleId: edit.articleId!, title: "Themes (draft)", body: "Newer.", createdAt: new Date(Date.now() + 1_000) } });
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision!, reviewedAs: "draft" })).rejects.toMatchObject({ status: 409, code: "changed" });
+    await call(dismissCodeChangeAction, team(), { id: edit.id });
+    expect(await editOf(56)).toMatchObject({ status: "DISMISSED" });
+    expect((await draftOf()).body).toBe("Soon.");
+  });
+
+  test("published from Docs: only with the edits the page showed, which go live and are approved with it; one landing since refuses it, one gone since or the team's own changes don't", async () => {
+    const before = await draftOf();
+    editing(88);
+    await merge(88);
+    const edit = await editOf(88);
+    // The page had shown none: the edit landed since, so it's refused.
+    await expect(call(publishArticle, team(), { slug: "themes-draft", edits: [] })).rejects.toMatchObject({ status: 409, code: "changed" });
+    expect(await draftOf()).toMatchObject({ id: before.id, publishedAt: null });
+    expect(await editOf(88)).toMatchObject({ status: "PENDING" });
+    // The team moves it out of its collection (a new version): not an edit of Autopilot's, so nothing to refuse. An edit
+    // the page showed that's gone since doesn't matter either: nothing unseen goes live.
+    await call(updateArticle, team(), { slug: "themes-draft", collection: null });
+    await call(publishArticle, team(), { slug: "themes-draft", edits: [edit.id, "an-edit-dismissed-since"] });
+    expect((await draftOf()).publishedAt).not.toBeNull();
+    expect(await editOf(88)).toMatchObject({ status: "APPLIED" });
+  });
+
+  test("published through the API without the edits while one waits in the draft: refused, it stays waiting", async () => {
+    editing(92);
+    await merge(92);
+    await expect(call(publishArticle, team(), { slug: "themes-draft" })).rejects.toMatchObject({ status: 409, code: "edits_required" });
+    expect(await draftOf()).toMatchObject({ publishedAt: null });
+    expect(await editOf(92)).toMatchObject({ status: "PENDING" });
+  });
+
+  test("published from Docs, the page having shown no edits: one landed since, so it's refused", async () => {
+    editing(90);
+    await merge(90);
+    expect(await publishFromDocs(project.slug, "themes-draft", [])).toEqual({ error: "The article changed since. Reload the page to review it." });
+    expect(await draftOf()).toMatchObject({ publishedAt: null });
+    expect(await editOf(90)).toMatchObject({ status: "PENDING" });
+  });
+
+  test("an edit going out by itself, its article unpublished since: Publish now and the runner don't approve it, it waits saying why", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotMinSure: 50 } });
+    pullRequest(91);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.7, reason: "Its theme list is out of date." }]), undefined, '"merge-91"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(91);
+    const edit = await editOf(91);
+    expect(edit).toMatchObject({ status: "SCHEDULED" });
+    await call(unpublishArticle, team(), { slug: "appearance" });
+    const state = () => prisma.codeChangeAction.findUniqueOrThrow({ where: { id: edit.id }, select: { status: true, waitReason: true, decidedById: true } });
+    await expect(call(publishCodeChangeActionNow, team(), { id: edit.id })).rejects.toMatchObject({ status: 409, code: "draft" });
+    expect(await state()).toEqual({ status: "PENDING", waitReason: "Its article is a draft", decidedById: null });
+    // Among several (Home's Publish now): it waits, told after the rest, rather than stopping them.
+    await prisma.codeChangeAction.update({ where: { id: edit.id }, data: { status: "SCHEDULED", waitReason: null } });
+    expect(await publishCodeChangesNow(project.slug, [edit.id, edit.id])).toEqual({ error: expect.stringMatching(/^An article edit waits\. /) });
+    expect(await state()).toEqual({ status: "PENDING", waitReason: "Its article is a draft", decidedById: null });
+    // The runner, due now: it waits too.
+    await prisma.codeChangeAction.update({ where: { id: edit.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() - 60_000), waitReason: null } });
+    await runDueAutopilot();
+    expect(await state()).toEqual({ status: "PENDING", waitReason: "Its article is a draft", decidedById: null });
+  });
+
+  test("an edit reviewed on a published article, unpublished since: Approve and publish is refused (nothing would be published)", async () => {
+    pullRequest(89);
+    model.decide(USERS);
+    model.reply(answer([{ slug: "appearance", problem: "wrong", probability: 0.7, reason: "Its theme list is out of date." }]), undefined, '"merge-89"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(EDIT, undefined, '"problem"');
+    await merge(89);
+    const edit = await editOf(89);
+    const review = await call(getCodeChangeTarget, team(), { type: "articles", id: article.id });
+    await call(unpublishArticle, team(), { slug: "appearance" });
+    await expect(call(applyCodeChangeAction, team(), { id: edit.id, revision: review.revision!, reviewedAs: "published" })).rejects.toMatchObject({ status: 409, code: "changed" });
+    expect(await editOf(89)).toMatchObject({ status: "PENDING" });
+  });
+
+  test("one to another pull request's new article waiting for the team is dropped (its text is fixed once proposed); the agent can still read it", async () => {
+    vi.stubEnv("CODE_CHANGES_REDECIDE_MODEL", "off");
+    resetCodeChangesSettings();
+    pullRequest(57);
+    model.decide(USERS);
+    model.reply(answer([], [{ title: "Use the dark theme", probability: 0.8, collection: null, after: null, reason: "Themes are new." }]), undefined, '"merge-57"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    model.reply(JSON.stringify({ title: "Use the dark theme", reason: "Themes are new.", notes: "## Use the dark theme\n\n1. Open **Settings**." }), undefined, '"article_needed"');
+    await merge(57);
+    const waiting = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChange: { projectId: project.id, number: 57 }, kind: "NEW_ARTICLE" }, select: { id: true, payload: true } });
+
+    pullRequest(58);
+    model.decide(USERS);
+    model.toolCalls([{ name: "read_article", arguments: JSON.stringify({ slug: `new:${waiting.id}` }) }], '"merge-58"');
+    model.reply(answer([{ slug: `new:${waiting.id}`, problem: "missing", probability: 0.8, reason: "It doesn't say where the theme is." }]), undefined, '"merge-58"');
+    model.reply(PROPOSALS, undefined, '"proposals"');
+    await merge(58);
+    // The agent read the waiting draft, to know what it covers.
+    const read = agentRequests(58)[1]!.messages.find((message) => message.role === "tool")!;
+    expect(String(read.content)).toContain("State: a new article waiting for the team's approval");
+    expect(String(read.content)).toContain("Open **Settings**");
+    // Its edit to it is dropped: nothing written (no writer request), its text as proposed, no update of its own.
+    expect(model.requests.some((request) => request.user.includes('"problem"'))).toBe(false);
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: waiting.id }, select: { payload: true } })).payload).toEqual(waiting.payload);
+    expect((await actions(58)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
   });
 });
 
@@ -523,7 +718,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     expect(agent.map((request) => request.model)).toEqual(["acme/tiny", "acme/tiny"]);
     expect(agent[0]).toMatchObject({ reasoning: { effort: "high" } });
     expect(agent[1]!.toolChoice).toBe("none");
-    // The edit at 0.35: past the project's 0.3, under the server's 0.4.
+    // The edit at 0.35: past the project's 0.3, under the server's 0.5.
     expect((await actions(60)).map((action) => [action.kind, action.probability])).toEqual([
       ["CHANGELOG_LINE", 1],
       ["ARTICLE_EDIT", 0.35],
@@ -531,7 +726,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     expect((await settled(60)).settings).toEqual({
       values: {
         "propose.edit.maybe": 0.3,
-        "propose.newArticle.maybe": 0.5,
+        "propose.newArticle.maybe": 0.3,
         "redecide.whenNewArticle": 0.2,
         "decide.rounds": 1,
         "write.rounds": 10,
@@ -562,7 +757,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     await merge(61);
     expect(agentRequests(61).map((request) => request.model)).toEqual(["acme/tiny"]);
     expect((await actions(61)).map((action) => action.kind)).toEqual(["CHANGELOG_LINE"]);
-    expect((await settled(61)).settings).toMatchObject({ values: { "propose.edit.maybe": 0.4 }, tuned: [] });
+    expect((await settled(61)).settings).toMatchObject({ values: { "propose.edit.maybe": 0.5 }, tuned: [] });
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 61 }, select: { id: true } });
     expect((await call(getCodeChange, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { id })).tuned).toEqual([]);
 
@@ -617,7 +812,8 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     model.toolCalls([{ name: "read_article", arguments: '{"slug":"appearance"}' }], '"problem"');
     model.reply(EDIT, undefined, '"problem"');
     await merge(65);
-    const diff = (JSON.parse(agentRequests(65)[0]!.user) as { pull_request: { diff: string } }).pull_request.diff;
+    // The pull request as JSON, then the help center's outline (Markdown).
+    const diff = (JSON.parse(agentRequests(65)[0]!.user.split("\n\nThe help center")[0]!) as { pull_request: { diff: string } }).pull_request.diff;
     // Cut to the project's 1,000 characters of patch (with the file's header line): its end isn't there.
     expect(patch.length).toBeGreaterThan(4_000);
     expect(diff.length).toBeLessThan(1_200);
@@ -629,17 +825,17 @@ describe("a project's own models and Advanced tuning (D6)", () => {
   });
 
   test("a new article from the project's threshold (propose.newArticle.maybe) is kept", async () => {
-    // 0.4: past the project's 0.3, under the server's 0.5; the double-check off, so the agent's own answer is used.
-    await business({ "propose.newArticle.maybe": 0.3 }, { code_changes_redecide: "off" });
+    // 0.25: past the project's 0.2, under the server's 0.3; the double-check off, so the agent's own answer is used.
+    await business({ "propose.newArticle.maybe": 0.2 }, { code_changes_redecide: "off" });
     pullRequest(66);
     model.decide(USERS);
-    model.reply(NEW_AT(0.4), undefined, '"merge-66"');
+    model.reply(NEW_AT(0.25), undefined, '"merge-66"');
     model.reply(PROPOSALS, undefined, '"proposals"');
     model.reply(DRAFT, undefined, '"article_needed"');
     await merge(66);
     expect((await actions(66)).map((action) => [action.kind, action.probability])).toEqual([
       ["CHANGELOG_LINE", 1],
-      ["NEW_ARTICLE", 0.4],
+      ["NEW_ARTICLE", 0.25],
     ]);
   });
 

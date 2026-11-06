@@ -159,8 +159,12 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (action.kind === "ARTICLE_EDIT" && action.articleId) {
     const article = await db.article.findUnique({ where: { id: action.articleId }, select: { deletedAt: true, publishedAt: true, projectId: true } });
     // One the previous release wrote, as a whole new article (not saved into its changes), is out of date.
-    if (!article || article.deletedAt || !article.publishedAt || (await db.articleRevision.count({ where: { codeChangeActionId: action.id } })) === 0) {
+    if (!article || article.deletedAt || (await db.articleRevision.count({ where: { codeChangeActionId: action.id } })) === 0) {
       return "Its article changed since";
+    }
+    // An edit on a draft is in its text already: the team approves it there, and publishes the draft from Docs.
+    if (!article.publishedAt) {
+      return "Its article is a draft";
     }
     if (await hasTeammateEdit(action.articleId, db)) {
       return "Its article has a teammate's unpublished edit";

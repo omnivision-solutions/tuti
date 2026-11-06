@@ -1,6 +1,7 @@
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
+import { editsInChanges } from "@tuti/jobs";
 import { aiProvider, articleVersionsNote } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -44,6 +45,10 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: { id: true },
   });
+  // A draft's: Autopilot's edits waiting in it, which publishing it takes live (and only those), read before its text:
+  // one landing between the two is in the text but not here, so Publish is refused rather than taking it live unseen.
+  const waitingDraft = await prisma.article.findFirst({ where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null, publishedAt: null }, select: { id: true } });
+  const autopilotEdits = waitingDraft ? (await editsInChanges(waitingDraft.id)).map((edit) => edit.actionId) : [];
   const article = await prisma.article.findFirst({
     where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null },
     select: {
@@ -136,7 +141,14 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
               }}
             />
             <ArticleSaveButton />
-            <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="publish" />
+            <ArticleActions
+              projectSlug={slug}
+              slug={article.slug}
+              title={article.title}
+              published={article.publishedAt !== null}
+              part="publish"
+              autopilotEdits={autopilotEdits}
+            />
           </>
         }
         more={

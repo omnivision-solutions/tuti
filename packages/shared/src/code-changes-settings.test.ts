@@ -28,7 +28,7 @@ test("a setting's variable is named from its path", () => {
   expect(Object.keys(readCodeChangesSettings({}).inUse)).toContain("CODE_CHANGES_PROPOSE_NEW_ARTICLE_LIKELY");
 });
 
-test("the defaults are the values Autopilot used before they were settings, and the docs agent's", () => {
+test("the defaults are the values Autopilot used before they were settings, and the docs agent's (its propose cutoffs chosen for it)", () => {
   expect(readCodeChangesSettings({}).values).toEqual({
     decisions: {
       model: "nace-ai/drex-max",
@@ -38,9 +38,8 @@ test("the defaults are the values Autopilot used before they were settings, and 
       links: { maybe: 0.65, likely: 0.85 },
       autoLink: 0.95,
     },
-    propose: { edit: { maybe: 0.4, likely: 0.75 }, newArticle: { maybe: 0.5, likely: 0.8 } },
+    propose: { edit: { maybe: 0.5, likely: 0.75 }, newArticle: { maybe: 0.3, likely: 0.8 } },
     context: { diffChars: 20_000, fileChars: 6_000, bodyChars: 4_000, outlineArticles: 1_000 },
-    docs: { pipeline: "classic" },
     decide: { model: "anthropic/claude-haiku-5.5", rounds: 12, maxTokens: 6_000, temperature: 0, reasoning: "off" },
     redecide: { model: "anthropic/claude-sonnet-5.5", rounds: 12, whenNewArticle: 0.2 },
     write: { model: "anthropic/claude-sonnet-5.5", rounds: 10, maxTokens: 6_000 },
@@ -72,10 +71,10 @@ test("a bad value is refused, naming the variable, the value and what it must be
 });
 
 test("enums and booleans take only their values", () => {
-  const tree = { docs: { pipeline: enumSetting(["agent", "classic"] as const, "agent", "Which"), on: booleanSetting(false, "Whether") } };
-  expect(readCodeChangesSettings({ CODE_CHANGES_DOCS_PIPELINE: "classic", CODE_CHANGES_DOCS_ON: "true" }, tree).values).toEqual({ docs: { pipeline: "classic", on: true } });
-  expect(() => readCodeChangesSettings({ CODE_CHANGES_DOCS_PIPELINE: "smart" }, tree)).toThrow('CODE_CHANGES_DOCS_PIPELINE is "smart": it must be one of agent, classic');
-  expect(() => readCodeChangesSettings({ CODE_CHANGES_DOCS_ON: "yes" }, tree)).toThrow("true or false");
+  const tree = { step: { speed: enumSetting(["fast", "slow"] as const, "fast", "Which"), on: booleanSetting(false, "Whether") } };
+  expect(readCodeChangesSettings({ CODE_CHANGES_STEP_SPEED: "slow", CODE_CHANGES_STEP_ON: "true" }, tree).values).toEqual({ step: { speed: "slow", on: true } });
+  expect(() => readCodeChangesSettings({ CODE_CHANGES_STEP_SPEED: "smart" }, tree)).toThrow('CODE_CHANGES_STEP_SPEED is "smart": it must be one of fast, slow');
+  expect(() => readCodeChangesSettings({ CODE_CHANGES_STEP_ON: "yes" }, tree)).toThrow("true or false");
 });
 
 test("DECISION_MODEL still sets the decision model; CODE_CHANGES_DECISIONS_MODEL wins over it", () => {

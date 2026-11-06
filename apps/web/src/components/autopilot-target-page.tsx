@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { prisma } from "@tuti/db";
-import { placeWords } from "@tuti/jobs";
+import { editsInChanges, placeWords } from "@tuti/jobs";
 import { codeChangesOff, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -31,7 +31,7 @@ const PROPOSED = ":proposed";
 
 /**
  * An article's review as one view of the whole article, as readers see it: its published version against its
- * unpublished changes (a new article's draft, or a draft not published yet: all of it added), each run of changed
+ * unpublished changes (a new article's draft: all of it added; a draft: its text before the edits waiting in it), each run of changed
  * blocks a change to step to (`data-change`), and the new text alone.
  */
 async function articleViews(articleId: string | null, review: TargetReview) {
@@ -40,7 +40,9 @@ async function articleViews(articleId: string | null, review: TargetReview) {
     : null;
   const draft = review.actions.find((action) => action.kind === "new_article" && action.status !== "applied");
   const payload = draft && !article ? ((await prisma.codeChangeAction.findUnique({ where: { id: draft.id }, select: { payload: true } }))?.payload as { content?: unknown; body?: string } | null) : null;
-  let before = article?.publishedAt ? displayDoc(article) : EMPTY;
+  // A draft with edits waiting in its text: its text before them, so the Changes are theirs (not all of it added).
+  const draftBefore = article && !article.publishedAt ? (await editsInChanges(articleId!))[0]?.base : undefined;
+  let before = article?.publishedAt ? displayDoc(article) : (draftBefore ?? EMPTY);
   let after = article ? displayDoc(article.changes ?? article) : displayDoc({ content: payload?.content ?? null, body: payload?.body ?? "" });
   // The Article view: the article as it is now, whatever the Changes compare.
   const current = after;

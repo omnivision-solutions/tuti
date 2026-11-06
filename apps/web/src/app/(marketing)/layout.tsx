@@ -32,10 +32,12 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
                 <Stars />
               </Suspense>
             </a>
-            {/* Sign in always signs in (as another account, if signed in already); signed in, Start free leads to the app. */}
-            <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
-              Sign in
-            </Link>
+            {/* Signed in, Start free leads to the app and there's no Sign in (/sign-in would go to the app too). */}
+            {!session && (
+              <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
+                Sign in
+              </Link>
+            )}
             <Link href={session ? "/app" : "/sign-up"} className={buttonVariants({ className: "max-md:hidden" })}>
               Start free
             </Link>

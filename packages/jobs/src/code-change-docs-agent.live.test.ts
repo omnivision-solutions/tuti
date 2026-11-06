@@ -1,31 +1,29 @@
-import { codeChangesSettings } from "@tuti/shared";
+import { codeChangesSettings, decisionsAvailable } from "@tuti/shared";
 import { expect, test } from "vitest";
 
 import { thresholds } from "./code-change-decisions";
 import { ARTICLES, CASES, fixtureRepository } from "./code-change-eval";
-import { decideDocs, type HelpCenterFixture } from "./docs-agent";
+import { decideDocs, type HelpCenterFixture, outlineMarkdown } from "./docs-agent";
 import { closeTools, runTool, type ToolContext } from "./docs-agent-tools";
 
 /**
- * The docs agent on the evaluation set (`pnpm test:live`, with OPENROUTER_API_KEY; CODE_CHANGES_DECIDE_MODEL and
+ * The docs agent on the evaluation set (`pnpm test:live`, with OPENAI_API_KEY; CODE_CHANGES_DECIDE_MODEL and
  * CODE_CHANGES_REDECIDE_MODEL for others than the defaults), for real: each case's pull request on its fixture
  * repository, with the tools, and the set's articles as the help center. Each kind of verdict must match what a team
  * member would expect, with the propose cutoffs in use. Without the key it's skipped: "not run", never "passed". Prints
  * the agent's answers, to tune the cutoffs or compare models.
  */
-const live = Boolean(process.env.OPENROUTER_API_KEY);
+// Chat with tools at OpenRouter (the default models are its ids), as the decisions evaluation beside it.
+const live = decisionsAvailable();
 
 /** The evaluation's spend isn't a project's. */
 const meter = async () => {};
 
 /** The set's articles, all published, in no collection; searching them lists them all (there are only a few). */
+const articles = Object.entries(ARTICLES).map(([slug, [title]]) => ({ id: slug, slug, title, publishedAt: new Date(), collectionId: null }));
 const helpCenter: HelpCenterFixture = {
-  outline: {
-    collections: [],
-    not_in_a_collection: Object.entries(ARTICLES).map(([slug, [title]]) => ({ slug, title, state: "published" })),
-    new_articles_waiting: [],
-  },
-  articles: Object.keys(ARTICLES).map((slug) => ({ id: slug, slug, publishedAt: new Date(), collectionId: null })),
+  outline: outlineMarkdown({ collections: [], articles, waiting: [], cap: Infinity }),
+  articles,
   collections: [],
   run: async (context, call) => {
     if (call.name === "read_article") {

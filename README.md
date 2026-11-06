@@ -132,15 +132,14 @@ setting is logged as a likely typo. The values in use are logged at start, the c
 | `CODE_CHANGES_DECISIONS_LINKS_MAYBE` | `0.65` | a number from 0 to 1 | Linking a post: below this the pull request isn't linked to it at all (links are only applied by themselves, see `CODE_CHANGES_DECISIONS_AUTO_LINK`) |
 | `CODE_CHANGES_DECISIONS_LINKS_LIKELY` | `0.85` | a number from 0 to 1 | Linking a post: an applied link is labelled likely from this probability |
 | `CODE_CHANGES_DECISIONS_AUTO_LINK` | `0.95` | a number from 0 to 1 | A link Autopilot applies by itself from this probability (with "Link posts by itself" on); at least `CODE_CHANGES_DECISIONS_LINKS_MAYBE` |
-| `CODE_CHANGES_PROPOSE_EDIT_MAYBE` | `0.4` | a number from 0 to 1 | Editing an article: proposed, as "maybe", from this probability |
+| `CODE_CHANGES_PROPOSE_EDIT_MAYBE` | `0.5` | a number from 0 to 1 | Editing an article: proposed, as "maybe", from this probability |
 | `CODE_CHANGES_PROPOSE_EDIT_LIKELY` | `0.75` | a number from 0 to 1 | Editing an article: proposed as likely from this probability |
-| `CODE_CHANGES_PROPOSE_NEW_ARTICLE_MAYBE` | `0.5` | a number from 0 to 1 | A new article: proposed, as "maybe", from this probability |
+| `CODE_CHANGES_PROPOSE_NEW_ARTICLE_MAYBE` | `0.3` | a number from 0 to 1 | A new article: proposed, as "maybe", from this probability |
 | `CODE_CHANGES_PROPOSE_NEW_ARTICLE_LIKELY` | `0.8` | a number from 0 to 1 | A new article: proposed as likely from this probability |
 | `CODE_CHANGES_CONTEXT_DIFF_CHARS` | `20000` | a whole number from 1000 to 500000 | The pull request's diff the decision model and the docs agent read, in characters; files past it are only listed |
 | `CODE_CHANGES_CONTEXT_FILE_CHARS` | `6000` | a whole number from 500 to 500000 | One file's share of the diff at most, in characters |
 | `CODE_CHANGES_CONTEXT_BODY_CHARS` | `4000` | a whole number from 0 to 100000 | The pull request's description it reads, in characters |
 | `CODE_CHANGES_CONTEXT_OUTLINE_ARTICLES` | `1000` | a whole number from 50 to 20000 | The help center's articles and drafts the docs agent is shown at most (published ones first); it finds the rest with its search |
-| `CODE_CHANGES_DOCS_PIPELINE` | `classic` | one of agent, classic | How Autopilot finds the help center's edits and new articles: `classic`, the decision model on the three articles nearest the summary; `agent`, the docs agent with read-only tools (the repository at the merge commit, the help center), which costs more per merged pull request. `classic` until the agent is checked against the evaluation and its rollout approved |
 | `CODE_CHANGES_DECIDE_MODEL` | `anthropic/claude-haiku-5.5` | a model id | The docs agent's model: with the tools, it decides what each merged pull request means for the help center (which articles to fix, which new ones it needs) in one answer |
 | `CODE_CHANGES_DECIDE_ROUNDS` | `12` | a whole number from 1 to 50 | Its rounds of tool calls at most, before it must answer |
 | `CODE_CHANGES_DECIDE_MAX_TOKENS` | `6000` | a whole number from 500 to 64000 | The most it writes in one reply, in tokens (the double-check's too) |
@@ -149,7 +148,7 @@ setting is logged as a likely typo. The values in use are logged at start, the c
 | `CODE_CHANGES_REDECIDE_MODEL` | `anthropic/claude-sonnet-5.5` | a model id, or off | The double-check's model: when the docs agent proposes a new article (see `CODE_CHANGES_REDECIDE_WHEN_NEW_ARTICLE`), it decides the pull request again from scratch, with the same tools, and its answer is used. `off` skips the double-check |
 | `CODE_CHANGES_REDECIDE_ROUNDS` | `12` | a whole number from 1 to 50 | Its rounds of tool calls at most, before it must answer |
 | `CODE_CHANGES_REDECIDE_WHEN_NEW_ARTICLE` | `0.2` | a number from 0 to 1 | The double-check runs when the docs agent proposes a new article this sure or more |
-| `CODE_CHANGES_WRITE_MODEL` | `anthropic/claude-sonnet-5.5` | a model id | With the agent pipeline: the model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `AI_MODEL_CODE_CHANGES`, then `AI_MODEL`, then this (with `classic`, Tuti's default model) |
+| `CODE_CHANGES_WRITE_MODEL` | `anthropic/claude-sonnet-5.5` | a model id | The model that writes each edit and new article, with the same tools, and Autopilot's other text (the summary, reasons, the changelog line) and Verify's. A project's own pick for Autopilot wins, then `AI_MODEL_CODE_CHANGES`, then `AI_MODEL`, then this |
 | `CODE_CHANGES_WRITE_ROUNDS` | `10` | a whole number from 1 to 50 | Its rounds of tool calls at most, for each edit or new article |
 | `CODE_CHANGES_WRITE_MAX_TOKENS` | `6000` | a whole number from 500 to 64000 | The most it writes in one reply, in tokens |
 | `CODE_CHANGES_TOOLS_LIST_CHARS` | `30000` | a whole number from 1000 to 500000 | List files: the answer's characters at most |

@@ -114,7 +114,8 @@ jobs:
   e2e-shard:
     name: E2E tests (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Room for a slow apt mirror: installing Chromium's system packages has taken over 10 minutes on its own.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:

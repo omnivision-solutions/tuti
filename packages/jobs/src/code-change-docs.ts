@@ -1,6 +1,6 @@
 import { blocksToNotes, type Doc, droppedFacts, factsIn, parseDoc, readNotes, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { type Ai, collectionName, complete } from "@tuti/shared";
+import { collectionName } from "@tuti/shared";
 
 import { docOf, sections } from "./article-layers";
 import { pullRequestState } from "./code-change-decisions";
@@ -79,14 +79,10 @@ export function placeWords(
 }
 
 /**
- * How a writer asks its model for the reply: `complete()` in the classic pipeline; the docs agent (docs-agent.ts) asks
- * with its tools first, for the same reply, so the review, Undo, revisions and the email read it unchanged.
+ * How a writer asks its model for the reply: the docs agent's write model (docs-agent.ts) asks with its tools first,
+ * for the reply below, so the review, Undo, revisions and the email read it unchanged.
  */
 export type Ask = (system: string, user: string, maxTokens: number) => Promise<string>;
-export const asking =
-  (use: Ai): Ask =>
-  (system, user, maxTokens) =>
-    complete({ system, user, maxTokens, ...use });
 
 /** Nodes and marks the reader can write back; a section with anything else (a table, code, italics) isn't edited. */
 const WRITABLE_NODES = new Set(["paragraph", "heading", "bulletList", "orderedList", "listItem", "text", "hardBreak"]);
@@ -110,7 +106,7 @@ Use only "## " or "### " headings, "1. " numbered steps, "- " list items, paragr
 /**
  * An edit to the article on top of its newest text (`writtenOn`), or null if the model's version can't be used
  * (unreadable, or it dropped a link, an image or a video). The edits already waiting on it (their reasons) go to the
- * model, for the overview; so does what the docs agent found wrong or missing (`found`), when it decided.
+ * model, for the overview; so does what the docs agent found wrong or missing (`found`).
  */
 export async function writeArticleEdit(
   pr: PullRequestRead,
@@ -118,7 +114,7 @@ export async function writeArticleEdit(
   articleId: string,
   problem: "wrong" | "missing",
   ask: Ask,
-  found?: string,
+  found: string,
 ): Promise<{ reason: string; payload: ArticleEditPayload; writtenOn: Doc; doc: Doc } | null> {
   const article = await prisma.article.findUnique({
     where: { id: articleId },
@@ -223,25 +219,14 @@ Don't invent anything the pull request doesn't say (no prices, limits or dates i
 Reply with JSON only: {"title": "<the article's title, under 60 characters>", "reason": "<one sentence for the team: why it needs an article>", "notes": "<the article>"}
 Use only "## " or "### " headings, "1. " numbered steps, "- " list items, paragraphs separated by blank lines and **bold**. No links.`;
 
-/**
- * A new article's draft, or null if the model's reply can't be used. `nearby`: the titles of the articles near it; or,
- * from the docs agent, the article it decided is needed (its title and why).
- */
+/** A new article's draft, or null if the model's reply can't be used. `needed`: the article the docs agent decided is needed (its title and why). */
 export async function writeNewArticle(
   pr: PullRequestRead,
   summary: string,
-  nearby: string[] | { title: string; reason: string },
+  needed: { title: string; reason: string },
   ask: Ask,
 ): Promise<{ reason: string; payload: NewArticlePayload } | null> {
-  const reply = await ask(
-    NEW_SYSTEM,
-    JSON.stringify(
-      { pull_request: pullRequestState(pr), summary_for_users: summary, ...(Array.isArray(nearby) ? { existing_articles: nearby } : { article_needed: nearby }) },
-      null,
-      1,
-    ),
-    3_000,
-  );
+  const reply = await ask(NEW_SYSTEM, JSON.stringify({ pull_request: pullRequestState(pr), summary_for_users: summary, article_needed: needed }, null, 1), 3_000);
   const read = readNotes(reply, new Set(), []);
   let reason = "";
   try {

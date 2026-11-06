@@ -88,16 +88,16 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   const writing = owner.getByRole("spinbutton", { name: "Lookups before writing" });
   const heading = owner.getByRole("heading", { name: "Advanced tuning", level: 2 });
   const save = owner.getByRole("button", { name: "Save", exact: true });
-  await expect(fix).toHaveValue("40");
+  await expect(fix).toHaveValue("50");
   await expect(fix).toHaveAttribute("max", "75");
   await expect(owner.getByText("Lower: fewer articles left out of date, more fixes to dismiss.", { exact: false })).toBeVisible();
   await fix.fill("30");
   await save.click();
   await expect(owner.getByText("Advanced tuning saved")).toBeVisible();
-  await expect(owner.getByText("Changed from 40%")).toBeVisible();
+  await expect(owner.getByText("Changed from 50%")).toBeVisible();
   await expect(owner.getByText(/^Last changed by Olive Owner/)).toBeVisible();
   await expect(fix).toHaveValue("30");
-  await expect(fix).toHaveAccessibleDescription(/Changed from 40%/);
+  await expect(fix).toHaveAccessibleDescription(/Changed from 50%/);
   // After a save, focus is on the page's heading (the form starts again from what's stored).
   await expect(heading).toBeFocused();
   await checkpoint(owner, "team-settings-ai-tuning-changed");
@@ -107,9 +107,9 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
 
   // Reset, then the saved value typed back in: it's the owner's again ("Changed from" back), and Save keeps it.
   await owner.getByRole("button", { name: "Reset Fix an article from" }).click();
-  await expect(owner.getByText("Changed from 40%")).toHaveCount(0);
+  await expect(owner.getByText("Changed from 50%")).toHaveCount(0);
   await fix.fill("30");
-  await expect(owner.getByText("Changed from 40%")).toBeVisible();
+  await expect(owner.getByText("Changed from 50%")).toBeVisible();
   await save.click();
   await expect(heading).toBeFocused();
   expect((await stored(slug))["propose.edit.maybe"]).toBe(0.3);
@@ -119,9 +119,9 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   // saves both together.
   await deciding.fill("6");
   await owner.getByRole("button", { name: "Reset Fix an article from" }).click();
-  await expect(fix).toHaveValue("40");
+  await expect(fix).toHaveValue("50");
   await expect(fix).toBeFocused();
-  await expect(owner.getByText("Changed from 40%")).toHaveCount(0);
+  await expect(owner.getByText("Changed from 50%")).toHaveCount(0);
   await expect(deciding).toHaveValue("6");
   expect((await stored(slug))["propose.edit.maybe"]).toBe(0.3);
   await save.click();
@@ -133,16 +133,16 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await expect.poll(() => stored(slug)).toEqual({});
   await expect(owner.getByRole("button", { name: "Reset all" })).toHaveCount(0);
 
-  // A value saved through the API that only rounds to the server's (0.395 shows as 40%): a Save of another field leaves
+  // A value saved through the API that only rounds to the server's (0.495 shows as 50%): a Save of another field leaves
   // it alone; its Reset, then Save, clears it.
-  await stored(slug, { "propose.edit.maybe": 0.395 });
+  await stored(slug, { "propose.edit.maybe": 0.495 });
   await owner.reload();
-  await expect(fix).toHaveValue("40");
-  await expect(owner.getByText("Changed from 40%")).toBeVisible();
+  await expect(fix).toHaveValue("50");
+  await expect(owner.getByText("Changed from 50%")).toBeVisible();
   await deciding.fill("7");
   await save.click();
   await expect.poll(async () => (await stored(slug))["decide.rounds"]).toBe(7);
-  expect((await stored(slug))["propose.edit.maybe"]).toBe(0.395);
+  expect((await stored(slug))["propose.edit.maybe"]).toBe(0.495);
   await expect(owner.getByRole("button", { name: "Reset Fix an article from" })).toBeEnabled();
   await owner.getByRole("button", { name: "Reset Fix an article from" }).click();
   await save.click();

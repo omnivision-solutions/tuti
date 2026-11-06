@@ -1,7 +1,7 @@
 import { resetCodeChangesSettings } from "@tuti/shared";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleProposal, confidence, gateResult, namedPosts, newArticleProposal, postProposal } from "./code-change-decisions";
+import { confidence, gateResult, namedPosts, postProposal, thresholds } from "./code-change-decisions";
 
 const effect = (probabilities: Record<string, number>) => ({ effect: { type: "choice" as const, choice: "", probabilities } });
 
@@ -32,8 +32,8 @@ test("likely, maybe and the propose cutoffs follow their settings", () => {
   vi.stubEnv("CODE_CHANGES_PROPOSE_NEW_ARTICLE_LIKELY", "0.8");
   resetCodeChangesSettings();
   expect(confidence("LINKS", 0.8)).toBe("likely");
-  expect(articleProposal(effect({ wrong: 0.3, missing: 0.5, unaffected: 0.2 }))).toBeNull();
-  expect(newArticleProposal({ needed: { type: "noul", noul: 0.2 } })).toBe(0.2);
+  expect(thresholds()).toMatchObject({ ARTICLE_EDIT: { maybe: 0.9, likely: 0.95 }, NEW_ARTICLE: { maybe: 0.1, likely: 0.8 } });
+  expect(confidence("ARTICLE_EDIT", 0.9)).toBe("maybe");
 });
 
 test("a post's link follows its cutoff", () => {
@@ -42,13 +42,6 @@ test("a post's link follows its cutoff", () => {
   vi.stubEnv("CODE_CHANGES_DECISIONS_LINKS_MAYBE", "0.5");
   resetCodeChangesSettings();
   expect(postProposal(touching)).toEqual({ kind: "LINKS", probability: expect.closeTo(0.5) });
-});
-
-test("an article: an edit when it's likely wrong or missing something, saying which", () => {
-  expect(articleProposal(effect({ wrong: 0.3, missing: 0.5, unaffected: 0.2 }))).toEqual({ probability: 0.8, problem: "missing" });
-  expect(articleProposal(effect({ wrong: 0.2, missing: 0.1, unaffected: 0.7 }))).toBeNull();
-  expect(newArticleProposal({ needed: { type: "noul", noul: 0.9 } })).toBe(0.9);
-  expect(newArticleProposal({ needed: { type: "noul", noul: 0.2 } })).toBeNull();
 });
 
 test("the gate's reason is its likeliest other answer", () => {

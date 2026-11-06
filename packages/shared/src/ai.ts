@@ -93,12 +93,11 @@ export function stepDefaultModel(step: AutopilotStep): string {
 
 /**
  * A feature's model for every project: AI_MODEL_<FEATURE> (e.g. AI_MODEL_ANSWERS, a model id), else AI_MODEL, else
- * Tuti's default (for code changes with the docs agent, Autopilot's write model: CODE_CHANGES_WRITE_MODEL).
+ * Tuti's default (for code changes, Autopilot's write model: CODE_CHANGES_WRITE_MODEL).
  */
 export function defaultModel(feature: AiFeature): string {
-  const settings = feature === "code_changes" ? codeChangesSettings() : null;
   return (
-    process.env[`AI_MODEL_${feature.toUpperCase()}`] || process.env.AI_MODEL || (settings?.docs.pipeline === "agent" ? settings.write.model : DEFAULT_AI_MODEL)
+    process.env[`AI_MODEL_${feature.toUpperCase()}`] || process.env.AI_MODEL || (feature === "code_changes" ? codeChangesSettings().write.model : DEFAULT_AI_MODEL)
   );
 }
 
@@ -302,11 +301,24 @@ export async function checkAiProvider(): Promise<void> {
   }
   const json = (await models.json().catch(() => null)) as { data?: { id?: unknown }[] } | null;
   const listed = new Set(Array.isArray(json?.data) ? json.data.map((model) => model?.id) : []);
-  const missing = [...new Set(AI_FEATURES.map(defaultModel))].filter((id) => !listed.has(id));
+  // Not code changes' model where Autopilot can't run (no Decisions API): nothing would ask it.
+  const used = AI_FEATURES.filter((feature) => feature !== "code_changes" || codeChangesEnabled());
+  const missing = [...new Set(used.map(defaultModel))].filter((id) => !listed.has(id));
   if (missing.length > 0) {
     log.error(
       `The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${missing.join(", ")}: set AI_MODEL (or a feature's AI_MODEL_<FEATURE>) to a model it serves. AI features using it will fail until then.`,
     );
+  }
+  // The docs agent's own models, on every merged pull request where Autopilot runs.
+  if (codeChangesEnabled()) {
+    const { decide, redecide } = codeChangesSettings();
+    const agent = [
+      ["CODE_CHANGES_DECIDE_MODEL", decide.model],
+      ["CODE_CHANGES_REDECIDE_MODEL", redecide.model],
+    ].filter(([, id]) => id !== "off" && !listed.has(id));
+    for (const [name, id] of agent) {
+      log.error(`The AI provider at ${shownAddress(chat.baseUrl)} doesn't list the chat model ${id}: set ${name} to a model it serves. Autopilot's analyses will fail until then.`);
+    }
   }
 }
 

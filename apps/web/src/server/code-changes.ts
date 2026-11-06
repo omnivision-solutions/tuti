@@ -34,24 +34,29 @@ export async function resumeCodeChanges(projectSlug: string): Promise<FormState 
 export async function applyCodeChange(
   projectSlug: string,
   actionId: string,
-  options: { comment?: string; line?: string; revision?: string; collection?: string | null } = {},
-): Promise<FormState> {
-  const { comment, line, revision, collection } = options ?? {};
+  options: { comment?: string; line?: string; revision?: string; reviewedAs?: "published" | "draft"; collection?: string | null } = {},
+): Promise<FormState & { published?: boolean }> {
+  const { comment, line, revision, reviewedAs, collection } = options ?? {};
   // A page from before `publish` went (an article's edit is always published now) gets told, not published.
   if (options && typeof options === "object" && "publish" in options) {
     return { error: "Autopilot changed: reload the page to review this again" };
   }
-  return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>
-    call(applyCodeChangeAction, context, {
+  // Whether it published (an article's edit: on a draft it's approved there), for the page to say what happened.
+  let published: boolean | undefined;
+  const result = await asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
+    const applied = await call(applyCodeChangeAction, context, {
       id: String(actionId),
       ...(typeof comment === "string" && comment.trim() && { comment }),
       ...(typeof line === "string" && line.trim() && { line }),
       // Any string, empty too: the operation refuses one that isn't a version, never dismissing only this part instead.
       ...(typeof revision === "string" && { revision }),
+      ...((reviewedAs === "published" || reviewedAs === "draft") && { reviewedAs }),
       // A new article's draft: the collection the team picked instead of its place (null: none).
       ...((typeof collection === "string" || collection === null) && { collection }),
-    }),
-  );
+    });
+    published = (applied as { published?: boolean }).published;
+  });
+  return { ...result, ...(published !== undefined && { published }) };
 }
 
 /** Undo on an approved update: puts back what it changed (codeChangeActions.undo). */
@@ -63,8 +68,8 @@ export async function undoCodeChange(projectSlug: string, actionId: string): Pro
 export async function publishCodeChangesNow(projectSlug: string, actionIds: string[]): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
     // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it; so is
-    // an article edit that can't go now (past the plan's published articles, or held by another edit to its article
-    // waiting): it waits saying why, and is told after the rest went.
+    // an article edit that can't go now (past the plan's published articles, held by another edit to its article
+    // waiting, or its article unpublished since): it waits saying why, and is told after the rest went.
     const ids = (Array.isArray(actionIds) ? actionIds : []).map(String);
     let done = 0;
     const waiting: OperationError[] = [];
@@ -73,7 +78,7 @@ export async function publishCodeChangesNow(projectSlug: string, actionIds: stri
         await call(publishCodeChangeActionNow, context, { id });
         done++;
       } catch (error) {
-        if (ids.length > 1 && error instanceof OperationError && (error.code === "article_limit" || error.code === "held")) {
+        if (ids.length > 1 && error instanceof OperationError && (error.code === "article_limit" || error.code === "held" || error.code === "draft")) {
           waiting.push(error);
         } else if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
           throw error;

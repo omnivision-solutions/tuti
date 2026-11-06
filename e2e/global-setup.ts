@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { startCloudflareFake, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
+import { startCloudflareFake, startDnsFake, startGithubFake, startGoogleFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
@@ -51,6 +51,9 @@ export default async function globalSetup() {
   const github = await startGithubFake();
   // Journeys set up their own installs through the fake's /_fake/next-install (e2e/github.ts).
   process.env.E2E_GITHUB_URL = github.url;
+  // Continue with Google: journeys say who signs in next through /_fake/next-sign-in (e2e/social.ts); GitHub's is on its fake.
+  const google = await startGoogleFake();
+  process.env.E2E_GOOGLE_URL = google.url;
   const dns = await startDnsFake();
   // Journeys publish TXT records through the fake's /_fake/txt (e2e/dns.ts).
   process.env.E2E_DNS_URL = new URL(dns.url).origin;
@@ -77,6 +80,10 @@ export default async function globalSetup() {
     ...model.env,
     ...s3.env,
     ...github.env,
+    // Continue with GitHub, with the App's client (as on tuti.so).
+    GITHUB_CLIENT_ID: github.env.GITHUB_APP_CLIENT_ID,
+    GITHUB_CLIENT_SECRET: github.env.GITHUB_APP_CLIENT_SECRET,
+    ...google.env,
     ...stripe.env,
     DNS_LOOKUP_URL: dns.url,
     ...cloudflare.env,
@@ -93,7 +100,7 @@ export default async function globalSetup() {
 
   return async () => {
     servers.forEach((server) => server.kill());
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };

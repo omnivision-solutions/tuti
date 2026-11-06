@@ -16,6 +16,7 @@ import {
   schedulePost,
   newestRevision,
   scheduleArticle,
+  settleWaitingEdits,
   takeOut,
   taggedEdits,
   changelogLineOf,
@@ -281,11 +282,12 @@ async function groupWaiting(
   });
   // As the page ticks them (actionViews' applyLikely), less one a teammate stopped (its page doesn't tick it either).
   // An article's edits once (approving one publishes them all), and none where a teammate's edit would go out with
-  // them: only its page, which asks first, approves those.
+  // them: only its page, which asks first, approves those. Nor one on a draft: only its review approves those
+  // (`reviewedAs: "draft"`), never the list.
   const sure = actions.filter(
     (action) =>
       action.status === "PENDING" &&
-      !(action.kind === "ARTICLE_EDIT" && outdated(action)) &&
+      !(action.kind === "ARTICLE_EDIT" && (outdated(action) || (action.article && !action.article.publishedAt))) &&
       !holdsForTeam(action.waitReason) &&
       likelyToApply(action),
   );
@@ -466,7 +468,13 @@ async function actionViews(projectId: string, actions: ActionRow[]) {
       ...((action.kind === "MOVES_FORWARD" || (action.kind === "RESOLVES" && payload.comment !== undefined)) && { comment: payload.comment ?? "" }),
       post: action.post ? summary(action.post, portal) : null,
       /** The article it edits (or, for a new article once its draft exists, the draft). */
-      article: action.article && { slug: action.article.slug, title: action.article.title, collection: action.article.collection?.name ?? null },
+      article: action.article && {
+        slug: action.article.slug,
+        title: action.article.title,
+        collection: action.article.collection?.name ?? null,
+        /** A draft: approving an edit keeps it in the draft, which the team publishes from Docs. */
+        draft: !action.article.publishedAt,
+      },
       /** An article edit's text before and after, and a new article's title and text (plain text). */
       ...(action.kind === "ARTICLE_EDIT" && { problem: payload.problem ?? "wrong", before: payload.before ?? "", after: payload.body ?? "" }),
       /** An article edit's own change: its tagged revision and the one it was written on. */
@@ -700,14 +708,17 @@ export async function autopilotTargets(projectId: string, { decided = false } = 
   return { feedback: ordered.filter((target) => target.section === "feedback"), helpCenter: ordered.filter((target) => target.section === "help_center") };
 }
 
-/** Whether an article's unpublished changes change it as readers see it (its title or text; all of it, unpublished). */
+/**
+ * Whether an article's unpublished changes change it as readers see it (its title or text; all of it, unpublished).
+ * A draft's edits are in its text: they show.
+ */
 async function changesReaders(articleId: string) {
   const article = await prisma.article.findUnique({
     where: { id: articleId },
     select: { title: true, body: true, content: true, publishedAt: true, changes: { select: { title: true, body: true, content: true } } },
   });
   const doc = (version: { body: string; content: unknown }) => (version.content as Doc | null) ?? fromPlainText(version.body);
-  return !!article?.changes && (!article.publishedAt || article.changes.title !== article.title || !sameDoc(doc(article.changes), doc(article)));
+  return !!article && (!article.publishedAt || (!!article.changes && (article.changes.title !== article.title || !sameDoc(doc(article.changes), doc(article)))));
 }
 
 export type AutopilotTarget = Awaited<ReturnType<typeof autopilotTargets>>["feedback"][number];
@@ -1184,7 +1195,7 @@ const byItself = (context: { actor: Actor; projectId: string }) => ({ ...context
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
-    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed); create a new article's draft (in its `place`, a new collection made for it, readers seeing that only once an article in it is published; `collection` puts it in another, or none); or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
+    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it (a post's update is every pull request's part waiting on it, applied as one: one status change, one comment theirs joined (`comment` replaces it), each pull request linked; `revision`: only if it's still the update reviewed, codeChanges.target's `update.revision`); approve an article's edit, which publishes the article's unpublished changes with every edit waiting in them (`revision`: only if it's still the version reviewed; on a draft, its edits are approved and stay in the draft, unpublished, `published: false`, and only with `reviewedAs: \"draft\"` and its `revision`, else a 409 `draft`); create a new article's draft (in its `place`, a new collection made for it, readers seeing that only once an article in it is published; `collection` puts it in another, or none); or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
   method: "POST",
   path: "/code-change-actions/{id}/apply",
   scope: "write",
@@ -1197,6 +1208,11 @@ export const applyCodeChangeAction = defineOperation({
     line: z.string().trim().min(1).max(300).optional(),
     /** For an article edit: only if the article's newest version (from articles.revisions) is still this one, the one reviewed. Otherwise it's a 409. */
     revision: z.string().min(1).max(100).optional(),
+    /**
+     * For an article edit: whether the article was published or a draft when reviewed (approving publishes the one,
+     * keeps the edit in the other). Published since, it's a 409 `changed`; a draft now, approving needs `draft` (else 409 `draft`).
+     */
+    reviewedAs: z.enum(["published", "draft"]).optional(),
     /** For a new article's draft: the collection to save it in instead of its `place` (its slug: last there; null: none). */
     collection: z.string().trim().min(1).max(80).nullable().optional(),
     publish: noPublish,
@@ -1227,7 +1243,7 @@ export const applyCodeChangeAction = defineOperation({
       throw new OperationError(409, "not_applicable", "This kind of action can't be applied yet");
     }
     if (action.kind === "ARTICLE_EDIT") {
-      return approveArticle(context, action, input.revision);
+      return approveArticle(context, action, input.revision, input.reviewedAs);
     }
     if (action.kind === "NEW_ARTICLE") {
       return applyDocs(context, action, input.collection);
@@ -1607,6 +1623,9 @@ const recordUndo = (id: string, payload: object, undo: object) =>
  * Approving an article edit publishes the article's unpublished changes (articles.publishChanges), which approves
  * every edit waiting in them: its update is the article's, not one pull request's. Only for the version reviewed
  * (`revision`: its newest revision then), and only the changes as they are now (a save in between refuses it).
+ * On a draft it approves the edits in its text, which stays a draft (published from Docs, never by Autopilot), only
+ * when reviewed as one (`reviewedAs`): reviewed for publishing, it's a 409 `changed` (unpublished since); not reviewed
+ * (Autopilot by itself, the email's one click), a 409 `draft`, and it waits.
  * One the previous release wrote, as a whole new article, is out of date.
  */
 async function approveArticle(
@@ -1621,10 +1640,11 @@ async function approveArticle(
     article: (Prisma.ArticleGetPayload<{ select: typeof articleSelect }> & { id: string; deletedAt: Date | null }) | null;
   },
   revision: string | undefined,
+  reviewedAs?: "published" | "draft",
 ) {
   const { article } = action;
-  if (!article || article.deletedAt || !article.publishedAt) {
-    throw new OperationError(409, "not_published", "The article isn't published any more");
+  if (!article || article.deletedAt) {
+    throw new OperationError(409, "gone", "The article was deleted since");
   }
   if (action.status === "PENDING" && outdated(action)) {
     await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING" }, data: { status: "STALE" } });
@@ -1660,16 +1680,52 @@ async function approveArticle(
       throw new OperationError(409, "held", "Another edit to its article waits for you");
     }
   };
-  try {
-    await publishArticleChanges(context, { slug: article.slug, ...(pinned && { revision: pinned }) }, claimed ? alone : undefined);
-  } catch (error) {
-    throw error instanceof OperationError && error.code === "changed" ? changed : error;
+  if (!article.publishedAt) {
+    // Only as its review shows a draft (Approve keeps it there): never by itself (the runner, Publish now, the email's
+    // one click), as an edit approved for publishing whose article was unpublished since. It waits, saying why.
+    if (reviewedAs === "published") {
+      throw changed;
+    }
+    if (reviewedAs !== "draft") {
+      throw new OperationError(409, "draft", 'Its article is a draft: approve it on its review');
+    }
+    // As reviewed: the version its review showed (it sends it).
+    if (revision === undefined) {
+      throw new OperationError(409, "revision_required", "Approving an edit to a draft needs the version reviewed (`revision`, from codeChanges.target)");
+    }
+    // Under the lock a save and an edit landing take: the version reviewed, still a draft (published meanwhile, its
+    // edits were approved with it).
+    await prisma.$transaction(async (tx) => {
+      await lockProject(tx, context.projectId);
+      const now = await tx.article.findUniqueOrThrow({ where: { id: article.id }, select: { publishedAt: true, deletedAt: true } });
+      // Published since: not this.
+      if (now.deletedAt || now.publishedAt || (pinned !== null && (await newestRevision(article.id, tx)) !== pinned)) {
+        throw changed;
+      }
+      await (claimed ? alone(tx, article.id) : undefined);
+      const kept = await tx.codeChangeAction.findMany({ where: { articleId: article.id, kind: "ARTICLE_EDIT", status: { in: ["PENDING", "STALE", "SCHEDULED"] }, revisions: { some: {} } }, select: { id: true, payload: true } });
+      await settleWaitingEdits(tx, article.id, "APPLIED", actorUser(context.actor));
+      // Approved, not published: said so where it's shown ("Approved", not "Published"), as one kept unpublished is.
+      for (const edit of kept) {
+        await tx.codeChangeAction.update({ where: { id: edit.id }, data: { payload: { ...asObject(edit.payload), undo: { published: false } } } });
+      }
+    });
+  } else {
+    // Reviewed as a draft (Approve keeps it there): published since, approving would publish what wasn't asked.
+    if (reviewedAs === "draft") {
+      throw changed;
+    }
+    try {
+      await publishArticleChanges(context, { slug: article.slug, ...(pinned && { revision: pinned }) }, claimed ? alone : undefined);
+    } catch (error) {
+      throw error instanceof OperationError && error.code === "changed" ? changed : error;
+    }
   }
   const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { status: true } });
   if (after.status !== "APPLIED") {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
   }
-  return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article.slug, published: true };
+  return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article.slug, published: Boolean(article.publishedAt) };
 }
 
 /** A new article becomes a draft. Claimed first, and back to waiting if saving fails. */
@@ -1922,7 +1978,7 @@ const undoOf = (payload: Prisma.JsonValue, kind: CodeChangeActionKind): Undo | n
 export const undoCodeChangeAction = defineOperation({
   name: "codeChangeActions.undo",
   summary:
-    "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed (a post's update applied as one, from several pull requests, is undone whole: every part's links too), an article's edit is taken out by section, of the published version (published again) and of its unpublished changes, everything else staying (refused when an edit on top of it changed the same sections; one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
+    "Undo an applied action (any team member): a post goes back to the status it had (shipped emails still due are cancelled; ones sent already can't be), a progress update's comment is deleted, the link is removed (a post's update applied as one, from several pull requests, is undone whole: every part's links too), an article's edit is taken out by section, of the published version (published again) and of its unpublished changes (of a draft's text, on a draft), everything else staying (refused when an edit on top of it changed the same sections; one approved before edits were saved as revisions publishes the previous version again, refused if it's been edited since), a new article's draft is deleted (refused once edited or published), the changelog line is put back (refused once its entry is published: edit the entry). It becomes `undone` and isn't proposed again",
   method: "POST",
   path: "/code-change-actions/{id}/undo",
   scope: "write",
@@ -2126,7 +2182,7 @@ export const publishCodeChangeActionNow = defineOperation({
       }
       // Not applied (back to waiting, or out of date): nobody's again, not looking stopped. Past the plan's published
       // articles, or held by another edit to its article that waits, it waits for the team saying so, as the runner's does.
-      const waits = error instanceof OperationError && (error.code === "article_limit" || error.code === "held");
+      const waits = error instanceof OperationError && (error.code === "article_limit" || error.code === "held" || error.code === "draft");
       await prisma.codeChangeAction.updateMany({
         // Not one apply held because its comment may already be on the post: that stays held, as a Stop holds.
         where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by, OR: [{ waitReason: null }, { waitReason: { not: COMMENT_UNSURE } }] },
@@ -2173,7 +2229,7 @@ export const stopCodeChangeAction = defineOperation({
 });
 
 /** What an update that couldn't be applied waits with: the error's message, but past the plan's published articles one that stays true. */
-const waitReasonOf = (error: OperationError) => (error.code === "article_limit" ? ARTICLES_FULL_WAIT : error.message);
+const waitReasonOf = (error: OperationError) => (error.code === "article_limit" ? ARTICLES_FULL_WAIT : error.code === "draft" ? "Its article is a draft" : error.message);
 
 /**
  * Autopilot's runner: each scheduled update that's due is checked again (waitsBecause) and applied as

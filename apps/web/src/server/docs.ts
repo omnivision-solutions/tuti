@@ -83,7 +83,13 @@ export type ArticleSaveState = FormState & {
    * Saved: the version it left newest, and whether the text was merged onto Autopilot's edits since (not stored as
    * sent); merged, that version as saved, for an editor still typing to show beside its text.
    */
-  saved?: { revision: string | null; merged: boolean; newVersion: boolean; title: string; version?: NewestVersion };
+  saved?: {
+    revision: string | null;
+    merged: boolean;
+    newVersion: boolean;
+    title: string;
+    version?: NewestVersion;
+  };
 };
 
 /**
@@ -208,8 +214,11 @@ export async function saveArticleSettings(projectSlug: string, slug: string, _st
   return result;
 }
 
-export async function publishArticle(projectSlug: string, slug: string): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) => call(publishOperation, context, { slug: String(slug) }));
+/** Publish a draft; `edits`: the ids of Autopilot's edits waiting in it that the page showed, which go live with it. */
+export async function publishArticle(projectSlug: string, slug: string, edits?: string[]): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) =>
+    call(publishOperation, context, { slug: String(slug), ...(Array.isArray(edits) && { edits: edits.map(String) }) }),
+  );
 }
 
 /** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */

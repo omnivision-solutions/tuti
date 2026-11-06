@@ -207,9 +207,11 @@ export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: 
           Docs
         </a>
         <div className="mt-6 flex flex-col gap-2">
-          <Link href="/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg" })}>
-            Sign in
-          </Link>
+          {!signedIn && (
+            <Link href="/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg" })}>
+              Sign in
+            </Link>
+          )}
           <Link href={signedIn ? "/app" : "/sign-up"} onClick={close} className={buttonVariants({ size: "lg" })}>
             Start free
           </Link>
