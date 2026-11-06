@@ -1,4 +1,4 @@
-import { type PostStatus, Prisma, prisma } from "@tuti/db";
+import { type PostStatus, type PostVisibility, Prisma, prisma } from "@tuti/db";
 import { audienceReach, postAudience, projectEmailWaits } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
@@ -6,6 +6,7 @@ import type { GroupRule } from "@/lib/group-conditions";
 import { ACTIVE_STATUSES, POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
 import { inGroupSql } from "@/server/group-conditions-sql";
 import { canActIn } from "@/server/membership";
+import { type PostViewer, shownBoards, visiblePosts, visiblePostsSql } from "@/server/post-visibility";
 
 /** Pending suggestions that this post duplicates an older post that's still listed. */
 export const possibleDuplicateOf = { status: "PENDING", original: { duplicateOfId: null } } as const;
@@ -32,6 +33,8 @@ const teamPostSelect = {
   voteCount: true,
   commentCount: true,
   sample: true,
+  visibility: true,
+  authorId: true,
   board: { select: { slug: true, name: true } },
   author: { select: { name: true } },
   _count: { select: { duplicateSuggestions: { where: possibleDuplicateOf } } },
@@ -185,12 +188,12 @@ export async function votersToEmail(projectId: string, postId: string): Promise<
   const [project, post] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } }),
     // A sample post's votes aren't loaded: it emails nobody.
-    prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, sample: true, votes: { where: { post: { sample: false } }, select: { userId: true } } } }),
+    prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, visibility: true, sample: true, votes: { where: { post: { sample: false } }, select: { userId: true } } } }),
   ]);
   if (post.sample) {
     return 0;
   }
-  return (await projectEmailWaits(projectId)) ? "paused" : (await postAudience(projectId, project, post.authorId, post.votes.map((vote) => vote.userId))).length;
+  return (await projectEmailWaits(projectId)) ? "paused" : (await postAudience(projectId, project, post, post.votes.map((vote) => vote.userId))).length;
 }
 
 /** Whether a project's email about someone else's post (as the shipped one) reaches `userId`, or why not (audienceReach), for a portal board's Get updates. */
@@ -244,22 +247,25 @@ export async function howShipped(postId: string) {
 }
 
 /**
- * A portal board's posts (without its `slug`, every board's: the widget's) in `statuses` (every status
- * without them) with `q`'s words in the title or description, with whether `userId` voted for each;
- * `mine`: only those `userId` posted or voted for.
+ * A portal board's posts (without its `slug`, every board's: the widget's) that `viewer` may see, in `statuses` (every
+ * status without them) with `q`'s words in the title or description, with whether they voted for each;
+ * `mine`: only those they posted or voted for.
  */
 export function boardPosts(
   board: { projectId: string; slug?: string },
   filters: PostFilters,
-  userId: string | undefined,
+  viewer: PostViewer,
   { statuses, q, mine = false }: { statuses?: PostStatus[]; q?: string; mine?: boolean } = {},
 ) {
+  const userId = viewer.userId ?? undefined;
   return upToPage(filters, async (page) => {
-    const where = Prisma.sql`${teamPostFilter(board.projectId, { board: board.slug, q })} ${statuses ? Prisma.sql`AND p.status = ANY(${statuses}::"PostStatus"[])` : Prisma.empty}
+    const where = Prisma.sql`${teamPostFilter(board.projectId, { board: board.slug, q })} AND ${visiblePostsSql(viewer)}
+      ${statuses ? Prisma.sql`AND p.status = ANY(${statuses}::"PostStatus"[])` : Prisma.empty}
       ${mine ? Prisma.sql`AND (p."authorId" = ${userId ?? ""} OR EXISTS (SELECT 1 FROM vote v WHERE v."postId" = p.id AND v."userId" = ${userId ?? ""}))` : Prisma.empty}`;
     const ids = await pageIds(board.projectId, filters.sort, where, page);
     const posts = await prisma.post.findMany({
-      where: { id: { in: ids } },
+      // Checked again: one made private or the team's since the ids were read isn't shown.
+      where: { id: { in: ids }, ...visiblePosts(viewer) },
       select: {
         id: true,
         number: true,
@@ -269,6 +275,7 @@ export function boardPosts(
         voteCount: true,
         commentCount: true,
         sample: true,
+        visibility: true,
         author: { select: { name: true } },
         board: { select: { slug: true } },
         votes: { where: { userId: userId ?? "" }, select: { userId: true } },
@@ -278,25 +285,40 @@ export function boardPosts(
   });
 }
 
-/** A project's boards for a portal board's sidebar, oldest first (as the header's row), each with how many ideas on it aren't done yet. */
-export function boardsWithCounts(projectId: string) {
+/** A project's boards `viewer` sees, for a portal board's sidebar, oldest first (as the header's row), each with how many ideas on it they see aren't done yet. */
+export function boardsWithCounts(projectId: string, viewer: PostViewer) {
   return prisma.board.findMany({
-    where: { projectId },
+    where: { projectId, ...shownBoards(viewer) },
     orderBy: { createdAt: "asc" },
-    select: { id: true, slug: true, name: true, _count: { select: { posts: { where: { duplicateOfId: null, status: { in: ACTIVE_STATUSES } } } } } },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      _count: { select: { posts: { where: { duplicateOfId: null, status: { in: ACTIVE_STATUSES }, ...visiblePosts(viewer) } } } },
+    },
   });
 }
 
-/** A board's completed posts, the latest completed first (as the roadmap's Completed: older ones by their last change), for its "Recently shipped" card. */
-export function recentlyShipped(boardId: string) {
+/** A board's completed posts `viewer` sees, the latest completed first (as the roadmap's Completed: older ones by their last change), for its "Recently shipped" card. */
+export function recentlyShipped(boardId: string, viewer: PostViewer) {
   return prisma.$queryRaw<{ id: string; number: number; title: string; voteCount: number }[]>`
     SELECT p.id, p.number, p.title, p."voteCount" FROM post p
-    WHERE p."boardId" = ${boardId} AND p."duplicateOfId" IS NULL AND p.status = 'COMPLETED'
+    WHERE p."boardId" = ${boardId} AND p."duplicateOfId" IS NULL AND p.status = 'COMPLETED' AND ${visiblePostsSql(viewer)}
     ORDER BY COALESCE((SELECT MAX(e."createdAt") FROM post_event e WHERE e."postId" = p.id AND e."to" = 'COMPLETED'), p."updatedAt") DESC, p.id DESC
     LIMIT 5`;
 }
 
-type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; sample: boolean; boardSlug: string };
+type Like = {
+  id: string;
+  number: number;
+  title: string;
+  voteCount: number;
+  status: PostStatus;
+  sample: boolean;
+  boardSlug: string;
+  visibility: PostVisibility;
+  authorId: string;
+};
 
 /**
  * The project's posts (not merged ones, and as `where` narrows them) whose titles have the words of `title`, the likest
@@ -304,7 +326,7 @@ type Like = { id: string; number: number; title: string; voteCount: number; stat
  */
 function postsTitledLike(projectId: string, title: string, sample: boolean, where: Prisma.Sql, limit: number) {
   return prisma.$queryRaw<Like[]>`
-    SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
+    SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug", p.visibility, p."authorId"
     FROM post p
     JOIN board b ON b.id = p."boardId"
     WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.sample = ${sample} ${where}
@@ -342,12 +364,13 @@ const SIMILAR_SHOWN = 5;
 export async function postsLike(
   projectId: string,
   post: { id: string; title: string; sample: boolean },
+  viewer: PostViewer,
   { open = false, sample = post.sample }: { open?: boolean; sample?: boolean } = {},
 ) {
-  const status = open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty;
+  const status = Prisma.sql`${open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty} AND ${visiblePostsSql(viewer)}`;
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug", p.visibility, p."authorId"
       FROM post_embedding mine
       JOIN post_embedding e ON e."projectId" = mine."projectId" AND e."postId" <> mine."postId"
       JOIN post p ON p.id = e."postId"
@@ -411,20 +434,21 @@ const ACCOUNT_POSTS_SHOWN = 50;
 
 /**
  * A portal's Account: the posts someone wrote there, newest first, and those they voted on (not their own,
- * which they upvoted by writing them), latest vote first. Not merged ones: their votes moved to the post kept.
+ * which they upvoted by writing them), latest vote first. Not merged ones: their votes moved to the post kept. Only
+ * those they may still see (`viewer`, them).
  */
-export async function accountPosts(projectId: string, userId: string) {
+export async function accountPosts(projectId: string, userId: string, viewer: PostViewer) {
   // ponytail: the latest 50 of each, with no paging; add "Load more" when people have more than that.
-  const select = { id: true, number: true, title: true, status: true, voteCount: true, board: { select: { slug: true } } } as const;
+  const select = { id: true, number: true, title: true, status: true, voteCount: true, visibility: true, board: { select: { slug: true } } } as const;
   const [posts, votes] = await Promise.all([
     prisma.post.findMany({
-      where: { projectId, authorId: userId, duplicateOfId: null },
+      where: { projectId, authorId: userId, duplicateOfId: null, ...visiblePosts(viewer) },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: ACCOUNT_POSTS_SHOWN,
       select,
     }),
     prisma.vote.findMany({
-      where: { projectId, userId, post: { duplicateOfId: null, authorId: { not: userId } } },
+      where: { projectId, userId, post: { duplicateOfId: null, authorId: { not: userId }, ...visiblePosts(viewer) } },
       orderBy: [{ createdAt: "desc" }, { postId: "desc" }],
       take: ACCOUNT_POSTS_SHOWN,
       select: { post: { select } },

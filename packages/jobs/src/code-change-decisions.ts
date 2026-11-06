@@ -1,3 +1,4 @@
+import type { PostVisibility } from "@tuti/db";
 import { codeChangesSettings, type DecisionAnswer, type DecisionQuestion } from "@tuti/shared";
 
 import type { PullRequestRead } from "./pull-request";
@@ -121,7 +122,8 @@ export const POST_QUESTION: Record<string, DecisionQuestion> = {
   },
 };
 
-export type PostCandidate = { id: string; number: number; title: string; body: string; status: string; named: boolean };
+/** `visibility`: who sees it besides the team (unset: public, as in the evaluation set). */
+export type PostCandidate = { id: string; number: number; title: string; body: string; status: string; named: boolean; visibility?: PostVisibility };
 
 export function postState(pr: PullRequestRead, summary: string, post: PostCandidate) {
   return {

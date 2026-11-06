@@ -254,3 +254,26 @@ test("drafts follow the tone notes and the examples, marked as style only", asyn
     examplesOfPublishedEntries: [{ title: "Faster search", text: "Search is quicker now. You'll find posts as you type." }],
   });
 });
+
+test("the model gets only the entry's public posts: a Team only post's title and link stay out of the text that's published", async () => {
+  const { number, postUrl } = await entryWithPullRequests();
+  const secret = await call(createPost, team(), { board: "feature-requests", title: "Tokens logged in plain text", visibility: "team" });
+  await call(updateChangelogEntry, team(), { number, posts: [...(await get(number)).posts.map((post) => post.number), secret.number] });
+  const secretUrl = (await get(number)).posts.find((post) => post.number === secret.number)!.url;
+  model.reply(reply("Next release", `Dark mode is here ([Dark mode](${postUrl})), and [tokens](${secretUrl}) are no longer logged.`));
+
+  const entry = await draft(number);
+
+  const [request] = model.requests;
+  expect(request!.user).toContain(postUrl);
+  expect(request!.user).not.toContain("Tokens logged in plain text");
+  expect(request!.user).not.toContain(secretUrl);
+  // A link to it the model writes anyway isn't kept.
+  expect(JSON.stringify(entry.content)).not.toContain(secretUrl);
+});
+
+test("an entry with nothing but posts that aren't public has nothing to draft from: the model isn't asked", async () => {
+  const secret = await call(createPost, team(), { board: "feature-requests", title: "Tokens logged in plain text", visibility: "team" });
+  const entry = await call(createChangelogEntry, team(), { title: "Security fix", posts: [secret.number] });
+  await expect(draft(entry.number)).rejects.toMatchObject({ status: 400, code: "nothing_to_draft", message: "Pick the public posts it completes or write a few notes first" });
+});

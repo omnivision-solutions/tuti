@@ -307,6 +307,10 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
     next: start + done < items.length ? JSON.stringify({ page: at.page, after: { id: last!.id, createdAt: last!.createdAt } }) : next && JSON.stringify({ page: next, after: null }),
     save: async (tx) => {
       const boardIds = await importBoards(tx, job, boards, cursor === null);
+      // A new post takes its board's visibility, as one made here does: a board the team made private keeps its posts so.
+      const visibilityOf = new Map(
+        (await tx.board.findMany({ where: { id: { in: [...boardIds.values()] } }, select: { id: true, postVisibility: true } })).map((board) => [board.id, board.postVisibility]),
+      );
       const users = await contacts.save(tx);
       const saved = await recorded(tx, job, "post", chunk.map((post) => post.id));
       for (const post of chunk) {
@@ -329,6 +333,7 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
           data: {
             projectId: job.projectId,
             boardId: boardIds.get(post.boardId)!,
+            visibility: visibilityOf.get(boardIds.get(post.boardId)!),
             authorId,
             number,
             title: (post.title ?? "").trim().slice(0, 120) || "Untitled",

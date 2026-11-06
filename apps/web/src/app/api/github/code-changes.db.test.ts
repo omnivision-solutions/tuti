@@ -479,6 +479,39 @@ describe("deciding", () => {
     await receiver.close();
   });
 
+  test("a post only the team sees among the proposals is written for apart: neither the changelog line nor what's written for public posts sees it", async () => {
+    await prisma.post.update({ where: { id: posts.darkMode!.id }, data: { visibility: "TEAM", title: "Dark mode breaks for Acme's e2e-admin@example.com" } });
+    await prisma.post.update({ where: { id: posts.themes!.id }, data: { visibility: "PRIVATE" } });
+    github.pullRequest(repo, pullRequest(12));
+    model.decide(INTERNAL);
+    noDocs();
+    await merge(12);
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
+    model.reply(SUMMARY);
+    model.decide({ effect: { resolves: 0.9, moves_forward: 0, related: 0, unrelated: 0.1 } }, '"post"');
+    model.decide({ effect: { resolves: 0.05, moves_forward: 0.85, related: 0.05, unrelated: 0.05 } }, '"post"');
+    for (let i = 0; i < 3; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    noDocs();
+    // Each post only some see in a request of its own, its line set aside; the public posts' request (none here), whose
+    // line is used.
+    model.reply(JSON.stringify({ why: "It fixes the reported bug.", changelog: "Dark mode fixed for Acme", proposals: { p1: { reason: "It fixes it." } } }), undefined, "Acme");
+    model.reply(JSON.stringify({ why: "", changelog: "Themes", proposals: { p1: { reason: "A step.", comment: "Dark is out." } } }), undefined, "Custom colour themes");
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme, in Settings", proposals: {} }), undefined, '"proposals"');
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
+
+    const written = model.requests.filter((request) => request.user.includes('"proposals"'));
+    expect(written).toHaveLength(3);
+    expect(written.filter((request) => !request.user.includes("Acme") && !request.user.includes("Custom colour themes"))).toHaveLength(1);
+    expect(written.filter((request) => request.user.includes("Acme") && request.user.includes("Custom colour themes"))).toEqual([]);
+    const draft = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, collecting: true }, select: { body: true } });
+    expect(draft.body).toContain("A dark theme, in Settings");
+    expect(draft.body).not.toContain("Acme");
+    // Its reason is still written, for the team.
+    expect(await prisma.codeChangeAction.findFirst({ where: { codeChangeId: id, kind: "RESOLVES" }, select: { reason: true } })).toEqual({ reason: "It fixes it." });
+  });
+
   test("the ready event is saved with the code change: if it can't be, the code change isn't ready, and the next run sends it", async () => {
     vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
     const receiver = await startWebhookReceiver();

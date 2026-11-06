@@ -8,6 +8,7 @@ import { EmailSettings } from "@/components/email-settings";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { VisibilityBadge } from "@/components/visibility-badge";
 import { SignInLink } from "@/components/sign-in-link";
 import { SignOutButton } from "@/components/user-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ import { ResendVerificationButton } from "@/components/verify-email-banner";
 import { postPath } from "@/lib/post-urls";
 import { accountEmails } from "@/server/operations/email-preferences";
 import { accountPosts, whyNotEmailedAboutPosts } from "@/server/post-lists";
+import { currentPostViewer } from "@/server/portal-access";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 
@@ -32,7 +34,9 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
   }
   const [{ preferences: saved, changelog }, { posts, votes }, whyNot] = await Promise.all([
     accountEmails(project.id, session.user.id),
-    accountPosts(project.id, session.user.id),
+    // Only those they may still see (a post made private or the team's since isn't theirs to see).
+    // As the page is seen: a team member previewing it signed out or as a reader sees what they would.
+    currentPostViewer(project.id).then((viewer) => accountPosts(project.id, session.user.id, viewer)),
     // Switches only for people the project's emails about posts may reach (once confirmed); the rest are told why not.
     whyNotEmailedAboutPosts(project.id, session.user.id),
   ]);
@@ -71,7 +75,12 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
                     {post.title}
                   </Link>
                 }
-                badges={<PostStatusBadge status={post.status} />}
+                badges={
+                  <>
+                    <VisibilityBadge visibility={post.visibility} />
+                    <PostStatusBadge status={post.status} />
+                  </>
+                }
                 meta={`${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`}
               />
             ))}

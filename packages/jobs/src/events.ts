@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { type PostStatus, type Prisma, prisma } from "@tuti/db";
+import { type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
 import { postPath } from "@tuti/shared/post-urls";
 
@@ -103,6 +103,7 @@ export type PostRow = {
   voteCount: number;
   commentCount: number;
   createdAt: Date;
+  visibility: PostVisibility;
   board: { slug: string };
   author: { name: string };
 };
@@ -114,6 +115,7 @@ export const postSummarySelect = {
   voteCount: true,
   commentCount: true,
   createdAt: true,
+  visibility: true,
   board: { select: { slug: true } },
   author: { select: { name: true } },
 } as const;
@@ -144,6 +146,8 @@ export const postSummary = (post: PostRow, portal: PortalAddress) => ({
   votes: post.voteCount,
   comments: post.commentCount,
   author: { name: post.author.name },
+  /** Who sees it besides the team: everyone (public), its author (private), nobody (team). */
+  visibility: post.visibility.toLowerCase() as "public" | "private" | "team",
   createdAt: post.createdAt.toISOString(),
   url: portalPostUrl(portal, post),
 });

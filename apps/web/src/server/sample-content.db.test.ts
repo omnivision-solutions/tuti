@@ -31,6 +31,7 @@ import { call } from "./operations/run";
 import { addSampleContent, removeSampleContent, setProjectUses } from "./projects";
 import { lockSampleContent } from "./sample-content";
 import { ideaNews } from "./widget-home";
+import { TEAM_VIEWER } from "./post-visibility";
 
 /** Sample content (server/sample-content.ts): what's added for the picks, that nothing goes out, and that removing takes exactly it. */
 
@@ -733,7 +734,7 @@ test("posts like a post are of its kind only: the team's similar post isn't a sa
   const [dark] = (await samples(project.id)).posts;
   const { number } = await call(createPost, team, { board: "feature-requests", title: "Darker mode" });
   const darker = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } });
-  const titles = async (post: typeof darker, options?: { open?: boolean; sample?: boolean }) => (await postsLike(project.id, post, options)).map((p) => p.title);
+  const titles = async (post: typeof darker, options?: { open?: boolean; sample?: boolean }) => (await postsLike(project.id, post, TEAM_VIEWER, options)).map((p) => p.title);
 
   expect(await titles(darker)).not.toContain("Dark mode");
   expect(await titles(darker, { open: true })).not.toContain("Dark mode");

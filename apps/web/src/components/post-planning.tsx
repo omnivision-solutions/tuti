@@ -5,7 +5,9 @@ import { toast } from "sonner";
 
 import { etaToast, formatMonth } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { setPostEta, setPostOwner } from "@/server/manage-posts";
+import { setPostEta, setPostOwner, setPostVisibility } from "@/server/manage-posts";
+import { POST_VISIBILITIES, VISIBILITY_DESCRIPTIONS, VISIBILITY_LABELS } from "@/lib/visibility-labels";
+import type { PostVisibility } from "@tuti/db";
 
 /** "*" can't be a user's id: it stands for nobody. */
 const NOBODY = "*";
@@ -97,5 +99,44 @@ export function PostEtaSelect({ projectSlug, postId, eta, status }: { projectSlu
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/** Who sees a post besides the team, saved as it's picked; its votes and comments go with it. */
+export function PostVisibilitySelect({ projectSlug, postId, visibility }: { projectSlug: string; postId: string; visibility: PostVisibility }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <div className="flex flex-col gap-1">
+      <Select
+        items={VISIBILITY_LABELS}
+        value={visibility}
+        disabled={pending}
+        onValueChange={(value) =>
+          startTransition(async () => {
+            const picked = value as PostVisibility;
+            const result = await setPostVisibility(projectSlug, postId, picked.toLowerCase());
+            if (result.error) {
+              toast.error(result.error);
+            } else {
+              toast.success(`Visibility: ${VISIBILITY_LABELS[picked]}`);
+            }
+          })
+        }
+      >
+        <SelectTrigger size="sm" className="w-full" aria-label="Visibility" aria-describedby={`visibility-${postId}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {POST_VISIBILITIES.map((value) => (
+            <SelectItem key={value} value={value}>
+              {VISIBILITY_LABELS[value]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p id={`visibility-${postId}`} className="text-xs text-muted-foreground">
+        {VISIBILITY_DESCRIPTIONS[visibility]}
+      </p>
+    </div>
   );
 }

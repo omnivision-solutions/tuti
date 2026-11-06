@@ -7,7 +7,8 @@ import { postOrderBy } from "@/lib/post-filters";
 import { displayDoc } from "../content";
 import { portalAddress } from "../custom-domains";
 import { actorReader } from "../portal-access";
-import { defineOperation, OperationError } from "./define";
+import { actorPostViewer, canSeePost, type PostViewer, shownBoards, toApiVisibility, visiblePosts, visiblePostsSql } from "../post-visibility";
+import { type Actor, defineOperation, OperationError } from "./define";
 import { linkSelect, linkView } from "./link-view";
 
 /** Statuses as the API spells them. */
@@ -32,13 +33,15 @@ export const listBoards = defineOperation({
   scope: "read",
   access: "anyone",
   input: z.object({}),
-  run: async ({ projectId }) => {
+  run: async ({ actor, projectId }) => {
+    // Those the caller sees, and the posts on them they see (post-visibility.ts).
+    const viewer = await actorPostViewer(actor, projectId);
     const boards = await prisma.board.findMany({
-      where: { projectId },
+      where: { projectId, ...shownBoards(viewer) },
       orderBy: { createdAt: "asc" },
-      select: { slug: true, name: true, _count: { select: { posts: { where: { duplicateOfId: null } } } } },
+      select: { slug: true, name: true, postVisibility: true, _count: { select: { posts: { where: { duplicateOfId: null, ...visiblePosts(viewer) } } } } },
     });
-    return { boards: boards.map((b) => ({ slug: b.slug, name: b.name, posts: b._count.posts })) };
+    return { boards: boards.map((b) => ({ slug: b.slug, name: b.name, posts: b._count.posts, postVisibility: toApiVisibility(b.postVisibility) })) };
   },
 });
 
@@ -61,12 +64,13 @@ export const listPosts = defineOperation({
     cursor: z.coerce.number().int().min(0).default(0),
   }),
   example: { status: "planned", sort: "top", limit: 10 },
-  run: async ({ projectId }, input) => {
+  run: async ({ actor, projectId }, input) => {
     // ponytail: offset cursors; switch to keyset pagination if projects get very large.
     const posts = await prisma.post.findMany({
       where: {
         projectId,
         duplicateOfId: null,
+        ...visiblePosts(await actorPostViewer(actor, projectId)),
         ...(input.board && { board: { slug: input.board } }),
         ...(input.status && { status: fromApiStatus(input.status) }),
       },
@@ -89,9 +93,30 @@ export const postNumber = z.coerce.number().int().positive();
 export async function findPost(projectId: string, number: number) {
   const post = await prisma.post.findUnique({
     where: { projectId_number: { projectId, number } },
-    select: { ...postSummarySelect, id: true, body: true, content: true, sample: true, duplicateOf: { select: { number: true } } },
+    select: {
+      ...postSummarySelect,
+      id: true,
+      body: true,
+      content: true,
+      sample: true,
+      authorId: true,
+      visibility: true,
+      duplicateOf: { select: { number: true, authorId: true, visibility: true } },
+    },
   });
   if (!post) {
+    throw new OperationError(404, "not_found", `There's no post #${number}`);
+  }
+  return post;
+}
+
+/**
+ * findPost for a caller who may only see some posts (the "anyone" operations): one they may not see, or merged into one
+ * they may not see, is as missing as one that isn't there (post-visibility.ts).
+ */
+export async function findVisiblePost(actor: Actor, projectId: string, number: number) {
+  const [post, viewer] = await Promise.all([findPost(projectId, number), actorPostViewer(actor, projectId)]);
+  if (!canSeePost(viewer, post) || (post.duplicateOf && !canSeePost(viewer, post.duplicateOf))) {
     throw new OperationError(404, "not_found", `There's no post #${number}`);
   }
   return post;
@@ -107,7 +132,7 @@ export const getPost = defineOperation({
   access: "anyone",
   input: z.object({ number: postNumber }),
   run: async ({ actor, projectId }, { number }) => {
-    const post = await findPost(projectId, number);
+    const post = await findVisiblePost(actor, projectId, number);
     const [links, ofTeam] = await Promise.all([
       prisma.postLink.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select: linkSelect }),
       actorReader(actor, projectId).then((reader) => reader === null),
@@ -135,7 +160,7 @@ export const listComments = defineOperation({
   access: "anyone",
   input: z.object({ number: postNumber }),
   run: async ({ actor, projectId }, { number }) => {
-    const post = await findPost(projectId, number);
+    const post = await findVisiblePost(actor, projectId, number);
     const ofTeam = (await actorReader(actor, projectId)) === null;
     const select = { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true } } } as const;
     const [comments, notes, team] = await Promise.all([
@@ -171,9 +196,10 @@ export const ROADMAP = [
  * Each column's posts: most voted first, except Completed (most recently finished first). Up to 50
  * each. The team's roadmap narrows to a board, and Completed to what finished in its last `completedDays`.
  */
-export async function roadmapColumns(projectId: string, { board, completedDays }: { board?: string; completedDays?: number } = {}) {
+export async function roadmapColumns(projectId: string, viewer: PostViewer, { board, completedDays }: { board?: string; completedDays?: number } = {}) {
   const select = { ...postSummarySelect, id: true, board: { select: { slug: true, name: true } } } as const;
-  const onBoard = board ? { board: { slug: board } } : {};
+  // Only the posts `viewer` may see (post-visibility.ts).
+  const onBoard = { ...(board ? { board: { slug: board } } : {}), ...visiblePosts(viewer) };
   return Promise.all(
     ROADMAP.map(async ({ status }) => {
       if (status !== "COMPLETED") {
@@ -190,13 +216,13 @@ export async function roadmapColumns(projectId: string, { board, completedDays }
       const since = completedDays ? new Date(Date.now() - completedDays * 86_400_000) : null;
       const rows = await prisma.$queryRaw<{ id: string }[]>`
         SELECT p.id FROM post p
-        WHERE p."projectId" = ${projectId} AND p.status = 'COMPLETED' AND p."duplicateOfId" IS NULL
+        WHERE p."projectId" = ${projectId} AND p.status = 'COMPLETED' AND p."duplicateOfId" IS NULL AND ${visiblePostsSql(viewer)}
           ${board ? Prisma.sql`AND p."boardId" = (SELECT id FROM board WHERE "projectId" = ${projectId} AND slug = ${board})` : Prisma.empty}
           ${since ? Prisma.sql`AND ${completedAt} >= ${since}` : Prisma.empty}
         ORDER BY ${completedAt} DESC, p.id DESC
         LIMIT 50`;
       // Still Completed as they're read (one may have moved since the ids were).
-      const posts = await prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) }, status: "COMPLETED", duplicateOfId: null }, select });
+      const posts = await prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) }, status: "COMPLETED", duplicateOfId: null, ...onBoard }, select });
       const byId = new Map(posts.map((post) => [post.id, post]));
       return rows.flatMap((row) => byId.get(row.id) ?? []);
     }),
@@ -211,8 +237,8 @@ export const getRoadmap = defineOperation({
   scope: "read",
   access: "anyone",
   input: z.object({}),
-  run: async ({ projectId }) => {
-    const [columns, portal] = await Promise.all([roadmapColumns(projectId), projectPortal(projectId)]);
+  run: async ({ actor, projectId }) => {
+    const [columns, portal] = await Promise.all([roadmapColumns(projectId, await actorPostViewer(actor, projectId)), projectPortal(projectId)]);
     return Object.fromEntries(ROADMAP.map(({ key }, i) => [key, columns[i]!.map((post) => summary(post, portal))])) as Record<
       (typeof ROADMAP)[number]["key"],
       ReturnType<typeof summary>[]

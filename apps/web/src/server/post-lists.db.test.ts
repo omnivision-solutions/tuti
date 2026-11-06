@@ -12,6 +12,7 @@ import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { boardPosts, boardsWithCounts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postsLikeConversation, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
+import { SIGNED_OUT_VIEWER, TEAM_VIEWER } from "./post-visibility";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -30,7 +31,7 @@ test("lists of 120 posts are read in full, a page of 50 at a time", async () => 
 
   for (const list of [
     (page: string, sort: string) => teamPosts(project.id, parsePostFilters({ page, sort }, TEAM_SORTS)),
-    (page: string, sort: string) => boardPosts(board, parsePostFilters({ page, sort }, TEAM_SORTS), owner.id),
+    (page: string, sort: string) => boardPosts(board, parsePostFilters({ page, sort }, TEAM_SORTS), { team: false, userId: owner.id }),
   ]) {
     for (const sort of ["top", "new", "trending"]) {
       const pages = [await list("1", sort), await list("2", sort), await list("3", sort)];
@@ -61,7 +62,7 @@ test("however far a list is loaded, one request lists at most 1,000 posts, the l
     })),
   });
   // Newest first: page 22 ends at the 1,100th newest post (number 21) and starts 1,000 before it.
-  const far = await boardPosts(board, parsePostFilters({ page: "22", sort: "new" }), undefined);
+  const far = await boardPosts(board, parsePostFilters({ page: "22", sort: "new" }), SIGNED_OUT_VIEWER);
   expect([far.posts.length, far.posts[0]!.number, far.posts.at(-1)!.number, far.more]).toEqual([1000, 1020, 21, true]);
   // The last page has the oldest; a page far past the end reads nothing, rather than every post.
   const last = await teamPosts(project.id, parsePostFilters({ page: "23", sort: "new" }));
@@ -117,7 +118,7 @@ test("Feedback and a portal board: a tab's posts, words found in titles and desc
   expect([searched.of("OPEN"), searched.of("PLANNED"), searched.all, searched.duplicates]).toEqual([2, 1, 3, 0]);
 
   // A portal board: its own posts in the same orders, searched in the statuses it lists.
-  const listed = async (params: Record<string, string>, options = {}) => (await boardPosts(ideas, parsePostFilters(params, TEAM_SORTS), undefined, options)).posts.map((p) => p.title);
+  const listed = async (params: Record<string, string>, options = {}) => (await boardPosts(ideas, parsePostFilters(params, TEAM_SORTS), SIGNED_OUT_VIEWER, options)).posts.map((p) => p.title);
   expect(await listed({})).toEqual(["Dark mode", "Exports", "SSO"]);
   expect(await listed({ sort: "trending" })).toEqual(["SSO", "Exports", "Dark mode"]);
   expect(await listed({ sort: "trending" }, { statuses: ["OPEN"] })).toEqual(["Exports", "Dark mode"]);
@@ -154,19 +155,19 @@ test("a portal board's sidebar counts each board's ideas not done yet, and Mine 
   await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: mia!.id, number: 1, title: "Elsewhere" } });
 
   // Open, under review, planned and in progress count; completed, closed and merged ones don't. Oldest board first.
-  expect((await boardsWithCounts(project.id)).map((board) => [board.name, board._count.posts])).toEqual([
+  expect((await boardsWithCounts(project.id, SIGNED_OUT_VIEWER)).map((board) => [board.name, board._count.posts])).toEqual([
     [ideas.name, 3],
     ["Bugs", 1],
   ]);
   const mine = async (userId: string, options = {}) =>
-    (await boardPosts(ideas, parsePostFilters({}, TEAM_SORTS, "new"), userId, { mine: true, ...options })).posts.map((p) => p.title);
+    (await boardPosts(ideas, parsePostFilters({}, TEAM_SORTS, "new"), { team: false, userId: userId ?? null }, { mine: true, ...options })).posts.map((p) => p.title);
   // Hers: posted (shipped too) or voted for, on this board, newest first; not Max's, nor the merged one, nor the other board's.
   expect(await mine(mia!.id)).toEqual(["Calendar", "SSO", "Dark mode"]);
   expect(await mine(max!.id)).toEqual(["Exports", "Dark mode"]);
   expect(await mine(max!.id, { q: "dark" })).toEqual(["Dark mode"]);
   expect(await mine(owner.id, { statuses: ["CLOSED"] })).toEqual(["Never"]);
   // Without Mine, everyone's.
-  expect((await boardPosts(ideas, parsePostFilters({}, TEAM_SORTS, "new"), mia!.id)).posts).toHaveLength(5);
+  expect((await boardPosts(ideas, parsePostFilters({}, TEAM_SORTS, "new"), { team: false, userId: mia!.id })).posts).toHaveLength(5);
 });
 
 test("Who's asking: each post's voters' total of the number property the team picks, and the posts a group voted for", async () => {
@@ -377,7 +378,7 @@ test("posts like a post: by meaning (its kept embedding), by its title's words, 
   const theirs = await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Their dark mode" } });
   await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${theirs.id}, ${project.id}, 'test', 'x', ${vector(1)}::vector, now())`;
   // Found both ways first (the dark editor), then by meaning (the night theme); not Exports, itself or the merged one.
-  const like = await postsLike(project.id, dark);
+  const like = await postsLike(project.id, dark, TEAM_VIEWER);
   expect(like.map((p) => p.title)).toEqual(["Dark mode in the editor", "Night theme for the editor"]);
   // The sidebar lists them, linked, with their status and votes.
   const text = renderToStaticMarkup(createElement(PostsLike, { projectSlug: project.slug, posts: like })).replace(/<[^>]+>/g, "|");
@@ -413,11 +414,11 @@ test("similar ideas under a portal post: those like it still open to votes, with
   const other = await createProject(await signUp("Oscar Other"));
   await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode" } });
 
-  expect(await postsLike(project.id, dark, { open: true })).toEqual([
-    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", sample: false, boardSlug: "editor" },
+  expect(await postsLike(project.id, dark, SIGNED_OUT_VIEWER, { open: true })).toEqual([
+    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", sample: false, boardSlug: "editor", visibility: "PUBLIC", authorId: expect.any(String) },
   ]);
   // Nothing like it: nothing to show.
-  expect(await postsLike(project.id, await post(6, "Exports"), { open: true })).toEqual([]);
+  expect(await postsLike(project.id, await post(6, "Exports"), SIGNED_OUT_VIEWER, { open: true })).toEqual([]);
 });
 
 test("a post's newer and older neighbours, newest first as Feedback lists them, past merged ones", async () => {
@@ -447,7 +448,7 @@ test("a post found both ways ranks first even when it's sixth by meaning alone",
   for (const [p, x] of [[dark, 1], ...closer, [both, 0.9]] as const) {
     await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${p.id}, ${project.id}, 'test', 'x', ${vector(x)}::vector, now())`;
   }
-  expect((await postsLike(project.id, dark))[0]!.title).toBe("Dark mode in the editor");
+  expect((await postsLike(project.id, dark, TEAM_VIEWER))[0]!.title).toBe("Dark mode in the editor");
 });
 
 test("looks related beside a conversation: up to 3 open posts like its subject, the likest first; not linked, merged, completed or closed ones, sample ones, nor another project's", async () => {

@@ -19,6 +19,9 @@ import { SampleBadge } from "@/components/sample-badge";
 import { etaOnPortal, formatMonth, timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
+import { currentPostViewer } from "@/server/portal-access";
+import { firstBoardPath } from "@/server/portal-home";
+import { canSeePost } from "@/server/post-visibility";
 import { postsLike } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
@@ -26,6 +29,7 @@ import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
+import { VisibilityBadge } from "@/components/visibility-badge";
 
 /** Sample content (server/sample-content.ts) is kept from search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]/[post]">): Promise<Metadata> {
@@ -47,7 +51,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   const post = await prisma.post.findFirst({
     where: { number, project: { slug: projectSlug } },
     include: {
-      board: { select: { slug: true, name: true } },
+      board: { select: { slug: true, name: true, postVisibility: true } },
       author: { select: { id: true, name: true } },
       votes: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
       subscriptions: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
@@ -60,7 +64,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       // Its status history: from what to what, and when; not who changed it or how many were emailed.
       events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, createdAt: true } },
       project: { select: { portalAccess: true, plan: true, team: { select: { userId: true } } } },
-      duplicateOf: { select: { number: true, title: true, board: { select: { slug: true } } } },
+      duplicateOf: { select: { number: true, title: true, visibility: true, authorId: true, board: { select: { slug: true } } } },
       // The published changelog entry that shipped it, if any.
       changelogEntries: {
         where: { entry: { publishedAt: { not: null } } },
@@ -71,6 +75,12 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     },
   });
   if (!post) {
+    notFound();
+  }
+  // A post they may not see (post-visibility.ts), with its comments and votes, is as good as missing; so is one merged
+  // into a post they may not see.
+  const viewer = await currentPostViewer(post.projectId);
+  if (!canSeePost(viewer, post) || (post.duplicateOf && !canSeePost(viewer, post.duplicateOf))) {
     notFound();
   }
   // Merged into another post: that's where its votes and comments are now.
@@ -100,8 +110,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       take: 5,
       select: { user: { select: { id: true, name: true, image: true } } },
     }),
-    postsLike(post.projectId, post, { open: true }),
-    voter && subscribable ? postAudience(post.projectId, post.project, post.author.id, [voter]) : [],
+    postsLike(post.projectId, post, viewer, { open: true }),
+    voter && subscribable ? postAudience(post.projectId, post.project, post, [voter]) : [],
   ]);
 
   // The month the team expects it, as their ETA says it, while it's still to come.
@@ -109,7 +119,17 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
 
   return (
     <div className="flex flex-col gap-6">
-      <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
+      {/* A public post on a Team only board: back to the portal's feedback (its home, when it has no board of its own), not
+          to a board only the team may open. */}
+      {post.board.postVisibility === "TEAM" && !viewer.team ? (
+        (await firstBoardPath(projectSlug)) ? (
+          <BackLink href={at("/feedback")}>Feedback</BackLink>
+        ) : (
+          <BackLink href={at("/")}>Home</BackLink>
+        )
+      ) : (
+        <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
+      )}
 
       <article className="flex items-start gap-4">
         <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
@@ -124,6 +144,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
               </>
             )}
             {post.sample && <SampleBadge />}
+            <VisibilityBadge visibility={post.visibility} />
             <span>{post.author.name}</span>
             <span>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
@@ -176,7 +197,12 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
                       {like.title}
                     </Link>
                   }
-                  badges={<PostStatusBadge status={like.status} />}
+                  badges={
+                    <>
+                      <VisibilityBadge visibility={like.visibility} />
+                      <PostStatusBadge status={like.status} />
+                    </>
+                  }
                   meta={`${like.voteCount} ${like.voteCount === 1 ? "vote" : "votes"}`}
                 />
               ))}

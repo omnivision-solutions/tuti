@@ -107,6 +107,8 @@ export async function emailedOnCompletion(projectId: string, postIds: string[]):
       UNION SELECT "postId", "userId" FROM post_subscription WHERE "postId" IN (${Prisma.join(postIds)})
     ) x
     WHERE NOT EXISTS (SELECT 1 FROM post p WHERE p.id = x."postId" AND p.sample)
+      -- Only people who may see the post (postAudience): a private one's author, nobody about a Team only one.
+      AND EXISTS (SELECT 1 FROM post p WHERE p.id = x."postId" AND (p.visibility = 'PUBLIC' OR (p.visibility = 'PRIVATE' AND p."authorId" = x."userId")))
       AND NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = x."userId")
       AND NOT EXISTS (SELECT 1 FROM email_opt_out o WHERE o."projectId" = ${projectId} AND o."userId" = x."userId")
       -- Turned off in their Account: its author by "Posts I wrote", everyone else by "Posts I voted on or follow" (as postAudience).

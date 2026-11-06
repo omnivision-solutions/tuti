@@ -24,7 +24,6 @@ import { PartRow } from "@/components/portal-nav";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
-import { boardPath } from "@/lib/post-urls";
 import { CUSTOMIZE } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
@@ -54,6 +53,7 @@ import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson, supportContact } from "@/server/operations/docs-escalate";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
+import { firstBoardPath } from "@/server/portal-home";
 
 /** Published articles matching `query`, each with the passage that matched (locked ones by their title, with none). */
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
@@ -91,8 +91,8 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
 /** The new-post form on the portal's first board, with the question as the title. */
 async function feedbackHref(projectSlug: string, question: string) {
   const at = await portalLinks();
-  const board = await prisma.board.findFirst({ where: { project: { slug: projectSlug } }, orderBy: { createdAt: "asc" }, select: { slug: true } });
-  return board && at(`${boardPath(board)}?${new URLSearchParams({ title: question.slice(0, MAX_POST_TITLE) })}`);
+  const path = await firstBoardPath(projectSlug);
+  return path && at(`${path}?${new URLSearchParams({ title: question.slice(0, MAX_POST_TITLE) })}`);
 }
 
 /** A search over every tab (`?q=` on /docs; the box is in the header and on the overviews): an AI answer, when on, and the results. */

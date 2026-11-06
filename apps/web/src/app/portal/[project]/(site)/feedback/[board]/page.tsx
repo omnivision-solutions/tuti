@@ -24,9 +24,11 @@ import { cn } from "@/lib/utils";
 import { portalAddress } from "@/server/custom-domains";
 import { canActIn } from "@/server/membership";
 import { getSession } from "@/server/session";
+import { currentPostViewer } from "@/server/portal-access";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { boardPosts, boardsWithCounts, emailReach, recentlyShipped } from "@/server/post-lists";
+import { VisibilityBadge } from "@/components/visibility-badge";
 
 /** A board's tabs, its orders: Trending (the most votes in the last 7 days, then the most votes) first. */
 const TABS = [
@@ -51,19 +53,24 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   // "Post this as feedback" from the docs starts the post with the question.
   const title = typeof searchParams.title === "string" ? searchParams.title : undefined;
   const session = await getSession();
-  const userId = session?.user.id;
 
-  const board = await prisma.board.findFirst({
+  const found = await prisma.board.findFirst({
     where: { slug: boardSlug, project: { slug: projectSlug } },
     include: { project: { select: { id: true, name: true, slug: true, portalAccess: true } } },
   });
-  if (!board) {
+  // A Team only board is the team's: not on the portal for anyone else (post-visibility.ts).
+  const viewer = found && (await currentPostViewer(found.projectId));
+  const board = found && viewer && (viewer.team || found.postVisibility !== "TEAM") ? found : null;
+  if (!board || !viewer) {
     // An old URL of a board that has since moved?
-    const moved = await prisma.boardRedirect.findFirst({
-      where: { slug: boardSlug, project: { slug: projectSlug } },
-      select: { board: { select: { slug: true } } },
-    });
-    if (moved) {
+    const moved =
+      !found &&
+      (await prisma.boardRedirect.findFirst({
+        where: { slug: boardSlug, project: { slug: projectSlug } },
+        select: { board: { select: { slug: true, postVisibility: true, projectId: true } } },
+      }));
+    // Not to a Team only board, but for the team: its new address is the team's too.
+    if (moved && (moved.board.postVisibility !== "TEAM" || (await currentPostViewer(moved.board.projectId)).team)) {
       permanentRedirect(at(boardPath(moved.board)));
     }
     notFound();
@@ -78,10 +85,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   // A search looks through every status (it's for one idea, shipped or not), unless the address asks for one; so does Mine.
   const statuses = (q || mine) && !first(searchParams.status) ? undefined : boardStatuses(searchParams);
   const [{ posts, more }, shipped, boards, reach] = await Promise.all([
-    boardPosts(board, filters, userId, { statuses, q, mine }),
+    boardPosts(board, filters, viewer, { statuses, q, mine }),
     // Beside the default list (however it's asked for), which leaves completed ideas out; not beside a search's results.
-    !q && statuses && statuses.length > 1 ? recentlyShipped(board.id) : [],
-    boardsWithCounts(board.projectId),
+    !q && statuses && statuses.length > 1 ? recentlyShipped(board.id, viewer) : [],
+    boardsWithCounts(board.projectId, viewer),
     // Whether the shipped email would reach them, by the rule that sends it.
     voter ? emailReach(board.projectId, voter) : undefined,
   ]);
@@ -173,6 +180,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                         <div className="flex gap-1">
                           <PostStatusBadge status={post.status} />
                           {post.sample && <SampleBadge />}
+                          <VisibilityBadge visibility={post.visibility} />
                         </div>
                         <h2 className="font-medium break-words">
                           <Link href={at(postPath({ ...post, board }))} className="hover:underline">

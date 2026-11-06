@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type PostVisibility, prisma } from "@tuti/db";
 import { planIncludes, readerEntriesFor } from "@tuti/shared";
 
 /** Someone a post's email may go to: who they are, the address it goes to, and their unsubscribe token. */
@@ -94,11 +94,20 @@ export async function audienceReach(
   return new Map(people.map((person) => [person.id, reach(person)]));
 }
 
-/** Of `ids`, who a project's email about a post goes to (audienceReach's rule), each address once. */
-export async function postAudience(projectId: string, project: Project, authorId: string | null, ids: string[]): Promise<Recipient[]> {
+/**
+ * Of `ids`, who a project's email about `post` goes to (audienceReach's rule), each address once; only people who
+ * may see the post (its visibility): a private post's author, nobody about a Team only one (the team isn't emailed).
+ */
+export async function postAudience(
+  projectId: string,
+  project: Project,
+  post: { authorId: string | null; visibility: PostVisibility },
+  ids: string[],
+): Promise<Recipient[]> {
+  const seeing = post.visibility === "PUBLIC" ? ids : post.visibility === "PRIVATE" ? ids.filter((id) => id === post.authorId) : [];
   const seen = new Set<string>();
   const audience: Recipient[] = [];
-  for (const [id, reach] of await audienceReach(projectId, project, authorId, ids)) {
+  for (const [id, reach] of await audienceReach(projectId, project, post.authorId, seeing)) {
     if (reach.status !== "emailed" || seen.has(reach.address.toLowerCase())) {
       continue;
     }
@@ -107,3 +116,6 @@ export async function postAudience(projectId: string, project: Project, authorId
   }
   return audience;
 }
+
+/** A post's visibility changed while it was being emailed: the run fails, and its retry reads who may see it now. */
+export const visibilityChanged = (postId: string) => new Error(`post ${postId}'s visibility changed while it was emailed; trying again with who may see it now`);

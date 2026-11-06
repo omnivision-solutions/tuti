@@ -9,7 +9,8 @@ import { upsertProjectUser } from "@/server/project-users";
 import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
 import { emitEvent } from "../events";
 import { type Actor, defineOperation, OperationError } from "./define";
-import { findPost, postNumber, postSummarySelect, projectPortal, summary } from "./read";
+import { actorPostViewer, fromApiVisibility, VISIBILITIES } from "../post-visibility";
+import { findVisiblePost, postNumber, postSummarySelect, projectPortal, summary } from "./read";
 
 /** Longest plain text a post or comment may have (rich content is capped by size too). */
 export const MAX_TEXT_LENGTH = 5000;
@@ -63,7 +64,8 @@ export const MAX_POST_TITLE = 120;
 
 export const createPost = defineOperation({
   name: "posts.create",
-  summary: "Create a post, as the key's creator or on behalf of someone from your app (`author`)",
+  summary:
+    "Create a post, as the key's creator or on behalf of someone from your app (`author`); who sees it (`visibility`: public, private for its author and the team, team for the team only) is its board's choice unless the team says",
   method: "POST",
   path: "/posts",
   scope: "write",
@@ -73,6 +75,8 @@ export const createPost = defineOperation({
     title: z.string().trim().min(3, "Title is too short").max(MAX_POST_TITLE),
     ...content,
     author,
+    /** Who sees it besides the team; its board's choice when not sent. The team's only. */
+    visibility: z.enum(VISIBILITIES).optional(),
   }),
   example: {
     board: "feature-requests",
@@ -82,9 +86,16 @@ export const createPost = defineOperation({
   },
   run: async (context, input) => {
     const { projectId } = context;
-    const board = await prisma.board.findFirst({ where: { projectId, slug: input.board }, select: { id: true } });
-    if (!board) {
+    const [board, viewer] = await Promise.all([
+      prisma.board.findFirst({ where: { projectId, slug: input.board }, select: { id: true, postVisibility: true } }),
+      actorPostViewer(context.actor, projectId),
+    ]);
+    // A Team only board is the team's: nobody else sees it or posts there (post-visibility.ts).
+    if (!board || (board.postVisibility === "TEAM" && !viewer.team)) {
       throw new OperationError(404, "not_found", "Board not found");
+    }
+    if (input.visibility && !viewer.team) {
+      throw new OperationError(403, "forbidden", "Only your team can choose who sees a post");
     }
     const text = await readContent("post", input, { projectId, maxLength: MAX_TEXT_LENGTH });
     if (text.error !== undefined) {
@@ -112,6 +123,7 @@ export const createPost = defineOperation({
           title: input.title,
           body: text.text,
           content: text.doc,
+          visibility: input.visibility ? fromApiVisibility(input.visibility) : board.postVisibility,
           voteCount: 1,
           votes: { create: { userId, projectId } },
         },
@@ -154,7 +166,7 @@ export const createComment = defineOperation({
   example: { body: "Thanks! This is planned for next month." },
   run: async (context, input) => {
     const { projectId } = context;
-    const post = await findPost(projectId, input.number);
+    const post = await findVisiblePost(context.actor, projectId, input.number);
     if (post.duplicateOf) {
       throw new OperationError(409, "merged", "This post was merged into another one; comment there instead");
     }

@@ -28,7 +28,10 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { BOARD_VISIBILITY_DESCRIPTIONS, POST_VISIBILITIES, VISIBILITY_LABELS } from "@/lib/visibility-labels";
+import type { PostVisibility } from "@tuti/db";
 import { BOARD_TEXT_DEFAULTS, BOARD_TEXT_LIMITS, boardTexts } from "@/lib/board-texts";
 import { createBoard, deleteBoard, updateBoard } from "@/server/boards";
 import type { FormState } from "@/server/form-state";
@@ -108,6 +111,7 @@ function CreateBoardForm({ projectSlug, onCreated }: { projectSlug: string; onCr
           <FieldLabel htmlFor="board-description">Description</FieldLabel>
           <Textarea id="board-description" name="description" rows={2} placeholder="Optional, shown on the board" />
         </Field>
+        <BoardVisibilityField id="board-visibility" saved="PUBLIC" />
         <Button type="submit" disabled={pending} className="self-end">
           {pending ? "Creating…" : "Create board"}
         </Button>
@@ -124,6 +128,7 @@ type BoardFields = {
   postButton: string | null;
   titlePlaceholder: string | null;
   detailsPlaceholder: string | null;
+  postVisibility: PostVisibility;
 };
 
 /** A board's settings: its name, address and description, and its words for posting, with a preview of them on the portal. */
@@ -189,6 +194,7 @@ export function EditBoardDialog({ projectSlug, board }: { projectSlug: string; b
                 <FieldLabel htmlFor={id("description")}>Description</FieldLabel>
                 <Textarea id={id("description")} {...typed("description")} rows={2} maxLength={280} placeholder="Optional, shown under the name" />
               </Field>
+              <BoardVisibilityField id={id("postVisibility")} saved={board.postVisibility} existing />
               <Field>
                 <FieldLabel htmlFor={id("postButton")}>Button</FieldLabel>
                 <Input
@@ -228,6 +234,32 @@ export function EditBoardDialog({ projectSlug, board }: { projectSlug: string; b
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Who sees the board's new posts (each post's can be changed on its page), with what the choice means. */
+function BoardVisibilityField({ id, saved, existing = false }: { id: string; saved: PostVisibility; existing?: boolean }) {
+  const [visibility, setVisibility] = useState(saved);
+  return (
+    <Field>
+      <FieldLabel id={`${id}-label`}>New posts are</FieldLabel>
+      <Select name="postVisibility" items={VISIBILITY_LABELS} value={visibility} onValueChange={(value) => setVisibility(value as PostVisibility)}>
+        <SelectTrigger className="w-full" aria-labelledby={`${id}-label`} aria-describedby={`${id}-description`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {POST_VISIBILITIES.map((value) => (
+            <SelectItem key={value} value={value}>
+              {VISIBILITY_LABELS[value]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <FieldDescription id={`${id}-description`}>
+        {BOARD_VISIBILITY_DESCRIPTIONS[visibility]}
+        {existing && " Posts already on it keep theirs."}
+      </FieldDescription>
+    </Field>
   );
 }
 

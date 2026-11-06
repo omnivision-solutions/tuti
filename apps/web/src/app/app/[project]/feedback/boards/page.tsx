@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { DeleteBoardButton, EditBoardDialog, NewBoardDialog } from "@/components/boards";
 import { ItemList, ItemRow } from "@/components/item-list";
+import { VisibilityBadge } from "@/components/visibility-badge";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +37,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
       postButton: true,
       titlePlaceholder: true,
       detailsPlaceholder: true,
+      postVisibility: true,
     },
   });
   // Each board's posts as Feedback lists them (merged duplicates aside), and the open ones as the portal counts them.
@@ -85,6 +87,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                     {board.name}
                   </Link>
                 }
+                badges={<VisibilityBadge visibility={board.postVisibility} of="board" />}
                 meta={
                   <>
                     <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="hover:underline">

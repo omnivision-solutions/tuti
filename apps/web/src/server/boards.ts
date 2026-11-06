@@ -32,6 +32,8 @@ const boardSchema = z.object({
   postButton: textSchema(BOARD_TEXT_LIMITS.postButton),
   titlePlaceholder: textSchema(BOARD_TEXT_LIMITS.titlePlaceholder),
   detailsPlaceholder: textSchema(BOARD_TEXT_LIMITS.detailsPlaceholder),
+  // Who sees new posts on it (server/post-visibility.ts); a form without the field keeps what's saved.
+  postVisibility: z.enum(["PUBLIC", "PRIVATE", "TEAM"]).optional(),
 });
 
 function parseBoard(formData: FormData) {
@@ -43,6 +45,7 @@ function parseBoard(formData: FormData) {
     postButton: field("postButton"),
     titlePlaceholder: field("titlePlaceholder"),
     detailsPlaceholder: field("detailsPlaceholder"),
+    postVisibility: field("postVisibility"),
   });
 }
 
@@ -66,7 +69,7 @@ export async function createBoard(projectSlug: string, _prev: FormState, formDat
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  const { name, slug, description } = parsed.data;
+  const { name, slug, description, postVisibility } = parsed.data;
   try {
     const full = await prisma.$transaction(async (tx) => {
       // Room on the plan, counted under the project's lock so two boards made at once can't both take the
@@ -78,7 +81,7 @@ export async function createBoard(projectSlug: string, _prev: FormState, formDat
       }
       // Taking a slug that used to redirect to another board ends that redirect.
       await tx.boardRedirect.deleteMany({ where: { projectId: project.id, slug } });
-      await tx.board.create({ data: { projectId: project.id, name, slug, description: description ?? null } });
+      await tx.board.create({ data: { projectId: project.id, name, slug, description: description ?? null, postVisibility } });
       return null;
     });
     if (full) {

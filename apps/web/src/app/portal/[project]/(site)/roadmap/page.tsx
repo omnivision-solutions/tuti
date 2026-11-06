@@ -15,6 +15,9 @@ import { canActIn } from "@/server/membership";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
 import { portalLinks } from "@/server/portal-base";
 import { getSession } from "@/server/session";
+import { currentPostViewer } from "@/server/portal-access";
+import { VisibilityBadge } from "@/components/visibility-badge";
+import { shownBoards } from "@/server/post-visibility";
 
 /** What each column means, under its name. */
 const MEANINGS: Partial<Record<PostStatus, string>> = {
@@ -28,18 +31,21 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
   const at = await portalLinks();
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
-  const project = await prisma.project.findUnique({
-    where: { slug },
-    select: { id: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
-  });
-  if (!project) {
+  const found = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
+  if (!found) {
     notFound();
   }
+  // The posts they may see, on the boards they may (post-visibility.ts).
+  const viewer = await currentPostViewer(found.id);
+  const project = {
+    id: found.id,
+    boards: await prisma.board.findMany({ where: { projectId: found.id, ...shownBoards(viewer) }, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } }),
+  };
   const session = await getSession();
   // As voting checks it: someone signed in through another project's single sign-on can't vote here.
   const voter = session && (await canActIn(session.user.id, project.id)) ? session.user.id : null;
   const board = project.boards.find((b) => b.slug === searchParams.board);
-  const columns = await roadmapColumns(project.id, { board: board?.slug });
+  const columns = await roadmapColumns(project.id, viewer, { board: board?.slug });
   const ids = columns.flat().map((post) => post.id);
   const [votes, shipped] = await Promise.all([
     voter ? prisma.vote.findMany({ where: { userId: voter, postId: { in: ids } }, select: { postId: true } }) : [],
@@ -143,7 +149,9 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                           <Link href={at(postPath(post))} className="font-medium break-words hover:underline">
                             {post.title}
                           </Link>
-                          <p className="text-xs text-muted-foreground">{post.board.name}</p>
+                          <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                            {post.board.name} <VisibilityBadge visibility={post.visibility} />
+                          </p>
                           {entry && (
                             <p className="text-xs text-muted-foreground">
                               Shipped in{" "}

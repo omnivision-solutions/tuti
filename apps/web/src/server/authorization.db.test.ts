@@ -484,6 +484,7 @@ const matrix: Matrix = {
     movePost: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.movePost(slug, f.postId, "empty") },
     setPostOwner: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.setPostOwner(slug, f.postId, null) },
     setPostEta: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.setPostEta(slug, f.postId, "2026-12") },
+    setPostVisibility: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.setPostVisibility(slug, f.postId, "private") },
     changePostStatus: {
       allowed: "MEMBER",
       takesIds: true,

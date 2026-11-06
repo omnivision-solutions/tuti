@@ -29,6 +29,7 @@ import { portalBase } from "@/server/portal-base";
 import { TeamHtml } from "@/components/team-html";
 import { requestTarget, siteMount } from "@/server/custom-domains";
 import { getSession } from "@/server/session";
+import { PORTAL_BOARDS } from "@/server/post-visibility";
 
 /** Read once per request by both the layout and its metadata. */
 const portalBranding = cache((slug: string) => branding({ slug }));
@@ -66,7 +67,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const [project, brand] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
-      select: { id: true, name: true, widgetOnPortal: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
+      select: { id: true, name: true, widgetOnPortal: true, boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
     }),
     portalBranding(slug),
   ]);

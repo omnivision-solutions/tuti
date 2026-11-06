@@ -6,7 +6,8 @@ import { z } from "zod";
 
 import { widgetUser } from "@/lib/widget-session";
 
-import { readableProject } from "./portal-access";
+import { currentPostViewer, readableProject } from "./portal-access";
+import { type PostViewer, postViewer, visiblePostsSql } from "./post-visibility";
 import { sessionIn } from "./session";
 
 export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string; boardSlug: string; voted: boolean };
@@ -34,9 +35,11 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
     return [];
   }
 
+  // Only posts they may see (post-visibility.ts): the widget's person, or whoever's reading the portal.
+  const viewer = widgetToken ? await postViewer(project.id, widgetUser(project.id, String(widgetToken))) : await currentPostViewer(project.id);
   const [byWords, byMeaning] = await Promise.all([
-    trigramMatches(project.id, query.data),
-    query.data.length >= MIN_EMBED_LENGTH && embeddingsEnabled() ? embeddingMatches(project.id, query.data) : [],
+    trigramMatches(project.id, query.data, viewer),
+    query.data.length >= MIN_EMBED_LENGTH && embeddingsEnabled() ? embeddingMatches(project.id, query.data, viewer) : [],
   ]);
   const both = new Set(byWords.map((p) => p.id).filter((id) => byMeaning.some((p) => p.id === id)));
   const ranked = [
@@ -50,20 +53,20 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
   return shown.map((post) => ({ ...post, voted: votes.some((vote) => vote.postId === post.id) }));
 }
 
-function trigramMatches(projectId: string, query: string) {
+function trigramMatches(projectId: string, query: string, viewer: PostViewer) {
   return prisma.$queryRaw<Omit<SimilarPost, "voted">[]>`
     SELECT p.id, p.number, p.title, p."voteCount", b.name AS "boardName", b.slug AS "boardSlug"
     FROM post p
     JOIN board b ON b.id = p."boardId"
     WHERE p."projectId" = ${projectId}
-      AND p."duplicateOfId" IS NULL
+      AND p."duplicateOfId" IS NULL AND ${visiblePostsSql(viewer)}
       AND (p.title % ${query} OR ${query} <% p.title)
     ORDER BY greatest(similarity(p.title, ${query}), word_similarity(${query}, p.title)) DESC,
       p."voteCount" DESC
     LIMIT ${LIMIT}`;
 }
 
-async function embeddingMatches(projectId: string, query: string): Promise<Omit<SimilarPost, "voted">[]> {
+async function embeddingMatches(projectId: string, query: string, viewer: PostViewer): Promise<Omit<SimilarPost, "voted">[]> {
   let vector: string;
   try {
     const [embedding] = await embed([query]);
@@ -78,7 +81,7 @@ async function embeddingMatches(projectId: string, query: string): Promise<Omit<
     JOIN post p ON p.id = e."postId"
     JOIN board b ON b.id = p."boardId"
     WHERE e."projectId" = ${projectId}
-      AND p."duplicateOfId" IS NULL
+      AND p."duplicateOfId" IS NULL AND ${visiblePostsSql(viewer)}
       AND 1 - (e.embedding <=> ${vector}::vector) >= ${TYPING_SUGGESTION_MIN_SIMILARITY}
     ORDER BY e.embedding <=> ${vector}::vector
     LIMIT ${LIMIT}`;

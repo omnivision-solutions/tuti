@@ -1,9 +1,9 @@
-import { prisma } from "@tuti/db";
+import { type PostVisibility, prisma } from "@tuti/db";
 import { sendEmail, shippedEmail } from "@tuti/email";
 import type { JobInput } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
-import { postAudience } from "./post-audience";
+import { postAudience, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
 import { claimProjectEmail } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
@@ -25,15 +25,19 @@ const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
  * it (so it never touches a claim another run took over); null when someone else
  * has it or it's sent.
  */
-async function claim(postId: string, userId: string): Promise<Date | null> {
+async function claim(postId: string, userId: string, visibility: PostVisibility): Promise<Date | null> {
   return prisma.$transaction(async (tx) => {
     // Only while it's still shipped and its emails are due: the post's row locked, so a status change (Undo, say) or a
     // resume that drops a pause's emails waits for this claim, or this claim sees it and emails nobody else. One claimed
-    // already may still go.
-    const [post] = await tx.$queryRaw<{ status: string; due: Date | null }[]>`
-      SELECT status, "shippedEmailsDueAt" AS due FROM post WHERE id = ${postId} FOR UPDATE`;
+    // already may still go. A visibility change since the audience was read (under the same lock) fails the run: its
+    // retry reads who may see it now.
+    const [post] = await tx.$queryRaw<{ status: string; due: Date | null; visibility: PostVisibility }[]>`
+      SELECT status, "shippedEmailsDueAt" AS due, visibility FROM post WHERE id = ${postId} FOR UPDATE`;
     if (post?.status !== "COMPLETED" || post.due === null) {
       return null;
+    }
+    if (post.visibility !== visibility) {
+      throw visibilityChanged(postId);
     }
     // For this completion (its activity counts who it reached), read under the same lock.
     const completion = await tx.postEvent.findFirst({ where: { postId, to: "COMPLETED" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } });
@@ -117,6 +121,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       board: { select: { slug: true } },
       projectId: true,
       authorId: true,
+      visibility: true,
       project: { select: { name: true, slug: true, portalAccess: true, plan: true } },
       votes: { select: { userId: true } },
       comments: { select: { authorId: true } },
@@ -132,7 +137,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
-  const people = await postAudience(projectId, project, post.authorId, [
+  const people = await postAudience(projectId, project, post, [
     post.authorId,
     ...post.votes.map((v) => v.userId),
     ...post.comments.map((c) => c.authorId),
@@ -176,7 +181,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   let held = false;
   for (const { id, address, unsubscribeToken } of people) {
     // Claimed before sending, so a retry, a second run or the post completed again doesn't email them twice.
-    const claimedAt = await claim(postId, id);
+    const claimedAt = await claim(postId, id, post.visibility);
     if (!claimedAt) {
       continue;
     }

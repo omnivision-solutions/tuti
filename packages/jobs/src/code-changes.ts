@@ -479,15 +479,29 @@ const replySchema = z.object({
  */
 async function writeProposals(pr: PullRequestRead, summary: string, proposals: Proposal[], posts: PostCandidate[], use: Ai): Promise<{ why: string; line: string }> {
   const keyed = proposals
-    .map((proposal, i) => ({ key: `p${i + 1}`, proposal, post: posts.find((post) => post.id === proposal.postId) }))
+    .map((proposal, i) => ({ key: `p${i + 1}`, proposal, post: posts.find((post) => post.id === proposal.postId)! }))
     .filter((k) => k.post);
+  // Posts only some see are written for one at a time: what's written with the public ones (their comments, which
+  // everyone sees, and the changelog line, which is published) never has their words in front of it, nor does what's
+  // written for another (a comment its own author reads).
+  const isPublic = ({ post }: (typeof keyed)[number]) => !post.visibility || post.visibility === "PUBLIC";
+  const [open, ...hidden] = await Promise.all([
+    writeFor(pr, summary, keyed.filter(isPublic), use),
+    ...keyed.filter((k) => !isPublic(k)).map((k) => writeFor(pr, summary, [k], use)),
+  ]);
+  return {
+    why: [open!.why, ...hidden.map((written) => written.why)].filter(Boolean).join(" ").trim().slice(0, 1_000),
+    line: open!.changelog.replace(/\s+/g, " ").trim().slice(0, 300),
+  };
+}
+
+/** One request for `keyed`'s reasons and comments (set on the proposals), with why and the changelog line. */
+async function writeFor(pr: PullRequestRead, summary: string, keyed: { key: string; proposal: Proposal; post: PostCandidate }[], use: Ai) {
   const user = JSON.stringify(
     {
       pull_request: pullRequestState(pr),
       summary_for_users: summary,
-      proposals: Object.fromEntries(
-        keyed.map(({ key, proposal, post }) => [key, { kind: proposal.kind.toLowerCase(), post: { title: post!.title, text: post!.body.slice(0, 2_000) } }]),
-      ),
+      proposals: Object.fromEntries(keyed.map(({ key, proposal, post }) => [key, { kind: proposal.kind.toLowerCase(), post: { title: post.title, text: post.body.slice(0, 2_000) } }])),
     },
     null,
     1,
@@ -501,7 +515,7 @@ async function writeProposals(pr: PullRequestRead, summary: string, proposals: P
       proposal.payload = { comment: (written?.comment ?? "").trim().slice(0, 2_000) };
     }
   }
-  return { why: parsed.why.trim().slice(0, 1_000), line: parsed.changelog.replace(/\s+/g, " ").trim().slice(0, 300) };
+  return { why: parsed.why.trim(), changelog: parsed.changelog };
 }
 
 const SUMMARY_SYSTEM = `You write for the users of a software product, not its developers. You get a merged pull request: its title, description, commits, changed files and diff.
@@ -529,7 +543,7 @@ async function postCandidates(projectId: string, vector: string, named: number[]
   const namedIds = new Set(namedRows.map((row) => row.id));
   const posts = await prisma.post.findMany({
     where: { ...open, id: { in: [...namedIds, ...nearest.map((row) => row.id)] } },
-    select: { id: true, number: true, title: true, body: true, status: true },
+    select: { id: true, number: true, title: true, body: true, status: true, visibility: true },
   });
   return posts.map((post) => ({ ...post, named: namedIds.has(post.id) }));
 }

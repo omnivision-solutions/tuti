@@ -1,6 +1,6 @@
 "use client";
 
-import type { PostStatus } from "@tuti/db";
+import type { PostStatus, PostVisibility } from "@tuti/db";
 import { ChevronDownIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ComponentProps, createContext, type ReactNode, use, useEffect, useRef, useState, useTransition } from "react";
@@ -23,10 +23,11 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { eachPost } from "@/lib/each-post";
 import { cn } from "@/lib/utils";
+import { mergeExposure } from "@/lib/visibility-labels";
 import { changePostStatus, mergePost, movePost } from "@/server/manage-posts";
 
 /** A post as the selection keeps it: enough to name it and pick which one stays in a merge (`sample`: sample content). */
-type Picked = { id: string; number: number; title: string; voteCount: number; emails: number; sample: boolean };
+type Picked = { id: string; number: number; title: string; voteCount: number; emails: number; sample: boolean; visibility?: PostVisibility; authorId?: string };
 
 const Selection = createContext<{
   picked: Picked[];
@@ -281,6 +282,13 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
                 </label>
               ))}
             </fieldset>
+            {/* Comments that will be seen by people who couldn't see them, as the post page's Merge dialog says. */}
+            {picked
+              .filter((post) => post.id !== kept.id)
+              .flatMap((post) => {
+                const exposure = mergeExposure(post, kept, kept.number);
+                return exposure ? [<p key={post.id} className="text-sm text-muted-foreground">#{post.number}: {exposure}</p>] : [];
+              })}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
               <AlertDialogAction

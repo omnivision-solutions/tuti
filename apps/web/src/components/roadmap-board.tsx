@@ -1,6 +1,6 @@
 "use client";
 
-import type { PostStatus } from "@tuti/db";
+import type { PostStatus, PostVisibility } from "@tuti/db";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { PostStatusMenu } from "@/components/post-status-select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { VisibilityBadge } from "@/components/visibility-badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +31,8 @@ type Card = {
   status: PostStatus;
   votes: number;
   board: string;
+  /** Who sees it besides the team (a badge when it isn't everyone). */
+  visibility: PostVisibility;
   asking: string | null;
   emails: number;
   eta: string | null;
@@ -177,6 +180,11 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       onChanged={(status) => setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 })}
                     />
                   </div>
+                  {card.visibility !== "PUBLIC" && (
+                    <div>
+                      <VisibilityBadge visibility={card.visibility} />
+                    </div>
+                  )}
                   {/* The owner wraps under the meta line when both don't fit (narrow columns), keeping to the right. */}
                   <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
                     <p className="min-w-0 grow text-xs text-muted-foreground">

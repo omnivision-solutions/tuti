@@ -128,7 +128,7 @@ describe("reading", () => {
     await prisma.post.update({ where: { id: night.id }, data: { duplicateOfId: dark.id } });
     expect(await api("/boards")).toEqual({
       status: 200,
-      body: { boards: [{ slug: "feature-requests", name: "Feature requests", posts: 1 }] },
+      body: { boards: [{ slug: "feature-requests", name: "Feature requests", posts: 1, postVisibility: "public" }] },
       headers: expect.anything(),
     });
   });
@@ -157,6 +157,7 @@ describe("reading", () => {
         votes: 1,
         comments: 0,
         author: { name: "Olive Owner" },
+        visibility: "public",
         createdAt: "2026-06-01T00:00:00.000Z",
         url: `http://${project.slug}.localhost:3100/feedback/feature-requests/new-2`,
       },
@@ -226,7 +227,7 @@ describe("changing", () => {
     });
     expect(await send("PATCH", "/posts/1", {}, writeKey)).toMatchObject({
       status: 400,
-      body: { error: { message: "input: Send a status, a board, an owner or an ETA" } },
+      body: { error: { message: "input: Send a status, a board, an owner, an ETA or a visibility" } },
     });
     expect(await send("PATCH", "/posts/1", "not json", writeKey)).toMatchObject({ status: 400, body: { error: { code: "invalid_json" } } });
   });
@@ -359,6 +360,7 @@ describe("OpenAPI", () => {
       { required: ["board"] },
       { required: ["owner"] },
       { required: ["eta"] },
+      { required: ["visibility"] },
     ]);
     expect(spec.paths["/posts/{number}"].get.parameters).toEqual([
       { name: "number", in: "path", required: true, schema: expect.objectContaining({ type: "integer" }) },

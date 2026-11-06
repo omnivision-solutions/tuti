@@ -10,6 +10,7 @@ import { mergePost as mergeOperation, updatePost } from "./operations/manage";
 import { dismissDuplicate as dismissOperation } from "./operations/more";
 import { toApiStatus } from "./operations/read";
 import { asTeam, call, postNumberOf } from "./operations/run";
+import type { Visibility } from "./post-visibility";
 
 /**
  * Actions the project's team takes on posts (any team role). Portal users act
@@ -42,6 +43,13 @@ export async function setPostOwner(projectSlug: string, postId: string, ownerId:
 export async function setPostEta(projectSlug: string, postId: string, month: string | null): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can change a post's ETA", async (context) =>
     call(updatePost, context, { number: await postNumberOf(context.projectId, postId), eta: month === null || month === "" ? null : String(month) }),
+  );
+}
+
+/** Who sees a post besides the team ("public", "private": its author, "team": nobody). See posts.update. */
+export async function setPostVisibility(projectSlug: string, postId: string, visibility: string): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can change who sees a post", async (context) =>
+    call(updatePost, context, { number: await postNumberOf(context.projectId, postId), visibility: String(visibility) as Visibility }),
   );
 }
 
