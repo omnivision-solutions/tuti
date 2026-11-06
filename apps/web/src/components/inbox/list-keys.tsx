@@ -128,6 +128,9 @@ export function ListKeys({
   }, [place]);
 
   // Somewhere they go themselves (any link, ⌘K's menu, Back or Forward): an action still saving doesn't move them on after it.
+  // ⌘K's: Next drops a held action's refresh once its navigation starts, so the action's own render never checks; it's
+  // for a live refresh rendering the list before that navigation lands, which no journey can time. The reset as the
+  // list mounts (below) covers the way back.
   useEffect(() => {
     const picked = (event: Event) => {
       // A link opening here: not one to a new tab or window (a modifier, target=_blank), nor a download, where they stay.

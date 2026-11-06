@@ -734,6 +734,18 @@ test("the team member's own action taking the open conversation out of its view 
     await held;
     await route.fulfill({ response });
   });
+  // Every address the app goes to from here: a move to #2 queued behind the way to Reporting would land after it, and
+  // replace its entry, so Reporting's address alone can't show it.
+  await owner.evaluate(() => {
+    const went: string[] = ((window as unknown as { went: string[] }).went = []);
+    for (const name of ["pushState", "replaceState"] as const) {
+      const original = history[name].bind(history);
+      history[name] = (data, unused, url) => {
+        went.push(String(url));
+        original(data, unused, url);
+      };
+    }
+  });
   await owner.getByRole("button", { name: "Close", exact: true }).click();
   // Off Close, which keeps the keyboard's focus while it saves and takes keys meanwhile.
   await owner.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -751,6 +763,10 @@ test("the team member's own action taking the open conversation out of its view 
   await api("/conversations", { email: "e2e-later@example.com", body: "A later question" });
   await expect(row(4)).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  // The way to Reporting is there (the record sees the app's own moves); none to #2.
+  const went = await owner.evaluate(() => (window as unknown as { went: string[] }).went);
+  expect(went.some((url) => url.endsWith("/reporting"))).toBe(true);
+  expect(went.filter((url) => /\/inbox\/2\b/.test(url))).toEqual([]);
 
   // On a phone, where the list is hidden beside the conversation, focus goes to the title of the one that opens.
   await owner.setViewportSize({ width: 390, height: 844 });
