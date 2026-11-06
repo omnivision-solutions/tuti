@@ -41,3 +41,14 @@ test("a user's page lists what they did with every account that is them, as User
   expect(html).toContain("Invoices");
   expect(html).not.toContain("Cheap pills");
 });
+
+test("someone who marked the project's email as spam says so: replies reach them only in the widget", async () => {
+  const project = await createProject(await signUp());
+  const userId = await upsertProjectUser(project.id, "ann-3", { name: "Ann Ash", email: "E2E-Ann@example.com" });
+  const panel = async () =>
+    renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true }, page: true }));
+  expect(await panel()).not.toContain("as spam");
+  // As SES's complaint saves it: lowercase.
+  await prisma.emailBlock.create({ data: { projectId: project.id, email: "e2e-ann@example.com" } });
+  expect(await panel()).toContain("Marked your email as spam, so replies reach them only in the widget.");
+});
