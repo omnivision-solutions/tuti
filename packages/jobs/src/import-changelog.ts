@@ -47,9 +47,10 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
   const begun = CHANGELOG_PAGE.now();
   const at: ChangelogAt = cursor ? JSON.parse(cursor) : { page: null, after: null };
   const listed = await job.featurebase.page<FeaturebaseChangelog>("/changelogs", at.page, { state: "all", sortBy: "date", sortOrder: "asc", limit: CHANGELOG_PAGE.entries });
-  // After the last one done; one gone since (deleted, made a segment's), after where it was by date.
+  // After the last one done; one gone since (deleted, made a segment's), from its date on: entries of the same date may
+  // not be done yet (one done already is skipped by its record, counted as brought earlier).
   const index = at.after ? listed.items.findIndex((entry) => entry.id === at.after!.id) : -1;
-  const later = at.after ? listed.items.findIndex((entry) => (entry.date ?? "") > at.after!.date) : 0;
+  const later = at.after ? listed.items.findIndex((entry) => Date.parse(entry.date ?? "") >= Date.parse(at.after!.date)) : 0;
   const rest = listed.items.slice(index >= 0 ? index + 1 : later >= 0 ? later : listed.items.length);
   // Read again in the page's transaction, under its lock: what the check before copying saw may have changed.
   const recorded = async (db: Prisma.TransactionClient) =>

@@ -125,12 +125,13 @@ test("a page cut short goes on after the last entry done, even when one before i
   const importStep = handlers.importStep;
   let cut = false;
   handlers.importStep = async (input, log) => {
-    const result = await importStep(input, log);
-    if (!cut) {
+    // Before the second page (pages run one inside another, inline).
+    const { cursor } = await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } });
+    if (cursor && !cut) {
       cut = true;
       fake.fixtures.changelogs = fake.fixtures.changelogs.filter((entry) => entry.title !== "Dark mode is here");
     }
-    return result;
+    return importStep(input, log);
   };
   try {
     await importChangelog();
@@ -138,6 +139,31 @@ test("a page cut short goes on after the last entry done, even when one before i
     handlers.importStep = importStep;
   }
   expect((await entries()).map((entry) => entry.title)).toEqual(["Dark mode is here", "Faster exports", "Single sign-on"]);
+});
+
+test("a page cut short whose last entry is gone meanwhile goes on from its date: another of the same date still comes", async () => {
+  const [first, second] = ["Dark mode is here", "Faster exports"].map((title) => fake.fixtures.changelogs.find((entry) => entry.title === title)!);
+  second!.date = first!.date;
+  let now = 0;
+  Object.assign(CHANGELOG_PAGE, { softMs: 0, now: () => ++now });
+  const importStep = handlers.importStep;
+  let cut = false;
+  handlers.importStep = async (input, log) => {
+    // Before the next page: the last one done, where it goes on from, is deleted in Featurebase.
+    const { cursor } = await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } });
+    const after = cursor && (JSON.parse(cursor) as { after: { id: string } | null }).after;
+    if (after && !cut) {
+      cut = true;
+      fake.fixtures.changelogs = fake.fixtures.changelogs.filter((entry) => entry.id !== after.id);
+    }
+    return importStep(input, log);
+  };
+  try {
+    await importChangelog();
+  } finally {
+    handlers.importStep = importStep;
+  }
+  expect((await entries()).map((entry) => entry.title).sort()).toEqual(["Dark mode is here", "Faster exports", "Single sign-on"]);
 });
 
 test("a cover that's also in the entry's text, signed apart, is copied once", async () => {
