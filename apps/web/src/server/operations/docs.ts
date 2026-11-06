@@ -27,7 +27,7 @@ import {
   settleWaitingEdits,
   editName,
 } from "@tuti/jobs";
-import { articleVersionsKept, collectionName, log } from "@tuti/shared";
+import { articleVersionsKept, collectionName, log, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
 import { inArticleOrder } from "@/lib/article-order";
@@ -50,7 +50,7 @@ import { projectSlug } from "./read";
 
 /** The docs (Phase 10): articles the team writes, grouped in collections, published on the portal's /docs. */
 
-export const MAX_ARTICLE_LENGTH = 50_000;
+export { MAX_ARTICLE_LENGTH };
 /**
  * Revisions kept per article; older ones go as new ones come. Every save is a deliberate click
  * (the editor doesn't autosave), so each is kept rather than merged with the last.

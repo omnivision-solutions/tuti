@@ -2,13 +2,13 @@ import { isDeepStrictEqual } from "node:util";
 
 import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason } from "@tuti/content/html";
 import { type Prisma, prisma } from "@tuti/db";
-import { articleLimit } from "@tuti/shared";
+import { articleLimit, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 
 import { recordRevision } from "./article-layers";
 import { freeDocsSlug } from "./docs-slugs";
 import { type Featurebase, type FeaturebaseArticle, type FeaturebaseCollection, FeaturebaseError } from "./featurebase";
 import { mediaImporter } from "./import-media";
-import { adminMember, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
+import { adminMember, ALREADY_HERE, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
 import { enqueue } from "./index";
 import { portalAddress } from "./portal-address";
 
@@ -184,10 +184,11 @@ async function collectionsPage(job: ImportJob): Promise<StepPage> {
           }
           continue;
         }
-        tally(job.counts, "collections", null);
         if (known.has(collection.id)) {
+          tally(job.counts, "collections", ALREADY_HERE);
           continue;
         }
+        tally(job.counts, "collections", null);
         const parentId = (chain[1] && local.get(chain[1].id)) ?? null;
         const tabId = parentId === null ? (firstTab?.id ?? null) : null;
         if (!nextOrder.has(parentId)) {
@@ -265,9 +266,10 @@ async function articlesPage(job: ImportJob, cursor: string | null): Promise<Step
  * Where links to Featurebase's articles and collections go now: a path like /en/articles/1234567-setup (or
  * /articles/…, /en/help/articles/…, /collections/…), on any host, whose id came across, to that page on the portal.
  */
-async function linksTo(job: ImportJob): Promise<(href: string) => string | null> {
-  const { slug } = await prisma.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { slug: true } });
-  const [portal, articles, collections] = await Promise.all([portalAddress(slug), recorded(prisma, job, "article"), recorded(prisma, job, "collection")]);
+async function linksTo(job: ImportJob, portal: string, html: string[]): Promise<(href: string) => string | null> {
+  // Only the ids the HTML mentions (a superset of what its links match below), not every page the import made.
+  const ids = (kind: string) => [...html.join("\n").matchAll(new RegExp(`/${kind}/(\\d+)`, "g"))].map((match) => match[1]!);
+  const [articles, collections] = await Promise.all([recorded(prisma, job, "article", ids("articles")), recorded(prisma, job, "collection", ids("collections"))]);
   return (href) => {
     let path: string;
     try {
@@ -312,7 +314,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
   const todo = items.filter((article) => !known.get(article.id)?.landed && !known.get(article.id)?.deleted && !known.get(article.id)?.saved);
-  const link = todo.length > 0 ? await linksTo(job) : undefined;
+  const portal = todo.length > 0 ? await portalAddress((await prisma.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { slug: true } })).slug) : "";
   // Those of imports that ended without their last page (failed, or failed as stale) go.
   const running = await prisma.dataImport.findMany({ where: { id: { in: [...mediaCaches.keys()] }, state: "RUNNING" }, select: { id: true } });
   [...mediaCaches.keys()].filter((id) => !running.some((row) => row.id === id)).forEach((id) => mediaCaches.delete(id));
@@ -325,13 +327,22 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
     if (texts.length > 0 && Date.now() - started > contentBudget.ms) {
       break;
     }
-    const convert = async (version: FeaturebaseArticle): Promise<Text | { error: string }> => {
-      const content = await htmlToContent("article", version.body ?? "", { media, link });
-      return "error" in content ? content : { title: version.title?.trim().slice(0, 120) || "Untitled", content };
-    };
     // Its draft is read first, while the page is within its time (contentBudget): converting copies media, which
     // Featurebase's read deadline (import-step's PAGE_READ_MS) doesn't wait for.
     const draftVersion = await draftOf(job, article);
+    const link = await linksTo(job, portal, [article.body ?? "", draftVersion?.body ?? ""]);
+    // `error`: why it's left out, as the summary says it (the article stays an empty draft).
+    const convert = async (version: FeaturebaseArticle): Promise<Text | { error: string }> => {
+      const content = await htmlToContent("article", version.body ?? "", { media, link });
+      if ("error" in content) {
+        return { error: "whose content couldn't be read (they're empty drafts)" };
+      }
+      // Past what an article may have (its saves are refused): none of it, rather than part.
+      if (content.text.length > MAX_ARTICLE_LENGTH) {
+        return { error: `longer than ${MAX_ARTICLE_LENGTH.toLocaleString("en")} characters, Tuti's most (they're empty drafts)` };
+      }
+      return { title: version.title?.trim().slice(0, 120) || "Untitled", content };
+    };
     const live = await convert(article);
     const draft = draftVersion && !("error" in live) ? await convert(draftVersion) : null;
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
@@ -366,13 +377,13 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
             await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
           }
           if (!again) {
-            tally(job.counts, "articles", null);
+            tally(job.counts, "articles", ALREADY_HERE);
           }
           continue;
         }
         await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
         if ("error" in text.live) {
-          tally(job.counts, "articles", "whose content couldn't be read (they're empty drafts)");
+          tally(job.counts, "articles", text.live.error);
           continue;
         }
         const everyone = isDeepStrictEqual(article.visibleBy ?? ["everyone"], ["everyone"]);

@@ -149,7 +149,9 @@ test("imported again, nothing comes twice: not a collection, article, revision, 
   const [before, embedded] = [{ collections: await collections(), articles: await articles(), media: await prisma.media.count({ where: { projectId: project.id } }) }, openai.inputs.length];
 
   const again = await importDocs();
-  expect(again.counts).toMatchObject({ collections: { imported: 3 }, articles: { imported: 4 } });
+  // Said as what it is: nothing new, everything there from before.
+  expect(again.counts).toEqual({ collections: { imported: 0, leftOut: { "already brought across earlier": 3 } }, articles: { imported: 0, leftOut: { "already brought across earlier": 4 } } });
+  expect(importSummary(again)).toBe("Nothing brought across. Left out: 3 collections already brought across earlier; 4 articles already brought across earlier.");
   expect({ collections: await collections(), articles: await articles(), media: await prisma.media.count({ where: { projectId: project.id } }) }).toEqual(before);
   expect(openai.inputs.length).toBe(embedded);
 });
@@ -180,7 +182,8 @@ test("an empty article the team wrote and published while the import was stopped
   await call(updateArticle, asOwner(), { slug, body: "Our own words, still being written." });
 
   const done = await importDocs();
-  expect(done).toMatchObject({ state: "done", counts: { articles: { imported: 3 } } });
+  // The team's article is there from before, as theirs.
+  expect(done).toMatchObject({ state: "done", counts: { articles: { imported: 2, leftOut: { "already brought across earlier": 1 } }, privateDrafts: { imported: 1 } } });
   expect(await article("Card payments")).toMatchObject({ body: "Our own words.", changes: { body: "Our own words, still being written." }, publishedAt: expect.any(Date) });
   expect(await article("Welcome to Acme")).toMatchObject({ publishedAt: expect.any(Date), body: expect.stringContaining("every invoice") });
 });
@@ -232,7 +235,8 @@ test("an article whose content didn't land is filled in by the next import; the 
   await prisma.article.update({ where: { id: welcome.id }, data: { content: Prisma.DbNull, body: "", publishedAt: null } });
   await prisma.importedRecord.updateMany({ where: { projectId: project.id, kind: "article", localId: welcome.id }, data: { contentLanded: false } });
 
-  await importDocs();
+  const again = await importDocs();
+  expect(again.counts.articles).toEqual({ imported: 1, leftOut: { "already brought across earlier": 3 } });
   expect(await article("Welcome to Acme")).toMatchObject({ publishedAt: new Date("2024-03-02T09:00:00.000Z"), body: expect.stringContaining("every invoice"), _count: { revisions: 1 } });
   expect(await article("Paying by card")).toMatchObject({ _count: { revisions: 2 } });
 });
@@ -280,6 +284,17 @@ test("past the plan's article limit, articles come in as drafts, counted", async
   expect((await articles()).filter((a) => a.publishedAt).map((a) => a.title)).toEqual(["Welcome to Acme"]);
   // Kept as a draft, it has the newest text: its draft's.
   expect(await article("Paying by card")).toMatchObject({ publishedAt: null, body: "Cards are charged on the 1st. Amex is coming soon.", changes: null });
+});
+
+test("an article longer than Tuti's 50,000 characters comes in as an empty draft under its title, counted, as an article that long can't be saved", async () => {
+  fake.fixtures.articles[0]!.body = `<p>${"Long words. ".repeat(4_200)}</p>`;
+
+  const done = await importDocs();
+  expect(done.counts.articles).toEqual({ imported: 2, leftOut: { "longer than 50,000 characters, Tuti's most (they're empty drafts)": 1 } });
+  expect(importSummary(done)).toContain("Left out: 1 article longer than 50,000 characters, Tuti's most (they're empty drafts).");
+  expect(await article("Welcome to Acme")).toMatchObject({ content: null, body: "", publishedAt: null, _count: { revisions: 0 } });
+  // The others link to it all the same.
+  expect(linksIn((await article("Paying by card")).content)).toEqual([{ text: "Welcome to Acme", href: `${await portalAddress(project.slug)}/docs/welcome-to-acme` }]);
 });
 
 test("without media storage, images and files are left out and counted, the article still coming across", async () => {
