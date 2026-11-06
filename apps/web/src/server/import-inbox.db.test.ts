@@ -245,11 +245,21 @@ test("a conversation Featurebase cut to its newest 500 parts is counted: the mes
 test("only files in Featurebase's storage come across: another site's image isn't fetched, as inbound email leaves remote images", async () => {
   // The team's reply links an image on another site (here, the fake under another host name).
   const reply = (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[2]!;
-  reply.bodyHtml += `<p><img src="${fake.url.replace("127.0.0.1", "localhost")}/files/shot.png" alt="Their chart"></p>`;
+  const outside = `${fake.url.replace("127.0.0.1", "localhost")}/files/shot.png`;
+  reply.bodyHtml += `<p><img src="${outside}" alt="Their chart"></p>`;
   await importInbox();
   const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
-  expect(open.messages[1]).toMatchObject({ body: expect.stringContaining("Their chart"), attachments: [], attachmentsDropped: 0 });
+  // Its alt text, and its address as a link's is kept.
+  expect(open.messages[1]).toMatchObject({ body: expect.stringMatching(new RegExp(`Their chart\\n${outside}$`)), attachments: [], attachmentsDropped: 0 });
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("a message that was only another site's image stays, its address as its text: who wrote last decides the status", async () => {
+  (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[4]!.bodyHtml = '<p><img src="https://images.example.com/screen.png"></p>';
+  await importInbox();
+  const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  expect(open.status).toBe("OPEN");
+  expect(open.messages.at(-1)).toMatchObject({ author: "USER", body: "https://images.example.com/screen.png", attachments: [], attachmentsDropped: 0 });
 });
 
 test("imported replies are never emailed, also by a worker from before imports were marked, and make no unread dot; seen only where Featurebase says so", async () => {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { attachmentName, type Doc, fileExtension, toPlainText, UPLOAD_FILE_TYPES } from "@tuti/content";
+import { attachmentName, type Doc, fileExtension, isSafeLink, toPlainText, UPLOAD_FILE_TYPES } from "@tuti/content";
 import { fileName, htmlToContent, type LeftOutReason } from "@tuti/content/html";
 import { type ConversationStatus, type MessageAuthor, type Prisma, prisma } from "@tuti/db";
 import { historyKeptDays } from "@tuti/shared";
@@ -184,9 +184,9 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
     if (!kind) {
       continue;
     }
-    const { body, urls } = await messageText(part);
+    const { body, urls, media, unshown } = await messageText(part);
     const files: StoredFile[] = [];
-    let dropped = 0;
+    let dropped = unshown;
     for (const url of urls) {
       const stored = Date.now() < copyUntil ? await copyAttachment(job, url) : { leftOut: null };
       if ("leftOut" in stored) {
@@ -196,8 +196,8 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
         files.push(stored);
       }
     }
-    // A message that was only a file stays, its file left out or not: who wrote last decides the status.
-    if (!body && urls.length === 0) {
+    // A message that was only an image or file stays, whatever became of it: who wrote last decides the status.
+    if (!body && !media) {
       continue;
     }
     const author = part.author ?? null;
@@ -221,16 +221,21 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
 /**
  * A part's HTML as the inbox's plain text (links' addresses kept after their words, list items marked), and the
  * addresses of its images and files in Featurebase's storage, which come across as attachments. Other sites' images
- * are left out (their alt text kept), as inbound email skips remote images.
+ * and videos aren't fetched (as inbound email doesn't): their address stays in the text, as a link's does. `media`:
+ * whether it had any; `unshown`: those neither copied nor shown by their address (no safe one), for the message to count.
  */
-async function messageText(part: FeaturebasePart): Promise<{ body: string; urls: string[] }> {
+async function messageText(part: FeaturebasePart): Promise<{ body: string; urls: string[]; media: boolean; unshown: number }> {
   // bodyHtml: bodyMarkdown drops images' addresses.
   const content = await htmlToContent("post", part.bodyHtml ?? "");
   if ("error" in content) {
-    return { body: part.bodyMarkdown?.trim() ?? "", urls: [] };
+    return { body: part.bodyMarkdown?.trim() ?? "", urls: [], media: false, unshown: 0 };
   }
   const urls = [...new Set(content.leftOut.map((item) => item.url).filter(inFeaturebaseStorage))];
-  return { body: toPlainText(readable(content.doc)), urls };
+  const outside = content.leftOut.filter((item) => !inFeaturebaseStorage(item.url));
+  const text = toPlainText(readable(content.doc));
+  const links = [...new Set(outside.map((item) => item.url).filter(isSafeLink))].filter((url) => !text.includes(url));
+  const body = [text, ...links].filter(Boolean).join("\n");
+  return { body, urls, media: content.leftOut.length > 0, unshown: outside.filter((item) => !isSafeLink(item.url)).length };
 }
 
 /** The doc with each link's address after its words (unless they're the address) and list items marked, for plain text. */
