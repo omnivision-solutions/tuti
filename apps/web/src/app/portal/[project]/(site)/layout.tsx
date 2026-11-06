@@ -160,12 +160,13 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalFooter />
         {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new. */}
         {/* Its launcher and panel over the page and its sticky header (z-40), under the portal's sheets and dialogs (z-50: the
-            assistant, the menu), which cover an open panel until they close; on phones
+            assistant, the menu), which cover an open panel until they close. The panel stays a level over the launcher, as the
+            loader has them (on a phone it's the whole screen); on phones
             the page ends clear of it. A plain script tag, in the page as sent; its panel is this address's /widget, where the
             reader's session is. */}
         {widgetHere && (
           <>
-            <style>{`body > button[aria-controls="tuti-widget"], #tuti-widget { z-index: 45 !important; } @media (width < 48rem) { body { padding-bottom: 5.5rem; } }`}</style>
+            <style>{`body > button[aria-controls="tuti-widget"] { z-index: 45 !important; } #tuti-widget { z-index: 46 !important; } @media (width < 48rem) { body { padding-bottom: 5.5rem; } }`}</style>
             <script src={`${appUrl().origin}/widget.js`} data-project={slug} data-on-portal="" async />
           </>
         )}

@@ -664,6 +664,13 @@ test("the portal shows the project's own widget, until the team turns it off in 
   // On phones the page ends clear of the launcher (5.5rem); wider, it doesn't need to.
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "88px");
+  // There, an open panel is the whole screen, over the launcher: its tabs at the bottom right take taps.
+  await visitor.reload();
+  await launcher.click();
+  const phonePanel = visitor.frameLocator('iframe[title="Feedback"]');
+  await phonePanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(phonePanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
+  await visitor.reload();
   await visitor.setViewportSize({ width: 1280, height: 720 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
 
