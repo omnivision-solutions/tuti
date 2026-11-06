@@ -83,7 +83,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Home says what came across, and the contacts are the project's users, with their company.
   await owner.waitForURL(`**/app/${slug}`);
   await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
-  await expect(owner.getByText("Team, Contacts and Profile pictures brought across.", { exact: true })).toBeVisible();
+  await expect(owner.getByText("Team, Contacts, and Profile pictures brought across.", { exact: true })).toBeVisible();
   // Its card is a line; View details opens each part's progress, as the setup step shows it.
   await owner.getByRole("button", { name: "View details" }).click();
   const details = owner.getByRole("dialog", { name: "Imported from Featurebase" });

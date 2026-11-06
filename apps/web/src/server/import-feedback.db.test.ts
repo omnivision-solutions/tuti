@@ -332,6 +332,30 @@ test("past a page's time, what's left of it goes to the next page; one post's im
   expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 1 } } });
 });
 
+test("profile pictures are copied several at a time; past a page's time, the next page goes on from the last one copied", async () => {
+  // Three contacts with an uploaded picture.
+  for (const n of [1, 3]) {
+    fake.fixtures.contacts[n]!.profilePicture = fake.fixtures.contacts[0]!.profilePicture;
+  }
+  const pages: string[] = [];
+  const importStep = handlers.importStep;
+  handlers.importStep = async (input, log) => {
+    pages.push((await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } })).step);
+    return importStep(input, log);
+  };
+  // Past the soft limit once a page has copied any: two at once fit the first page (one at a time, one would), the third the next.
+  let now = 0;
+  Object.assign(FEEDBACK_PAGE, { softMs: 0, avatarsAtOnce: 2, now: () => ++now });
+  try {
+    await importFeedback();
+  } finally {
+    handlers.importStep = importStep;
+  }
+  expect(pages.filter((step) => step === "avatars")).toHaveLength(2);
+  expect((await call(getImport, asOwner(), {})).import!.counts.avatars).toEqual({ imported: 3, leftOut: {} });
+  expect(await prisma.user.count({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } } })).toBe(3);
+});
+
 test("profile pictures come last, after the duplicate check; an import from before they were a part, at them, goes on with the rest and copies them last", async () => {
   // The step each page ran, in order.
   const pages: string[] = [];
