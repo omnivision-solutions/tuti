@@ -197,6 +197,29 @@ test("a subject is never taken from an internal note: the user sees it, in the w
   expect((await conversations()).find((c) => c.messages.some((m) => m.note && m.body === "Owes us three invoices"))!.subject).toBe("How do I reset my password?");
 });
 
+test("the team is never told of imported history: the cron that resends the team's missed notices finds none", async () => {
+  vi.stubEnv("APP_URL", "https://tuti.example");
+  // The user's last message an hour ago, unanswered, in a conversation assigned to the owner: inside the cron's window.
+  (fake.fixtures.conversations[0]!.conversationParts as { createdAt: string }[])[4]!.createdAt = new Date(Date.now() - 60 * 60_000).toISOString();
+  await importInbox();
+  const emailed = mailbox.emails.length;
+  expect(await handlers.resubmitConversationNotices({}, log)).toEqual({ found: 0, queued: 0 });
+  expect(mailbox.emails.length).toBe(emailed);
+});
+
+test("a snooze's time is its latest snooze, whatever order Featurebase sends the parts in", async () => {
+  const snoozed = fake.fixtures.conversations[1]!;
+  const parts = snoozed.conversationParts as { id: string; createdAt: string }[];
+  const [asked, replied, latest] = parts;
+  // Snoozed once before the reply too; sent newest first, the earlier snooze last.
+  const earlier = { ...latest!, id: "p2000", createdAt: new Date(Date.parse(asked!.createdAt) + 10 * 60_000).toISOString() };
+  snoozed.conversationParts = [latest, replied, asked, earlier];
+  await importInbox();
+  const conversation = (await conversations()).find((c) => c.subject === "Invoice for October")!;
+  expect(conversation.messages.map((m) => m.author)).toEqual(["USER", "TEAM"]);
+  expect(conversation.snoozedAt).toEqual(new Date(latest!.createdAt));
+});
+
 test("imported replies are never emailed, also by a worker from before imports were marked, and make no unread dot; seen only where Featurebase says so", async () => {
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email");
   await mailSubdomain(project.id);

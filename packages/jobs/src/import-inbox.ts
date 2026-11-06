@@ -62,7 +62,15 @@ type Message = {
   /** Files left out because the server has no media storage: the message says so, as a received email's does. */
   dropped: number;
 };
-type Read = { conversation: FeaturebaseConversation; contactId: string | null; email: string | null; messages: Message[]; leftOut: string[] };
+type Read = {
+  conversation: FeaturebaseConversation;
+  contactId: string | null;
+  email: string | null;
+  messages: Message[];
+  leftOut: string[];
+  /** When it was last snoozed there (its latest status change to snoozed), if it was. */
+  snoozedAt: Date | null;
+};
 
 /** When it was last active there: what Tuti's history goes by (activeAt). */
 const lastActive = (c: FeaturebaseConversation) => new Date(c.lastActivityAt ?? c.updatedAt ?? c.createdAt);
@@ -203,7 +211,8 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
     });
   }
   const email = parts.find((p) => CONTACT.has(p.author?.type ?? "") && p.author?.email)?.author?.email?.trim().toLowerCase() ?? null;
-  return { conversation, contactId, email, messages, leftOut };
+  const snoozed = parts.findLast((p) => p.partType === "status" && p.status === "snoozed");
+  return { conversation, contactId, email, messages, leftOut, snoozedAt: snoozed ? new Date(snoozed.createdAt) : null };
 }
 
 /**
@@ -280,7 +289,6 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
   }
   const status: ConversationStatus = c.state === "closed" ? "CLOSED" : spoken.at(-1)?.author === "USER" ? "OPEN" : "WAITING";
   const snoozedUntil = c.state === "snoozed" && c.snoozedUntil ? new Date(c.snoozedUntil) : null;
-  const snoozedPart = c.conversationParts?.findLast((p) => p.partType === "status" && p.status === "snoozed");
 
   const { conversationCount: number } = await tx.project.update({ where: { id: job.projectId }, data: { conversationCount: { increment: 1 } }, select: { conversationCount: true } });
   // From what the user can see (the subject shows in the widget and their emails): never a note.
@@ -301,7 +309,9 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
       activeAt: lastActive(c),
       waitingSince: status === "OPEN" ? waitingSince : null,
       snoozedUntil,
-      snoozedAt: snoozedUntil && (snoozedPart ? new Date(snoozedPart.createdAt) : new Date()),
+      snoozedAt: snoozedUntil && (read.snoozedAt ?? new Date()),
+      // The team was told of it in Featurebase: nothing in its history is owed a notice (resubmitConversationNotices).
+      notifiedAt: messages.at(-1)?.createdAt ?? new Date(c.createdAt),
     },
     select: { id: true },
   });
