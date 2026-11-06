@@ -184,7 +184,7 @@ export async function homeOverview(projectId: string, slug: string) {
   const uses = (...any: string[]) => picked.size === 0 || any.some((use) => picked.has(use));
   // Each with what it's for, in a line under its title.
   const steps = [
-    { key: "widget", title: "Add the widget to your site", description: `Users give feedback, get help and see what's new right inside ${setup.name}.`, action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
+    { key: "widget", title: "Add the widget to your site", description: `Users give feedback right inside ${setup.name}.`, action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
     // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.
     { key: "github", title: "Connect GitHub", // Without Autopilot (no AI, or no Decisions API) merged pull requests only go into the changelog's draft.
       description: codeChangesEnabled()

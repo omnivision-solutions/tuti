@@ -89,7 +89,7 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
   await owner.waitForURL(`**/app/${slug}`);
   const setup = owner.getByRole("list", { name: "Get set up" });
   await expect(setup.getByRole("listitem")).toHaveText([
-    "Add the widget to your site(to do)Users give feedback, get help and see what's new right inside Acme.Get snippet",
+    "Add the widget to your site(to do)Users give feedback right inside Acme.Get snippet",
     "Connect GitHub(to do)Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog.Connect",
     "Set up single sign-on(to do)Users sign in with their Acme account, so every post and message says who it's from.Set up",
     "Publish an update(to do)Show users what shipped, on your portal and in the widget.New entry",
