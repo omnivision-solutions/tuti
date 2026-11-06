@@ -184,12 +184,14 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await api("/users", { users: Array.from({ length: 50 }, (_, i) => ({ id: `bulk-${i}`, name: `Zed ${String(i).padStart(2, "0")}` })) });
   await owner.goto(`/app/${slug}/users`);
   await expect(rows).toHaveCount(50);
-  // Which of them these are, above the table and below it.
-  const pages = owner.getByRole("navigation", { name: "Pages", exact: true });
+  // Which of them these are, below the table only: nothing about pages above it.
+  const pages = owner.getByRole("navigation", { name: /pages/i });
+  await expect(pages).toHaveCount(1);
   await expect(pages).toContainText("1–50 of 55");
-  await expect(owner.getByRole("navigation", { name: "More pages" })).toContainText("1–50 of 55");
+  const below = (await table.boundingBox())!;
+  expect((await pages.boundingBox())!.y).toBeGreaterThanOrEqual(below.y + below.height);
   // In the middle, clear of the bottom right where Tuti's chat launcher sits (56px, 20px in).
-  const next = (await owner.getByRole("navigation", { name: "More pages" }).getByRole("link", { name: "Next" }).boundingBox())!;
+  const next = (await pages.getByRole("link", { name: "Next" }).boundingBox())!;
   expect(next.x + next.width).toBeLessThan(owner.viewportSize()!.width - 76);
   await pages.getByRole("link", { name: "Next" }).click();
   await expect(owner).toHaveURL(/\?page=2$/);
