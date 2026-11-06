@@ -34,7 +34,7 @@ beforeEach(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
   vi.stubEnv("OPENAI_BASE_URL", openai.url);
-  Object.assign(fake, { fixtures: featurebaseFixtures(fake.url), pageSize: 100, requests: [], onFile: undefined });
+  Object.assign(fake, { fixtures: featurebaseFixtures(), pageSize: 100, requests: [], onFile: undefined });
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
