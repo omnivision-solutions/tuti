@@ -104,6 +104,27 @@ test("with a deadline, nothing waits or starts past it: the last answer's error 
   }
 });
 
+test("a wait that runs late past the deadline starts no request: the last answer's error comes back", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(Date.parse("2026-11-05T12:00:00Z"));
+    const api = featurebase(FAKE_FEATUREBASE_KEY, {
+      deadline: Date.now() + 100_000,
+      // Asked for 30 seconds, it took two minutes.
+      wait: async (ms) => {
+        waits.push(ms);
+        vi.setSystemTime(Date.now() + 120_000);
+      },
+    });
+    fake.failNext(429, 5, { "retry-after": "30" });
+    await expect(api.get("/admins")).rejects.toMatchObject({ status: 429 });
+    expect(waits).toEqual([30_000]);
+    expect(fake.requests.filter((request) => request.startsWith("GET /v2/admins"))).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("a list goes on until Featurebase's cursor is null, through an empty page; a cursor that doesn't move ends it", async () => {
   const first = Buffer.from("0").toString("base64url");
   fake.failNext(200, 1, {}, JSON.stringify({ object: "list", data: [], nextCursor: first }));

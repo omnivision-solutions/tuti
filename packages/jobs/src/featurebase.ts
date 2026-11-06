@@ -84,8 +84,12 @@ export function featurebase(key: string, { wait = pause, deadline = Infinity }: 
       if ((!response || response.status === 429 || response.status >= 500) && attempt < RETRIES) {
         const ms = waitFor(response, attempt);
         if (Date.now() + ms < deadline) {
-          await response?.body?.cancel();
+          const error = response ? new FeaturebaseError(response.status, await messageOf(response)) : failure;
           await wait(ms);
+          // A wait that ran late doesn't start a request past the deadline: this answer's error stands.
+          if (Date.now() >= deadline) {
+            throw error;
+          }
           continue;
         }
       }
