@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import { type Prisma, Prisma as PrismaNamespace, prisma } from "@tuti/db";
-import { adminMember, contactUsers, handlers, importJob, IMPORT_PARTS as STEPS, importsSettled, loadAdmins, lockProject } from "@tuti/jobs";
+import { adminMember, contactUsers, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, loadAdmins, lockProject } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
+import { openValue, sealValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { auth } from "@/lib/auth";
@@ -49,9 +50,11 @@ const start = (input: Partial<{ key: string; parts: string[] }> = {}) =>
 const refusal = (promise: Promise<unknown>) => promise.then(() => null, (error: { status: number; code: string; message: string }) => ({ status: error.status, code: error.code, message: error.message }));
 const usersOf = () =>
   prisma.ssoIdentity.findMany({ where: { projectId: project.id }, orderBy: { externalId: "asc" }, select: { externalId: true, email: true, properties: true, user: { select: { name: true, image: true } } } });
+/** The fake's key as an import keeps it: sealed (encrypted at rest). */
+const sealedKey = () => sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY);
 /** An import's row, as if one had started (running, with the key), at `step`. */
 const running = (data: { apiKey?: string; step?: string; updatedAt?: Date } = {}) =>
-  prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts: ["contacts"], step: "contacts", ...data } });
+  prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealedKey(), parts: ["contacts"], step: "contacts", ...data } });
 
 test("every part the app offers can be imported", () => {
   expect(Object.keys(STEPS)).toEqual(expect.arrayContaining(Object.keys(IMPORT_PARTS)));
@@ -70,7 +73,7 @@ test("a start is refused, nothing made, for an API key, a key Featurebase refuse
 
 test("an import with a part this worker doesn't have (a newer web started it mid-deploy) fails, its key cleared, rather than ending done without it", async () => {
   const row = await prisma.dataImport.create({
-    data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts: ["contacts", "a-part-from-the-future"], step: "contacts" },
+    data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealedKey(), parts: ["contacts", "a-part-from-the-future"], step: "contacts" },
   });
   await handlers.importStep({ importId: row.id }, log);
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
@@ -123,6 +126,19 @@ test("Contacts come across as the project's users, page after page: their app's 
   expect((await call(getImport, asOwner(), {})).import).toMatchObject({ id: again.id, state: "done", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
 });
 
+test("the key is kept encrypted while the import runs, and a worker that can't open it fails the import, saying why", async () => {
+  const row = await running();
+  expect(row.apiKey).not.toContain(FAKE_FEATUREBASE_KEY);
+  expect(openValue(IMPORT_KEY, row.apiKey!)).toBe(FAKE_FEATUREBASE_KEY);
+  vi.stubEnv("BETTER_AUTH_SECRET", "another-secret-at-least-32-characters-long");
+  await handlers.importStep({ importId: row.id }, log);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+    state: "FAILED",
+    apiKey: null,
+    error: "The worker couldn't read the API key: give it the web app's BETTER_AUTH_SECRET. Start it again to go on: what came across already is skipped.",
+  });
+});
+
 test("one import runs per project at a time: starting again returns it, and its view never has the key", async () => {
   const row = await running();
   const again = await start();
@@ -137,7 +153,7 @@ test("a page run twice, at once or again later, brings nothing twice", async () 
   expect(results).toContainEqual({ skipped: true });
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 3, leftOut: {} } } });
   // As if its save had been lost: the page again.
-  await prisma.dataImport.update({ where: { id: row.id }, data: { state: "RUNNING", apiKey: FAKE_FEATUREBASE_KEY, step: "contacts", cursor: null, counts: {} } });
+  await prisma.dataImport.update({ where: { id: row.id }, data: { state: "RUNNING", apiKey: sealedKey(), step: "contacts", cursor: null, counts: {} } });
   await handlers.importStep({ importId: row.id }, log);
   expect(await usersOf()).toHaveLength(3);
   expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(3);
@@ -158,7 +174,7 @@ test("a page's save that loses a race to someone's first sign-in is tried again,
 });
 
 test("a page Featurebase refuses fails the import, saying so, and clears its key", async () => {
-  const row = await running({ apiKey: "sk_revoked" });
+  const row = await running({ apiKey: sealValue(IMPORT_KEY, "sk_revoked") });
   expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ failed: true });
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
     state: "FAILED",
@@ -179,7 +195,7 @@ test("a stuck import goes on when it's looked at; one that hasn't moved for a da
   const recent = await running({ updatedAt: new Date(Date.now() - 60 * 60_000) });
   expect(await handlers.failStaleImports({}, log)).toEqual({ failed: 1 });
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stale.id } })).toMatchObject({ state: "FAILED", apiKey: null, error: "It stopped moving for a day. Start it again to go on: what came across already is skipped." });
-  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: recent.id } })).toMatchObject({ state: "RUNNING", apiKey: FAKE_FEATUREBASE_KEY });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: recent.id } })).toMatchObject({ state: "RUNNING", apiKey: recent.apiKey });
 });
 
 test("one that hasn't moved for a day is failed when it's looked at, not resumed: inline installs run no daily job", async () => {

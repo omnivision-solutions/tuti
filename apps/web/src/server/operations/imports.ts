@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { continueImport, failStaleImports, featurebase, FeaturebaseError, type ImportCounts, IMPORT_PARTS as STEPS, importStale, importStuck, lockProject, nextStep, resumeImport } from "@tuti/jobs";
+import { continueImport, failStaleImports, featurebase, FeaturebaseError, type ImportCounts, IMPORT_KEY, IMPORT_PARTS as STEPS, importStale, importStuck, lockProject, nextStep, resumeImport } from "@tuti/jobs";
 import { log } from "@tuti/shared";
+import { sealValue } from "@tuti/shared/signed";
 import { z } from "zod";
 
 import { IMPORT_PARTS, type ImportPart, missingNeed } from "@/lib/import-parts";
@@ -130,7 +131,7 @@ export const startImport = defineOperation({
       return (
         running ??
         (await tx.dataImport.create({
-          data: { projectId, source: "FEATUREBASE", startedById: actor.userId, apiKey: input.key, parts, step: nextStep(parts, null) ?? "" },
+          data: { projectId, source: "FEATUREBASE", startedById: actor.userId, apiKey: sealValue(IMPORT_KEY, input.key), parts, step: nextStep(parts, null) ?? "" },
           select: { id: true },
         }))
       );

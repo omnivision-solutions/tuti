@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 /** Never without a secret: a key with none would make links anyone can forge, or no server can check. */
 const signingKey = (purpose: string, secret = process.env.BETTER_AUTH_SECRET) => {
@@ -48,3 +48,24 @@ export const signForever = (purpose: string, payload: string): string =>
 
 export const verifyForever = (purpose: string, payload: string, signature: string): boolean =>
   same(signature, signForever(purpose, payload));
+
+const sealingKey = (purpose: string) => createHash("sha256").update(signingKey(`seal:${purpose}`)).digest();
+
+/**
+ * `text` encrypted for keeping (AES-256-GCM, keyed from BETTER_AUTH_SECRET and `purpose`): only a server with the
+ * secret can read it back, and a changed value doesn't open. For third-party keys kept a while (an import's).
+ */
+export function sealValue(purpose: string, text: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", sealingKey(purpose), iv);
+  const body = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
+  return `v1.${Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64url")}`;
+}
+
+/** What sealValue sealed for `purpose`; throws for anything else (another secret or purpose, a changed value). */
+export function openValue(purpose: string, sealed: string): string {
+  const raw = Buffer.from(sealed.replace(/^v1\./, ""), "base64url");
+  const decipher = createDecipheriv("aes-256-gcm", sealingKey(purpose), raw.subarray(0, 12));
+  decipher.setAuthTag(raw.subarray(12, 28));
+  return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+}

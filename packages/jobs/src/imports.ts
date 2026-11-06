@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { type DataImport, type ImportSource, type Prisma, prisma } from "@tuti/db";
 import type { JobInput } from "@tuti/shared";
+import { openValue } from "@tuti/shared/signed";
 import { type PropertyChanges, propertyChanges } from "@tuti/shared/user-properties";
 
 import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseContact, FeaturebaseError } from "./featurebase";
@@ -130,8 +131,11 @@ export function importJob(row: DataImport): ImportJob | null {
     return null;
   }
   const counts = structuredClone(row.counts ?? {}) as ImportCounts;
-  return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, featurebase: featurebase(row.apiKey, { deadline: Date.now() + PAGE_READ_MS }), counts };
+  return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, featurebase: featurebase(openValue(IMPORT_KEY, row.apiKey), { deadline: Date.now() + PAGE_READ_MS }), counts };
 }
+
+/** What an import's API key is sealed for while it's kept (sealValue: encrypted at rest). */
+export const IMPORT_KEY = "import-key";
 
 /** Why a page failed, in words, for the team. */
 function failure(error: unknown): string {
@@ -175,7 +179,17 @@ async function locked<T>(projectId: string, fn: (tx: Tx) => Promise<T>): Promise
  */
 export async function importStep({ importId }: JobInput<"importStep">, log: JobLogger): Promise<JobResult> {
   const row = await prisma.dataImport.findUnique({ where: { id: importId } });
-  const job = row && importJob(row);
+  let job: ImportJob | null;
+  try {
+    job = row && importJob(row);
+  } catch {
+    // The key can't be opened: this worker hasn't the web app's BETTER_AUTH_SECRET (a self-hosted worker set up apart).
+    await prisma.dataImport.updateMany({
+      where: { id: importId, state: "RUNNING" },
+      data: { state: "FAILED", apiKey: null, error: `The worker couldn't read the API key: give it the web app's BETTER_AUTH_SECRET. ${AGAIN}`, finishedAt: new Date() },
+    });
+    return { failed: true };
+  }
   if (!row || !job) {
     return { skipped: true };
   }
