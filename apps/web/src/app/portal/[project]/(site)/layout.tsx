@@ -97,10 +97,10 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       : target.kind === "portal" && target.customDomain
         ? `${new URL(portalUrl(slug)).protocol}//${requestHeaders.get("host")}`
         : null;
-  // The project's own widget (Customize → Widget). Not where the team's Custom code adds it its own way (it runs only on
-  // their own address, later, and the first copy wins). ponytail: not under a path of the team's site until /widget keeps
+  // The project's own widget (Customize → Widget). Not where the team's Custom code adds it its own way, from the address
+  // Customize hands out (it runs only on their own address, later, and the first copy wins); other tools' widget.js don't count. ponytail: not under a path of the team's site until /widget keeps
   // the base in its links.
-  const widgetHere = canRead && project.widgetOnPortal && !base && !(ownOrigin && brand.customHtml.includes("widget.js"));
+  const widgetHere = canRead && project.widgetOnPortal && !base && !(ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`));
   // The docs' assistant (AI answers as a conversation), for readers, when the server has AI answers.
   const assistant = canRead && answersEnabled();
   const firstBoard = project.boards[0];

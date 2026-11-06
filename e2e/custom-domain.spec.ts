@@ -120,6 +120,13 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(onTuti.locator("#team-html")).toHaveCount(0);
   await expect(onTuti.locator("body")).not.toHaveAttribute("data-team-script", "ran");
 
+  // Another tool's widget.js (here only named, in a comment) isn't Tuti's: the portal keeps its own.
+  await owner.getByLabel("Custom HTML").fill("<!-- https://chat.example.com/js/widget.js -->");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(1);
+
   // Custom code that adds the widget its own way (its options): the portal leaves its own tag out there, so theirs is the
   // one that runs. On the Tuti address, where their code doesn't run, the portal's stays.
   await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
