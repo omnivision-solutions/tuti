@@ -228,8 +228,10 @@ function fromName(mail: Mail) {
     .trim()
     .slice(0, 100)
     .trim();
-  // Something to show (not only joiners and spaces), and no address in it.
-  return name && /[^\s\u200C\u200D]/u.test(name) && !name.includes("@") ? name : null;
+  // Something to show: a letter, number, symbol or punctuation once what draws nothing is set aside (joiners, Hangul
+  // fillers, variation selectors, a blank braille cell). And no address in it.
+  const shown = name?.replace(/[\s\p{Default_Ignorable_Code_Point}\u2800]/gu, "");
+  return name && shown && /[\p{L}\p{N}\p{S}\p{P}]/u.test(shown) && !name.includes("@") ? name : null;
 }
 
 /** Another request read this email first. */

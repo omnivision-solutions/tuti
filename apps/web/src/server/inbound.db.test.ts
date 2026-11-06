@@ -148,12 +148,14 @@ test("an email's From name is who the conversation is with, trimmed and cut shor
     `=?UTF-8?B?${Buffer.from("Kim \u202ELee").toString("base64")}?= <e2e-bidi@example.com>`,
     `=?UTF-8?B?${Buffer.from("Mehr\u200Cnaz").toString("base64")}?= <e2e-zwnj@example.com>`,
     `=?UTF-8?B?${Buffer.from("\u200D\u200C\u200D").toString("base64")}?= <e2e-joiners@example.com>`,
+    `=?UTF-8?B?${Buffer.from("\u3164").toString("base64")}?= <e2e-filler@example.com>`,
+    `=?UTF-8?B?${Buffer.from("\u2800\u034F").toString("base64")}?= <e2e-blank@example.com>`,
   ];
   for (const sender of from) {
     await postEmail(rawEmail({ from: sender, to: address }), { recipient: address });
   }
   const people = (await conversations(project.id)).map((c) => conversationPerson({ ...c, user: null }).name);
-  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim(), null, null, "Kim Lee", "Mehr\u200Cnaz", null]);
+  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim(), null, null, "Kim Lee", "Mehr\u200Cnaz", null, null, null]);
   // The team's email about it names them too.
   expect(mailbox.emails.some((email) => email.text.includes("Carlos Mendes started a conversation"))).toBe(true);
 });
