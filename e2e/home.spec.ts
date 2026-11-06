@@ -121,6 +121,24 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await expect(owner.getByRole("main").getByRole("listitem").getByRole("link", { name: /^(Dark mode|Exports)$/ })).toHaveText(["Exports", "Dark mode"]);
 });
 
+test("Get set up's cards wrap a long project name inside the card, on a phone and two to a row", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "AcmeAnalyticsPlatformForEnterpriseTeamsAndPartnersWorldwide", slug);
+  const list = owner.getByRole("list", { name: "Get set up" });
+  const card = list.getByRole("listitem").filter({ hasText: "Set up single sign-on" });
+  await expect(card).toContainText("Users sign in with their AcmeAnalyticsPlatformForEnterpriseTeamsAndPartnersWorldwide account");
+  // The card stays inside the list, and its text inside the card.
+  const fits = async () => {
+    const [box, outer] = [(await card.boundingBox())!, (await list.boundingBox())!];
+    expect(box.x + box.width).toBeLessThanOrEqual(outer.x + outer.width + 0.5);
+    expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  };
+  await fits();
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await fits();
+});
+
 test("a new project: Home leads with sample content and each setup step's action, no numbers; empty Feedback and Changelog each say what to do", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -146,14 +164,19 @@ test("a new project: Home leads with sample content and each setup step's action
   await expect(setup.getByRole("link", { name: "Invite" })).toHaveAttribute("href", `/app/${slug}/settings/team`);
   // Each button is read with its step.
   await expect(setup.getByRole("link", { name: "Connect" })).toHaveAccessibleDescription("Connect GitHub");
+  // A card per step, two to a row, each saying what it's for. Their buttons are outlines: Add sample content stays the page's one primary.
+  const widget = setup.getByRole("listitem").filter({ hasText: "Add the widget to your site" });
+  const github = setup.getByRole("listitem").filter({ hasText: "Connect GitHub" });
+  await expect(github).toContainText("Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog.");
+  expect((await github.boundingBox())!.y).toBeCloseTo((await widget.boundingBox())!.y, 0);
+  await expect(setup.getByRole("link").and(owner.locator(".bg-primary"))).toHaveCount(0);
+  await expect(owner.getByRole("progressbar", { name: "Steps done" })).toHaveAttribute("aria-valuenow", "0");
   await checkpoint(owner, "home-new-project");
   await owner.setViewportSize({ width: 390, height: 844 });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  // On a phone too, each step's button sits at the end of its row.
-  const row = setup.getByRole("listitem").filter({ hasText: "Publish an article" });
-  const button = (await row.getByRole("link").boundingBox())!;
-  const item = (await row.boundingBox())!;
-  expect(button.x + button.width).toBeCloseTo(item.x + item.width, 0);
+  // On a phone, one card to a row, as wide as the list.
+  const card = (await setup.getByRole("listitem").filter({ hasText: "Publish an article" }).boundingBox())!;
+  expect(card.width).toBeCloseTo((await setup.boundingBox())!.width, 0);
   await checkpoint(owner, "home-new-project-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
 

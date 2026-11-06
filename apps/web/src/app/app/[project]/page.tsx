@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
-import { CheckCircle2Icon, CircleIcon } from "lucide-react";
+import { AppWindowIcon, BookOpenIcon, CheckCircle2Icon, GitMergeIcon, InboxIcon, KeyRoundIcon, type LucideIcon, MegaphoneIcon, UserPlusIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -15,6 +15,7 @@ import { StatTile } from "@/components/stat-tile";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { formatDate, timeAgo } from "@/lib/format";
 import { homeInvitationsToSend, importBrief, importSummary, importTitle, onHome } from "@/lib/import-parts";
 import { homeOverview } from "@/server/home";
@@ -22,6 +23,17 @@ import { hasSampleContent } from "@/server/sample-content";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { codeChangeList } from "@/server/operations/code-changes";
 import { latestImport } from "@/server/operations/imports";
+
+/** Get set up's steps' icons, by step. */
+const SETUP_ICONS: Record<string, LucideIcon> = {
+  widget: AppWindowIcon,
+  github: GitMergeIcon,
+  sso: KeyRoundIcon,
+  support: InboxIcon,
+  article: BookOpenIcon,
+  changelog: MegaphoneIcon,
+  team: UserPlusIcon,
+};
 
 /** The Feedback list's filters, from when it was the project's first page: a link with them still finds it. */
 const FEEDBACK_FILTERS = ["status", "board", "sort", "show"];
@@ -115,25 +127,43 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             <CardDescription>
               {overview.setup.filter((step) => step.done).length} of {overview.setup.length} done
             </CardDescription>
+            <CardAction className="self-center">
+              <Progress aria-label="Steps done" value={overview.setup.filter((step) => step.done).length} max={overview.setup.length} className="w-28 sm:w-36" />
+            </CardAction>
           </CardHeader>
           <CardContent>
-            <ul className="flex flex-col gap-2" aria-label="Get set up">
-              {overview.setup.map((step) => (
-                <li key={step.key} className="flex min-h-8 items-center gap-2 text-sm">
-                  {step.done ? <CheckCircle2Icon aria-hidden className="size-4 shrink-0 text-primary" /> : <CircleIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-                  <span id={`setup-${step.key}`} className={step.done ? "text-muted-foreground line-through" : undefined}>
-                    {step.title}
-                  </span>
-                  <span className="sr-only">{step.done ? "(done)" : "(to do)"}</span>
-                  {/* Each step left to do with its own action, a button rather than a link in the text. */}
-                  {!step.done && (
-                    // Described by its step, which screen readers then read with it ("Connect", Connect GitHub).
-                    <Link href={step.href} aria-describedby={`setup-${step.key}`} className={buttonVariants({ variant: "outline", size: "sm", className: "ml-auto shrink-0" })}>
-                      {step.action}
-                    </Link>
-                  )}
-                </li>
-              ))}
+            {/* A card per step, two to a row: what it's for under its title, its own button. Done ones last; the first left to do stands out (its border and icon in green, its button an outline: the page's one primary is elsewhere). */}
+            <ul className="grid gap-3 sm:grid-cols-2" aria-label="Get set up">
+              {overview.setup.map((step, i) => {
+                const Icon = step.done ? CheckCircle2Icon : SETUP_ICONS[step.key]!;
+                const next = i === 0 && !step.done;
+                return (
+                  <li key={step.key} className={`flex min-w-0 flex-col gap-3 rounded-xl border p-4 ${next ? "border-primary/50" : ""}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${step.done ? "text-primary" : next ? "bg-soft text-soft-foreground" : "bg-muted text-muted-foreground"}`}>
+                        <Icon aria-hidden className="size-[18px]" />
+                      </span>
+                      <span id={`setup-${step.key}`} className={`text-sm font-medium ${step.done ? "text-muted-foreground" : ""}`}>
+                        {step.title}
+                      </span>
+                      <span className="sr-only">{step.done ? "(done)" : "(to do)"}</span>
+                    </div>
+                    {/* The project's name is in some: a long one wraps rather than running out of the card. */}
+                    <p className="text-sm wrap-anywhere text-muted-foreground">{step.description}</p>
+                    {/* Each step left to do with its own action, a button rather than a link in the text. */}
+                    {!step.done && (
+                      // Described by its step, which screen readers then read with it ("Connect", Connect GitHub).
+                      <Link
+                        href={step.href}
+                        aria-describedby={`setup-${step.key}`}
+                        className={buttonVariants({ variant: "outline", size: "sm", className: "mt-auto self-start" })}
+                      >
+                        {step.action}
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>
