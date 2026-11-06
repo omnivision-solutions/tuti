@@ -102,6 +102,14 @@ test.beforeAll(async () => {
 test.afterAll(() => site.close());
 const sitePage = (host: string, slug: string) => `http://${host}:${(site.address() as AddressInfo).port}/${slug}`;
 
+type Sent = { method(): string; headers(): Record<string, string>; postData(): string | null };
+/**
+ * The panel trading `token` for a sign-in (a server action carrying it): not its other server actions, such as its
+ * lists reloading for whoever's signed in now, which can still be on their way from a step before.
+ */
+const trades = (token: string) => (request: Sent) =>
+  request.method() === "POST" && !!request.headers()["next-action"] && !!request.postData()?.includes(token);
+
 test("a customer's site shows the widget: feedback and what's new", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
@@ -441,7 +449,8 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   const bea = await signUp(browser, portalUrl(slug), "Bea");
   await bea.goto("/feedback/feature-requests");
   await bea.getByRole("button", { name: "Upvote (1 vote)" }).click();
-  await expect(bea.getByRole("button", { name: "Remove vote (2 votes)" })).toBeVisible();
+  // Saved once it's enabled again (the count changes at once): closing before then can drop the vote.
+  await expect(bea.getByRole("button", { name: "Remove vote (2 votes)" })).toBeEnabled();
   await bea.context().close();
   await widget.getByLabel("Title").fill("Calendar");
   await widget.getByLabel("Title").fill("Calendar sync");
@@ -465,7 +474,7 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   // Then the site's next token doesn't check out (someone else, an expired one): nobody's posting,
   // not Sam still. Another part of the panel asks for it, as the docs' assistant does when opened.
   await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "not-a-token" }));
-  const asked = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  const asked = visitor.waitForResponse((response) => trades("not-a-token")(response.request()));
   // The panel's "ready for a token" message (WIDGET_READY_MESSAGE).
   await visitor.frames().find((frame) => frame.url().includes("/widget"))!.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
   await asked;
@@ -486,28 +495,28 @@ test("a customer's site signs its users in to the widget with SSO, and they post
     });
   });
   let tokens = 0;
+  const samToken = ssoToken(secret, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) });
   await visitor.unroute("**/token/**");
   await visitor.route("**/token/**", (route) => {
     tokens += 1;
-    const body = tokens === 1 ? ssoToken(secret, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }) : "not-a-token";
-    return route.fulfill({ contentType: "text/plain", body });
+    return route.fulfill({ contentType: "text/plain", body: tokens === 1 ? samToken : "not-a-token" });
   });
-  const isExchange = (request: { method(): string; headers(): Record<string, string> }) => request.method() === "POST" && !!request.headers()["next-action"];
+  const isSam = trades(samToken);
+  const isExchange = (request: Sent) => isSam(request) || trades("not-a-token")(request);
   let releaseSam!: () => void;
   const samReleased = new Promise<void>((resolve) => (releaseSam = resolve));
-  let exchanges = 0;
   let answered = 0;
   visitor.on("response", (response) => isExchange(response.request()) && (answered += 1));
   await visitor.route(
     (url) => url.pathname === "/widget",
     async (route) => {
-      if (isExchange(route.request()) && ++exchanges === 1) {
+      if (isSam(route.request())) {
         await samReleased;
       }
       await route.continue();
     },
   );
-  const samAsked = visitor.waitForRequest(isExchange);
+  const samAsked = visitor.waitForRequest(isSam);
   await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
   await samAsked;
   await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));

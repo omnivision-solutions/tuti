@@ -8,8 +8,8 @@ import { APP_URL } from "./env";
 import { fillSignUp, newPerson, signUp, type TestPage } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 
-/** Who `page`'s browser is when it next continues with Google or GitHub (the fakes, by its X-Forwarded-For). */
-async function nextSignIn(page: { ip: string }, provider: "google" | "github", person: { email: string; name: string; verified?: boolean }) {
+/** Who `page`'s browser is when it next continues with Google or GitHub (the fakes, by its X-Forwarded-For); `sub`: which Google account (default a new one). */
+async function nextSignIn(page: { ip: string }, provider: "google" | "github", person: { email: string; name: string; verified?: boolean; sub?: string }) {
   const [url, body] =
     provider === "google"
       ? [process.env.E2E_GOOGLE_URL, { sub: randomUUID(), ...person }]
@@ -39,6 +39,7 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   const checkpoint = checkpoints(testInfo);
   const gina = await newPerson(browser, APP_URL);
   const email = `e2e-${randomUUID()}@example.com`;
+  const google = { sub: randomUUID(), email, name: "Gina Google" };
   await gina.goto("/sign-up");
   await expect(gina.getByRole("button", { name: "Continue with GitHub" })).toBeVisible();
   await checkpoint(gina, "sign-up");
@@ -59,7 +60,7 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   await expect(gina.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
   await held!.abort();
 
-  await nextSignIn(gina, "google", { email, name: "Gina Google" });
+  await nextSignIn(gina, "google", google);
   await gina.getByRole("button", { name: "Continue with Google" }).click();
   await gina.waitForURL(/\/app$/);
   // Signed in with it, and nothing of Google's kept: no token to read anything with.
@@ -77,10 +78,11 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   // Signed out, Continue with Google on the sign-in page is the same account, and `next` is where it goes.
   await signOut(gina);
   await gina.goto("/sign-in?next=/app/account");
-  await nextSignIn(gina, "google", { email, name: "Gina Google" });
+  await nextSignIn(gina, "google", google);
   await gina.getByRole("button", { name: "Continue with Google" }).click();
-  await gina.waitForURL("**/app/account");
-  // Signing in again keeps nothing of Google's either.
+  // Its path: "**/app/account" would match the page it starts on (/sign-in?next=/app/account), before Google's answer.
+  await gina.waitForURL((url) => url.pathname === "/app/account");
+  // Signing in again (the same Google account) keeps nothing of Google's either.
   expect(await storedTokens(email, "google")).toEqual([{ accessToken: null, refreshToken: null, idToken: null }]);
   await expect(gina.getByRole("main").getByText(email)).toBeVisible();
 });
