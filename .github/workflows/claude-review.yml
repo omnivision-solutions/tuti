@@ -114,6 +114,14 @@ jobs:
       # as a short-lived node that may reach only the hub, with a join key traded for GitHub's
       # token for this workflow: no network secret is stored here. Without the hub, the
       # review falls back to CLAUDE_CODE_OAUTH_TOKEN's single account.
+      - name: Hide the Claude hub's address
+        env:
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+        run: |
+          # GitHub masks the whole URL in logs; mask its host and network names too, before connecting.
+          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
+          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac # the network's name, from a dotted name only
+          for value in "$host" "$domain"; do [ -z "$value" ] || echo "::add-mask::$value"; done
       - name: Connect to the Claude hub
         id: tailnet
         continue-on-error: true
@@ -132,9 +140,6 @@ jobs:
           CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
           CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
         run: |
-          # GitHub masks the whole URL in logs; mask the hub's host and network names too.
-          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}
-          echo "::add-mask::$host"; echo "::add-mask::${host#*.}"
           # Only root may talk to Tailscale, so Claude's user can't look around the network.
           if sudo chmod 600 /var/run/tailscale/tailscaled.sock \
             && curl -sf -m 20 --retry 3 --retry-all-errors -o /dev/null \
@@ -170,13 +175,15 @@ jobs:
             || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
           # Findings are public: never post a credential or the hub's address, whatever
           # the prompt talked Claude into.
-          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}
-          for value in "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "${host#*.}"; do
-            if [ -n "$value" ] && grep -qiF "$value" "$RUNNER_TEMP/findings.json"; then
-              echo "A finding contains a Claude credential or the hub's address; not posting." >&2
-              exit 1
-            fi
-          done
+          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
+          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac
+          never=$(mktemp)
+          printf '%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "$domain" | awk NF > "$never"
+          if [ -s "$never" ] && grep -qiFf "$never" "$RUNNER_TEMP/findings.json"; then
+            echo "A finding contains a Claude credential or the hub's address; not posting." >&2
+            exit 1
+          fi
+          rm "$never"
       - name: Post the findings
         env:
           GH_TOKEN: ${{ github.token }}

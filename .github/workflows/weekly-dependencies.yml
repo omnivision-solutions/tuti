@@ -66,6 +66,15 @@ jobs:
       # as a short-lived node that may reach only the hub, with a join key traded for GitHub's
       # token for this workflow on main: no network secret is stored here. Without the hub,
       # the update falls back to CLAUDE_CODE_OAUTH_TOKEN's single account.
+      - name: Hide the Claude hub's address
+        if: steps.prepare.outcome == 'success'
+        env:
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+        run: |
+          # GitHub masks the whole URL in logs; mask its host and network names too, before connecting.
+          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
+          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac # the network's name, from a dotted name only
+          for value in "$host" "$domain"; do [ -z "$value" ] || echo "::add-mask::$value"; done
       - name: Connect to the Claude hub
         id: tailnet
         if: steps.prepare.outcome == 'success'
@@ -85,9 +94,6 @@ jobs:
           CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
           CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
         run: |
-          # GitHub masks the whole URL in logs; mask the hub's host and network names too.
-          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}
-          echo "::add-mask::$host"; echo "::add-mask::${host#*.}"
           # Only root may talk to Tailscale, so Claude's user can't look around the network.
           if sudo chmod 600 /var/run/tailscale/tailscaled.sock \
             && curl -sf -m 20 --retry 3 --retry-all-errors -o /dev/null \
@@ -126,15 +132,19 @@ jobs:
             || { tail -n 50 "$RUNNER_TEMP/dependency-update/pr.md"; exit 1; } # Claude reports its errors there
           # The description and the patch go public: never a credential or the hub's address,
           # whatever a package talked Claude into.
-          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}
-          for value in "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "${host#*.}"; do
-            if [ -n "$value" ] && { grep -qiF "$value" "$RUNNER_TEMP/dependency-update/pr.md" \
-              || sudo -n -u claude-updater grep -rqiF --exclude-dir=node_modules --exclude-dir=.git \
-                --exclude-dir=.next --exclude-dir=.turbo "$value" /home/claude-updater/tuti; }; then
-              echo "The update contains a Claude credential or the hub's address; not publishing." >&2
-              exit 1
-            fi
-          done
+          # The values go to grep on stdin, never on a command line the agent's leftovers could read.
+          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
+          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac
+          never=$(mktemp)
+          printf '%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "$domain" | awk NF > "$never"
+          found() { local status=0; "$@" || status=$?; [ "$status" -ne 1 ]; } # a match, or grep failing
+          if [ -s "$never" ] && { found grep -qiFf "$never" "$RUNNER_TEMP/dependency-update/pr.md" \
+            || found sudo -n -u claude-updater grep -rqiF -f - --exclude-dir=node_modules --exclude-dir=.git \
+              --exclude-dir=.next --exclude-dir=.turbo /home/claude-updater/tuti < "$never"; }; then
+            echo "The update contains a Claude credential or the hub's address; not publishing." >&2
+            exit 1
+          fi
+          rm "$never"
       - name: Collect the patch
         id: patch
         if: success() && steps.prepare.outcome == 'success'
