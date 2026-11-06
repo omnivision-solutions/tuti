@@ -295,6 +295,31 @@ test("each article is counted once, on the run of a page that decides it: one le
   expect(job.counts).toEqual({ articles: { imported: 2, leftOut: { "deleted here since": 1 } }, privateDrafts: { imported: 1, leftOut: {} } });
 });
 
+test("an article new on a page by the time it's read again is counted there, once", async () => {
+  await structureOnly();
+  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["docs"], step: "docs-content" } });
+  const job = importJob(row)!;
+  const step = STEPS.docs!.steps[2]!;
+  const budget = contentBudget.ms;
+  contentBudget.ms = -1;
+  try {
+    let page = await step.page(job, null);
+    await prisma.$transaction((tx) => page.save(tx));
+    // Before the page is read again, a new article heads it in Featurebase: that run converts it first.
+    const [welcome] = fake.fixtures.articles;
+    fake.fixtures.articles.unshift({ ...welcome!, id: "0200009", title: "What's new", slug: "0200009-whats-new", body: "<p>New here.</p>", author: null });
+    while (page.next) {
+      page = await step.page(job, page.next);
+      await prisma.$transaction((tx) => page.save(tx));
+    }
+  } finally {
+    contentBudget.ms = budget;
+  }
+  // Five articles, each counted once: four brought (the new one too), one only some could see.
+  expect(job.counts).toEqual({ articles: { imported: 4, leftOut: {} }, privateDrafts: { imported: 1, leftOut: {} } });
+  expect(await article("What's new")).toMatchObject({ body: "New here.", publishedAt: expect.any(Date) });
+});
+
 test("an article whose content didn't land is filled in by the next import; the others stay as they are", async () => {
   await importDocs();
   const welcome = await article("Welcome to Acme");

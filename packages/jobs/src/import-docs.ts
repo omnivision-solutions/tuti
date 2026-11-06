@@ -329,14 +329,15 @@ type Text = { title: string; content: HtmlContent };
  */
 async function contentPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const started = Date.now();
-  // A page read again counts only the articles left to it: the run before counted what it decided.
+  // A page read again counts the articles left to it (counted below): the run before counted what it decided.
   const again = cursor?.startsWith(AGAIN) ?? false;
   const [againCursor = "", leftToIt = ""] = again ? cursor!.slice(AGAIN.length).split("|") : [];
   const listCursor = again ? againCursor || null : cursor;
-  const counted = (article: FeaturebaseArticle) => !again || leftToIt.split(",").includes(article.id);
   const { items, next: listNext } = await job.featurebase.page<FeaturebaseArticle>("/help_center/articles", listCursor, { state: "all", limit: CONTENT_PAGE });
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
+  // Read again, the articles left to it, and any new on the page since (with no record yet, nothing counted it).
+  const counted = (article: FeaturebaseArticle) => !again || leftToIt.split(",").includes(article.id) || !known.has(article.id);
   const todo = items.filter((article) => {
     const local = known.get(article.id);
     return !local || (!local.landed && !local.deleted && !teamSaved(local));
