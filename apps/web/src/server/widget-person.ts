@@ -6,7 +6,7 @@ import { widgetUser } from "@/lib/widget-session";
 
 import type { InboxChange } from "./live";
 import { canActIn } from "./membership";
-import { getSession } from "./session";
+import { sessionIn } from "./session";
 
 /**
  * Who's writing in the widget's Messages (docs/plan.md, Support inbox): someone the page signed in
@@ -98,7 +98,7 @@ export async function widgetPerson(projectSlug: string, auth: WidgetAuth): Promi
     const userId = widgetUser(project.id, String(auth.token));
     return userId ? await signedIn(project.id, userId) : null;
   }
-  const session = await getSession();
+  const session = await sessionIn(project.id);
   if (session && (await canActIn(session.user.id, project.id))) {
     return signedIn(project.id, session.user.id);
   }

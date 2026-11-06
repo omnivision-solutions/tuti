@@ -3,7 +3,7 @@ import { refresh } from "next/cache";
 import type { z } from "zod";
 
 import { canActIn, getAdminProject, getMembership, getOwnerProject } from "../membership";
-import { getSession } from "../session";
+import { actsIn, getSession } from "../session";
 import { type Actor, type Operation, OperationError } from "./define";
 
 type Context = { actor: Actor; projectId: string };
@@ -90,7 +90,7 @@ export async function asAnyone(
     return { error: signedOut };
   }
   const found = await project();
-  if (!found || !(await canActIn(session.user.id, found.id))) {
+  if (!found || !actsIn(session, found.id) || !(await canActIn(session.user.id, found.id))) {
     return { error: notFound };
   }
   try {

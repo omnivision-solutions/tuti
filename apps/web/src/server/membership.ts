@@ -4,7 +4,7 @@ import { lastingImage } from "./media-urls";
 import { toReviewCounts } from "./operations/code-changes";
 import { awake } from "./operations/conversations";
 import { canReadPortal } from "./portal-access";
-import { getSession } from "./session";
+import { actsIn, getSession } from "./session";
 
 const ADMIN_ROLES = ["OWNER", "ADMIN"] as const;
 
@@ -17,10 +17,12 @@ export async function getMembership(slug: string) {
   if (!session) {
     return null;
   }
-  return prisma.teamMember.findFirst({
+  const membership = await prisma.teamMember.findFirst({
     where: { userId: session.user.id, project: { slug } },
     select: { role: true, userId: true, project: { select: { id: true, slug: true, name: true, plan: true, ssoSecret: true, ssoSignInUrl: true, askingProperty: true, propertyFormats: true } } },
   });
+  // A portal's session is on that project's team only.
+  return membership && actsIn(session, membership.project.id) ? membership : null;
 }
 
 /** The project, if the signed-in user owns it (settings only owners change, like Autopilot's). */

@@ -22,7 +22,7 @@ import { z } from "zod";
 
 import { canActIn } from "./membership";
 import { lastingImage } from "./media-urls";
-import { getSession } from "./session";
+import { actsIn, getSession } from "./session";
 
 /**
  * Image uploads, straight from the browser to media storage:
@@ -76,7 +76,7 @@ export async function createUpload(
     return { error: attachment ? "File uploads aren't set up on this server" : "Image uploads aren't set up on this server" };
   }
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
-  if (!project || !(await canActIn(session.user.id, project.id))) {
+  if (!project || !actsIn(session, project.id) || !(await canActIn(session.user.id, project.id))) {
     return { error: "Project not found" };
   }
 

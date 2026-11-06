@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { supportAddress as inboxAddress, supportDomain } from "../inbound";
 import { countEmailedLink } from "../email-link-limits";
-import { getSession } from "../session";
+import { sessionIn } from "../session";
 import { newWidgetVisitor, type WidgetAuth, widgetPerson } from "../widget-person";
 import { emailAddress, limitHeaders } from "./assistant";
 import { defineOperation, OperationError } from "./define";
@@ -41,10 +41,11 @@ const toInbox = (project: { supportInbox: boolean; widgetHidden: string[] } | nu
 
 /** For the portal and the widget: null when "Ask a person" is off, else the address to start with (the signed-in person's). */
 export async function askAPerson(projectSlug: string): Promise<{ email: string } | null> {
-  if (!toInbox(await prisma.project.findUnique({ where: { slug: projectSlug }, select: { supportInbox: true, widgetHidden: true } }))) {
+  const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true, supportInbox: true, widgetHidden: true } });
+  if (!project || !toInbox(project)) {
     return null;
   }
-  const session = await getSession();
+  const session = await sessionIn(project.id);
   if (!session) {
     return { email: "" };
   }

@@ -6,7 +6,7 @@ import { refresh } from "next/cache";
 
 import type { FormState } from "./form-state";
 import { getAdminProject, getOwnerProject } from "./membership";
-import { getSession } from "./session";
+import { getAccountSession } from "./session";
 
 /** Disconnects GitHub from the project here (the App stays installed on GitHub until removed there). */
 export async function disconnectGithub(projectSlug: string): Promise<{ error?: string }> {
@@ -207,7 +207,7 @@ export async function saveAutopilotRecipients(projectSlug: string, _state: FormS
  * the one their browser reports), or off (owners still hear what goes out by itself).
  */
 export async function setAutopilotEmails(choice: string, timeZone?: string): Promise<FormState> {
-  const session = await getSession();
+  const session = await getAccountSession();
   if (!session) {
     return { error: "Sign in first" };
   }

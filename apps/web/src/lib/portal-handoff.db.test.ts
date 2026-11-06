@@ -4,6 +4,7 @@ import { beforeEach, expect, test } from "vitest";
 import { GET as startContinue } from "@/app/portal/[project]/(site)/continue/route";
 import { forgetCustomDomain } from "@/server/custom-domains";
 import { getOwnerProject } from "@/server/membership";
+import { createPost } from "@/server/posts";
 import { continueToPortal } from "@/server/portal-handoff";
 import { getAccountSession, getSession } from "@/server/session";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
@@ -155,12 +156,30 @@ test("a session a portal on its team's own site starts doesn't work on the app h
   expect(await getOwnerProject(own.slug)).toBeNull();
   request.host = APP_HOST;
   expect(await getSession()).toBeNull();
+  // Better Auth's own endpoints there don't take it either.
+  const getSessionOn = (host: string) => auth.handler(new Request(`http://${host}/api/auth/get-session`, { headers: { host, cookie: stolen } }));
+  expect(await (await getSessionOn(APP_HOST)).json()).toBeNull();
+  expect(await (await getSessionOn(portalHost())).json()).toMatchObject({ user: { id: ada.id } });
 
   // It's Ada on the portal that started it, and on no other.
   request.host = portalHost();
   expect((await getSession())?.user.id).toBe(ada.id);
   request.host = portalHost(own.slug);
   expect(await getSession()).toBeNull();
+
+  // On that portal, actions name their project: it acts in that portal's project only, never as her account.
+  request.host = portalHost();
+  expect(await getAccountSession()).toBeNull();
+  expect(await getOwnerProject(own.slug)).toBeNull();
+  const post = (projectSlug: string) => {
+    const form = new FormData();
+    form.set("projectSlug", projectSlug);
+    form.set("boardSlug", "feature-requests");
+    form.set("title", "Posted as Ada");
+    return createPost({}, form);
+  };
+  expect(await post(own.slug)).toEqual({ error: "Board not found" });
+  expect(await post(slug)).toEqual({});
 });
 
 test("signing in with a password on a portal starts a session for that portal only; on the app, one for the app", async () => {
@@ -184,4 +203,12 @@ test("signing in with a password on a portal starts a session for that portal on
 
   const app = await signIn(APP_HOST);
   expect(await sessionOn(app, APP_HOST)).toBe(ada.id);
+});
+
+test("a session from before sessions were bound works nowhere", async () => {
+  await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: null } });
+  request.host = APP_HOST;
+  expect(await getSession()).toBeNull();
+  request.host = portalHost();
+  expect(await getSession()).toBeNull();
 });

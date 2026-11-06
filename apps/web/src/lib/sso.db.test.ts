@@ -68,6 +68,8 @@ test("signs a new user in and sends them to the requested page", async () => {
   actAs({ id: identity!.userId, email: "", cookie: result.cookie });
   request.host = `${slug}.localhost:3100`;
   expect((await getSession())?.user.id).toBe(identity!.userId);
+  request.host = "tuti.localhost:3100";
+  expect(await getSession()).toBeNull();
   request.host = "";
   // Their email is a placeholder: no verification email goes out.
   expect(mailbox.emails.filter((e) => e.to.includes(identity!.user.email))).toEqual([]);
