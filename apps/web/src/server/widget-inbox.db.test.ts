@@ -453,6 +453,11 @@ test("a signed-out visitor who types someone else's address never reads that per
   const opened = await widgetConversation(project.slug, visitor, 1);
   expect(opened).toMatchObject({ messages: expect.any(Array) });
   expect(JSON.stringify(opened)).not.toContain("private-details");
+  // The team answers in the visitor's conversation again; the owner's next email goes on in their own, not a third.
+  await call(replyToConversation, team, { number: 1, body: "Sorry, could you check?" });
+  const again = rawEmail({ from: "e2e-victim@example.com", to: replyAddress, subject: "Re: Please confirm", body: "Still private-details." });
+  expect(await postEmail(again, { recipient: replyAddress })).toEqual({ status: 200, body: { outcome: "added" } });
+  expect(JSON.stringify(await widgetConversation(project.slug, visitor, 1))).not.toContain("private-details");
   // The team still has it: a conversation of its own with the address's owner, verified, beside the visitor's.
   const all = await prisma.conversation.findMany({
     where: { projectId: project.id },
@@ -460,7 +465,13 @@ test("a signed-out visitor who types someone else's address never reads that per
     select: { number: true, email: true, emailVerified: true, visitorHash: true, messages: { orderBy: { createdAt: "asc" }, select: { body: true } } },
   });
   expect(all.map(({ visitorHash, messages, ...c }) => ({ ...c, visitor: !!visitorHash, bodies: messages.map((m) => m.body) }))).toEqual([
-    { number: 1, email: "e2e-victim@example.com", emailVerified: false, visitor: true, bodies: ["Please confirm the billing email on file", "Which account is it?"] },
-    { number: 2, email: "e2e-victim@example.com", emailVerified: true, visitor: false, bodies: ["I never asked. My account is private-details."] },
+    {
+      number: 1,
+      email: "e2e-victim@example.com",
+      emailVerified: false,
+      visitor: true,
+      bodies: ["Please confirm the billing email on file", "Which account is it?", "Sorry, could you check?"],
+    },
+    { number: 2, email: "e2e-victim@example.com", emailVerified: true, visitor: false, bodies: ["I never asked. My account is private-details.", "Still private-details."] },
   ]);
 });
