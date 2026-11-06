@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { handlers, importsSettled } from "@tuti/jobs";
-import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
+import { FAKE_FEATUREBASE_FILES, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { startImport } from "@/server/operations/imports";
@@ -138,7 +138,7 @@ test("without plans, every closed conversation comes across: none is deleted", a
   ]);
 });
 
-test("a page run again, or another import, brings nothing twice; numbers stay in date order around a conversation started meanwhile", async () => {
+test("a page run again, or another import, brings nothing twice; an import numbers what it brought in date order, leaving every number given before", async () => {
   fake.pageSize = 2;
   const done = await importInbox();
   const before = await conversations();
@@ -153,13 +153,13 @@ test("a page run again, or another import, brings nothing twice; numbers stay in
   await importInbox();
 
   const after = await conversations();
+  // The team may know the first import's by their numbers by now: they stay, and so does the one started meanwhile.
   expect(after.map((c) => [c.number, c.subject])).toEqual([
-    [1, "Older still"],
-    [2, "How do I reset my password?"],
-    [3, "Invoice for October"],
-    // Someone else's number stays theirs.
+    [1, "How do I reset my password?"],
+    [2, "Invoice for October"],
+    [3, "Exporting to CSV"],
     [4, "New here"],
-    [5, "Exporting to CSV"],
+    [5, "Older still"],
   ]);
   expect(after.flatMap((c) => c.messages)).toHaveLength(before.flatMap((c) => c.messages).length + 2);
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(1);
@@ -191,13 +191,19 @@ test("imported replies are never emailed, also by a worker from before imports w
   expect(await unseenRepliesOf(project.id, mira!.userId)).toBe(0);
 });
 
-test("without media storage, an image is left out of its message and counted", async () => {
+test("without media storage, an image is left out of its message and counted; a message that was only the image stays, saying so", async () => {
   for (const name of Object.keys(s3.env)) {
     vi.stubEnv(name, "");
   }
+  // The user's last message is just a screenshot, with no alt text.
+  (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[4]!.bodyHtml = `<p><img src="${FAKE_FEATUREBASE_FILES}/shot.png?X-Amz-Signature=abc"></p>`;
   const done = await importInbox();
   expect(done.counts).toMatchObject({ attachments: { imported: 0, leftOut: { "as this server has no media storage": 1 } } });
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(0);
+  // They wrote last: it still needs a reply.
+  const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  expect(open.status).toBe("OPEN");
+  expect(open.messages.at(-1)).toMatchObject({ author: "USER", body: "", attachmentsDropped: 1 });
 });
 
 /** An import's row at the conversations step, as if Contacts had been picked and skipped over. */
@@ -225,12 +231,15 @@ test("a part this worker doesn't know (picked on a newer release mid-deploy) fai
   });
 });
 
-test("a page that has read for a while saves what it read and reads its list page again, counting each conversation once", async () => {
-  // A minute and a half passes once the first conversation has been read (its files copying slowly, say).
+test("a page that has read for a while saves what it read and reads its list page again, counting each conversation once; files it has no time left for are left out", async () => {
+  // Over two minutes pass once the first conversation has been read, before its files are copied.
   const now = Date.now.bind(Date);
-  vi.spyOn(Date, "now").mockImplementation(() => now() + (fake.requests.some((r) => r.startsWith("GET /v2/conversations/")) ? 100_000 : 0));
+  vi.spyOn(Date, "now").mockImplementation(() => now() + (fake.requests.some((r) => r.startsWith("GET /v2/conversations/")) ? 130_000 : 0));
   const done = await importInbox();
-  expect(done.counts).toMatchObject({ conversations: { imported: 3, leftOut: { "closed more than 365 days ago, past what Tuti keeps": 1 } } });
+  expect(done.counts).toMatchObject({
+    conversations: { imported: 3, leftOut: { "closed more than 365 days ago, past what Tuti keeps": 1 } },
+    attachments: { imported: 0, leftOut: { "that the page had no time left to copy": 1 } },
+  });
   expect(fake.requests.filter((r) => r.startsWith("GET /v2/conversations?")).length).toBe(3);
   expect((await conversations()).map((c) => c.number)).toEqual([1, 2, 3]);
 });

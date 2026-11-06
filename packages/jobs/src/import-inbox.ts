@@ -22,11 +22,15 @@ type Tx = Prisma.TransactionClient;
 /** Conversations a list page has: each is read on its own and its files copied. */
 const PAGE = 10;
 /**
- * A page stops reading conversations after this long, saves those it read and reads the same list page again (its
- * cursor marked AGAIN), so Featurebase's reads end within the page's budget (imports.ts PAGE_READ_MS) however long
- * files take to copy. It always reads one, so it gets on.
+ * Featurebase's reads end within the page's budget (imports.ts PAGE_READ_MS, 3 minutes) however long files take to
+ * copy: from the page's start, a page stops reading conversations after READ_FOR_MS, saves those it read and reads the
+ * same list page again (its cursor marked AGAIN); it always reads one, so it gets on, and past COPY_FOR_MS (a download
+ * takes 30 seconds at most) that one's remaining files are left out, so the contacts it needs are still read in time.
  */
 const READ_FOR_MS = 90_000;
+const COPY_FOR_MS = 120_000;
+/** Why a file was left out when the page ran out of time. */
+const NO_TIME = "that the page had no time left to copy";
 const AGAIN = "again:";
 const DAY_MS = 86_400_000;
 /** Featurebase sends at most this many parts of a conversation, the newest: one with that many has lost its start. */
@@ -55,6 +59,8 @@ type Message = {
   createdAt: Date;
   seenAt: Date | null;
   files: StoredFile[];
+  /** Files left out because the server has no media storage: the message says so, as a received email's does. */
+  dropped: number;
 };
 type Read = { conversation: FeaturebaseConversation; contactId: string | null; email: string | null; messages: Message[]; leftOut: string[] };
 
@@ -63,10 +69,11 @@ const lastActive = (c: FeaturebaseConversation) => new Date(c.lastActivityAt ?? 
 
 /** Conversations, a page at a time; the last page numbers what came across in date order. */
 export async function conversationsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
+  const started = Date.now();
   const again = cursor?.startsWith(AGAIN) ?? false;
   const listCursor = again ? cursor!.slice(AGAIN.length) || null : cursor;
   const { items, next } = await job.featurebase.page<FeaturebaseConversation>("/conversations", listCursor, { limit: PAGE });
-  const started = Date.now();
+  await loadAdmins(job);
   let cut = false;
   // Closed ones older than Tuti keeps would be deleted by the daily history job: counted, not imported.
   const days = historyKeptDays();
@@ -87,10 +94,9 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
       throw error;
     });
     if (conversation) {
-      read.push(await readConversation(job, conversation));
+      read.push(await readConversation(job, conversation, started + COPY_FOR_MS));
     }
   }
-  await loadAdmins(job);
   const contacts = await contactUsers(job, read.flatMap((r) => [r.contactId, ...r.messages.map((m) => m.contactId)].filter((id) => id !== null)));
   return {
     next: cut ? AGAIN + (listCursor ?? "") : next,
@@ -144,7 +150,7 @@ function kindOf(part: FeaturebasePart): { author: MessageAuthor; note: boolean }
 }
 
 /** A conversation's messages, its person and its files (copied now), before the page's transaction. */
-async function readConversation(job: ImportJob, conversation: FeaturebaseConversation): Promise<Read> {
+async function readConversation(job: ImportJob, conversation: FeaturebaseConversation, copyUntil: number): Promise<Read> {
   const parts = [...(conversation.conversationParts ?? [])].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
   // The first part repeats the conversation's source; only once the start is cut off (the newest 500) is the source needed.
   const source = conversation.source;
@@ -168,15 +174,18 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
     }
     const { body, urls } = await messageText(part);
     const files: StoredFile[] = [];
+    let dropped = 0;
     for (const url of urls) {
-      const stored = await copyAttachment(job, url);
+      const stored = Date.now() < copyUntil ? await copyAttachment(job, url) : { leftOut: null };
       if ("leftOut" in stored) {
-        leftOut.push(LEFT_OUT[stored.leftOut] ?? "that couldn't be fetched");
+        leftOut.push(stored.leftOut ? (LEFT_OUT[stored.leftOut] ?? "that couldn't be fetched") : NO_TIME);
+        dropped += stored.leftOut === "unsupported" ? 1 : 0;
       } else {
         files.push(stored);
       }
     }
-    if (!body && files.length === 0) {
+    // A message that was only a file stays, its file left out or not: who wrote last decides the status.
+    if (!body && urls.length === 0) {
       continue;
     }
     const author = part.author ?? null;
@@ -189,6 +198,7 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
       createdAt: new Date(part.createdAt),
       seenAt: kind.author === "TEAM" && !kind.note && i <= readTo ? seenAt : null,
       files,
+      dropped,
     });
   }
   const email = parts.find((p) => CONTACT.has(p.author?.type ?? "") && p.author?.email)?.author?.email?.trim().toLowerCase() ?? null;
@@ -305,6 +315,7 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
         note: m.note,
         createdAt: m.createdAt,
         seenAt: m.seenAt,
+        attachmentsDropped: m.dropped,
         importId: job.id,
         // The reply emails' tries used up: a worker from before importId skips it too, while a deploy overlaps.
         ...(m.author === "TEAM" && { emailAttempts: MAX_TRIES }),
@@ -327,15 +338,17 @@ const subjectFrom = (text: string) => {
 };
 
 /**
- * Numbers the conversations imports brought in the order they started (Featurebase lists the newest first): they swap
- * the numbers they hold among themselves, so nobody else's changes.
+ * Numbers the conversations this import brought in the order they started (Featurebase lists the newest first): they
+ * swap the numbers they hold among themselves, so nobody else's changes, nor that of one an earlier import brought (the
+ * team may know it by its number by now: a link in an email, a note).
  */
 async function renumber(tx: Tx, job: ImportJob) {
   await tx.$executeRaw`
     WITH mine AS (
       SELECT c.id, c.number, c."createdAt" FROM conversation c
       JOIN imported_record r ON r."localId" = c.id AND r."projectId" = c."projectId"
-      WHERE c."projectId" = ${job.projectId} AND r.source = ${job.source}::"ImportSource" AND r.kind = 'conversation'
+      JOIN data_import d ON d.id = ${job.id}
+      WHERE c."projectId" = ${job.projectId} AND r.source = ${job.source}::"ImportSource" AND r.kind = 'conversation' AND r."createdAt" >= d."createdAt"
     ),
     slots AS (SELECT number, row_number() OVER (ORDER BY number) AS i FROM mine),
     ordered AS (SELECT id, row_number() OVER (ORDER BY "createdAt", number) AS i FROM mine)
