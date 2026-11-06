@@ -11,6 +11,7 @@
     "./webhook-url": "./src/webhook-url.ts",
     "./post-urls": "./src/post-urls.ts",
     "./inbound-signature": "./src/inbound-signature.ts",
+    "./email-quotes": "./src/email-quotes.ts",
     "./signed": "./src/signed.ts",
     "./user-properties": "./src/user-properties.ts"
   },

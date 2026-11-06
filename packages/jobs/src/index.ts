@@ -28,6 +28,7 @@ export { featurebase, FeaturebaseError, type FeaturebaseContact } from "./featur
 export { contentBudget, FEATUREBASE_ICONS } from "./import-docs";
 export { adminMember, contactDetails, contactUsers, continueImport, failStaleImports, handOverOnVerified, handOverPlaceholders, type ImportCounts, importJob, IMPORT_KEY, IMPORT_PARTS, importsSettled, importStale, importStep, importStuck, loadAdmins, nextStep, resumeImport, type StepPage, tally } from "./imports";
 export { FEEDBACK_PAGE } from "./import-feedback";
+export { cutImportedQuotes } from "./import-inbox";
 export { isUniqueViolation, placeholderEmail, syncUsers, syncUsersIn, TooManyProperties, upsertProjectUser, type UserDetails } from "./project-users";
 export { lockConflict, withLockRetries } from "./lock-retries";
 export { signWebhook } from "./webhooks";

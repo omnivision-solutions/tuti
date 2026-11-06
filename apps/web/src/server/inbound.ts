@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import { type Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
+import { REPLY_PREFIXES, stripQuotes } from "@tuti/shared/email-quotes";
 import { convert as htmlToText } from "html-to-text";
 import { simpleParser } from "mailparser";
 
-import { REPLY_PREFIXES, stripQuotes } from "@/lib/email-quotes";
 import { noiseReason } from "@/lib/email-noise";
 
 import {

@@ -387,7 +387,13 @@ test("the inbox comes across from Featurebase: its conversations with their mess
   await expect(messages.nth(1)).toContainText("Sent again: it's in your inbox.");
   await expect(messages.nth(1)).toContainText("Imported from Featurebase");
   await expect(messages.nth(1)).not.toContainText("Emailed");
+  // Sent by email: only its new part shows, the quote it carried behind "Show the whole email".
+  const quote = messages.nth(1).getByText(/Tobias Quill <e2e-tobias@example\.com> wrote:/);
+  await expect(quote).toBeHidden();
   await checkpoint(owner, "conversation-imported-unread");
+  await messages.nth(1).getByText("Show the whole email").click();
+  await expect(quote).toBeVisible();
+  await checkpoint(owner, "conversation-imported-whole-email");
 
   // Closed: the bot's and the one from two years ago (this server keeps every closed conversation).
   await owner.goto(`/app/${slug}/inbox`);

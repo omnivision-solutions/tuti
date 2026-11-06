@@ -28,6 +28,23 @@ test("an attribution wrapped onto two lines, Outlook's blocks, signatures and qu
   expect(stripQuotes("Done.\n\n> earlier\n>\n> more").text).toBe("Done.");
 });
 
+test("Featurebase's attribution and footer, and Yahoo's app signature, are cut", () => {
+  expect(stripQuotes("Is it fixed?\n\nAaron Example (e2e-aaron@example.com) wrote on 9/30/2026, 1:47:14 PM:\nIt crashes on export.").text).toBe("Is it fixed?");
+  expect(stripQuotes("Is it fixed?\nAaron Example (mailto:e2e-aaron@example.com) wrote on 9/30/2026, 1:47:14 PM:\nIt crashes.").text).toBe("Is it fixed?");
+  expect(stripQuotes("Thanks!\n\nPowered by (https://featurebase.app)\nearlier").text).toBe("Thanks!");
+  expect(stripQuotes("Thanks!\n\nYahoo Mail: Search, Organize, Conquer (https://mail.onelink.me/107872968?pid=nativeplacement)\n\nOn Mon, Oct 12, 2026 at 6:51 AM, Acme Support <e2e-support@example.com> wrote:").text).toBe("Thanks!");
+  // Their own words that only mention someone's address are theirs.
+  expect(stripQuotes("Ask Aaron (e2e-aaron@example.com), who wrote on Monday: it's fixed.").stripped).toBe(false);
+  // "wrote on" without Featurebase's date and time: their own words, kept.
+  expect(stripQuotes("Hi, same problem as my colleague.\nSam Lee (e2e-sam@example.com) wrote on your forum last week:\nExports fail with a 500.\nAny news?").stripped).toBe(false);
+  expect(stripQuotes("Same here.\nAaron Example (e2e-aaron@example.com) wrote on 2 tickets before 10:30 today:\nBoth failed.").stripped).toBe(false);
+  // Featurebase's in other locales: day-first with a spaced "p. m.", and Korean.
+  expect(stripQuotes("Is it fixed?\nAaron Example (e2e-aaron@example.com) wrote on 30/9/2026, 1:47:14 p. m.:\nIt crashes.").text).toBe("Is it fixed?");
+  expect(stripQuotes("Is it fixed?\nAaron Example (e2e-aaron@example.com) wrote on 2026. 9. 30. 오후 1:47:14:\nIt crashes.").text).toBe("Is it fixed?");
+  // Featurebase's in a 24-hour, day-first locale.
+  expect(stripQuotes("Is it fixed?\nAaron Example (e2e-aaron@example.com) wrote on 30.09.2026, 13:47:14:\nIt crashes.").text).toBe("Is it fixed?");
+});
+
 test("kept whole: a forward, text with no quote, and a reply that's only a quote", () => {
   const forward = "FYI\n\nOn Mon, someone <a@example.com> wrote:\n> the bug";
   expect(stripQuotes(forward, "Fwd: the bug")).toEqual({ text: forward, stripped: false });

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { handlers, IMPORT_KEY, importsSettled } from "@tuti/jobs";
+import { cutImportedQuotes, handlers, IMPORT_KEY, importsSettled } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_FILES, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -106,6 +106,11 @@ test("conversations still going and the closed ones Tuti keeps come across, numb
     // Their read receipt is before it: not seen.
     ["TEAM", "Fern Former", "EMAIL", null],
   ]);
+  // The team's reply by email shows its new part; the whole of it is behind it, as a received email's.
+  expect(snoozed!.messages[1]).toMatchObject({
+    body: "Sent again: it's in your inbox.",
+    original: "Sent again: it's in your inbox.\n\nOn Mon, Oct 12, 2026 at 6:51 AM, Tobias Quill <e2e-tobias@example.com> wrote:\nCould you send October's invoice again?",
+  });
 
   // Open, the user writing last; assigned to the owner. The first part repeats the conversation's start: once.
   expect(open).toMatchObject({ status: "OPEN", origin: "WIDGET", user: { name: "Mira Fenwick" }, assignee: { name: "Olive Owner" }, heldById: null, snoozedUntil: null });
@@ -125,6 +130,8 @@ test("conversations still going and the closed ones Tuti keeps come across, numb
 
   // Every message is marked as imported, at its original date; the team's with their email tries used up.
   const messages = [closed, snoozed, open].flatMap((c) => c!.messages);
+  // Only that email had a quote to cut: no other message has a whole email behind it.
+  expect(messages.filter((m) => m.original !== null)).toEqual([snoozed!.messages[1]]);
   expect(messages.every((m) => m.importId === done.id)).toBe(true);
   expect(messages.filter((m) => m.author === "TEAM").every((m) => m.emailAttempts === 3 && m.emailStatus === null)).toBe(true);
   expect(ago(messages[0]!.createdAt)).toBe(10);
@@ -471,6 +478,95 @@ test("without media storage, an image is left out of its message and counted; a 
   const mira = await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "app-user-1" }, select: { userId: true } });
   const shown = (await widgetConversation(project.slug, { token: widgetToken(project.id, mira.userId) }, open.number)) as { messages: { body: string; dropped: number }[] };
   expect(shown.messages.at(-1)).toMatchObject({ body: "", dropped: 1 });
+});
+
+test("an email's quote, Featurebase's quoted thread and footer and a mail app's signature are cut, the whole email behind it, in the inbox and the widget; a widget message is kept whole", async () => {
+  // Their reply by email to the team's, quoting Featurebase's email, after a Yahoo signature.
+  const snoozed = fake.fixtures.conversations[1]!;
+  const parts = snoozed.conversationParts as Record<string, unknown>[];
+  const reply = [
+    "<div>Thanks, got it. September's too, please?</div><br>",
+    '<div><a href="https://mail.onelink.me/107872968?pid=nativeplacement">Yahoo Mail: Search, Organize, Conquer</a></div><br>',
+    "<blockquote><p>Fern Former (e2e-fern@example.com) wrote on 10/12/2026, 6:51:14 AM:</p><p>Sent again: it's in your inbox.</p>",
+    '<p><a href="https://featurebase.app">Powered by</a></p></blockquote>',
+  ].join("");
+  parts.push({ ...parts[0], id: "p2004", createdAt: new Date(Date.now() - 60 * 60_000).toISOString(), bodyHtml: reply, bodyMarkdown: null });
+  // A widget message that looks like a quote is theirs, whole.
+  const open = fake.fixtures.conversations[0]!;
+  (open.conversationParts as { bodyHtml: string }[])[4]!.bodyHtml = "<p>It says:</p><p>On Monday, the export wrote:</p><p>nothing</p>";
+  await importInbox();
+
+  const conversation = (await conversations()).find((c) => c.subject === "Invoice for October")!;
+  const last = conversation.messages.at(-1)!;
+  expect(last).toMatchObject({ author: "USER", channel: "EMAIL", body: "Thanks, got it. September's too, please?" });
+  expect(last.original).toContain("Fern Former (e2e-fern@example.com) wrote on 10/12/2026, 6:51:14 AM:");
+  expect(last.original).toContain("Powered by (https://featurebase.app)");
+  const widgetMessage = (await conversations()).find((c) => c.subject === "Exporting to CSV")!.messages.at(-1)!;
+  expect(widgetMessage).toMatchObject({ channel: "WIDGET", body: "It says:\nOn Monday, the export wrote:\nnothing", original: null });
+
+  // Their widget shows the same new part.
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  const tobias = await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "app-user-2" }, select: { userId: true } });
+  const shown = (await widgetConversation(project.slug, { token: widgetToken(project.id, tobias.userId) }, conversation.number)) as { messages: { body: string }[] };
+  expect(shown.messages.at(-1)!.body).toBe("Thanks, got it. September's too, please?");
+});
+
+test("emails imported before imports cut quotes are cut once, the whole email kept; others are left alone", async () => {
+  await importInbox();
+  const snoozed = (await conversations()).find((c) => c.subject === "Invoice for October")!;
+  const [asked, replied] = snoozed.messages;
+  // As an import from before saved it: whole, nothing behind it.
+  await prisma.conversationMessage.update({ where: { id: replied!.id }, data: { body: replied!.original!, original: null } });
+  // A received email is cut when it arrives: not this one's to touch.
+  await prisma.conversationMessage.update({ where: { id: asked!.id }, data: { importId: null, body: `${asked!.body}\n\nOn Mon, someone <e2e-someone@example.com> wrote:` } });
+  const before = await prisma.conversationMessage.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } });
+
+  expect(await cutImportedQuotes(new Date(Date.now() + 60_000))).toBe(1);
+  const after = await prisma.conversationMessage.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } });
+  expect(after.find((m) => m.id === replied!.id)).toMatchObject({ body: "Sent again: it's in your inbox.", original: replied!.original });
+  expect(after.filter((m) => m.id !== replied!.id).map((m) => [m.body, m.original])).toEqual(before.filter((m) => m.id !== replied!.id).map((m) => [m.body, m.original]));
+  // Again: nothing left to cut.
+  expect(await cutImportedQuotes(new Date(Date.now() + 60_000))).toBe(0);
+});
+
+test("a conversation started by a forwarded email keeps it whole, on import and when cut later, a note before it too; replies after it are cut", async () => {
+  const snoozed = fake.fixtures.conversations[1]!;
+  const forward = "FYI, from our bank.\n\nOn Mon, Oct 12, 2026 at 6:51 AM, Example Bank <e2e-bank@example.com> wrote:\nYour payment failed.";
+  snoozed.source = { ...snoozed.source!, subject: "Fwd: Payment failed" };
+  const parts = snoozed.conversationParts as { createdAt: string; bodyHtml: string }[];
+  parts[0]!.bodyHtml = forward
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => `<p>${line.replace(/</g, "&lt;")}</p>`)
+    .join("");
+  // A teammate's note before it: the forward still starts the conversation.
+  const noteAt = new Date(Date.parse(parts[0]!.createdAt) - 60_000).toISOString();
+  parts.unshift({ ...parts[1]!, id: "note-first", partType: "admin_note", channel: "desktop", createdAt: noteAt, updatedAt: noteAt, bodyHtml: "<p>Forwarded from the bank.</p>", bodyMarkdown: "Forwarded from the bank." } as never);
+  await importInbox();
+  const conversation = (await conversations()).find((c) => c.subject === "Fwd: Payment failed")!;
+  const [note, asked, replied] = conversation.messages;
+  expect(note).toMatchObject({ note: true, body: "Forwarded from the bank." });
+  expect(asked).toMatchObject({ body: "FYI, from our bank.\nOn Mon, Oct 12, 2026 at 6:51 AM, Example Bank <e2e-bank@example.com> wrote:\nYour payment failed.", original: null });
+  expect(replied).toMatchObject({ body: "Sent again: it's in your inbox." });
+
+  // Imported before quotes were cut: the forward stays whole, the reply is cut.
+  await prisma.conversationMessage.update({ where: { id: replied!.id }, data: { body: replied!.original!, original: null } });
+  expect(await cutImportedQuotes(new Date(Date.now() + 60_000))).toBe(1);
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: asked!.id } })).toMatchObject({ body: asked!.body, original: null });
+});
+
+test("a titled conversation started by a forwarded email keeps it whole on import, by its email's subject", async () => {
+  const snoozed = fake.fixtures.conversations[1]!;
+  snoozed.title = "Payment failed";
+  snoozed.source = { ...snoozed.source!, subject: "Fwd: Payment failed" };
+  (snoozed.conversationParts as { bodyHtml: string }[])[0]!.bodyHtml =
+    "<p>FYI, from our bank.</p><p>On Mon, Oct 12, 2026 at 6:51 AM, Example Bank &lt;e2e-bank@example.com&gt; wrote:</p><p>Your payment failed.</p>";
+  await importInbox();
+  const conversation = (await conversations()).find((c) => c.subject === "Payment failed")!;
+  expect(conversation.messages[0]).toMatchObject({ body: "FYI, from our bank.\nOn Mon, Oct 12, 2026 at 6:51 AM, Example Bank <e2e-bank@example.com> wrote:\nYour payment failed.", original: null });
+  // Imported since the release that cuts quotes: the script leaves it as the import meant it.
+  expect(await cutImportedQuotes(new Date(Date.now() - 60 * 60_000))).toBe(0);
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: conversation.messages[0]!.id } })).toMatchObject({ original: null });
 });
 
 /** An import's row at the conversations step, as if Contacts had been picked and skipped over. */
