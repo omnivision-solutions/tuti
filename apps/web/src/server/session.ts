@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { headers } from "next/headers";
+import { cache } from "react";
 
 import { auth, type Session } from "@/lib/auth";
 
@@ -14,9 +15,8 @@ export async function sessionFrom(requestHeaders: Headers) {
   return session && (await sessionWorksOn(session.session.boundTo, requestHeaders.get("host"))) ? session : null;
 }
 
-export async function getSession() {
-  return sessionFrom(await headers());
-}
+/** The request's session (sessionFrom), read once per request however many times it's asked for. */
+export const getSession = cache(async () => sessionFrom(await headers()));
 
 /**
  * Whether a session may act in a project. One a portal started (see lib/auth.ts) only works on that portal's

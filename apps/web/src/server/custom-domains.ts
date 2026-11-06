@@ -21,12 +21,16 @@ export async function requestTarget(host: string | null): Promise<RequestTarget>
 
 /**
  * What a session started on a request's host is bound to (see lib/auth.ts): the project whose portal it is,
- * or "app" (Tuti's own portal under its path is the app host's); null for a portal that doesn't exist.
+ * or "app" (Tuti's own portal under its path is the app host's); null, working nowhere, for a portal that
+ * doesn't exist, an unknown host or none.
  */
 export async function sessionBinding(host: string | null): Promise<string | null> {
   const target = await requestTarget(host);
-  if (target.kind !== "portal") {
+  if (target.kind === "app") {
     return "app";
+  }
+  if (target.kind !== "portal") {
+    return null;
   }
   const project = await prisma.project.findUnique({ where: { slug: target.slug }, select: { id: true } });
   return project?.id ?? null;

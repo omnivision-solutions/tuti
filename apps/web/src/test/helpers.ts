@@ -6,6 +6,7 @@ import { vi } from "vitest";
 import { docOf, landEdit, lockProject } from "@tuti/jobs";
 
 import { auth } from "@/lib/auth";
+import { appUrl } from "@/lib/hosts";
 
 import { request } from "./next-headers";
 
@@ -17,6 +18,8 @@ export type TestUser = { id: string; email: string; cookie: string };
 export async function signUp(name = "Test user", email = `e2e-${randomUUID()}@example.com`): Promise<TestUser> {
   const { headers, response } = await auth.api.signUpEmail({
     body: { email, name, password: "correct horse battery staple" },
+    // On the app, as a browser would say: a session from no host or an unknown one works nowhere.
+    headers: new Headers({ host: appUrl().host }),
     returnHeaders: true,
   });
   const cookie = headers
