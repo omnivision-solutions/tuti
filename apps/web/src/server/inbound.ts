@@ -185,7 +185,11 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
 
 type Mail = Awaited<ReturnType<typeof simpleParser>>;
 
-/** Who's in a conversation by email: its person, and anyone who's written in it from another address. */
+/**
+ * Who's in a conversation by email: its person, and anyone who's written in it from another address. Not a signed-out
+ * visitor's address: they typed it, never proved it, and read the conversation in the widget by their visitor token, so
+ * mail from it (its owner answering the team's reply) starts a conversation of its own instead.
+ */
 async function conversationAddresses(conversationId: string) {
   const conversation = await prisma.conversation.findUniqueOrThrow({
     where: { id: conversationId },
@@ -193,12 +197,14 @@ async function conversationAddresses(conversationId: string) {
       email: true,
       name: true,
       emailVerified: true,
+      visitorHash: true,
       user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
       messages: { where: { fromAddress: { not: null } }, select: { fromAddress: true }, distinct: ["fromAddress"] },
     },
   });
-  const person = conversationPerson(conversation).email?.toLowerCase();
-  return { person, others: conversation.messages.map((m) => m.fromAddress!.toLowerCase()) };
+  const unproven = !conversation.user && !!conversation.visitorHash && !conversation.emailVerified;
+  const person = unproven ? undefined : conversationPerson(conversation).email?.toLowerCase();
+  return { person, others: conversation.messages.map((m) => m.fromAddress!.toLowerCase()), unproven };
 }
 
 /**
@@ -316,11 +322,11 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     // References), finds the conversation; but only its people, with DMARC passed, join it (the token
     // and our Message-IDs are random secrets sent only to them; DMARC proves the domain, not the mailbox).
     // The Message-IDs of mail we received never count: their senders chose them, and others have copies.
-    const select = { id: true, number: true, userId: true } as const;
+    const select = { id: true, number: true, userId: true, replyToken: true } as const;
     const named = [mail.inReplyTo, ...(Array.isArray(mail.references) ? mail.references : mail.references ? [mail.references] : [])].filter(
       (id): id is string => !!id,
     );
-    const conversation =
+    const found =
       (token ? await prisma.conversation.findFirst({ where: { projectId, replyToken: token }, select }) : null) ??
       (named.length > 0
         ? ((
@@ -334,8 +340,33 @@ async function readEmail(id: string, projectId: string, token: string | null, au
             })
           )?.conversation ?? null)
         : null);
-    if (conversation && dmarcPassed) {
-      const { person, others } = await conversationAddresses(conversation.id);
+    if (found && dmarcPassed) {
+      let conversation = found;
+      let addresses = await conversationAddresses(found.id);
+      // A signed-out visitor's conversation: mail from its address started one of its own (below), and further
+      // replies to the visitor's go on there, the latest one this address's proven mail (DMARC passed, so never one
+      // forged into Spam) to its reply address went to, which they join by that conversation's own people. Replies
+      // that lost the reply address (only its Message-IDs) start one each.
+      if (addresses.unproven) {
+        const earlier = await prisma.inboundEmail.findFirst({
+          where: {
+            projectId,
+            sender,
+            dmarc: "pass",
+            status: "ADDED",
+            recipient: { startsWith: `support+${found.replyToken}@` },
+            conversationId: { not: found.id },
+          },
+          orderBy: { createdAt: "desc" },
+          select: { conversationId: true },
+        });
+        const own = earlier && (await prisma.conversation.findFirst({ where: { id: earlier.conversationId!, projectId }, select }));
+        if (own) {
+          conversation = own;
+          addresses = await conversationAddresses(own.id);
+        }
+      }
+      const { person, others } = addresses;
       if (sender === person || others.includes(sender)) {
         const message = await addMessage(
           conversation.id,

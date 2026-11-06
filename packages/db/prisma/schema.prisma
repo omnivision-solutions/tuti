@@ -1235,6 +1235,8 @@ model InboundEmail {
 
   @@unique([projectId, dedupeKey])
   @@index([projectId, createdAt])
+  /// A signed-out visitor's thread: where this address's earlier proven replies went (inbound.ts).
+  @@index([projectId, sender, createdAt])
   @@map("inbound_email")
 }
 
