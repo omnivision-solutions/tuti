@@ -175,12 +175,13 @@ export const updateSupportSettings = defineOperation({
     if (input.email && !supportDomain()) {
       throw new OperationError(409, "email_off", "This server doesn't receive email (SUPPORT_EMAIL_DOMAIN isn't set)");
     }
-    if (input.inbox !== undefined) {
-      await prisma.project.update({ where: { id: projectId }, data: { supportInbox: input.inbox } });
-    }
-    // Turning Messages on gives it the address too (where the server receives email), so replies can be emailed.
+    // Turning Messages on gives it the address too (where the server receives email), so replies can be emailed. The
+    // address first: if that fails, Messages stays off, as the switch shows, and trying again does both.
     if (input.email || (input.inbox && supportDomain())) {
       await mailSubdomain(projectId);
+    }
+    if (input.inbox !== undefined) {
+      await prisma.project.update({ where: { id: projectId }, data: { supportInbox: input.inbox } });
     }
     return supportSettings(projectId);
   },
