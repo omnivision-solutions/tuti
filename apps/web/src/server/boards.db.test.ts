@@ -169,6 +169,14 @@ describe("deleting boards", () => {
     expect(await deleteBoard(project.slug, boardId)).toEqual({ error: "A project needs at least one board" });
   });
 
+  test("deleting the last two boards at once keeps one", async () => {
+    await createBoard(project.slug, {}, board({ slug: "bugs" }));
+    const bugs = await prisma.board.findFirstOrThrow({ where: { projectId: project.id, slug: "bugs" }, select: { id: true } });
+    const results = await Promise.all([deleteBoard(project.slug, boardId), deleteBoard(project.slug, bugs.id)]);
+    expect(results.filter((result) => result.error)).toEqual([{ error: "A project needs at least one board" }]);
+    expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(1);
+  });
+
   test("deleting a board removes its redirects", async () => {
     await createBoard(project.slug, {}, board({ slug: "bugs" }));
     await rename(boardId, "ideas");

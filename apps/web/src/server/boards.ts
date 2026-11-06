@@ -150,10 +150,12 @@ export async function deleteBoard(projectSlug: string, boardId: string): Promise
   if (!board) {
     return { error: "Board not found" };
   }
-  if ((await prisma.board.count({ where: { projectId: project.id } })) <= 1) {
-    return { error: "A project needs at least one board" };
-  }
   const error = await prisma.$transaction(async (tx) => {
+    // The project's row locked (as createBoard does), so two deletes can't both leave it without a board.
+    await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${project.id} FOR UPDATE`;
+    if ((await tx.board.count({ where: { projectId: project.id } })) <= 1) {
+      return "A project needs at least one board";
+    }
     // The board's row locked holds off posts moved or added to it; its posts' rows, merges and unmerges of them.
     await tx.$executeRaw`SELECT 1 FROM board WHERE id = ${board.id} FOR UPDATE`;
     const posts = await tx.$queryRaw<{ duplicateOfId: string | null }[]>`
