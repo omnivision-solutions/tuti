@@ -176,6 +176,8 @@ describe("connecting", () => {
       `${project.id}.502.9999999999.forged`,
       signValue("callback", [project.id, "502"], Date.now() - 60 * 60 * 1000),
       signValue("install", [project.id, "502"]),
+      // Started by another admin of the project (their link, opened by the owner).
+      signValue("callback", [project.id, "502", "install", (await addMember(project.id, "ADMIN")).id]),
     ]) {
       const response = await callback(new Request(`${APP}/api/github/callback?code=code-3&state=${encodeURIComponent(state)}`));
       expect(location(response)).toBe(`${APP}/app?github=expired`);
@@ -338,10 +340,14 @@ describe("repositories", () => {
     expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
     expect(await included(project.id)).toEqual(["acme/mobile"]);
-    // Another site can't start it (nor Connect GitHub) for a signed-in admin.
-    const fromElsewhere = { headers: { "sec-fetch-site": "cross-site" } };
-    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, fromElsewhere)))).toMatch(/github=expired$/);
-    expect(location(await install(new Request(`${APP}/api/github/install?project=${project.slug}`, fromElsewhere)))).toMatch(/github=expired$/);
+    // Another site or a portal (a subdomain) can't start it (nor Connect GitHub) for a signed-in admin.
+    for (const site of ["cross-site", "same-site"]) {
+      const fromElsewhere = { headers: { "sec-fetch-site": site } };
+      expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, fromElsewhere)))).toMatch(/github=expired$/);
+      expect(location(await install(new Request(`${APP}/api/github/install?project=${project.slug}`, fromElsewhere)))).toMatch(/github=expired$/);
+    }
+    const fromApp = { headers: { "sec-fetch-site": "same-origin" } };
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, fromApp)))).toContain("/login/oauth/authorize");
     // Reconnecting goes only to the project's own account, or one GitHub offered them.
     expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=799`)))).toMatch(/github=expired$/);
   });

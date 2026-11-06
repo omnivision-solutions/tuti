@@ -28,24 +28,26 @@ export function accountsFromCookie(value: string, projectId: string): { id: numb
 
 /**
  * GitHub's web authorization flow, back to our callback with a signed `state`: the project, the
- * installation ("" while the person is choosing one) and what it's for ("choose", "install", "refresh").
+ * installation ("" while the person is choosing one), what it's for ("choose", "install") and who
+ * started it (only they finish it: their GitHub access makes the project's list).
  */
-export function authorizeRedirect(config: GithubConfig, projectId: string, installationId: number | "", purpose: string) {
+export function authorizeRedirect(config: GithubConfig, project: { id: string; userId: string }, installationId: number | "", purpose: string) {
   const authorize = new URL(`${config.url}/login/oauth/authorize`);
   authorize.search = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: new URL("/api/github/callback", appUrl()).href,
-    state: signValue("callback", [projectId, String(installationId), purpose]),
+    state: signValue("callback", [project.id, String(installationId), purpose, project.userId]),
   }).toString();
   return NextResponse.redirect(authorize);
 }
 
 /**
- * Whether the browser says another site sent it here. Connecting starts only from Tuti's own pages:
- * another site mustn't start it for a signed-in admin, whose access on GitHub would then make the
- * project's list. (GitHub's own returns go to the Setup and Callback URLs.)
+ * Whether the browser says a page elsewhere sent it here: another site, or a portal (a subdomain,
+ * so "same-site"). Connecting starts only from the app's own pages: elsewhere mustn't start it for
+ * a signed-in admin, whose access on GitHub would then make the project's list. (GitHub's own
+ * returns go to the Setup and Callback URLs; a typed address says "none", an old browser nothing.)
  */
-export const crossSite = (request: Request) => request.headers.get("sec-fetch-site") === "cross-site";
+export const crossSite = (request: Request) => !["same-origin", "none", null].includes(request.headers.get("sec-fetch-site"));
 
 /** Remembers the project for 15 minutes while the person installs the App on GitHub. */
 export function rememberInstall(response: NextResponse, projectId: string) {

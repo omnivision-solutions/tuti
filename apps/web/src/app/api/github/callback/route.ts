@@ -18,9 +18,10 @@ export async function GET(request: Request) {
     return new NextResponse(null, { status: 404 });
   }
   const params = new URL(request.url).searchParams;
-  const [projectId, installation, purpose] = verifyValue("callback", params.get("state") ?? "") ?? [];
+  const [projectId, installation, purpose, startedBy] = verifyValue("callback", params.get("state") ?? "") ?? [];
   const project = projectId && (await adminProject({ id: projectId }));
-  if (!project) {
+  // Finished by whoever started it: another admin sent someone else's link would make the list theirs.
+  if (!project || project.userId !== startedBy) {
     return NextResponse.redirect(new URL("/app?github=expired", appUrl()));
   }
   // Connected: on to its settings; otherwise back to the integrations, to try again.

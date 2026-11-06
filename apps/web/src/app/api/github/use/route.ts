@@ -28,5 +28,5 @@ export async function GET(request: Request) {
   if (!current && !offered.some((installation) => installation.id === installationId)) {
     return NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=expired`, appUrl()));
   }
-  return authorizeRedirect(config, project.id, installationId, "install");
+  return authorizeRedirect(config, project, installationId, "install");
 }

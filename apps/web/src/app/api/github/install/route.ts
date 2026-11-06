@@ -24,6 +24,6 @@ export async function GET(request: Request) {
   const response =
     params.get("new") === "1"
       ? NextResponse.redirect(`${config.url}/apps/${config.appSlug}/installations/new`)
-      : authorizeRedirect(config, project.id, "", "choose");
+      : authorizeRedirect(config, project, "", "choose");
   return rememberInstall(response, project.id);
 }
