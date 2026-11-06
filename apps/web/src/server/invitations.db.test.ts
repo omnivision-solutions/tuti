@@ -202,6 +202,14 @@ describe("on the free plan (where plans are sold)", () => {
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
   });
 
+  test("an invite link with no address takes a place too", async () => {
+    await addMember(project.id, "MEMBER");
+    await prisma.invitation.create({
+      data: { projectId: project.id, tokenHash: hashInvitationToken(crypto.randomUUID()), createdById: owner.id, expiresAt: new Date(Date.now() + 60_000) },
+    });
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({ error: FULL });
+  });
+
   test("two invites at once for the last place: only one is sent", async () => {
     await addMember(project.id, "MEMBER");
     const results = await Promise.all([createInvitation(project.slug, newEmail(), "MEMBER"), createInvitation(project.slug, newEmail(), "MEMBER")]);

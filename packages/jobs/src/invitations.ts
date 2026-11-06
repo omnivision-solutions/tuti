@@ -40,7 +40,8 @@ export const pendingInvitation = (now = new Date()) =>
 export async function teamPlacesTaken(tx: Prisma.TransactionClient, projectId: string, except?: string): Promise<number> {
   const [members, pending] = await Promise.all([
     tx.teamMember.count({ where: { projectId } }),
-    tx.invitation.count({ where: { projectId, ...pendingInvitation(), ...(except !== undefined && { NOT: { email: except } }) } }),
+    // Not `NOT: { email }` alone: in SQL that leaves out invite links with no address, which take a place too.
+    tx.invitation.count({ where: { projectId, ...pendingInvitation(), ...(except !== undefined && { AND: [{ OR: [{ email: null }, { NOT: { email: except } }] }] }) } }),
   ]);
   return members + pending;
 }
