@@ -189,6 +189,9 @@ export function importAt(run: ImportView) {
   return at < 0 ? null : `Part ${at + 1} of ${parts.length}`;
 }
 
+/** What's said under an import's title: the part under way, or why it stopped. */
+export const importNote = (run: ImportView) => (run.state === "running" ? importAt(run) && `${importAt(run)}.` : run.state === "failed" ? run.error : null);
+
 /** How long Home shows an import's result once it ended. */
 const SHOWN_MS = 3 * 24 * 60 * 60_000;
 

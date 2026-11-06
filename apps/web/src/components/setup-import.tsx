@@ -9,7 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { importAt, IMPORT_PARTS, type ImportPart, importProgress, importSummary, importTitle, pickPart } from "@/lib/import-parts";
+import { IMPORT_PARTS, type ImportPart, importNote, importProgress, importSummary, importTitle, pickPart } from "@/lib/import-parts";
 import { cn } from "@/lib/utils";
 import { startImport } from "@/server/imports";
 import type { ImportView } from "@/server/operations/imports";
@@ -99,9 +99,6 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
     </>
   );
 }
-
-/** What's said under an import's title: the part under way, or why it stopped. */
-export const importNote = (run: ImportView) => (run.state === "running" ? importAt(run) && `${importAt(run)}.` : run.state === "failed" ? run.error : null);
 
 /** Reads the page again every few seconds while `on`: an import's progress. */
 export function RefreshWhile({ on }: { on: boolean }) {
