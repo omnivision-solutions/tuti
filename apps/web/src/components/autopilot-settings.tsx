@@ -188,6 +188,7 @@ export function AutopilotEmailsChoice({ choice, timeZone }: { choice: "AS_THEY_H
   const here = useSyncExternalStore(noSubscribe, browserZone, () => null);
   // The digest's time zone as saved: shown, so someone who moved sees it's not where they are now.
   const [zone, setZone] = useState(timeZone);
+  const [givenZone, setGivenZone] = useState(timeZone);
   // What's saved: a choice that isn't (signed out meanwhile, say) goes back to it.
   const [saved, setSaved] = useState(choice);
   const [picked, setPicked] = useState(choice);
@@ -197,6 +198,11 @@ export function AutopilotEmailsChoice({ choice, timeZone }: { choice: "AS_THEY_H
     setGiven(choice);
     setSaved(choice);
     setPicked(choice);
+  }
+  // Likewise its time zone, saved again elsewhere.
+  if (givenZone !== timeZone && !pending) {
+    setGivenZone(timeZone);
+    setZone(timeZone);
   }
   const pick = (value: typeof choice) => {
     setPicked(value);
