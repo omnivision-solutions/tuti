@@ -2519,14 +2519,17 @@ model DataImport {
 /// What an import brought across: the source's id of a record (a contact, a post, …) and the local record it became, so
 /// a retried page or another import skips it, and later parts find who a contact is here.
 model ImportedRecord {
-  id         String       @id @default(cuid())
-  projectId  String
-  source     ImportSource
-  /// What it is: contact, …
-  kind       String
-  externalId String
-  localId    String
-  createdAt  DateTime     @default(now())
+  id            String       @id @default(cuid())
+  projectId     String
+  source        ImportSource
+  /// What it is: contact, admin, collection, article, …
+  kind          String
+  externalId    String
+  localId       String
+  /// For a record made empty first and filled later (an article: its title first, so links to it resolve, then its
+  /// content): whether it's filled. A retried or repeated import fills those that aren't.
+  contentLanded Boolean      @default(false)
+  createdAt     DateTime     @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
