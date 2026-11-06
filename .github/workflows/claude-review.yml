@@ -112,14 +112,15 @@ jobs:
           } > "$RUNNER_TEMP/pull-request.md"
       # The Claude hub pools our Claude subscriptions on a private network. The runner joins it
       # as a short-lived node that may reach only the hub, with a join key traded for GitHub's
-      # token for this workflow: no network secret is stored here. When the hub doesn't answer,
-      # or the review fails through it, the review uses CLAUDE_CODE_OAUTH_TOKEN's single account.
+      # token for this workflow: no network secret is stored here. When the hub doesn't answer, none
+      # of its accounts has quota, or the review fails through it, the review uses
+      # CLAUDE_CODE_OAUTH_TOKEN's single account.
       - name: Hide the Claude hub's address
         env:
           CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
         run: |
           # GitHub masks the whole URL in logs; mask its host and network names too, before connecting.
-          .github/scripts/claude-hub.sh names | sed 's/^/::add-mask::/'
+          bash .github/scripts/claude-hub.sh names | sed 's/^/::add-mask::/'
       - name: Connect to the Claude hub
         id: tailnet
         continue-on-error: true
@@ -138,12 +139,15 @@ jobs:
           CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
         run: |
           # Only root may talk to Tailscale, so Claude's user can't look around the network.
+          # A one-token request, not a ping: the hub answers even when every account is at its limit.
           if sudo chmod 600 /var/run/tailscale/tailscaled.sock \
-            && curl -sf -m 20 --retry 3 --retry-all-errors -o /dev/null \
-              -H "Authorization: Bearer $CLIPROXY_API_KEY" "$CLIPROXY_URL/v1/models"; then
+            && curl -sf -m 60 --retry 2 --retry-all-errors -o /dev/null "$CLIPROXY_URL/v1/messages" \
+              -H "Authorization: Bearer $CLIPROXY_API_KEY" -H "anthropic-version: 2023-06-01" \
+              -H "content-type: application/json" \
+              -d '{"model": "claude-opus-5-5", "max_tokens": 1, "messages": [{"role": "user", "content": "ok"}]}'; then
             echo "use=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::The Claude hub didn't answer; reviewing with the single account."
+            echo "::warning::The Claude hub didn't answer or has no quota; reviewing with the single account."
           fi
       - name: Review with Claude Code
         env:
@@ -178,7 +182,7 @@ jobs:
             || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
           # Findings are public: never post a credential or the hub's address, whatever
           # the prompt talked Claude into.
-          .github/scripts/claude-hub.sh check "$RUNNER_TEMP/findings.json" \
+          bash .github/scripts/claude-hub.sh check "$RUNNER_TEMP/findings.json" \
             || { echo "A finding contains a Claude credential or the hub's address; not posting." >&2; exit 1; }
       - name: Post the findings
         env:

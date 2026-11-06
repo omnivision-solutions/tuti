@@ -65,15 +65,16 @@ jobs:
       # The Claude hub pools our Claude subscriptions on a private network. The runner joins it
       # as a short-lived node that may reach only the hub, with a join key traded for GitHub's
       # token for this workflow on main: no network secret is stored here. When the hub doesn't
-      # answer, the update uses CLAUDE_CODE_OAUTH_TOKEN's single account. A run that fails through
-      # the hub isn't retried (the agent has already changed the checkout): run the workflow again.
+      # answer, or none of its accounts has quota, the update uses CLAUDE_CODE_OAUTH_TOKEN's single
+      # account. One that fails partway through the hub isn't retried: the agent has already changed
+      # the checkout, and the next run checks the hub again.
       - name: Hide the Claude hub's address
         if: steps.prepare.outcome == 'success'
         env:
           CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
         run: |
           # GitHub masks the whole URL in logs; mask its host and network names too, before connecting.
-          .github/scripts/claude-hub.sh names | sed 's/^/::add-mask::/'
+          bash .github/scripts/claude-hub.sh names | sed 's/^/::add-mask::/'
       - name: Connect to the Claude hub
         id: tailnet
         if: steps.prepare.outcome == 'success'
@@ -93,12 +94,15 @@ jobs:
           CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
         run: |
           # Only root may talk to Tailscale, so Claude's user can't look around the network.
+          # A one-token request, not a ping: the hub answers even when every account is at its limit.
           if sudo chmod 600 /var/run/tailscale/tailscaled.sock \
-            && curl -sf -m 20 --retry 3 --retry-all-errors -o /dev/null \
-              -H "Authorization: Bearer $CLIPROXY_API_KEY" "$CLIPROXY_URL/v1/models"; then
+            && curl -sf -m 60 --retry 2 --retry-all-errors -o /dev/null "$CLIPROXY_URL/v1/messages" \
+              -H "Authorization: Bearer $CLIPROXY_API_KEY" -H "anthropic-version: 2023-06-01" \
+              -H "content-type: application/json" \
+              -d '{"model": "claude-opus-5-5", "max_tokens": 1, "messages": [{"role": "user", "content": "ok"}]}'; then
             echo "use=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::The Claude hub didn't answer; updating with the single account."
+            echo "::warning::The Claude hub didn't answer or has no quota; updating with the single account."
           fi
       - name: Update dependencies with Claude Code
         if: steps.prepare.outcome == 'success'
@@ -146,7 +150,7 @@ jobs:
             > "$RUNNER_TEMP/dependency-update/update.patch"
           # The description and the patch go public: never a credential or the hub's address,
           # whatever a package talked Claude into. Checked on the files that get published.
-          .github/scripts/claude-hub.sh check "$RUNNER_TEMP/dependency-update/pr.md" "$RUNNER_TEMP/dependency-update/update.patch" \
+          bash .github/scripts/claude-hub.sh check "$RUNNER_TEMP/dependency-update/pr.md" "$RUNNER_TEMP/dependency-update/update.patch" \
             || { echo "The update contains a Claude credential or the hub's address; not publishing." >&2; exit 1; }
           # grep can't read inside binary hunks, and a dependency update needs none.
           if grep -q '^GIT binary patch' "$RUNNER_TEMP/dependency-update/update.patch"; then
