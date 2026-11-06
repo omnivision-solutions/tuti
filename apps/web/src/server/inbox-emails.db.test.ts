@@ -69,6 +69,26 @@ test("a reply on an unassigned conversation goes to everyone with the emails on,
   expect((await mailbox.latestTo(owner.email)).text).toContain("e2e-asker@example.com started a conversation");
 });
 
+test("an emailed name comes with its address (anyone can give any name), and a Cc'd colleague's reply is theirs", async () => {
+  const { owner, project, key } = await setup();
+  const log = { info: () => {}, warn: () => {} };
+  await call(createConversation, key, { email: "e2e-carlos@example.com", subject: "Export", body: "Hi" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  // The name their email gave, and a reply from a colleague they Cc'd, emailed now.
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { name: "Carlos Mendes", notifiedAt: null } });
+  const tell = async (fromAddress: string | null) => {
+    const { id } = await prisma.conversationMessage.create({
+      data: { projectId: project.id, conversationId: conversation.id, author: "USER", channel: "EMAIL", body: "Never mind", fromAddress },
+    });
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: null } });
+    await handlers.conversationMessage({ messageId: id }, log);
+  };
+  await tell("e2e-bob@example.com");
+  expect(to(owner.email).at(-1)).toBe("e2e-bob@example.com replied: Export");
+  await tell(null);
+  expect(to(owner.email).at(-1)).toBe("Carlos Mendes (e2e-carlos@example.com) replied: Export");
+});
+
 test("one address that's refused doesn't keep the rest of the team from hearing, and only it is tried again", async () => {
   const { owner, member, key } = await setup();
   mailbox.refuseNext(member.email);

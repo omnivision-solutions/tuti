@@ -38,6 +38,7 @@ const conversationSelect = {
   status: true,
   origin: true,
   email: true,
+  name: true,
   emailVerified: true,
   spam: true,
   lastMessageAt: true,
@@ -66,14 +67,17 @@ type MessageRow = Prisma.ConversationMessageGetPayload<{ select: typeof messageS
 
 /**
  * Who a conversation is with: someone Tuti knows (their id in your app when they came through SSO
- * or the API) or just an email. An SSO user's User.email is a placeholder, so their app's email shows.
+ * or the API) or just an email, with the name its first email came from. An SSO user's User.email is a
+ * placeholder, so their app's email shows.
  */
-export function conversationPerson(row: Pick<ConversationRow, "user" | "email" | "emailVerified">) {
+export function conversationPerson(row: Pick<ConversationRow, "user" | "email" | "name" | "emailVerified">) {
   if (row.user) {
     const sso = row.user.ssoIdentity;
     return { id: sso?.externalId ?? null, name: row.user.name, email: sso ? sso.email : row.user.email, verified: true };
   }
-  return { id: null, name: null, email: row.email, verified: row.emailVerified };
+  // The name their email gave only once its address is verified: anyone can give any name, and the list would show it
+  // alone (as with the company, conversationCompanies). Unverified, they're their address.
+  return { id: null, name: row.emailVerified ? row.name : null, email: row.email, verified: row.emailVerified };
 }
 
 function view(row: ConversationRow, slug: string) {
@@ -110,17 +114,19 @@ function messageView(row: MessageRow) {
 }
 
 /**
- * Each conversation's latest message (not a note; by id where two share a time), its start only: one read each,
- * from the newest back along the (conversation, time) index, not its whole history. By conversation id.
+ * Each conversation's latest message (not a note; by id where two share a time), its start only, with who wrote it
+ * (a team member's id and name): one read each, from the newest back along the (conversation, time) index, not its
+ * whole history. By conversation id.
  */
 export async function latestMessages(ids: string[]) {
   const rows = ids.length
-    ? await prisma.$queryRaw<{ conversationId: string; body: string; author: MessageAuthor }[]>`
-        SELECT c.id AS "conversationId", m.body, m.author FROM unnest(${ids}::text[]) AS c(id)
+    ? await prisma.$queryRaw<{ conversationId: string; body: string; author: MessageAuthor; authorId: string | null; name: string | null; fromAddress: string | null }[]>`
+        SELECT c.id AS "conversationId", m.body, m.author, m."authorId", u.name, m."fromAddress" FROM unnest(${ids}::text[]) AS c(id)
         CROSS JOIN LATERAL (
-          SELECT left(body, 1000) AS body, author FROM conversation_message
+          SELECT left(body, 1000) AS body, author, "authorId", "fromAddress" FROM conversation_message
           WHERE "conversationId" = c.id AND NOT note ORDER BY "createdAt" DESC, id DESC LIMIT 1
-        ) m`
+        ) m
+        LEFT JOIN "user" u ON u.id = m."authorId"`
     : [];
   return new Map(rows.map(({ conversationId, ...message }) => [conversationId, message]));
 }
@@ -325,6 +331,8 @@ export async function startConversation(
   start: {
     userId: string | null;
     email: string | null;
+    /** With `email`: the name it came from (an email's From). */
+    name?: string | null;
     /** A signed-out visitor's, in the widget (lib/visitor-session.ts). */
     visitorHash?: string | null;
     subject?: string;
@@ -359,7 +367,7 @@ export async function startConversation(
         throw new OperationError(429, "rate_limited", "You've started a lot of conversations today. Try again tomorrow, or add to one you have.");
       }
     }
-    const conversation = await tx.conversation.create({
+    const created = await tx.conversation.create({
       data: {
         projectId,
         number,
@@ -367,6 +375,7 @@ export async function startConversation(
         origin: start.origin,
         userId: start.userId,
         email: start.email?.toLowerCase() ?? null,
+        name: start.name ?? null,
         visitorHash: start.visitorHash ?? null,
         spam: start.spam ?? false,
         lastMessageAt: now,
@@ -375,6 +384,7 @@ export async function startConversation(
       },
       select: conversationSelect,
     });
+    let conversation = created;
     const message = await tx.conversationMessage.create({
       data: {
         projectId,
@@ -393,6 +403,8 @@ export async function startConversation(
       await start.alongside(tx, conversation.id, message.id);
       // What it wrote with the first message (a received email's attachments) is part of the message announced.
       first = await tx.conversationMessage.findUniqueOrThrow({ where: { id: message.id }, select: messageSelect });
+      // And with the conversation (whether a received email's address is verified): it's announced as it is now.
+      conversation = await tx.conversation.findUniqueOrThrow({ where: { id: conversation.id }, select: conversationSelect });
     }
     // A millisecond apart, so they read in order.
     await tx.conversationMessage.createMany({

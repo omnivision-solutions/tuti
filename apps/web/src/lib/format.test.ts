@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, etaOnPortal, etaToast, firstLine, initial, longDuration, replyTime, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
+import { asking, askingTotal, etaOnPortal, etaToast, firstLine, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);
@@ -72,6 +72,17 @@ test("an Inbox row's line beside its subject: not when the subject is it, or was
   // A subject someone wrote, ending in "…", and a message going on from it: shown.
   expect(rowLine("Billing…", "Billing page shows the wrong total")).toBe("Billing page shows the wrong total");
   expect(rowLine("Can't export", "The button does nothing\nOn reports")).toBe("The button does nothing");
+});
+
+test("an Inbox row says who wrote its latest message when it isn't the person: the AI, you, or a teammate by first name", () => {
+  expect(rowBy({ author: "USER", authorId: "u1", name: "Sam Lee" }, "me")).toBeUndefined();
+  // A colleague they Cc'd replied: not them, so the row says who.
+  expect(rowBy({ author: "USER", authorId: null, name: null, fromAddress: "e2e-bob@example.com" }, "me")).toBe("e2e-bob@example.com");
+  // An "Ask a person" conversation ends with the AI's answer, not the person's question.
+  expect(rowBy({ author: "AI", authorId: null, name: null }, "me")).toBe("AI");
+  expect(rowBy({ author: "TEAM", authorId: "me", name: "Olive Owner" }, "me")).toBe("You");
+  expect(rowBy({ author: "TEAM", authorId: "t2", name: "Tess Team" }, "me")).toBe("Tess");
+  expect(rowBy({ author: "TEAM", authorId: null, name: null }, "me")).toBe("Tuti");
 });
 
 test.each([

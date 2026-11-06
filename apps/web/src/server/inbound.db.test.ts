@@ -4,8 +4,10 @@ import { beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
+import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
+import { conversationPerson } from "./operations/conversations";
 import { upsertProjectUser } from "./project-users";
 
 /** Receiving email (server/inbound.ts, /api/inbound/email): fixture emails as the receiver posts them. */
@@ -131,6 +133,43 @@ test("with DMARC passed, a known user's address is theirs; otherwise the address
   const [mine, posing] = await conversations(project.id);
   expect(mine).toMatchObject({ userId: sam, email: null });
   expect(posing).toMatchObject({ userId: null, email: "e2e-sam@example.com", emailVerified: false, spam: false });
+});
+
+test("an email's From name is who the conversation is with, trimmed and cut short; none when it's an address, its own or another", async () => {
+  const { project, address } = await setup();
+  const from = [
+    "Carlos Mendes <e2e-carlos@example.com>",
+    "e2e-bare@example.com",
+    '"E2E-Same@example.com" <e2e-same@example.com>',
+    `"  ${"Long ".repeat(40)}" <e2e-long@example.com>`,
+    '"e2e-ceo@acme.example" <e2e-spoof@example.com>',
+    // A look-alike at sign (fullwidth, in an encoded word) is an address too; a right-to-left override is dropped.
+    `=?UTF-8?B?${Buffer.from("e2e-ceo\uFF20acme.example").toString("base64")}?= <e2e-wide@example.com>`,
+    `=?UTF-8?B?${Buffer.from("Kim \u202ELee").toString("base64")}?= <e2e-bidi@example.com>`,
+    `=?UTF-8?B?${Buffer.from("Mehr\u200Cnaz").toString("base64")}?= <e2e-zwnj@example.com>`,
+    `=?UTF-8?B?${Buffer.from("\u200D\u200C\u200D").toString("base64")}?= <e2e-joiners@example.com>`,
+    `=?UTF-8?B?${Buffer.from("\u3164").toString("base64")}?= <e2e-filler@example.com>`,
+    `=?UTF-8?B?${Buffer.from("\u2800\u034F").toString("base64")}?= <e2e-blank@example.com>`,
+    // Cut at 100 characters, not in the middle of the flag there (two code points, one character).
+    `=?UTF-8?B?${Buffer.from(`${"x".repeat(99)}\u{1F1EB}\u{1F1F7}more`).toString("base64")}?= <e2e-emoji@example.com>`,
+    // One letter with a thousand combining marks is one character, but not a thousand: cut at 200 units.
+    `=?UTF-8?B?${Buffer.from(`Zoe a${"\u0301".repeat(1000)}`).toString("base64")}?= <e2e-marks@example.com>`,
+  ];
+  for (const sender of from) {
+    await postEmail(rawEmail({ from: sender, to: address }), { recipient: address });
+  }
+  const people = (await conversations(project.id)).map((c) => conversationPerson({ ...c, user: null }).name);
+  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim(), null, null, "Kim Lee", "Mehr\u200Cnaz", null, null, null, `${"x".repeat(99)}\u{1F1EB}\u{1F1F7}`, "Zoe"]);
+  // The team's email about it names them too.
+  expect(mailbox.emails.some((email) => email.text.includes("Carlos Mendes (e2e-carlos@example.com) started a conversation"))).toBe(true);
+});
+
+test("an unverified email's From name isn't shown: it's its address, as anyone can give any name", async () => {
+  const { project, address } = await setup();
+  await postEmail(rawEmail({ from: "Kim Lee <e2e-not-kim@example.com>", to: address }), { recipient: address, auth: "spf=none dkim=none dmarc=none" });
+  const [conversation] = await conversations(project.id);
+  expect(conversation).toMatchObject({ name: "Kim Lee", emailVerified: false });
+  expect(conversationPerson({ ...conversation!, user: null })).toMatchObject({ name: null, email: "e2e-not-kim@example.com", verified: false });
 });
 
 test("auto-replies, bounces, our own mail and loops are kept as ignored, with the reason", async () => {

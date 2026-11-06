@@ -123,7 +123,11 @@ test("the webhook for a new conversation says what came with its message", async
   await postEmail(withAttachments("Kim <e2e-kim@example.com>", address), { recipient: address });
   const delivery = await prisma.webhookDelivery.findFirstOrThrow({ where: { webhook: { projectId: project.id } } });
   expect(delivery.payload).toMatchObject({
-    data: { messages: [{ attachments: [{ filename: "Invoice Oct.pdf" }, { filename: "screenshot.png" }], attachmentsDropped: 0 }] },
+    // Who it's with as saved: its address verified (DMARC passed), so the name its email gave.
+    data: {
+      user: { name: "Kim", email: "e2e-kim@example.com", verified: true },
+      messages: [{ attachments: [{ filename: "Invoice Oct.pdf" }, { filename: "screenshot.png" }], attachmentsDropped: 0 }],
+    },
   });
 });
 

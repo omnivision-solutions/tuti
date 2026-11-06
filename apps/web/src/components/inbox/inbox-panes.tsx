@@ -18,7 +18,7 @@ import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { initial, longDuration, replyTime, rowLine, shortDuration, timeAgo } from "@/lib/format";
+import { initial, longDuration, replyTime, rowBy, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
@@ -82,6 +82,7 @@ const LISTED = {
   subject: true,
   status: true,
   email: true,
+  name: true,
   emailVerified: true,
   lastMessageAt: true,
   waitingSince: true,
@@ -207,8 +208,11 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                     const name = person.name ?? person.email ?? "Unknown";
                     // Their company, as the team's app says (Users' company property), when it says one.
                     const company = companies.get(c.id);
-                    const body = latest.get(c.id)?.body;
-                    const line = body === undefined ? undefined : rowLine(c.subject, body);
+                    // The latest message's first line, with who wrote it when it isn't the person (an AI answer isn't their question).
+                    const message = latest.get(c.id);
+                    const text = message && rowLine(c.subject, message.body);
+                    const by = message && rowBy(message, userId);
+                    const line = text && (by ? `${by}: ${text}` : text);
                     // Spam waits on nobody, however it came in. Not said in Needs reply, where every row does.
                     const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
                     // One age per row: how long they've waited for the team, or since the latest message.

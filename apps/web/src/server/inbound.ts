@@ -191,6 +191,7 @@ async function conversationAddresses(conversationId: string) {
     where: { id: conversationId },
     select: {
       email: true,
+      name: true,
       emailVerified: true,
       user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
       messages: { where: { fromAddress: { not: null } }, select: { fromAddress: true }, distinct: ["fromAddress"] },
@@ -212,6 +213,41 @@ async function userWithAddress(projectId: string, address: string): Promise<stri
   }
   const sso = await prisma.ssoIdentity.findFirst({ where: { projectId, email: address }, orderBy: { updatedAt: "desc" }, select: { userId: true } });
   return sso?.userId ?? null;
+}
+
+/**
+ * The name in an email's From ("Kim Lee <kim@…>"), trimmed and cut short. None when it has an address in it: the
+ * sender's own again, or another one it would pass for in the Inbox's list and the team's emails. Look-alikes (a
+ * fullwidth ＠) are folded first (NFKC), and control and formatting characters (a right-to-left override) dropped, but
+ * not the zero-width joiners Persian, Indic and emoji names spell with.
+ */
+function fromName(mail: Mail) {
+  const cleaned = mail.from?.value[0]?.name
+    ?.normalize("NFKC")
+    .replace(/(?![\u200C\u200D])[\p{Cc}\p{Cf}]/gu, "")
+    .trim();
+  const name = cleaned && cutName(cleaned);
+  // Something to show: a letter, number, symbol or punctuation once what draws nothing is set aside (joiners, Hangul
+  // fillers, variation selectors, a blank braille cell). And no address in it.
+  const shown = name?.replace(/[\s\p{Default_Ignorable_Code_Point}\u2800]/gu, "");
+  return name && shown && /[\p{L}\p{N}\p{S}\p{P}]/u.test(shown) && !name.includes("@") ? name : null;
+}
+
+/**
+ * Up to 100 of what a reader sees as one character (graphemes), so a flag or an emoji at the cut isn't left in half,
+ * and never more than 200 UTF-16 units (one grapheme can carry any number of combining marks).
+ */
+function cutName(name: string) {
+  let cut = "";
+  let count = 0;
+  for (const { segment } of new Intl.Segmenter().segment(name)) {
+    if (count === 100 || cut.length + segment.length > 200) {
+      break;
+    }
+    cut += segment;
+    count++;
+  }
+  return cut.trim();
 }
 
 /** Another request read this email first. */
@@ -329,6 +365,7 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     const started = await startConversation(projectId, {
       userId,
       email: userId ? null : sender,
+      name: userId ? null : fromName(mail),
       subject: subject.replace(REPLY_PREFIXES, "").trim().slice(0, 200) || undefined,
       body,
       origin: "EMAIL",
