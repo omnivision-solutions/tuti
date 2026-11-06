@@ -98,7 +98,7 @@ export const CODE_CHANGES_SETTINGS = {
     newArticle: odds("A new article", 0.3, 0.8),
   },
   context: {
-    diffChars: integer(20_000, 1_000, 500_000, "The pull request's diff the decision model and the docs agent read, in characters; files past it are only listed"),
+    diffChars: integer(60_000, 1_000, 500_000, "The pull request's diff the docs agent and the writers read, in characters (the decision model at most 20,000 of it); files past it are only listed"),
     fileChars: integer(6_000, 500, 500_000, "One file's share of the diff at most, in characters"),
     bodyChars: integer(4_000, 0, 100_000, "The pull request's description it reads, in characters"),
     outlineArticles: integer(1_000, 50, 20_000, "The help center's articles and drafts the docs agent is shown at most (published ones first); it finds the rest with its search"),

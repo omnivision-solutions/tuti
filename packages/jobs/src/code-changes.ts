@@ -18,7 +18,7 @@ import {
 } from "@tuti/shared";
 import { z } from "zod";
 
-import { GATE, gateResult, namedPosts, POST_QUESTION, type PostCandidate, postProposal, postState, pullRequestState, thresholds } from "./code-change-decisions";
+import { DECISION_DIFF_CHARS, GATE, gateResult, namedPosts, POST_QUESTION, type PostCandidate, postProposal, postState, pullRequestState, thresholds } from "./code-change-decisions";
 import { aiFor, projectModels } from "./ai-usage";
 import { landEdit } from "./article-layers";
 import { autopilotSettingsSelect, inReview, POST_UPDATE, scheduleByItself, schedulePost } from "./autopilot";
@@ -268,7 +268,7 @@ async function analyse(
 ) {
   // Everything the analysis asks a model is the project's code changes' spend (`use`), written by the project's model for them.
   const versions: Versions = { decider: decisionModel(), model: use.model, settings: ranWith };
-  const gate = pastGate ? null : gateResult(await decide(pullRequestState(pr), GATE, { meter: use.meter }));
+  const gate = pastGate ? null : gateResult(await decide(pullRequestState(pr, DECISION_DIFF_CHARS), GATE, { meter: use.meter }));
   // Users see it: the changelog hears about it, and its posts are decided.
   const seen = !gate || gate.users >= thresholds().gate;
   const tools: ToolContext = { projectId: change.projectId, repository };

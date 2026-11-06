@@ -731,7 +731,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
         "decide.rounds": 1,
         "write.rounds": 10,
         "decide.reasoning": "high",
-        "context.diffChars": 20_000,
+        "context.diffChars": 60_000,
       },
       tuned: ["propose.edit.maybe", "decide.rounds", "decide.reasoning"],
     });

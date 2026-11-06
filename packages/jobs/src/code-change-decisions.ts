@@ -34,16 +34,47 @@ export function confidence(kind: ProposedKind, probability: number): "likely" | 
   return probability >= thresholds()[kind].likely ? "likely" : "maybe";
 }
 
-/** The pull request as the decision model sees it. */
-export function pullRequestState(pr: PullRequestRead) {
+/** The pull request as the models see it: the decision model with at most `DECISION_DIFF_CHARS` of its diff. */
+export function pullRequestState(pr: PullRequestRead, diffChars = Infinity) {
+  // Read at or under this size already (`context.diffChars`), it's left as read: its file headers make it a little longer.
+  const diff = codeChangesSettings().context.diffChars <= diffChars ? pr.diff : diffUpTo(pr.diff, diffChars, pr.files.map((file) => file.path));
+  // A file the cut left out says so, as one past the reading's own cap does.
+  const cut = (path: string) => diff !== pr.diff && !`\n${diff}`.includes(`\n--- ${path} (`);
   return {
     title: pr.title,
     labels: pr.labels,
     description: pr.body,
     commits: pr.commits,
-    files: pr.files.map((file) => `${file.path} (${file.status}${file.left ? `, not shown: ${file.left}` : ""})`),
-    diff: pr.diff,
+    files: pr.files.map((file) => {
+      const left = file.left ?? (cut(file.path) ? "size" : undefined);
+      return `${file.path} (${file.status}${left ? `, not shown: ${left}` : ""})`;
+    }),
+    diff,
   };
+}
+
+/**
+ * How much of the diff the decision model (the gate, the posts) is asked about: it answers best under about 32 KB of
+ * text, however much `context.diffChars` lets the docs agent and the writers read.
+ */
+export const DECISION_DIFF_CHARS = 20_000;
+
+/** How much of the room the cut gives up to end at a file's header rather than in the middle of the next file. */
+const HEADER_SLACK = 2_000;
+
+/**
+ * The diff up to `max` characters: it ends before the file that doesn't fit (at its own "--- path (" header) when that
+ * gives up at most HEADER_SLACK characters, else at `max`, inside that file, whose start is then shown.
+ */
+function diffUpTo(diff: string, max: number, paths: string[]) {
+  if (diff.length <= max) {
+    return diff;
+  }
+  // At a file's own header only: a removed line can start "--- " too (a deleted `-- …` SQL comment, a Markdown rule).
+  const header = Math.max(-1, ...paths.map((path) => diff.lastIndexOf(`\n--- ${path} (`, max)));
+  // Before the file that doesn't fit, unless that gives up much of the room: then the start of that file instead.
+  const end = header > 0 && max - header <= HEADER_SLACK ? header : max;
+  return `${diff.slice(0, end)}\n[cut at ${max.toLocaleString("en")} characters]`;
 }
 
 export const GATE: Record<string, DecisionQuestion> = {
@@ -94,7 +125,7 @@ export type PostCandidate = { id: string; number: number; title: string; body: s
 
 export function postState(pr: PullRequestRead, summary: string, post: PostCandidate) {
   return {
-    pull_request: pullRequestState(pr),
+    pull_request: pullRequestState(pr, DECISION_DIFF_CHARS),
     summary_for_users: summary,
     post: { title: post.title, text: post.body.slice(0, 3_000), status: post.status.toLowerCase().replace("_", " ") },
     ...(post.named && { the_pull_request_names_this_post: true }),
