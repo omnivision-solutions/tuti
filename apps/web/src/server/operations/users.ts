@@ -163,7 +163,8 @@ export const listUsers = defineOperation({
     }
     // ponytail: offset cursors, like posts.list; switch to keyset pagination if projects get very large.
     // By name, the page is picked first and its activity worked out after; an activity sort needs everyone's.
-    // Every match is sorted anyway, so counting them all (`total`) costs nothing more.
+    // Every match is sorted anyway, so counting them all here (`total`) adds little: holding them for the count took about
+    // a tenth more on 100k+ users, where a count of its own took over half as long again (and could disagree with the page).
     const page = await prisma.$queryRaw<{ id: string; total: number }[]>`
       SELECT s.id, count(*) OVER ()::int AS total FROM sso_identity s JOIN "user" u ON u.id = s."userId" ${input.sort === "name" ? Prisma.empty : accountsOf}
       WHERE ${Prisma.join(filters, " AND ")}
