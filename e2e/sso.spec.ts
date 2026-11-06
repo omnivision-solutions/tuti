@@ -174,7 +174,9 @@ test("a collection for one reader group: people the app signs in with that group
   await checkpoint(owner, "team-settings-new-group", { fullPage: false });
   await groupDialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();
-  await expect(groups).toContainText("groups is enterprise · 0 users · On the Enterprise plan");
+  // How many are in it and what it's for; its conditions are in Edit.
+  await expect(groups).toContainText("0 users · On the Enterprise plan");
+  await expect(groups).not.toContainText("groups is enterprise");
 
   // "Specific groups" on a new collection: the group, picked from the list.
   await owner.goto(`/app/${slug}/docs`);
@@ -217,7 +219,7 @@ test("a collection for one reader group: people the app signs in with that group
 
   // The team sees Sam in the group, and can't delete it while the collection is for it.
   await owner.goto(`/app/${slug}/settings/groups`);
-  await expect(groups).toContainText("enterprise · 1 user");
+  await expect(groups).toContainText("1 user · On the Enterprise plan");
   await groups.scrollIntoViewIfNeeded();
   await checkpoint(owner, "team-settings-groups", { fullPage: false });
   await groups.getByRole("button", { name: "Delete Enterprise customers" }).click();
@@ -496,7 +498,9 @@ test("a group from conditions: readers whose properties match read its collectio
   await expect(preview).toHaveText("1 matching user");
   await dialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();
-  await expect(groups).toContainText("plan is any of pro, enterprise · 1 user: Ada from Acme");
+  await expect(groups).toContainText("1 user");
+  // Who they are is in Edit, not the list.
+  await expect(groups).not.toContainText("Ada from Acme");
   await checkpoint(owner, "team-settings-groups-with-conditions", { fullPage: false });
 
   // Any one of its conditions: saved, listed with "or", and still "any" when it's opened and saved again.
@@ -513,12 +517,12 @@ test("a group from conditions: readers whose properties match read its collectio
   await owner.getByRole("option", { name: "Any can match" }).click();
   await expect(preview).toHaveText("2 matching users");
   await dialog.getByRole("button", { name: "Add group" }).click();
-  await expect(groups).toContainText("plan is pro or seats is not set · 2 users: Ada from Acme and Bea from Acme");
+  await expect(groups).toContainText("2 users");
   await groups.getByRole("button", { name: "Edit Pro or seatless" }).click();
   await expect(dialog.getByRole("combobox", { name: "Which must match" })).toContainText("Any can match");
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Group saved")).toBeVisible();
-  await expect(groups).toContainText("plan is pro or seats is not set · 2 users");
+  await expect(groups).toContainText("2 users");
 
   // A collection for it, with an article.
   await api("/collections", { name: "Pro guides", groups: ["pro-customers"] });

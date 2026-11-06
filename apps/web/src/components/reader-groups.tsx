@@ -25,26 +25,15 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
-import { type GroupCondition, LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS } from "@/lib/group-conditions";
+import { count } from "@/lib/usage-format";
+import { LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS } from "@/lib/group-conditions";
 import type { FormState } from "@/server/form-state";
 import { deleteGroup, type GroupPreview, previewGroup, saveGroup, suggestValues } from "@/server/groups";
 import type { GroupView } from "@/server/operations/groups";
 
+const usersCount = (n: number) => `${count(n)} ${n === 1 ? "user" : "users"}`;
 
-const names = (list: string[]) => new Intl.ListFormat("en-GB").format(list);
-
-const usersCount = (count: number) => `${count} ${count === 1 ? "user" : "users"}`;
-
-/** "2 users: Ada and Bea", "12 users, including Ada, Bea and Cy". */
-function whoIsIn({ readers, sample }: { readers: number; sample: string[] }) {
-  const count = usersCount(readers);
-  return sample.length === 0 ? count : readers > sample.length ? `${count}, including ${names(sample)}` : `${count}: ${names(sample)}`;
-}
-
-const conditionText = (c: GroupCondition) =>
-  [c.property, OPERATORS[c.op], "value" in c ? (Array.isArray(c.value) ? c.value.join(", ") : c.value) : ""].filter(Boolean).join(" ");
-
-/** Settings → Groups: the project's reader groups, with who's in each now. `properties`: the names its users have, suggested in the dialog. */
+/** Settings → Groups: the project's reader groups, with how many are in each now (who, and the conditions, in Edit). `properties`: the names its users have, suggested in the dialog. */
 export function ReaderGroups({ projectSlug, groups, properties }: { projectSlug: string; groups: GroupView[]; properties: string[] }) {
   return (
     <div className="flex flex-col gap-4">
@@ -56,7 +45,7 @@ export function ReaderGroups({ projectSlug, groups, properties }: { projectSlug:
             <ItemRow
               key={group.key}
               title={group.name}
-              meta={[group.conditions.map(conditionText).join(group.match === "any" ? " or " : " and "), whoIsIn(group), group.description].filter(Boolean).join(" · ")}
+              meta={[usersCount(group.readers), group.description].filter(Boolean).join(" · ")}
               actions={
                 <>
                   <GroupDialog projectSlug={projectSlug} properties={properties} group={group} />

@@ -137,8 +137,8 @@ group that needs only one. Each is a property, an operator and a value, e.g. `pl
 A token's `groups` is the `groups` property, so a group for the people your app puts in its
 "enterprise" group has the condition `groups` is `enterprise`. While you write the conditions, the
 dialog lists the users who match them now beside them (the first 50, and how many in all), and
-property names your users have are suggested; the list of groups shows how many each has, with a
-few names. Changing a group's conditions changes who's in it. (In the API, conditions
+property names your users have are suggested; the list of groups shows how many each has (who
+they are, and the conditions, are in Edit). Changing a group's conditions changes who's in it. (In the API, conditions
 written with `attribute` and `is_one_of`, their names before, still work. Groups named by an SSO
 group name before got the condition `groups` is that name; one that had conditions as well kept
 just those.)
