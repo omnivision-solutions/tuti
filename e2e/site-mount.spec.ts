@@ -83,10 +83,17 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await owner.getByLabel("Custom HTML").fill('<p id="team-html">From the team</p><script>document.body.dataset.teamScript = "ran"</script>');
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Custom code saved")).toBeVisible();
-  // An article for the widget's Help center, and Messages on (straight to the team: AI first off).
+  // Messages on (straight to the team: AI first off).
   const api = await apiFor(owner, slug);
+  // An article for the widget's Help center, one in a collection, an update for What's new and an idea, so each view has its links.
   const article = await api("/articles", { title: "Getting started", body: "Install the app." });
   await api(`/articles/${article.slug}/publish`, {});
+  const billing = await api("/collections", { name: "Billing" });
+  const invoices = await api("/articles", { title: "Invoices", body: "Where to find them.", collection: billing.slug });
+  await api(`/articles/${invoices.slug}/publish`, {});
+  await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
+  await api("/changelog/1/publish", {});
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/support", { inbox: true }, "PATCH");
   await api("/widget", { aiFirst: false }, "PATCH");
   await visitor.goto("/portal/docs");
@@ -103,15 +110,49 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await panel.getByRole("link", { name: "Feedback" }).click();
   await expect(panel.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
   await checkpoint(visitor, "portal-on-site-widget");
-  // Its Help center: the article's link, and its "Open in new tab" to the portal's page, keep the path.
+  // On every view, each link and form the panel has stays under the path: a root path would leave what the site forwards.
   const frame = visitor.frameLocator('iframe[title="Feedback"]');
+  const underPath = async () => {
+    const inside = (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!;
+    const targets = await inside.evaluate(() =>
+      [...document.querySelectorAll('a[href^="/"], form[action^="/"]')].map((element) => element.getAttribute("href") ?? element.getAttribute("action")),
+    );
+    expect(targets.length).toBeGreaterThan(0);
+    expect(targets.filter((target) => !/^\/portal(\/|$)/.test(target!))).toEqual([]);
+  };
+  // Feedback, with an idea (its link to the portal's page, and signing in to vote).
+  await expect(frame.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await underPath();
+  // Home: its search, suggested articles and its cards.
+  await panel.getByRole("link", { name: "Home" }).click();
+  await expect(frame.getByRole("link", { name: /^What's new/ })).toBeVisible();
+  await underPath();
+  // What's new, and an update from it.
+  await frame.getByRole("link", { name: /^What's new/ }).click();
+  await frame.getByRole("link", { name: /^Read more/ }).click();
+  await expect(frame.getByRole("heading", { name: "Calendar sync is here" })).toBeVisible();
+  await underPath();
+  // The Help center: its list, a collection, an article (and "Open in new tab" to the portal's page), and a search.
   await panel.getByRole("link", { name: "Help center" }).click();
   await expect(frame.getByRole("link", { name: "Getting started" })).toHaveAttribute("href", /^\/portal\/widget\?tab=docs&/);
-  await frame.getByRole("link", { name: "Getting started" }).click();
-  await expect(frame.getByRole("heading", { name: "Getting started" })).toBeVisible();
-  await expect(frame.getByRole("link", { name: "Open in new tab" })).toHaveAttribute("href", `/portal/docs/${article.slug}`);
+  await underPath();
+  await frame.getByRole("link", { name: /^Billing/ }).click();
+  await expect(frame.getByRole("link", { name: "Invoices" })).toBeVisible();
+  await underPath();
+  await frame.getByRole("link", { name: "Invoices" }).click();
+  await expect(frame.getByRole("heading", { name: "Invoices" })).toBeVisible();
+  await expect(frame.getByRole("link", { name: "Open in new tab" })).toHaveAttribute("href", `/portal/docs/${invoices.slug}`);
+  await underPath();
+  await panel.getByRole("link", { name: "Help center" }).click();
+  await frame.getByRole("searchbox", { name: "Search the docs" }).fill("invoices");
+  await frame.getByRole("searchbox", { name: "Search the docs" }).press("Enter");
+  await expect.poll(async () => (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!.url()).toContain(`${siteUrl()}/portal/widget?tab=docs&q=invoices`);
+  await expect(frame.getByRole("list", { name: "Search results" }).getByRole("link", { name: "Invoices" })).toBeVisible();
+  await underPath();
   // Messages: once they've written, its live updates come through the site too.
   await panel.getByRole("link", { name: "Messages" }).click();
+  await expect(frame.getByRole("textbox", { name: "Your email" })).toBeVisible();
+  await underPath();
   await frame.getByRole("textbox", { name: "Your email" }).fill(`e2e-sam-${slug}@example.com`);
   await frame.getByRole("textbox", { name: "Message" }).fill("Is there a nonprofit discount?");
   const live = visitor.waitForResponse((response) => response.url().startsWith(`${siteUrl()}/portal/api/widget/live`));
