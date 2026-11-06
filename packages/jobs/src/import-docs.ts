@@ -114,10 +114,14 @@ async function recorded(db: Tx, job: ImportJob, kind: "collection" | "article", 
     select: { id: true, externalId: true, localId: true, contentLanded: true },
   });
   const where = { id: { in: records.map((record) => record.localId) } };
-  const rows = new Map<string, { id: string; slug: string; deleted: boolean; createdById: string | null }>(
+  const rows = new Map<string, { id: string; slug: string; deleted: boolean; createdById: string | null; saved?: boolean }>(
     kind === "collection"
-      ? (await db.collection.findMany({ where, select: { id: true, slug: true } })).map((row) => [row.id, { ...row, deleted: false, createdById: null }])
-      : (await db.article.findMany({ where, select: { id: true, slug: true, deletedAt: true, createdById: true } })).map(({ deletedAt, ...row }) => [row.id, { ...row, deleted: deletedAt !== null }]),
+      ? (await db.collection.findMany({ where, select: { id: true, slug: true } })).map((row) => [row.id, { ...row, deleted: false, createdById: null }] as const)
+      : (await db.article.findMany({ where, select: { id: true, slug: true, deletedAt: true, createdById: true, _count: { select: { revisions: true } } } })).map(({ deletedAt, _count, ...row }) => [
+          row.id,
+          // Saved since it was made empty (every save is a revision): the team's now, never written over.
+          { ...row, deleted: deletedAt !== null, saved: _count.revisions > 0 },
+        ]),
   );
   return new Map(records.filter((record) => rows.has(record.localId)).map((record) => [record.externalId, { record: record.id, landed: record.contentLanded, ...rows.get(record.localId)! }]));
 }
@@ -295,8 +299,11 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const { items, next } = await job.featurebase.page<FeaturebaseArticle>("/help_center/articles", cursor, { state: "all", limit: CONTENT_PAGE });
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
-  const todo = items.filter((article) => !known.get(article.id)?.landed && !known.get(article.id)?.deleted);
+  const todo = items.filter((article) => !known.get(article.id)?.landed && !known.get(article.id)?.deleted && !known.get(article.id)?.saved);
   const link = todo.length > 0 ? await linksTo(job) : undefined;
+  // Those of imports that ended without their last page (failed, or failed as stale) go.
+  const running = await prisma.dataImport.findMany({ where: { id: { in: [...mediaCaches.keys()] }, state: "RUNNING" }, select: { id: true } });
+  [...mediaCaches.keys()].filter((id) => !running.some((row) => row.id === id)).forEach((id) => mediaCaches.delete(id));
   const cache = mediaCaches.get(job.id) ?? new Map();
   mediaCaches.set(job.id, cache);
   // Copies are the import's starter's uploads (someone who left since: none copied).
@@ -330,8 +337,12 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       for (const article of items) {
         const local = locals.get(article.id);
         const text = texts.find((t) => t.article === article);
-        // Landed before (or by a run of this page that got in first), or deleted here since: as it is.
-        if (!local || local.landed || local.deleted || !text) {
+        // Landed before (or by a run of this page that got in first), deleted here since, or saved by the team since it
+        // was made empty (an import that stopped between its passes, started again): as it is.
+        if (!local || local.landed || local.deleted || local.saved || !text) {
+          if (local && !local.landed) {
+            await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
+          }
           tally(job.counts, "articles", null);
           continue;
         }

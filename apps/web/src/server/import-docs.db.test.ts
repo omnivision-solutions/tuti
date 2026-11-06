@@ -1,10 +1,11 @@
 import { Prisma, prisma } from "@tuti/db";
-import { importJob, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
+import { handlers, importJob, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { importSummary } from "@/lib/import-parts";
+import { publishArticle, updateArticle } from "@/server/operations/docs";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -169,6 +170,26 @@ test("an import stopped between the passes leaves every article made, empty, as 
   expect(linksIn((await article("Welcome to Acme")).content)[0]).toEqual({ text: "Paying by card", href: `${await portalAddress(project.slug)}/docs/paying-by-card` });
   expect((await articles()).filter((a) => a.publishedAt)).toHaveLength(2);
   expect(await prisma.importedRecord.count({ where: { projectId: project.id, kind: "article", contentLanded: true } })).toBe(4);
+});
+
+test("an empty article the team wrote and published while the import was stopped stays theirs when it's started again", async () => {
+  await structureOnly();
+  // A draft's address follows its title.
+  const { slug } = await call(updateArticle, asOwner(), { slug: (await article("Paying by card")).slug, title: "Card payments", body: "Our own words." });
+  await call(publishArticle, asOwner(), { slug });
+  await call(updateArticle, asOwner(), { slug, body: "Our own words, still being written." });
+
+  const done = await importDocs();
+  expect(done).toMatchObject({ state: "done", counts: { articles: { imported: 3 } } });
+  expect(await article("Card payments")).toMatchObject({ body: "Our own words.", changes: { body: "Our own words, still being written." }, publishedAt: expect.any(Date) });
+  expect(await article("Welcome to Acme")).toMatchObject({ publishedAt: expect.any(Date), body: expect.stringContaining("every invoice") });
+});
+
+test("a worker without a part the import picked (the release before, mid-deploy) fails it, saying so, rather than skipping it", async () => {
+  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts: ["docs", "later"], step: "docs-collections" } });
+  expect(await handlers.importStep({ importId: row.id }, { info: () => {}, warn: () => {} })).toEqual({ failed: true });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "FAILED", apiKey: null, error: "Tuti was updating as it started. Start it again to go on: what came across already is skipped." });
+  expect(await collections()).toEqual([]);
 });
 
 test("an article whose content didn't land is filled in by the next import; the others stay as they are", async () => {
