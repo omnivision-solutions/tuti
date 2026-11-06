@@ -96,13 +96,15 @@ export async function addSampleContent(projectId: string, userId: string) {
       });
     }
 
-    const board = missing.feedback ? await tx.board.findFirst({ where: { projectId }, orderBy: { createdAt: "asc" }, select: { id: true } }) : null;
+    const board = missing.feedback ? await tx.board.findFirst({ where: { projectId }, orderBy: { createdAt: "asc" }, select: { id: true, postVisibility: true } }) : null;
     for (const post of board ? POSTS : []) {
       const { postCount: number } = await tx.project.update({ where: { id: projectId }, data: { postCount: { increment: 1 } }, select: { postCount: true } });
       await tx.post.create({
         data: {
           ...sample(projectId),
           boardId: board!.id,
+          // As any new post on its board.
+          visibility: board!.postVisibility,
           authorId: people[post.voters[0]!]!,
           number,
           title: post.title,

@@ -7,12 +7,13 @@ import { ListFilters } from "@/components/list-filters";
 import BoardPage from "@/app/portal/[project]/(site)/feedback/[board]/page";
 import PostPage from "@/app/portal/[project]/(site)/feedback/[board]/[post]/page";
 import RoadmapPage from "@/app/portal/[project]/(site)/roadmap/page";
+import WidgetPage from "@/app/portal/[project]/widget/page";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { publishedEntries } from "./changelog-queries";
-import { getChangelogEntry } from "./operations/changelog";
+import { getChangelogEntry, listChangelog } from "./operations/changelog";
 import { emailedOnCompletion } from "./operations/code-changes";
 import { createComment, createPost } from "./operations/create";
 import type { Actor } from "./operations/define";
@@ -21,6 +22,7 @@ import { setSubscription, setVote } from "./operations/more";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./operations/read";
 import { call } from "./operations/run";
 import { firstBoardPath } from "./portal-home";
+import { addSampleContent } from "./sample-content";
 import { accountPosts, boardsWithCounts, postsLike, recentlyShipped, votersToEmail } from "./post-lists";
 import { postViewer, SIGNED_OUT_VIEWER } from "./post-visibility";
 import { findSimilarPosts } from "./similar-posts";
@@ -169,6 +171,10 @@ test("the portal's board, post page and roadmap show each reader the posts they 
   // A Team only board: not found for anyone else, the team's to read.
   await prisma.board.create({ data: { projectId: project.id, slug: "security", name: "Security", postVisibility: "TEAM" } });
   expect(await board("security")).toBe("404");
+  // Its old address: not found for anyone else, sent on for the team.
+  const security = await prisma.board.findFirstOrThrow({ where: { projectId: project.id, slug: "security" } });
+  await prisma.boardRedirect.create({ data: { projectId: project.id, boardId: security.id, slug: "security-old" } });
+  expect(await board("security-old")).toBe("404");
   // Nor a choice on the roadmap: with one board left, there's nothing to pick.
   const roadmapFilters = async () => {
     const tree = await RoadmapPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never);
@@ -180,6 +186,7 @@ test("the portal's board, post page and roadmap show each reader the posts they 
   actAs(owner);
   expect(await board("security")).not.toBe("404");
   expect(await roadmapFilters()).toBe(true);
+  await expect(board("security-old")).rejects.toMatchObject({ digest: expect.stringContaining("/feedback/security;308") });
 });
 
 test("Similar ideas, typing suggestions, the widget's ideas and news, Account and Recently shipped leave out what a reader may not see", async () => {
@@ -231,10 +238,24 @@ test("the changelog lists only an entry's public posts to readers; boards that a
   expect((await publishedEntries(project.slug, { number: entry.number }))[0]!.posts.map((post) => post.number)).toEqual([1]);
   expect((await call(getChangelogEntry, as(bob), { number: 1 })).posts.map((post) => post.number)).toEqual([1]);
   expect((await call(getChangelogEntry, key, { number: 1 })).posts.map((post) => post.number).sort()).toEqual([1, 2]);
+  expect((await call(listChangelog, as(bob), {})).entries[0]!.posts.map((post) => post.number)).toEqual([1]);
+  expect((await call(listChangelog, key, {})).entries[0]!.posts.map((post) => post.number).sort()).toEqual([1, 2]);
 
   // A Team only board, older than the rest: never the portal's first.
   await prisma.board.create({ data: { projectId: project.id, slug: "security", name: "Security", postVisibility: "TEAM", createdAt: new Date(0) } });
   expect(await firstBoardPath(project.slug)).toBe("/feedback/feature-requests");
+  // The widget's Feedback tab posts on the portal's first board too.
+  const widgetBoard = async () => {
+    const find = (node: ReactNode): string | undefined =>
+      Array.isArray(node)
+        ? node.map(find).find(Boolean)
+        : isValidElement<{ board?: { slug: string }; children?: ReactNode }>(node)
+          ? (node.props.board?.slug ?? find(node.props.children))
+          : undefined;
+    return find((await WidgetPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ tab: "feedback" }) } as never)) as ReactNode);
+  };
+  actAs(null);
+  expect(await widgetBoard()).toBe("feature-requests");
   expect((await boardsWithCounts(project.id, SIGNED_OUT_VIEWER)).map((board) => board.slug)).toEqual(["feature-requests"]);
   const request = new Request("http://x");
   const map = await (await sitemap(request, { params: Promise.resolve({ project: project.slug }) })).text();
@@ -243,4 +264,14 @@ test("the changelog lists only an entry's public posts to readers; boards that a
   expect(map).not.toContain("rollout");
   expect(map).not.toContain("/feedback/security");
   expect(await (await llms(request, { params: Promise.resolve({ project: project.slug }) })).text()).not.toContain("Security");
+});
+
+test("sample content takes its board's visibility, as any new post", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  await prisma.board.update({ where: { id: project.boards[0]!.id }, data: { postVisibility: "TEAM" } });
+  await addSampleContent(project.id, owner.id);
+  const posts = await prisma.post.findMany({ where: { projectId: project.id }, select: { visibility: true } });
+  expect(posts.length).toBeGreaterThan(0);
+  expect(posts.every((post) => post.visibility === "TEAM")).toBe(true);
 });

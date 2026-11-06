@@ -67,10 +67,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
       !found &&
       (await prisma.boardRedirect.findFirst({
         where: { slug: boardSlug, project: { slug: projectSlug } },
-        select: { board: { select: { slug: true, postVisibility: true } } },
+        select: { board: { select: { slug: true, postVisibility: true, projectId: true } } },
       }));
-    // Not to a Team only board: its new address is the team's too.
-    if (moved && moved.board.postVisibility !== "TEAM") {
+    // Not to a Team only board, but for the team: its new address is the team's too.
+    if (moved && (moved.board.postVisibility !== "TEAM" || (await currentPostViewer(moved.board.projectId)).team)) {
       permanentRedirect(at(boardPath(moved.board)));
     }
     notFound();

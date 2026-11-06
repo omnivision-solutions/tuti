@@ -38,7 +38,7 @@ test("a board's posts are private to their author and the team; the team makes o
   // Anyone else: not on the board, and its page isn't found.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/feedback/bug-reports");
-  await expect(visitor.getByText("No feedback yet")).toBeVisible();
+  await expect(visitor.getByText("No ideas waiting")).toBeVisible();
   expect((await visitor.goto(postUrl))?.status()).toBe(404);
 
   // The team sees it, and makes it public: its page says who sees it.
