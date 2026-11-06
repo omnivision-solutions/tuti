@@ -219,12 +219,16 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   await expect(owner.getByRole("button", { name: "Date range: Last month" })).toBeVisible();
 });
 
-test("on Tuti's cloud, signing up agrees to the Terms of Service and Privacy Policy, linked there and in the footer; a self-hosted server has neither", async ({ browser }, testInfo) => {
+test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign-in) agrees to the Terms of Service and Privacy Policy, linked there and in the footer; a self-hosted server has neither", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const page = await browser.newPage({ baseURL: CLOUD_URL });
   await page.goto("/sign-up");
   await expect(page.getByText("By signing up, you agree to the Terms of Service and Privacy Policy.")).toBeVisible();
   await checkpoint(page, "sign-up-terms");
+  // Sign-in's Continue with Google or GitHub signs up someone new, so it says so too.
+  await page.goto("/sign-in");
+  await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
+  await expect(page.getByText("By continuing, you agree to the Terms of Service and Privacy Policy.")).toBeVisible();
   await page.getByRole("main").getByRole("link", { name: "Terms of Service" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Terms of Service" })).toBeVisible();
   await checkpoint(page, "terms");
@@ -236,6 +240,9 @@ test("on Tuti's cloud, signing up agrees to the Terms of Service and Privacy Pol
   await selfHosted.goto("/sign-up");
   await expect(selfHosted.getByRole("button", { name: "Sign up" })).toBeVisible();
   await expect(selfHosted.getByText("By signing up")).toHaveCount(0);
+  await selfHosted.goto("/sign-in");
+  await expect(selfHosted.getByRole("button", { name: "Sign in" })).toBeVisible();
+  await expect(selfHosted.getByText("By continuing")).toHaveCount(0);
   await expect(selfHosted.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Terms" })).toHaveCount(0);
   for (const path of ["/terms", "/privacy"]) {
     expect((await selfHosted.request.get(path)).status()).toBe(404);

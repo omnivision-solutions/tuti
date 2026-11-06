@@ -7,6 +7,7 @@ import { safeRedirectPath } from "@/lib/redirects";
 import { socialProviders, socialSignInError } from "@/lib/social-sign-in";
 import { getSession } from "@/server/session";
 
+import { TermsAgreement } from "../legal";
 import { WithPitch } from "../with-pitch";
 
 export default async function SignInPage(props: PageProps<"/sign-in">) {
@@ -19,13 +20,14 @@ export default async function SignInPage(props: PageProps<"/sign-in">) {
   if (!nextPath && !defaultEmail && !reset && (await getSession())) {
     redirect("/app");
   }
+  const social = socialProviders();
   return (
     <WithPitch>
       <div className="mx-auto flex w-full max-w-sm flex-col gap-4">
         {reset === "done" && <PasswordChangedAlert />}
         <AuthForm
           mode="sign-in"
-          social={socialProviders()}
+          social={social}
           socialError={socialSignInError(error, via, emailConfigured())}
           redirectTo="/app"
           next={nextPath || undefined}
@@ -33,6 +35,8 @@ export default async function SignInPage(props: PageProps<"/sign-in">) {
           // Password resets need email that really goes out.
           forgotPassword={emailConfigured()}
         />
+        {/* Continue with Google or GitHub signs up someone new. */}
+        {social.length > 0 && <TermsAgreement by="continuing" />}
       </div>
     </WithPitch>
   );

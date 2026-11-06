@@ -85,7 +85,7 @@ export default function PrivacyPage() {
       <h2>How long we keep it</h2>
       <p>
         We keep account data and content while your account or project exists. Closed inbox and AI conversations are
-        deleted after a year. When you delete your account or a project, we delete its data within 30 days, apart from
+        deleted after a year. When you ask us to delete your account or a project (email {contact}), we delete its data within 30 days, apart from
         backups, which expire on their own schedule, and billing records we must keep by law.
       </p>
 

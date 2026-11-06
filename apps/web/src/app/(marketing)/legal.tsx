@@ -1,4 +1,5 @@
 import { plansEnabled } from "@tuti/shared";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 /** The address for anything about tuti.so's terms and privacy. */
@@ -26,5 +27,27 @@ export function LegalPage({ title, updated, children }: { title: string; updated
       </header>
       {children}
     </article>
+  );
+}
+
+/**
+ * "By signing up, you agree to …" under the forms that create a tuti.so account: sign-up, and sign-in
+ * when it offers Continue with Google or GitHub (which signs up someone new). Only on Tuti's cloud.
+ */
+export function TermsAgreement({ by }: { by: string }) {
+  if (!plansEnabled()) return null;
+  const link = "underline underline-offset-4 hover:text-foreground";
+  return (
+    <p className="text-center text-sm text-muted-foreground">
+      By {by}, you agree to the{" "}
+      <Link href="/terms" className={link}>
+        Terms of Service
+      </Link>{" "}
+      and{" "}
+      <Link href="/privacy" className={link}>
+        Privacy Policy
+      </Link>
+      .
+    </p>
   );
 }
