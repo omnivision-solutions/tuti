@@ -420,11 +420,17 @@ const changelog = (row: Row): Row => ({
 });
 
 /**
- * The changelog: an entry with a cover, an image, a category and comments, emailed to subscribers; one improved; a draft;
- * one only a segment sees.
+ * The changelog, newest first as Featurebase lists it by default: an entry with a cover, an image, a category and
+ * comments, emailed to subscribers; one improved; a draft that was emailed before it was unpublished; one only a segment
+ * sees, one in a category only some roles see; one too long for Tuti.
  */
 function changelogFixtures(): Row[] {
   return [
+    changelog({ id: "65f0000000000000000000d6", title: "The long one", content: `<p>${"word ".repeat(4001)}</p>`, date: "2024-03-20T09:00:00.000Z" }),
+    changelog({ id: "65f0000000000000000000d5", title: "For admins", content: "<p>Roles only.</p>", date: "2024-03-15T09:00:00.000Z", categories: [{ id: "c3", name: "New", roles: ["admin"] }] }),
+    changelog({ id: "65f0000000000000000000d4", title: "For our beta group", content: "<p>Just for you.</p>", date: "2024-03-10T09:00:00.000Z", allowedSegmentIds: ["s1"] }),
+    changelog({ id: "65f0000000000000000000d3", title: "Single sign-on", content: "<p>Coming soon.</p>", date: "2024-03-05T09:00:00.000Z", state: "draft", emailSentToSubscribers: true }),
+    changelog({ id: "65f0000000000000000000d2", title: "Faster exports", content: "<p>Exports take half the time.</p>", date: "2024-03-01T09:00:00.000Z", categories: [{ id: "c2", name: "Improvement" }] }),
     changelog({
       id: "65f0000000000000000000d1",
       title: "Dark mode is here",
@@ -435,9 +441,6 @@ function changelogFixtures(): Row[] {
       emailSentToSubscribers: true,
       commentCount: 2,
     }),
-    changelog({ id: "65f0000000000000000000d2", title: "Faster exports", content: "<p>Exports take half the time.</p>", date: "2024-03-01T09:00:00.000Z", categories: [{ id: "c2", name: "Improvement" }] }),
-    changelog({ id: "65f0000000000000000000d3", title: "Single sign-on", content: "<p>Coming soon.</p>", date: "2024-03-05T09:00:00.000Z", state: "draft" }),
-    changelog({ id: "65f0000000000000000000d4", title: "For our beta group", content: "<p>Just for you.</p>", date: "2024-03-10T09:00:00.000Z", allowedSegmentIds: ["s1"] }),
   ];
 }
 
@@ -565,6 +568,11 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
       const rows = (list.rows as (Row | null)[])
         .filter((row) => (list.rows !== fake.fixtures.articles && list.rows !== fake.fixtures.changelogs) || state === "all" || row?.state === state)
         .map((row) => (row && detail ? Object.fromEntries(Object.entries(row).filter(([key]) => !detail.includes(key))) : row));
+      // Changelog entries by date, newest first unless `sortOrder` says asc, as Featurebase sorts them.
+      if (list.rows === fake.fixtures.changelogs) {
+        const asc = url.searchParams.get("sortOrder") === "asc";
+        rows.sort((a, b) => (asc ? 1 : -1) * String(a?.date).localeCompare(String(b?.date)));
+      }
       if (!list.paged) {
         return send(200, "bare" in list ? rows : { object: "list", data: rows, nextCursor: null });
       }

@@ -348,7 +348,7 @@ test("the changelog comes across from Featurebase: its entries on the portal at 
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await expect(status).toContainText("Imported from Featurebase");
   await expect(status).toContainText("3 changelog entries, 2 images in the changelog brought across.");
-  await expect(status).toContainText("1 changelog entry only some people see");
+  await expect(status).toContainText("2 changelog entries only some people see");
   await expect(owner.getByRole("link", { name: "See changelog" })).toBeVisible();
   await checkpoint(owner, "setup-changelog-imported");
 

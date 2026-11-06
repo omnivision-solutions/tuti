@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { importsSettled } from "@tuti/jobs";
+import { CHANGELOG_PAGE, importsSettled } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -20,7 +20,11 @@ beforeAll(async () => {
   [fake, s3] = await Promise.all([startFeaturebaseFake(), startS3Fake()]);
 });
 afterAll(() => Promise.all([fake.close(), s3.close()]));
-afterEach(() => vi.unstubAllEnvs());
+const limits = { ...CHANGELOG_PAGE };
+afterEach(() => {
+  vi.unstubAllEnvs();
+  Object.assign(CHANGELOG_PAGE, limits);
+});
 beforeEach(async () => {
   for (const [name, value] of Object.entries({ ...fake.env, ...s3.env, WEBHOOK_ALLOW_PRIVATE_URLS: "true" })) {
     vi.stubEnv(name, value);
@@ -46,19 +50,19 @@ const entries = () =>
     select: { number: true, title: true, body: true, content: true, tags: true, publishedAt: true, announced: true, coverId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true, createdById: true },
   });
 
-test("the changelog comes across quietly: entries everyone sees in date order, published at their dates and drafts as drafts, with their images, cover and tags; one only some people see left out, comments counted", async () => {
+test("the changelog comes across quietly: entries everyone sees in date order, published at their dates and drafts as drafts, with their images, cover and tags; those only some people see, or too long, left out; comments counted", async () => {
   await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: "e2e-reader@example.com", token: "t", confirmedAt: new Date() } });
   const emailed = mailbox.emails.length;
   const done = await importChangelog();
 
   expect(done).toMatchObject({ state: "done", error: null });
   expect(done.counts).toEqual({
-    changelogEntries: { imported: 3, leftOut: { "only some people see": 1 } },
+    changelogEntries: { imported: 3, leftOut: { "only some people see": 2, "longer than 20,000 characters, Tuti's most": 1 } },
     // The entry's image and its cover.
     changelogImages: { imported: 2, leftOut: {} },
     changelogComments: { imported: 0, leftOut: { "(Tuti's changelog has no comments)": 2 } },
   });
-  expect(importSummary(done)).toBe("3 changelog entries, 2 images in the changelog brought across. Left out: 1 changelog entry only some people see; 2 comments on the changelog (Tuti's changelog has no comments).");
+  expect(importSummary(done)).toBe("3 changelog entries, 2 images in the changelog brought across. Left out: 2 changelog entries only some people see; 1 changelog entry longer than 20,000 characters, Tuti's most; 2 comments on the changelog (Tuti's changelog has no comments).");
 
   const [dark, exports, sso, ...rest] = await entries();
   expect(rest).toEqual([]);
@@ -79,7 +83,8 @@ test("the changelog comes across quietly: entries everyone sees in date order, p
   expect(JSON.stringify(dark!.content)).toContain('"type":"image"');
   expect(await prisma.media.count({ where: { projectId: project.id, status: "READY" } })).toBe(2);
   expect(exports).toMatchObject({ number: 2, title: "Faster exports", tags: ["IMPROVED"], publishedAt: new Date("2024-03-01T09:00:00.000Z"), subscribersEmailedAt: null });
-  expect(sso).toMatchObject({ number: 3, title: "Single sign-on", tags: [], publishedAt: null });
+  // Emailed, then unpublished in Featurebase: still marked emailed.
+  expect(sso).toMatchObject({ number: 3, title: "Single sign-on", tags: [], publishedAt: null, subscribersEmailedAt: new Date("2024-03-05T09:00:00.000Z") });
   expect(mailbox.emails.length).toBe(emailed);
 });
 
@@ -88,7 +93,15 @@ test("importing again brings nothing twice", async () => {
   const before = await entries();
   const again = await importChangelog();
   expect(await entries()).toEqual(before);
-  expect(again.counts.changelogEntries).toEqual({ imported: 0, leftOut: { "already brought across earlier": 3, "only some people see": 1 } });
+  expect(again.counts.changelogEntries).toEqual({ imported: 0, leftOut: { "already brought across earlier": 3, "only some people see": 2, "longer than 20,000 characters, Tuti's most": 1 } });
+});
+
+test("a page's images begun past its time limit are left out, counted; the entries come across", async () => {
+  CHANGELOG_PAGE.hardMs = -1;
+  const done = await importChangelog();
+  expect(done.counts.changelogEntries!.imported).toBe(3);
+  expect(done.counts.changelogImages).toEqual({ imported: 0, leftOut: { "that couldn't be fetched": 2 } });
+  expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(0);
 });
 
 test("a key that can't read the changelog isn't accepted for it", async () => {

@@ -1,5 +1,6 @@
 import { htmlToContent, type HtmlContent } from "@tuti/content/html";
 import { type ChangelogTag, prisma } from "@tuti/db";
+import { MAX_ENTRY_LENGTH } from "@tuti/shared";
 
 import type { FeaturebaseChangelog } from "./featurebase";
 import { MEDIA_LEFT_OUT } from "./import-docs";
@@ -40,7 +41,7 @@ const dateOf = (value: string | null | undefined) => (value && !Number.isNaN(Dat
 
 export async function changelogPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = Date.now();
-  const { items, next } = await job.featurebase.page<FeaturebaseChangelog>("/changelogs", cursor, { state: "all", sortOrder: "asc", limit: CHANGELOG_PAGE.entries });
+  const { items, next } = await job.featurebase.page<FeaturebaseChangelog>("/changelogs", cursor, { state: "all", sortBy: "date", sortOrder: "asc", limit: CHANGELOG_PAGE.entries });
   const recorded = async () =>
     new Set(
       (await prisma.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: { in: items.map((entry) => entry.id) } }, select: { externalId: true } })).map(
@@ -74,8 +75,8 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
           continue;
         }
         const { content, cover } = made;
-        if ("error" in content) {
-          tally(job.counts, "changelogEntries", "whose content couldn't be read");
+        if ("error" in content || content.text.length > MAX_ENTRY_LENGTH) {
+          tally(job.counts, "changelogEntries", "error" in content ? "whose content couldn't be read" : `longer than ${MAX_ENTRY_LENGTH.toLocaleString("en")} characters, Tuti's most`);
           continue;
         }
         const { changelogCount: number } = await tx.project.update({ where: { id: job.projectId }, data: { changelogCount: { increment: 1 } }, select: { changelogCount: true } });
@@ -91,7 +92,8 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
             tags: tagsOf(entry),
             publishedAt,
             coverId: cover && "mediaId" in cover ? cover.mediaId : null,
-            subscribersEmailedAt: publishedAt && entry.emailSentToSubscribers ? publishedAt : null,
+            // Moved back to a draft since, too: publishing it here mustn't email it again.
+            subscribersEmailedAt: entry.emailSentToSubscribers ? date : null,
             createdById: job.startedById,
             createdAt: dateOf(entry.createdAt) ?? date,
             updatedAt: dateOf(entry.updatedAt) ?? date,
@@ -100,12 +102,14 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
         });
         await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: entry.id, localId: created.id } });
         tally(job.counts, "changelogEntries", null);
-        if (content.mediaIds.length > 0) {
-          tally(job.counts, "changelogImages", null, content.mediaIds.length);
+        // Images only (the changelog takes no files), each once: a cover that's also in the text too.
+        const copies = new Set([...content.mediaIds, ...(cover && "mediaId" in cover ? [cover.mediaId] : [])]);
+        if (copies.size > 0) {
+          tally(job.counts, "changelogImages", null, copies.size);
         }
         content.leftOut.forEach((item) => tally(job.counts, CHANGELOG_MEDIA[item.kind], MEDIA_LEFT_OUT[item.reason]));
-        if (cover) {
-          tally(job.counts, "changelogImages", "mediaId" in cover ? null : MEDIA_LEFT_OUT[cover.leftOut]);
+        if (cover && "leftOut" in cover) {
+          tally(job.counts, "changelogImages", MEDIA_LEFT_OUT[cover.leftOut]);
         }
         if (entry.commentCount) {
           tally(job.counts, "changelogComments", "(Tuti's changelog has no comments)", entry.commentCount);
