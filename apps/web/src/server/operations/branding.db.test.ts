@@ -332,7 +332,18 @@ test('"Powered by tuti" stays without a licence for the project on this installa
   expect(await get()).toMatchObject({ poweredBy: true });
 });
 
-test("Customize's forms each save their part: an empty image field removes it, empty link rows are skipped", async () => {
+test('where plans are sold, hiding "Powered by tuti" takes the add-on, and the error says so', async () => {
+  vi.stubEnv("PLANS", "on");
+  await expect(update({ poweredBy: false })).rejects.toMatchObject({
+    status: 400,
+    message: 'Hiding "Powered by tuti" needs its add-on on this project\'s paid plan, in Billing',
+  });
+  await prisma.project.update({ where: { id: project.id }, data: { badgeAddOn: true } });
+  await update({ poweredBy: false });
+  expect(await get()).toMatchObject({ poweredBy: false });
+});
+
+test("Customize's forms each save their part:an empty image field removes it, empty link rows are skipped", async () => {
   actAs(owner);
   const logo = await uploaded();
   const form = (fields: Record<string, string>, rows: [string, string][] = []) => {

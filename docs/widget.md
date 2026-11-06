@@ -12,7 +12,7 @@ they posted or voted on ("Dark mode is now Planned": moves to Planned, In progre
 in the last 30 days, three at most); then a way into feedback, What's new (its card opens it),
 and your quick links. The tabs, Home,
 Feedback, Help center (your docs) and Messages, are at the bottom of the panel, with
-"Powered by tuti" under them unless your project hides it (Customize → Powered by). Add one
+"Powered by tuti" under them unless your project hides it (Customize → Branding). Add one
 script tag anywhere in your pages:
 
 ```html

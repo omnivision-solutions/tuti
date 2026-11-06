@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: 'Remove "Powered by tuti"', robots: {
 const LICENSE_EMAIL = "hello@tuti.so";
 
 /**
- * tuti.so/license?installation=…&project=… is where "Get a licence" in Customize → Powered by goes,
+ * tuti.so/license?installation=…&project=… is where "Get a licence" in Customize → Branding goes,
  * on any installation: a licence is for that project on that installation, so the page shows both
  * ids, and buys it for them with Stripe Checkout (or, without Stripe, says to email). Only on Tuti's
  * own installation, the licence server.
@@ -31,7 +31,7 @@ export default async function LicensePage(props: PageProps<"/license">) {
     return (
       <EmptyState
         title="Open this page from your Tuti"
-        description='In Customize → Powered by, untick "Powered by tuti" and choose Get a licence: the link says which project it is for.'
+        description='In Customize → Branding, untick "Powered by tuti" and choose Get a licence: the link says which project it is for.'
       />
     );
   }
@@ -69,7 +69,7 @@ export default async function LicensePage(props: PageProps<"/license">) {
         <div className="flex flex-col gap-2" role="status">
           <p className="font-medium">This project is licensed.</p>
           <p>
-            In Customize → Powered by, choose Check now (or wait for the daily check), then untick &quot;Powered by tuti&quot;.
+            In Customize → Branding, choose Check now (or wait for the daily check), then untick &quot;Powered by tuti&quot;.
           </p>
           {license.stripeSubscriptionId && (
             <p className="text-sm text-muted-foreground">
@@ -114,7 +114,7 @@ export default async function LicensePage(props: PageProps<"/license">) {
       ) : (
         <>
           <p>
-            To buy one, email {email} with both IDs. Once it&apos;s active, choose Check now in Customize → Powered by, or wait for the daily check.
+            To buy one, email {email} with both IDs. Once it&apos;s active, choose Check now in Customize → Branding, or wait for the daily check.
           </p>
           <a href={mailto} className={buttonVariants({ className: "self-start" })}>
             Email {LICENSE_EMAIL}

@@ -19,7 +19,7 @@ export async function setPortalAccess(projectSlug: string, access: string): Prom
   );
 }
 
-/** Customize → Home page (see portal.update). */
+/** Customize → Navigation (see portal.update). */
 export async function setPortalHome(projectSlug: string, home: string): Promise<{ error?: string }> {
   return asAdmin(projectSlug, "Only project owners and admins can change the portal's home page", (context) =>
     call(updatePortal, context, { home: home as PortalHomePage }),

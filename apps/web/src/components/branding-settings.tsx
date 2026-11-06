@@ -236,7 +236,7 @@ export function NavigationSettings({
 /** What hiding the badge takes where plans are sold (tuti.so): the add-on on the project's plan, bought on Billing. */
 type BadgePlan = { addOn: boolean; billingUrl: string };
 
-/** Customize → Powered by: "Powered by tuti" in the footer, which needs a licence (or on tuti.so the add-on) to hide (see branding.update). */
+/** Customize → Branding: "Powered by tuti" in the footer, which needs a licence (or on tuti.so the add-on) to hide (see branding.update). */
 export function PoweredBySettings({
   projectSlug,
   poweredBy,
@@ -452,6 +452,7 @@ function PoweredByField({
   plan: BadgePlan | null;
 }) {
   const [shown, setShown] = useState(poweredBy);
+  const descriptionId = useId();
   const box = useRef<HTMLInputElement>(null);
   useFieldChanged(box, shown);
   const [licensedUntil, setLicensedUntil] = useState(initial);
@@ -490,6 +491,7 @@ function PoweredByField({
           type="checkbox"
           name="poweredBy"
           checked={shown}
+          aria-describedby={descriptionId}
           onChange={(event) => {
             if (!event.target.checked && !licensedUntil && !plan?.addOn) {
               setMessage(null);
@@ -502,9 +504,12 @@ function PoweredByField({
         />
         Show &quot;Powered by tuti&quot; in the footer
       </label>
-      <FieldDescription>
+      {/* Live: ticking the box back on with the add-on says it's still billed, and where it's removed. */}
+      <FieldDescription id={descriptionId} aria-live="polite">
         {plan?.addOn
-          ? "Hidden with the add-on on this project's plan."
+          ? shown
+            ? <>The add-on is still on this project&apos;s plan: remove it in <Link href={plan.billingUrl}>Billing</Link>.</>
+            : "Hidden with the add-on on this project's plan."
           : licensedUntil
             ? `Licensed until ${untilDate(licensedUntil)}.`
             : plan

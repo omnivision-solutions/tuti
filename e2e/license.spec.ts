@@ -9,7 +9,7 @@ test("someone buying a licence sees which installation and project it's for, and
   const checkpoint = checkpoints(testInfo);
   const installation = `e2e-installation-${randomUUID().slice(0, 8)}`;
   const project = `e2e-project-${randomUUID().slice(0, 8)}`;
-  // Where "Get a licence" in Customize → Powered by goes, on tuti.so.
+  // Where "Get a licence" in Customize → Branding goes, on tuti.so.
   await page.goto(`${APP_URL}/license?installation=${installation}&project=${project}`);
   await expect(page.getByRole("heading", { name: 'Remove "Powered by tuti"' })).toBeVisible();
   await expect(page.getByRole("definition").filter({ hasText: installation })).toBeVisible();

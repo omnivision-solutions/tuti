@@ -22,7 +22,7 @@ const DESCRIPTIONS: Record<PortalHomePage, string> = {
   docs: "Your articles, for a portal that's mostly docs.",
 };
 
-/** Customize → Home page (see portal.update's `home`): what the portal's address opens. */
+/** Customize → Navigation (see portal.update's `home`): what the portal's address opens. */
 export function PortalHomeSelect({ projectSlug, home }: { projectSlug: string; home: PortalHomePage }) {
   const [pending, startTransition] = useTransition();
   const preview = usePreview();
