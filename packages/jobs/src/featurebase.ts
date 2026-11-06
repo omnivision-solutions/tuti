@@ -63,7 +63,13 @@ export function featurebase(key: string, { wait = pause, deadline = Infinity }: 
         url.searchParams.set(name, String(value));
       }
     }
+    // The last answer's error, once one came: what a request the deadline stops returns instead.
+    let last: FeaturebaseError | null = null;
     for (let attempt = 0; ; attempt++) {
+      // Nothing starts past the deadline (a late wait, a slow error body, or one already passed).
+      if (Date.now() >= deadline) {
+        throw last ?? new FeaturebaseError(0, UNREACHABLE);
+      }
       let response: Response | null = null;
       // An answer that was cut off or isn't JSON is tried again like no answer.
       let failure = new FeaturebaseError(0, UNREACHABLE);
@@ -81,19 +87,17 @@ export function featurebase(key: string, { wait = pause, deadline = Infinity }: 
           response = null;
         }
       }
+      const error = response ? new FeaturebaseError(response.status, await messageOf(response)) : failure;
       if ((!response || response.status === 429 || response.status >= 500) && attempt < RETRIES) {
         const ms = waitFor(response, attempt);
+        // Judged after the error's body was read, so its reading counts against the deadline too.
         if (Date.now() + ms < deadline) {
-          const error = response ? new FeaturebaseError(response.status, await messageOf(response)) : failure;
+          last = error;
           await wait(ms);
-          // A wait that ran late doesn't start a request past the deadline: this answer's error stands.
-          if (Date.now() >= deadline) {
-            throw error;
-          }
           continue;
         }
       }
-      throw response ? new FeaturebaseError(response.status, await messageOf(response)) : failure;
+      throw error;
     }
   }
 

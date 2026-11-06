@@ -54,8 +54,10 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
 
   // Home says what came across, and the contacts are the project's users, with their company.
   await owner.waitForURL(`**/app/${slug}`);
-  await expect(owner.getByText("Imported from Featurebase")).toBeVisible();
-  await expect(owner.getByText("3 contacts brought across.")).toBeVisible();
+  await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
+  await expect(owner.getByText("3 contacts brought across.", { exact: true })).toBeVisible();
+  // Screen readers hear it in one status: the title and, once it's over, the summary.
+  await expect(owner.getByRole("status").filter({ hasText: "Featurebase" })).toHaveText("Imported from Featurebase. 3 contacts brought across.");
   await checkpoint(owner, "home-imported");
   await owner.getByRole("link", { name: "See users" }).click();
   await owner.waitForURL(`**/app/${slug}/users`);

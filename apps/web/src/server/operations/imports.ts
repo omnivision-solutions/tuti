@@ -86,7 +86,7 @@ function refusal(error: unknown, cant: { code: string; message: string }): never
 export const startImport = defineOperation({
   name: "imports.start",
   summary:
-    "Start an import from Featurebase with an API key of its own and the parts to bring (contacts: as the project's users, by their id in your app). Feedback and Inbox need Contacts (400 without). The key is checked, then each part's list read once: a key Featurebase refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Only people can start it, in the app's first run: API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
+    "Start an import from Featurebase with an API key of its own and the parts to bring (contacts: as the project's users, by their id in your app). The key is checked, then each part's list read once: a key Featurebase refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Only people can start it, in the app's first run: API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
   method: "POST",
   path: "/imports",
   scope: "write",

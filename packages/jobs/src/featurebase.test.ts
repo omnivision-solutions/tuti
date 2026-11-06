@@ -125,6 +125,26 @@ test("a wait that runs late past the deadline starts no request: the last answer
   }
 });
 
+test("a deadline already passed starts no request; an error body read up to the deadline starts no wait", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(Date.parse("2026-11-05T12:00:00Z"));
+    const passed = featurebase(FAKE_FEATUREBASE_KEY, { deadline: Date.now() - 1, wait: async (ms) => void waits.push(ms) });
+    await expect(passed.get("/admins")).rejects.toMatchObject({ status: 0 });
+    expect(fake.requests).toEqual([]);
+
+    // The 429's body arrives as the deadline passes: read first, then judged, so no wait starts.
+    const api = featurebase(FAKE_FEATUREBASE_KEY, { deadline: Date.now() + 10_000, wait: async (ms) => void waits.push(ms) });
+    fake.failNext(429, 1, { "retry-after": "1" });
+    fake.beforeBody = () => vi.setSystemTime(Date.now() + 10_000);
+    await expect(api.get("/admins")).rejects.toMatchObject({ status: 429 });
+    expect(waits).toEqual([]);
+  } finally {
+    fake.beforeBody = undefined;
+    vi.useRealTimers();
+  }
+});
+
 test("a list goes on until Featurebase's cursor is null, through an empty page; a cursor that doesn't move ends it", async () => {
   const first = Buffer.from("0").toString("base64url");
   fake.failNext(200, 1, {}, JSON.stringify({ object: "list", data: [], nextCursor: first }));

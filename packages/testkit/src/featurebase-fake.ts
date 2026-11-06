@@ -66,6 +66,8 @@ export type FeaturebaseFake = {
    * X-RateLimit-Reset) and `body` as it is (default an error's JSON): a 200 with a cut-off body, an empty page.
    */
   failNext(status: number, times?: number, headers?: Record<string, string>, body?: string): void;
+  /** Runs between a failing answer's headers and its body (sent a moment later): time passing as the body is read. */
+  beforeBody?: () => void;
   /** Serves a file at `<url>/files/<name>` (no key, like Featurebase's attachments' links); returns its address. */
   file(name: string, type: string, body: Buffer): string;
   close(): Promise<void>;
@@ -90,7 +92,18 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     if (failing) {
       const { status, headers, body } = failing;
       failing = --failing.times > 0 ? failing : undefined;
-      return res.writeHead(status, { "Content-Type": "application/json", ...headers }).end(body ?? JSON.stringify({ error: { type: "api_error", message: "fake failure", status } }));
+      const text = body ?? JSON.stringify({ error: { type: "api_error", message: "fake failure", status } });
+      res.writeHead(status, { "Content-Type": "application/json", ...headers });
+      if (!fake.beforeBody) {
+        return res.end(text);
+      }
+      res.flushHeaders();
+      const before = fake.beforeBody;
+      setTimeout(() => {
+        before();
+        res.end(text);
+      }, 50);
+      return;
     }
     if (req.method !== "GET") {
       return send(405, { message: "the fake is read-only" });

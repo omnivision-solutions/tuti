@@ -92,8 +92,12 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
           </label>
         ))}
       </CardContent>
-      {/* On the page before there's anything in it, so screen readers hear the import start and end. */}
-      <CardContent role="status" className={from === "featurebase" && latest ? undefined : "sr-only"}>
+      {/* On the page before there's anything in it, so screen readers hear the import start and end: the title while
+          it runs, and the summary once it's over, never each page's count. */}
+      <p role="status" className="sr-only">
+        {from === "featurebase" && latest ? (running ? importTitle(latest) : `${importTitle(latest)}. ${importSummary(latest)}`) : ""}
+      </p>
+      <CardContent className={from === "featurebase" && latest ? undefined : "sr-only"}>
         {from === "featurebase" && latest && (
           <div className="rounded-xl border p-4">
             <p className="text-sm font-medium">{importTitle(latest)}</p>
@@ -140,20 +144,17 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
         </CardContent>
       )}
       <CardFooter className="justify-end gap-2">
-        {from === "featurebase" && !running ? (
+        {from === "featurebase" && !running && (
           <>
             {/* Done, going on is the main action; importing again (more parts, say) the other. */}
             {latest?.state !== "done" && skip}
             <Button type="submit" variant={latest?.state === "done" ? "outline" : "default"} disabled={pending || picked.length === 0} focusableWhenDisabled>
               {pending ? "Checking the key…" : latest?.state === "done" ? "Import again" : "Check the key and start"}
             </Button>
-            {latest?.state === "done" && (
-              <Link ref={continueRef} href={next} className={buttonVariants()}>
-                Continue
-              </Link>
-            )}
           </>
-        ) : (
+        )}
+        {/* One Continue in one place, so it keeps focus as the import goes from running to done. */}
+        {(from !== "featurebase" || running || latest?.state === "done") && (
           <Link ref={continueRef} href={next} className={buttonVariants()}>
             Continue
           </Link>

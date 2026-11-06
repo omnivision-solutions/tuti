@@ -88,7 +88,11 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
           <RefreshWhile on={imported.state === "running"} />
           <CardHeader>
             <CardTitle>{importTitle(imported)}</CardTitle>
-            <CardDescription role="status">{importSummary(imported)}</CardDescription>
+            <CardDescription>{importSummary(imported)}</CardDescription>
+            {/* Heard when it starts and ends, not with each page's count while it runs. */}
+            <p role="status" className="sr-only">
+              {imported.state === "running" ? importTitle(imported) : `${importTitle(imported)}. ${importSummary(imported)}`}
+            </p>
             {imported.state !== "running" && (
               <CardAction>
                 <Link href={imported.state === "failed" ? `/app/${slug}/setup` : `/app/${slug}/users`} className={buttonVariants({ variant: "outline", size: "sm" })}>
