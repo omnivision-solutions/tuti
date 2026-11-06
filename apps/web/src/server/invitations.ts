@@ -247,7 +247,8 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
         }
         // Placeholders an import made for them (a teammate in the other tool) hand over to them, if their address is verified.
         await handOverPlaceholders(tx, invitation.projectId, userId);
-      });
+        // Waits for an import page's save (the project lock) and moves what the placeholder wrote: as long as the other handover path.
+      }, { timeout: 60_000 });
     } catch (error) {
       if (error instanceof InvitationUnavailableError) {
         return { error: "This invite has expired, was revoked, or was already used" };
