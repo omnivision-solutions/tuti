@@ -403,7 +403,13 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         // Landed before (or by a run of this page that got in first), deleted here since it landed, or saved by the team
         // since it was made empty (an import that stopped between its passes, started again): as it is. The team's
         // isn't marked landed: nothing of Featurebase's landed; it's told as theirs by its title and text each time.
-        if (!local || local.landed || local.deleted || teamSaved(local) || !text) {
+        if (local && !local.landed && !local.deleted && teamSaved(local)) {
+          if (!again) {
+            tally(job.counts, "articles", "edited here before their text came, so left as they are");
+          }
+          continue;
+        }
+        if (!local || local.landed || local.deleted || !text) {
           if (!again) {
             tally(job.counts, "articles", ALREADY_HERE);
           }

@@ -184,7 +184,7 @@ test("an empty article the team wrote and published while the import was stopped
 
   const done = await importDocs();
   // The team's article is there from before, as theirs.
-  expect(done).toMatchObject({ state: "done", counts: { articles: { imported: 2, leftOut: { "already brought across earlier": 1 } }, privateDrafts: { imported: 1 } } });
+  expect(done).toMatchObject({ state: "done", counts: { articles: { imported: 2, leftOut: { "edited here before their text came, so left as they are": 1 } }, privateDrafts: { imported: 1 } } });
   expect(await article("Card payments")).toMatchObject({ body: "Our own words.", changes: { body: "Our own words, still being written." }, publishedAt: expect.any(Date) });
   expect(await article("Welcome to Acme")).toMatchObject({ publishedAt: expect.any(Date), body: expect.stringContaining("every invoice") });
 });
@@ -232,11 +232,11 @@ test("an empty article the team only retitled while the import was stopped stays
   await call(updateArticle, asOwner(), { slug: paying.slug, title: "Card payments" });
 
   const done = await importDocs();
-  expect(done.counts.articles).toMatchObject({ leftOut: { "already brought across earlier": 1 } });
+  expect(done.counts.articles).toMatchObject({ leftOut: { "edited here before their text came, so left as they are": 1 } });
   expect(await prisma.article.findUniqueOrThrow({ where: { id: paying.id }, select: { title: true, content: true, publishedAt: true } })).toEqual({ title: "Card payments", content: null, publishedAt: null });
   // Nothing of Featurebase's landed in it: not marked so; told as theirs by its title each time.
   expect(await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "article", localId: paying.id }, select: { contentLanded: true } })).toEqual({ contentLanded: false });
-  expect((await importDocs()).counts.articles).toMatchObject({ leftOut: { "already brought across earlier": 4 } });
+  expect((await importDocs()).counts.articles).toMatchObject({ leftOut: { "already brought across earlier": 3, "edited here before their text came, so left as they are": 1 } });
   expect(await prisma.article.findUniqueOrThrow({ where: { id: paying.id }, select: { title: true, content: true } })).toEqual({ title: "Card payments", content: null });
 });
 
