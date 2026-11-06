@@ -716,7 +716,10 @@ test("the details beside a conversation hide for every conversation, after a rel
     const before = (await plain.getByRole("button", { name: "Close", exact: true }).boundingBox())!;
     await owner.setViewportSize({ width, height: 900 });
     await owner.goto(`/app/${slug}/inbox/1`);
-    // Checked once the scripts have run: at 1100px the toggle is there but unseen.
+    // Checked once the scripts have run (React has taken over the toggle, its layout effect run in the same commit): at
+    // 1100px it's there but unseen.
+    const toggle = owner.locator('[aria-controls="conversation-details"]');
+    await expect.poll(() => toggle.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$")))).toBe(true);
     await (width === 1100 ? expect(hide).toBeHidden() : expect(hide).toBeVisible());
     expect((await owner.getByRole("button", { name: "Close", exact: true }).boundingBox())!.x).toBe(before.x);
   }
