@@ -2198,3 +2198,51 @@ test("an article ends with the previous and next in reading order, related ones,
   await visitor.goto("/docs/paying-invoices");
   await expect(steps.getByRole("link")).toHaveText([/Previous\s*Plans/]);
 });
+
+test("a link in an article to another of the portal's articles stays on the portal and previews it; in the widget it opens in the panel", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/collections", { name: "Billing" });
+  const invoices = await api("/articles", { title: "Invoices", body: "Download them from Billing.", description: "Where to find and download them.", collection: "billing" });
+  await api(`/articles/${invoices.slug}/publish`, {});
+  // The team links to it by its Tuti address (as they'd copy it), to one of its headings; and to another site.
+  const text = (words: string, href?: string) => ({ type: "text", text: words, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
+  const content = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [text("See "), text("your invoices", `${portalUrl(slug)}/docs/${invoices.slug}#download`), text(", or "), text("our status page", "https://status.example.com")] },
+    ],
+  };
+  const guide = await api("/articles", { title: "Billing basics", content });
+  await api(`/articles/${guide.slug}/publish`, {});
+
+  // On the portal: the article's link stays here, in this tab; the other site's opens in a new one.
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.goto(`/docs/${guide.slug}`);
+  const body = reader.getByRole("article");
+  const link = body.getByRole("link", { name: "your invoices" });
+  await expect(link).toHaveAttribute("href", `/docs/${invoices.slug}#download`);
+  await expect(link).not.toHaveAttribute("target", /.*/);
+  await expect(body.getByRole("link", { name: "our status page" })).toHaveAttribute("target", "_blank");
+  // Pointed at, it previews the article: its collection, title and description.
+  await link.hover();
+  const card = reader.locator('[data-slot="article-preview"]');
+  await expect(card).toContainText("Billing");
+  await expect(card).toContainText("Invoices");
+  await expect(card).toContainText("Where to find and download them.");
+  await checkpoint(reader, "docs-article-link-preview");
+  // Clicked, it opens there.
+  await link.click();
+  await expect(reader).toHaveURL(`${portalUrl(slug)}/docs/${invoices.slug}#download`);
+  await expect(reader.getByRole("heading", { level: 1, name: "Invoices" })).toBeVisible();
+
+  // In the widget's Help center, it opens the article in the panel.
+  await reader.goto(`/widget?tab=docs&article=${guide.slug}`);
+  const inPanel = reader.getByRole("article").getByRole("link", { name: "your invoices" });
+  await expect(inPanel).toHaveAttribute("href", `/widget?tab=docs&article=${invoices.slug}#download`);
+  await inPanel.click();
+  await expect(reader.getByRole("heading", { name: "Invoices" })).toBeVisible();
+});
