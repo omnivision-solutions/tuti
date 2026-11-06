@@ -51,6 +51,15 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(continueLink).toBeFocused();
   // The key isn't left in the page.
   await expect(key).toHaveCount(0);
+  // Each part says where it is, in the order they run: the team done, contacts under way.
+  const parts = owner.getByRole("list", { name: "What's brought across" });
+  const part = (name: string) => parts.getByRole("listitem").filter({ has: owner.getByText(name, { exact: true }) });
+  await expect(owner.getByText("Part 2 of 2.", { exact: false })).toBeVisible();
+  await expect(part("Team")).toContainText("2 invitations.");
+  await expect(part("Team")).toContainText("Done");
+  await expect(part("Contacts")).toContainText("Starting…");
+  await expect(part("Contacts")).toContainText("In progress");
+  await checkpoint(owner, "setup-featurebase-importing");
   // Featurebase answers now; done, Continue still has focus (one Continue, kept as the import ends), and the summary is said.
   await fetch(`${process.env.E2E_FEATUREBASE_URL}/_fake/release`, { method: "POST" });
   await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.", { timeout: 15_000 });
@@ -68,7 +77,9 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Home says what came across, and the contacts are the project's users, with their company.
   await owner.waitForURL(`**/app/${slug}`);
   await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
-  await expect(owner.getByText("2 invitations, 3 contacts brought across.", { exact: true })).toBeVisible();
+  await expect(part("Team")).toContainText("2 invitations.");
+  await expect(part("Contacts")).toContainText("3 contacts.");
+  await expect(part("Contacts").getByRole("link", { name: "See users" })).toBeVisible();
   // Screen readers hear it in one status: the title and, once it's over, the summary.
   await expect(owner.getByRole("status").filter({ hasText: "Featurebase" })).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.");
   await checkpoint(owner, "home-imported");

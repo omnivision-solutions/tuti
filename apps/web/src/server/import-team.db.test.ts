@@ -100,11 +100,11 @@ test("left out, and said so: the importer, people on the team (verified), people
   expect(run.counts).toEqual({
     invitations: {
       imported: 1,
-      leftOut: { "for whoever ran the import": 1, "for people already on the team": 1, "for people already invited": 1, "for admins without an email": 1 },
+      leftOut: { "for the person who ran the import, already on the team": 1, "for people already on the team": 1, "for people already invited": 1, "for admins without an email": 1 },
     },
   });
   expect(importSummary(run)).toBe(
-    "1 invitation brought across. Left out: 1 invitation for people already invited; 1 invitation for whoever ran the import; 1 invitation for admins without an email; 1 invitation for people already on the team.",
+    "1 invitation brought across. Left out: 1 invitation for people already invited; 1 invitation for admins without an email; 1 invitation for people already on the team; 1 invitation for the person who ran the import, already on the team.",
   );
   const [made] = (await invitationsOf()).filter((invitation) => invitation.email === fresh);
   expect(made).toMatchObject({ sentAt: null });

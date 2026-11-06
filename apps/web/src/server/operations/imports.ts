@@ -39,8 +39,8 @@ async function importView(row: ImportRow) {
     /** running, done, or failed (`error` says why; started again, what came across already is skipped). */
     state: row.state.toLowerCase() as "running" | "done" | "failed",
     parts: row.parts as ImportPart[],
-    /** The step under way (contacts, …), while it runs. */
-    step: row.state === "RUNNING" ? row.step : null,
+    /** The step under way (contacts, …), while it runs; where it stopped, once failed. */
+    step: row.state === "DONE" ? null : row.step || null,
     /** What came across so far, per kind: how many, and how many it left out, by reason. */
     counts: row.counts as ImportCounts,
     error: row.error || null,
