@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { request } from "@/test/next-headers";
 
 import { createUpload, finishUpload, setAvatar, uploadStatus } from "./media";
 import { createPost } from "./posts";
@@ -162,6 +163,15 @@ describe("limits", () => {
     expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({
       error: "You've uploaded a lot of images in the last hour. Try again later.",
     });
+  });
+
+  test("a session another portal started uploads nothing here, even on that portal", async () => {
+    const other = await createProject(owner);
+    await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: other.id } });
+    request.host = `${other.slug}.localhost:3100`;
+    expect(await createUpload(project.slug, { type: "image/png", size: 1000 })).toEqual({ error: "Project not found" });
+    expect(await createUpload(other.slug, { type: "image/png", size: 1000 })).toMatchObject({ mediaId: expect.any(String) });
+    request.host = "";
   });
 
   test("without media storage, uploads are off", async () => {

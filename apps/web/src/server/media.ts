@@ -22,7 +22,7 @@ import { z } from "zod";
 
 import { canActIn } from "./membership";
 import { lastingImage } from "./media-urls";
-import { actsIn, getSession } from "./session";
+import { actsIn, getAccountSession, getSession } from "./session";
 
 /**
  * Image uploads, straight from the browser to media storage:
@@ -251,7 +251,7 @@ export async function uploadStatus(mediaId: string): Promise<UploadStatus | { er
  * or deleting the project takes the photo with it, and initials show again; keep avatars apart from projects if that bites.
  */
 export async function setAvatar(mediaId: string | null): Promise<{ error?: string }> {
-  const session = await getSession();
+  const session = await getAccountSession();
   if (!session) {
     return { error: "Sign in to change your photo" };
   }

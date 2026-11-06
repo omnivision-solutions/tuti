@@ -3,8 +3,19 @@ import { headers } from "next/headers";
 
 import { auth, type Session } from "@/lib/auth";
 
+import { sessionWorksOn } from "./custom-domains";
+
+/**
+ * The session a request's cookie carries, if it works on the request's host (a portal's on that portal only).
+ * Better Auth's hook (lib/auth.ts) already leaves others out; checked again here, where everything reads it.
+ */
+export async function sessionFrom(requestHeaders: Headers) {
+  const session = await auth.api.getSession({ headers: requestHeaders });
+  return session && (await sessionWorksOn(session.session.boundTo, requestHeaders.get("host"))) ? session : null;
+}
+
 export async function getSession() {
-  return auth.api.getSession({ headers: await headers() });
+  return sessionFrom(await headers());
 }
 
 /**

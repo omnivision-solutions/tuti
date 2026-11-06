@@ -4,7 +4,17 @@ import { beforeEach, expect, test } from "vitest";
 import { GET as startContinue } from "@/app/portal/[project]/(site)/continue/route";
 import { forgetCustomDomain } from "@/server/custom-domains";
 import { getOwnerProject } from "@/server/membership";
+import { portalPreview } from "@/server/customize";
+import { setAutopilotEmails } from "@/server/github";
+import { setAvatar } from "@/server/media";
+import { askAPerson } from "@/server/operations/docs-escalate";
+import { mayRead } from "@/server/portal-access";
 import { createPost } from "@/server/posts";
+import { findSimilarPosts } from "@/server/similar-posts";
+import { widgetIdeas } from "@/server/widget";
+import { answerArticle } from "@/server/docs-readers";
+import { portalReaderHome } from "@/server/widget-home";
+import { widgetPerson } from "@/server/widget-person";
 import { continueToPortal } from "@/server/portal-handoff";
 import { getAccountSession, getSession } from "@/server/session";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
@@ -180,6 +190,48 @@ test("a session a portal on its team's own site starts doesn't work on the app h
   };
   expect(await post(own.slug)).toEqual({ error: "Board not found" });
   expect(await post(slug)).toEqual({});
+
+  // Her own idea in her project, posted on the app: on the portal, it isn't hers.
+  actAs(ada);
+  request.host = APP_HOST;
+  expect(await post(own.slug)).toEqual({});
+  actAs({ ...ada, cookie: stolen });
+  request.host = portalHost();
+  expect(await widgetIdeas(own.slug, null, true)).toEqual([]);
+  expect((await findSimilarPosts(own.slug, "Posted as Ada")).map((idea) => idea.voted)).toEqual([false]);
+
+  // Nor does it read, answer or message as her in her own project (private, with Messages on), or change her account.
+  await prisma.article.create({ data: { projectId: own.id, slug: "setup", title: "Setup", body: "Steps.", publishedAt: new Date() } });
+  expect(await answerArticle(own.slug, "setup", false, "From the portal's team")).toEqual({});
+  expect(await prisma.articleFeedback.count({ where: { readerId: ada.id } })).toBe(0);
+  await prisma.project.update({ where: { id: own.id }, data: { portalAccess: "PRIVATE", supportInbox: true } });
+  expect(await mayRead(own.id)).toBe(false);
+  expect(await portalReaderHome(own.id)).toBeNull();
+  expect(await widgetPerson(own.slug, {})).toBeNull();
+  expect(await askAPerson(own.slug)).toEqual({ email: "" });
+  expect((await portalPreview(own.slug, "/feedback")).token).toBeUndefined();
+  expect(await setAutopilotEmails("OFF")).toEqual({ error: "Sign in first" });
+  expect(await setAvatar(null)).toEqual({ error: "Sign in to change your photo" });
+
+  // Better Auth's own endpoints on the portal: its account page's rename, nothing else of her account.
+  const api = (path: string, body?: object, cookie = stolen) =>
+    auth.handler(
+      new Request(`http://${portalHost()}/api/auth${path}`, {
+        method: body ? "POST" : "GET",
+        headers: { host: portalHost(), cookie, origin: `http://${portalHost()}`, ...(body && { "content-type": "application/json" }) },
+        body: body && JSON.stringify(body),
+      }),
+    );
+  expect((await api("/update-user", { image: "https://tracker.example/pixel.png" })).status).toBe(401);
+  expect((await api("/update-user", { name: "Ada L." })).status).toBe(200);
+  expect((await api("/list-sessions")).status).toBe(404);
+  expect((await api("/revoke-other-sessions", {})).status).toBe(404);
+  // However the cookie is written.
+  const spaced = stolen.replace("session_token=", "session_token =");
+  expect(await (await auth.handler(new Request(`http://${APP_HOST}/api/auth/get-session`, { headers: { host: APP_HOST, cookie: spaced } }))).json()).toBeNull();
+  actAs({ ...ada, cookie: spaced });
+  request.host = APP_HOST;
+  expect(await getSession()).toBeNull();
 });
 
 test("signing in with a password on a portal starts a session for that portal only; on the app, one for the app", async () => {

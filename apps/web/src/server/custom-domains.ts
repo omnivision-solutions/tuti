@@ -32,6 +32,11 @@ export async function sessionBinding(host: string | null): Promise<string | null
   return project?.id ?? null;
 }
 
+/** Whether a session bound to `boundTo` (see sessionBinding) works on `host`: the app's anywhere, a portal's on that portal only. */
+export async function sessionWorksOn(boundTo: string | null | undefined, host: string | null): Promise<boolean> {
+  return boundTo === "app" || (!!boundTo && boundTo === (await sessionBinding(host)));
+}
+
 /** A portal on its custom domain says which (its hostname). */
 export type RequestTarget = Exclude<HostTarget, { kind: "portal" }> | { kind: "portal"; slug: string; customDomain?: string };
 
