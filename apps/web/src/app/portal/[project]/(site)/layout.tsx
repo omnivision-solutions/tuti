@@ -150,12 +150,12 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
         {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new, and Ask
-            AI. For readers who may read the portal; a full load once that or who's reading changes. Under a path, the loader at
-            an address of its own: a browser's copy from before it read the path (kept an hour) would open the panel at the
-            site's root, which the site doesn't forward. */}
+            AI. For readers who may read the portal; a full load once that or who's reading changes. The loader at an address of its
+            own (PORTAL_LOADER): a browser's copy of an older one (kept an hour) would miss what the portal needs of it (the
+            path it's under, Ask AI's question). */}
         {widgetHere && (
           <PortalWidget
-            src={`${appUrl().origin}/widget.js${base ? "?path" : ""}`}
+            src={`${appUrl().origin}/widget.js?v=${PORTAL_LOADER}`}
             slug={slug}
             base={base}
             launcher={project.widgetOnPortal}
@@ -172,6 +172,12 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
     </PortalBaseProvider>
   );
 }
+
+/**
+ * The loader's version the portal needs, in its address: up it when the portal starts relying on something new in it, so
+ * no browser's copy of an older one (cached an hour) runs (2: Tuti.open({ ask }); before it, `?path`: the path it's under).
+ */
+const PORTAL_LOADER = 2;
 
 /** The page with Ask AI (the widget's assistant), where the portal has it. */
 function WithAssistant({ assistant, viewer, children }: { assistant: boolean; viewer: string | null; children: React.ReactNode }) {

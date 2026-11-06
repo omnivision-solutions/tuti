@@ -1537,6 +1537,9 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await expect(conversation.getByRole("listitem").filter({ hasText: "Each invite is good for 7 days" })).toBeVisible();
   const source = conversation.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
   await expect(source).toHaveAttribute("href", "/widget?tab=docs&article=inviting-your-team");
+  // Asked, the question leaves the panel's address: going back or reloading it doesn't ask again.
+  const panelUrl = async () => (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!.url();
+  await expect.poll(panelUrl).toBe(`${portalUrl(slug)}/widget?tab=messages`);
   await checkpoint(visitor, "portal-docs-assistant-answer", { fullPage: false });
   const asked = (await modelRequests()).filter((request) => request.user.includes(question));
   expect(asked).toHaveLength(1);
@@ -1572,6 +1575,16 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.setViewportSize({ width: 390, height: 844 });
   await checkpoint(visitor, "portal-docs-assistant-follow-up-phone", { fullPage: false });
   await visitor.setViewportSize({ width: 1280, height: 720 });
+
+  // Asked again from the header with the panel open: the same panel asks it, not reloaded, so the conversation stays.
+  const again = "Do invites expire?";
+  await similar(`${question}\n${followUp}\n${again}`, `Inviting your team\n\n${body}`, 0.8);
+  await nextModelReply(JSON.stringify({ answer: "Yes, after 7 days.", sources: ["s1"] }), again);
+  await typeSearch(visitor, again);
+  await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
+  await expect(conversation.getByText("Yes, after 7 days.")).toBeVisible();
+  await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
+  expect(await panelUrl()).toBe(`${portalUrl(slug)}/widget?tab=messages`);
 
   // A source opens the article in the panel; the header's box opens the assistant again, as it was.
   await source.first().click();

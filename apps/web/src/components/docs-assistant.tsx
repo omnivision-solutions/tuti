@@ -11,6 +11,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useWidgetSignIn } from "@/components/widget-feedback";
+import { MAX_QUESTION } from "@/lib/widget-docs";
+import { WIDGET_ASK_MESSAGE } from "@/lib/widget-messages";
 import { askDocs, rateDocsAnswer } from "@/server/docs-readers";
 import type { DocsAnswer } from "@/server/operations/docs-ask";
 
@@ -194,19 +196,32 @@ export function DocsAssistantProvider({
     [run, show],
   );
 
-  // Opened to ask (the portal's Ask AI): once, as the panel opens.
+  // Asked by the page (Tuti.open({ ask }), the portal's Ask AI): as the panel opens (`opening`), once, the question then out
+  // of its address so going back or reloading doesn't ask it again; then, the panel open, by message, so nothing in it is lost.
   const openedToAsk = useRef(false);
   useEffect(() => {
-    if (opening === undefined || openedToAsk.current) {
-      return;
+    const askOrOpen = (question: string) => (question.trim() ? assistant.ask(question.slice(0, MAX_QUESTION)) : assistant.open());
+    if (opening !== undefined && !openedToAsk.current) {
+      openedToAsk.current = true;
+      askOrOpen(opening);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("ask");
+      window.history.replaceState(window.history.state, "", url);
     }
-    openedToAsk.current = true;
-    if (opening.trim()) {
-      assistant.ask(opening);
-    } else {
-      assistant.open();
-    }
-  }, [opening, assistant]);
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: unknown; ask?: unknown } | null;
+      if (event.source === window.parent && data?.type === WIDGET_ASK_MESSAGE && typeof data.ask === "string") {
+        // What the page kept for it meanwhile (the portal's "Ask a follow-up": a search's answer), after what's here.
+        const kept = storedTurns(slug, reader).filter((stored) => !turnsRef.current.some((turn) => turn.key === stored.key));
+        if (kept.length > 0) {
+          setTurns((all) => [...all, ...kept]);
+        }
+        askOrOpen(data.ask);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [opening, assistant, slug, reader]);
 
   const retry = (turn: Turn) => {
     const before = turn.fresh ? [] : turnsRef.current.slice(0, turnsRef.current.findIndex((each) => each.key === turn.key));

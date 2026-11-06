@@ -43,7 +43,8 @@ export function PortalWidget({
   }
   return (
     <>
-      <style>{`body > button[aria-controls="tuti-widget"] { z-index: 45 !important; } #tuti-widget { z-index: 46 !important; } @media (width < 48rem) { body { padding-bottom: 5.5rem; } }`}</style>
+      {/* Room at the end of the page on phones only for a launcher there is. */}
+      <style>{`body > button[aria-controls="tuti-widget"] { z-index: 45 !important; } #tuti-widget { z-index: 46 !important; }${launcher ? " @media (width < 48rem) { body { padding-bottom: 5.5rem; } }" : ""}`}</style>
       <script src={src} data-project={slug} data-on-portal={base} {...(!launcher && { "data-hide-launcher": "" })} async />
     </>
   );

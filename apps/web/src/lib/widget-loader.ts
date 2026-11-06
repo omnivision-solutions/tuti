@@ -3,6 +3,7 @@ import { MAX_QUESTION } from "./widget-docs";
 import { SLUG_PATTERN } from "./project-slugs";
 import { WIDGET_ICONS } from "./widget-icons";
 import {
+  WIDGET_ASK_MESSAGE,
   WIDGET_CLOSABLE_MESSAGE,
   WIDGET_CLOSE_MESSAGE,
   WIDGET_IDENTIFY_MESSAGE,
@@ -639,11 +640,16 @@ export function widgetLoader(portalTemplate: string): string {
   // assistant open, asking \`ask\` (true: just open); closing it gives focus back to \`from\`.
   function open(options, from) {
     var article = options && typeof options.article === "string" ? options.article : "";
-    var ask = options && (typeof options.ask === "string" || options.ask === true) ? options.ask : null;
+    var ask = options && (typeof options.ask === "string" || options.ask === true) ? (options.ask === true ? "" : options.ask.slice(0, ${MAX_QUESTION})) : null;
     var query =
-      ask !== null ? "?tab=messages&ask=" + encodeURIComponent(ask === true ? "" : ask.slice(0, ${MAX_QUESTION}))
+      ask !== null ? "?tab=messages&ask=" + encodeURIComponent(ask)
       : article ? "?tab=docs&article=" + encodeURIComponent(article)
       : tabQuery(options && options.tab);
+    // A panel already there asks it without reloading, so nothing in it is lost (an answer still coming).
+    if (ask !== null && frame && frameLoaded && frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_ASK_MESSAGE)}, ask: ask }, origin);
+      query = null;
+    }
     var src = portal + "/widget" + (query || "");
     // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
     if (!frame) {
@@ -776,8 +782,10 @@ export function widgetLoader(portalTemplate: string): string {
         ready = ready.then(function () { return checking; });
       }
     },
+    // \`returnFocus\` (the portal's own): where focus goes back to on closing, for a panel opened from a dialog of the page's.
     open: function (options) {
-      open(options, document.activeElement);
+      var back = options && options.returnFocus;
+      open(options, back && back.nodeType === 1 && document.contains(back) ? back : document.activeElement);
     },
     close: function () { close(); },
     // Light, dark or auto (the project's colour scheme), for sites that switch theirs without a reload.

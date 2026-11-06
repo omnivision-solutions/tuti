@@ -654,7 +654,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
   // On by default: the launcher on the portal's pages opens the panel. Its script tag is in the page as sent.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/");
-  const script = visitor.locator('script[src$="/widget.js"][data-project]');
+  const script = visitor.locator('script[src*="/widget.js"][data-on-portal]');
   await expect(script).toHaveCount(1);
   const launcher = visitor.getByRole("button", { name: "Feedback" });
   await launcher.click();
@@ -672,6 +672,10 @@ test("the portal shows the project's own widget, until the team turns it off in 
     await expect(assistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
     await assistant.getByRole("button", { name: "Close the assistant" }).click();
     await expect(assistant).toBeHidden();
+    // Closed, the panel gives focus back to the header's search (the dialog it was asked from is gone).
+    await visitor.keyboard.press("Escape");
+    await expect(visitor.locator("#tuti-widget")).toBeHidden();
+    await expect(visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ })).toBeFocused();
   };
   await askAI();
   await expect(visitor.locator("#tuti-widget")).toBeVisible();
@@ -704,9 +708,12 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await visitor.reload();
   await expect(visitor.getByRole("banner")).toBeVisible();
   await expect(launcher).toHaveCount(0);
-  // Its script stays, without the launcher, for Ask AI.
+  // Its script stays, without the launcher, for Ask AI; on phones the page needs no room for one.
   await expect(script).toHaveAttribute("data-hide-launcher", "");
   await askAI();
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
+  await visitor.setViewportSize({ width: 1280, height: 720 });
 
   // Back on. Signing out on the portal (a client navigation) loads the page afresh: the launcher and panel the loader added
   // for the signed-in reader don't stay for whoever's next.
