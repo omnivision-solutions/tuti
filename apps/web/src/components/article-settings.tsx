@@ -212,9 +212,9 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
                 checked={customSlug}
                 onChange={setCustomSlug}
                 label="Custom slug"
-                description="Set the end of the URL instead of using the title."
+                // Published, its address stays when the box is unticked: said in its label, so it's read out too.
+                description={`Set the end of the URL instead of using the title.${article.published && !customSlug ? " Its address stays as it is; links to it keep working." : ""}`}
               />
-              {article.published && !customSlug && <FieldDescription>Its address stays as it is; links to it keep working.</FieldDescription>}
               {customSlug && (
                 <Input
                   name="newSlug"

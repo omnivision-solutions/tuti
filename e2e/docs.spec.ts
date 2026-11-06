@@ -1382,6 +1382,8 @@ test("an article's settings: its own address (the old one redirects), keywords r
     })
     .toEqual([0, 1280, 720, true]);
   await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveCount(0);
+  // Published, with the box off: its address stays as it is, and the checkbox says so.
+  await expect(dialog.getByRole("checkbox", { name: /^Custom slug/ })).toHaveAccessibleName(/Its address stays as it is; links to it keep working\.$/);
   await dialog.getByRole("checkbox", { name: /^Custom slug/ }).check();
   const slugBox = dialog.getByRole("textbox", { name: "Slug" });
   await expect(slugBox).toHaveValue("inviting-your-team");
