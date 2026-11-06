@@ -218,12 +218,13 @@ async function userWithAddress(projectId: string, address: string): Promise<stri
 /**
  * The name in an email's From ("Kim Lee <kim@…>"), trimmed and cut short. None when it has an address in it: the
  * sender's own again, or another one it would pass for in the Inbox's list and the team's emails. Look-alikes (a
- * fullwidth ＠) are folded first (NFKC), and control and formatting characters (a right-to-left override) dropped.
+ * fullwidth ＠) are folded first (NFKC), and control and formatting characters (a right-to-left override) dropped, but
+ * not the zero-width joiners Persian, Indic and emoji names spell with.
  */
 function fromName(mail: Mail) {
   const name = mail.from?.value[0]?.name
     ?.normalize("NFKC")
-    .replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .replace(/(?![\u200C\u200D])[\p{Cc}\p{Cf}]/gu, "")
     .trim()
     .slice(0, 100)
     .trim();
