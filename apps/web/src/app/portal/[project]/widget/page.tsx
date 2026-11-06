@@ -122,8 +122,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
     : null;
   // Messages' AI first (Customize → Widget) where the assistant is here, has docs to answer from, can pass a question to the
   // team (Ask a person: not with Messages turned off, though the page's own code may still open it), and isn't paused (out
-  // of AI credits, when it would only say it's unavailable).
-  const aiFirst = settings.aiFirst && !!assistant?.askAPerson && project._count.articles > 0 && !(await aiPaused(project.id));
+  // of AI credits, when it would only say it's unavailable). Only worked out on Messages, the one tab that uses it.
+  const aiFirst = tab === "messages" && settings.aiFirst && !!assistant?.askAPerson && project._count.articles > 0 && !(await aiPaused(project.id));
 
   return (
     <PortalBaseProvider base="" slug={slug}>
