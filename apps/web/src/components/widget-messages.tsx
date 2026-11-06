@@ -835,7 +835,7 @@ function Conversation({
                   <p className="text-sm break-words whitespace-pre-wrap">
                     <MessageText text={m.body} ugc={!m.fromTeam} />
                   </p>
-                  <MessageAttachments attachments={m.attachments} dropped={0} />
+                  <MessageAttachments attachments={m.attachments} dropped={m.dropped} imported />
                 </div>
               </li>
             ))}

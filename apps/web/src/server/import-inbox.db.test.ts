@@ -4,12 +4,14 @@ import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_FILES, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+import { widgetToken } from "@/lib/widget-session";
 import { startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain } from "./inbound";
+import { widgetConversation } from "./widget-inbox";
 import { unseenRepliesOf } from "./widget-person";
 
 /** The inbox from Featurebase (docs/plan.md, Switching from Featurebase, I5), against the Featurebase and S3 fakes. */
@@ -343,6 +345,12 @@ test("without media storage, an image is left out of its message and counted; a 
   const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
   expect(open.status).toBe("OPEN");
   expect(open.messages.at(-1)).toMatchObject({ author: "USER", body: "", attachmentsDropped: 1 });
+
+  // In their widget too, it says it had an attachment, never an empty bubble.
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  const mira = await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "app-user-1" }, select: { userId: true } });
+  const shown = (await widgetConversation(project.slug, { token: widgetToken(project.id, mira.userId) }, open.number)) as { messages: { body: string; dropped: number }[] };
+  expect(shown.messages.at(-1)).toMatchObject({ body: "", dropped: 1 });
 });
 
 /** An import's row at the conversations step, as if Contacts had been picked and skipped over. */
