@@ -74,7 +74,7 @@ export type FeaturebaseFake = {
   failNext(status: number, times?: number, headers?: Record<string, string>, body?: string): void;
   /** Runs between a failing answer's headers and its body (sent a moment later): time passing as the body is read. */
   beforeBody?: () => void;
-  /** Lets the slow key's held pages answer (FAKE_FEATUREBASE_SLOW_KEY). */
+  /** Lets the slow key's held pages answer (FAKE_FEATUREBASE_SLOW_KEY), and those that come later too. */
   release(): void;
   /** Serves a file at `<url>/files/<name>` (no key, like Featurebase's attachments' links); returns its address. */
   file(name: string, type: string, body: Buffer): string;
@@ -87,6 +87,8 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
   let failing: { status: number; times: number; headers: Record<string, string>; body?: string } | undefined;
   /** The slow key's held pages, each with its fallback timer. */
   const held = new Map<() => void, NodeJS.Timeout>();
+  /** Once released, the slow key's pages answer at once: one that arrives after the release isn't held. */
+  let released = false;
 
   const server = createServer((req, res) => {
     const send = (status: number, body: unknown) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
@@ -104,7 +106,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     if (req.headers.authorization !== `Bearer ${FAKE_FEATUREBASE_KEY}` && !slow) {
       return send(401, { success: false, message: "Invalid API key" });
     }
-    if (slow && url.searchParams.get("limit") === "100" && !req.headers["x-fake-late"]) {
+    if (slow && !released && url.searchParams.get("limit") === "100" && !req.headers["x-fake-late"]) {
       req.headers["x-fake-late"] = "1";
       fake.requests.pop();
       const go = () => server.emit("request", req, res);
@@ -169,6 +171,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     forbidden: new Set(),
     failNext: (status, times = 1, headers = {}, body) => void (failing = { status, times, headers, body }),
     release: () => {
+      released = true;
       for (const [go, timer] of held) {
         clearTimeout(timer);
         held.delete(go);
