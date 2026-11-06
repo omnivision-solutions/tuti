@@ -130,35 +130,39 @@ jobs:
             < .github/prompts/weekly-dependencies.md \
             > "$RUNNER_TEMP/dependency-update/pr.md" \
             || { tail -n 50 "$RUNNER_TEMP/dependency-update/pr.md"; exit 1; } # Claude reports its errors there
-          # The description and the patch go public: never a credential or the hub's address,
-          # whatever a package talked Claude into.
-          # Nothing the agent started may change the tree after the check.
-          while sudo pkill -KILL -u claude-updater; do sleep 0.2; done # until none is left, forks included
-          # The values go to grep on stdin, never on a command line the agent's leftovers could read.
-          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
-          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
-          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac
-          never=$(mktemp)
-          printf '%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "$domain" | awk NF > "$never"
-          found() { local status=0; "$@" || status=$?; [ "$status" -ne 1 ]; } # a match, or grep failing
-          if [ -s "$never" ] && { found grep -qiFf "$never" "$RUNNER_TEMP/dependency-update/pr.md" \
-            || found sudo -n -u claude-updater grep -rqiF -f - --exclude-dir=node_modules --exclude-dir=.git \
-              --exclude-dir=.next --exclude-dir=.turbo /home/claude-updater/tuti < "$never"; }; then
-            echo "The update contains a Claude credential or the hub's address; not publishing." >&2
-            exit 1
-          fi
-          rm "$never"
       - name: Collect the patch
         id: patch
         if: success() && steps.prepare.outcome == 'success'
         env:
           UPDATE_BASE: ${{ steps.base.outputs.sha }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
         run: |
           set -euo pipefail
           # Git runs as the agent's user too: the checkout's git config is untrusted now.
+          # sudo resets the environment, so the credentials above don't reach it.
           sudo -n -H -u claude-updater env -C /home/claude-updater/tuti UPDATE_BASE="$UPDATE_BASE" \
             bash -e -o pipefail -c 'git add -N .; git diff --no-ext-diff --binary "$UPDATE_BASE"' \
             > "$RUNNER_TEMP/dependency-update/update.patch"
+          # The description and the patch go public: never a credential or the hub's address,
+          # whatever a package talked Claude into. Checked on the files that get published.
+          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
+          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
+          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac
+          never=$(mktemp)
+          printf '%s\n' "$CLAUDE_CODE_OAUTH_TOKEN" "$CLIPROXY_API_KEY" "$host" "$domain" | awk NF > "$never"
+          status=1
+          if [ -s "$never" ]; then
+            status=0
+            grep -qiFf "$never" "$RUNNER_TEMP/dependency-update/pr.md" "$RUNNER_TEMP/dependency-update/update.patch" \
+              || status=$?
+          fi
+          rm "$never"
+          if [ "$status" -ne 1 ]; then # a match, or grep failing
+            echo "The update contains a Claude credential or the hub's address; not publishing." >&2
+            exit 1
+          fi
           if [ -s "$RUNNER_TEMP/dependency-update/update.patch" ]; then
             test -s "$RUNNER_TEMP/dependency-update/pr.md"
             echo "changed=true" >> "$GITHUB_OUTPUT"
