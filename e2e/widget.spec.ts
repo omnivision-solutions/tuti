@@ -1925,7 +1925,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await visitor.goto(sitePage("customer.localhost", slug));
   await visitor.getByRole("button", { name: "Feedback" }).click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
-  // Home's way in, then the tab.
+  // Home's way in (no reply time yet, so nothing under it), then the tab.
+  await expect(widget.getByRole("link", { name: /Send us a message/ })).not.toContainText(/repl/i);
   await widget.getByRole("link", { name: /Send us a message/ }).click();
   await expect(widget.getByText("No messages yet")).toBeVisible();
   await widget.getByRole("button", { name: "New message" }).click();
@@ -2055,7 +2056,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await widget.getByRole("link", { name: "Messages" }).click();
   const team = widget.getByRole("region", { name: "The team" });
   await expect(team).toContainText("The Acme team");
-  await expect(team).toContainText("We'll reply here and by email");
+  // Too few answered conversations for a reply time: no line under the team's name.
+  await expect(team).not.toContainText(/repl/i);
   await expect(team.locator('[data-slot="avatar"]')).toHaveCount(1);
   const skeleton = widget.locator("[data-loading-skeleton]");
   await expect(skeleton).toBeVisible();
