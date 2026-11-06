@@ -404,18 +404,20 @@ const subjectFrom = (text: string) => {
 };
 
 /**
- * Cuts the quotes from emails imported before imports cut them, the whole email kept behind each, as an import does now
- * (a conversation's first message that isn't a note by its subject, a forward kept whole). Run once by apps/worker's `cut:imported-quotes`,
- * a page at a time; nothing is lost, so running it again changes nothing. Only the stored subject is left to go by, which is
+ * Cuts the quotes from emails imported before imports cut them (by an import started before `importedBefore`, the
+ * release that cuts them), the whole email kept behind each, as an import does now (a conversation's first message
+ * that isn't a note by its subject, a forward kept whole). Run once by apps/worker's `cut:imported-quotes`, a page at
+ * a time; nothing is lost, so running it again changes nothing. Only the stored subject is left to go by, which is
  * Featurebase's title when it had one: a titled conversation started by a forward has its quote cut here, where an import
- * keeps it whole (its email's subject), the whole email still behind "Show the whole email".
+ * keeps it whole (its email's subject), the whole email still behind "Show the whole email". Imports since are left as
+ * they are: what they kept whole, they meant to.
  */
-export async function cutImportedQuotes(): Promise<number> {
+export async function cutImportedQuotes(importedBefore: Date): Promise<number> {
   let cut = 0;
   let after: string | undefined;
   for (;;) {
     const messages = await prisma.conversationMessage.findMany({
-      where: { importId: { not: null }, channel: "EMAIL", note: false, original: null, ...(after && { id: { gt: after } }) },
+      where: { import: { createdAt: { lt: importedBefore } }, channel: "EMAIL", note: false, original: null, ...(after && { id: { gt: after } }) },
       orderBy: { id: "asc" },
       take: 200,
       select: { id: true, body: true, conversation: { select: { subject: true, messages: { where: { note: false }, orderBy: { createdAt: "asc" }, take: 1, select: { id: true } } } } },

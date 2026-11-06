@@ -401,12 +401,12 @@ test("emails imported before imports cut quotes are cut once, the whole email ke
   await prisma.conversationMessage.update({ where: { id: asked!.id }, data: { importId: null, body: `${asked!.body}\n\nOn Mon, someone <e2e-someone@example.com> wrote:` } });
   const before = await prisma.conversationMessage.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } });
 
-  expect(await cutImportedQuotes()).toBe(1);
+  expect(await cutImportedQuotes(new Date(Date.now() + 60_000))).toBe(1);
   const after = await prisma.conversationMessage.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } });
   expect(after.find((m) => m.id === replied!.id)).toMatchObject({ body: "Sent again: it's in your inbox.", original: replied!.original });
   expect(after.filter((m) => m.id !== replied!.id).map((m) => [m.body, m.original])).toEqual(before.filter((m) => m.id !== replied!.id).map((m) => [m.body, m.original]));
   // Again: nothing left to cut.
-  expect(await cutImportedQuotes()).toBe(0);
+  expect(await cutImportedQuotes(new Date(Date.now() + 60_000))).toBe(0);
 });
 
 test("a conversation started by a forwarded email keeps it whole, on import and when cut later, a note before it too; replies after it are cut", async () => {
@@ -431,7 +431,7 @@ test("a conversation started by a forwarded email keeps it whole, on import and 
 
   // Imported before quotes were cut: the forward stays whole, the reply is cut.
   await prisma.conversationMessage.update({ where: { id: replied!.id }, data: { body: replied!.original!, original: null } });
-  expect(await cutImportedQuotes()).toBe(1);
+  expect(await cutImportedQuotes(new Date(Date.now() + 60_000))).toBe(1);
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: asked!.id } })).toMatchObject({ body: asked!.body, original: null });
 });
 
@@ -444,6 +444,9 @@ test("a titled conversation started by a forwarded email keeps it whole on impor
   await importInbox();
   const conversation = (await conversations()).find((c) => c.subject === "Payment failed")!;
   expect(conversation.messages[0]).toMatchObject({ body: "FYI, from our bank.\nOn Mon, Oct 12, 2026 at 6:51 AM, Example Bank <e2e-bank@example.com> wrote:\nYour payment failed.", original: null });
+  // Imported since the release that cuts quotes: the script leaves it as the import meant it.
+  expect(await cutImportedQuotes(new Date(Date.now() - 60 * 60_000))).toBe(0);
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: conversation.messages[0]!.id } })).toMatchObject({ original: null });
 });
 
 /** An import's row at the conversations step, as if Contacts had been picked and skipped over. */
