@@ -30,9 +30,12 @@ export function ReplyEmail({ projectName, authorName, postTitle, text, doc, medi
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         {authorName} from {projectName} replied to <strong>{postTitle}</strong>:
       </Text>
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px", whiteSpace: "pre-wrap", borderLeft: `3px solid ${colors.border}`, paddingLeft: 12 }}>
-        {quoted}
-      </Text>
+      {/* An image alone: no empty quote above it. */}
+      {quoted && (
+        <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px", whiteSpace: "pre-wrap", borderLeft: `3px solid ${colors.border}`, paddingLeft: 12 }}>
+          {quoted}
+        </Text>
+      )}
       {images.length > 0 && <EmailRichText doc={{ type: "doc", content: images }} mediaUrls={mediaUrls} linkUrl={postUrl} />}
       <Button
         href={postUrl}

@@ -1,6 +1,6 @@
 "use client";
 
-import { type Doc, readableBy } from "@tuti/content";
+import { type Doc, isEmptyDoc, readableBy } from "@tuti/content";
 import { useRouter } from "next/navigation";
 import { useActionState, useId, useRef, useState } from "react";
 
@@ -127,7 +127,11 @@ export function CommentForm({
               draftUnreadable.current = false;
               setDraftKept(false);
             }
-            drafts.save(draftKey, editor.isEmpty ? null : editor.getJSON());
+            // Its words only: a restored image would have no link to show it by (they're signed as a page renders).
+            // ponytail: an image added before leaving the page is gone from the draft; sign them on restore if that's missed.
+            const doc = editor.getJSON() as Doc;
+            const words = { ...doc, content: doc.content?.filter((node) => node.type !== "image") };
+            drafts.save(draftKey, isEmptyDoc(words) ? null : words);
           }}
           profile="comment"
           uploads={uploads}

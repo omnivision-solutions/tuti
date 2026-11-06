@@ -482,11 +482,12 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
   const posts = await recorded(prisma, job, "post", items.map((comment) => comment.postId!));
   const known = await recorded(prisma, job, "comment", items.map((comment) => comment.id));
   const fresh = items.filter((comment) => !known.has(comment.id) && !commentLeftOut(comment, posts));
+  // Featurebase read before copying, while the page's reads have time.
+  const contacts = await people(job, fresh.map((comment) => comment.author));
   const contents = new Map<string, HtmlContent | { error: string }>();
   for (const comment of fresh) {
     contents.set(comment.id, await htmlToContent("comment", comment.content ?? "", { media }));
   }
-  const contacts = await people(job, fresh.map((comment) => comment.author));
   return {
     next: page.next,
     save: async (tx) => {

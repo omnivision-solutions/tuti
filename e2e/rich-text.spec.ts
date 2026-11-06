@@ -179,6 +179,10 @@ test("someone comments with a screenshot, and the team replies with one", async 
   await ada.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Image" }).click();
   await (await picker).setFiles({ name: "export.png", mimeType: "image/png", buffer: screenshot });
   await expect.poll(() => comment.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  // The draft kept in the tab has the words only (a restored image would have no signed link to show it by).
+  const draft = () => ada.evaluate(() => Object.entries(sessionStorage).find(([key]) => key.startsWith("tuti:comment-draft:"))?.[1] ?? "");
+  await expect.poll(draft).toContain("Here's what I see:");
+  expect(await draft()).not.toContain('"image"');
   await ada.getByRole("button", { name: "Comment", exact: true }).click();
   const shown = ada.getByRole("region", { name: "Comments" }).getByRole("listitem").locator("figure.rich-image img");
   await expect(shown).toHaveAttribute("srcset", /X-Amz-Signature=/);

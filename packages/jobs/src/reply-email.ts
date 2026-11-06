@@ -1,4 +1,4 @@
-import type { Doc } from "@tuti/content";
+import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { replyEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
@@ -131,6 +131,8 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   const postUrl = portalPostUrl(origin, post);
   const doc = (comment.content as Doc | null) ?? undefined;
   const mediaUrls = lastingMediaUrls(doc);
+  // Quoted without its images' alt text: the images are shown under the quote.
+  const text = doc ? toPlainText({ ...doc, content: doc.content?.filter((node) => node.type !== "image") }) : comment.body;
   let emailed = 0;
   let failed = 0;
   let held = false;
@@ -154,7 +156,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
           projectName: project.name,
           authorName: comment.author.name,
           postTitle: post.title,
-          text: comment.body,
+          text,
           doc,
           mediaUrls,
           postUrl,

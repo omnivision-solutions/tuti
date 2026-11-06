@@ -83,14 +83,16 @@ test("the reply's images are in the email to voters, at lasting links", async ()
       type: "doc",
       content: [
         { type: "paragraph", content: [{ type: "text", text: "Here's how it looks." }] },
-        { type: "image", attrs: { mediaId: image.id, width: "100", align: "center", alt: "Dark mode", w: 480, h: 320 } },
+        { type: "image", attrs: { mediaId: image.id, width: "100", align: "center", alt: "The night theme", w: 480, h: 320 } },
       ],
     };
     await call(createComment, as(owner.id), { number: post.number, content, emailVoters: true });
     const [email] = emailsTo(voter.email);
     expect(email!.text).toContain("Here's how it looks.");
+    // Its alt text is the image's only, not quoted as part of the reply.
+    expect(email!.html.match(/The night theme/g)).toEqual(["The night theme"]);
     expect(email!.html).toContain(`/media/${image.id}/`);
-    expect(email!.html).toContain('alt="Dark mode"');
+    expect(email!.html).toContain('alt="The night theme"');
   } finally {
     vi.unstubAllEnvs();
     await s3.close();
