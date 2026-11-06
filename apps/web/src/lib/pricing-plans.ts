@@ -1,4 +1,5 @@
 import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
+import { ses } from "@tuti/shared/ses";
 
 import { PLAN_PRICES } from "./plans";
 
@@ -117,7 +118,17 @@ export function pricingPlans(): PricingPlan[] {
       price: PLAN_PRICES.PRO,
       highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
       intro: "Everything in Free, plus:",
-      features: [{ text: "Unlimited team members" }, boards("PRO"), articles("PRO"), ...history("PRO"), { text: "Your own domain" }, versions("PRO"), { text: "Reporting, up to a month" }],
+      features: [
+        { text: "Unlimited team members" },
+        boards("PRO"),
+        articles("PRO"),
+        ...history("PRO"),
+        { text: "Your own domain" },
+        // Offered where the server has support email and Amazon SES (as Settings → Support offers it: supportDomain, ses).
+        ...(process.env.SUPPORT_EMAIL_DOMAIN?.trim() && ses() ? [{ text: "Email from your own domain" }] : []),
+        versions("PRO"),
+        { text: "Reporting, up to a month" },
+      ],
       cta: { label: "Start with Pro", href: "/sign-up" },
       featured: true,
     },

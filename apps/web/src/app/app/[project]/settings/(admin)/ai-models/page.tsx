@@ -1,4 +1,4 @@
-import { aiEnabled, aiProvider, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, planIncludes, withinModelCap } from "@tuti/shared";
+import { aiEnabled, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, planIncludes, withinModelCap } from "@tuti/shared";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -32,7 +32,7 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
       <CardHeader>
         <CardTitle>AI models</CardTitle>
         <CardDescription>
-          Which model writes for each AI feature, from the models at {aiProvider()}. Fast is the default; a bigger model can write better and
+          Which model writes for each AI feature, from the models this server offers. Fast is the default; a bigger model can write better and
           costs more (estimates for a typical use).
           {cap !== null && ` This server allows models up to $${cap} per million output tokens.`}
         </CardDescription>

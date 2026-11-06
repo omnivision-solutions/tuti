@@ -307,7 +307,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   expect(await changelogModel.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(false);
   await changelogModel.fill("acme/imaginary");
   await team.getByRole("button", { name: "Save" }).click();
-  await expect(team.getByText("has no model “acme/imaginary”")).toBeVisible();
+  await expect(team.getByText("There's no model “acme/imaginary”")).toBeVisible();
   // The server caps what a model may cost, so one without a price can't be picked.
   await expect(team.getByText("This server allows models up to $15 per million output tokens.")).toBeVisible();
   await changelogModel.fill("acme/no-price");

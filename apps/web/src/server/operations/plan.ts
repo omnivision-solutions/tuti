@@ -9,7 +9,6 @@ import { syncSubscription } from "../subscriptions";
 import { defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
 
-/** The project's Billing page, where Stripe sends the team back. */
 /**
  * Refuses (402) what the project's plan doesn't include (see planIncludes), saying which plan does. In
  * `db`, a transaction that holds the project's row, a plan ending meanwhile counts. Returns the plan.
@@ -46,6 +45,7 @@ export async function requireArticleRoom(db: Prisma.TransactionClient, projectId
   }
 }
 
+/** The project's Billing page, where Stripe sends the team back. */
 const billingUrl = async (projectId: string) => new URL(`/app/${await projectSlug(projectId)}/settings/billing`, appUrl());
 
 export const getPlan = defineOperation({

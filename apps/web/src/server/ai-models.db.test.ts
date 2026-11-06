@@ -74,7 +74,7 @@ test("only a model the endpoint lists can be picked; nothing is saved otherwise"
   await expect(call(updateAiModels, as(), { answers: "acme/tiny", changelog: "acme/imaginary" })).rejects.toMatchObject({
     status: 400,
     code: "unknown_model",
-    message: "127.0.0.1 has no model “acme/imaginary”",
+    message: "There's no model “acme/imaginary”",
   });
   // The endpoint's list can't be read: refused, rather than saving an id nobody checked.
   vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");

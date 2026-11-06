@@ -1,4 +1,5 @@
 import { Button, Text } from "@react-email/components";
+import { CREDIT_FEATURES } from "@tuti/shared";
 
 import { colors, Layout } from "./layout";
 
@@ -19,13 +20,13 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         {out ? (
           <>
-            <strong>{projectName}</strong> is out of AI credits, so AI answers, changelog drafts and Autopilot are paused
-            until it has more. Nothing is lost: merged pull requests wait as Paused for you to resume them.
+            <strong>{projectName}</strong> is out of AI credits, so {CREDIT_FEATURES} are paused until it has
+            more. Nothing is lost: merged pull requests wait as Paused for you to resume them.
           </>
         ) : (
           <>
-            <strong>{projectName}</strong> has {left} AI credits left. When they run out, AI answers, changelog drafts and
-            Autopilot pause until it has more.
+            <strong>{projectName}</strong> has {left} AI credits left. When they run out, {CREDIT_FEATURES} pause until it
+            has more.
           </>
         )}
       </Text>

@@ -17,7 +17,7 @@ import {
 import { BilledToggle, PlanLineItem } from "@/components/plan-line";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
-import { BADGE_PRICE, PLAN_PRICES, planPriceText } from "@/lib/plans";
+import { BADGE_PRICE, PLAN_PRICES, planPriceText, YEARLY_NOTE } from "@/lib/plans";
 import type { PricingPlan } from "@/lib/pricing-plans";
 import { cn } from "@/lib/utils";
 import { manageSubscription, setBadge, subscribe } from "@/server/credits";
@@ -32,7 +32,7 @@ export function PlanPicker({ projectSlug, plans }: { projectSlug: string; plans:
   const { upgrade, pending, error } = useUpgrade(projectSlug);
   return (
     <div id="plans" className="flex scroll-mt-20 flex-col gap-4">
-      <BilledToggle value={interval} onChange={setBilled} />
+      <BilledToggle value={interval} onChange={setBilled} yearlyNote={YEARLY_NOTE} />
       <div className="grid gap-4 md:grid-cols-3">
         {(["FREE", "PRO", "BUSINESS"] as const).map((plan) => (
           <div key={plan} className={cn("flex flex-col gap-3 rounded-xl border p-4", plan === "PRO" && "ring-2 ring-primary")}>

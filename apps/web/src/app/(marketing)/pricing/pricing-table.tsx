@@ -5,17 +5,17 @@ import { useState } from "react";
 
 import { BilledToggle, PlanLineItem } from "@/components/plan-line";
 import { buttonVariants } from "@/components/ui/button";
+import { YEARLY_NOTE } from "@/lib/plans";
 import type { PricingPlan } from "@/lib/pricing-plans";
 import { cn } from "@/lib/utils";
 
 /** The plans side by side, priced monthly or yearly as picked. */
 export function PricingTable({ plans }: { plans: PricingPlan[] }) {
   const [interval, setBilled] = useState<"month" | "year">("month");
-  const saving = Math.max(...plans.map(({ price }) => (price ? Math.round((1 - price.year / price.month) * 100) : 0)));
 
   return (
     <div className="flex flex-col items-center gap-8">
-      <BilledToggle value={interval} onChange={setBilled} yearlyNote={saving > 0 ? `Save up to ${saving}%` : undefined} />
+      <BilledToggle value={interval} onChange={setBilled} yearlyNote={YEARLY_NOTE} />
       <ul className="grid w-full gap-5 lg:grid-cols-3">
         {plans.map((plan) => (
           <li

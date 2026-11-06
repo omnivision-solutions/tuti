@@ -85,3 +85,21 @@ test("Pro lists Reporting up to a month, Business every range, Free none", () =>
   vi.stubEnv("PLANS", "on");
   expect(["Free", "Pro", "Business"].map((plan) => line(plan, "Reporting")?.text)).toEqual([undefined, "Reporting, up to a month", "Reporting, every range"]);
 });
+
+test("Pro lists email from your own domain where the server offers it (support email and SES)", () => {
+  vi.stubEnv("PLANS", "on");
+  for (const name of ["SES_REGION", "SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY", "SES_CONFIGURATION_SET", "SES_EVENTS_TOPIC_ARN", "SUPPORT_EMAIL_DOMAIN"]) {
+    vi.stubEnv(name, "");
+  }
+  const texts = (plan: string) => lines(plan).map(({ text }) => text);
+  expect(texts("Pro")).not.toContain("Email from your own domain");
+
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "mail.example.com");
+  vi.stubEnv("SES_REGION", "us-east-1");
+  vi.stubEnv("SES_ACCESS_KEY_ID", "test");
+  vi.stubEnv("SES_SECRET_ACCESS_KEY", "test");
+  vi.stubEnv("SES_CONFIGURATION_SET", "tuti");
+  vi.stubEnv("SES_EVENTS_TOPIC_ARN", "arn:aws:sns:us-east-1:000000000000:tuti");
+  expect(texts("Pro")).toContain("Email from your own domain");
+  expect(texts("Free")).not.toContain("Email from your own domain");
+});
