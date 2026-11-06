@@ -34,6 +34,7 @@ const teamPostSelect = {
   commentCount: true,
   sample: true,
   visibility: true,
+  authorId: true,
   board: { select: { slug: true, name: true } },
   author: { select: { name: true } },
   _count: { select: { duplicateSuggestions: { where: possibleDuplicateOf } } },

@@ -42,6 +42,19 @@ test("a board's posts are private to their author and the team; the team makes o
   await expect(visitor.getByText("No ideas waiting")).toBeVisible();
   expect((await visitor.goto(postUrl))?.status()).toBe(404);
 
+  // Merging it into a public post says its comments will be seen by everyone who sees that one.
+  await ada.goto("/feedback/feature-requests");
+  await postFeedback(ada, "Faster exports");
+  await owner.goto(`/app/${slug}/feedback`);
+  await owner.getByRole("checkbox", { name: "Select Export crashes on large files" }).check();
+  await owner.getByRole("checkbox", { name: "Select Faster exports" }).check();
+  await owner.getByRole("button", { name: "Merge…" }).click();
+  const merge = owner.getByRole("alertdialog", { name: "Merge 2 posts into one?" });
+  await merge.getByRole("radio", { name: /Faster exports/ }).check();
+  await expect(merge.getByText("#1: It's Private: its comments will be seen by everyone who sees #2.")).toBeVisible();
+  await checkpoint(owner, "merge-private-warning", { fullPage: false });
+  await merge.getByRole("button", { name: "Cancel" }).click();
+
   // The team sees it, and makes it public: its page says who sees it.
   await owner.goto(`/app/${slug}/p/1`);
   const visibility = owner.getByRole("combobox", { name: "Visibility" });

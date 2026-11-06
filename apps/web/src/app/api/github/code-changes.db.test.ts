@@ -479,6 +479,31 @@ describe("deciding", () => {
     await receiver.close();
   });
 
+  test("a post only the team sees among the proposals: the changelog line is written from the pull request alone, so nothing it says is published", async () => {
+    await prisma.post.update({ where: { id: posts.darkMode!.id }, data: { visibility: "TEAM", title: "Dark mode breaks for Acme's admin@acme.com" } });
+    github.pullRequest(repo, pullRequest(12));
+    model.decide(INTERNAL);
+    noDocs();
+    await merge(12);
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
+    model.reply(SUMMARY);
+    model.decide({ effect: { resolves: 0.9, moves_forward: 0, related: 0, unrelated: 0.1 } }, '"post"');
+    for (let i = 0; i < 4; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    noDocs();
+    // The reply with the proposals offers a line naming the customer; it isn't used.
+    model.reply(JSON.stringify({ why: "", changelog: "Dark mode fixed for Acme", proposals: {} }), undefined, '"proposals"');
+    model.reply("A dark theme, in Settings", undefined, '"summary_for_users"');
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
+
+    const line = model.requests.find((request) => request.user.includes('"summary_for_users"') && !request.user.includes('"proposals"'))!;
+    expect(line.user).not.toContain("Acme");
+    const draft = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, collecting: true }, select: { body: true } });
+    expect(draft.body).toContain("A dark theme, in Settings");
+    expect(draft.body).not.toContain("Acme");
+  });
+
   test("the ready event is saved with the code change: if it can't be, the code change isn't ready, and the next run sends it", async () => {
     vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
     const receiver = await startWebhookReceiver();
