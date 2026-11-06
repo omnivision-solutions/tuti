@@ -5,7 +5,7 @@ import { APP_WIDGET_SLUG, CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
 // On Tuti's cloud, whose team app shows its own project's widget (APP_WIDGET_PROJECT).
-test("Tuti's own widget in the team app signs people in with their account once SSO is on, and isn't on portals", async ({ browser }, testInfo) => {
+test("Tuti's own widget in the team app signs people in with their account once SSO is on, and isn't on the marketing pages", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Tuti", APP_WIDGET_SLUG, cloudPortalUrl);
@@ -92,13 +92,14 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await launcher.click();
   await expect(panel.getByRole("button", { name: "Sign in to post" })).toBeVisible();
 
-  // Not on the marketing pages, nor on a portal: no script (the launcher would only come after it loads).
+  // Not on the marketing pages: no script (the launcher would only come after it loads).
   await owner.goto("/");
   await expect(owner.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
   await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
   await owner.goto(`${cloudPortalUrl(APP_WIDGET_SLUG)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: "Export to CSV" })).toBeVisible();
-  await expect(script).toHaveCount(0);
-  await expect(launcher).toHaveCount(0);
+  // On a portal, the project's own widget (Customize → Widget, on by default) as any site has it: one script, not the app's too.
+  await expect(script).toHaveCount(1);
+  await expect(script).toHaveAttribute("data-project", APP_WIDGET_SLUG);
 });

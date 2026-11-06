@@ -654,6 +654,8 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await owner.goto(`/app/${slug}/customize/widget`);
   const onPortal = owner.getByRole("switch", { name: "Show on your portal" });
   await expect(onPortal).toBeChecked();
+  await onPortal.scrollIntoViewIfNeeded();
+  await checkpoint(owner, "customize-widget-on-portal", { fullPage: false });
   await onPortal.click();
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
