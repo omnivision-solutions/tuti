@@ -190,6 +190,9 @@ test("a session a portal on its team's own site starts doesn't work on the app h
   };
   expect(await post(own.slug)).toEqual({ error: "Board not found" });
   expect(await post(slug)).toEqual({});
+  // Nor is it the team's, even on its own project: whoever runs the portal's site may be on its team too.
+  await prisma.teamMember.create({ data: { projectId: portal.id, userId: ada.id, role: "OWNER" } });
+  expect(await getOwnerProject(slug)).toBeNull();
 
   // Her own idea in her project, posted on the app: on the portal, it isn't hers.
   actAs(ada);
@@ -225,6 +228,8 @@ test("a session a portal on its team's own site starts doesn't work on the app h
   expect((await api("/update-user", { image: "https://tracker.example/pixel.png" })).status).toBe(401);
   expect((await api("/update-user", { name: "Ada L." })).status).toBe(200);
   expect((await api("/list-sessions")).status).toBe(404);
+  expect((await api("/revoke-session", { token: "x" })).status).toBe(404);
+  expect((await api("/revoke-sessions", {})).status).toBe(404);
   expect((await api("/revoke-other-sessions", {})).status).toBe(404);
   // However the cookie is written.
   const spaced = stolen.replace("session_token=", "session_token =");
