@@ -2,6 +2,11 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# Security fixes a dependency pins below. Remove each once its parent depends on the fixed version.
+overrides:
+  # mailauth pins joi 18.3.0 (GHSA-4528-x5fx-h6hg, fixed in 18.3.1).
+  joi@18.3.0: 18.3.1
+
 allowBuilds:
   sharp: true
   unrs-resolver: true

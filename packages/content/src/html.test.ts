@@ -1,7 +1,10 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+
 import { describe, expect, test } from "vitest";
 
 import { type Doc, parseDoc } from "./document";
-import { fileName, htmlToContent, type HtmlOptions, type MediaSource } from "./html";
+import { fileName, htmlToContent, type HtmlOptions, inertWindow, type MediaSource } from "./html";
 import type { Profile } from "./profiles";
 
 /** Invented media ids, one per source key, as an importer would make them. */
@@ -301,4 +304,24 @@ test("scripts, styles, event handlers and Tuti's own attributes are dropped", as
 test("blank spacer paragraphs are dropped; content too long to store is an error", async () => {
   expect(await blocks("post", "<p>One</p><p></p><p> </p><p>Two</p>")).toEqual([p(text("One")), p(text("Two"))]);
   expect(await htmlToContent("post", `<p>${"word ".repeat(50_000)}</p>`)).toEqual({ error: "This is too long." });
+});
+
+test("parsing imported HTML requests nothing: no stylesheet, iframe or script it names", async () => {
+  const requested: string[] = [];
+  const server = createServer((request, response) => {
+    requested.push(request.url!);
+    response.end("");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const window = inertWindow();
+  try {
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    window.document.body.innerHTML = `<link rel="stylesheet" href="${origin}/style.css"><iframe src="${origin}/frame"></iframe><script src="${origin}/script.js"></script><p>Hi</p>`;
+    // Resolves once every load the HTML started has finished: a request it made has reached the server.
+    await window.happyDOM.waitUntilComplete();
+    expect(requested).toEqual([]);
+  } finally {
+    await window.happyDOM.close();
+    server.close();
+  }
 });

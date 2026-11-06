@@ -2,7 +2,7 @@
 /// <reference lib="dom" />
 
 import { generateJSON } from "@tiptap/html/server";
-import { Window } from "happy-dom";
+import { type IOptionalBrowserSettings, Window } from "happy-dom";
 
 import { type Doc, mediaIdsIn, parseDoc, toPlainText, updateImages } from "./document";
 import { isSafeLink, parseVideoUrl } from "./links";
@@ -58,14 +58,16 @@ const JUNK = "script, style, noscript, template, head, title, meta, link, base, 
 const KEPT = new Set(["href", "src", "alt", "colspan", "rowspan", "start", "data", "data-width", "data-align"]);
 /** Featurebase's own storage: links there are its attachments. */
 const ATTACHMENT_HOST = /(^|\.)featurebase-attachments\.com$/i;
-/** A window that runs and loads nothing: only parses. */
+/** A window that runs and loads nothing: only parses. Typed, so a setting happy-dom renames fails typecheck. */
 const INERT = {
   disableJavaScriptEvaluation: true,
   disableJavaScriptFileLoading: true,
-  disableCSSFileLoading: true,
-  disableIframePageLoading: true,
+  enableCSSFileLoading: false,
+  enableIframePageLoading: false,
   disableComputedStyleRendering: true,
-};
+} satisfies IOptionalBrowserSettings;
+/** A window for untrusted HTML: it parses, and runs and loads nothing. Close it when done. */
+export const inertWindow = () => new Window({ settings: INERT });
 const BLOCKS = "p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote, pre";
 
 /**
@@ -73,7 +75,7 @@ const BLOCKS = "p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote, pre";
  * show and its links point at, parsed: for HTML htmlToContent refuses (too long to be content).
  */
 export async function htmlText(html: string): Promise<{ text: string; urls: string[] }> {
-  const window = new Window({ settings: INERT });
+  const window = inertWindow();
   try {
     const body = (window.document as unknown as Document).body;
     body.innerHTML = html;
@@ -95,7 +97,7 @@ export async function htmlText(html: string): Promise<{ text: string; urls: stri
  * never inside one holding the project lock.
  */
 export async function htmlToContent(profile: Profile, html: string, { media, link }: HtmlOptions = {}): Promise<HtmlContent | { error: string }> {
-  const window = new Window({ settings: INERT });
+  const window = inertWindow();
   try {
     const document = window.document as unknown as Document;
     const body = document.body;
