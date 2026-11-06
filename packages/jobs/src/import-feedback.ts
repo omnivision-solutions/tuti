@@ -467,29 +467,48 @@ function commentLeftOut(comment: FeaturebaseComment, posts: Map<string, string>)
   return comment.isPrivate && !(comment.author?.type === "admin" && comment.author.id) ? "private but not by the team" : null;
 }
 
+/** Where the comments step got to: Featurebase's page (its cursor) and how many of its comments are done. */
+type CommentsAt = { page: string | null; done: number };
+
 /**
- * Comments, every one at once in date order (a changelog's left alone), joined to their posts by the record map:
- * public ones as comments (flat: a reply follows its thread in time), private ones by the team as internal notes.
- * Their images are copied, as posts' are. commentCount is counted from them.
+ * Comments in date order (a changelog's left alone), joined to their posts by the record map: public ones as comments
+ * (flat: a reply follows its thread in time), private ones by the team as internal notes. Their images are copied, as
+ * posts' are: past the page's soft limit no more comments are begun, and the next page reads the same list page from
+ * there. commentCount is counted from them.
  */
 async function commentsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = FEEDBACK_PAGE.now();
-  // ponytail: never put off (`Later`): the page's images all copy now, those past the hard limit left out. Rare in
-  // comments; split the page as postsPage does if they make pages run long.
-  const media = timedImporter(job, begun, () => true);
-  const page = await job.featurebase.page<FeaturebaseComment>("/comments", cursor, { privacy: "all", sortBy: "old" });
-  const items = page.items.filter((comment) => comment.postId);
-  const posts = await recorded(prisma, job, "post", items.map((comment) => comment.postId!));
-  const known = await recorded(prisma, job, "comment", items.map((comment) => comment.id));
-  const fresh = items.filter((comment) => !known.has(comment.id) && !commentLeftOut(comment, posts));
+  // A Featurebase cursor alone: an import from before comments' pages were split.
+  const at: CommentsAt = cursor?.startsWith("{") ? JSON.parse(cursor) : { page: cursor, done: 0 };
+  let done = 0;
+  const media = timedImporter(job, begun, () => done === 0);
+  const page = await job.featurebase.page<FeaturebaseComment>("/comments", at.page, { privacy: "all", sortBy: "old" });
+  const rest = page.items.filter((comment) => comment.postId).slice(at.done);
+  const posts = await recorded(prisma, job, "post", rest.map((comment) => comment.postId!));
+  const known = await recorded(prisma, job, "comment", rest.map((comment) => comment.id));
+  const fresh = new Set(rest.filter((comment) => !known.has(comment.id) && !commentLeftOut(comment, posts)));
   // Featurebase read before copying, while the page's reads have time.
-  const contacts = await people(job, fresh.map((comment) => comment.author));
+  const contacts = await people(job, [...fresh].map((comment) => comment.author));
   const contents = new Map<string, HtmlContent | { error: string }>();
-  for (const comment of fresh) {
-    contents.set(comment.id, await htmlToContent("comment", comment.content ?? "", { media }));
+  for (const comment of rest) {
+    if (done > 0 && FEEDBACK_PAGE.now() - begun > FEEDBACK_PAGE.softMs) {
+      break;
+    }
+    if (fresh.has(comment)) {
+      try {
+        contents.set(comment.id, await htmlToContent("comment", comment.content ?? "", { media }));
+      } catch (error) {
+        if (error instanceof Later) {
+          break;
+        }
+        throw error;
+      }
+    }
+    done++;
   }
+  const items = rest.slice(0, done);
   return {
-    next: page.next,
+    next: done < rest.length ? JSON.stringify({ page: at.page, done: at.done + done }) : page.next,
     save: async (tx) => {
       const users = await contacts.save(tx);
       const saved = await recorded(tx, job, "comment", items.map((comment) => comment.id));

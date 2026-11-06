@@ -337,12 +337,14 @@ test("past a page's time, what's left of it goes to the next page; one post's im
     handlers.importStep = importStep;
   }
   let counts = (await call(getImport, asOwner(), {})).import!.counts;
-  // The post's image and the comment's (comments' pages copy every image: they're never put off).
+  // The post's image and the comment's.
   expect(counts).toMatchObject({ posts: { imported: 5 }, images: { imported: 2 }, avatars: { imported: 2 } });
   expect(await prisma.user.count({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } } })).toBe(2);
   // One post a page (Featurebase's 10, 2 to its page: 5 pages without the limit), one avatar a page (else 1).
   expect(pages.filter((step) => step === "posts")).toHaveLength(10);
   expect(pages.filter((step) => step === "avatars")).toHaveLength(2);
+  // Comments too, past the limit: one with something to copy a page (Featurebase's 10, 2 to its page: 5 without it).
+  expect(pages.filter((step) => step === "comments")).toHaveLength(9);
 
   // A page whose first post's images begin past its hard limit leaves them out; a comments page's too.
   project = await createProject(owner);

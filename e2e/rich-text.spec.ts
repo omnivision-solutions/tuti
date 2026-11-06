@@ -206,4 +206,19 @@ test("someone comments with a screenshot, and the team replies with one", async 
     await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   }
   await checkpoint(owner, "team-reply-with-image");
+
+  // The Feedback pane's reply box takes one as well.
+  await owner.goto(`/app/${slug}/feedback?post=1`);
+  const paneReply = owner.getByRole("textbox", { name: "Comment" });
+  await paneReply.click();
+  await owner.keyboard.type("One more from the list:");
+  const panePicker = owner.waitForEvent("filechooser");
+  await owner.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Image" }).click();
+  await (await panePicker).setFiles({ name: "pane.png", mimeType: "image/png", buffer: screenshot });
+  await expect.poll(() => paneReply.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await owner.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(paneReply).not.toContainText("One more from the list:");
+  await owner.goto(`/app/${slug}/p/1`);
+  await expect(owner.getByText("One more from the list:")).toBeVisible();
+  await expect(images).toHaveCount(3);
 });
