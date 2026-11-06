@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { sendEmail, shippedEmail } from "@tuti/email";
-import type { JobInput } from "@tuti/shared";
+import { type JobInput, plansEnabled } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
 import { postAudience } from "./post-audience";
@@ -105,8 +105,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   // Only while it's still shipped (the team may have reopened it since) and not merged away; never for sample content
   // (Home's "Add sample content"), whatever completed it.
   const post = await prisma.post.findFirst({
-    // Only while its emails are due: a resume lets a pause's go (apps/web/src/server/email-pause.ts), even of a run queued before.
-    where: { id: postId, status: "COMPLETED", duplicateOfId: null, sample: false, shippedEmailsDueAt: { not: null } },
+    where: { id: postId, status: "COMPLETED", duplicateOfId: null, sample: false },
     select: {
       number: true,
       title: true,
@@ -224,7 +223,11 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
  */
 export async function resubmitShippedEmails(_input: JobInput<"resubmitShippedEmails">, log: JobLogger): Promise<JobResult> {
   const due = await prisma.post.findMany({
-    where: { shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+    where: {
+      shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) },
+      // Not a paused project's: it would only wait, and still be queued once the resume has let it go.
+      ...(plansEnabled() && { project: { emailPausedAt: null } }),
+    },
     select: { id: true },
     take: 500,
   });

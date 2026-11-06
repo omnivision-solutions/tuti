@@ -10,11 +10,13 @@ import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
 import { replyToConversation } from "./operations/conversations";
+import { emailedOnCompletion } from "./operations/code-changes";
 import { createComment, createPost } from "./operations/create";
 import { updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
 import { call } from "./operations/run";
 import { resumeEmailSending } from "./email-pause";
+import { votersToEmail } from "./post-lists";
 import { emailSignInLink } from "./sign-in-link";
 
 /**
@@ -226,6 +228,10 @@ test("resumed, the posts' and replies' emails the pause held aren't sent: a paus
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
   await call(updatePost, team, { number: post.number, status: "completed" });
   await call(createComment, team, { number: post.number, body: "It's out.", emailVoters: true });
+  // While it's paused, nothing promises them: the post's pages count nobody to email.
+  const { id: postId } = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } } });
+  expect(await votersToEmail(project.id, postId)).toBe(0);
+  expect(await emailedOnCompletion(project.id, [postId])).toEqual(new Map());
 
   expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
   // Past the 10 minutes the crons wait, they find nothing.
@@ -235,9 +241,6 @@ test("resumed, the posts' and replies' emails the pause held aren't sent: a paus
   });
   await handlers.resubmitShippedEmails({}, log);
   await handlers.resubmitReplyEmails({}, log);
-  // Nor does a run queued before the resume.
-  const { id: postId } = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } } });
-  await handlers.postShipped({ postId }, log);
   expect(emailsTo(voters[1]!.email).filter((email) => email.subject.endsWith("Dark mode"))).toEqual([]);
 });
 

@@ -1,5 +1,5 @@
 import { type PostStatus, Prisma, prisma } from "@tuti/db";
-import { audienceReach, postAudience } from "@tuti/jobs";
+import { audienceReach, postAudience, projectEmailWaits } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
 import type { GroupCondition } from "@/lib/group-conditions";
@@ -184,7 +184,8 @@ export async function votersToEmail(projectId: string, postId: string) {
     // A sample post's votes aren't loaded: it emails nobody.
     prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, sample: true, votes: { where: { post: { sample: false } }, select: { userId: true } } } }),
   ]);
-  return post.sample ? 0 : (await postAudience(projectId, project, post.authorId, post.votes.map((vote) => vote.userId))).length;
+  // While the project's email is paused nobody is: the resume lets what it held go.
+  return post.sample || (await projectEmailWaits(projectId)) ? 0 : (await postAudience(projectId, project, post.authorId, post.votes.map((vote) => vote.userId))).length;
 }
 
 /** Whether a project's email about someone else's post (as the shipped one) reaches `userId`, or why not (audienceReach), for a portal board's Get updates. */
