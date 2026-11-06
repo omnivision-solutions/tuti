@@ -207,10 +207,12 @@ jobs:
       # Nightly: what ships in the image (Alpine packages, npm's, Go binaries such as the
       # Infisical CLI) against known vulnerabilities, failing on high or critical ones that
       # have a fix. Not on pull requests: a newly published CVE would fail unrelated ones.
+      # A finding that is safe, or can't be fixed from here yet, goes in an `ignore:` list
+      # in .grype.yaml with the reason; Grype reads it from the checkout.
       - name: Vulnerability scan
         if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/repo:ro" -w /repo \
             anchore/grype:v0.121.2@sha256:6a36234da13f9faa327306ac0b3dab3405cfa2b4eb20c8f904125a8707863913 \
             "tuti-$APP:scan" --only-fixed --fail-on high
         env:
