@@ -1276,7 +1276,7 @@ test("on a server selling plans, a new project's email is capped in its first we
   await expect(owner.getByText("Not emailed while your project's email is paused (Settings → Inbox and email)")).toBeVisible();
   await checkpoint(owner, "reply-waits-while-paused");
   await owner.goto(`/app/${slug}/settings/support`);
-  const paused = owner.getByText("Your email to your users is paused: 2.0% of emails bounced in the last 2 weeks (2 of 100).");
+  const paused = owner.getByText("Email sending is paused because of a high bounce rate. We need to review it before sending can be enabled again.");
   await expect(paused).toBeVisible();
   await checkpoint(owner, "support-email-paused");
 

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { Doc } from "@tuti/content";
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
-import { aiPaused, onlyPullRequestTitles, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { aiPaused, onlyPullRequestTitles, projectEmailWaits, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
@@ -142,6 +142,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           subscribersLeft: left,
           subscribersSent: sent,
           sample: entry.sample,
+          emailPaused: await projectEmailWaits(membership.project.id),
         }}
         subscribers={subscribers}
         posts={posts}

@@ -155,6 +155,8 @@ counts keep it safe for everyone's delivery (`packages/jobs/src/email-limits.ts`
   complaints above 0.03% of its emails (5 at any rate), pauses its email: replies and "it shipped"
   wait, sign-in links still go. Its owners and admins are emailed why, and the operator
   (`APP_PORTAL_OWNER`) gets a link that resumes that pause (it lasts as long as the pause); its rates count afresh from then.
+  Resuming sends the held replies, but not the changelog, "it shipped" and reply-to-voters emails the pause held: those
+  go to many people at once, the kind of list that paused it.
 
 Self-hosted servers (no plans sold) have neither, and without `APP_PORTAL_OWNER` nothing is paused
 (nobody could resume it).

@@ -11,7 +11,7 @@ const { HowAnnounced, publishSummary } = await import("./changelog");
 
 /** "How it's announced" in an entry's sidebar, as text. */
 const sidebar = (
-  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; told?: { asked: number; subscribers: number } | null },
+  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; told?: { asked: number; subscribers: number } | null; emailPaused?: boolean },
   subscribers: number | null = 3,
 ) =>
   renderToStaticMarkup(
@@ -109,5 +109,11 @@ describe("published, who it told", () => {
 test("a draft's Mark it new says what each place shows: the widget a dot, the portal's Changelog tab New", () => {
   expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 })).toContain(
     "Marked new, the widget shows a dot and your portal's Changelog tab says New to signed-in readers, until they see it.",
+  );
+});
+
+test("while the project's email is paused, a draft says subscribers aren't emailed, not that nobody subscribed", () => {
+  expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, emailPaused: true }, 0)).toContain(
+    "Your project's email is paused, so subscribers aren't emailed.",
   );
 });

@@ -143,3 +143,7 @@ export function rowBy(
   }
   return message.authorId === me ? "You" : message.name?.trim().split(/\s+/)[0] || "Tuti";
 }
+
+/** Who "Email voters" reaches, after its label. */
+export const votersNote = (voters: number | "paused") =>
+  voters === "paused" ? "your project's email is paused" : voters === 0 ? "nobody to email" : voters === 1 ? "1 person" : `${voters} people`;

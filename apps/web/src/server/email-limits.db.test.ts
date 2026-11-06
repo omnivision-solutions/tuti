@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { claimProjectEmail, handlers, resumeToken } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
-import { afterAll, afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { POST } from "@/app/api/email/events/route";
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -10,11 +10,13 @@ import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
 import { replyToConversation } from "./operations/conversations";
-import { createPost } from "./operations/create";
+import { emailedOnCompletion } from "./operations/code-changes";
+import { createComment, createPost } from "./operations/create";
 import { updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
 import { call } from "./operations/run";
 import { resumeEmailSending } from "./email-pause";
+import { votersToEmail } from "./post-lists";
 import { emailSignInLink } from "./sign-in-link";
 
 /**
@@ -169,7 +171,8 @@ test("too many bounces pause the project's email: replies and shipped wait, sign
   expect(toOperator).toMatchObject({ subject: `${project.name}'s email is paused` });
   expect(toOperator!.text).toContain("2.0% of emails bounced in the last 2 weeks (2 of 100)");
   const [toTeam] = emailsTo(owner.email).filter((email) => email.subject.endsWith("is paused"));
-  expect(toTeam).toMatchObject({ subject: `${project.name}'s email is paused` });
+  expect(toTeam).toMatchObject({ subject: `Email sending for ${project.name} is paused` });
+  expect(toTeam!.text).toContain("Email sending is paused because of a high bounce rate. We need to review it before sending can be enabled again.");
   expect(toTeam!.replyTo).toContain(OPERATOR);
   // Once: another bounce while it's paused tells nobody again.
   await sesEvent(project.id, "Bounce");
@@ -212,6 +215,35 @@ test("too many bounces pause the project's email: replies and shipped wait, sign
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date(), emailPausedReason: "5 people marked emails as spam in the last 2 weeks" } });
   expect(await resumeEmailSending(token)).toEqual({ error: "This pause is over" });
   expect(await pausedAt(project.id)).not.toBeNull();
+});
+
+test("resumed, the posts' and replies' emails the pause held aren't sent: a pause holds its email for good", async () => {
+  const { project, team, aWeekOld } = await setup();
+  await aWeekOld();
+  const voters = [await signUp("Val Voter"), await signUp("Vic Voter")];
+  await prisma.user.updateMany({ where: { id: { in: voters.map((v) => v.id) } }, data: { emailVerified: true } });
+  const post = await call(createPost, { actor: { kind: "user", userId: voters[0]!.id }, projectId: project.id }, { board: "feature-requests", title: "Dark mode" });
+  await call(setVote, { actor: { kind: "user", userId: voters[1]!.id }, projectId: project.id }, { number: post.number, voted: true });
+  const pausedAt = new Date(Date.now() - 60 * 60_000);
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
+  await call(updatePost, team, { number: post.number, status: "completed" });
+  await call(createComment, team, { number: post.number, body: "It's out.", emailVoters: true });
+  // While it's paused, nothing promises them: the reply form says email is paused, completing counts nobody.
+  const { id: postId } = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } } });
+  expect(await votersToEmail(project.id, postId)).toBe("paused");
+  expect(await emailedOnCompletion(project.id, [postId])).toEqual(new Map());
+
+  expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
+  // Past the 10 minutes the crons wait, they find nothing.
+  vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 15 * 60_000 });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  await handlers.resubmitShippedEmails({}, log);
+  await handlers.resubmitReplyEmails({}, log);
+  // Nor does a run after the resume (Hatchet retrying one that failed before it).
+  await handlers.postShipped({ postId }, log);
+  expect(emailsTo(voters[1]!.email).filter((email) => email.subject.endsWith("Dark mode"))).toEqual([]);
 });
 
 test("sends that come after the bounces still pause it, once there are 100", async () => {

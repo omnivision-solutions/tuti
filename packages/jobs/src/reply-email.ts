@@ -21,16 +21,23 @@ const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 /**
  * Takes on emailing one voter: a new claim, or one a crashed run left unsent. Returns the claim's time, which the
  * run then uses to mark it sent or release it (never touching a claim another run took over); null when someone
- * else has it or it's sent.
+ * else has it, it's sent, or the reply's emails aren't due any more (a resume dropped a pause's).
  */
 async function claim(commentId: string, userId: string): Promise<Date | null> {
-  const claimedAt = new Date();
-  const { count } = await prisma.replyEmail.createMany({ data: [{ commentId, userId, claimedAt }], skipDuplicates: true });
-  if (count === 1) {
-    return claimedAt;
-  }
-  const taken = await prisma.replyEmail.updateMany({ where: { commentId, userId, sentAt: null, claimedAt: { lt: late() } }, data: { claimedAt } });
-  return taken.count === 1 ? claimedAt : null;
+  return prisma.$transaction(async (tx) => {
+    // The reply's row locked, so a resume that drops a pause's emails waits for this claim, or this claim sees it.
+    const [comment] = await tx.$queryRaw<{ due: Date | null }[]>`SELECT "votersEmailDueAt" AS due FROM comment WHERE id = ${commentId} FOR UPDATE`;
+    if (!comment?.due) {
+      return null;
+    }
+    const claimedAt = new Date();
+    const { count } = await tx.replyEmail.createMany({ data: [{ commentId, userId, claimedAt }], skipDuplicates: true });
+    if (count === 1) {
+      return claimedAt;
+    }
+    const taken = await tx.replyEmail.updateMany({ where: { commentId, userId, sentAt: null, claimedAt: { lt: late() } }, data: { claimedAt } });
+    return taken.count === 1 ? claimedAt : null;
+  });
 }
 
 /**
@@ -59,7 +66,9 @@ async function whileClaimed(commentId: string, userId: string, claimedAt: Date, 
   }
   const mine = { commentId, userId, claimedAt: current };
   if (error) {
-    await prisma.replyEmail.deleteMany({ where: mine });
+    // Released as stale, not deleted: still unsent, so another run finishing meanwhile doesn't take the reply as done
+    // (and clear its due time, which the retry needs), and the retry takes it over.
+    await prisma.replyEmail.updateMany({ where: mine, data: { claimedAt: new Date(0) } });
     return error;
   }
   // Sent: never released from here on. If saving this fails, the claim stays unsent and is taken over later,
@@ -100,7 +109,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   }
   const { post } = comment;
   const { projectId, project } = post;
-  // The project's email is paused: still due, so the cron brings it back (for a day) once it's resumed.
+  // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }

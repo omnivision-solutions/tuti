@@ -29,6 +29,7 @@ import {
   RUN_STALE_MS,
   lockProject,
   postsReach,
+  projectEmailWaits,
   reviewPath,
   setChangelogLine,
   tellOwners,
@@ -93,7 +94,8 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
 export async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
   // A private portal on a plan without them is the team's only: postShipped emails nobody.
-  if (postIds.length === 0 || (project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal"))) {
+  // Nor while the project's email is paused: the resume lets what it held go.
+  if (postIds.length === 0 || (project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal")) || (await projectEmailWaits(projectId))) {
     return new Map();
   }
   const rows = await prisma.$queryRaw<{ postId: string; people: bigint }[]>`

@@ -84,6 +84,8 @@ type Entry = {
   subscribersSent: number;
   /** Sample content (server/sample-content.ts): it completes sample posts only. */
   sample?: boolean;
+  /** The project's email is paused (its bounces or complaints): nobody's emailed, and the resume doesn't send it later. */
+  emailPaused?: boolean;
 };
 type PostOption = PickablePost & { status: PostStatus };
 
@@ -440,7 +442,9 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
           ) : (
             choice(
               "Email subscribers",
-              subscribers === null
+              entry.emailPaused
+                ? "Your project's email is paused, so subscribers aren't emailed."
+                : subscribers === null
                 ? "Your portal is private: its changelog isn't emailed."
                 : subscribers === 0
                   ? "Nobody has subscribed yet: people subscribe on your portal's changelog."

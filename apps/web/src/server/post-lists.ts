@@ -1,5 +1,5 @@
 import { type PostStatus, Prisma, prisma } from "@tuti/db";
-import { audienceReach, postAudience } from "@tuti/jobs";
+import { audienceReach, postAudience, projectEmailWaits } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
 import type { GroupCondition } from "@/lib/group-conditions";
@@ -177,14 +177,20 @@ export function postVoters(projectId: string, property: string | null, postId: s
     LIMIT ${VOTERS_SHOWN}`;
 }
 
-/** How many of a post's voters the team's reply emails with "Email voters" (who replyEmailed tells: postAudience); none on a sample post. */
-export async function votersToEmail(projectId: string, postId: string) {
+/**
+ * How many of a post's voters the team's reply emails with "Email voters" (who replyEmailed tells: postAudience); none
+ * on a sample post. "paused" while the project's email is: nobody is, and the resume doesn't send it later.
+ */
+export async function votersToEmail(projectId: string, postId: string): Promise<number | "paused"> {
   const [project, post] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } }),
     // A sample post's votes aren't loaded: it emails nobody.
     prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, sample: true, votes: { where: { post: { sample: false } }, select: { userId: true } } } }),
   ]);
-  return post.sample ? 0 : (await postAudience(projectId, project, post.authorId, post.votes.map((vote) => vote.userId))).length;
+  if (post.sample) {
+    return 0;
+  }
+  return (await projectEmailWaits(projectId)) ? "paused" : (await postAudience(projectId, project, post.authorId, post.votes.map((vote) => vote.userId))).length;
 }
 
 /** Whether a project's email about someone else's post (as the shipped one) reaches `userId`, or why not (audienceReach), for a portal board's Get updates. */

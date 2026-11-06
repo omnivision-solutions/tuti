@@ -27,7 +27,7 @@ type Db = Pick<typeof prisma, "$queryRaw">;
  * Where a subscriber stands with the changelog: one rule, which the subscription and confirmation pages ask, and the
  * sender and the editor's counts read in SQL (audienceSql, its "gets" and "paused"), so no page promises what isn't sent.
  * - "gets": it's emailed to them.
- * - "paused": it will be, once the project's email is resumed (its bounces or complaints went over); the cron sends it then.
+ * - "paused": it will be, once the project's email is resumed (its bounces or complaints went over); the entries published meanwhile aren't.
  * - "unconfirmed": they haven't confirmed (or unsubscribed since).
  * - "private": the portal is private, which emails nobody its changelog.
  * - "opted-out": they've turned all of the project's emails off ("Unsubscribe" in a shipped email, say). That wins,
@@ -62,8 +62,8 @@ export const reached = (reach: ChangelogReach) => reach === "gets" || reach === 
 
 /**
  * SQL: who an entry goes to, as `s`: the project's subscribers confirmed by the time it was published with Email
- * subscribers (`emailedAt`) that changelogReach reaches, on a public portal and not opted out (paused still counts:
- * the job itself waits while the project's email is paused). `unsentOf`: of those, the ones with no email of that
+ * subscribers (`emailedAt`) that changelogReach reaches, on a public portal and not opted out (paused still counts here:
+ * the job waits while the project's email is paused, and the editor's counts are 0 then). `unsentOf`: of those, the ones with no email of that
  * entry sent yet. The sender reads its rows and the editor counts them, both from this.
  */
 const audienceSql = (projectId: string, emailedAt: Date, unsentOf?: string) => Prisma.sql`
@@ -93,7 +93,8 @@ async function audienceSize(...args: Parameters<typeof audienceSql>) {
  */
 export async function subscriberCount(projectId: string): Promise<number | null> {
   const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
-  return portalAccess === "PUBLIC" ? audienceSize(projectId, new Date()) : null;
+  // While the project's email is paused nothing is: the resume lets what it held go.
+  return portalAccess !== "PUBLIC" ? null : (await projectEmailWaits(projectId)) ? 0 : audienceSize(projectId, new Date());
 }
 
 /**
@@ -106,7 +107,9 @@ export async function subscribersLeft(entryId: string): Promise<number> {
     select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true },
   });
   // audienceSql (changelogReach) leaves out a private portal's: none are left there.
-  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt ? audienceSize(entry.projectId, entry.subscribersEmailedAt, entryId) : 0;
+  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt && !(await projectEmailWaits(entry.projectId))
+    ? audienceSize(entry.projectId, entry.subscribersEmailedAt, entryId)
+    : 0;
 }
 
 /**
@@ -115,7 +118,7 @@ export async function subscribersLeft(entryId: string): Promise<number> {
  * unsubscribing, unpublishing or making the portal private waits for this, or this sees it), not as the run began.
  * A new claim, or one a crashed run left unsent. Returns the claim's time, which the run then uses to mark it sent or
  * release it (never touching a claim another run took over); null when they don't want it any more, someone else has
- * it, or it's sent; "stop" when the entry is unpublished or its portal private now.
+ * it, or it's sent; "stop" when the entry is unpublished, its portal private or its emails let go now.
  */
 async function claim(entry: { id: string; projectId: string; emailedAt: Date }, subscriberId: string): Promise<Date | null | "stop"> {
   return prisma.$transaction(async (tx) => {
@@ -123,9 +126,10 @@ async function claim(entry: { id: string; projectId: string; emailedAt: Date }, 
     // can't each hold one the other waits for; the subscriber's last.
     const [project] = await tx.$queryRaw<{ portalAccess: string }[]>`
       SELECT "portalAccess" FROM "project" WHERE "id" = ${entry.projectId} FOR SHARE`;
-    const [current] = await tx.$queryRaw<{ publishedAt: Date | null }[]>`
-      SELECT "publishedAt" FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
-    if (!current?.publishedAt || project?.portalAccess !== "PUBLIC") {
+    const [current] = await tx.$queryRaw<{ publishedAt: Date | null; due: Date | null }[]>`
+      SELECT "publishedAt", "subscribersEmailDueAt" AS due FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
+    // Its emails let go meanwhile (a resume drops a pause's): nobody else.
+    if (!current?.publishedAt || !current.due || project?.portalAccess !== "PUBLIC") {
       return "stop";
     }
     await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
@@ -232,7 +236,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   if (!entry?.subscribersEmailDueAt || !entry.subscribersEmailedAt || entry.sample) {
     return { skipped: true };
   }
-  // Every clear is of the due time this run read, so one set since (published again, a pause resumed) stays.
+  // Every clear is of the due time this run read, so one set since (published again) stays.
   const dueAsRead = { id: entryId, subscribersEmailDueAt: entry.subscribersEmailDueAt };
   // On a private portal (since it was published): let go, while it still is.
   if (entry.project.portalAccess === "PRIVATE") {
@@ -244,7 +248,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     return { waiting: "the entry isn't published" };
   }
   const { projectId, project } = entry;
-  // The project's email is paused: still due, so the cron brings it back (for a day) once it's resumed.
+  // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }

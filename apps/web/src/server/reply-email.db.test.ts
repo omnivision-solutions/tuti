@@ -193,3 +193,35 @@ test("the safety net leaves a new project's replies out once it's past its daily
     vi.unstubAllEnvs();
   }
 });
+
+test("a resume that drops a pause's emails while a reply's go out: nobody else is emailed", async () => {
+  const voter = await verified("Voter");
+  const { post } = await votedFor(voter);
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  mailbox.refuseNext(voter.email, { code: 421 });
+  const reply = await call(createComment, as(owner.id), { number: post.number, body: "Shipping soon.", emailVoters: true });
+  expect(emailsTo(voter.email)).toEqual([]);
+  // The retry starts while it's due; the resume clears that right before its claim.
+  const transaction = prisma.$transaction.bind(prisma);
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (...args: Parameters<typeof transaction>) => {
+    await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: null } });
+    return transaction(...args);
+  }) as typeof prisma.$transaction);
+  await handlers.replyEmailed({ commentId: reply.id }, { info: () => {}, warn: () => {} });
+  expect(emailsTo(voter.email)).toEqual([]);
+});
+
+test("a send that fails while another run finishes: the reply stays due, and the retry emails that voter", async () => {
+  const voter = await verified("Voter");
+  const { post } = await votedFor(voter);
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  mailbox.refuseNext(voter.email, { code: 421 });
+  const reply = await call(createComment, as(owner.id), { number: post.number, body: "Shipping soon.", emailVoters: true });
+  expect(emailsTo(voter.email)).toEqual([]);
+  // Another run finishing now finds an unsent claim: not done.
+  await prisma.comment.updateMany({ where: { id: reply.id, replyEmails: { none: { sentAt: null } } }, data: { votersEmailDueAt: null } });
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: reply.id } })).votersEmailDueAt).not.toBeNull();
+  // Hatchet's retry.
+  await handlers.replyEmailed({ commentId: reply.id }, { info: () => {}, warn: () => {} });
+  expect(emailsTo(voter.email)).toHaveLength(1);
+});

@@ -27,10 +27,12 @@ const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
  */
 async function claim(postId: string, userId: string): Promise<Date | null> {
   return prisma.$transaction(async (tx) => {
-    // Only while it's still shipped: the post's row locked, so a status change (Undo, say) waits for
-    // this claim, or this claim sees it and emails nobody else. One claimed already may still go.
-    const [post] = await tx.$queryRaw<{ status: string }[]>`SELECT status FROM post WHERE id = ${postId} FOR UPDATE`;
-    if (post?.status !== "COMPLETED") {
+    // Only while it's still shipped and its emails are due: the post's row locked, so a status change (Undo, say) or a
+    // resume that drops a pause's emails waits for this claim, or this claim sees it and emails nobody else. One claimed
+    // already may still go.
+    const [post] = await tx.$queryRaw<{ status: string; due: Date | null }[]>`
+      SELECT status, "shippedEmailsDueAt" AS due FROM post WHERE id = ${postId} FOR UPDATE`;
+    if (post?.status !== "COMPLETED" || post.due === null) {
       return null;
     }
     // For this completion (its activity counts who it reached), read under the same lock.
@@ -78,7 +80,9 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
   }
   const mine = { postId, userId, claimedAt: current };
   if (error) {
-    await prisma.shippedEmail.deleteMany({ where: mine });
+    // Released as stale, not deleted: still unsent, so another run finishing meanwhile doesn't take the post as done
+    // (and clear its due time, which the retry needs), and the retry takes it over.
+    await prisma.shippedEmail.updateMany({ where: mine, data: { claimedAt: new Date(0) } });
     return error;
   }
   // Sent: never released from here on. If saving this fails, the claim stays unsent and is
@@ -105,7 +109,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   // Only while it's still shipped (the team may have reopened it since) and not merged away; never for sample content
   // (Home's "Add sample content"), whatever completed it.
   const post = await prisma.post.findFirst({
-    where: { id: postId, status: "COMPLETED", duplicateOfId: null, sample: false },
+    // Only while its emails are due: a resume drops a pause's (apps/web/src/server/email-pause.ts), even a retry's.
+    where: { id: postId, status: "COMPLETED", duplicateOfId: null, sample: false, shippedEmailsDueAt: { not: null } },
     select: {
       number: true,
       title: true,
@@ -123,7 +128,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     return { skipped: true };
   }
   const { projectId, project } = post;
-  // The project's email is paused: still due, so the cron brings it back (for a day) once it's resumed.
+  // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
@@ -133,10 +138,15 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     ...post.comments.map((c) => c.authorId),
     ...post.subscriptions.map((s) => s.userId),
   ]);
-  if (people.length === 0) {
-    // Claims a crashed try left unsent won't be sent now (a private portal that's the team's only, say): dropped,
-    // so the post isn't due again and again. A run still sending keeps its claim (not stale yet), so it can mark it sent.
-    await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } } });
+  // Claims a failed or crashed try left unsent for people it won't email now (they unsubscribed, a private portal
+  // that's the team's only): dropped, so the post isn't due again and again. A run still sending keeps its claim (not
+  // stale yet), so it can mark it sent. The few stale claims are read and checked here: no list of the whole audience
+  // goes into a query.
+  const audience = new Set(people.map((person) => person.id));
+  const stale = await prisma.shippedEmail.findMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } }, select: { userId: true } });
+  const gone = stale.map(({ userId }) => userId).filter((userId) => !audience.has(userId));
+  if (gone.length > 0) {
+    await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() }, userId: { in: gone } } });
   }
 
   // The team's comment Autopilot's review posted with the completion (its update's `note`): quoted. Only that one,

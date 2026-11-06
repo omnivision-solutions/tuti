@@ -167,9 +167,67 @@ describe("when a post ships", () => {
 
     // Hatchet's retry.
     expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 2 });
-    expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 0 });
+    // Done, so none are due: another run sends nothing.
+    expect(await handlers.postShipped({ postId }, log)).toEqual({ skipped: true });
     expect(emailsTo(author.email)).toHaveLength(1);
     expect(emailsTo(voter.email)).toHaveLength(1);
+    expect(await due(postId)).toBeNull();
+  });
+
+  test("a resume that drops a pause's emails while they go out: nobody else is emailed", async () => {
+    const [author, voter] = [await verified("Author"), await verified("Voter")];
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Offline sync" });
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    const log = { info: () => {}, warn: () => {} };
+    const port = process.env.SMTP_PORT;
+    process.env.SMTP_PORT = "1"; // the first run reaches nobody
+    try {
+      await setStatus(post.number, "completed");
+    } finally {
+      process.env.SMTP_PORT = port;
+    }
+    // The retry starts while they're due; the resume clears that right before the first claim.
+    const transaction = prisma.$transaction.bind(prisma);
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (...args: Parameters<typeof transaction>) => {
+      await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: null } });
+      return transaction(...args);
+    }) as typeof prisma.$transaction);
+    expect(await handlers.postShipped({ postId }, log)).toMatchObject({ emailed: 0 });
+    expect([...emailsTo(author.email), ...emailsTo(voter.email)]).toEqual([]);
+  });
+
+  test("a send that fails while another run finishes: the post stays due, and the retry emails that person", async () => {
+    const [author, voter] = [await verified("Author"), await verified("Voter")];
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Bulk edit" });
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    const log = { info: () => {}, warn: () => {} };
+    mailbox.refuseNext(voter.email, { code: 421 });
+    await setStatus(post.number, "completed"); // the voter's send fails; with inline jobs that's only logged
+    expect(emailsTo(author.email)).toHaveLength(1);
+    expect(emailsTo(voter.email)).toEqual([]);
+    // Another run finishing now finds an unsent claim: not done.
+    await prisma.post.updateMany({ where: { id: postId, shippedEmails: { none: { sentAt: null } } }, data: { shippedEmailsDueAt: null } });
+    expect(await due(postId)).not.toBeNull();
+    // Hatchet's retry.
+    expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 1 });
+    expect(emailsTo(voter.email)).toHaveLength(1);
+    expect(await due(postId)).toBeNull();
+  });
+
+  test("a voter whose send failed and who unsubscribed since doesn't keep the post due", async () => {
+    const [author, voter] = [await verified("Author"), await verified("Voter")];
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Saved views" });
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    mailbox.refuseNext(voter.email, { code: 421 });
+    await setStatus(post.number, "completed"); // the voter's send fails: their claim is left stale and unsent
+    expect(await due(postId)).not.toBeNull();
+    await prisma.emailOptOut.create({ data: { projectId: project.id, userId: voter.id } });
+    // Hatchet's retry: nobody's left to email, and the post isn't due any more.
+    await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+    expect(emailsTo(voter.email)).toEqual([]);
     expect(await due(postId)).toBeNull();
   });
 
@@ -240,7 +298,8 @@ describe("when a post ships", () => {
       const author = await verified("Author");
       const post = await call(createPost, as(author.id), { board: "feature-requests", title: `Slow mail ${randomUUID()}` });
       const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
-      await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED" } });
+      // As completing it does: its emails are due.
+      await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date() } });
       const where = { postId_userId: { postId, userId: author.id } };
       const claim = () => prisma.shippedEmail.findUniqueOrThrow({ where, select: { claimedAt: true, sentAt: true } });
       const fake = await startSmtpFake({ onEmail: () => onEmail(claim, where) });
