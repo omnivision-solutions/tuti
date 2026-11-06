@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled } from "@tuti/jobs";
+import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled, upsertProjectUser } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -209,6 +209,16 @@ test("a page run twice, at once or again later, and a second import, bring nothi
     comments: already,
     notes: { imported: 0, leftOut: { "already brought across earlier": 1 } },
   });
+});
+
+test("a contact matched by address to a user the team's app signed in keeps that user's own avatar: the import doesn't copy or clear it", async () => {
+  const image = "http://127.0.0.1:9/avatars/42.png";
+  const signedIn = await upsertProjectUser(project.id, "signed-in-mira", { name: "Mira", email: "e2e-mira@example.com", image });
+  fake.fixtures.contacts[0]!.userId = null;
+  await importFeedback();
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: signedIn }, select: { image: true, imageId: true } })).toEqual({ image, imageId: null });
+  const { import: done } = await call(getImport, asOwner(), {});
+  expect(done!.counts.avatars).toBeUndefined();
 });
 
 test("a repeat import after a post was deleted in Featurebase goes on: the post and its votes here stay, and the rest come across", async () => {

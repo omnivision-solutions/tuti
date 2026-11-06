@@ -371,14 +371,18 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
     const { userIds } = await syncUsersIn(tx, job.projectId, [...details.values()]);
     const records = fresh.map((contact) => {
       const to = linked.get(contact.id)!;
-      return { externalId: contact.id, localId: "userId" in to ? to.userId : userIds.get(to.externalId)! };
+      // Linked by their address to someone else's user (there before, or another contact's): not theirs to change.
+      const byLink = "userId" in to || to.externalId !== all[fresh.indexOf(contact)]!.externalId;
+      return { externalId: contact.id, localId: "userId" in to ? to.userId : userIds.get(to.externalId)!, byLink };
     });
     // Only those of their own: a lead with an id in the team's app is that app's user.
     const leads = new Set(fresh.filter((contact) => contact.type === "lead" && !contact.userId?.trim()).map((contact) => contact.id));
     await tx.importedRecord.createMany({
-      data: records.flatMap((record) => [
+      // `lead`: their address is never matched; `linked`: their user's avatar isn't the import's to copy (avatarsPage).
+      data: records.flatMap(({ byLink, ...record }) => [
         { projectId: job.projectId, source: job.source, kind: "contact", ...record },
         ...(leads.has(record.externalId) ? [{ projectId: job.projectId, source: job.source, kind: "lead", ...record }] : []),
+        ...(byLink ? [{ projectId: job.projectId, source: job.source, kind: "linked", ...record }] : []),
       ]),
       skipDuplicates: true,
     });
