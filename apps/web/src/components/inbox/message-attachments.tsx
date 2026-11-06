@@ -6,8 +6,11 @@ export { fileSize };
 
 type Attachment = { id: string; filename: string; size: number; image: boolean; url: string | null };
 
-/** What came with a message: images shown, other files to download; and what couldn't be kept. */
-export function MessageAttachments({ attachments, dropped }: { attachments: Attachment[]; dropped: number }) {
+/**
+ * What came with a message: images shown, other files to download; and what couldn't be kept (`imported`: from
+ * another tool, for any reason: too big, unreachable, no media storage).
+ */
+export function MessageAttachments({ attachments, dropped, imported = false }: { attachments: Attachment[]; dropped: number; imported?: boolean }) {
   if (attachments.length === 0 && dropped === 0) {
     return null;
   }
@@ -44,7 +47,9 @@ export function MessageAttachments({ attachments, dropped }: { attachments: Atta
       )}
       {dropped > 0 && (
         <p className="text-xs text-muted-foreground">
-          {dropped === 1 ? "1 attachment wasn't kept" : `${dropped} attachments weren't kept`}: this server has no file storage.
+          {imported
+            ? `${dropped === 1 ? "1 attachment wasn't" : `${dropped} attachments weren't`} brought across from Featurebase.`
+            : `${dropped === 1 ? "1 attachment wasn't kept" : `${dropped} attachments weren't kept`}: this server has no file storage.`}
         </p>
       )}
     </div>

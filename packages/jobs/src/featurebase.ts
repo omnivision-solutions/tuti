@@ -16,6 +16,19 @@ export class FeaturebaseError extends Error {
   }
 }
 
+/**
+ * A file in Featurebase's own storage: its attachment host, or its API's own address (where the fake serves files).
+ * Imports bring only these across; other sites' images are left where they are, as inbound email leaves them.
+ */
+export function inFeaturebaseStorage(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return /(^|\.)featurebase-attachments\.com$/i.test(parsed.hostname) || parsed.origin === new URL(process.env.FEATUREBASE_API_URL || FEATUREBASE_URL).origin;
+  } catch {
+    return false;
+  }
+}
+
 /** A list's page, and where the next one starts (null: it was the last). */
 export type Page<T> = { items: T[]; next: string | null };
 

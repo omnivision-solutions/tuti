@@ -7,7 +7,7 @@ import { historyKeptDays } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { MAX_TRIES } from "./conversations";
-import { type FeaturebaseConversation, FeaturebaseError, type FeaturebasePart, type FeaturebasePartAuthor } from "./featurebase";
+import { type FeaturebaseConversation, FeaturebaseError, inFeaturebaseStorage, type FeaturebasePart, type FeaturebasePartAuthor } from "./featurebase";
 import { download } from "./import-media";
 import { ALREADY_HERE, adminMember, contactUsers, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
 
@@ -59,7 +59,7 @@ type Message = {
   createdAt: Date;
   seenAt: Date | null;
   files: StoredFile[];
-  /** Files left out because the server has no media storage: the message says so, as a received email's does. */
+  /** Files it had that were left out (no media storage, too big, unreachable, no time): the message says how many. */
   dropped: number;
 };
 type Read = {
@@ -70,6 +70,8 @@ type Read = {
   leftOut: string[];
   /** When it was last snoozed there (its latest status change to snoozed), if it was. */
   snoozedAt: Date | null;
+  /** Featurebase sent only its newest 500 parts: the messages before them are missing. */
+  cutShort: boolean;
 };
 
 /** When it was last active there: what Tuti's history goes by (activeAt). */
@@ -163,7 +165,8 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
   const parts = [...(conversation.conversationParts ?? [])].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
   // The first part repeats the conversation's source; only once the start is cut off (the newest 500) is the source needed.
   const source = conversation.source;
-  if (parts.length >= MAX_PARTS && source?.bodyHtml) {
+  const cutShort = parts.length >= MAX_PARTS;
+  if (cutShort && source?.bodyHtml) {
     parts.unshift({ id: "source", partType: "user_msg", createdAt: conversation.createdAt, bodyHtml: source.bodyHtml, channel: source.channel, author: source.author });
   }
   // Their person: the contact taking part, else who started it or wrote.
@@ -188,7 +191,7 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
       const stored = Date.now() < copyUntil ? await copyAttachment(job, url) : { leftOut: null };
       if ("leftOut" in stored) {
         leftOut.push(stored.leftOut ? (LEFT_OUT[stored.leftOut] ?? "that couldn't be fetched") : NO_TIME);
-        dropped += stored.leftOut === "unsupported" ? 1 : 0;
+        dropped++;
       } else {
         files.push(stored);
       }
@@ -212,12 +215,13 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
   }
   const email = parts.find((p) => CONTACT.has(p.author?.type ?? "") && p.author?.email)?.author?.email?.trim().toLowerCase() ?? null;
   const snoozed = parts.findLast((p) => p.partType === "status" && p.status === "snoozed");
-  return { conversation, contactId, email, messages, leftOut, snoozedAt: snoozed ? new Date(snoozed.createdAt) : null };
+  return { conversation, contactId, email, messages, leftOut, snoozedAt: snoozed ? new Date(snoozed.createdAt) : null, cutShort };
 }
 
 /**
  * A part's HTML as the inbox's plain text (links' addresses kept after their words, list items marked), and the
- * addresses of its images and Featurebase files, which come across as attachments.
+ * addresses of its images and files in Featurebase's storage, which come across as attachments. Other sites' images
+ * are left out (their alt text kept), as inbound email skips remote images.
  */
 async function messageText(part: FeaturebasePart): Promise<{ body: string; urls: string[] }> {
   // bodyHtml: bodyMarkdown drops images' addresses.
@@ -225,7 +229,7 @@ async function messageText(part: FeaturebasePart): Promise<{ body: string; urls:
   if ("error" in content) {
     return { body: part.bodyMarkdown?.trim() ?? "", urls: [] };
   }
-  const urls = [...new Set(content.leftOut.map((item) => item.url).filter(Boolean))];
+  const urls = [...new Set(content.leftOut.map((item) => item.url).filter(inFeaturebaseStorage))];
   return { body: toPlainText(readable(content.doc)), urls };
 }
 
@@ -340,6 +344,9 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
     }
   }
   read.leftOut.forEach((reason) => tally(job.counts, "attachments", reason));
+  if (read.cutShort) {
+    tally(job.counts, "conversations", "whose messages before their newest 500 are missing: Featurebase gives no more");
+  }
   await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "conversation", externalId: c.id, localId: id } });
 }
 

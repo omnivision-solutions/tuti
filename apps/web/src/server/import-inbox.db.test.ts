@@ -220,6 +220,38 @@ test("a snooze's time is its latest snooze, whatever order Featurebase sends the
   expect(conversation.snoozedAt).toEqual(new Date(latest!.createdAt));
 });
 
+test("an image-only message whose image can't be brought keeps saying it had one, whatever the reason", async () => {
+  // The user's last message is just an image Featurebase no longer has.
+  (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[4]!.bodyHtml = `<p><img src="${FAKE_FEATUREBASE_FILES}/gone.png?X-Amz-Signature=abc"></p>`;
+  const done = await importInbox();
+  expect(done.counts).toMatchObject({ attachments: { imported: 0, leftOut: { "that couldn't be fetched": 1 } } });
+  const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  expect(open.status).toBe("OPEN");
+  expect(open.messages.at(-1)).toMatchObject({ author: "USER", body: "", attachmentsDropped: 1 });
+});
+
+test("a conversation Featurebase cut to its newest 500 parts is counted: the messages before them are missing", async () => {
+  // The user's question, then 499 tag changes: Featurebase's 500, older ones not sent.
+  const conversation = fake.fixtures.conversations[2]!;
+  const [question] = conversation.conversationParts as { createdAt: string }[];
+  const tags = Array.from({ length: 499 }, (_, i) => ({ object: "conversation_part", id: `t${i}`, partType: "tags", createdAt: new Date(Date.parse(question!.createdAt) + (i + 1) * 1000).toISOString() }));
+  conversation.conversationParts = [question, ...tags];
+  const done = await importInbox();
+  expect(done.counts).toMatchObject({
+    conversations: { imported: 3, leftOut: { "closed more than 365 days ago, past what Tuti keeps": 1, "whose messages before their newest 500 are missing: Featurebase gives no more": 1 } },
+  });
+});
+
+test("only files in Featurebase's storage come across: another site's image isn't fetched, as inbound email leaves remote images", async () => {
+  // The team's reply links an image on another site (here, the fake under another host name).
+  const reply = (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string }[])[2]!;
+  reply.bodyHtml += `<p><img src="${fake.url.replace("127.0.0.1", "localhost")}/files/shot.png" alt="Their chart"></p>`;
+  await importInbox();
+  const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  expect(open.messages[1]).toMatchObject({ body: expect.stringContaining("Their chart"), attachments: [], attachmentsDropped: 0 });
+  expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(1);
+});
+
 test("imported replies are never emailed, also by a worker from before imports were marked, and make no unread dot; seen only where Featurebase says so", async () => {
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email");
   await mailSubdomain(project.id);
