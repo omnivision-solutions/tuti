@@ -67,7 +67,10 @@ test("each part's place: done before the step under way, the next one after it, 
   // A part's later step is still that part.
   expect(states(run("running", "votes"))).toEqual(["team done", "contacts done", "feedback now", "docs next", "inbox waiting"]);
   expect(importProgress(run("running", "votes"))[2]).toMatchObject({ step: "votes", brought: "4 posts, 1 image", leftOut: "" });
-  expect(importProgress(run("running", "docs-content"))[3]).toMatchObject({ state: "now", brought: "", leftOut: "2 images too large" });
+  expect(importProgress(run("running", "docs-content"))[3]).toMatchObject({ state: "now", brought: "", leftOut: "2 images in articles too large" });
+  // An import from before they were counted apart, without feedback: its images are the help center's.
+  const older = { state: "done", step: null, parts: ["docs"], counts: { articles: { imported: 3, leftOut: {} }, images: { imported: 0, leftOut: { "too large": 1 } } } } as never;
+  expect(importProgress(older)).toEqual([{ part: "docs", state: "done", step: null, brought: "3 articles", leftOut: "1 image too large" }]);
   expect(importProgress(run("running", "contacts"))[0]).toMatchObject({ brought: "2 invitations", leftOut: "1 invitation for people already invited" });
   // Failed, where it stopped; done, all of them.
   expect(states(run("failed", "posts"))).toEqual(["team done", "contacts done", "feedback stopped", "docs waiting", "inbox waiting"]);

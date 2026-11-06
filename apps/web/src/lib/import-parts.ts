@@ -130,9 +130,9 @@ const KINDS: Record<string, [string, string]> = {
   videos: ["video", "videos"],
   avatars: ["avatar", "avatars"],
   // The help center's, counted apart from feedback's.
-  articleImages: ["image", "images"],
-  articleFiles: ["file", "files"],
-  articleVideos: ["video", "videos"],
+  articleImages: ["image in an article", "images in articles"],
+  articleFiles: ["file in an article", "files in articles"],
+  articleVideos: ["video in an article", "videos in articles"],
   conversations: ["conversation", "conversations"],
   attachments: ["attachment", "attachments"],
 };
@@ -175,7 +175,10 @@ export function importProgress(run: ImportView) {
   return picked.map((part, i) => {
     const state =
       run.state === "done" || i < at ? "done" : i === at ? (run.state === "running" ? "now" : "stopped") : run.state === "running" && i === at + 1 ? "next" : "waiting";
-    return { part, state, step: i === at ? run.step : null, ...described(run.counts, IMPORT_PARTS[part].kinds) } as const;
+    // Imports from before the help center counted its media apart kept it as feedback's kinds: the help center's when
+    // there's no feedback.
+    const kinds = part === "docs" && !picked.includes("feedback") ? [...IMPORT_PARTS.docs.kinds, "images", "files", "videos"] : IMPORT_PARTS[part].kinds;
+    return { part, state, step: i === at ? run.step : null, ...described(run.counts, kinds) } as const;
   });
 }
 

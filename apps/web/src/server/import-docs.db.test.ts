@@ -499,6 +499,6 @@ test("without media storage, images and files are left out and counted, the arti
   const done = await importDocs();
   // Counted as the help center's, apart from feedback's.
   expect(done.counts).toMatchObject({ articleImages: { imported: 0, leftOut: { "with nowhere to keep them": 1 } }, articleFiles: { imported: 0, leftOut: { "with nowhere to keep them": 1 } } });
-  expect(importSummary(done)).toContain("Left out: 1 image with nowhere to keep them; 1 file with nowhere to keep them.");
+  expect(importSummary(done)).toContain("Left out: 1 image in an article with nowhere to keep them; 1 file in an article with nowhere to keep them.");
   expect((await article("Welcome to Acme")).body).toContain("The dashboard");
 });
