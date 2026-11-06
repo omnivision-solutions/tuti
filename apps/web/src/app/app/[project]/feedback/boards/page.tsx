@@ -36,11 +36,10 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
       postButton: true,
       titlePlaceholder: true,
       detailsPlaceholder: true,
-      _count: { select: { posts: true } },
     },
   });
   // Each board's posts as Feedback lists them (merged duplicates aside), and the open ones as the portal counts them.
-  // Delete still goes by `_count.posts`: a board with merged duplicates on it can't be deleted.
+  // A board with none can be deleted: its merged duplicates move to their originals' boards.
   const counts = await prisma.post.groupBy({
     by: ["boardId", "status"],
     where: { projectId: project.id, duplicateOfId: null },
@@ -94,8 +93,6 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                     {" · "}
                     {count(board.id)} {count(board.id) === 1 ? "post" : "posts"}
                     {count(board.id) > 0 && ` · ${count(board.id, ACTIVE_STATUSES)} open`}
-                    {/* Merged duplicates still keep a board from being deleted: "0 posts · 1 merged" says why there's no Delete. */}
-                    {board._count.posts > count(board.id) && ` · ${board._count.posts - count(board.id)} merged`}
                     {board.description && ` · ${board.description}`}
                   </>
                 }
@@ -103,7 +100,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                   isAdmin && (
                     <>
                       <EditBoardDialog projectSlug={project.slug} board={board} />
-                      {board._count.posts === 0 && boards.length > 1 && (
+                      {count(board.id) === 0 && boards.length > 1 && (
                         <DeleteBoardButton projectSlug={project.slug} boardId={board.id} name={board.name} />
                       )}
                     </>
