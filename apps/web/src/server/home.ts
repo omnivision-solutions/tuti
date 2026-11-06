@@ -96,10 +96,10 @@ export async function homeOverview(projectId: string, slug: string) {
     }),
     prisma.vote.groupBy({ by: ["postId"], where: { projectId, createdAt: { gte: week }, post: { sample: false } }, _count: { postId: true }, orderBy: { _count: { postId: "desc" } }, take: 5 }),
     hasOwnContent(projectId),
-    // An email that went into the Inbox (not one ignored or refused, nor an email reply to a widget's conversation): the support
-    // email works. Imported conversations come with no email received. Its conversation may be gone (past the plan's history):
-    // still done.
-    prisma.$queryRaw<[{ found: boolean }]>`SELECT EXISTS (SELECT 1 FROM inbound_email i LEFT JOIN conversation c ON c.id = i."conversationId" WHERE i."projectId" = ${projectId} AND i.status = 'ADDED' AND (c.id IS NULL OR c.origin = 'EMAIL')) AS found`,
+    // An email to the support address that went into the Inbox (not one ignored or refused, nor a reply to a conversation's
+    // address, support+<token>@): the support email works. Imported conversations come with no email received. Its conversation
+    // may be gone since (past the plan's history): still done.
+    prisma.$queryRaw<[{ found: boolean }]>`SELECT EXISTS (SELECT 1 FROM inbound_email i LEFT JOIN conversation c ON c.id = i."conversationId" WHERE i."projectId" = ${projectId} AND i.status = 'ADDED' AND i.recipient NOT LIKE 'support+%' AND (c.id IS NULL OR c.origin = 'EMAIL')) AS found`,
   ]);
 
   // Publish now on what completes a post emails people: Home asks first, saying how many.

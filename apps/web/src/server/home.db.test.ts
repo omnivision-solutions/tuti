@@ -192,6 +192,9 @@ test("Get set up follows what the team picked after Create project; a project wi
     const widget = await prisma.conversation.create({ data: { projectId: project.id, number: 99, subject: "From the widget", origin: "WIDGET", email: "e2e-kim@example.com" } });
     expect((await receive(supportAddress(await mailSubdomain(project.id), "tuti.email.example", widget.replyToken))).body).toEqual({ outcome: "added" });
     expect(await support()).toMatchObject({ done: false, waiting: "Waiting for your first email" });
+    // Nor once that widget conversation is deleted (past the plan's history).
+    await prisma.conversation.delete({ where: { id: widget.id } });
+    expect(await support()).toMatchObject({ done: false, waiting: "Waiting for your first email" });
     expect((await receive(address)).body).toEqual({ outcome: "added" });
     expect(await support()).toMatchObject({ done: true, waiting: undefined });
     // Its conversation deleted later (past the plan's history): still done.
