@@ -228,7 +228,8 @@ function fromName(mail: Mail) {
     .trim()
     .slice(0, 100)
     .trim();
-  return name && !name.includes("@") ? name : null;
+  // Something to show (not only joiners and spaces), and no address in it.
+  return name && /[^\s\u200C\u200D]/u.test(name) && !name.includes("@") ? name : null;
 }
 
 /** Another request read this email first. */
