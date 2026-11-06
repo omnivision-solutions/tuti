@@ -68,7 +68,8 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(owner.getByLabel('Show "Powered by tuti" in the footer')).not.toBeChecked();
   // Showing the badge again here leaves the add-on billing: the field says where it's removed.
   await owner.getByLabel('Show "Powered by tuti" in the footer').click();
-  await expect(owner.getByText("The add-on is still on this project's plan: remove it in Billing.")).toBeVisible();
+  await expect(owner.getByLabel('Show "Powered by tuti" in the footer')).toHaveAccessibleDescription("The add-on is still on this project's plan: remove it in Billing.");
+  await expect(owner.getByText("The add-on is still on").getByRole("link", { name: "Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "customize-branding-badge-shown-with-add-on");
   await owner.getByLabel('Show "Powered by tuti" in the footer').click();
   await expect(owner.getByText("Hidden with the add-on on this project's plan.")).toBeVisible();

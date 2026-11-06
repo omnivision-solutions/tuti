@@ -3,10 +3,9 @@ import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { SignJWT } from "jose";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 
 import { GET } from "@/app/portal/[project]/(site)/sso/route";
-import { portalAddress } from "@/server/custom-domains";
 import { acceptInvitation } from "@/server/invitations";
 import { createProject as createProjectAction } from "@/server/projects";
 import { getSession } from "@/server/session";
@@ -27,7 +26,6 @@ beforeEach(async () => {
   secret = generateSsoSecret();
   await prisma.project.update({ where: { id: projectId }, data: { ssoSecret: secret } });
 });
-afterEach(() => vi.unstubAllEnvs());
 
 type Claims = { sub?: string; jti?: string; iat?: number; exp?: number; email?: string; name?: string; attributes?: unknown; properties?: unknown };
 
@@ -69,19 +67,6 @@ test("signs a new user in and sends them to the requested page", async () => {
   expect((await getSession())?.user.id).toBe(identity!.userId);
   // Their email is a placeholder: no verification email goes out.
   expect(mailbox.emails.filter((e) => e.to.includes(identity!.user.email))).toEqual([]);
-});
-
-test("signs in on the portal's custom domain too, the address Settings → Single sign-on shows once it's live", async () => {
-  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
-  const host = `help-${slug}.example.com`;
-  await prisma.customDomain.create({ data: { projectId, hostname: host, verificationToken: "t", verifiedAt: new Date() } });
-  expect(await portalAddress(slug)).toBe(`http://${host}:3100`);
-
-  const result = await visit(await token(), { host, redirect: "/feedback/ideas" });
-  expect(result.location).toBe("/feedback/ideas");
-  const [identity] = await ssoUsers();
-  actAs({ id: identity!.userId, email: "", cookie: result.cookie });
-  expect((await getSession())?.user.id).toBe(identity!.userId);
 });
 
 test("the same `sub` is the same user, with an updated profile", async () => {

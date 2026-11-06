@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { SsoSettings } from "@/components/sso-settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { portalAddress } from "@/server/custom-domains";
+import { portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 
 /** Settings → Single sign-on: the JWT secret the team's app signs its users in with. */
@@ -22,7 +22,7 @@ export default async function SsoSettingsPage(props: PageProps<"/app/[project]/s
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <SsoSettings projectSlug={project.slug} enabled={project.ssoSecret !== null} ssoUrl={`${await portalAddress(project.slug)}/sso`}
+        <SsoSettings projectSlug={project.slug} enabled={project.ssoSecret !== null} ssoUrl={`${portalUrl(project.slug)}/sso`}
           signInUrl={project.ssoSignInUrl}
         />
       </CardContent>
