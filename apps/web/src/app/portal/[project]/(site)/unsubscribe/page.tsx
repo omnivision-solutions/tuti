@@ -23,7 +23,7 @@ export default async function UnsubscribePage(props: PageProps<"/portal/[project
         <>
           <h1 className="font-heading text-2xl font-bold">Stop emails from {found.project.name}?</h1>
           <p className="text-muted-foreground">
-            You won&apos;t hear from {found.project.name} when posts you asked for are done.
+            You won&apos;t get {found.project.name}&apos;s updates or replies on posts you voted on or follow, or its changelog emails.
           </p>
           <form method="post" action={(await portalLinks())(`/unsubscribe/confirm?token=${encodeURIComponent(value)}`)}>
             <Button type="submit">Unsubscribe</Button>

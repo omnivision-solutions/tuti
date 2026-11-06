@@ -23,7 +23,7 @@ type Result = { error?: string };
 
 /** Said when a project's plan has no room for another team member (Free: 3). */
 const teamFull = (limit: number) =>
-  `Projects on the free plan have up to ${limit} team members, invites included. Upgrade to Pro in Settings → Billing to invite more.`;
+  `Projects on the Free plan have up to ${limit} team members, invites included. Upgrade to Pro in Settings → Billing to invite more.`;
 
 const roleSchema = z.enum(["OWNER", "ADMIN", "MEMBER"]);
 

@@ -97,7 +97,7 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await owner.goto(`/app/${slug}/team`);
-  await expect(owner.getByText("Projects on the free plan have up to 3 team members, invites included (1 now)")).toBeVisible();
+  await expect(owner.getByText("Projects on the Free plan have up to 3 team members, invites included (1 now)")).toBeVisible();
   const invite = async (email: string) => {
     await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(email);
     await owner.getByRole("button", { name: "Send invite" }).click();
@@ -108,7 +108,7 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   }
   await invite(`e2e-${randomUUID()}@example.com`);
   await expect(
-    owner.getByText("Projects on the free plan have up to 3 team members, invites included. Upgrade to Pro in Settings → Billing to invite more."),
+    owner.getByText("Projects on the Free plan have up to 3 team members, invites included. Upgrade to Pro in Settings → Billing to invite more."),
   ).toBeVisible();
   await checkpoint(owner, "team-free-plan-full");
 
@@ -119,7 +119,7 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   await newBoard.getByLabel("Name").fill("Bug reports");
   await newBoard.getByRole("button", { name: "Create board" }).click();
   await expect(owner.getByText("Board created")).toBeVisible();
-  await expect(owner.getByRole("alert").filter({ hasText: "Projects on the free plan have up to 2 feedback boards." })).toBeVisible();
+  await expect(owner.getByRole("alert").filter({ hasText: "Projects on the Free plan have up to 2 feedback boards." })).toBeVisible();
   await expect(owner.getByRole("link", { name: "Upgrade to Pro" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await expect(owner.getByRole("button", { name: "New board" })).toHaveCount(0);
   await checkpoint(owner, "boards-free-plan-full");

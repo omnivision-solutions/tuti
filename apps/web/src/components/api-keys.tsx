@@ -109,7 +109,7 @@ export function ApiKeys({ projectSlug, keys, apiUrl }: { projectSlug: string; ke
       )}
 
       {keys.length === 0 ? (
-        <EmptyState title="No API keys yet" description="Create one to read or change this project's feedback from your own code." />
+        <EmptyState title="No API keys yet" description="Create one to read or change this project from your own code." />
       ) : (
         <ItemList>
           {keys.map((key) => (

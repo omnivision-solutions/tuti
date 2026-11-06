@@ -24,7 +24,7 @@ export default async function AppHome() {
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Create your first project</CardTitle>
-          <CardDescription>A project is your team&apos;s home for feedback, with its own public portal.</CardDescription>
+          <CardDescription>A project is your team&apos;s home for feedback, docs, the changelog and the inbox, with a portal to share them.</CardDescription>
         </CardHeader>
         <CardContent>
           <CreateProjectForm portalTemplate={portalTemplate()} />

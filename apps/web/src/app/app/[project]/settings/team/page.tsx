@@ -112,7 +112,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
               {limit !== null && (
                 <>
                   {" "}
-                  Projects on the free plan have up to {limit} team members, invites included ({members.length + invitations.length} now);{" "}
+                  Projects on the Free plan have up to {limit} team members, invites included ({members.length + invitations.length} now);{" "}
                   <Link href={`/app/${project.slug}/settings/billing`} className="underline underline-offset-4">
                     upgrade
                   </Link>{" "}

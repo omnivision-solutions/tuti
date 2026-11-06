@@ -8,8 +8,8 @@ export const ROLE_LABELS: Record<TeamRole, string> = {
 
 export const ROLE_DESCRIPTIONS: Record<TeamRole, string> = {
   OWNER: "Everything, including managing owners",
-  ADMIN: "Settings, SSO and the team",
-  MEMBER: "View and work on feedback",
+  ADMIN: "All a member does, plus settings, Customize, boards, billing and the team",
+  MEMBER: "Feedback, the inbox, docs, the changelog and Autopilot's reviews",
 };
 
 export function isAdminRole(role: TeamRole): boolean {

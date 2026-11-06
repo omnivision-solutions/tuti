@@ -156,7 +156,7 @@ describe("how many boards a plan has (where plans are sold)", () => {
   test("Free: 2 boards, then Upgrade to Pro", async () => {
     expect(await createBoard(project.slug, {}, board({ slug: "bugs" }))).toEqual({});
     expect(await createBoard(project.slug, {}, board({ slug: "ideas" }))).toEqual({
-      error: "Projects on the free plan have up to 2 feedback boards. Upgrade to Pro in Settings → Billing to add more.",
+      error: "Projects on the Free plan have up to 2 feedback boards. Upgrade to Pro in Settings → Billing to add more.",
     });
     expect(await boards()).toBe(2);
   });

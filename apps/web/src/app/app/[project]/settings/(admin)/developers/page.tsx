@@ -42,7 +42,7 @@ export default async function DevelopersSettingsPage(props: PageProps<"/app/[pro
         <CardHeader>
           <CardTitle>API keys</CardTitle>
           <CardDescription>
-            Use this project&apos;s feedback from your own code (REST API) or an AI assistant (MCP). Keys are shown once; revoke any you no longer
+            Use this project&apos;s feedback, docs, changelog and inbox from your own code (REST API) or an AI assistant (MCP). Keys are shown once; revoke any you no longer
             use. <a href="/docs/api" className="text-primary underline underline-offset-4">API docs</a>
           </CardDescription>
         </CardHeader>
