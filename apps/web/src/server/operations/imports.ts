@@ -47,10 +47,8 @@ async function importView(row: ImportRow) {
     startedBy: row.startedBy?.name ?? null,
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
-    /** With Team: the invitations the project has waiting to be sent, as Team & roles lists them (an owner or admin sends them). */
-    invitationsToSend: row.parts.includes("team")
-      ? await prisma.invitation.count({ where: { projectId: row.projectId, sentAt: null, acceptedAt: null, revokedAt: null } })
-      : 0,
+    /** The invitations an import (this one or an earlier one) left waiting to be sent, as Team & roles lists them. */
+    invitationsToSend: await prisma.invitation.count({ where: { projectId: row.projectId, sentAt: null, acceptedAt: null, revokedAt: null } }),
   };
 }
 

@@ -77,10 +77,20 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(unsent.getByRole("listitem")).toHaveCount(2);
   await expect(unsent.getByText("e2e-featurebase-former@example.com · Member")).toBeVisible();
   await checkpoint(owner, "team-invitations-not-sent");
-  await unsent.getByRole("listitem").filter({ hasText: "e2e-featurebase-former@example.com" }).getByRole("button", { name: "Send" }).click();
+  // By keyboard: from Send all, Tab reaches the first row's Send (named for its address); Enter sends it, and focus goes on
+  // to the next row's Send.
+  const sends = unsent.getByRole("button", { name: /^Send the invite to / });
+  const [first, next] = await Promise.all([sends.nth(0).getAttribute("aria-label"), sends.nth(1).getAttribute("aria-label")]);
+  const sentTo = first!.replace("Send the invite to ", "");
+  await owner.getByRole("button", { name: "Send all 2" }).focus();
+  await owner.keyboard.press("Tab");
+  await expect(owner.getByRole("button", { name: first! })).toBeFocused();
+  await owner.keyboard.press("Enter");
   await expect(owner.getByText("Invite sent")).toBeVisible();
   await expect(unsent.getByRole("listitem")).toHaveCount(1);
-  const pending = owner.getByRole("listitem").filter({ hasText: "e2e-featurebase-former@example.com · Member" });
+  await expect(owner.getByRole("button", { name: next! })).toBeFocused();
+  await expect(unsent.getByRole("button", { name: `Remove the invite to ${next!.replace("Send the invite to ", "")}` })).toBeVisible();
+  const pending = owner.getByRole("list", { name: "Pending invites" }).getByRole("listitem").filter({ hasText: `${sentTo} · Member` });
   await expect(pending).toContainText("Created by Olive Owner");
   await expect(pending.getByRole("button", { name: "Revoke" })).toBeVisible();
   await checkpoint(owner, "team-invitation-sent");

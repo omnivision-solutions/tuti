@@ -1,7 +1,7 @@
 "use server";
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
-import { inviteEmail, sendEmail } from "@tuti/email";
+import { emailConfigured, inviteEmail, sendEmail } from "@tuti/email";
 import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverOnVerified, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
@@ -57,15 +57,16 @@ export async function createInvitation(
   if (onTeam) {
     return { error: `${parsed.data.email} is already on the team` };
   }
-  if ((await sentToday(projectId)) >= DAILY_INVITE_LIMIT) {
-    return { error: DAILY_LIMIT };
-  }
 
   const token = generateInvitationToken();
   const full = await prisma.$transaction(async (tx) => {
     // Room on the plan for members and invites still pending (a new invite to the same address replaces
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
     const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
+    // The day's cap too, under that lock: an import's invites being sent at the same moment can't both take its last place.
+    if ((await sentToday(projectId, tx)) >= DAILY_INVITE_LIMIT) {
+      return "daily" as const;
+    }
     const limit = project ? teamLimit(project.plan) : null;
     if (limit !== null && (await teamPlacesTaken(tx, projectId, parsed.data.email)) >= limit) {
       return limit;
@@ -86,6 +87,9 @@ export async function createInvitation(
     });
     return null;
   });
+  if (full === "daily") {
+    return { error: DAILY_LIMIT };
+  }
   if (full !== null) {
     return { error: teamFull(full) };
   }
@@ -117,7 +121,7 @@ async function emailInvite({ to, role, url, inviter, projectName }: { to: string
  * email. Claimed as sent first (under the project's lock), so two clicks at once send each once; one whose email fails
  * goes back to not sent.
  */
-async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Result & { sent?: number; waiting?: number }> {
+async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Result & { sent?: number; waiting?: number; links?: { email: string; url: string }[] }> {
   const membership = await getMembership(projectSlug);
   const session = await getSession();
   if (!membership || !session || !isAdminRole(membership.role)) {
@@ -143,6 +147,12 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
   });
   if (ids && claimed.sending.length === 0) {
     return { error: claimed.capped && claimed.waiting > 0 ? DAILY_LIMIT : "That invite was sent already, or removed" };
+  }
+  // No email on this server (no SMTP_HOST): nothing is emailed, so the links are for the sender to pass on, as with
+  // inviting ("for installs without email"). Each is live now, and shown this once.
+  if (!emailConfigured()) {
+    refresh();
+    return { sent: 0, waiting: claimed.waiting, links: claimed.sending.map((invitation) => ({ email: invitation.email, url: `${appUrl().origin}/invite/${invitation.token}` })) };
   }
   let sent = 0;
   for (const invitation of claimed.sending) {

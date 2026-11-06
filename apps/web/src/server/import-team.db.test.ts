@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { DAILY_INVITE_LIMIT, generateInvitationToken, handlers, hashInvitationToken, IMPORT_KEY, importsSettled, UNSENT_EXPIRY } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handlers, hashInvitationToken, IMPORT_KEY, importsSettled, lockProject, UNSENT_EXPIRY } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -168,6 +168,27 @@ const sentEarlier = (n: number) =>
     data: Array.from({ length: n }, () => ({ projectId: project.id, email: newAddress(), tokenHash: hashInvitationToken(generateInvitationToken()), createdById: owner.id, expiresAt: new Date(Date.now() + 60_000) })),
   });
 
+test("on a server without email, Send emails nothing and says so with the links to pass on; a link joins", async () => {
+  const [ada, bo, cy] = [newAddress(), newAddress(), newAddress()];
+  admins(ada, bo, cy);
+  await importTeam();
+  vi.stubEnv("SMTP_HOST", "");
+  const [first] = (await invitationsOf()).filter((invitation) => invitation.email === ada);
+  const one = await sendInvitation(project.slug, first!.id);
+  expect(one).toEqual({ sent: 0, waiting: 0, links: [{ email: ada, url: expect.stringMatching(/\/invite\/[\w-]+$/) }] });
+  const all = await sendAllInvitations(project.slug);
+  expect(all).toMatchObject({ sent: 0, waiting: 0 });
+  expect(all.links!.map((link) => link.email).sort()).toEqual([bo, cy].sort());
+  expect(emailsTo(ada, bo, cy)).toEqual([]);
+  vi.unstubAllEnvs();
+  vi.stubEnv("FEATUREBASE_API_URL", fake.url);
+
+  const joiner = await signUp("Ada", ada);
+  actAs(joiner);
+  expect(await redirectTarget(acceptInvitation(one.links![0]!.url.split("/invite/")[1]!))).toBe(`/app/${project.slug}`);
+  expect(await prisma.teamMember.count({ where: { projectId: project.id, userId: joiner.id } })).toBe(1);
+});
+
 test("sending stops at the day's cap, counted under the project's lock: two Send alls at once send the one place left once", async () => {
   await sentEarlier(DAILY_INVITE_LIMIT - 1);
   admins(newAddress(), newAddress(), newAddress());
@@ -179,6 +200,44 @@ test("sending stops at the day's cap, counted under the project's lock: two Send
   const [waiting] = (await invitationsOf()).filter((invitation) => invitation.sentAt === null);
   expect(await sendInvitation(project.slug, waiting!.id)).toEqual({ error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.` });
   expect(await prisma.invitation.findUniqueOrThrow({ where: { id: waiting!.id } })).toMatchObject({ sentAt: null });
+});
+
+test("inviting someone and sending an import's invites at once share the day's last place: one of them gets it", async () => {
+  await sentEarlier(DAILY_INVITE_LIMIT - 1);
+  admins(newAddress());
+  await importTeam();
+  // Both start while the project's lock is held elsewhere, so each has read what it reads before the lock by the time it
+  // waits: the invite's cap is only right if it's read under the lock, after the Send all took the last place.
+  let release!: () => void;
+  let held!: () => void;
+  const holding = new Promise<void>((resolve) => (held = resolve));
+  const lock = prisma.$transaction(
+    async (tx) => {
+      await lockProject(tx, project.id);
+      held();
+      await new Promise<void>((resolve) => (release = resolve));
+    },
+    { timeout: 20_000 },
+  );
+  await holding;
+  const lockWaits = () => prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`.then(([row]) => row!.n);
+  // Send all queues for the lock first, then the invite: Postgres hands it on in that order.
+  const sending$ = sendAllInvitations(project.slug);
+  await expect.poll(lockWaits, { timeout: 4_000 }).toBe(1);
+  const made$ = createInvitation(project.slug, newAddress(), "MEMBER");
+  await expect.poll(lockWaits, { timeout: 4_000 }).toBe(2);
+  release();
+  await lock;
+  const both = Promise.all([made$, sending$]);
+  const [made, sending] = await both;
+  expect(await prisma.invitation.count({ where: { projectId: project.id, sentAt: { gt: new Date(Date.now() - 24 * 60 * 60_000) } } })).toBe(DAILY_INVITE_LIMIT);
+  expect([made.error, sending.error].filter(Boolean)).toEqual([`You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`]);
+});
+
+test("a later import without Team still says how many invitations wait to be sent", async () => {
+  admins(newAddress(), newAddress());
+  await importTeam();
+  expect((await importTeam(["contacts"])).invitationsToSend).toBe(2);
 });
 
 test("an invite whose email fails goes back to not sent, said so, to be sent again", async () => {

@@ -4,12 +4,12 @@ import { teamLimit } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { InviteForm, RevokeInvitationButton, SendAllInvitationsButton, SendInvitationButton } from "@/components/invitations";
+import { InviteForm, RevokeInvitationButton, UnsentInvitations } from "@/components/invitations";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { LeaveProjectButton, MemberActions } from "@/components/team-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { canAssignRole, canManageTeamMember, isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { getSession } from "@/server/session";
@@ -128,59 +128,40 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
           <CardContent className="flex flex-col gap-4">
             <InviteForm projectSlug={project.slug} roles={assignable} />
             {sent.length > 0 && (
-              <ItemList className="border-t pt-2.5">
-                {sent.map((invitation) => (
-                  <ItemRow
-                    key={invitation.id}
-                    title={`${invitation.email ?? "Invite link"} · ${ROLE_LABELS[invitation.role]}`}
-                    meta={`Created by ${invitation.createdBy.name} · expires ${invitation.expiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
-                    actions={
-                      canAssignRole(myRole, invitation.role) && (
-                        <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
-                      )
-                    }
-                  />
-                ))}
-              </ItemList>
+              // Where focus goes once the last invite from Featurebase is sent (UnsentInvitations).
+              <div id="pending-invites" tabIndex={-1} className="outline-none">
+                <ItemList className="border-t pt-2.5" aria-label="Pending invites">
+                  {sent.map((invitation) => (
+                    <ItemRow
+                      key={invitation.id}
+                      title={`${invitation.email ?? "Invite link"} · ${ROLE_LABELS[invitation.role]}`}
+                      meta={`Created by ${invitation.createdBy.name} · expires ${invitation.expiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                      actions={
+                        canAssignRole(myRole, invitation.role) && (
+                          <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
+                        )
+                      }
+                    />
+                  ))}
+                </ItemList>
+              </div>
             )}
           </CardContent>
         </Card>
       )}
 
-      {isAdmin && unsent.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>From Featurebase, not sent yet</CardTitle>
-            <CardDescription>
-              Your team in Featurebase, invited as members. Nothing has been emailed: send the ones you want here.
-              {limit !== null && " Until you remove them, they count toward your plan's team members."}
-            </CardDescription>
-            {unsent.length > 1 && (
-              <CardAction>
-                <SendAllInvitationsButton projectSlug={project.slug} count={unsent.length} />
-              </CardAction>
-            )}
-          </CardHeader>
-          <CardContent>
-            <ItemList aria-label="Invitations not sent yet">
-              {unsent.map((invitation) => (
-                <ItemRow
-                  key={invitation.id}
-                  title={`${invitation.email} · ${ROLE_LABELS[invitation.role]}`}
-                  meta={`Imported ${invitation.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} by ${invitation.createdBy.name}`}
-                  actions={
-                    canAssignRole(myRole, invitation.role) && (
-                      <>
-                        <SendInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
-                        <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} unsent={invitation.email!} />
-                      </>
-                    )
-                  }
-                />
-              ))}
-            </ItemList>
-          </CardContent>
-        </Card>
+      {isAdmin && (
+        <UnsentInvitations
+          projectSlug={project.slug}
+          note={`Your team in Featurebase, invited as members. Nothing has been emailed: send the ones you want here.${limit !== null ? " Until you remove them, they count toward your plan's team members." : ""}`}
+          invitations={unsent.map((invitation) => ({
+            id: invitation.id,
+            email: invitation.email!,
+            title: `${invitation.email} · ${ROLE_LABELS[invitation.role]}`,
+            meta: `Imported ${invitation.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} by ${invitation.createdBy.name}`,
+            manageable: canAssignRole(myRole, invitation.role),
+          }))}
+        />
       )}
     </>
   );
