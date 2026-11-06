@@ -1,0 +1,14 @@
+# Workflows pin actions by commit SHA (the CI workflow audit requires it); this keeps the pins
+# current, in one pull request a month. npm updates come from weekly-dependencies.yml instead.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # A release that turns out to be malicious is usually pulled within days.
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
