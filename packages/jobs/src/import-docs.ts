@@ -122,7 +122,7 @@ async function recorded(db: Tx, job: ImportJob, kind: "collection" | "article", 
     select: { id: true, externalId: true, localId: true, contentLanded: true },
   });
   const where = { id: { in: records.map((record) => record.localId) } };
-  const rows = new Map<string, { id: string; slug: string; deleted: boolean; createdById: string | null; saved?: boolean }>(
+  const rows = new Map<string, { id: string; slug: string; deleted: boolean; createdById: string | null; title?: string; saved?: boolean }>(
     kind === "collection"
       ? (await db.collection.findMany({ where, select: { id: true, slug: true } })).map((row) => [row.id, { ...row, deleted: false, createdById: null }] as const)
       : await articleRows(db, records.map((record) => record.localId)),
@@ -131,14 +131,25 @@ async function recorded(db: Tx, job: ImportJob, kind: "collection" | "article", 
 }
 
 /**
- * Imported articles' rows, with whether the team has saved one since it was made empty (`saved`: it has text, or
- * unpublished changes; restoring an empty one from the trash isn't a save of anything): the team's now, never written over.
+ * Imported articles' rows, with whether one has text or unpublished changes (`saved`). With its title, that says if the
+ * team saved it since it was made empty (teamSaved).
  */
 async function articleRows(db: Tx, ids: string[]) {
-  const rows = await db.article.findMany({ where: { id: { in: ids } }, select: { id: true, slug: true, deletedAt: true, createdById: true } });
+  const rows = await db.article.findMany({ where: { id: { in: ids } }, select: { id: true, slug: true, title: true, deletedAt: true, createdById: true } });
   const saved = await db.article.findMany({ where: { id: { in: ids }, OR: [{ content: { not: Prisma.DbNull } }, { changes: { isNot: null } }] }, select: { id: true } });
   return rows.map(({ deletedAt, ...row }) => [row.id, { ...row, deleted: deletedAt !== null, saved: saved.some((s) => s.id === row.id) }] as const);
 }
+
+/** An article's title as the import gives it. */
+const titleOf = (version: { title?: string | null }) => version.title?.trim().slice(0, 120) || "Untitled";
+
+/**
+ * Whether the team saved an imported article since it was made empty: the team's now, never written over. A save gives
+ * it text or unpublished changes, or a title of its own (a title-only save writes it straight to the article); the
+ * import's content pass changes none of what it made but those (its collection and order stay), and restoring an
+ * empty one from the trash keeps its title.
+ */
+const teamSaved = (local: { saved?: boolean; title?: string }, article: FeaturebaseArticle) => Boolean(local.saved) || (local.title !== undefined && local.title !== titleOf(article));
 
 /** Saves what `kind` records became here; one whose row was deleted since is replaced. */
 async function remember(tx: Tx, job: ImportJob, kind: "collection" | "article", made: { externalId: string; localId: string }[]) {
@@ -241,7 +252,7 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
   const collections = await recorded(tx, job, "collection", fresh.flatMap((article) => (article.parentId ? [article.parentId] : [])));
   const made: { externalId: string; localId: string }[] = [];
   for (const article of fresh) {
-    const title = article.title?.trim().slice(0, 120) || "Untitled";
+    const title = titleOf(article);
     const author = article.author?.authorId ? await adminMember(tx, job, article.author.authorId, { name: article.author.name }) : null;
     const { id } = await tx.article.create({
       data: {
@@ -319,7 +330,10 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const { items, next: listNext } = await job.featurebase.page<FeaturebaseArticle>("/help_center/articles", listCursor, { state: "all", limit: CONTENT_PAGE });
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
-  const todo = items.filter((article) => !known.get(article.id)?.landed && !known.get(article.id)?.deleted && !known.get(article.id)?.saved);
+  const todo = items.filter((article) => {
+    const local = known.get(article.id);
+    return !local || (!local.landed && !local.deleted && !teamSaved(local, article));
+  });
   const portal = todo.length > 0 ? await portalAddress((await prisma.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { slug: true } })).slug) : "";
   // Those of imports that ended without their last page (failed, or failed as stale) go.
   const running = await prisma.dataImport.findMany({ where: { id: { in: [...mediaCaches.keys()] }, state: "RUNNING" }, select: { id: true } });
@@ -348,7 +362,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       if (content.text.length > MAX_ARTICLE_LENGTH) {
         return { error: `longer than ${MAX_ARTICLE_LENGTH.toLocaleString("en")} characters, Tuti's most` };
       }
-      return { title: version.title?.trim().slice(0, 120) || "Untitled", content };
+      return { title: titleOf(version), content };
     };
     const live = await convert(article);
     const draft = draftVersion && !("error" in live) ? await convert(draftVersion) : null;
@@ -386,7 +400,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         }
         // Landed before (or by a run of this page that got in first), deleted here since it landed, or saved by the team
         // since it was made empty (an import that stopped between its passes, started again): as it is.
-        if (!local || local.landed || local.deleted || local.saved || !text) {
+        if (!local || local.landed || local.deleted || teamSaved(local, article) || !text) {
           if (local && !local.landed) {
             await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
           }

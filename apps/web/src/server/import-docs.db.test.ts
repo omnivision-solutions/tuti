@@ -226,6 +226,16 @@ test("an article's draft is read before its media is copied, so a slow copy can'
   expect(await article("Paying by card")).toMatchObject({ publishedAt: expect.any(Date), changes: { body: expect.stringContaining("Amex is coming soon.") } });
 });
 
+test("an empty article the team only retitled while the import was stopped stays theirs too", async () => {
+  await structureOnly();
+  const paying = await article("Paying by card");
+  await call(updateArticle, asOwner(), { slug: paying.slug, title: "Card payments" });
+
+  const done = await importDocs();
+  expect(done.counts.articles).toMatchObject({ leftOut: { "already brought across earlier": 1 } });
+  expect(await prisma.article.findUniqueOrThrow({ where: { id: paying.id }, select: { title: true, content: true, publishedAt: true } })).toEqual({ title: "Card payments", content: null, publishedAt: null });
+});
+
 test("an article deleted here before its content came stays deleted; restored, the next import fills it in", async () => {
   await structureOnly();
   const roadmap = await article("Roadmap notes");
