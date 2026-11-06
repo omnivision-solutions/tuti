@@ -37,8 +37,8 @@ The launcher is a round button with an icon. In the Tuti app, your project's
   that moves to the free plan keeps its choice, and the launcher shows the chat bubble until
   the plan is back. Self-hosted, every project can pick one.
 - **Show on your portal** (on by default): the launcher on every page of your Tuti portal too,
-  opening the same panel as on your site (under your site's path too, for a portal there). Not
-  where your portal's Custom code adds Tuti's `widget.js` itself (yours is the one that runs).
+  opening the same panel as on your site (under your site's path too, for a portal there). A
+  `widget.js` your portal's Custom code adds gives way to it: set the portal's widget here.
   Your portal's Ask AI is the widget's assistant either way: turned off, the portal still loads
   the widget, without its launcher, and opens it only when a reader asks the AI.
 

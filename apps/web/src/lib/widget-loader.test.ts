@@ -193,6 +193,8 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
         return new FakeElement(tag, page);
       },
       createTextNode: (text: string) => ({ nodeValue: text }),
+      // The portal's own tag, which a copy elsewhere gives way to: none on these pages.
+      querySelector: () => null,
       querySelectorAll: (selector: string) => {
         const name = /^\[([\w-]+)\]$/.exec(selector)![1]!;
         const all = (element: FakeElement): FakeElement[] =>
@@ -410,6 +412,20 @@ test("Tuti.open({ ask }) opens Messages with the assistant asking the question (
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages&ask=");
   page.Tuti.open({ ask: "x".repeat(400) });
   expect(new URL(String(page.frame!.src)).searchParams.get("ask")).toHaveLength(300);
+});
+
+test("a question asked while the panel loads another page goes in its address, not to the page on its way out", () => {
+  const page = loadWidget({});
+  page.Tuti.open({ article: "billing" });
+  loaded(page);
+  // Loaded: asked by message, the panel as it is.
+  page.Tuti.open({ ask: "Do you refund?" });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs&article=billing");
+  expect(page.frame!.contentWindow!.postMessage).toHaveBeenCalledWith({ type: "tuti:ask", ask: "Do you refund?" }, "https://acme.tuti.example");
+  // Loading another page: in its address.
+  page.Tuti.open({ article: "refunds" });
+  page.Tuti.open({ ask: "How do refunds work?" });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages&ask=How%20do%20refunds%20work%3F");
 });
 
 test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; unknown tabs are reported", async () => {

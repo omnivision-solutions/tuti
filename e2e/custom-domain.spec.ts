@@ -127,16 +127,17 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await visitor.goto("/feedback/feature-requests");
   await expect(visitor.locator("script[data-on-portal]")).toHaveCount(1);
 
-  // Custom code that adds the widget its own way (its options): the portal leaves its own tag out there, so theirs is the
-  // one that runs. On the Tuti address, where their code doesn't run, the portal's stays.
+  // Custom code that adds the widget its own way (here without its launcher): it gives way to the portal's own, which Ask AI
+  // and the reader's sign-in here need. One launcher, the portal's. On the Tuti address, where their code doesn't run, the
+  // portal's is there too.
   await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
   await owner.getByRole("button", { name: "Save changes" }).click();
   // Saved once it has nothing left to save (the first save's toast may still be up).
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await visitor.goto("/feedback/feature-requests");
-  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(visitor.locator('script[src$="/widget.js"]')).toHaveCount(1);
-  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(0);
+  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(1);
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(1);
   await onTuti.reload();
   await expect(onTuti.locator("script[data-on-portal]")).toHaveCount(1);
 

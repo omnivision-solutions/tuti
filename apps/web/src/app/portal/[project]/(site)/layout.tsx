@@ -99,10 +99,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   // Ask AI (the header's search, "Still stuck?"): the widget's assistant, for readers, when the server has AI answers.
   const assistant = canRead && answersEnabled();
   // The project's own widget (Customize → Widget), and for Ask AI even where the team turned it off here (without its
-  // launcher). Not where the team's Custom code adds it its own way, from the address Customize hands out (it runs only on
-  // their own address, later, and the first copy wins; its Tuti.open asks the same); other tools' widget.js don't count.
-  const widgetHere =
-    (project.widgetOnPortal || assistant) && !(ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`));
+  // launcher). A copy the team's Custom code adds gives way to it (the loader sees this tag).
+  const widgetHere = project.widgetOnPortal || assistant;
 
   return (
     <PortalBaseProvider base={base} slug={slug}>

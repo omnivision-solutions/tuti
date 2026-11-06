@@ -75,9 +75,11 @@ import {
 export function widgetLoader(portalTemplate: string): string {
   return `(function () {
   "use strict";
-  if (window.__tutiWidget) return;
-  window.__tutiWidget = true;
   var script = document.currentScript;
+  // A Tuti portal's page has its own tag (data-on-portal), in the page as sent: another copy there (the team's Custom code)
+  // gives way to it, whichever runs first, so the portal's Ask AI and sign-in work.
+  if (window.__tutiWidget || (script && !script.hasAttribute("data-on-portal") && document.querySelector("script[data-on-portal]"))) return;
+  window.__tutiWidget = true;
   var slug = script && script.getAttribute("data-project");
   if (!slug || !${SLUG_PATTERN}.test(slug)) {
     console.error("Tuti widget: set data-project to your project's URL name, e.g. data-project=\\"acme\\"");
@@ -664,6 +666,8 @@ export function widgetLoader(portalTemplate: string): string {
       });
     } else if (query !== null) {
       closable = false;
+      // Loading again: a question asked meanwhile goes in its address, not to the page on its way out.
+      frameLoaded = false;
       frame.src = src;
     }
     showStandIn();
