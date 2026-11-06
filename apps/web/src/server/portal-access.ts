@@ -9,6 +9,7 @@ import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { storedProperties } from "@tuti/shared/user-properties";
 
 import type { Actor } from "./operations/define";
+import type { PostViewer } from "./post-visibility";
 import { previewUser } from "@/lib/preview-session";
 import { widgetUser } from "@/lib/widget-session";
 
@@ -175,6 +176,15 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
 export async function currentReader(projectId: string): Promise<Reader> {
   const reader = await readerOf(projectId, await readerId(projectId));
   return reader === null && (await headers()).get(PREVIEW.header) === PREVIEW.value ? SIGNED_OUT : reader;
+}
+
+/**
+ * Whoever's reading on this request as a viewer of posts (post-visibility.ts): the team, as currentReader has it (the
+ * team previewing the portal as a reader sees what people signed out do), or the portal's or widget's person.
+ */
+export async function currentPostViewer(projectId: string): Promise<PostViewer> {
+  const [userId, reader] = await Promise.all([readerId(projectId), currentReader(projectId)]);
+  return reader === null ? { team: true, userId } : { team: false, userId: reader.signedIn ? userId : null };
 }
 
 /** An operation's caller as a reader: API keys act for the team (everything). */

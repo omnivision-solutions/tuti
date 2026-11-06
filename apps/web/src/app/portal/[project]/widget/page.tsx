@@ -47,6 +47,7 @@ import { boardTexts } from "@/lib/board-texts";
 import { formatDate, initial, replyTime, timeAgo } from "@/lib/format";
 import { RichText } from "@tuti/content/react";
 import { toPlainText } from "@tuti/content";
+import { PORTAL_BOARDS } from "@/server/post-visibility";
 
 export const metadata: Metadata = { robots: { index: false } };
 
@@ -77,7 +78,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       select: {
         id: true,
         name: true,
-        boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, postButton: true, titlePlaceholder: true, detailsPlaceholder: true } },
+        // The first board on the portal (a Team only board isn't).
+        boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, postButton: true, titlePlaceholder: true, detailsPlaceholder: true } },
         articles: { where: listedArticle, take: 1, select: { id: true } },
         // Something for the AI to answer from, for Messages' AI first.
         _count: { select: { articles: { where: answerableArticle } } },

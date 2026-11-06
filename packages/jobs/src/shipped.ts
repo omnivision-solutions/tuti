@@ -117,6 +117,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       board: { select: { slug: true } },
       projectId: true,
       authorId: true,
+      visibility: true,
       project: { select: { name: true, slug: true, portalAccess: true, plan: true } },
       votes: { select: { userId: true } },
       comments: { select: { authorId: true } },
@@ -132,7 +133,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
-  const people = await postAudience(projectId, project, post.authorId, [
+  const people = await postAudience(projectId, project, post, [
     post.authorId,
     ...post.votes.map((v) => v.userId),
     ...post.comments.map((c) => c.authorId),

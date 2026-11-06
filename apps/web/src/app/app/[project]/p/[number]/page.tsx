@@ -10,7 +10,8 @@ import { CommentList } from "@/components/comments";
 import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
 import { MergePostDialog } from "@/components/merge-post-dialog";
 import { MovePostSelect } from "@/components/move-post-select";
-import { PostEtaSelect, PostOwnerSelect } from "@/components/post-planning";
+import { PostEtaSelect, PostOwnerSelect, PostVisibilitySelect } from "@/components/post-planning";
+import { VisibilityBadge } from "@/components/visibility-badge";
 import { PageHeader } from "@/components/page-header";
 import { PostLinks } from "@/components/post-links";
 import { CONVERSATIONS_SHOWN, Property, PostConversations, PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
@@ -30,6 +31,7 @@ import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
+import { TEAM_VIEWER } from "@/server/post-visibility";
 import { howShipped, likeFirst, postNeighbours, postsLike, postVoters, votersToEmail, voterTotals } from "@/server/post-lists";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
@@ -98,7 +100,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     voterTotals(project.id, project.askingProperty, [post.id]),
     postVoters(project.id, project.askingProperty, post.id),
     howShipped(post.id),
-    post.duplicateOf ? [] : postsLike(project.id, post),
+    post.duplicateOf ? [] : postsLike(project.id, post, TEAM_VIEWER),
     postNeighbours(project.id, post.number),
     emailedOnCompletion(project.id, [post.id]),
     // Only for the reply form, which a merged post doesn't have.
@@ -138,7 +140,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         titleOnPage
         meta={
           <>
-            {post.sample && <SampleBadge />} #{post.number} · {post.author.name} · {timeAgo(post.createdAt)}
+            {post.sample && <SampleBadge />} <VisibilityBadge visibility={post.visibility} /> #{post.number} · {post.author.name} · {timeAgo(post.createdAt)}
             {/* A merged post's votes moved with it. */}
             {!post.duplicateOf && ` · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`}
             {total !== undefined && ` · ${asking(total, project.askingProperty!, formats)}`}
@@ -237,6 +239,9 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </Property>
             <Property label="Board">
               <MovePostSelect projectSlug={slug} postId={post.id} boardSlug={post.board.slug} boards={boards} className="w-full max-w-none" />
+            </Property>
+            <Property label="Visibility">
+              <PostVisibilitySelect projectSlug={slug} postId={post.id} visibility={post.visibility} />
             </Property>
             <Property label="Owner">
               <PostOwnerSelect projectSlug={slug} postId={post.id} ownerId={post.owner?.id ?? null} team={team.map((m) => ({ id: m.userId, name: m.user.name }))} />

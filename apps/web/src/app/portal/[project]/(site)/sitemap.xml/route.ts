@@ -4,6 +4,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { docsContents, docsTabPath, everyCollection, listedArticle, readableArticle } from "@/server/docs-queries";
+import { PORTAL_BOARDS, SIGNED_OUT_VIEWER, visiblePosts } from "@/server/post-visibility";
 
 // Next.js prerenders routes named sitemap.xml at build time (as metadata routes), where there's no database.
 export const dynamic = "force-dynamic";
@@ -26,9 +27,10 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     where: { slug },
     select: {
       id: true,
-      boards: { orderBy: { createdAt: "asc" }, select: { id: true, slug: true, updatedAt: true } },
+      boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, select: { id: true, slug: true, updatedAt: true } },
+      // Public posts only (post-visibility.ts).
       posts: {
-        where: { duplicateOfId: null, sample: false },
+        where: { duplicateOfId: null, sample: false, ...visiblePosts(SIGNED_OUT_VIEWER) },
         orderBy: { updatedAt: "desc" },
         take: MAX_URLS,
         select: { boardId: true, number: true, title: true, updatedAt: true, board: { select: { slug: true } } },

@@ -886,6 +886,14 @@ model Invitation {
 
 // ─── Feedback ────────────────────────────────────────────────────────────────
 
+/// Who sees a post besides the team: everyone who may read the portal (PUBLIC), only its author (PRIVATE), or nobody (TEAM).
+/// Enforced wherever posts reach people: apps/web/src/server/post-visibility.ts, and postAudience for emails.
+enum PostVisibility {
+  PUBLIC
+  PRIVATE
+  TEAM
+}
+
 enum PostStatus {
   OPEN
   UNDER_REVIEW
@@ -905,8 +913,10 @@ model Board {
   postButton         String?
   titlePlaceholder   String?
   detailsPlaceholder String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  /// Who sees a new post on it (each post keeps its own after; see PostVisibility). Team only: the board isn't on the portal, and only the team posts there.
+  postVisibility     PostVisibility @default(PUBLIC)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   posts     Post[]
@@ -960,6 +970,8 @@ model Post {
   eta                DateTime?
   /// Sample content (Home's "Add sample content"): labelled Sample, left out of Home, removed with "Remove sample content".
   sample             Boolean    @default(false)
+  /// Who sees it, its comments and votes besides the team; its board's postVisibility when it's made.
+  visibility         PostVisibility @default(PUBLIC)
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 

@@ -5,6 +5,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { boardPath } from "@/lib/post-urls";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { type DocsCollection, docsContents, docsTabPath } from "@/server/docs-queries";
+import { PORTAL_BOARDS } from "@/server/post-visibility";
 
 const text = (value: string, href?: string) => ({ type: "text", text: value, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
 const heading = (level: number, value: string, href?: string) => ({ type: "heading", attrs: { level }, content: [text(value, href)] });
@@ -26,7 +27,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const { project: slug } = await params;
   const project = await prisma.project.findUnique({
     where: { slug },
-    select: { name: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true, description: true } } },
+    select: { name: true, boards: { where: PORTAL_BOARDS, orderBy: { createdAt: "asc" }, select: { slug: true, name: true, description: true } } },
   });
   if (!project) {
     return new Response("Not found", { status: 404 });

@@ -19,6 +19,8 @@ import { SampleBadge } from "@/components/sample-badge";
 import { etaOnPortal, formatMonth, timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
+import { currentPostViewer } from "@/server/portal-access";
+import { canSeePost } from "@/server/post-visibility";
 import { postsLike } from "@/server/post-lists";
 import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
@@ -26,6 +28,7 @@ import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
+import { VisibilityBadge } from "@/components/visibility-badge";
 
 /** Sample content (server/sample-content.ts) is kept from search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]/[post]">): Promise<Metadata> {
@@ -60,7 +63,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       // Its status history: from what to what, and when; not who changed it or how many were emailed.
       events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, createdAt: true } },
       project: { select: { portalAccess: true, plan: true, team: { select: { userId: true } } } },
-      duplicateOf: { select: { number: true, title: true, board: { select: { slug: true } } } },
+      duplicateOf: { select: { number: true, title: true, visibility: true, authorId: true, board: { select: { slug: true } } } },
       // The published changelog entry that shipped it, if any.
       changelogEntries: {
         where: { entry: { publishedAt: { not: null } } },
@@ -71,6 +74,12 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     },
   });
   if (!post) {
+    notFound();
+  }
+  // A post they may not see (post-visibility.ts), with its comments and votes, is as good as missing; so is one merged
+  // into a post they may not see.
+  const viewer = await currentPostViewer(post.projectId);
+  if (!canSeePost(viewer, post) || (post.duplicateOf && !canSeePost(viewer, post.duplicateOf))) {
     notFound();
   }
   // Merged into another post: that's where its votes and comments are now.
@@ -100,8 +109,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       take: 5,
       select: { user: { select: { id: true, name: true, image: true } } },
     }),
-    postsLike(post.projectId, post, { open: true }),
-    voter && subscribable ? postAudience(post.projectId, post.project, post.author.id, [voter]) : [],
+    postsLike(post.projectId, post, viewer, { open: true }),
+    voter && subscribable ? postAudience(post.projectId, post.project, post, [voter]) : [],
   ]);
 
   // The month the team expects it, as their ETA says it, while it's still to come.
@@ -124,6 +133,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
               </>
             )}
             {post.sample && <SampleBadge />}
+            <VisibilityBadge visibility={post.visibility} />
             <span>{post.author.name}</span>
             <span>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>

@@ -9,6 +9,7 @@ import { getPost } from "@/server/operations/read";
 import { recentlyShipped } from "@/server/post-lists";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp } from "@/test/helpers";
+import { SIGNED_OUT_VIEWER } from "./post-visibility";
 
 test("a post's owner (someone on the team) and ETA (a month): set and cleared, and read only by the team", async () => {
   const owner = await signUp("Olive Owner");
@@ -83,5 +84,5 @@ test("an owner or ETA set on a shipped post doesn't move it up Recently shipped:
   await call(updatePost, team, { number: newer.number, status: "completed" });
   await call(updatePost, team, { number: older.number, owner: owner.email, eta: "2026-12" });
   const { boardId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: older.number } });
-  expect((await recentlyShipped(boardId)).map((post) => post.title)).toEqual(["Exports", "Dark mode"]);
+  expect((await recentlyShipped(boardId, SIGNED_OUT_VIEWER)).map((post) => post.title)).toEqual(["Exports", "Dark mode"]);
 });

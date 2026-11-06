@@ -54,6 +54,7 @@ import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson, supportContact } from "@/server/operations/docs-escalate";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
+import { PORTAL_BOARDS } from "@/server/post-visibility";
 
 /** Published articles matching `query`, each with the passage that matched (locked ones by their title, with none). */
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
@@ -91,7 +92,7 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
 /** The new-post form on the portal's first board, with the question as the title. */
 async function feedbackHref(projectSlug: string, question: string) {
   const at = await portalLinks();
-  const board = await prisma.board.findFirst({ where: { project: { slug: projectSlug } }, orderBy: { createdAt: "asc" }, select: { slug: true } });
+  const board = await prisma.board.findFirst({ where: { project: { slug: projectSlug }, ...PORTAL_BOARDS }, orderBy: { createdAt: "asc" }, select: { slug: true } });
   return board && at(`${boardPath(board)}?${new URLSearchParams({ title: question.slice(0, MAX_POST_TITLE) })}`);
 }
 

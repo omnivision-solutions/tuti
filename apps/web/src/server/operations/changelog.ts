@@ -59,7 +59,7 @@ const entrySelect = {
   createdAt: true,
   updatedAt: true,
   sample: true,
-  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, board: { select: { slug: true } } } } } },
+  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, visibility: true, board: { select: { slug: true } } } } } },
   pullRequests: { orderBy: { createdAt: "asc" }, select: { repo: true, number: true, url: true, title: true } },
 } as const;
 
@@ -100,6 +100,9 @@ export async function isTeam(actor: Actor, projectId: string): Promise<boolean> 
   }
   return (await prisma.teamMember.count({ where: { projectId, userId: actor.userId } })) > 0;
 }
+
+/** An entry as someone off the team reads it: only its public posts (post-visibility.ts), as the portal lists them. */
+const asReaderSees = (entry: EntryRow, team: boolean): EntryRow => (team ? entry : { ...entry, posts: entry.posts.filter(({ post }) => post.visibility === "PUBLIC") });
 
 const findEntry = (projectId: string, number: number) =>
   prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: entrySelect });
@@ -188,7 +191,8 @@ export const listChangelog = defineOperation({
   example: { status: "published", limit: 10 },
   run: async ({ actor, projectId }, input) => {
     const portal = await projectPortal(projectId);
-    if (input.status === "draft" && !(await isTeam(actor, projectId))) {
+    const team = await isTeam(actor, projectId);
+    if (input.status === "draft" && !team) {
       throw new OperationError(403, "forbidden", "Only the project's team sees drafts");
     }
     const published = input.status === "published";
@@ -202,7 +206,7 @@ export const listChangelog = defineOperation({
     const shown = entries.slice(0, input.limit);
     const counts = await reactionCounts(shown.map((entry) => entry.id));
     return {
-      entries: await Promise.all(shown.map((entry) => entryView(entry, portal, counts))),
+      entries: await Promise.all(shown.map((entry) => entryView(asReaderSees(entry, team), portal, counts))),
       nextCursor: entries.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
@@ -218,12 +222,12 @@ export const getChangelogEntry = defineOperation({
   input: z.object({ number: entryNumber }),
   run: async ({ actor, projectId }, { number }) => {
     const portal = await projectPortal(projectId);
-    const entry = await findEntry(projectId, number);
+    const [entry, team] = await Promise.all([findEntry(projectId, number), isTeam(actor, projectId)]);
     // A draft is as good as missing to everyone but the team.
-    if (!entry || (!entry.publishedAt && !(await isTeam(actor, projectId)))) {
+    if (!entry || (!entry.publishedAt && !team)) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
     }
-    return entryView(entry, portal);
+    return entryView(asReaderSees(entry, team), portal);
   },
 });
 

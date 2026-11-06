@@ -2,6 +2,7 @@ import { type PostStatus, prisma } from "@tuti/db";
 import { postStatusChanged } from "@tuti/jobs";
 import { z } from "zod";
 
+import { fromApiVisibility, VISIBILITIES } from "../post-visibility";
 import { lockSampleContent } from "../sample-content";
 import { defineOperation, OperationError } from "./define";
 import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, STATUSES, summary } from "./read";
@@ -11,7 +12,7 @@ import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, 
 export const updatePost = defineOperation({
   name: "posts.update",
   summary:
-    "Change a post's status, move it to another board, or say who on the team looks after it (`owner`: a team member's email, null for nobody) and when it's expected (`eta`: a month like 2026-12, null for not said)",
+    "Change a post's status, move it to another board, say who sees it (`visibility`: public, private for its author and the team, team for the team only; its votes and comments go with it), or say who on the team looks after it (`owner`: a team member's email, null for nobody) and when it's expected (`eta`: a month like 2026-12, null for not said)",
   method: "PATCH",
   path: "/posts/{number}",
   scope: "write",
@@ -28,10 +29,14 @@ export const updatePost = defineOperation({
         .regex(/^20\d{2}-(0[1-9]|1[0-2])$/, "Say the month as 2026-12")
         .nullable()
         .optional(),
+      visibility: z.enum(VISIBILITIES).optional(),
     })
-    .refine((input) => [input.status, input.board, input.owner, input.eta].some((value) => value !== undefined), "Send a status, a board, an owner or an ETA")
+    .refine(
+      (input) => [input.status, input.board, input.owner, input.eta, input.visibility].some((value) => value !== undefined),
+      "Send a status, a board, an owner, an ETA or a visibility",
+    )
     // The same rule, for the OpenAPI spec (a refine doesn't show up in JSON Schema).
-    .meta({ anyOf: [{ required: ["status"] }, { required: ["board"] }, { required: ["owner"] }, { required: ["eta"] }] }),
+    .meta({ anyOf: [{ required: ["status"] }, { required: ["board"] }, { required: ["owner"] }, { required: ["eta"] }, { required: ["visibility"] }] }),
   example: { status: "planned" },
   run: async ({ actor, projectId }, input) => {
     const post = await findPost(projectId, input.number);
@@ -71,7 +76,13 @@ export const updatePost = defineOperation({
       const previous = current?.status ?? post.status;
       const saved = await tx.post.update({
         where: { id: post.id },
-        data: { ...(status && { status }), ...(boardId && { boardId }), ...(ownerId !== undefined && { ownerId }), ...(eta !== undefined && { eta }) },
+        data: {
+          ...(status && { status }),
+          ...(boardId && { boardId }),
+          ...(ownerId !== undefined && { ownerId }),
+          ...(eta !== undefined && { eta }),
+          ...(input.visibility && { visibility: fromApiVisibility(input.visibility) }),
+        },
         select: postSummarySelect,
       });
       if (status && status !== previous) {

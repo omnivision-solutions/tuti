@@ -7,7 +7,7 @@ import { portalAddress } from "@/server/custom-domains";
 
 import { author, authorId } from "./create";
 import { defineOperation, OperationError } from "./define";
-import { findPost, postNumber } from "./read";
+import { findVisiblePost, postNumber } from "./read";
 
 /** The project, its team, votes and duplicate suggestions. */
 
@@ -173,7 +173,7 @@ export const setVote = defineOperation({
   input: z.object({ number: postNumber, voted: z.boolean(), author }),
   example: { voted: true, author: { id: "user-42" } },
   run: async (context, input) => {
-    const post = await findPost(context.projectId, input.number);
+    const post = await findVisiblePost(context.actor, context.projectId, input.number);
     if (post.duplicateOf) {
       throw new OperationError(409, "merged", "This post was merged into another one; vote there instead");
     }
@@ -211,7 +211,7 @@ export const setSubscription = defineOperation({
   input: z.object({ number: postNumber, subscribed: z.boolean(), author }),
   example: { subscribed: true, author: { id: "user-42" } },
   run: async (context, input) => {
-    const post = await findPost(context.projectId, input.number);
+    const post = await findVisiblePost(context.actor, context.projectId, input.number);
     const userId = await authorId(context, input.author);
     await prisma.$transaction(async (tx) => {
       // Locked as setVote locks it: a subscription during a merge waits for it, then finds the post merged.

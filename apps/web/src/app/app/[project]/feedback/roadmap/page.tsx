@@ -9,6 +9,7 @@ import { storedPropertyFormats } from "@/lib/property-formats";
 import { getMembership } from "@/server/membership";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
+import { TEAM_VIEWER } from "@/server/post-visibility";
 import { voterTotals } from "@/server/post-lists";
 
 /** How far back Completed goes on the team's roadmap. */
@@ -25,7 +26,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
   const { project } = membership;
   const boards = await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } });
   const board = boards.find((b) => b.slug === searchParams.board)?.slug;
-  const columns = await roadmapColumns(project.id, { board, completedDays: COMPLETED_DAYS });
+  const columns = await roadmapColumns(project.id, TEAM_VIEWER, { board, completedDays: COMPLETED_DAYS });
   const ids = columns.flat().map((post) => post.id);
   // Who's asking, how many completing each one emails (asked before a card goes to Completed), and the team's plan for it.
   const [totals, emails, plans] = await Promise.all([

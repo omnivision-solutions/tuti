@@ -7,6 +7,7 @@ import type { Fresh } from "@/lib/whats-new";
 import { changelogSeenAt, freshSince } from "./operations/changelog-seen";
 import { docsContents, popularArticles } from "./docs-queries";
 import { canReadPortal } from "./portal-access";
+import { postViewer, visiblePostsSql } from "./post-visibility";
 import { ROADMAP } from "./operations/read";
 import { sessionIn } from "./session";
 
@@ -121,6 +122,8 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
     return [];
   }
   const since = new Date(now.getTime() - NEWS_DAYS * DAY_MS);
+  // Only those they may still see (post-visibility.ts).
+  const viewer = await postViewer(projectId, userId);
   // Their ideas in a roadmap status, each with its newest move to where it is now (post_event by post and
   // time, its index; two in one millisecond by id): news if that's recent; the newest three.
   const rows = await prisma.$queryRaw<{ title: string; number: number; status: PostStatus; board: string; at: Date }[]>`
@@ -130,7 +133,7 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
     CROSS JOIN LATERAL (SELECT "createdAt" FROM post_event WHERE "postId" = p.id AND "to" = p.status ORDER BY "createdAt" DESC, id DESC LIMIT 1) e
     WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND NOT p.sample AND p.status::text IN (${Prisma.join(NEWS_STATUSES)})
       AND (p."authorId" = ${userId} OR EXISTS (SELECT 1 FROM vote v WHERE v."postId" = p.id AND v."userId" = ${userId}))
-      AND e."createdAt" >= ${since}
+      AND e."createdAt" >= ${since} AND ${visiblePostsSql(viewer)}
     ORDER BY e."createdAt" DESC, p.id
     LIMIT ${NEWS}`;
   return rows.map((row) => ({ title: row.title, status: row.status, href: postPath({ ...row, board: { slug: row.board } }), at: row.at.toISOString() }));

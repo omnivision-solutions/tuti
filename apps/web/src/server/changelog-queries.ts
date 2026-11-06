@@ -141,7 +141,11 @@ export async function publishedEntries(
       body: true,
       content: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
-      posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true, sample: true, board: { select: { slug: true } } } } } },
+      // Public posts only, whoever reads it (post-visibility.ts): an announcement is for everyone.
+      posts: {
+        where: { post: { duplicateOfId: null, visibility: "PUBLIC" } },
+        select: { post: { select: { number: true, title: true, sample: true, board: { select: { slug: true } } } } },
+      },
     },
   });
   const ids = entries.map((e) => e.id);

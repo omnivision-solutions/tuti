@@ -107,7 +107,7 @@ test("the Account lists the posts they wrote and those they voted on, in this pr
   const other = await createProject(await signUp("Other owner"));
   await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: other.id }, { board: "feature-requests", title: "Elsewhere" });
 
-  const { posts, votes } = await accountPosts(project.id, voter.id);
+  const { posts, votes } = await accountPosts(project.id, voter.id, { team: false, userId: voter.id });
   expect(posts.map((p) => p.title)).toEqual(["Keyboard shortcuts"]);
   expect(posts[0]).toMatchObject({ number: own.number, board: { slug: "feature-requests" } });
   expect(votes.map((p) => p.title)).toEqual(["Dark mode"]);

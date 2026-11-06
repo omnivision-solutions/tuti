@@ -26,6 +26,7 @@ import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib
 import { portalAddress } from "@/server/custom-domains";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { teamPostCounts, teamPosts, voterTotals } from "@/server/post-lists";
+import { VisibilityBadge } from "@/components/visibility-badge";
 
 /** Feedback's tabs by status, opening on the posts nobody has triaged; then All and the possible duplicates. */
 const TABS = [
@@ -240,6 +241,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                         badges={
                           <>
                             {post.sample && <SampleBadge />}
+                            <VisibilityBadge visibility={post.visibility} />
                             {post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>}
                           </>
                         }

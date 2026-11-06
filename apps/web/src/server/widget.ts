@@ -18,6 +18,7 @@ import { setVote } from "./operations/more";
 import { asAdmin, call, postNumberOf } from "./operations/run";
 import { readableProject, WIDGET_READER_COOKIE } from "./portal-access";
 import { boardPosts } from "./post-lists";
+import { postViewer } from "./post-visibility";
 import { sessionIn } from "./session";
 import { updateWidgetSettings } from "./operations/widget";
 import { type IdeaNews, ideaNews } from "./widget-home";
@@ -120,7 +121,8 @@ export async function widgetIdeas(projectSlug: string, token: string | null, min
     return [];
   }
   const filters = parsePostFilters({}, TEAM_SORTS, mine ? "new" : "trending");
-  const { posts } = await boardPosts({ projectId: project.id }, filters, userId ?? undefined, { statuses: mine ? undefined : ACTIVE_STATUSES, mine: mine === true });
+  const viewer = await postViewer(project.id, userId);
+  const { posts } = await boardPosts({ projectId: project.id }, filters, viewer, { statuses: mine ? undefined : ACTIVE_STATUSES, mine: mine === true });
   return posts.map((post) => ({
     id: post.id,
     number: post.number,
