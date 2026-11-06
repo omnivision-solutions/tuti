@@ -317,6 +317,21 @@ async function invite() {
   };
 }
 
+test("verifying an address by accepting an emailed invite to another project hands over the placeholders in the projects they're on", async () => {
+  const { placeholder, theirs } = await placeholderWithHistory();
+  // On this project already, by a link (unverified): nothing handed over.
+  const joiner = await signUp("Fern Former", formerEmail);
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: joiner.id, role: "MEMBER" } });
+  // An emailed invite to another project verifies the address.
+  const other = await createProject(owner);
+  actAs(owner);
+  const { url } = await createInvitation(other.slug, formerEmail, "MEMBER");
+  actAs(joiner);
+  expect(await redirectTarget(acceptInvitation(url!.split("/invite/")[1]!))).toBe(`/app/${other.slug}`);
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: joiner.id });
+  expect(await prisma.user.findUnique({ where: { id: placeholder } })).toBeNull();
+});
+
 test("a placeholder's admin who joins the team takes over what they wrote, their votes (theirs win a clash) and the conversations they still hold; the placeholder goes", async () => {
   const { placeholder, theirs, both, conversations } = await placeholderWithHistory();
   const [kept, taken, unassigned, olderRelease] = conversations;
