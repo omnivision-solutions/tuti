@@ -409,7 +409,7 @@ test("Tuti.open({ ask }) opens Messages with the assistant asking the question (
   page.Tuti.open({ ask: true });
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages&ask=");
   page.Tuti.open({ ask: "x".repeat(400) });
-  expect(new URL(page.frame!.src).searchParams.get("ask")).toHaveLength(300);
+  expect(new URL(String(page.frame!.src)).searchParams.get("ask")).toHaveLength(300);
 });
 
 test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; unknown tabs are reported", async () => {
