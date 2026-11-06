@@ -1,4 +1,5 @@
 import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
+import { ses } from "@tuti/shared/ses";
 
 import { PLAN_PRICES } from "./plans";
 
@@ -123,7 +124,8 @@ export function pricingPlans(): PricingPlan[] {
         articles("PRO"),
         ...history("PRO"),
         { text: "Your own domain" },
-        { text: "Email from your own domain" },
+        // Offered where the server has support email and Amazon SES (as Settings → Support offers it: supportDomain, ses).
+        ...(process.env.SUPPORT_EMAIL_DOMAIN?.trim() && ses() ? [{ text: "Email from your own domain" }] : []),
         { text: "Your own widget launcher icon" },
         versions("PRO"),
         { text: "Reporting, up to a month" },

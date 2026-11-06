@@ -53,7 +53,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   // The changelog's AI: shown, disabled, and why.
   await owner.goto(`/app/${slug}/changelog/${entry.number}`);
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toContainText(
-    "AI answers, inbox drafts and summaries, changelog drafts and Autopilot are paused",
+    "AI answers, inbox drafts and summaries, changelog drafts, Autopilot and Verify are paused",
   );
   // Its one way in, Edit with AI (Draft with AI is in its menu).
   await expect(owner.getByRole("button", { name: "Edit with AI" })).toBeDisabled();
@@ -79,7 +79,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   // Home says so, and lists what's paused.
   await owner.goto(`/app/${slug}`);
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toContainText(
-    "AI answers, inbox drafts and summaries, changelog drafts and Autopilot are paused",
+    "AI answers, inbox drafts and summaries, changelog drafts, Autopilot and Verify are paused",
   );
   await expect(owner.getByRole("listitem").filter({ hasText: pr })).toContainText("Paused");
   await checkpoint(owner, "home-paused");
