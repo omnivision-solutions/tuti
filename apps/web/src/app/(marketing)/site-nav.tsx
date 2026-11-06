@@ -207,14 +207,20 @@ export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: 
           Docs
         </a>
         <div className="mt-6 flex flex-col gap-2">
-          {!signedIn && (
-            <Link href="/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg" })}>
-              Sign in
+          {signedIn ? (
+            <Link href="/app" onClick={close} className={buttonVariants({ size: "lg" })}>
+              Open app
             </Link>
+          ) : (
+            <>
+              <Link href="/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg" })}>
+                Sign in
+              </Link>
+              <Link href="/sign-up" onClick={close} className={buttonVariants({ size: "lg" })}>
+                Start free
+              </Link>
+            </>
           )}
-          <Link href={signedIn ? "/app" : "/sign-up"} onClick={close} className={buttonVariants({ size: "lg" })}>
-            Start free
-          </Link>
         </div>
       </nav>
     </>

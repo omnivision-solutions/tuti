@@ -21,9 +21,10 @@ test("a team member switches projects, edits their account, signs out and back i
     await olive.goto(`${APP_URL}${page}`);
     await olive.waitForURL(/\/app\/e2e-/);
   }
-  // The site's header leads to the app, with no Sign in.
+  // The site's header has one way into the app: Open app, in place of Sign in and Start free.
   await olive.goto(APP_URL);
-  await expect(olive.getByRole("banner").getByRole("link", { name: "Start free" })).toHaveAttribute("href", "/app");
+  await expect(olive.getByRole("banner").getByRole("link", { name: "Open app" })).toHaveAttribute("href", "/app");
+  await expect(olive.getByRole("banner").getByRole("link", { name: "Start free" })).toHaveCount(0);
   await expect(olive.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(0);
   await checkpoint(olive, "site-header-signed-in", { fullPage: false });
   // Except after a password reset, which may be someone else's on this browser: its message and the form stay.
