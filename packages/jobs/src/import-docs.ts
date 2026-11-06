@@ -329,9 +329,11 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       const content = await htmlToContent("article", version.body ?? "", { media, link });
       return "error" in content ? content : { title: version.title?.trim().slice(0, 120) || "Untitled", content };
     };
+    // Its draft is read first, while the page is within its time (contentBudget): converting copies media, which
+    // Featurebase's read deadline (import-step's PAGE_READ_MS) doesn't wait for.
+    const draftVersion = await draftOf(job, article);
     const live = await convert(article);
-    const draftVersion = "error" in live ? null : await draftOf(job, article);
-    const draft = draftVersion && (await convert(draftVersion));
+    const draft = draftVersion && !("error" in live) ? await convert(draftVersion) : null;
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
     texts.push({ article, live, draft: differs ? (draft as Text) : null });
   }

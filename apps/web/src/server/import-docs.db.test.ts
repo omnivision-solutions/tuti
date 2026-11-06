@@ -1,5 +1,5 @@
 import { Prisma, prisma } from "@tuti/db";
-import { contentBudget, handlers, importJob, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
+import { contentBudget, featurebase, handlers, importJob, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -33,7 +33,7 @@ beforeEach(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
   vi.stubEnv("OPENAI_BASE_URL", openai.url);
-  Object.assign(fake, { fixtures: featurebaseFixtures(fake.url), pageSize: 100, requests: [] });
+  Object.assign(fake, { fixtures: featurebaseFixtures(fake.url), pageSize: 100, requests: [], fileDelay: 0 });
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -205,6 +205,24 @@ test("a page of content out of time saves the articles it converted and reads th
   expect(fake.requests.filter((r) => r.includes("/help_center/articles?") && r.includes("limit=20"))).toHaveLength(4);
   expect(await prisma.importedRecord.count({ where: { projectId: project.id, kind: "article", contentLanded: true } })).toBe(4);
   expect((await articles()).filter((a) => a.publishedAt)).toHaveLength(2);
+});
+
+test("an article's draft is read before its media is copied, so a slow copy can't put that read past the page's time with Featurebase", { timeout: 30_000 }, async () => {
+  await structureOnly();
+  // First on the page: an article with a draft that differs and an image on a host that takes 4 seconds.
+  const image = `<img src="${fake.url}/files/welcome.png?X-Amz-Signature=x" alt="Card form">`;
+  const [, paying] = fake.fixtures.articles;
+  paying!.body = `${image}${paying!.body}`;
+  fake.fixtures.articleDrafts[0]!.body = `${image}${fake.fixtures.articleDrafts[0]!.body}`;
+  fake.fixtures.articles = [paying!];
+  fake.fileDelay = 4_000;
+
+  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts: ["docs"], step: "docs-content" } });
+  // Its reads from Featurebase have 2 seconds (a page's read deadline, near its end).
+  const job = { ...importJob(row)!, featurebase: featurebase(FAKE_FEATUREBASE_KEY, { deadline: Date.now() + 2_000 }) };
+  const page = await STEPS.docs!.steps[2]!.page(job, null);
+  await prisma.$transaction((tx) => page.save(tx));
+  expect(await article("Paying by card")).toMatchObject({ publishedAt: expect.any(Date), changes: { body: expect.stringContaining("Amex is coming soon.") } });
 });
 
 test("an article whose content didn't land is filled in by the next import; the others stay as they are", async () => {

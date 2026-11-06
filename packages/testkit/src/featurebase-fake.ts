@@ -426,6 +426,8 @@ export type FeaturebaseFake = {
   fixtures: FeaturebaseFixtures;
   /** A page holds at most this many (Featurebase: 100), so a few fixtures make several pages. */
   pageSize: number;
+  /** How long it takes to answer for a file (ms): a slow host, for imports copying media. */
+  fileDelay: number;
   /** Requests made, as `GET /v2/contacts?limit=100&…`. */
   requests: string[];
   /** Lists answered 403 with their items (e.g. "/v2/contacts"; posts' voters as "/v2/posts/voters"), as for a key that can't read them. */
@@ -465,6 +467,9 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     const url = new URL(req.url ?? "/", "http://fake");
     if (req.method === "GET" && url.pathname.startsWith("/files/")) {
       const file = files.get(decodeURIComponent(url.pathname.slice("/files/".length)));
+      if (fake.fileDelay > 0) {
+        return void setTimeout(() => (file ? res.writeHead(200, { "Content-Type": file.type }).end(file.body) : send(404, { message: "no such file" })), fake.fileDelay);
+      }
       return file ? res.writeHead(200, { "Content-Type": file.type }).end(file.body) : send(404, { message: "no such file" });
     }
     if (req.method === "POST" && url.pathname === "/_fake/release") {
@@ -548,6 +553,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     env: { FEATUREBASE_API_URL: url },
     fixtures: featurebaseFixtures(),
     pageSize: 100,
+    fileDelay: 0,
     requests: [],
     forbidden: new Set(),
     failNext: (status, times = 1, headers = {}, body) => void (failing = { status, times, headers, body }),
