@@ -100,7 +100,7 @@ export default function PrivacyPage() {
       <p>
         Depending on where you live, you can ask to access, correct, export or delete your personal data, object to or
         restrict how we use it, and complain to your data protection authority. Email {contact}; we&apos;ll answer within
-        30 days. You can change most account details in the app, and get a project&apos;s data through the API.
+        30 days. You can change most account details in the app, and get a project&apos;s data through the API, within its plan&apos;s history limits; for anything older, email us.
       </p>
 
       <h2>Children</h2>

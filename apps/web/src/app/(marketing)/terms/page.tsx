@@ -37,7 +37,7 @@ export default function TermsPage() {
         Your content stays yours: the posts, comments, articles, changelog entries, messages, files and other data you or
         the people using your portals and widget put into the Service. You give us the permission we need to host, copy,
         process and display it in order to run the Service for you, and nothing more. You confirm you have the right to
-        put it there. You can get your project&apos;s data out through the API at any time.
+        put it there. You can get your project&apos;s data out through the API at any time, within your plan&apos;s history limits.
       </p>
       <p>
         When you collect feedback or support messages from your own customers through Tuti, you decide what is collected
@@ -71,7 +71,7 @@ export default function TermsPage() {
         <li>Prices are shown before you buy and exclude taxes unless stated. We&apos;ll give you at least 30 days&apos; notice of a price change, which applies from your next renewal.</li>
         <li>
           AI credits are prepaid units for AI features. Bought credits expire after the period shown when you buy them;
-          credits that come with a plan last until that month ends. Credits have no cash value and aren&apos;t refundable
+          credits that come with a plan last until the end of the billing period they come with. Credits have no cash value and aren&apos;t refundable
           or transferable.
         </li>
         <li>Payments aren&apos;t refundable for partial periods, except where the law requires it.</li>

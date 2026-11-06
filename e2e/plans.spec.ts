@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { seedArticles } from "./articles";
 import { checkpoints } from "./checkpoint";
-import { CLOUD_URL, cloudPortalUrl } from "./env";
+import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
 // On Tuti's cloud, which sells plans.
@@ -217,4 +217,27 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   await owner.getByRole("menuitem", { name: "Last month" }).click();
   await owner.waitForURL(`**/app/${slug}/reporting?range=last-month`);
   await expect(owner.getByRole("button", { name: "Date range: Last month" })).toBeVisible();
+});
+
+test("on Tuti's cloud, signing up agrees to the Terms of Service and Privacy Policy, linked there and in the footer; a self-hosted server has neither", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const page = await browser.newPage({ baseURL: CLOUD_URL });
+  await page.goto("/sign-up");
+  await expect(page.getByText("By signing up, you agree to the Terms of Service and Privacy Policy.")).toBeVisible();
+  await checkpoint(page, "sign-up-terms");
+  await page.getByRole("main").getByRole("link", { name: "Terms of Service" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Terms of Service" })).toBeVisible();
+  await checkpoint(page, "terms");
+  await page.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeVisible();
+  await checkpoint(page, "privacy");
+
+  const selfHosted = await browser.newPage({ baseURL: APP_URL });
+  await selfHosted.goto("/sign-up");
+  await expect(selfHosted.getByRole("button", { name: "Sign up" })).toBeVisible();
+  await expect(selfHosted.getByText("By signing up")).toHaveCount(0);
+  await expect(selfHosted.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Terms" })).toHaveCount(0);
+  for (const path of ["/terms", "/privacy"]) {
+    expect((await selfHosted.request.get(path)).status()).toBe(404);
+  }
 });
