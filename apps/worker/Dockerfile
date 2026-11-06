@@ -29,10 +29,13 @@ RUN --mount=type=cache,id=tuti-pnpm-store,target=/pnpm-store \
     && chmod +x /prod/worker/start.sh
 
 FROM base AS runner
-ARG INFISICAL_CLI_VERSION=0.43.137
-RUN apk add --no-cache bash wget \
+ARG INFISICAL_CLI_VERSION=0.44.15
+# BusyBox's wget fetches the setup script. npm comes with the Node image but
+# nothing here runs it, and its bundled packages carry known vulnerabilities.
+RUN apk add --no-cache bash \
     && wget -qO- 'https://artifacts-cli.infisical.com/setup.apk.sh' | sh \
-    && apk add --no-cache infisical=${INFISICAL_CLI_VERSION}
+    && apk add --no-cache infisical=${INFISICAL_CLI_VERSION} \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 worker
