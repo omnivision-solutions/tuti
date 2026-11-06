@@ -126,7 +126,6 @@ export function pricingPlans(): PricingPlan[] {
         { text: "Your own domain" },
         // Offered where the server has support email and Amazon SES (as Settings → Support offers it: supportDomain, ses).
         ...(process.env.SUPPORT_EMAIL_DOMAIN?.trim() && ses() ? [{ text: "Email from your own domain" }] : []),
-        { text: "Your own widget launcher icon" },
         versions("PRO"),
         { text: "Reporting, up to a month" },
       ],
