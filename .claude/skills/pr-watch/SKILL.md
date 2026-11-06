@@ -27,6 +27,13 @@ else
 fi
 ```
 
+Then, also with Claude Code, run its security review: a second pass that looks only for exploitable vulnerabilities and drops what it can't confirm, about a minute. It compares `HEAD` with `origin/HEAD`, which a clone sets but a fetch into an older checkout may not: the first line sets it to `main` when it's missing. It reads everything above `main`, so in a stack it reviews the lower branches too. Fix what holds up before pushing, like the review's findings.
+
+```sh
+git symbolic-ref -q refs/remotes/origin/HEAD > /dev/null || git remote set-head origin main
+claude -p /security-review --model claude-opus-5-5 --no-session-persistence < /dev/null
+```
+
 ## Read the PR with the digest
 
 `node .claude/skills/pr-watch/pr-digest.mjs [<n>]` (from the repo root) reads the PR's head commit once: its check runs and commit statuses, the review bot its label asks for, review threads, comments and reviews. It prints only what needs a decision, then a `VERDICT`:
