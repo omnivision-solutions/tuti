@@ -151,8 +151,9 @@ export async function deleteBoard(projectSlug: string, boardId: string): Promise
     return { error: "Board not found" };
   }
   const error = await prisma.$transaction(async (tx) => {
-    // The project's row locked (as createBoard does), so two deletes can't both leave it without a board.
-    await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${project.id} FOR UPDATE`;
+    // The project's row locked (createBoard's lock waits on it too), so two deletes can't both leave it without a board. Not
+    // FOR UPDATE: that would block the key-share lock a post insert takes on it while holding the board's, a deadlock.
+    await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${project.id} FOR NO KEY UPDATE`;
     if ((await tx.board.count({ where: { projectId: project.id } })) <= 1) {
       return "A project needs at least one board";
     }
