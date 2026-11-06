@@ -183,7 +183,9 @@ export function importSummary(run: ImportView) {
  */
 export function importProgress(run: ImportView) {
   const picked = (Object.keys(IMPORT_PARTS) as ImportPart[]).filter((part) => run.parts.includes(part));
-  const at = run.step ? picked.findIndex((part) => run.step! in IMPORT_PARTS[part].steps) : -1;
+  // One that stopped at Feedback's avatars, from before they were a part of their own: Feedback's, before its last step.
+  const step = run.step === "avatars" && !picked.includes("avatars") ? "embeddings" : run.step;
+  const at = step ? picked.findIndex((part) => step in IMPORT_PARTS[part].steps) : -1;
   return picked.map((part, i) => {
     const state =
       run.state === "done" || i < at ? "done" : i === at ? (run.state === "running" ? "now" : "stopped") : run.state === "running" && i === at + 1 ? "next" : "waiting";
@@ -195,7 +197,7 @@ export function importProgress(run: ImportView) {
         : part === "feedback" && !picked.includes("avatars")
           ? [...IMPORT_PARTS.feedback.kinds, "avatars"]
           : IMPORT_PARTS[part].kinds;
-    return { part, state, step: i === at ? run.step : null, ...described(run.counts, kinds) } as const;
+    return { part, state, step: i === at ? step : null, ...described(run.counts, kinds) } as const;
   });
 }
 
