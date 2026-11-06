@@ -171,6 +171,10 @@ export async function PersonPanel({
   const headings = propertyHeadings(formats, Object.keys(view?.properties ?? {}));
   const shownEmail = sso ? sso.email : (user?.email ?? email);
   const verified = sso ? true : user ? user.emailVerified : person.emailVerified;
+  // They marked an email from the project as spam (SES's complaint): replies aren't emailed to that address any more.
+  const blocked = shownEmail
+    ? await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId, email: shownEmail.toLowerCase() } }, select: { email: true } })
+    : null;
   const postLink = (p: { number: number; title: string; status: PostStatus }) => ({
     href: `/app/${slug}/p/${p.number}`,
     title: p.title,
@@ -199,6 +203,7 @@ export async function PersonPanel({
             {!verified && " (not verified)"}
           </p>
         )}
+        {blocked && <p className="text-xs text-muted-foreground">Marked your email as spam, so replies aren&apos;t emailed to them any more.</p>}
         {view && <p className="text-xs break-all text-muted-foreground">id {view.id}</p>}
         {!user && <p className="text-xs text-muted-foreground">Known only by this address.</p>}
         {lookalike && (

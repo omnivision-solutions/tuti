@@ -236,7 +236,7 @@ export async function replyRecipient(conversationId: string): Promise<ReplyRecip
   }
   // They marked an email from the project as spam (SES's complaint): no more email to them from it.
   if (await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId: conversation.projectId, email: to.toLowerCase() } } })) {
-    return { error: "They marked an email from you as spam, so replies reach them only in the widget" };
+    return { error: "They marked an email from you as spam, so replies aren't emailed to them any more" };
   }
   return { to, subdomain };
 }

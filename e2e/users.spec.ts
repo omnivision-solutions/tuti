@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
+import { sesComplaint } from "./ses";
 
 test("the team syncs its users over the API and finds them on the Users page, by name and by group", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -110,6 +111,12 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner.getByRole("heading", { name: "Bea Byte", level: 1 })).toBeVisible();
   await checkpoint(owner, "team-user-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
+  // She marks one of the project's emails as spam: her page says replies aren't emailed to her any more.
+  await expect(who).not.toContainText("as spam");
+  await sesComplaint(slug, "e2e-bea@example.com");
+  await owner.reload();
+  await expect(who.getByText("Marked your email as spam, so replies aren't emailed to them any more.")).toBeVisible();
+  await checkpoint(owner, "team-user-spam");
   // Anyone's, whatever their app's id holds.
   await api("/users", { users: [{ id: "team/7 x", name: "Dee Slash" }] });
   await owner.goto(`/app/${slug}/users?q=Dee`);
