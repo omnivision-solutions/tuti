@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/roles";
-import { acceptInvitation, createInvitation, revokeInvitation } from "@/server/invitations";
+import { acceptInvitation, createInvitation, revokeInvitation, sendAllInvitations, sendInvitation } from "@/server/invitations";
 
 export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles: TeamRole[] }) {
   const [role, setRole] = useState<TeamRole>("MEMBER");
@@ -94,7 +94,8 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
   );
 }
 
-export function RevokeInvitationButton({ projectSlug, invitationId }: { projectSlug: string; invitationId: string }) {
+/** Revoke on a pending invite; Remove (`unsent`) on one an import made that wasn't sent. */
+export function RevokeInvitationButton({ projectSlug, invitationId, unsent = false }: { projectSlug: string; invitationId: string; unsent?: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
     <Button
@@ -107,12 +108,42 @@ export function RevokeInvitationButton({ projectSlug, invitationId }: { projectS
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success("Invite revoked");
+            toast.success(unsent ? "Invite removed" : "Invite revoked");
           }
         })
       }
     >
-      Revoke
+      {unsent ? "Remove" : "Revoke"}
+    </Button>
+  );
+}
+
+/** Says how sending went: how many were emailed, and why the rest weren't. */
+function sentToast(result: { error?: string; sent?: number }) {
+  if (result.sent) {
+    toast.success(result.sent === 1 ? "Invite sent" : `${result.sent} invites sent`);
+  }
+  if (result.error) {
+    toast.error(result.error);
+  }
+}
+
+/** Send on an invite an import made: emails it. */
+export function SendInvitationButton({ projectSlug, invitationId }: { projectSlug: string; invitationId: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button variant="outline" size="sm" disabled={pending} onClick={() => startTransition(async () => sentToast(await sendInvitation(projectSlug, invitationId)))}>
+      {pending ? "Sending…" : "Send"}
+    </Button>
+  );
+}
+
+/** Send all: emails every invite an import made. */
+export function SendAllInvitationsButton({ projectSlug, count }: { projectSlug: string; count: number }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button size="sm" disabled={pending} onClick={() => startTransition(async () => sentToast(await sendAllInvitations(projectSlug)))}>
+      {pending ? "Sending…" : `Send all ${count}`}
     </Button>
   );
 }

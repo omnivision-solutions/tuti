@@ -866,6 +866,10 @@ model Invitation {
   acceptedAt   DateTime?
   acceptedById String?
   revokedAt    DateTime?
+  /// When it was emailed. Null: made by an import from another tool (docs/plan.md, Switching from Featurebase) for an
+  /// owner or admin to review and send from Team & roles; its token is one nobody has until then, so it can't be
+  /// accepted. Defaults to now, so an invite made the usual way (by the release before this column, too) is sent.
+  sentAt       DateTime? @default(now())
   createdAt    DateTime  @default(now())
 
   project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

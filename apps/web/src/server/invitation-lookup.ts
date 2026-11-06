@@ -1,6 +1,6 @@
 import { type TeamRole, prisma } from "@tuti/db";
 
-import { hashInvitationToken } from "@/lib/invitations";
+import { hashInvitationToken } from "@tuti/jobs";
 
 export type InvitationState =
   | { status: "invalid" }
@@ -56,6 +56,8 @@ export async function pendingInvitationsFor(user: { id: string; email: string; e
       acceptedAt: null,
       revokedAt: null,
       expiresAt: { gt: new Date() },
+      // Not one an import made that the team hasn't sent yet.
+      sentAt: { not: null },
       project: { team: { none: { userId: user.id } } },
     },
     orderBy: { createdAt: "desc" },

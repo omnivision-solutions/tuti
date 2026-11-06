@@ -9,6 +9,7 @@ import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseC
 import { checkDocs, DOCS_STEPS } from "./import-docs";
 import { feedbackSteps } from "./import-feedback";
 import { conversationsPage } from "./import-inbox";
+import { teamPage } from "./import-team";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lockConflict } from "./lock-retries";
 import { isUniqueViolation, placeholderEmail, syncUsersIn, type UserDetails } from "./project-users";
@@ -63,9 +64,11 @@ type Step = { name: string; page: (job: ImportJob, cursor: string | null) => Pro
 
 /**
  * The parts an import can bring, in the order they run: how a key is checked for each before it starts (its list read
- * once), and its steps. Feedback, the help center and the inbox add theirs (docs/plan.md, I3–I5).
+ * once), and its steps (docs/plan.md, I1, I3–I6).
  */
 export const IMPORT_PARTS: Record<string, { check: (api: Featurebase) => Promise<unknown>; steps: Step[] }> = {
+  // First, so the team's invitations are ready to send while the rest comes across.
+  team: { check: (api) => api.get("/admins"), steps: [{ name: "team", page: teamPage }] },
   contacts: { check: (api) => api.get("/contacts", { limit: 1, contactType: "all" }), steps: [{ name: "contacts", page: contactsPage }] },
   feedback: { check: (api) => Promise.all([api.get("/boards"), api.get("/posts", { limit: 1 })]), steps: feedbackSteps },
   docs: { check: checkDocs, steps: DOCS_STEPS },

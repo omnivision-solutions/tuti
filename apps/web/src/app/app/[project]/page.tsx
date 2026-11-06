@@ -9,7 +9,7 @@ import { GoesOut } from "@/components/goes-out";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
-import { RefreshWhile } from "@/components/setup-import";
+import { InvitationsToSend, RefreshWhile } from "@/components/setup-import";
 import { AddSampleContent, RemoveSampleContent } from "@/components/sample-content";
 import { StatTile } from "@/components/stat-tile";
 import { Badge } from "@/components/ui/badge";
@@ -107,6 +107,11 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               </CardAction>
             ) : null}
           </CardHeader>
+          {imported.state !== "running" && imported.invitationsToSend > 0 && (
+            <CardContent>
+              <InvitationsToSend projectSlug={slug} count={imported.invitationsToSend} />
+            </CardContent>
+          )}
         </Card>
       )}
       {overview.setup && admin && (

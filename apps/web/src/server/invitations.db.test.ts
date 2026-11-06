@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { DAILY_INVITE_LIMIT, hashInvitationToken } from "@/lib/invitations";
+import { DAILY_INVITE_LIMIT, hashInvitationToken } from "@tuti/jobs";
 import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 

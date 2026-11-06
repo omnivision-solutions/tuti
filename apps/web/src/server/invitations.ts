@@ -2,19 +2,13 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { inviteEmail, sendEmail } from "@tuti/email";
-import { handOverOnVerified, handOverPlaceholders } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverOnVerified, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, teamPlacesTaken } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { appUrl } from "@/lib/hosts";
-import {
-  DAILY_INVITE_LIMIT,
-  generateInvitationToken,
-  hashInvitationToken,
-  INVITATION_TTL_DAYS,
-} from "@/lib/invitations";
 import { canAssignRole, isAdminRole, ROLE_LABELS } from "@/lib/roles";
 
 import { getMembership } from "./membership";
@@ -63,11 +57,8 @@ export async function createInvitation(
   if (onTeam) {
     return { error: `${parsed.data.email} is already on the team` };
   }
-  const sentToday = await prisma.invitation.count({
-    where: { projectId, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
-  });
-  if (sentToday >= DAILY_INVITE_LIMIT) {
-    return { error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.` };
+  if ((await sentToday(projectId)) >= DAILY_INVITE_LIMIT) {
+    return { error: DAILY_LIMIT };
   }
 
   const token = generateInvitationToken();
@@ -76,16 +67,8 @@ export async function createInvitation(
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
     const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
     const limit = project ? teamLimit(project.plan) : null;
-    if (limit !== null) {
-      const [members, pending] = await Promise.all([
-        tx.teamMember.count({ where: { projectId } }),
-        tx.invitation.count({
-          where: { projectId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, NOT: { email: parsed.data.email } },
-        }),
-      ]);
-      if (members + pending >= limit) {
-        return limit;
-      }
+    if (limit !== null && (await teamPlacesTaken(tx, projectId, parsed.data.email)) >= limit) {
+      return limit;
     }
     await tx.invitation.updateMany({
       where: { projectId, email: parsed.data.email, acceptedAt: null, revokedAt: null },
@@ -98,7 +81,7 @@ export async function createInvitation(
         role: parsed.data.role,
         tokenHash: hashInvitationToken(token),
         createdById: session.user.id,
-        expiresAt: new Date(Date.now() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000),
+        expiresAt: invitationExpiry(),
       },
     });
     return null;
@@ -107,25 +90,84 @@ export async function createInvitation(
     return { error: teamFull(full) };
   }
   const url = `${appUrl().origin}/invite/${token}`;
-
-  let emailSent = true;
-  try {
-    await sendEmail({
-      to: parsed.data.email,
-      replyTo: session.user.email, // replies reach the person who invited them
-      ...inviteEmail({
-        inviterName: session.user.name,
-        projectName: membership.project.name,
-        roleLabel: ROLE_LABELS[parsed.data.role],
-        url,
-      }),
-    });
-  } catch (error) {
-    log.error("Sending the invite email failed", { error });
-    emailSent = false;
-  }
+  const emailSent = await emailInvite({ to: parsed.data.email, role: parsed.data.role, url, inviter: session.user, projectName: membership.project.name });
   refresh();
   return { url, emailSent };
+}
+
+const DAILY_LIMIT = `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`;
+
+/** Invites the project emailed in the last day: inviting emails any address, so it's capped (DAILY_INVITE_LIMIT). */
+const sentToday = (projectId: string) => prisma.invitation.count({ where: { projectId, sentAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } });
+
+/** Emails an invite's link from `inviter` (replies reach them); false when the email couldn't be sent. */
+async function emailInvite({ to, role, url, inviter, projectName }: { to: string; role: TeamRole; url: string; inviter: { name: string; email: string }; projectName: string }) {
+  try {
+    await sendEmail({ to, replyTo: inviter.email, ...inviteEmail({ inviterName: inviter.name, projectName, roleLabel: ROLE_LABELS[role], url }) });
+    return true;
+  } catch (error) {
+    log.error("Sending the invite email failed", { error });
+    return false;
+  }
+}
+
+/**
+ * Sends invites an import made (docs/plan.md, Switching from Featurebase: not sent yet, `sentAt` null), `ids` or all of
+ * them, within the day's cap: each gets a new token, the sender as who invited them, and a full week from now, then its
+ * email. Claimed as sent first (under the project's lock), so two clicks at once send each once; one whose email fails
+ * goes back to not sent.
+ */
+async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Result & { sent?: number; waiting?: number }> {
+  const membership = await getMembership(projectSlug);
+  const session = await getSession();
+  if (!membership || !session || !isAdminRole(membership.role)) {
+    return { error: "Only project owners and admins can send invites" };
+  }
+  const projectId = membership.project.id;
+  const room = DAILY_INVITE_LIMIT - (await sentToday(projectId));
+  const unsent = { projectId, sentAt: null, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, ...(ids && { id: { in: ids } }) };
+  const claimed = await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const waiting = await tx.invitation.findMany({ where: unsent, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true, role: true } });
+    // Only roles the sender may give (an import's are all members).
+    const mine = waiting.filter((invitation) => invitation.email && canAssignRole(membership.role, invitation.role)).slice(0, Math.max(room, 0));
+    const now = new Date();
+    const sending = [];
+    for (const invitation of mine) {
+      const token = generateInvitationToken();
+      await tx.invitation.update({ where: { id: invitation.id }, data: { tokenHash: hashInvitationToken(token), sentAt: now, createdById: session.user.id, expiresAt: invitationExpiry(now.getTime()) } });
+      sending.push({ ...invitation, email: invitation.email!, token });
+    }
+    return { sending, waiting: waiting.length - sending.length };
+  });
+  if (ids && claimed.sending.length === 0) {
+    return { error: room <= 0 && claimed.waiting > 0 ? DAILY_LIMIT : "That invite was sent already, or removed" };
+  }
+  let sent = 0;
+  for (const invitation of claimed.sending) {
+    const url = `${appUrl().origin}/invite/${invitation.token}`;
+    if (await emailInvite({ to: invitation.email, role: invitation.role, url, inviter: session.user, projectName: membership.project.name })) {
+      sent++;
+    } else {
+      await prisma.invitation.updateMany({ where: { id: invitation.id, acceptedAt: null }, data: { sentAt: null } });
+    }
+  }
+  refresh();
+  const waiting = claimed.waiting + claimed.sending.length - sent;
+  if (sent < claimed.sending.length) {
+    return { error: `Couldn't email ${claimed.sending.length - sent === 1 ? "an invite" : `${claimed.sending.length - sent} invites`}: try again in a moment.`, sent, waiting };
+  }
+  return waiting > 0 && room <= claimed.sending.length ? { error: DAILY_LIMIT, sent, waiting } : { sent, waiting };
+}
+
+/** Team & roles' Send on an invite an import made: emails it. */
+export async function sendInvitation(projectSlug: string, invitationId: string) {
+  return sendUnsent(projectSlug, [String(invitationId)]);
+}
+
+/** Team & roles' Send all: emails every invite an import made, up to the day's cap. */
+export async function sendAllInvitations(projectSlug: string) {
+  return sendUnsent(projectSlug, null);
 }
 
 export async function revokeInvitation(projectSlug: string, invitationId: string): Promise<Result> {
@@ -177,8 +219,9 @@ async function myInvitation(invitationId: string) {
   if (!session?.user.emailVerified) {
     return null;
   }
+  // Not one that wasn't sent yet: it's for the team to review first.
   const invitation = await prisma.invitation.findFirst({
-    where: { id: invitationId, email: session.user.email.toLowerCase() },
+    where: { id: invitationId, email: session.user.email.toLowerCase(), sentAt: { not: null } },
     select: invitationForJoining,
   });
   return invitation ? { invitation, userId: session.user.id } : null;
@@ -232,7 +275,7 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
         const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${invitation.projectId} FOR UPDATE`;
         // Claim the invite atomically so it can only be used once.
         const claimed = await tx.invitation.updateMany({
-          where: { id: invitation.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+          where: { id: invitation.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, sentAt: { not: null } },
           data: { acceptedAt: new Date(), acceptedById: userId },
         });
         if (claimed.count !== 1) {
