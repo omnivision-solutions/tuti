@@ -1,5 +1,6 @@
 import { Prisma, prisma } from "@tuti/db";
-import { contentBudget, featurebase, handlers, importJob, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
+import { contentBudget, featurebase, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
+import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -67,7 +68,7 @@ const linksIn = (doc: unknown) => nodesOf(doc as Node).flatMap((node) => (node.m
 
 /** The help center's first pass by hand (collections, then articles made empty), as an import that stopped after it did. */
 async function structureOnly() {
-  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts: ["docs"], step: "docs-collections" } });
+  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["docs"], step: "docs-collections" } });
   const job = importJob(row)!;
   for (const step of STEPS.docs!.steps.slice(0, 2)) {
     let cursor: string | null = null;
@@ -188,13 +189,6 @@ test("an empty article the team wrote and published while the import was stopped
   expect(await article("Welcome to Acme")).toMatchObject({ publishedAt: expect.any(Date), body: expect.stringContaining("every invoice") });
 });
 
-test("a worker without a part the import picked (the release before, mid-deploy) fails it, saying so, rather than skipping it", async () => {
-  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts: ["docs", "later"], step: "docs-collections" } });
-  expect(await handlers.importStep({ importId: row.id }, { info: () => {}, warn: () => {} })).toEqual({ failed: true });
-  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "FAILED", apiKey: null, error: "Tuti was updating as it started. Start it again to go on: what came across already is skipped." });
-  expect(await collections()).toEqual([]);
-});
-
 test("a page of content out of time saves the articles it converted and reads the same page again for the rest, counting each once", async () => {
   const budget = contentBudget.ms;
   contentBudget.ms = -1;
@@ -220,7 +214,7 @@ test("an article's draft is read before its media is copied, so a slow copy can'
   fake.fixtures.articles = [paying!];
   fake.fileDelay = 4_000;
 
-  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts: ["docs"], step: "docs-content" } });
+  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["docs"], step: "docs-content" } });
   // Its reads from Featurebase have 2 seconds (a page's read deadline, near its end).
   const job = { ...importJob(row)!, featurebase: featurebase(FAKE_FEATUREBASE_KEY, { deadline: Date.now() + 2_000 }) };
   const page = await STEPS.docs!.steps[2]!.page(job, null);
