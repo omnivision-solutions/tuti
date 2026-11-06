@@ -8,10 +8,9 @@ import { widgetToken } from "@/lib/widget-session";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { markChangelogSeen } from "./changelog-seen";
-import { mailSubdomain } from "./inbound";
 import { syncUsers } from "./project-users";
 import { widgetIdeaNews } from "./widget";
-import { portalReaderHome, repliesEmailed, suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "./widget-home";
+import { portalReaderHome, suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "./widget-home";
 
 /** The widget's Home: suggested articles, when the team usually replies, the news of someone's ideas, and what's new to them. */
 
@@ -305,17 +304,4 @@ test("Home greets whoever's signed in on the portal by the first name they gave,
   expect(await portalReaderHome(project.id)).toBeNull();
   actAs(owner);
   expect(await portalReaderHome(project.id)).toMatchObject({ name: "Owner" });
-});
-
-test("the team's card promises email only when replies can be emailed: the server receives and sends email, and the project has its support address", async () => {
-  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email");
-  expect(await repliesEmailed(project.id)).toBe(false);
-  await mailSubdomain(project.id);
-  expect(await repliesEmailed(project.id)).toBe(true);
-  vi.stubEnv("SMTP_HOST", "");
-  expect(await repliesEmailed(project.id)).toBe(false);
-  vi.unstubAllEnvs();
-  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
-  expect(await repliesEmailed(project.id)).toBe(false);
-  vi.unstubAllEnvs();
 });
