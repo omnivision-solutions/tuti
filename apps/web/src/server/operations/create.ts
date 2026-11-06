@@ -1,6 +1,6 @@
 import { isEmptyDoc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { enqueue } from "@tuti/jobs";
+import { enqueue, seenAs } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -218,7 +218,7 @@ export const createComment = defineOperation({
         const created = await tx.comment.create({
           // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't).
           // Not for sample content (Home's "Add sample content"): no webhook, and its voters aren't emailed.
-          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, ...(input.emailVoters && !post.sample && { votersEmailDueAt: new Date() }) },
+          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, ...(input.emailVoters && !post.sample && seenAs(post) !== "TEAM" && { votersEmailDueAt: new Date() }) },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
         });
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });

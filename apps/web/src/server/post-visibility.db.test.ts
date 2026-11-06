@@ -434,6 +434,17 @@ test("a board turned off is the team's: its posts, public ones too, are nobody e
   actAs(owner);
   expect(await page(PostPage({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-for-the-editor-1" }), searchParams: Promise.resolve({}) } as never))).not.toBe("404");
 
+  // Completed or answered while off, nothing is left due to email: turning the board on later tells nobody, even when
+  // the emails' jobs couldn't be queued (Hatchet, unreachable) and wait for the resubmit cron.
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+  await call(updatePost, key, { number: 1, status: "completed" });
+  const reply = await call(createComment, as(owner), { number: 1, body: "Shipped", emailVoters: true });
+  vi.unstubAllEnvs();
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: open.id }, select: { shippedEmailsDueAt: true } })).toEqual({ shippedEmailsDueAt: null });
+  expect(await prisma.comment.findUniqueOrThrow({ where: { id: reply.id }, select: { votersEmailDueAt: true } })).toEqual({ votersEmailDueAt: null });
+  await prisma.post.update({ where: { id: open.id }, data: { status: "PLANNED" } });
+
   // Turned on again, its public post is everyone's once more; and the roadmap's board filter still narrows to a board.
   await prisma.board.update({ where: { id: board.id }, data: { off: false } });
   expect(numbers((await call(listPosts, as(bob), {})).posts)).toEqual([1]);

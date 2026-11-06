@@ -1,6 +1,6 @@
 import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
-import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type Prisma, prisma } from "@tuti/db";
-import { enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, toApiStatus } from "@tuti/jobs";
+import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
+import { enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus } from "@tuti/jobs";
 import { aiEnabled, complete, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
@@ -682,12 +682,13 @@ export const publishChangelogEntry = defineOperation({
         select: { postId: true },
       });
       for (const { postId } of linked) {
-        const [current] = await tx.$queryRaw<{ status: PostStatus; sample: boolean }[]>`SELECT status, sample FROM post WHERE id = ${postId} FOR UPDATE`;
+        const [current] = await tx.$queryRaw<{ status: PostStatus; sample: boolean; seen: PostVisibility }[]>`
+          SELECT status, sample, ${SEEN_AS_SQL} AS seen FROM post WHERE id = ${postId} FOR UPDATE`;
         // A sample entry completes sample posts only, and a real one real posts only, however one got linked (changelog.update refuses them).
         if (!current || sample !== current.sample || current.status === "COMPLETED" || current.status === "CLOSED") {
           continue;
         }
-        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: new Date() }) } });
+        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && current.seen !== "TEAM" && { shippedEmailsDueAt: new Date() }) } });
         // Its shipped emails are counted on this event: the entry's "told" (entryTold).
         await tx.postEvent.create({
           data: { postId, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: current.status, to: "COMPLETED", changelogEntryId: entry.id },
