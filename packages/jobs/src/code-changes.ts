@@ -481,13 +481,17 @@ async function writeProposals(pr: PullRequestRead, summary: string, proposals: P
   const keyed = proposals
     .map((proposal, i) => ({ key: `p${i + 1}`, proposal, post: posts.find((post) => post.id === proposal.postId)! }))
     .filter((k) => k.post);
-  // Posts only some see are written for apart: what's written with the public ones (their comments, which everyone
-  // sees, and the changelog line, which is published) never has their words in front of it.
+  // Posts only some see are written for one at a time: what's written with the public ones (their comments, which
+  // everyone sees, and the changelog line, which is published) never has their words in front of it, nor does what's
+  // written for another (a comment its own author reads).
   const isPublic = ({ post }: (typeof keyed)[number]) => !post.visibility || post.visibility === "PUBLIC";
   const open = await writeFor(pr, summary, keyed.filter(isPublic), use);
-  const hidden = keyed.some((k) => !isPublic(k)) ? await writeFor(pr, summary, keyed.filter((k) => !isPublic(k)), use) : null;
+  const hidden = [];
+  for (const k of keyed.filter((k) => !isPublic(k))) {
+    hidden.push(await writeFor(pr, summary, [k], use));
+  }
   return {
-    why: [open.why, hidden?.why].filter(Boolean).join(" ").trim().slice(0, 1_000),
+    why: [open.why, ...hidden.map((written) => written.why)].filter(Boolean).join(" ").trim().slice(0, 1_000),
     line: open.changelog.replace(/\s+/g, " ").trim().slice(0, 300),
   };
 }
