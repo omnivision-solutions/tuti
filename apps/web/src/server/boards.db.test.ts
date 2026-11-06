@@ -117,6 +117,42 @@ describe("deleting boards", () => {
     });
   });
 
+  test("a post moved onto a board while it's being deleted keeps the board, and isn't deleted with it", async () => {
+    await createBoard(project.slug, {}, board({ slug: "bugs" }));
+    const bugs = await prisma.board.findFirstOrThrow({ where: { projectId: project.id, slug: "bugs" } });
+    const author = project.team[0]!.userId;
+    const original = await prisma.post.create({ data: { projectId: project.id, boardId, authorId: author, number: 1, title: "A post", body: "" } });
+    await prisma.post.create({
+      data: { projectId: project.id, boardId: bugs.id, authorId: author, number: 2, title: "A post", body: "", duplicateOfId: original.id },
+    });
+    // The move, not yet committed, while the board is deleted.
+    let commit = () => {};
+    let moved = () => {};
+    const isMoved = new Promise<void>((resolve) => (moved = resolve));
+    const moving = prisma.$transaction(
+      async (tx) => {
+        await tx.post.update({ where: { id: original.id }, data: { boardId: bugs.id } });
+        moved();
+        await new Promise<void>((resolve) => (commit = resolve));
+      },
+      { timeout: 20_000 },
+    );
+    await isMoved;
+    const deleting = deleteBoard(project.slug, bugs.id);
+    await vi.waitFor(
+      async () => {
+        const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+        expect(waiting).toBeGreaterThan(0);
+      },
+      { timeout: 10_000, interval: 25 },
+    );
+    commit();
+    await moving;
+    expect(await deleting).toEqual({ error: "Only empty boards can be deleted. Move its posts to another board first." });
+    expect(await prisma.post.findUniqueOrThrow({ where: { id: original.id }, select: { boardId: true } })).toEqual({ boardId: bugs.id });
+  });
+
   test("a merged post's original on the same board keeps the board", async () => {
     await createBoard(project.slug, {}, board({ slug: "bugs" }));
     const author = project.team[0]!.userId;
