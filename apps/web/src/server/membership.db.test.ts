@@ -54,7 +54,7 @@ test("each project counts where work waits: open conversations, posts to triage,
   expect(mine).toMatchObject({ slug: project.slug, openConversations: 1, toTriage: 2, changesWaiting: 3 });
 });
 
-test("each project's logos from Customize → Branding, for the project switcher; none without one", async () => {
+test("the project switcher shows the logos from Customize → Branding, or the favicon where the logo is wide", async () => {
   const s3 = await startS3Fake();
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
@@ -64,9 +64,21 @@ test("each project's logos from Customize → Branding, for the project switcher
     const project = await createProject(owner);
     expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: null, logoDark: null });
 
-    const logo = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width: 600, height: 200 } });
-    await prisma.project.update({ where: { id: project.id }, data: { brandLogoId: logo.id } });
-    expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: lastingMediaUrl(imageKey(logo.id, 480)), logoDark: null });
+    const image = (width: number, height: number) =>
+      prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width, height } });
+    const url = (media: { id: string }) => lastingMediaUrl(imageKey(media.id, 480));
+    const brand = (data: { brandLogoId?: string; brandLogoDarkId?: string; brandFaviconId?: string }) =>
+      prisma.project.update({ where: { id: project.id }, data });
+    const [logo, dark, wide, favicon] = [await image(600, 400), await image(600, 400), await image(600, 200), await image(600, 600)];
+
+    await brand({ brandLogoId: logo.id, brandLogoDarkId: dark.id, brandFaviconId: favicon.id });
+    expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: url(logo), logoDark: url(dark) });
+    // A wordmark three times as wide as it's tall would be a sliver in a square: the favicon instead.
+    await brand({ brandLogoId: wide.id });
+    expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: url(favicon), logoDark: null });
+    // Without a favicon, the initial.
+    await prisma.project.update({ where: { id: project.id }, data: { brandFaviconId: null } });
+    expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: null, logoDark: null });
   } finally {
     vi.unstubAllEnvs();
     await s3.close();

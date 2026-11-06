@@ -69,7 +69,7 @@ export type ProjectSummary = {
   name: string;
   role: TeamRole;
   portalUrl: string;
-  /** Its logo from Customize → Branding (one for dark mode too), else its initial shows. */
+  /** Its logo from Customize → Branding (one for dark mode too), or its favicon where the logo is wide; else its initial shows. */
   logo: string | null;
   logoDark: string | null;
   openConversations: number;
