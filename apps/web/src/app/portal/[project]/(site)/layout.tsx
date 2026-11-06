@@ -21,6 +21,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
 import { appUrl, portalUrl, resolveHost } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
+import { portalWidgetSrc } from "@/lib/widget-loader";
 import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { branding } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
@@ -161,7 +162,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalFooter />
         {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new. */}
         {/* The project's own widget, for readers who may read the portal; a full load once that or who's reading changes. */}
-        {widgetHere && <PortalWidget src={`${appUrl().origin}/widget.js`} slug={slug} base={base} shown={canRead} viewer={session?.user.id ?? null} />}
+        {widgetHere && <PortalWidget src={portalWidgetSrc(appUrl().origin, base)} slug={slug} base={base} shown={canRead} viewer={session?.user.id ?? null} />}
         </PortalMenuProvider>
         </WithAssistant>
       </PortalLookProvider>

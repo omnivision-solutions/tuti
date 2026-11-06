@@ -70,6 +70,18 @@ import {
  * what it shows now (What's new marks what's unread, Home counts it). A private portal's latest announcement
  * comes from there too, for someone signed in who may read the portal; nobody else's dot lights for it.
  */
+/**
+ * The query on widget.js for the portal's own tag under a path (data-base): a URL no loader from before data-base was
+ * cached under (widget.js is cached for an hour, e.g. from the app's own widget on tuti.so). Served with a short cache
+ * (app/widget.js/route.ts), so a rolling deploy's old server can't pin the old loader under it for long either.
+ */
+export const WIDGET_BASE_PARAM = "v";
+
+/** The portal's own tag's widget.js on the app (`appOrigin`): under a path (`base`), the marked URL. */
+export function portalWidgetSrc(appOrigin: string, base: string): string {
+  return `${appOrigin}/widget.js${base ? `?${WIDGET_BASE_PARAM}=base` : ""}`;
+}
+
 export function widgetLoader(portalTemplate: string): string {
   return `(function () {
   "use strict";

@@ -31,6 +31,8 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   await owner.waitForURL(`${own}/docs`);
   // The project's own widget: its panel is the path's /widget, on the app's domain where they're signed in.
   await expect(owner.locator("script[data-on-portal]")).toHaveAttribute("data-base", `/${APP_PORTAL_SLUG}`);
+  // From a URL the app's own widget never cached an older loader under (it ignored data-base).
+  await expect(owner.locator("script[data-on-portal]")).toHaveAttribute("src", `${APP_URL}/widget.js?v=base`);
   await owner.getByRole("button", { name: "Feedback" }).click();
   await expect(owner.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${own}/widget`);
   await expect(owner.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" })).toBeVisible();

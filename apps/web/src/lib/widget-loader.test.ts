@@ -1,7 +1,9 @@
 import { expect, test, vi } from "vitest";
 
 import { WIDGET_ICONS } from "./widget-icons";
-import { widgetLoader } from "./widget-loader";
+import { GET } from "@/app/widget.js/route";
+
+import { portalWidgetSrc, widgetLoader } from "./widget-loader";
 
 test("the loader is valid JavaScript with the portal template and the slug check built in", () => {
   const script = widgetLoader("https://{project}.tuti.example");
@@ -387,6 +389,16 @@ test("the portal's own tag (data-on-portal): the panel is the page's own address
   site.Tuti.open();
   expect(site.frame!.src).toBe("https://acme.tuti.example/widget");
   expect((site.window.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url))).toContain("https://app.tuti.example/api/widget/latest?project=acme");
+});
+
+test("the portal's own tag under a path loads widget.js from a URL no older loader was cached under, cached briefly", () => {
+  expect(portalWidgetSrc("https://app.tuti.example", "")).toBe("https://app.tuti.example/widget.js");
+  expect(portalWidgetSrc("https://app.tuti.example", "/help")).toBe("https://app.tuti.example/widget.js?v=base");
+  vi.stubEnv("PORTAL_URL_TEMPLATE", "https://{project}.tuti.example");
+  const cache = (url: string) => GET(new Request(url)).headers.get("cache-control");
+  expect(cache("https://app.tuti.example/widget.js")).toBe("public, max-age=3600");
+  expect(cache("https://app.tuti.example/widget.js?v=base")).toBe("public, max-age=60");
+  vi.unstubAllEnvs();
 });
 
 test("the portal under a path of the team's site (data-base): its panels are that path's /widget, tokens still go to the page's origin", async () => {
