@@ -62,8 +62,8 @@ export const reached = (reach: ChangelogReach) => reach === "gets" || reach === 
 
 /**
  * SQL: who an entry goes to, as `s`: the project's subscribers confirmed by the time it was published with Email
- * subscribers (`emailedAt`) that changelogReach reaches, on a public portal and not opted out (paused still counts:
- * the job itself waits while the project's email is paused). `unsentOf`: of those, the ones with no email of that
+ * subscribers (`emailedAt`) that changelogReach reaches, on a public portal and not opted out (paused still counts here:
+ * the job waits while the project's email is paused, and the editor's counts are 0 then). `unsentOf`: of those, the ones with no email of that
  * entry sent yet. The sender reads its rows and the editor counts them, both from this.
  */
 const audienceSql = (projectId: string, emailedAt: Date, unsentOf?: string) => Prisma.sql`
@@ -93,7 +93,8 @@ async function audienceSize(...args: Parameters<typeof audienceSql>) {
  */
 export async function subscriberCount(projectId: string): Promise<number | null> {
   const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
-  return portalAccess === "PUBLIC" ? audienceSize(projectId, new Date()) : null;
+  // While the project's email is paused nothing is: the resume lets what it held go.
+  return portalAccess !== "PUBLIC" ? null : (await projectEmailWaits(projectId)) ? 0 : audienceSize(projectId, new Date());
 }
 
 /**
@@ -106,7 +107,9 @@ export async function subscribersLeft(entryId: string): Promise<number> {
     select: { projectId: true, subscribersEmailedAt: true, subscribersEmailDueAt: true },
   });
   // audienceSql (changelogReach) leaves out a private portal's: none are left there.
-  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt ? audienceSize(entry.projectId, entry.subscribersEmailedAt, entryId) : 0;
+  return entry.subscribersEmailedAt && entry.subscribersEmailDueAt && !(await projectEmailWaits(entry.projectId))
+    ? audienceSize(entry.projectId, entry.subscribersEmailedAt, entryId)
+    : 0;
 }
 
 /**

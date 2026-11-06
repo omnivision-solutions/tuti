@@ -390,7 +390,8 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
     {
       reach: "paused",
       page: "The changelog entries {name} emails to subscribers go to {email} once {name}'s emails, paused for now, are resumed.",
-      emailed: true,
+      // Not while it's paused: the resume lets what it held go.
+      emailed: false,
       make: () => prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } }),
     },
     { reach: "unconfirmed", page: "You're unsubscribed", emailed: false, make: ({ token }) => unsubscribe(token) },
@@ -409,7 +410,7 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
     expect(await subscriberCount(project.id)).toBe(emailed === null ? null : emailed ? 1 : 0);
   });
 
-  test("the editor's counts are the sender's audience, counted in the database: paused, private, unconfirmed, opted out, already sent", async () => {
+  test("the editor's counts are the sender's audience, counted in the database: paused (none), private, unconfirmed, opted out, already sent", async () => {
     vi.stubEnv("PLANS", "on");
     // Every query the counts make returns a row at most: no subscriber's row leaves the database to be counted.
     const queries = vi.spyOn(prisma, "$queryRaw");
@@ -430,13 +431,16 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
     await confirmed(lee);
     expect(await count(subscriberCount(project.id))).toBe(2);
 
-    // Paused: still who it's for; the job waits.
+    // Paused: nobody's emailed (the resume lets what it held go), so the editor promises nobody.
     await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
-    expect(await count(subscriberCount(project.id))).toBe(2);
+    expect(await count(subscriberCount(project.id))).toBe(0);
     await publishEntry("Dark mode");
     const { id: entryId } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(await count(subscribersLeft(entryId))).toBe(0);
+    // Back on with the entry still due (as if it never paused): both are left.
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: null } });
     expect(await count(subscribersLeft(entryId))).toBe(2);
-    // Already sent to Kim (a run before the pause): Lee is left.
+    // Already sent to Kim: Lee is left.
     const kimId = (await prisma.changelogSubscriber.findFirstOrThrow({ where: { projectId: project.id, email: kim } })).id;
     await prisma.changelogEmail.create({ data: { entryId, subscriberId: kimId, sentAt: new Date() } });
     expect(await count(subscribersLeft(entryId))).toBe(1);
@@ -1031,13 +1035,21 @@ describe("the project's email limits", () => {
     await confirmed(kim);
     const pausedAt = new Date();
     await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt } });
-    await publishEntry("Dark mode");
+    // The editor doesn't promise it: nobody's to be emailed while it's paused.
+    expect(await subscriberCount(project.id)).toBe(0);
+    const number = await publishEntry("Dark mode");
+    const held = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } });
+    expect(await subscribersLeft(held.id)).toBe(0);
+    // One taken off the portal keeps its emails for when it's published again.
+    const kept = await publishEntry("Light mode");
+    await call(unpublishChangelogEntry, team(), { number: kept });
     // An hour on, the operator resumes it.
     vi.setSystemTime(Date.now() + 60 * 60_000);
     expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
     vi.setSystemTime(Date.now() + 15 * 60_000);
     await handlers.resubmitChangelogEmails({}, log);
     expect(entryEmailsTo(kim)).toEqual([]);
+    expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: kept } })).subscribersEmailDueAt).not.toBeNull();
   });
 });
 
@@ -1252,7 +1264,8 @@ describe("the Account's changelog switch", () => {
       const reach = await changelogReach(project.id, { email, confirmed: subscriber?.confirmedAt != null });
       expect(reach).toBe(expected);
       expect((await changelogSwitch())?.on).toBe(reached(reach));
-      expect(await subscriberCount(project.id)).toBe(reached(reach) ? 1 : 0);
+      // The editor's count: none while paused (the resume lets what it held go).
+      expect(await subscriberCount(project.id)).toBe(reach === "gets" ? 1 : 0);
     };
     await check("unconfirmed");
     expect(await setEmailPreference(project.slug, "changelog", true)).toEqual({});

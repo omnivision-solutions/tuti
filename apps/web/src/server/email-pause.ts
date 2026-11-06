@@ -25,7 +25,11 @@ export async function resumeEmailSending(token: string): Promise<FormState> {
     if (count === 1) {
       // What the pause held to many people (changelog entries, posts' shipped emails, replies' emails to voters) isn't sent:
       // they went to the list that bounced or complained. Replies to a conversation still go: someone's waiting on them.
-      await tx.changelogEntry.updateMany({ where: { projectId: pause.projectId, subscribersEmailDueAt: { not: null } }, data: { subscribersEmailDueAt: null } });
+      // Published ones only: an unpublished entry keeps what's left of its emails for when it's published again.
+      await tx.changelogEntry.updateMany({
+        where: { projectId: pause.projectId, publishedAt: { not: null }, subscribersEmailDueAt: { not: null } },
+        data: { subscribersEmailDueAt: null },
+      });
       await tx.post.updateMany({ where: { projectId: pause.projectId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: null } });
       await tx.comment.updateMany({ where: { projectId: pause.projectId, votersEmailDueAt: { not: null } }, data: { votersEmailDueAt: null } });
       // The cap's count (claimed) stays: it's today's either way.

@@ -35,7 +35,7 @@ export const emailPausedEmail = (props: PausedProps & { portalUrl: string; url: 
 
 /** What the team is told of a pause (its email, Settings → Inbox and email), from its reason: bounces or complaints. */
 export const pausedNotice = (reason: string) =>
-  `Email sending is paused because of ${reason.includes("spam") ? "too many spam reports" : "a high bounce rate"}. An admin needs to review it before sending can be enabled again.`;
+  `Email sending is paused because of ${reason.includes("spam") ? "too many spam reports" : "a high bounce rate"}. We need to review it before sending can be enabled again.`;
 
 /** To the project's owners and admins: its email was paused, and what that means. */
 export function EmailPausedTeamEmail({ projectName, reason, url }: PausedProps & { url: string }) {

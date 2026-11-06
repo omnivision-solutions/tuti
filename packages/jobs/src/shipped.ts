@@ -105,7 +105,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   // Only while it's still shipped (the team may have reopened it since) and not merged away; never for sample content
   // (Home's "Add sample content"), whatever completed it.
   const post = await prisma.post.findFirst({
-    where: { id: postId, status: "COMPLETED", duplicateOfId: null, sample: false },
+    // Only while its emails are due: a resume lets a pause's go (apps/web/src/server/email-pause.ts), even of a run queued before.
+    where: { id: postId, status: "COMPLETED", duplicateOfId: null, sample: false, shippedEmailsDueAt: { not: null } },
     select: {
       number: true,
       title: true,

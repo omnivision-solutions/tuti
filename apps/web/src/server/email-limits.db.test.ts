@@ -170,7 +170,7 @@ test("too many bounces pause the project's email: replies and shipped wait, sign
   expect(toOperator!.text).toContain("2.0% of emails bounced in the last 2 weeks (2 of 100)");
   const [toTeam] = emailsTo(owner.email).filter((email) => email.subject.endsWith("is paused"));
   expect(toTeam).toMatchObject({ subject: `Email sending for ${project.name} is paused` });
-  expect(toTeam!.text).toContain("Email sending is paused because of a high bounce rate. An admin needs to review it before sending can be enabled again.");
+  expect(toTeam!.text).toContain("Email sending is paused because of a high bounce rate. We need to review it before sending can be enabled again.");
   expect(toTeam!.replyTo).toContain(OPERATOR);
   // Once: another bounce while it's paused tells nobody again.
   await sesEvent(project.id, "Bounce");
@@ -235,6 +235,9 @@ test("resumed, the posts' and replies' emails the pause held aren't sent: a paus
   });
   await handlers.resubmitShippedEmails({}, log);
   await handlers.resubmitReplyEmails({}, log);
+  // Nor does a run queued before the resume.
+  const { id: postId } = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } } });
+  await handlers.postShipped({ postId }, log);
   expect(emailsTo(voters[1]!.email).filter((email) => email.subject.endsWith("Dark mode"))).toEqual([]);
 });
 
