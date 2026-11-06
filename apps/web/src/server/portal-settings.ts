@@ -12,21 +12,21 @@ import { asAdmin, call } from "./operations/run";
 
 const DENIED = "Only project owners and admins can change who sees the portal";
 
-/** Settings → Portal access (see portal.update). */
+/** Settings → Access (see portal.update). */
 export async function setPortalAccess(projectSlug: string, access: string): Promise<{ error?: string }> {
   return asAdmin(projectSlug, DENIED, (context) =>
     call(updatePortal, context, { access: access as "public" | "private" }),
   );
 }
 
-/** Customize → Navigation (see portal.update). */
+/** Customize → Navigation → Home page (see portal.update). */
 export async function setPortalHome(projectSlug: string, home: string): Promise<{ error?: string }> {
   return asAdmin(projectSlug, "Only project owners and admins can change the portal's home page", (context) =>
     call(updatePortal, context, { home: home as PortalHomePage }),
   );
 }
 
-/** Settings → Portal access → Readers: the form's addresses and domains, separated by commas, spaces or lines (see portalReaders.add). */
+/** Settings → Access → Readers: the form's addresses and domains, separated by commas, spaces or lines (see portalReaders.add). */
 export async function addPortalReaders(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState & { added?: string[]; emailed?: number }> {
   const emails = String(formData.get("emails") ?? "")
     .split(/[\s,;]+/)
@@ -44,7 +44,7 @@ export async function removePortalReader(projectSlug: string, email: string): Pr
 
 const DOMAIN_DENIED = "Only project owners and admins can change the portal's domain";
 
-/** Customize → Address (see domain.set, domain.verify and domain.remove). */
+/** Settings → Domain (see domain.set, domain.verify and domain.remove). */
 export async function saveCustomDomain(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   return asAdmin(projectSlug, DOMAIN_DENIED, (context) => call(setDomain, context, { hostname: String(formData.get("hostname") ?? "") }));
 }
@@ -60,7 +60,7 @@ export async function removeCustomDomain(projectSlug: string): Promise<{ error?:
 const SITE_DENIED = "Only project owners and admins can change where the portal is on your site";
 
 /**
- * Customize → Address → Sub-folder (see site.set, site.verify and site.remove): the address as one
+ * Settings → Domain → Sub-folder (see site.set, site.verify and site.remove): the address as one
  * `url`, or the site and the path as two fields (`site`, `path`), put together.
  */
 export async function saveSite(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
@@ -84,14 +84,14 @@ export async function removeSiteMount(projectSlug: string): Promise<{ error?: st
 
 const REDIRECTS_DENIED = "Only project owners and admins can change the portal's redirects";
 
-/** Customize → Redirects: adds one (see redirects.create). */
+/** Settings → Domain → Redirects: adds one (see redirects.create). */
 export async function saveRedirect(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   return asAdmin(projectSlug, REDIRECTS_DENIED, (context) =>
     call(createRedirect, context, { from: String(formData.get("from") ?? ""), to: String(formData.get("to") ?? "") }),
   );
 }
 
-/** Customize → Redirects: deletes one (see redirects.delete). */
+/** Settings → Domain → Redirects: deletes one (see redirects.delete). */
 export async function removeRedirect(projectSlug: string, id: string): Promise<{ error?: string }> {
   return asAdmin(projectSlug, REDIRECTS_DENIED, (context) => call(deleteRedirect, context, { id: String(id) }));
 }

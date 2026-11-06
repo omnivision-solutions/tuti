@@ -32,7 +32,7 @@ const SITE_PATH_DOCS = "https://github.com/omnivision-solutions/tuti/blob/main/d
 type Site = { url: string; status: "pending" | "verified"; forward: { from: string; to: string }[] };
 
 /**
- * Customize → Address → Sub-folder (see the site.* operations): the portal under a path of the
+ * Settings → Domain → Sub-folder (see the site.* operations): the portal under a path of the
  * team's own site (yourcompany.com/help). They set the site and the path, make their site forward
  * them to Tuti (a guide per platform, with their own rules written out), and check it.
  */

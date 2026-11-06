@@ -6,7 +6,7 @@ import { getMembership } from "@/server/membership";
 
 /**
  * A pull request's page before Autopilot reviewed by post and article (links in emails sent then): its activity page
- * now. An email's Edit (`?select=<update id>`, one of its updates) opens that update's review with it ticked.
+ * now. An email's Edit then (`?select=<update id>`, one of its updates) opens that update's review.
  */
 export default async function CodeChangePage(props: PageProps<"/app/[project]/autopilot/[id]">) {
   const [{ project, id }, searchParams] = await Promise.all([props.params, props.searchParams]);
@@ -22,7 +22,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
     });
     const path = action && reviewPath(action);
     if (path) {
-      redirect(`/app/${project}/autopilot/${path}?select=${encodeURIComponent(select)}`);
+      redirect(`/app/${project}/autopilot/${path}`);
     }
   }
   const query = new URLSearchParams(Object.entries(searchParams).flatMap(([name, value]) => (typeof value === "string" ? [[name, value]] : [])));

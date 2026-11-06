@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 import { redirectKey } from "@/lib/portal-redirects";
 
 /**
- * A portal's redirects (Customize → Redirects), for proxy.ts on every portal request: kept for a
+ * A portal's redirects (Settings → Domain → Redirects), for proxy.ts on every portal request: kept for a
  * few seconds per portal. Forgetting them when they change reaches this module's own copy only (the
  * proxy is bundled apart from the app's actions, as with custom domains), so the proxy catches up
  * within CACHE_MS.

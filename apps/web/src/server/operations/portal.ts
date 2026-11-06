@@ -101,7 +101,7 @@ const readerView = (reader: { email: string; createdAt: Date; addedBy: { name: s
 });
 const readerSelect = { email: true, createdAt: true, addedBy: { select: { name: true } } } as const;
 
-/** The private portal's readers by email, newest first (Settings → Portal access, and portalReaders.list). */
+/** The private portal's readers by email, newest first (Settings → Access, and portalReaders.list). */
 export async function portalReaders(projectId: string) {
   const readers = await prisma.portalReader.findMany({ where: { projectId }, orderBy: [{ createdAt: "desc" }, { email: "asc" }], select: readerSelect });
   return readers.map(readerView);

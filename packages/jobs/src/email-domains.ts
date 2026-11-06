@@ -6,7 +6,7 @@ import type { JobLogger, JobResult } from "./index";
 /**
  * Asks SES whether a project's own domain may send (docs/plan.md, Support inbox, item 11), and keeps
  * the answer: verified once SES finds its DKIM records, and no longer when it stops (replies come from
- * the project's support address meanwhile, with why on Settings → Support). Null without SES or a domain.
+ * the project's support address meanwhile, with why on Settings → Inbox and email). Null without SES or a domain.
  */
 export async function checkEmailDomain(projectId: string, now = new Date()) {
   const api = ses();

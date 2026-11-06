@@ -198,7 +198,7 @@ test("“Contact us” is where the project answers messages: Messages in the wi
   expect(await supportContact(project.slug)).toEqual({ messages: true, email: null });
   await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["messages"] } });
   expect(await supportContact(project.slug)).toBeNull();
-  // The project's support address (Settings → Support).
+  // The project's support address (Settings → Inbox and email).
   await prisma.mailSubdomain.create({ data: { projectId: project.id, subdomain: "acme" } });
   expect(await supportContact(project.slug)).toEqual({ messages: false, email: "support@acme.mail.tuti.example" });
   // The team's own address, once an email forwarded from it has come through.

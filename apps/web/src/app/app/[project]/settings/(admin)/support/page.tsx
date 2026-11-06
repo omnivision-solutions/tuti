@@ -13,7 +13,7 @@ import { oneClickDns } from "@/server/domain-connect";
 import { getAdminProject } from "@/server/membership";
 import { supportSettings } from "@/server/operations/support";
 
-/** Settings → Support: the support inbox (docs/plan.md, Support inbox), and its email address where the server receives email. */
+/** Settings → Inbox and email: the support inbox (docs/plan.md, Support inbox), and its email address where the server receives email. */
 export default async function SupportSettingsPage(props: PageProps<"/app/[project]/settings/support">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);

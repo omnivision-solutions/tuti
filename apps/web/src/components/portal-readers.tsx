@@ -27,7 +27,7 @@ type Reader = { email: string; addedAt: string; addedBy: string | null };
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
- * Settings → Portal access, on a private portal: the people who may read it by email, besides the
+ * Settings → Access, on a private portal: the people who may read it by email, besides the
  * team and SSO users. Adding them emails each a link to the portal (when email is set up).
  */
 export function PortalReaders({ projectSlug, readers }: { projectSlug: string; readers: Reader[] }) {

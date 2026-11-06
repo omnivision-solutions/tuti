@@ -123,7 +123,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // Nothing in the fixture's docs is close to what was asked: no draft, and the model isn't asked.
   "conversations.suggestReply": () => ({ number: 1 }),
   "conversations.summarize": () => ({ number: 1 }),
-  // Like widget.update: admins only in the app (Settings → Support).
+  // Like widget.update: admins only in the app (Settings → Inbox and email).
   "support.get": () => ({}),
   // Off: the fixture has it on (for docs.escalate), so a refused write would show.
   "support.update": () => ({ inbox: false }),
@@ -153,7 +153,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "branding.get": () => ({}),
   // Like widget.update: admins only in the app (see the authorization matrix).
   "branding.update": () => ({ color: "#5b21b6", headerLinks: [{ label: "Docs", url: "https://docs.example.com" }], poweredBy: true }),
-  // Like branding.update: admins only in the app (Check now, Customize → Branding).
+  // Like branding.update: admins only in the app (Check now, Customize → Branding → Powered by tuti).
   "license.check": () => ({}),
   // Like license.check: admins only in the app (Settings → Usage).
   "usage.get": () => ({ months: 3 }),

@@ -8,7 +8,7 @@ import { mailSubdomain, supportAddress, supportDomain } from "../inbound";
 import { defineOperation, OperationError } from "./define";
 import { requirePlan } from "./plan";
 
-/** The support inbox's settings (Settings → Support; docs/plan.md, Support inbox). */
+/** The support inbox's settings (Settings → Inbox and email; docs/plan.md, Support inbox). */
 
 export const supportSettings = async (projectId: string) => {
   const domain = supportDomain();

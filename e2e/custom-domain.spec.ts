@@ -17,8 +17,8 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  await owner.goto(`/app/${slug}/customize/address`);
-  // Customize → Address: three ways to go live; they pick a domain of their own.
+  await owner.goto(`/app/${slug}/settings/domain`);
+  // Settings → Domain: three ways to go live; they pick a domain of their own.
   await expect(owner.getByRole("radio", { name: /Tuti address/ })).toHaveAttribute("aria-checked", "true");
   await owner.getByRole("radio", { name: /Custom domain/ }).click();
   await owner.getByRole("textbox", { name: "Custom domain" }).fill(domain);
@@ -159,7 +159,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await checkpoint(visitor, "portal-on-custom-domain");
 
   // Removed, it stops answering there.
-  await owner.goto(`/app/${slug}/customize/address`);
+  await owner.goto(`/app/${slug}/settings/domain`);
   // A destructive button, hovered: its text reads on the tint (colours.test.ts holds the contrast).
   await owner.getByRole("button", { name: "Remove domain" }).hover();
   await checkpoint(owner, "settings-custom-domain-remove");

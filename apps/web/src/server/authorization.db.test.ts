@@ -796,7 +796,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const projectId = project.id;
   // A Stripe customer (it had a plan once), for Manage plan; its email paused, for the operator's resume link.
   await prisma.project.update({ where: { id: projectId }, data: { stripeCustomerId: `cus_matrix_${projectId}`, emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" } });
-  // Replies from its own domain, verified (Settings → Support), which SES (the fake) has for it.
+  // Replies from its own domain, verified (Settings → Inbox and email), which SES (the fake) has for it.
   const emailDomain = `${project.slug}.example.com`;
   await prisma.emailDomain.create({ data: { projectId, domain: emailDomain, address: `support@${emailDomain}`, dkimTokens: [], verifiedAt: new Date() } });
   ses.identities.set(emailDomain, { tags: { "tuti-project": projectId }, tokens: [], configurationSet: "tuti-test", verified: true });

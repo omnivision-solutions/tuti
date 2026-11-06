@@ -14,7 +14,7 @@ users keep writing to the address they know.
    providers send a confirmation first; it lands in your Inbox in Tuti. Step by step for Google
    Workspace, Microsoft 365, Zoho Mail, Fastmail, Proton Mail and Cloudflare Email Routing are in the
    help center: [Use your own email address](https://tuti.so/help/docs/own-email-address). With your
-   own address set (Settings → Support → Your own address), Receiving emails names your domain's
+   own address set (Settings → Inbox and email → Your own address), Receiving emails names your domain's
    provider and links its guide.
 3. Send your support address a test email: it shows in the Inbox, and Settings → Inbox and email says when
    the last email came in (and, for your own address, that it's forwarded).
