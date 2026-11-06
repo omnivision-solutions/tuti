@@ -117,9 +117,11 @@ async function emailInvite({ to, role, url, inviter, projectName }: { to: string
 
 /**
  * Sends invites an import made (docs/plan.md, Switching from Featurebase: not sent yet, `sentAt` null), `ids` or all of
- * them, within the day's cap: each gets a new token, the sender as who invited them, and a full week from now, then its
- * email. Claimed as sent first (under the project's lock), so two clicks at once send each once; one whose email fails
- * goes back to not sent.
+ * them, within the day's cap, one at a time: each is claimed in a short transaction under the project's lock (the day's
+ * cap counted there, so sends at once can't share its room; a new token, the sender as who invited them, a full week
+ * from now), then emailed, then the next. So a restart partway leaves at most the one being emailed sent but not
+ * emailed, the rest still waiting to be sent; one whose email fails goes back to not sent, and the run stops there (the
+ * mail server's trouble would be the rest's too). Without email on the server, nothing is emailed: the links come back.
  */
 async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Result & { sent?: number; waiting?: number; links?: { email: string; url: string }[] }> {
   const membership = await getMembership(projectSlug);
@@ -128,50 +130,64 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
     return { error: "Only project owners and admins can send invites" };
   }
   const projectId = membership.project.id;
-  const unsent = { projectId, sentAt: null, acceptedAt: null, revokedAt: null, ...(ids && { id: { in: ids } }) };
-  const claimed = await prisma.$transaction(async (tx) => {
-    await lockProject(tx, projectId);
-    // The day's cap counted under the lock, so two sends at once can't both use the same room.
-    const room = DAILY_INVITE_LIMIT - (await sentToday(projectId, tx));
-    const waiting = await tx.invitation.findMany({ where: unsent, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true, role: true } });
-    // Only roles the sender may give (an import's are all members).
-    const mine = waiting.filter((invitation) => invitation.email && canAssignRole(membership.role, invitation.role)).slice(0, Math.max(room, 0));
-    const now = new Date();
-    const sending = [];
-    for (const invitation of mine) {
-      const token = generateInvitationToken();
-      await tx.invitation.update({ where: { id: invitation.id }, data: { tokenHash: hashInvitationToken(token), sentAt: now, createdById: session.user.id, expiresAt: invitationExpiry(now.getTime()) } });
-      sending.push({ ...invitation, email: invitation.email!, token });
-    }
-    return { sending, waiting: waiting.length - sending.length, capped: room <= sending.length };
-  });
-  if (ids && claimed.sending.length === 0) {
-    return { error: claimed.capped && claimed.waiting > 0 ? DAILY_LIMIT : "That invite was sent already, or removed" };
-  }
-  // No email on this server (no SMTP_HOST): nothing is emailed, so the links are for the sender to pass on, as with
-  // inviting ("for installs without email"). Each is live now, and shown this once.
-  if (!emailConfigured()) {
-    refresh();
-    const links = claimed.sending.map((invitation) => ({ email: invitation.email, url: `${appUrl().origin}/invite/${invitation.token}` }));
-    // As with email: the ones the day's cap held back are said.
-    return { ...(claimed.waiting > 0 && claimed.capped && { error: DAILY_LIMIT }), sent: 0, waiting: claimed.waiting, links };
-  }
+  // Only roles the sender may give (an import's are all members).
+  const roles = (["OWNER", "ADMIN", "MEMBER"] as const).filter((role) => canAssignRole(membership.role, role));
+  const unsent = { projectId, sentAt: null, acceptedAt: null, revokedAt: null, email: { not: null }, role: { in: roles }, ...(ids && { id: { in: ids } }) } satisfies Prisma.InvitationWhereInput;
+  // No email on this server (no SMTP_HOST): the links are for the sender to pass on, as with inviting ("for installs
+  // without email"). Each is live once claimed, and shown this once.
+  const mailing = emailConfigured();
+  const links: { email: string; url: string }[] = [];
   let sent = 0;
-  for (const invitation of claimed.sending) {
-    const url = `${appUrl().origin}/invite/${invitation.token}`;
-    if (await emailInvite({ to: invitation.email, role: invitation.role, url, inviter: session.user, projectName: membership.project.name })) {
-      sent++;
-    } else {
-      // Back to unsent, its expiry too: the release before (which doesn't know sentAt) must not take it as live.
-      await prisma.invitation.updateMany({ where: { id: invitation.id, acceptedAt: null }, data: { sentAt: null, expiresAt: UNSENT_EXPIRY } });
+  let capped = false;
+  let failed = false;
+  for (;;) {
+    const claim = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      if ((await sentToday(projectId, tx)) >= DAILY_INVITE_LIMIT) {
+        return "capped" as const;
+      }
+      const invitation = await tx.invitation.findFirst({ where: unsent, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true, role: true } });
+      if (!invitation) {
+        return null;
+      }
+      const token = generateInvitationToken();
+      const now = new Date();
+      await tx.invitation.update({ where: { id: invitation.id }, data: { tokenHash: hashInvitationToken(token), sentAt: now, createdById: session.user.id, expiresAt: invitationExpiry(now.getTime()) } });
+      return { ...invitation, email: invitation.email!, url: `${appUrl().origin}/invite/${token}` };
+    });
+    if (claim === "capped") {
+      capped = true;
+      break;
     }
+    if (!claim) {
+      break;
+    }
+    if (!mailing) {
+      links.push({ email: claim.email, url: claim.url });
+      continue;
+    }
+    let emailed = false;
+    try {
+      emailed = await emailInvite({ to: claim.email, role: claim.role, url: claim.url, inviter: session.user, projectName: membership.project.name });
+    } catch (error) {
+      log.error("Sending the invite email failed", { error });
+    }
+    if (emailed) {
+      sent++;
+      continue;
+    }
+    // Back to unsent, its expiry too: the release before (which doesn't know sentAt) must not take it as live.
+    await prisma.invitation.updateMany({ where: { id: claim.id, acceptedAt: null }, data: { sentAt: null, expiresAt: UNSENT_EXPIRY } });
+    failed = true;
+    break;
   }
   refresh();
-  const waiting = claimed.waiting + claimed.sending.length - sent;
-  if (sent < claimed.sending.length) {
-    return { error: `Couldn't email ${claimed.sending.length - sent === 1 ? "an invite" : `${claimed.sending.length - sent} invites`}: try again in a moment.`, sent, waiting };
+  const waiting = await prisma.invitation.count({ where: unsent });
+  if (ids && sent + links.length === 0 && !failed) {
+    return { error: capped && waiting > 0 ? DAILY_LIMIT : "That invite was sent already, or removed" };
   }
-  return waiting > 0 && claimed.capped ? { error: DAILY_LIMIT, sent, waiting } : { sent, waiting };
+  const error = failed ? "Couldn't email an invite: try again in a moment." : capped && waiting > 0 ? DAILY_LIMIT : null;
+  return { ...(error && { error }), sent, waiting, ...(!mailing && { links }) };
 }
 
 /** Team & roles' Send on an invite an import made: emails it. */

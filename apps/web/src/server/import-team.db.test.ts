@@ -16,6 +16,19 @@ import { homeOverview } from "./home";
 import { pendingInvitationsFor } from "./invitation-lookup";
 import { acceptInvitation, acceptInvitationById, createInvitation, revokeInvitation, sendAllInvitations, sendInvitation } from "./invitations";
 
+// The invite emails, as they are, unless a test runs something before one (to look at the database, or to fail it).
+const emailHook = vi.hoisted(() => ({ before: null as null | ((to: string) => Promise<void>) }));
+vi.mock("@tuti/email", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tuti/email")>();
+  return {
+    ...actual,
+    sendEmail: async (...args: Parameters<typeof actual.sendEmail>) => {
+      await emailHook.before?.(args[0].to);
+      return actual.sendEmail(...args);
+    },
+  };
+});
+
 /**
  * The team from Featurebase (docs/plan.md, Switching from Featurebase, I6): its admins as invitations to the project, not
  * sent, for an owner or admin to send from Team & roles.
@@ -87,11 +100,11 @@ test("left out, and said so: the importer, people on the team (verified), people
   expect(run.counts).toEqual({
     invitations: {
       imported: 1,
-      leftOut: { "for you (you ran the import)": 1, "for people already on the team": 1, "for people already invited": 1, "for admins without an email": 1 },
+      leftOut: { "for whoever ran the import": 1, "for people already on the team": 1, "for people already invited": 1, "for admins without an email": 1 },
     },
   });
   expect(importSummary(run)).toBe(
-    "1 invitation brought across. Left out: 1 invitation for people already invited; 1 invitation for admins without an email; 1 invitation for you (you ran the import); 1 invitation for people already on the team.",
+    "1 invitation brought across. Left out: 1 invitation for people already invited; 1 invitation for whoever ran the import; 1 invitation for admins without an email; 1 invitation for people already on the team.",
   );
   const [made] = (await invitationsOf()).filter((invitation) => invitation.email === fresh);
   expect(made).toMatchObject({ sentAt: null });
@@ -260,6 +273,37 @@ test("an invite whose email fails goes back to not sent, said so, to be sent aga
   expect(await prisma.invitation.findUniqueOrThrow({ where: { id: invitation!.id } })).toMatchObject({ sentAt: null, revokedAt: null, expiresAt: UNSENT_EXPIRY });
   expect(await sendInvitation(project.slug, invitation!.id)).toEqual({ sent: 1, waiting: 0 });
   expect(emailsTo(ada)).toHaveLength(1);
+});
+
+test("Send all claims and emails one invite at a time: one whose email throws goes back to unsent, the run stops, and the rest, never claimed, can still be sent", async () => {
+  admins(newAddress(), newAddress(), newAddress());
+  await importTeam();
+  const order = await prisma.invitation.findMany({ where: { projectId: project.id, sentAt: null }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true } });
+  let calls = 0;
+  let thirdWhileSecond: Date | null | undefined;
+  emailHook.before = async () => {
+    if (++calls === 2) {
+      // Not claimed yet: a restart now would leave it waiting to be sent.
+      thirdWhileSecond = (await prisma.invitation.findUniqueOrThrow({ where: { id: order[2]!.id } })).sentAt;
+      throw new Error("The mail server went away");
+    }
+  };
+  let result;
+  try {
+    result = await sendAllInvitations(project.slug);
+  } finally {
+    emailHook.before = null;
+  }
+  expect(thirdWhileSecond).toBeNull();
+  expect(result).toEqual({ error: "Couldn't email an invite: try again in a moment.", sent: 1, waiting: 2 });
+  const after = await prisma.invitation.findMany({ where: { id: { in: order.map((invitation) => invitation.id) } }, select: { id: true, sentAt: true, expiresAt: true } });
+  const of = (id: string) => after.find((invitation) => invitation.id === id)!;
+  expect(of(order[0]!.id).sentAt).not.toBeNull();
+  expect(of(order[1]!.id)).toMatchObject({ sentAt: null, expiresAt: UNSENT_EXPIRY });
+  expect(of(order[2]!.id).sentAt).toBeNull();
+  expect(emailsTo(order[0]!.email!)).toHaveLength(1);
+  expect(await sendAllInvitations(project.slug)).toEqual({ sent: 2, waiting: 0 });
+  expect(emailsTo(order[1]!.email!, order[2]!.email!)).toHaveLength(2);
 });
 
 test("a big team imported doesn't use up the day's invites: they count only once sent", async () => {

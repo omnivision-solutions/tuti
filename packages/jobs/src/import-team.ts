@@ -18,7 +18,8 @@ type Tx = Prisma.TransactionClient;
 
 /** Why an admin wasn't invited, as the summary says it after "2 invitations". */
 export const TEAM_LEFT_OUT = {
-  you: "for you (you ran the import)",
+  // Stored, and shown to anyone who reads the summary (Home, imports.get): true whoever reads it.
+  you: "for whoever ran the import",
   member: "for people already on the team",
   invited: "for people already invited",
   noEmail: "for admins without an email",
