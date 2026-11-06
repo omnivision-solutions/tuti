@@ -59,10 +59,13 @@ export function pullRequestState(pr: PullRequestRead, diffChars = Infinity) {
  */
 export const DECISION_DIFF_CHARS = 20_000;
 
-/** The diff up to `max` characters, cut before the first file's part that doesn't fit (each starts "--- path ("). */
 /** How much of the room the cut gives up to end at a file's header rather than in the middle of the next file. */
 const HEADER_SLACK = 2_000;
 
+/**
+ * The diff up to `max` characters: it ends before the file that doesn't fit (at its own "--- path (" header) when that
+ * gives up at most HEADER_SLACK characters, else at `max`, inside that file, whose start is then shown.
+ */
 function diffUpTo(diff: string, max: number, paths: string[]) {
   if (diff.length <= max) {
     return diff;
