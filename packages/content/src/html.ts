@@ -62,8 +62,8 @@ const ATTACHMENT_HOST = /(^|\.)featurebase-attachments\.com$/i;
 const INERT = {
   disableJavaScriptEvaluation: true,
   disableJavaScriptFileLoading: true,
-  disableCSSFileLoading: true,
-  disableIframePageLoading: true,
+  enableCSSFileLoading: false,
+  enableIframePageLoading: false,
   disableComputedStyleRendering: true,
 };
 const BLOCKS = "p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote, pre";

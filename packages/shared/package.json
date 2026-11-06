@@ -20,7 +20,7 @@
   "dependencies": {
     "@hatchet-dev/typescript-sdk": "^1.33.2",
     "aws4fetch": "^1.0.20",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tuti/testkit": "workspace:*",

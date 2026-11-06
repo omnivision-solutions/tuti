@@ -13,30 +13,30 @@
   },
   "dependencies": {
     "@hatchet-dev/typescript-sdk": "^1.33.2",
-    "@prisma/adapter-pg": "7.10.0",
-    "@prisma/client": "7.10.0",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.1.1",
     "@tuti/db": "workspace:*",
     "@tuti/jobs": "workspace:*",
     "@tuti/shared": "workspace:*",
     "aws4fetch": "^1.0.20",
-    "happy-dom": "^20.14.6",
+    "happy-dom": "^21.0.4",
     "mailauth": "^8.0.4",
-    "nodemailer": "^10.1.2",
+    "nodemailer": "^10.3.1",
     "pg": "8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sharp": "^0.35.5",
-    "smtp-server": "^3.19.23",
-    "undici": "^7.30.0",
-    "zod": "^4.6.5"
+    "smtp-server": "^3.21.3",
+    "undici": "^7.30.2",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tuti/typescript-config": "workspace:*",
     "@types/node": "^22",
     "@types/smtp-server": "^3.5.13",
-    "tsup": "^8",
+    "tsup": "^9",
     "tsx": "^4",
     "typescript": "^6.0.3"
   }

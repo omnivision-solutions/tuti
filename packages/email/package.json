@@ -21,7 +21,7 @@
     "@react-email/render": "^2.1.1",
     "@tuti/content": "workspace:*",
     "@tuti/shared": "workspace:*",
-    "nodemailer": "^10.1.2",
+    "nodemailer": "^10.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   }
