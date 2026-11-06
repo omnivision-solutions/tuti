@@ -367,7 +367,7 @@ export async function startConversation(
         throw new OperationError(429, "rate_limited", "You've started a lot of conversations today. Try again tomorrow, or add to one you have.");
       }
     }
-    const conversation = await tx.conversation.create({
+    const created = await tx.conversation.create({
       data: {
         projectId,
         number,
@@ -384,6 +384,7 @@ export async function startConversation(
       },
       select: conversationSelect,
     });
+    let conversation = created;
     const message = await tx.conversationMessage.create({
       data: {
         projectId,
@@ -402,6 +403,8 @@ export async function startConversation(
       await start.alongside(tx, conversation.id, message.id);
       // What it wrote with the first message (a received email's attachments) is part of the message announced.
       first = await tx.conversationMessage.findUniqueOrThrow({ where: { id: message.id }, select: messageSelect });
+      // And with the conversation (whether a received email's address is verified): it's announced as it is now.
+      conversation = await tx.conversation.findUniqueOrThrow({ where: { id: conversation.id }, select: conversationSelect });
     }
     // A millisecond apart, so they read in order.
     await tx.conversationMessage.createMany({

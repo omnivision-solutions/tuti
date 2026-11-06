@@ -220,7 +220,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                 <PersonPanel
                   projectId={projectId}
                   slug={slug}
-                  person={conversation}
+                  // Its name as the page shows it: an emailed name only once the address is verified.
+                  person={{ ...conversation, name: person.name }}
                   besides={conversation.number}
                   inbox={{ view, userId: membership.userId }}
                 />
