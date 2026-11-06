@@ -19,6 +19,19 @@ export async function requestTarget(host: string | null): Promise<RequestTarget>
   return slug ? { kind: "portal", slug, customDomain: hostname } : target;
 }
 
+/**
+ * The project whose portal a request's host is (null on the app host, Tuti's own portal under its path
+ * included): what a session started there is bound to (lib/auth.ts, server/session.ts).
+ */
+export async function hostProjectId(host: string | null): Promise<string | null> {
+  const target = await requestTarget(host);
+  if (target.kind !== "portal") {
+    return null;
+  }
+  const project = await prisma.project.findUnique({ where: { slug: target.slug }, select: { id: true } });
+  return project?.id ?? null;
+}
+
 /** A portal on its custom domain says which (its hostname). */
 export type RequestTarget = Exclude<HostTarget, { kind: "portal" }> | { kind: "portal"; slug: string; customDomain?: string };
 

@@ -3,8 +3,22 @@ import { headers } from "next/headers";
 
 import { auth } from "@/lib/auth";
 
+import { hostProjectId } from "./custom-domains";
+
+/**
+ * The session a request's cookie carries, where it counts: one a portal started works on that
+ * portal only (see lib/auth.ts), whatever host the cookie reached. The app's work anywhere.
+ */
+export async function sessionFrom(requestHeaders: Headers) {
+  const session = await auth.api.getSession({ headers: requestHeaders });
+  if (!session?.session.projectId) {
+    return session;
+  }
+  return session.session.projectId === (await hostProjectId(requestHeaders.get("host"))) ? session : null;
+}
+
 export async function getSession() {
-  return auth.api.getSession({ headers: await headers() });
+  return sessionFrom(await headers());
 }
 
 /**

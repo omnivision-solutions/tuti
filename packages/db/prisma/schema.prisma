@@ -96,6 +96,8 @@ model Session {
   userAgent String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The portal's project when a portal started it (lib/auth.ts): it works there only (server/session.ts). Null: the app's.
+  projectId String?
 
   @@unique([token])
   @@index([userId])

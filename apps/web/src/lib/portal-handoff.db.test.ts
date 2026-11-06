@@ -5,8 +5,9 @@ import { GET as startContinue } from "@/app/portal/[project]/(site)/continue/rou
 import { forgetCustomDomain } from "@/server/custom-domains";
 import { getOwnerProject } from "@/server/membership";
 import { continueToPortal } from "@/server/portal-handoff";
-import { getAccountSession } from "@/server/session";
+import { getAccountSession, getSession } from "@/server/session";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { request } from "@/test/next-headers";
 
 import { auth } from "./auth";
 import { HANDOFF_STATE_COOKIE, randomSecret } from "./portal-handoff";
@@ -18,8 +19,10 @@ beforeEach(async () => {
   ada = await signUp("Ada");
   slug = (await createProject(await signUp("Owner"))).slug;
   actAs(ada);
+  request.host = "";
 });
 
+const APP_HOST = "tuti.localhost:3100";
 const portalHost = (projectSlug = slug) => `${projectSlug}.localhost:3100`;
 
 /** Ada confirms "Continue as Ada" on the app host; returns the portal callback URL. */
@@ -150,4 +153,35 @@ test("a session a portal on its team's own site starts doesn't work on the app h
   actAs({ ...ada, cookie: stolen });
   expect(await getAccountSession()).toBeNull();
   expect(await getOwnerProject(own.slug)).toBeNull();
+  request.host = APP_HOST;
+  expect(await getSession()).toBeNull();
+
+  // It's Ada on the portal that started it, and on no other.
+  request.host = portalHost();
+  expect((await getSession())?.user.id).toBe(ada.id);
+  request.host = portalHost(own.slug);
+  expect(await getSession()).toBeNull();
+});
+
+test("signing in with a password on a portal starts a session for that portal only; on the app, one for the app", async () => {
+  const signIn = async (host: string) => {
+    const { headers } = await auth.api.signInEmail({
+      body: { email: ada.email, password: "correct horse battery staple" },
+      headers: new Headers({ host }),
+      returnHeaders: true,
+    });
+    return headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+  };
+  const sessionOn = async (cookie: string, host: string) => {
+    actAs({ ...ada, cookie });
+    request.host = host;
+    return (await getSession())?.user.id ?? null;
+  };
+
+  const portal = await signIn(portalHost());
+  expect(await sessionOn(portal, portalHost())).toBe(ada.id);
+  expect(await sessionOn(portal, APP_HOST)).toBeNull();
+
+  const app = await signIn(APP_HOST);
+  expect(await sessionOn(app, APP_HOST)).toBe(ada.id);
 });

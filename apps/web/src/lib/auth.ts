@@ -8,7 +8,7 @@ import { nextCookies } from "better-auth/next-js";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { magicLink } from "better-auth/plugins/magic-link";
 
-import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
+import { hostProjectId, portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
@@ -116,7 +116,13 @@ export const auth = betterAuth({
   },
   // Continue with Google / GitHub only signs people in: their tokens are never used, and GitHub's (through tuti.so's
   // GitHub App) could read code where the App is installed. So none is kept, and none can be handed out again.
+  // A session started on a portal (signing in there, "Continue as", SSO) is bound to its project: a team runs its
+  // portal's custom domain or site, so can see its cookies there, and the session mustn't work anywhere else.
+  session: { additionalFields: { projectId: { type: "string", required: false, input: false } } },
   databaseHooks: {
+    session: {
+      create: { before: async (session, ctx) => ({ data: { ...session, projectId: await hostProjectId(ctx?.headers?.get("host") ?? null) } }) },
+    },
     // However an address comes to be verified (its link, a sign-in link, an account from Google or GitHub), an import's
     // placeholders for it hand over, in the projects they're on (a password reset is a direct update: it calls it too).
     user: { update: { after: async (user) => void (user.emailVerified && (await handOverPlaceholdersLogged(user.id))) } },
