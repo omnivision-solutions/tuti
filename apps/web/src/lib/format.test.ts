@@ -76,6 +76,8 @@ test("an Inbox row's line beside its subject: not when the subject is it, or was
 
 test("an Inbox row says who wrote its latest message when it isn't the person: the AI, you, or a teammate by first name", () => {
   expect(rowBy({ author: "USER", authorId: "u1", name: "Sam Lee" }, "me")).toBeUndefined();
+  // A colleague they Cc'd replied: not them, so the row says who.
+  expect(rowBy({ author: "USER", authorId: null, name: null, fromAddress: "e2e-bob@acme.example" }, "me")).toBe("e2e-bob@acme.example");
   // An "Ask a person" conversation ends with the AI's answer, not the person's question.
   expect(rowBy({ author: "AI", authorId: null, name: null }, "me")).toBe("AI");
   expect(rowBy({ author: "TEAM", authorId: "me", name: "Olive Owner" }, "me")).toBe("You");

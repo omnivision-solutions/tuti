@@ -222,12 +222,12 @@ async function userWithAddress(projectId: string, address: string): Promise<stri
  * not the zero-width joiners Persian, Indic and emoji names spell with.
  */
 function fromName(mail: Mail) {
-  const name = mail.from?.value[0]?.name
+  const cleaned = mail.from?.value[0]?.name
     ?.normalize("NFKC")
     .replace(/(?![\u200C\u200D])[\p{Cc}\p{Cf}]/gu, "")
-    .trim()
-    .slice(0, 100)
     .trim();
+  // Cut by characters, not UTF-16 units, so an emoji at the cut isn't left in half.
+  const name = cleaned && Array.from(cleaned).slice(0, 100).join("").trim();
   // Something to show: a letter, number, symbol or punctuation once what draws nothing is set aside (joiners, Hangul
   // fillers, variation selectors, a blank braille cell). And no address in it.
   const shown = name?.replace(/[\s\p{Default_Ignorable_Code_Point}\u2800]/gu, "");

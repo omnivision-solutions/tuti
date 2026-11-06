@@ -118,10 +118,10 @@ function messageView(row: MessageRow) {
  */
 export async function latestMessages(ids: string[]) {
   const rows = ids.length
-    ? await prisma.$queryRaw<{ conversationId: string; body: string; author: MessageAuthor; authorId: string | null; name: string | null }[]>`
-        SELECT c.id AS "conversationId", m.body, m.author, m."authorId", u.name FROM unnest(${ids}::text[]) AS c(id)
+    ? await prisma.$queryRaw<{ conversationId: string; body: string; author: MessageAuthor; authorId: string | null; name: string | null; fromAddress: string | null }[]>`
+        SELECT c.id AS "conversationId", m.body, m.author, m."authorId", u.name, m."fromAddress" FROM unnest(${ids}::text[]) AS c(id)
         CROSS JOIN LATERAL (
-          SELECT left(body, 1000) AS body, author, "authorId" FROM conversation_message
+          SELECT left(body, 1000) AS body, author, "authorId", "fromAddress" FROM conversation_message
           WHERE "conversationId" = c.id AND NOT note ORDER BY "createdAt" DESC, id DESC LIMIT 1
         ) m
         LEFT JOIN "user" u ON u.id = m."authorId"`
