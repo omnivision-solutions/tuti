@@ -1,7 +1,7 @@
 import { resetCodeChangesSettings } from "@tuti/shared";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { confidence, gateResult, namedPosts, postProposal, pullRequestState, thresholds } from "./code-change-decisions";
+import { confidence, DECISION_DIFF_CHARS, gateResult, namedPosts, postProposal, postState, pullRequestState, thresholds } from "./code-change-decisions";
 
 const effect = (probabilities: Record<string, number>) => ({ effect: { type: "choice" as const, choice: "", probabilities } });
 
@@ -75,4 +75,15 @@ test("the decision model's copy of the diff: cut before the first file that does
   });
   // One file bigger than the cap: its start.
   expect(pullRequestState(pr, 30).diff).toBe(`${pr.diff.slice(0, 30)}\n[cut at 30 characters]`);
+});
+
+test("each post's decision gets the decision model's copy of a big diff, never the whole of it", () => {
+  const part = (name: string) => `--- src/${name}.ts (modified, +1 -0)\n+${"x".repeat(DECISION_DIFF_CHARS / 2)}`;
+  const files = ["a", "b", "c"].map((name) => ({ path: `src/${name}.ts`, status: "modified", additions: 1, deletions: 0 }));
+  const pr = { title: "T", body: "", labels: [], author: "", mergedAt: "", mergeCommit: null, commits: [], files, diff: [part("a"), part("b"), part("c")].join("\n") };
+  const state = postState(pr, "Dark mode.", { id: "p", number: 7, title: "Dark mode", body: "Please", status: "OPEN", named: false });
+  expect(state.pull_request.diff.length).toBeLessThanOrEqual(DECISION_DIFF_CHARS + 40);
+  expect(state.pull_request.diff).toContain(`[cut at ${DECISION_DIFF_CHARS.toLocaleString("en")} characters]`);
+  expect(state.pull_request.diff).not.toContain("--- src/c.ts");
+  expect(state.pull_request.files).toContain("src/c.ts (modified, not shown: size)");
 });
