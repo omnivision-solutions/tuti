@@ -84,7 +84,13 @@ test("an import in a line, as Home's card says it", () => {
   expect(importBrief(run("running", "contacts"))).toBe("Part 2 of 3: Contacts, 1,300 contacts so far.");
   expect(importBrief(run("running", "posts"))).toBe("Part 3 of 3: Feedback, starting.");
   expect(importBrief(run("failed", "posts", "Featurebase couldn't be reached."))).toBe("Stopped at Feedback. Featurebase couldn't be reached.");
-  expect(importBrief(run("done", null))).toBe("Team, Contacts, and Feedback brought across.");
+  // Only the parts that brought something.
+  expect(importBrief(run("done", null))).toBe("Contacts brought across.");
+  // Importing again: everything already here is left out, page after page, which isn't "starting".
+  const again = (state: string, step: string | null) =>
+    ({ state, step, error: null, parts: ["team", "contacts"], counts: { invitations: { imported: 0, leftOut: { x: 1 } }, contacts: { imported: 0, leftOut: { "already brought across earlier": 1300 } } } }) as never;
+  expect(importBrief(again("running", "contacts"))).toBe("Part 2 of 2: Contacts, nothing new so far.");
+  expect(importBrief(again("done", null))).toBe("Nothing new brought across.");
 });
 
 test("the team needs nothing, and nothing needs it: unticking Contacts leaves it ticked; its invitations are counted in words", () => {

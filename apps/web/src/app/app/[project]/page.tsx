@@ -93,7 +93,8 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             <p role="status" className="sr-only">
               {imported.state === "running" ? importTitle(imported) : `${importTitle(imported)}. ${importSummary(imported)}`}
             </p>
-            <CardAction className="flex flex-wrap justify-end gap-2">
+            {/* Stacked on a phone, so two buttons leave the title room. */}
+            <CardAction className="flex flex-col items-end gap-2 sm:flex-row">
               <ImportDetails projectSlug={slug} run={imported} invitations={homeInvitationsToSend(imported, admin)} />
               {imported.state === "failed" && (
                 <Link href={`/app/${slug}/setup`} className={buttonVariants({ variant: "outline", size: "sm" })}>

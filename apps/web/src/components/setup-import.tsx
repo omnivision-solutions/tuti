@@ -56,7 +56,7 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
           const steps = Object.entries(info.steps as Record<string, string>);
           const at = steps.findIndex(([name]) => name === step);
           const toSendHere = part === "team" && (state === "done" || state === "stopped") && invitations > 0;
-          const said = state === "now" ? (brought ? `${brought} so far.` : "Starting…") : state === "done" || state === "stopped" ? (brought ? `${brought}.` : "Nothing new.") : info.brings;
+          const said = state === "now" ? (brought ? `${brought} so far.` : leftOut ? "Nothing new so far." : "Starting…") : state === "done" || state === "stopped" ? (brought ? `${brought}.` : "Nothing new.") : info.brings;
           return (
             <li key={part} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
               <span className="mt-0.5 shrink-0">{PART_STATE[state].icon}</span>

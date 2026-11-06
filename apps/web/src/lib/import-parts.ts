@@ -198,12 +198,14 @@ export function importBrief(run: ImportView) {
   const at = progress.find(({ state }) => state === "now" || state === "stopped");
   const label = at && IMPORT_PARTS[at.part].label;
   if (run.state === "running") {
-    return at ? `${importAt(run)}: ${label}, ${at.brought ? `${at.brought} so far` : "starting"}.` : "Starting…";
+    return at ? `${importAt(run)}: ${label}, ${at.brought ? `${at.brought} so far` : at.leftOut ? "nothing new so far" : "starting"}.` : "Starting…";
   }
   if (run.state === "failed") {
     return [at && `Stopped at ${label}.`, run.error].filter(Boolean).join(" ");
   }
-  return `${new Intl.ListFormat("en").format(progress.map(({ part }) => IMPORT_PARTS[part].label)) || "Nothing"} brought across.`;
+  // Only the parts that brought something: one that only left things out (all of them already here, on importing again) didn't.
+  const brought = progress.filter((part) => part.brought).map(({ part }) => IMPORT_PARTS[part].label);
+  return brought.length > 0 ? `${new Intl.ListFormat("en").format(brought)} brought across.` : "Nothing new brought across.";
 }
 
 /** How long Home shows an import's result once it ended. */
