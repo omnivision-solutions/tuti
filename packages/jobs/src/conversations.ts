@@ -32,6 +32,7 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
       author: true,
       body: true,
       createdAt: true,
+      fromAddress: true,
       conversation: {
         select: {
           id: true,
@@ -70,7 +71,13 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   });
   const email = conversationEmail({
     projectName: conversation.project.name,
-    from: conversation.user?.name ?? conversation.name ?? conversation.email ?? "Someone",
+    // Who wrote it: someone else on the email thread (a Cc'd colleague) by their address; the person by their account's
+    // name, or the name their email gave with its address beside it (anyone can give any name), or the address.
+    from:
+      message.fromAddress ??
+      conversation.user?.name ??
+      (conversation.name && conversation.email ? `${conversation.name} (${conversation.email})` : conversation.email) ??
+      "Someone",
     // The user's first message is the conversation's start.
     isNew: earlier === 0,
     subject: conversation.subject,

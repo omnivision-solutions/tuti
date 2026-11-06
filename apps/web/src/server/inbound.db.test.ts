@@ -161,7 +161,7 @@ test("an email's From name is who the conversation is with, trimmed and cut shor
   const people = (await conversations(project.id)).map((c) => conversationPerson({ ...c, user: null }).name);
   expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim(), null, null, "Kim Lee", "Mehr\u200Cnaz", null, null, null, `${"x".repeat(99)}\u{1F1EB}\u{1F1F7}`, "Zoe"]);
   // The team's email about it names them too.
-  expect(mailbox.emails.some((email) => email.text.includes("Carlos Mendes started a conversation"))).toBe(true);
+  expect(mailbox.emails.some((email) => email.text.includes("Carlos Mendes (e2e-carlos@example.com) started a conversation"))).toBe(true);
 });
 
 test("auto-replies, bounces, our own mail and loops are kept as ignored, with the reason", async () => {
