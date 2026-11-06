@@ -60,13 +60,18 @@ export function pullRequestState(pr: PullRequestRead, diffChars = Infinity) {
 export const DECISION_DIFF_CHARS = 20_000;
 
 /** The diff up to `max` characters, cut before the first file's part that doesn't fit (each starts "--- path ("). */
+/** How much of the room the cut gives up to end at a file's header rather than in the middle of the next file. */
+const HEADER_SLACK = 2_000;
+
 function diffUpTo(diff: string, max: number, paths: string[]) {
   if (diff.length <= max) {
     return diff;
   }
   // At a file's own header only: a removed line can start "--- " too (a deleted `-- …` SQL comment, a Markdown rule).
-  const end = Math.max(-1, ...paths.map((path) => diff.lastIndexOf(`\n--- ${path} (`, max)));
-  return `${diff.slice(0, end > 0 ? end : max)}\n[cut at ${max.toLocaleString("en")} characters]`;
+  const header = Math.max(-1, ...paths.map((path) => diff.lastIndexOf(`\n--- ${path} (`, max)));
+  // Before the file that doesn't fit, unless that gives up much of the room: then the start of that file instead.
+  const end = header > 0 && max - header <= HEADER_SLACK ? header : max;
+  return `${diff.slice(0, end)}\n[cut at ${max.toLocaleString("en")} characters]`;
 }
 
 export const GATE: Record<string, DecisionQuestion> = {
