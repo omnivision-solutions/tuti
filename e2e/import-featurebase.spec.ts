@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
-import { FAKE_FEATUREBASE_SLOW_KEY } from "@tuti/testkit";
+import { FAKE_FEATUREBASE_KEY, FAKE_FEATUREBASE_SLOW_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl } from "./env";
