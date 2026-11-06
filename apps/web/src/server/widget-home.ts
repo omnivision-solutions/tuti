@@ -65,18 +65,32 @@ async function medianFirstReplyMs(projectId: string, now: Date): Promise<number 
   return row && row.median !== null && Number(row.replies) >= MIN_REPLIES ? row.median * 1000 : null;
 }
 
-/** Up to three of the team, as faces for "Send us a message": the owners first, then whoever joined first. */
-export async function teamFaces(projectId: string) {
-  const faces = (owners: boolean, take: number) =>
+/**
+ * Up to three of the team, as faces for "Send us a message" and atop Messages: who answers, so whoever sent the most
+ * replies in the last 30 days (not notes, sample or spam conversations), then those with a photo, the owners, and whoever
+ * joined first. Shown with photos first, so an initial doesn't sit between them.
+ */
+export async function teamFaces(projectId: string, now = new Date()) {
+  const since = new Date(now.getTime() - REPLY_DAYS * DAY_MS);
+  const [members, replies] = await Promise.all([
+    // ponytail: the whole team, sorted here; a team of hundreds would want this in SQL.
     prisma.teamMember.findMany({
-      where: { projectId, role: owners ? "OWNER" : { not: "OWNER" } },
+      where: { projectId },
       orderBy: { createdAt: "asc" },
-      take,
-      select: { user: { select: { id: true, name: true, image: true } } },
-    });
-  const owners = await faces(true, 3);
-  const others = owners.length < 3 ? await faces(false, 3 - owners.length) : [];
-  return [...owners, ...others].map(({ user }) => user);
+      select: { role: true, user: { select: { id: true, name: true, image: true } } },
+    }),
+    prisma.conversationMessage.groupBy({
+      by: ["authorId"],
+      // Through the project's conversations: messages are indexed by conversation and time, not by project.
+      where: { conversation: { projectId, spam: false, sample: false }, author: "TEAM", note: false, createdAt: { gte: since } },
+      _count: { _all: true },
+    }),
+  ]);
+  const sent = new Map(replies.map((row) => [row.authorId, row._count._all]));
+  // Replies outweigh the rest (a photo and being an owner add at most 3); Array.sort is stable, so the earliest to join wins a tie.
+  const score = ({ role, user }: (typeof members)[number]) => (sent.get(user.id) ?? 0) * 4 + (user.image ? 2 : 0) + (role === "OWNER" ? 1 : 0);
+  const faces = members.sort((a, b) => score(b) - score(a)).slice(0, 3).map(({ user }) => user);
+  return faces.sort((a, b) => Number(!!b.image) - Number(!!a.image));
 }
 
 /** How many of someone's ideas' news Home shows, and from how many days back. */

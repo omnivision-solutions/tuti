@@ -5,7 +5,7 @@ new (the changelog), your docs once you've published articles, and Messages to y
 once you turn the support inbox on (see [Messages](#messages)). It opens at Home: a search
 of your docs first, with the three articles read most across your docs in the last 30 days that
 the visitor may read; then "Send us a message", with up to
-three of your team's faces and "Usually replies in …" (the median time to the team's first
+three of your team's faces (whoever answered most in the last 30 days, then those with a photo) and "Usually replies in …" (the median time to the team's first
 reply over the last 30 days' conversations, once at least five were answered); for people your
 page signs in ([Tuti.identify](sso.md#in-the-widget)), "Hi <first name>" and the news of ideas
 they posted or voted on ("Dark mode is now Planned": moves to Planned, In progress or Completed

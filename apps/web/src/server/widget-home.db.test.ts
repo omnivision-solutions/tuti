@@ -29,10 +29,18 @@ beforeEach(async () => {
 });
 
 let number = 0;
-/** A conversation started `startedAgo`, the user's first message then; the team replying `replyAfter` later (none: unanswered). */
-async function conversation(startedAgo: number, replyAfter: number | null, data: { spam?: boolean; note?: boolean; sample?: boolean } = {}) {
+/** A conversation started `startedAgo`, the user's first message then; the team (`by`) replying `replyAfter` later (none: unanswered). */
+async function conversation(startedAgo: number, replyAfter: number | null, data: { spam?: boolean; note?: boolean; sample?: boolean; by?: string } = {}) {
   const started = ago(startedAgo);
-  const message = (author: "USER" | "TEAM", createdAt: Date, note = false) => ({ projectId: project.id, author, channel: "WIDGET" as const, body: "Hi", createdAt, note });
+  const message = (author: "USER" | "TEAM", createdAt: Date, note = false) => ({
+    projectId: project.id,
+    author,
+    authorId: author === "TEAM" ? data.by : undefined,
+    channel: "WIDGET" as const,
+    body: "Hi",
+    createdAt,
+    note,
+  });
   await prisma.conversation.create({
     data: {
       projectId: project.id,
@@ -200,7 +208,7 @@ test("suggested articles: the three most read lately that whoever's here may ope
   expect((await suggestedArticles(project.slug)).map((a) => a.title)).toEqual(["Pro features", "Inviting your team", "Billing"]);
 });
 
-test("the team's faces: three at most, the owners first, then whoever joined first", async () => {
+test("the team's faces before anyone replies: three at most, the owners first, then whoever joined first", async () => {
   const member = await addMember(project.id, "MEMBER");
   await addMember(project.id, "ADMIN");
   const secondOwner = await addMember(project.id, "OWNER");
@@ -211,6 +219,25 @@ test("after the owners, whoever joined first, whatever their role", async () => 
   const member = await addMember(project.id, "MEMBER");
   const admin = await addMember(project.id, "ADMIN");
   expect((await teamFaces(project.id)).map((face) => face.id)).toEqual([owner.id, member.id, admin.id]);
+});
+
+test("the team's faces: whoever replied most in the last 30 days first, then those with a photo; photos shown first", async () => {
+  const first = await addMember(project.id, "MEMBER");
+  const second = await addMember(project.id, "MEMBER");
+  const pictured = await addMember(project.id, "ADMIN");
+  await prisma.user.update({ where: { id: pictured.id }, data: { image: "https://example.com/face.png" } });
+  await conversation(DAY, MINUTE, { by: second.id });
+  await conversation(DAY, MINUTE, { by: second.id });
+  await conversation(DAY, MINUTE, { by: first.id });
+  // Not replies that count: notes, spam, sample content, too long ago.
+  for (const data of [{ note: true }, { spam: true }, { sample: true }]) {
+    await conversation(DAY, MINUTE, { ...data, by: first.id });
+    await conversation(DAY, MINUTE, { ...data, by: first.id });
+  }
+  await conversation(31 * DAY, MINUTE, { by: first.id });
+  await conversation(31 * DAY, MINUTE, { by: first.id });
+  // Picked: second (2 replies), first (1), then the one with a photo over the owner (none). Shown: the photo first.
+  expect((await teamFaces(project.id, now)).map((face) => face.id)).toEqual([pictured.id, second.id, first.id]);
 });
 
 test("what's new to someone: announcements of the last 30 days published since they last looked, until they've seen them", async () => {
