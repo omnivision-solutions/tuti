@@ -6,6 +6,7 @@ import { expect, type Locator, type Page, type Route, test } from "@playwright/t
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
+import { spendCredits } from "./credits";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, newPerson, png, postFeedback, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
@@ -910,6 +911,20 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await widget.getByRole("textbox", { name: "Message" }).fill("Do you have a status page?");
   await send.click();
   await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Do you have a status page?");
+  await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
+
+  // On, with Messages shown, but the project is out of AI credits (its AI paused): a message goes to the team, not to an
+  // assistant that would only say it's unavailable.
+  await api("/widget", { hidden: [] }, "PATCH");
+  await spendCredits(slug);
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
+  await widget.getByRole("button", { name: "New message" }).click();
+  await widget.getByRole("textbox", { name: "Your email" }).fill(`e2e-paused-${slug}@example.com`);
+  await widget.getByRole("textbox", { name: "Message" }).fill("Can I change my plan?");
+  await send.click();
+  await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Can I change my plan?");
   await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
 
   // The team's conversation for the second question is that question's own: the first isn't in it.

@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { aiPaused } from "@tuti/jobs";
 import { BookOpenIcon, ChevronRightIcon, HouseIcon, LightbulbIcon, MegaphoneIcon, MessageCircleIcon, SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -119,6 +120,10 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         askAPerson: await askAPerson(slug),
       }
     : null;
+  // Messages' AI first (Customize → Widget) where the assistant is here, has docs to answer from, can pass a question to the
+  // team (Ask a person: not with Messages turned off, though the page's own code may still open it), and isn't paused (out
+  // of AI credits, when it would only say it's unavailable).
+  const aiFirst = settings.aiFirst && !!assistant?.askAPerson && project._count.articles > 0 && !(await aiPaused(project.id));
 
   return (
     <PortalBaseProvider base="" slug={slug}>
@@ -174,9 +179,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             collection={typeof collection === "string" ? collection : undefined}
           />
         )}
-        {/* AI first (Customize → Widget) where the assistant is here, has docs to answer from, and can pass a question to the
-            team (Ask a person: not with Messages turned off, though the page's own code may still open it). */}
-        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} aiFirst={settings.aiFirst && !!assistant?.askAPerson && project._count.articles > 0} />}
+        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} aiFirst={aiFirst} />}
         {tab === "feedback" && (
           <Feedback slug={slug} projectId={project.id} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
         )}
