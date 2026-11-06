@@ -1,3 +1,4 @@
+import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { replyEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
@@ -5,6 +6,7 @@ import { type JobInput, plansEnabled } from "@tuti/shared";
 import { cappedProjects, claimProjectEmail } from "./email-limits";
 import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
+import { lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
 import { postAudience } from "./post-audience";
 import { projectEmailWaits, projectSender } from "./project-sender";
@@ -87,6 +89,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
     select: {
       authorId: true,
       body: true,
+      content: true,
       votersEmailDueAt: true,
       author: { select: { name: true } },
       post: {
@@ -126,6 +129,8 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   const origin = await portalAddress(project.slug);
   const sender = await projectSender(projectId);
   const postUrl = portalPostUrl(origin, post);
+  const doc = (comment.content as Doc | null) ?? undefined;
+  const mediaUrls = lastingMediaUrls(doc);
   let emailed = 0;
   let failed = 0;
   let held = false;
@@ -150,6 +155,8 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
           authorName: comment.author.name,
           postTitle: post.title,
           text: comment.body,
+          doc,
+          mediaUrls,
           postUrl,
           unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,
         }),

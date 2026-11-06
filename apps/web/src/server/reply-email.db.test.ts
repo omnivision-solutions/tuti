@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { log } from "@tuti/shared";
+import { startS3Fake } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createComment, createPost } from "@/server/operations/create";
@@ -67,6 +68,33 @@ test("the team's reply with Email voters goes to the post's voters, each once; n
   expect(emailsTo(unverified.email)).toEqual([]);
   // Done: not due any more.
   expect(await prisma.comment.count({ where: { votersEmailDueAt: { not: null } } })).toBe(0);
+});
+
+test("the reply's images are in the email to voters, at lasting links", async () => {
+  const s3 = await startS3Fake();
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
+  try {
+    const voter = await verified("Voter");
+    const { post } = await votedFor(voter);
+    const image = await prisma.media.create({ data: { projectId: project.id, uploaderId: owner.id, size: 10, status: "READY", width: 480, height: 320 } });
+    const content = {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Here's how it looks." }] },
+        { type: "image", attrs: { mediaId: image.id, width: "100", align: "center", alt: "Dark mode", w: 480, h: 320 } },
+      ],
+    };
+    await call(createComment, as(owner.id), { number: post.number, content, emailVoters: true });
+    const [email] = emailsTo(voter.email);
+    expect(email!.text).toContain("Here's how it looks.");
+    expect(email!.html).toContain(`/media/${image.id}/`);
+    expect(email!.html).toContain('alt="Dark mode"');
+  } finally {
+    vi.unstubAllEnvs();
+    await s3.close();
+  }
 });
 
 test("the team's reply form says how many voters it emails, and emails them when switched on", async () => {

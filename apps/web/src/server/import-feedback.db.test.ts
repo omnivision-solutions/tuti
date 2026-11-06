@@ -93,7 +93,8 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
     contacts: { imported: 3, leftOut: {} },
     boards: { imported: 2, leftOut: { "only some people see": 3 } },
     posts: { imported: 5, leftOut: { "only some people see": 3, "hidden from the portal": 1, "waiting for moderation": 1 } },
-    images: { imported: 1, leftOut: { "in comments, which have none in Tuti": 1 } },
+    // The post's and the comment's.
+    images: { imported: 2, leftOut: {} },
     // Each author's own (5), a guest author's among them, and the others' (3); only the guest who isn't the author left out.
     votes: { imported: 8, leftOut: { "by guests": 1 } },
     comments: { imported: 3, leftOut: { "private but not by the team": 1, "deleted or spam": 2, "waiting for moderation": 1, "on posts left out": 1 } },
@@ -156,11 +157,15 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   ]);
   expect(votes.find((vote) => vote.user.name === "Olive Owner")!.user.id).toBe(owner.id);
 
-  // Comments flat and in date order, the reply after the comment it answers; the image left out of one, its text kept.
+  // Comments flat and in date order, the reply after the comment it answers.
   expect(await prisma.comment.findMany({ where: { postId: dark.id }, orderBy: { createdAt: "asc" }, select: { body: true, createdAt: true, votersEmailDueAt: true, author: { select: { name: true } } } })).toEqual([
     { body: "Yes please!", createdAt: new Date("2024-01-11T09:00:00.000Z"), votersEmailDueAt: null, author: { name: "Tobias Quill" } },
     { body: "On our list, thanks!", createdAt: new Date("2024-01-14T09:00:00.000Z"), votersEmailDueAt: null, author: { name: "Fern Former" } },
   ]);
+  // A comment's image is copied, as a post's is.
+  const [withImage] = await prisma.comment.findMany({ where: { postId: dark.id }, orderBy: { createdAt: "asc" }, select: { content: true } });
+  const image = (withImage!.content as { content: { type: string; attrs?: { mediaId: string } }[] }).content.find((node) => node.type === "image");
+  expect(await prisma.media.findUniqueOrThrow({ where: { id: image!.attrs!.mediaId } })).toMatchObject({ projectId: project.id, status: "READY" });
   // The team's private comment is an internal note, the owner's; a user's private one stays out.
   expect(await prisma.postNote.findMany({ where: { postId: dark.id }, select: { body: true, authorId: true, createdAt: true } })).toEqual([
     { body: "Planning it for June.", authorId: owner.id, createdAt: new Date("2024-01-12T09:00:00.000Z") },
@@ -240,7 +245,7 @@ test("past the plan's board limit, a board's posts go into the last board import
   expect(done!.counts).toMatchObject({
     boards: { imported: 2, leftOut: { "only some people see": 3, "past the plan's board limit, their posts in the last board": 1 } },
     posts: { imported: 6 },
-    images: { imported: 0, leftOut: { "with no media storage on this server": 2, "in comments, which have none in Tuti": 1 } },
+    images: { imported: 0, leftOut: { "with no media storage on this server": 3 } },
   });
   expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
   expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Offline mode" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Bugs" } });
@@ -321,18 +326,19 @@ test("past a page's time, what's left of it goes to the next page; one post's im
     handlers.importStep = importStep;
   }
   let counts = (await call(getImport, asOwner(), {})).import!.counts;
-  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { imported: 1 }, avatars: { imported: 2 } });
+  // The post's image and the comment's (comments' pages copy every image: they're never put off).
+  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { imported: 2 }, avatars: { imported: 2 } });
   expect(await prisma.user.count({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } } })).toBe(2);
   // One post a page (Featurebase's 10, 2 to its page: 5 pages without the limit), one avatar a page (else 1).
   expect(pages.filter((step) => step === "posts")).toHaveLength(10);
   expect(pages.filter((step) => step === "avatars")).toHaveLength(2);
 
-  // A page whose first post's images begin past its hard limit leaves them out.
+  // A page whose first post's images begin past its hard limit leaves them out; a comments page's too.
   project = await createProject(owner);
   Object.assign(FEEDBACK_PAGE, { ...limits, hardMs: -1 });
   await importFeedback();
   counts = (await call(getImport, asOwner(), {})).import!.counts;
-  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 1 } } });
+  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 2 } } });
 });
 
 test("profile pictures are copied several at a time; past a page's time, the next page goes on from the last one copied; one picture several contacts share is copied once", async () => {

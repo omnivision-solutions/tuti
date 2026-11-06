@@ -14,6 +14,7 @@ import { fileExtension, fileSize, imageKey, imageWidths } from "./media";
 /**
  * What each kind of content may contain. The editor, the server-side validation
  * and the renderers all derive from these, so they agree on every node and mark.
+ * `comment` is text, links and images; `post` adds lists, code blocks and videos.
  * `changelog` adds headings, quotes and dividers to `post`; `article` (docs)
  * adds tables to `changelog`.
  */
@@ -525,6 +526,7 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
           listKeymap: false,
           codeBlock: false,
         }),
+        ImageNode.configure({ mediaUrl }),
       ];
     case "post":
       return [StarterKit.configure(textOnly), VideoEmbed, ImageNode.configure({ mediaUrl })];

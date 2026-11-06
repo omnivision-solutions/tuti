@@ -155,3 +155,51 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   await checkpoint(ada, "portal-post-with-image");
 });
+
+test("someone comments with a screenshot, and the team replies with one", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto("/");
+  const screenshot = await owner.screenshot();
+
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto("/feedback/feature-requests");
+  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByLabel("Title").fill("Export is broken");
+  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByRole("link", { name: "Export is broken" }).click();
+
+  // The comment box's Image button picks one, as a post's editor does.
+  const comment = ada.getByRole("textbox", { name: "Comment" });
+  await comment.click();
+  await ada.keyboard.type("Here's what I see:");
+  const picker = ada.waitForEvent("filechooser");
+  await ada.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Image" }).click();
+  await (await picker).setFiles({ name: "export.png", mimeType: "image/png", buffer: screenshot });
+  await expect.poll(() => comment.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await ada.getByRole("button", { name: "Comment", exact: true }).click();
+  const shown = ada.getByRole("region", { name: "Comments" }).getByRole("listitem").locator("figure.rich-image img");
+  await expect(shown).toHaveAttribute("srcset", /X-Amz-Signature=/);
+  await expect.poll(() => shown.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await checkpoint(ada, "portal-comment-with-image");
+
+  // The team's reply box takes one too; both show on the team's post page.
+  await owner.goto(`/app/${slug}/p/1`);
+  const reply = owner.getByRole("textbox", { name: "Comment" });
+  await reply.click();
+  await owner.keyboard.type("Fixed, it looks like this now:");
+  const teamPicker = owner.waitForEvent("filechooser");
+  await owner.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Image" }).click();
+  await (await teamPicker).setFiles({ name: "fixed.png", mimeType: "image/png", buffer: screenshot });
+  await expect.poll(() => reply.locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await owner.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(owner.getByText("Fixed, it looks like this now:")).toBeVisible();
+  const images = owner.locator("ol figure.rich-image img");
+  await expect(images).toHaveCount(2);
+  for (const image of await images.all()) {
+    await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  }
+  await checkpoint(owner, "team-reply-with-image");
+});

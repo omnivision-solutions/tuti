@@ -57,18 +57,18 @@ async function recorded(db: Tx, job: ImportJob, kind: string, externalIds: strin
 const remember = (tx: Tx, job: ImportJob, kind: string, externalId: string, localId: string) =>
   tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind, externalId, localId } });
 
-/** Images, files and videos the content left out, and what it copied, counted (`profile`'s rules say why). */
-function countMedia(job: ImportJob, content: HtmlContent, profile: "post" | "comment") {
+/** Images, files and videos the content left out, and what it copied, counted. */
+function countMedia(job: ImportJob, content: HtmlContent) {
   if (content.mediaIds.length > 0) {
     tally(job.counts, "images", null, content.mediaIds.length);
   }
-  content.leftOut.forEach((item: LeftOut) => tally(job.counts, `${item.kind}s`, mediaReason(item.reason, profile)));
+  content.leftOut.forEach((item: LeftOut) => tally(job.counts, `${item.kind}s`, mediaReason(item.reason)));
 }
 
 /** Why an image (or avatar) was left out, after "2 images …". */
-function mediaReason(reason: LeftOutReason, profile?: "post" | "comment"): string {
+function mediaReason(reason: LeftOutReason): string {
   if (reason === "unsupported") {
-    return profile === "comment" ? "in comments, which have none in Tuti" : mediaStorage() ? "Tuti has no place for" : "with no media storage on this server";
+    return mediaStorage() ? "Tuti has no place for" : "with no media storage on this server";
   }
   return { type: "of a type Tuti doesn't take", size: "over the upload limit", quota: "past the project's media quota", unreachable: "that couldn't be fetched" }[reason];
 }
@@ -347,7 +347,7 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
         await remember(tx, job, "post", post.id, created.id);
         tally(job.counts, "posts", null);
         tally(job.counts, "votes", null);
-        countMedia(job, content, "post");
+        countMedia(job, content);
       }
     },
   };
@@ -470,9 +470,13 @@ function commentLeftOut(comment: FeaturebaseComment, posts: Map<string, string>)
 /**
  * Comments, every one at once in date order (a changelog's left alone), joined to their posts by the record map:
  * public ones as comments (flat: a reply follows its thread in time), private ones by the team as internal notes.
- * Tuti's comments have no images, so theirs are left out and counted. commentCount is counted from them.
+ * Their images are copied, as posts' are. commentCount is counted from them.
  */
 async function commentsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
+  const begun = FEEDBACK_PAGE.now();
+  // ponytail: never put off (`Later`): the page's images all copy now, those past the hard limit left out. Rare in
+  // comments; split the page as postsPage does if they make pages run long.
+  const media = timedImporter(job, begun, () => true);
   const page = await job.featurebase.page<FeaturebaseComment>("/comments", cursor, { privacy: "all", sortBy: "old" });
   const items = page.items.filter((comment) => comment.postId);
   const posts = await recorded(prisma, job, "post", items.map((comment) => comment.postId!));
@@ -480,7 +484,7 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
   const fresh = items.filter((comment) => !known.has(comment.id) && !commentLeftOut(comment, posts));
   const contents = new Map<string, HtmlContent | { error: string }>();
   for (const comment of fresh) {
-    contents.set(comment.id, await htmlToContent("comment", comment.content ?? ""));
+    contents.set(comment.id, await htmlToContent("comment", comment.content ?? "", { media }));
   }
   const contacts = await people(job, fresh.map((comment) => comment.author));
   return {
@@ -495,7 +499,7 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
         const content = contents.get(comment.id);
         const postId = posts.get(comment.postId!);
         const leftOut = commentLeftOut(comment, posts) ?? (postId && !live.has(postId) ? "on posts left out" : null);
-        if (leftOut || (content && ("error" in content || !content.text.trim()))) {
+        if (leftOut || (content && ("error" in content || (!content.text.trim() && content.mediaIds.length === 0)))) {
           tally(job.counts, "comments", leftOut ?? (content && "error" in content ? "whose content couldn't be read" : "with nothing left in them"));
           continue;
         }
@@ -512,7 +516,7 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
         await remember(tx, job, "comment", comment.id, created.id);
         touched.push(postId!);
         tally(job.counts, kind, null);
-        countMedia(job, content, "comment");
+        countMedia(job, content);
       }
       await recount(tx, touched);
     },

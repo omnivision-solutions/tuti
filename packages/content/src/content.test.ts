@@ -240,10 +240,12 @@ describe("RichText", () => {
 });
 
 describe("images", () => {
-  test("posts may have uploaded images, sized and aligned; comments may not", () => {
+  test("posts and comments may have uploaded images, sized and aligned; comments no videos", () => {
     const result = parseDoc("post", doc(image()));
     expect(result.ok && result.doc.content?.[0]).toEqual(image());
-    expect(parseDoc("comment", doc(image()))).toMatchObject({ ok: false });
+    const comment = parseDoc("comment", doc(image()));
+    expect(comment.ok && comment.doc.content?.[0]).toEqual(image());
+    expect(parseDoc("comment", doc({ type: "video", attrs: { provider: "youtube", id: "dQw4w9WgXcQ" } }))).toMatchObject({ ok: false });
   });
 
   test.each([
