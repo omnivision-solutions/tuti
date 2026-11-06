@@ -434,9 +434,10 @@ export type FeaturebaseFake = {
   forbidden: Set<string>;
   /**
    * The next `times` API requests answer `status` (e.g. 429, 500), with these response headers (Retry-After,
-   * X-RateLimit-Reset) and `body` as it is (default an error's JSON): a 200 with a cut-off body, an empty page.
+   * X-RateLimit-Reset) and `body` as it is (default an error's JSON): a 200 with a cut-off body, an empty page. With
+   * `path`, only requests to a path it matches fail (the others answer as usual).
    */
-  failNext(status: number, times?: number, headers?: Record<string, string>, body?: string): void;
+  failNext(status: number, times?: number, headers?: Record<string, string>, body?: string, path?: RegExp): void;
   /** Runs between a failing answer's headers and its body (sent a moment later): time passing as the body is read. */
   beforeBody?: () => void;
   /** Lets the slow key's held pages answer (FAKE_FEATUREBASE_SLOW_KEY), and those that come later too. */
@@ -455,7 +456,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     ["welcome.png", { type: "image/png", body: PNG }],
     ["setup-guide.pdf", { type: "application/pdf", body: Buffer.from("%PDF-1.4\n%invented test file\n") }],
   ]);
-  let failing: { status: number; times: number; headers: Record<string, string>; body?: string } | undefined;
+  let failing: { status: number; times: number; headers: Record<string, string>; body?: string; path?: RegExp } | undefined;
   /** The slow key's held pages, each with its fallback timer. */
   const held = new Map<() => void, NodeJS.Timeout>();
   /** Once released, the slow key's pages answer at once: one that arrives after the release isn't held. */
@@ -487,7 +488,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
       held.set(go, timer);
       return;
     }
-    if (failing) {
+    if (failing && (!failing.path || failing.path.test(url.pathname))) {
       const { status, headers, body } = failing;
       failing = --failing.times > 0 ? failing : undefined;
       const text = body ?? JSON.stringify({ error: { type: "api_error", message: "fake failure", status } });
@@ -559,7 +560,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     pageSize: 100,
     requests: [],
     forbidden: new Set(),
-    failNext: (status, times = 1, headers = {}, body) => void (failing = { status, times, headers, body }),
+    failNext: (status, times = 1, headers = {}, body, path) => void (failing = { status, times, headers, body, path }),
     release: () => {
       released = true;
       for (const [go, timer] of held) {

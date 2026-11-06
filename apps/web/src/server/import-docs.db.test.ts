@@ -1,5 +1,5 @@
 import { Prisma, prisma } from "@tuti/db";
-import { contentBudget, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
+import { contentBudget, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -289,6 +289,33 @@ test("an article Featurebase still has that the content pass didn't reach (its l
   expect(await article("Roadmap notes")).toMatchObject({ body: "Not ready yet." });
 });
 
+test("an empty article the team retitled that Featurebase still has, though the content pass missed it, is counted as the team's", async () => {
+  await structureOnly();
+  const roadmap = await article("Roadmap notes");
+  await call(updateArticle, asOwner(), { slug: roadmap.slug, title: "Notes on the roadmap" });
+  // Featurebase's list leaves it out; reading it as a draft finds it.
+  const [welcome, paying, notes, sso] = fake.fixtures.articles;
+  fake.fixtures.articles = [welcome!, paying!, sso!];
+  fake.fixtures.articleDrafts.push(notes!);
+
+  const done = await importDocs();
+  expect(done.counts.articles).toEqual({ imported: 2, leftOut: { "edited here before their text came, so left as they are": 1 } });
+});
+
+test("a check that Featurebase fails (not a 404) counts the article as not reached and never fails the import", async () => {
+  await structureOnly();
+  // The articles' content pass done, as an earlier import's: they're the step's to check.
+  await prisma.importedRecord.updateMany({ where: { projectId: project.id, kind: "article", externalId: { not: "0200003" } }, data: { contentLanded: true } });
+  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["docs"], step: "docs-unreached" } });
+  // Featurebase answers reading that article with a 503, each try.
+  fake.failNext(503, 10, { "Retry-After": "0.01" }, undefined, /^\/v2\/help_center\/articles\/0200003$/);
+
+  await handlers.importStep({ importId: row.id }, { info: () => {}, warn: () => {} });
+  await importsSettled();
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", counts: { articles: { imported: 0, leftOut: { "not reached (import again to bring their text)": 1 } } } });
+  expect(fake.requests.filter((r) => r.startsWith("GET /v2/help_center/articles/0200003"))).toHaveLength(5);
+});
+
 test("an article deleted here before its content came stays deleted; restored, the next import fills it in", async () => {
   await structureOnly();
   const roadmap = await article("Roadmap notes");
@@ -413,7 +440,8 @@ test("collections deeper than five levels fold into their fifth-level ancestor, 
     expect.arrayContaining(Array.from({ length: MAX_COLLECTION_DEPTH }, (_, n) => [`Level ${n + 1}`, n === 0 ? null : `Level ${n}`])),
   );
   expect(await collections()).toHaveLength(MAX_COLLECTION_DEPTH);
-  expect((await articles()).map((a) => [a.title, a.collection?.name])).toEqual([
+  // By title: both are made at once, so their dates can tie.
+  expect((await articles()).map((a) => [a.title, a.collection?.name]).sort()).toEqual([
     ["At the bottom", `Level ${MAX_COLLECTION_DEPTH}`],
     ["At the fifth", `Level ${MAX_COLLECTION_DEPTH}`],
   ]);

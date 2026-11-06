@@ -45,8 +45,8 @@ export const DOCS_STEPS = [
   { name: "docs-unreached", page: unreachedPage },
 ];
 
-/** Articles checked against Featurebase a page at a time, once the content pass is done (unreachedPage). */
-const UNREACHED_PAGE = 50;
+/** Articles checked against Featurebase a page at a time, once the content pass is done (unreachedPage): up to two reads each, within a page's read deadline. */
+const UNREACHED_PAGE = 8;
 
 /** Featurebase's predefined icons (Heroicons' names) that have an obvious Lucide one; the rest are left out. */
 export const FEATUREBASE_ICONS: Record<string, string> = {
@@ -474,7 +474,10 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   };
 }
 
-/** Whether Featurebase still has an article: its draft (every article has one; a never-published one only that), else its live version. */
+/**
+ * Whether Featurebase still has an article: its draft (every article has one; a never-published one only that), else
+ * its live version. Gone only on a 404 for both; any other failure (429, 5xx, the page's deadline) throws.
+ */
 async function stillThere(job: ImportJob, id: string): Promise<boolean> {
   const path = `/help_center/articles/${encodeURIComponent(id)}`;
   for (const query of [{ state: "draft" }, {}]) {
@@ -499,7 +502,8 @@ async function stillThere(job: ImportJob, id: string): Promise<boolean> {
  * import) and that are still empty here, checked against Featurebase a page at a time (by their record, reading with
  * no lock held). Nothing is deleted: one Featurebase no longer has is counted as gone and left as the empty draft it is
  * (the team can delete it); one it still has (its list shifted while the import read it) is counted as not reached and
- * left unlanded, so the next import fills it.
+ * left unlanded, so the next import fills it, or, retitled here, as the team's. A read that fails for another reason
+ * counts it as not reached: this step only reports, so it never fails the import.
  */
 async function unreachedPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const records = await prisma.importedRecord.findMany({
@@ -513,31 +517,36 @@ async function unreachedPage(job: ImportJob, cursor: string | null): Promise<Ste
     },
     orderBy: { id: "asc" },
     take: UNREACHED_PAGE,
-    select: { id: true, externalId: true, localId: true },
+    select: { id: true, externalId: true, localId: true, madeTitle: true },
   });
   // Still empty here (one with text or unpublished changes is the team's; one deleted here, theirs too).
   const empty = await prisma.article.findMany({
     where: { id: { in: records.map((record) => record.localId) }, deletedAt: null, content: { equals: Prisma.DbNull }, changes: { is: null } },
-    select: { id: true },
+    select: { id: true, title: true },
   });
-  let gone = 0;
-  let there = 0;
-  for (const record of records.filter((r) => empty.some((article) => article.id === r.localId))) {
-    if (await stillThere(job, record.externalId)) {
-      there++;
-    } else {
-      gone++;
+  const reasons = new Map<string, string>();
+  for (const record of records) {
+    const article = empty.find((a) => a.id === record.localId);
+    if (!article) {
+      continue;
     }
+    // This step only reports: a read that fails for any other reason than a 404 leaves it as not reached.
+    const there = await stillThere(job, record.externalId).catch(() => true);
+    reasons.set(
+      record.id,
+      !there
+        ? "gone from Featurebase (left as empty drafts)"
+        : record.madeTitle !== null && article.title !== record.madeTitle
+          ? "edited here before their text came, so left as they are"
+          : "not reached (import again to bring their text)",
+    );
   }
   return {
     next: records.length === UNREACHED_PAGE ? records.at(-1)!.id : null,
-    save: async () => {
-      if (gone > 0) {
-        tally(job.counts, "articles", "gone from Featurebase (left as empty drafts)", gone);
-      }
-      if (there > 0) {
-        tally(job.counts, "articles", "not reached (import again to bring their text)", there);
-      }
+    // Each counted once by this import (marked so); a later import checks them again, a page at a time.
+    save: async (tx) => {
+      reasons.forEach((reason) => tally(job.counts, "articles", reason));
+      await tx.importedRecord.updateMany({ where: { id: { in: [...reasons.keys()] } }, data: { countedIn: job.id } });
     },
   };
 }
