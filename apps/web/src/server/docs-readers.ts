@@ -15,7 +15,7 @@ import { escalateFields, escalateQuestion } from "./operations/docs-escalate";
 import { answerFields, saveAnswer } from "./operations/docs-insights";
 import { OperationError } from "./operations";
 import { currentReader, readableProject } from "./portal-access";
-import { getSession } from "./session";
+import { sessionIn } from "./session";
 import type { WidgetAuth } from "./widget-person";
 
 /**
@@ -38,8 +38,8 @@ const BOT = /bot|crawl|spider|slurp|preview/i;
  * across sites. A browser that refuses even that gets a new id per question, which only the
  * project's hourly limit then counts.
  */
-async function readerId(projectSlug: string, widget = false) {
-  const session = await getSession();
+async function readerId(projectId: string, projectSlug: string, widget = false) {
+  const session = await sessionIn(projectId);
   if (session) {
     return session.user.id;
   }
@@ -70,7 +70,7 @@ export async function answerArticle(projectSlug: string, slug: string, helpful: 
     return { error: "Article not found" };
   }
   try {
-    await saveAnswer(project.id, await readerId(String(projectSlug)), input.data, await currentReader(project.id));
+    await saveAnswer(project.id, await readerId(project.id, String(projectSlug)), input.data, await currentReader(project.id));
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
@@ -148,7 +148,7 @@ export async function askDocs(
   try {
     return await answerQuestion(
       project.id,
-      await readerId(String(projectSlug), widget),
+      await readerId(project.id, String(projectSlug), widget),
       input.data.q,
       widget ? "WIDGET" : "PORTAL",
       await currentReader(project.id),
@@ -202,7 +202,7 @@ export async function escalateDocs(
     return { error: "Docs not found" };
   }
   try {
-    const askerId = await readerId(String(projectSlug), from === "widget");
+    const askerId = await readerId(project.id, String(projectSlug), from === "widget");
     const widget = { token: who.token ?? null, visitor: who.visitor ?? null };
     const escalated = await escalateQuestion(project.id, askerId, input.data, await headers(), { widget });
     return { conversation: escalated.conversation, ...(escalated.visitor && { visitor: escalated.visitor }) };

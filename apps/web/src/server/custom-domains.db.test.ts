@@ -4,10 +4,11 @@ import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { auth } from "@/lib/auth";
+import { appUrl } from "@/lib/hosts";
 import { proxy } from "@/proxy";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { requestTarget } from "./custom-domains";
+import { requestTarget, sessionBinding } from "./custom-domains";
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./operations/domain";
 import { updatePortal } from "./operations/portal";
 import { call } from "./operations/run";
@@ -209,4 +210,10 @@ test("off unless the server says where domains point; one added before keeps sho
   });
   expect((await call(getDomain, as(), {})).domain).toMatchObject({ records: [{ type: "TXT" }] });
   await call(removeDomain, as(), {});
+});
+
+test("a session from no host or an unknown one is bound to nothing, so it works nowhere; the app's to the app", async () => {
+  expect(await sessionBinding(null)).toBeNull();
+  expect(await sessionBinding("help.unknown-e2e.example")).toBeNull();
+  expect(await sessionBinding(appUrl().host)).toBe("app");
 });

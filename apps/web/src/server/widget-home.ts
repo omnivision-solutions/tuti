@@ -8,7 +8,7 @@ import { changelogSeenAt, freshSince } from "./operations/changelog-seen";
 import { docsContents, popularArticles } from "./docs-queries";
 import { canReadPortal } from "./portal-access";
 import { ROADMAP } from "./operations/read";
-import { getSession } from "./session";
+import { sessionIn } from "./session";
 
 /**
  * What the widget's Home shows besides links: when the team usually replies, a few of its faces,
@@ -142,7 +142,7 @@ export async function ideaNews(projectId: string, userId: string, now = new Date
  * their ideas. Null for nobody, or someone who may not read the portal. Read per request: never cache it.
  */
 export async function portalReaderHome(projectId: string): Promise<{ name: string | null; news: IdeaNews[] } | null> {
-  const session = await getSession();
+  const session = await sessionIn(projectId);
   if (!session || !(await canReadPortal({ id: projectId }, session.user.id))) {
     return null;
   }

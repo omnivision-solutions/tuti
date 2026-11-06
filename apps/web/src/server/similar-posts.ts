@@ -7,7 +7,7 @@ import { z } from "zod";
 import { widgetUser } from "@/lib/widget-session";
 
 import { readableProject } from "./portal-access";
-import { getSession } from "./session";
+import { sessionIn } from "./session";
 
 export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string; boardSlug: string; voted: boolean };
 
@@ -45,7 +45,7 @@ export async function findSimilarPosts(projectSlug: string, title: string, widge
     ...byWords.filter((p) => !both.has(p.id)),
   ];
   const shown = ranked.slice(0, LIMIT);
-  const userId = widgetToken ? widgetUser(project.id, String(widgetToken)) : (await getSession())?.user.id;
+  const userId = widgetToken ? widgetUser(project.id, String(widgetToken)) : (await sessionIn(project.id))?.user.id;
   const votes = userId && shown.length > 0 ? await prisma.vote.findMany({ where: { userId, postId: { in: shown.map((post) => post.id) } }, select: { postId: true } }) : [];
   return shown.map((post) => ({ ...post, voted: votes.some((vote) => vote.postId === post.id) }));
 }

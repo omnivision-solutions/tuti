@@ -93,6 +93,8 @@ test("the email has a link to a page that asks to confirm, then signs a new addr
   const { location, user } = await confirm(link);
   expect(location).toBe("/");
   expect(user).toMatchObject({ email, name: email.split("@")[0], emailVerified: true });
+  // The session works on this portal only (lib/auth.ts).
+  expect(await prisma.session.findFirst({ where: { userId: user!.id }, select: { boundTo: true } })).toEqual({ boundTo: project.id });
 
   // Used once: confirming again fails, and the page now sends them to ask for a new one.
   expect(await confirm(link)).toEqual({ location: FAILED, user: null });

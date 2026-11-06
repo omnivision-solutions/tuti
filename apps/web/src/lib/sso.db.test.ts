@@ -11,6 +11,7 @@ import { createProject as createProjectAction } from "@/server/projects";
 import { getSession } from "@/server/session";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
+import { request } from "@/test/next-headers";
 
 import { hashInvitationToken } from "@tuti/jobs";
 import { generateSsoSecret } from "./sso";
@@ -63,8 +64,13 @@ test("signs a new user in and sends them to the requested page", async () => {
   // The asserted email is never the account's email: a project could claim anyone's.
   expect(identity!.user.email).toMatch(/@users\.tuti\.invalid$/);
 
+  // Signed in on that portal (its session works there only).
   actAs({ id: identity!.userId, email: "", cookie: result.cookie });
+  request.host = `${slug}.localhost:3100`;
   expect((await getSession())?.user.id).toBe(identity!.userId);
+  request.host = "tuti.localhost:3100";
+  expect(await getSession()).toBeNull();
+  request.host = "";
   // Their email is a placeholder: no verification email goes out.
   expect(mailbox.emails.filter((e) => e.to.includes(identity!.user.email))).toEqual([]);
 });

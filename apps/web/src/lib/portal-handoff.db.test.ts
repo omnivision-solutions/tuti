@@ -2,8 +2,23 @@ import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
 import { GET as startContinue } from "@/app/portal/[project]/(site)/continue/route";
+import { forgetCustomDomain } from "@/server/custom-domains";
+import { getOwnerProject } from "@/server/membership";
+import { portalPreview } from "@/server/customize";
+import { setAutopilotEmails } from "@/server/github";
+import { setAvatar } from "@/server/media";
+import { askAPerson } from "@/server/operations/docs-escalate";
+import { mayRead } from "@/server/portal-access";
+import { createPost } from "@/server/posts";
+import { findSimilarPosts } from "@/server/similar-posts";
+import { widgetIdeas } from "@/server/widget";
+import { answerArticle } from "@/server/docs-readers";
+import { portalReaderHome } from "@/server/widget-home";
+import { widgetPerson } from "@/server/widget-person";
 import { continueToPortal } from "@/server/portal-handoff";
+import { getAccountSession, getSession } from "@/server/session";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { request } from "@/test/next-headers";
 
 import { auth } from "./auth";
 import { HANDOFF_STATE_COOKIE, randomSecret } from "./portal-handoff";
@@ -15,8 +30,10 @@ beforeEach(async () => {
   ada = await signUp("Ada");
   slug = (await createProject(await signUp("Owner"))).slug;
   actAs(ada);
+  request.host = "";
 });
 
+const APP_HOST = "tuti.localhost:3100";
 const portalHost = (projectSlug = slug) => `${projectSlug}.localhost:3100`;
 
 /** Ada confirms "Continue as Ada" on the app host; returns the portal callback URL. */
@@ -115,4 +132,140 @@ test("without a Tuti account there is nothing to continue with", async () => {
   });
   expect(await continueToPortal("no-such-project", randomSecret(), "/")).toEqual({ error: "Project not found." });
   expect(await prisma.portalHandoff.count()).toBe(before);
+});
+
+test("a session a portal on its team's own site starts doesn't work on the app host", async () => {
+  // Ada owns a project of her own; the portal's team puts its portal under a path of their site,
+  // whose server sees every request and response there (cookies included).
+  const own = await createProject(ada);
+  const portal = await prisma.project.findUniqueOrThrow({ where: { slug } });
+  await prisma.siteMount.create({
+    data: { projectId: portal.id, origin: "https://attacker.example", path: "/portal", verificationToken: "t", verifiedAt: new Date() },
+  });
+  forgetCustomDomain("");
+
+  // The team picked the state; Ada clicks Continue on the app host, and the code goes to their site.
+  const state = randomSecret();
+  const url = await confirm(state);
+  expect(url.origin).toBe("https://attacker.example");
+
+  // The site's server passes the callback on to Tuti and reads the session cookie Tuti sets.
+  const headers = new Headers({ host: portalHost(), cookie: `${HANDOFF_STATE_COOKIE}=${state}` });
+  const path = url.pathname.replace(/^\/portal/, "");
+  const response = await auth.handler(new Request(`http://${portalHost()}${path}${url.search}`, { headers }));
+  const stolen = response.headers
+    .getSetCookie()
+    .filter((c) => !c.startsWith(`${HANDOFF_STATE_COOKIE}=`))
+    .map((c) => c.split(";")[0])
+    .join("; ");
+  expect(stolen).toMatch(/session_token=/);
+
+  // Presented on the app host, that portal session must not be Ada's account.
+  actAs({ ...ada, cookie: stolen });
+  expect(await getAccountSession()).toBeNull();
+  expect(await getOwnerProject(own.slug)).toBeNull();
+  request.host = APP_HOST;
+  expect(await getSession()).toBeNull();
+  // Better Auth's own endpoints there don't take it either.
+  const getSessionOn = (host: string) => auth.handler(new Request(`http://${host}/api/auth/get-session`, { headers: { host, cookie: stolen } }));
+  expect(await (await getSessionOn(APP_HOST)).json()).toBeNull();
+  expect(await (await getSessionOn(portalHost())).json()).toMatchObject({ user: { id: ada.id } });
+
+  // It's Ada on the portal that started it, and on no other.
+  request.host = portalHost();
+  expect((await getSession())?.user.id).toBe(ada.id);
+  request.host = portalHost(own.slug);
+  expect(await getSession()).toBeNull();
+
+  // On that portal, actions name their project: it acts in that portal's project only, never as her account.
+  request.host = portalHost();
+  expect(await getAccountSession()).toBeNull();
+  expect(await getOwnerProject(own.slug)).toBeNull();
+  const post = (projectSlug: string) => {
+    const form = new FormData();
+    form.set("projectSlug", projectSlug);
+    form.set("boardSlug", "feature-requests");
+    form.set("title", "Posted as Ada");
+    return createPost({}, form);
+  };
+  expect(await post(own.slug)).toEqual({ error: "Board not found" });
+  expect(await post(slug)).toEqual({});
+  // Nor is it the team's, even on its own project: whoever runs the portal's site may be on its team too.
+  await prisma.teamMember.create({ data: { projectId: portal.id, userId: ada.id, role: "OWNER" } });
+  expect(await getOwnerProject(slug)).toBeNull();
+
+  // Her own idea in her project, posted on the app: on the portal, it isn't hers.
+  actAs(ada);
+  request.host = APP_HOST;
+  expect(await post(own.slug)).toEqual({});
+  actAs({ ...ada, cookie: stolen });
+  request.host = portalHost();
+  expect(await widgetIdeas(own.slug, null, true)).toEqual([]);
+  expect((await findSimilarPosts(own.slug, "Posted as Ada")).map((idea) => idea.voted)).toEqual([false]);
+
+  // Nor does it read, answer or message as her in her own project (private, with Messages on), or change her account.
+  await prisma.article.create({ data: { projectId: own.id, slug: "setup", title: "Setup", body: "Steps.", publishedAt: new Date() } });
+  expect(await answerArticle(own.slug, "setup", false, "From the portal's team")).toEqual({});
+  expect(await prisma.articleFeedback.count({ where: { readerId: ada.id } })).toBe(0);
+  await prisma.project.update({ where: { id: own.id }, data: { portalAccess: "PRIVATE", supportInbox: true } });
+  expect(await mayRead(own.id)).toBe(false);
+  expect(await portalReaderHome(own.id)).toBeNull();
+  expect(await widgetPerson(own.slug, {})).toBeNull();
+  expect(await askAPerson(own.slug)).toEqual({ email: "" });
+  expect((await portalPreview(own.slug, "/feedback")).token).toBeUndefined();
+  expect(await setAutopilotEmails("OFF")).toEqual({ error: "Sign in first" });
+  expect(await setAvatar(null)).toEqual({ error: "Sign in to change your photo" });
+
+  // Better Auth's own endpoints on the portal: its account page's rename, nothing else of her account.
+  const api = (path: string, body?: object, cookie = stolen) =>
+    auth.handler(
+      new Request(`http://${portalHost()}/api/auth${path}`, {
+        method: body ? "POST" : "GET",
+        headers: { host: portalHost(), cookie, origin: `http://${portalHost()}`, ...(body && { "content-type": "application/json" }) },
+        body: body && JSON.stringify(body),
+      }),
+    );
+  expect((await api("/update-user", { image: "https://tracker.example/pixel.png" })).status).toBe(401);
+  expect((await api("/update-user", { name: "Ada L." })).status).toBe(200);
+  expect((await api("/list-sessions")).status).toBe(404);
+  expect((await api("/revoke-session", { token: "x" })).status).toBe(404);
+  expect((await api("/revoke-sessions", {})).status).toBe(404);
+  expect((await api("/revoke-other-sessions", {})).status).toBe(404);
+  // However the cookie is written.
+  const spaced = stolen.replace("session_token=", "session_token =");
+  expect(await (await auth.handler(new Request(`http://${APP_HOST}/api/auth/get-session`, { headers: { host: APP_HOST, cookie: spaced } }))).json()).toBeNull();
+  actAs({ ...ada, cookie: spaced });
+  request.host = APP_HOST;
+  expect(await getSession()).toBeNull();
+});
+
+test("signing in with a password on a portal starts a session for that portal only; on the app, one for the app", async () => {
+  const signIn = async (host: string) => {
+    const { headers } = await auth.api.signInEmail({
+      body: { email: ada.email, password: "correct horse battery staple" },
+      headers: new Headers({ host }),
+      returnHeaders: true,
+    });
+    return headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+  };
+  const sessionOn = async (cookie: string, host: string) => {
+    actAs({ ...ada, cookie });
+    request.host = host;
+    return (await getSession())?.user.id ?? null;
+  };
+
+  const portal = await signIn(portalHost());
+  expect(await sessionOn(portal, portalHost())).toBe(ada.id);
+  expect(await sessionOn(portal, APP_HOST)).toBeNull();
+
+  const app = await signIn(APP_HOST);
+  expect(await sessionOn(app, APP_HOST)).toBe(ada.id);
+});
+
+test("a session from before sessions were bound works nowhere", async () => {
+  await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: null } });
+  request.host = APP_HOST;
+  expect(await getSession()).toBeNull();
+  request.host = portalHost();
+  expect(await getSession()).toBeNull();
 });

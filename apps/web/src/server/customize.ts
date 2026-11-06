@@ -5,7 +5,7 @@ import { previewToken } from "@/lib/preview-session";
 
 import { portalAddress } from "./custom-domains";
 import { portalHomePath } from "./portal-home";
-import { getSession } from "./session";
+import { sessionIn } from "./session";
 
 /**
  * Customize's preview of page `path` of a portal (CustomizeShell's `preview`): the portal's Tuti
@@ -16,7 +16,8 @@ import { getSession } from "./session";
 export async function portalPreview(slug: string, path: string): Promise<{ origin: string; path: string; address: string; token?: string }> {
   // The home ("/") sends people to the part it opens: the preview starts there.
   const page = path === "/" ? ((await portalHomePath(slug)) ?? path) : path;
-  const [session, project] = await Promise.all([getSession(), prisma.project.findUnique({ where: { slug }, select: { id: true } })]);
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
+  const session = project && (await sessionIn(project.id));
   return {
     origin: new URL(portalUrl(slug)).origin,
     path: page,

@@ -3,12 +3,13 @@ import { handOverOnVerified, projectSender } from "@tuti/jobs";
 import { passwordChangedEmail, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { magicLink } from "better-auth/plugins/magic-link";
 
-import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
+import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount } from "@/server/custom-domains";
 
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
@@ -62,6 +63,32 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
 const handOverPlaceholdersLogged = (userId: string) =>
   handOverOnVerified(userId).catch((error: unknown) => log.error("Handing an import's placeholders over failed", { error, userId }));
 
+/** What a portal's session may do on its portal with Better Auth's own endpoints: be read, sign out, and its account page's rename and verification email. */
+const PORTAL_SESSION_PATHS = new Set(["/get-session", "/sign-out", "/send-verification-email", "/update-user"]);
+
+/**
+ * Every auth request, auth.api.getSession's included: a session cookie is left out, as if there were none, unless its
+ * session works here (sessionWorksOn: the app's, or this portal's own) and, for a portal's, the endpoint is one it may
+ * use (PORTAL_SESSION_PATHS; renaming only). Sessions from before they were bound (boundTo null) work nowhere.
+ */
+async function withoutSessionBoundElsewhere(ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0]) {
+  const name = ctx.context.authCookies.sessionToken.name;
+  const token = await ctx.getSignedCookie(name, ctx.context.secret);
+  if (!token) {
+    return;
+  }
+  const session = await prisma.session.findUnique({ where: { token }, select: { boundTo: true } });
+  const portalMay = PORTAL_SESSION_PATHS.has(ctx.path) && (ctx.path !== "/update-user" || Object.keys(ctx.body ?? {}).every((key) => key === "name"));
+  if (!session || ((session.boundTo === "app" || portalMay) && (await sessionWorksOn(session.boundTo, ctx.headers!.get("host"))))) {
+    return;
+  }
+  // Every copy, its name read as Better Auth reads it (better-call's parseCookies: trimmed, up to the first "=").
+  const headers = new Headers(ctx.headers);
+  const kept = headers.get("cookie")!.split(";").filter((part) => !part.includes("=") || part.slice(0, part.indexOf("=")).trim() !== name);
+  headers.set("cookie", kept.join(";"));
+  return { context: { headers } };
+}
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // One deployment serves the app host and every portal host. Each host gets its
@@ -114,9 +141,17 @@ export const auth = betterAuth({
       }
     },
   },
+  // A session is bound to where it was started: a portal's (signing in there, "Continue as", SSO) to its project, as a
+  // team runs its portal's custom domain or site, so can see its cookies there. It works there only (hooks.before).
+  session: { additionalFields: { boundTo: { type: "string", required: false, input: false } } },
+  hooks: { before: createAuthMiddleware(async (ctx) => withoutSessionBoundElsewhere(ctx)) },
   // Continue with Google / GitHub only signs people in: their tokens are never used, and GitHub's (through tuti.so's
   // GitHub App) could read code where the App is installed. So none is kept, and none can be handed out again.
   databaseHooks: {
+    // Where it's started: see `session` above.
+    session: {
+      create: { before: async (session, ctx) => ({ data: { ...session, boundTo: await sessionBinding(ctx?.headers?.get("host") ?? null) } }) },
+    },
     // However an address comes to be verified (its link, a sign-in link, an account from Google or GitHub), an import's
     // placeholders for it hand over, in the projects they're on (a password reset is a direct update: it calls it too).
     user: { update: { after: async (user) => void (user.emailVerified && (await handOverPlaceholdersLogged(user.id))) } },
@@ -150,7 +185,17 @@ export const auth = betterAuth({
   // action (which applies the limits) and opened at the portal's /sign-in/link (bound to that portal).
   // Password resets (server/password-reset.ts) likewise: asked for through emailPasswordReset (limits)
   // and set through setNewPassword (bound to the host that asked).
-  disabledPaths: ["/sign-in/magic-link", "/magic-link/verify", "/request-password-reset", "/reset-password"],
+  // Listing and revoking sessions: unused, and they'd show a portal's session (bound there, above) the account's others.
+  disabledPaths: [
+    "/sign-in/magic-link",
+    "/magic-link/verify",
+    "/request-password-reset",
+    "/reset-password",
+    "/list-sessions",
+    "/revoke-session",
+    "/revoke-sessions",
+    "/revoke-other-sessions",
+  ],
   // nextCookies must stay last: lets server actions set auth cookies.
   plugins: [
     jwtSso(),

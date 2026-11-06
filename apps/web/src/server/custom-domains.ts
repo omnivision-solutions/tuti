@@ -19,6 +19,28 @@ export async function requestTarget(host: string | null): Promise<RequestTarget>
   return slug ? { kind: "portal", slug, customDomain: hostname } : target;
 }
 
+/**
+ * What a session started on a request's host is bound to (see lib/auth.ts): the project whose portal it is,
+ * or "app" (Tuti's own portal under its path is the app host's); null, working nowhere, for a portal that
+ * doesn't exist, an unknown host or none.
+ */
+export async function sessionBinding(host: string | null): Promise<string | null> {
+  const target = await requestTarget(host);
+  if (target.kind === "app") {
+    return "app";
+  }
+  if (target.kind !== "portal") {
+    return null;
+  }
+  const project = await prisma.project.findUnique({ where: { slug: target.slug }, select: { id: true } });
+  return project?.id ?? null;
+}
+
+/** Whether a session bound to `boundTo` (see sessionBinding) works on `host`: the app's anywhere, a portal's on that portal only. */
+export async function sessionWorksOn(boundTo: string | null | undefined, host: string | null): Promise<boolean> {
+  return boundTo === "app" || (!!boundTo && boundTo === (await sessionBinding(host)));
+}
+
 /** A portal on its custom domain says which (its hostname). */
 export type RequestTarget = Exclude<HostTarget, { kind: "portal" }> | { kind: "portal"; slug: string; customDomain?: string };
 

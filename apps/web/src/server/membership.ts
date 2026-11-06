@@ -14,7 +14,9 @@ export const isAdminRole = (role: string) => (ADMIN_ROLES as readonly string[]).
 /** The signed-in user's membership in a project, if any. */
 export async function getMembership(slug: string) {
   const session = await getSession();
-  if (!session) {
+  // Signed in on the app: a portal's session (lib/auth.ts) is never the team's, not even on its own project, whose
+  // portal's site or custom domain any admin may run.
+  if (session?.session.boundTo !== "app") {
     return null;
   }
   return prisma.teamMember.findFirst({

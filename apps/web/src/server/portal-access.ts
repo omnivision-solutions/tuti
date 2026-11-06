@@ -3,7 +3,6 @@ import { planIncludes, readerEntriesFor } from "@tuti/shared";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
-import { auth } from "@/lib/auth";
 import { inGroup, storedRule } from "@/lib/group-conditions";
 import { PREVIEW } from "@/lib/portal-base";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
@@ -13,7 +12,7 @@ import type { Actor } from "./operations/define";
 import { previewUser } from "@/lib/preview-session";
 import { widgetUser } from "@/lib/widget-session";
 
-import { getSession } from "./session";
+import { sessionFrom, sessionIn } from "./session";
 
 /**
  * Who may read a project's portal (Settings → Access). Public: anyone. Private: only
@@ -71,7 +70,7 @@ export async function portalVisitor(slug: string, headers: Headers, preview?: st
   if (!project || project.portalAccess === "PUBLIC") {
     return "public";
   }
-  const session = await auth.api.getSession({ headers });
+  const session = await sessionFrom(headers);
   if (session && (await isPrivateReader(project, session.user.id))) {
     return "allowed";
   }
@@ -112,7 +111,7 @@ export const WIDGET_READER_COOKIE = "tuti_widget_reader";
  * the team member previewing the portal in Customize.
  */
 async function readerId(projectId: string): Promise<string | null> {
-  const session = await getSession();
+  const session = await sessionIn(projectId);
   if (session) {
     return session.user.id;
   }

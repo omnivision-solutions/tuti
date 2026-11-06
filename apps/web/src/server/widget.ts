@@ -18,7 +18,7 @@ import { setVote } from "./operations/more";
 import { asAdmin, call, postNumberOf } from "./operations/run";
 import { readableProject, WIDGET_READER_COOKIE } from "./portal-access";
 import { boardPosts } from "./post-lists";
-import { getSession } from "./session";
+import { sessionIn } from "./session";
 import { updateWidgetSettings } from "./operations/widget";
 import { type IdeaNews, ideaNews } from "./widget-home";
 
@@ -104,7 +104,7 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
  * the portal's actions check (a token outlives a reader's access to a private portal).
  */
 async function widgetPerson(projectId: string, token: string | null): Promise<string | null> {
-  const userId = token ? widgetUser(projectId, String(token)) : (await getSession())?.user.id;
+  const userId = token ? widgetUser(projectId, String(token)) : (await sessionIn(projectId))?.user.id;
   return userId && (await canActIn(userId, projectId)) ? userId : null;
 }
 
