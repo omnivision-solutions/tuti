@@ -57,7 +57,7 @@ function Ctas({ start, docs, className }: { start: string; docs: string; classNa
   return (
     <div className={cn("flex flex-wrap justify-center gap-3", className)}>
       <Link href={start} className={buttonVariants({ size: "lg", className: big })}>
-        Start free
+        {start === "/app" ? "Open app" : "Start free"}
       </Link>
       <a href={docs} className={buttonVariants({ size: "lg", variant: "outline", className: big })}>
         {docs.startsWith(REPO_URL) ? "Read the docs" : "See a live help center"}
