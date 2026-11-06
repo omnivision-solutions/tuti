@@ -27,10 +27,12 @@ const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
  */
 async function claim(postId: string, userId: string): Promise<Date | null> {
   return prisma.$transaction(async (tx) => {
-    // Only while it's still shipped: the post's row locked, so a status change (Undo, say) waits for
-    // this claim, or this claim sees it and emails nobody else. One claimed already may still go.
-    const [post] = await tx.$queryRaw<{ status: string }[]>`SELECT status FROM post WHERE id = ${postId} FOR UPDATE`;
-    if (post?.status !== "COMPLETED") {
+    // Only while it's still shipped and its emails are due: the post's row locked, so a status change (Undo, say) or a
+    // resume that drops a pause's emails waits for this claim, or this claim sees it and emails nobody else. One claimed
+    // already may still go.
+    const [post] = await tx.$queryRaw<{ status: string; due: Date | null }[]>`
+      SELECT status, "shippedEmailsDueAt" AS due FROM post WHERE id = ${postId} FOR UPDATE`;
+    if (post?.status !== "COMPLETED" || post.due === null) {
       return null;
     }
     // For this completion (its activity counts who it reached), read under the same lock.
@@ -105,7 +107,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   // Only while it's still shipped (the team may have reopened it since) and not merged away; never for sample content
   // (Home's "Add sample content"), whatever completed it.
   const post = await prisma.post.findFirst({
-    // Only while its emails are due: a resume lets a pause's go (apps/web/src/server/email-pause.ts), even a retry's.
+    // Only while its emails are due: a resume drops a pause's (apps/web/src/server/email-pause.ts), even a retry's.
     where: { id: postId, status: "COMPLETED", duplicateOfId: null, sample: false, shippedEmailsDueAt: { not: null } },
     select: {
       number: true,
@@ -124,7 +126,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     return { skipped: true };
   }
   const { projectId, project } = post;
-  // The project's email is paused: still due, till the resume lets it go (apps/web/src/server/email-pause.ts).
+  // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }

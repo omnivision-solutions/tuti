@@ -118,7 +118,7 @@ export async function subscribersLeft(entryId: string): Promise<number> {
  * unsubscribing, unpublishing or making the portal private waits for this, or this sees it), not as the run began.
  * A new claim, or one a crashed run left unsent. Returns the claim's time, which the run then uses to mark it sent or
  * release it (never touching a claim another run took over); null when they don't want it any more, someone else has
- * it, or it's sent; "stop" when the entry is unpublished or its portal private now.
+ * it, or it's sent; "stop" when the entry is unpublished, its portal private or its emails let go now.
  */
 async function claim(entry: { id: string; projectId: string; emailedAt: Date }, subscriberId: string): Promise<Date | null | "stop"> {
   return prisma.$transaction(async (tx) => {
@@ -126,9 +126,10 @@ async function claim(entry: { id: string; projectId: string; emailedAt: Date }, 
     // can't each hold one the other waits for; the subscriber's last.
     const [project] = await tx.$queryRaw<{ portalAccess: string }[]>`
       SELECT "portalAccess" FROM "project" WHERE "id" = ${entry.projectId} FOR SHARE`;
-    const [current] = await tx.$queryRaw<{ publishedAt: Date | null }[]>`
-      SELECT "publishedAt" FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
-    if (!current?.publishedAt || project?.portalAccess !== "PUBLIC") {
+    const [current] = await tx.$queryRaw<{ publishedAt: Date | null; due: Date | null }[]>`
+      SELECT "publishedAt", "subscribersEmailDueAt" AS due FROM "changelog_entry" WHERE "id" = ${entry.id} FOR SHARE`;
+    // Its emails let go meanwhile (a resume drops a pause's): nobody else.
+    if (!current?.publishedAt || !current.due || project?.portalAccess !== "PUBLIC") {
       return "stop";
     }
     await tx.$queryRaw`SELECT 1 FROM "changelog_subscriber" WHERE "id" = ${subscriberId} FOR UPDATE`;
@@ -247,7 +248,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     return { waiting: "the entry isn't published" };
   }
   const { projectId, project } = entry;
-  // The project's email is paused: still due, till the resume lets it go (apps/web/src/server/email-pause.ts).
+  // The project's email is paused: still due, till the resume drops it (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }

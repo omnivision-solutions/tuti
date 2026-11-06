@@ -1053,6 +1053,25 @@ describe("the project's email limits", () => {
   });
 });
 
+test("a resume that drops a pause's emails while an entry's go out: nobody else is emailed", async () => {
+  const kim = newAddress();
+  await confirmed(kim);
+  vi.stubEnv("PLANS", "on");
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+  const number = await publishEntry("Dark mode");
+  const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } });
+  expect(entry.subscribersEmailDueAt).not.toBeNull();
+  // A run starts as the pause is lifted; the resume clears the due time right before its claim.
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: null } });
+  const transaction = prisma.$transaction.bind(prisma);
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (...args: Parameters<typeof transaction>) => {
+    await prisma.changelogEntry.update({ where: { id: entry.id }, data: { subscribersEmailDueAt: null } });
+    return transaction(...args);
+  }) as typeof prisma.$transaction);
+  await handlers.changelogEmailed({ entryId: entry.id }, log);
+  expect(entryEmailsTo(kim)).toEqual([]);
+});
+
 describe("the Account's opt-out", () => {
   test("someone who hasn't proven an address can't stop its changelog emails: signed up as a subscriber's address and never confirmed, Stop emails is refused and the entry still arrives", async () => {
     const victim = newAddress();
