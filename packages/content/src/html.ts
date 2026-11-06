@@ -2,7 +2,7 @@
 /// <reference lib="dom" />
 
 import { generateJSON } from "@tiptap/html/server";
-import { Window } from "happy-dom";
+import { type IOptionalBrowserSettings, Window } from "happy-dom";
 
 import { type Doc, mediaIdsIn, parseDoc, toPlainText, updateImages } from "./document";
 import { isSafeLink, parseVideoUrl } from "./links";
@@ -58,14 +58,14 @@ const JUNK = "script, style, noscript, template, head, title, meta, link, base, 
 const KEPT = new Set(["href", "src", "alt", "colspan", "rowspan", "start", "data", "data-width", "data-align"]);
 /** Featurebase's own storage: links there are its attachments. */
 const ATTACHMENT_HOST = /(^|\.)featurebase-attachments\.com$/i;
-/** A window that runs and loads nothing: only parses. */
+/** A window that runs and loads nothing: only parses. Typed, so a setting happy-dom renames fails typecheck. */
 const INERT = {
   disableJavaScriptEvaluation: true,
   disableJavaScriptFileLoading: true,
   enableCSSFileLoading: false,
   enableIframePageLoading: false,
   disableComputedStyleRendering: true,
-};
+} satisfies IOptionalBrowserSettings;
 const BLOCKS = "p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote, pre";
 
 /**
