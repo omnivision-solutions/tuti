@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
-import { handlers, importsSettled } from "@tuti/jobs";
+import { handlers, IMPORT_KEY, importsSettled } from "@tuti/jobs";
+import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_FILES, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -14,6 +15,8 @@ import { unseenRepliesOf } from "./widget-person";
 /** The inbox from Featurebase (docs/plan.md, Switching from Featurebase, I5), against the Featurebase and S3 fakes. */
 
 const log = { info: () => {}, warn: () => {} };
+/** The fake's key as an import's row keeps it (sealed). */
+const sealedKey = () => sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY);
 let fake: FeaturebaseFake;
 let s3: S3Fake;
 let owner: TestUser;
@@ -143,7 +146,7 @@ test("a page run again, or another import, brings nothing twice; a number once g
   const done = await importInbox();
   const before = await conversations();
   // As if its last save had been lost: the conversations step again from the start.
-  await prisma.dataImport.update({ where: { id: done.id }, data: { state: "RUNNING", apiKey: FAKE_FEATUREBASE_KEY, step: "conversations", cursor: null, counts: done.counts! } });
+  await prisma.dataImport.update({ where: { id: done.id }, data: { state: "RUNNING", apiKey: sealedKey(), step: "conversations", cursor: null, counts: done.counts! } });
   await handlers.importStep({ importId: done.id }, log);
   await importsSettled();
   // Someone writes in, then the import runs again with a conversation that started before that.
@@ -237,7 +240,7 @@ test("without media storage, an image is left out of its message and counted; a 
 
 /** An import's row at the conversations step, as if Contacts had been picked and skipped over. */
 const atConversations = (parts = ["contacts", "inbox"]) =>
-  prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts, step: "conversations" } });
+  prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealedKey(), parts, step: "conversations" } });
 
 test("a page that fails after copying its files leaves them unattached, for the daily cleanup", async () => {
   // Its contacts aren't here yet, and Featurebase refuses them once the conversations (and their files) are read.
