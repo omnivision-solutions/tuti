@@ -140,6 +140,31 @@ async function articleRows(db: Tx, ids: string[]) {
   return rows.map(({ deletedAt, ...row }) => [row.id, { ...row, deleted: deletedAt !== null, saved: saved.some((s) => s.id === row.id) }] as const);
 }
 
+/**
+ * Once the content pass has read every page: articles this import made empty that Featurebase no longer lists (none of
+ * its pages decided them, so `countedIn` isn't this import) go, if they're still as it made them (no text, no
+ * unpublished changes, its title, not deleted or published here): nobody can read an empty draft, and the summary
+ * counts them. One the team touched stays.
+ */
+async function removeGone(tx: Tx, job: ImportJob) {
+  const records = await tx.importedRecord.findMany({
+    where: { projectId: job.projectId, source: job.source, kind: "article", contentLanded: false, madeTitle: { not: null }, OR: [{ countedIn: null }, { countedIn: { not: job.id } }] },
+    select: { id: true, localId: true, madeTitle: true },
+  });
+  const rows = new Map(await articleRows(tx, records.map((record) => record.localId)));
+  const gone = records.filter((record) => {
+    const row = rows.get(record.localId);
+    return row && !row.deleted && !row.saved && row.title === record.madeTitle;
+  });
+  if (gone.length === 0) {
+    return;
+  }
+  // Checked again in the delete itself: empty and unpublished.
+  await tx.article.deleteMany({ where: { id: { in: gone.map((record) => record.localId) }, content: { equals: Prisma.DbNull }, changes: { is: null }, publishedAt: null } });
+  await tx.importedRecord.deleteMany({ where: { id: { in: gone.map((record) => record.id) } } });
+  tally(job.counts, "articles", "gone from Featurebase", gone.length);
+}
+
 /** An article's title as the import gives it. */
 const titleOf = (version: { title?: string | null }) => version.title?.trim().slice(0, 120) || "Untitled";
 
@@ -460,6 +485,9 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       }
       await tx.importedRecord.updateMany({ where: { id: { in: countedRecords } }, data: { countedIn: job.id } });
       await tx.importedRecord.updateMany({ where: { id: { in: landedRecords } }, data: { contentLanded: true } });
+      if (!next) {
+        await removeGone(tx, job);
+      }
     },
     // As publishing does (indexArticle): never twice, as only a page's saved run gets here, and only for what it filled.
     after: async () => {

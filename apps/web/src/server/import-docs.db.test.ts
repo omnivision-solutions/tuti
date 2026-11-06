@@ -256,6 +256,22 @@ test("an article renamed in Featurebase between the passes isn't taken for the t
   expect(await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "article", localId: paying.id }, select: { contentLanded: true } })).toEqual({ contentLanded: true });
 });
 
+test("an empty draft for an article deleted in Featurebase after the first pass goes, counted; one the team touched stays", async () => {
+  await structureOnly();
+  const roadmap = await article("Roadmap notes");
+  // The team retitles another, which Featurebase then deletes too.
+  const paying = await article("Paying by card");
+  await call(updateArticle, asOwner(), { slug: paying.slug, title: "Card payments" });
+  fake.fixtures.articles = fake.fixtures.articles.filter((a) => a.id !== "0200003" && a.id !== "0200002");
+
+  const done = await importDocs();
+  expect(done.counts.articles).toEqual({ imported: 1, leftOut: { "gone from Featurebase": 1 } });
+  expect(importSummary(done)).toContain("1 article gone from Featurebase");
+  expect(await prisma.article.findUnique({ where: { id: roadmap.id } })).toBeNull();
+  expect(await prisma.importedRecord.count({ where: { projectId: project.id, kind: "article", localId: roadmap.id } })).toBe(0);
+  expect(await prisma.article.findUniqueOrThrow({ where: { id: paying.id }, select: { title: true } })).toEqual({ title: "Card payments" });
+});
+
 test("an article deleted here before its content came stays deleted; restored, the next import fills it in", async () => {
   await structureOnly();
   const roadmap = await article("Roadmap notes");
