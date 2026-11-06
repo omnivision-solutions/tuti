@@ -91,8 +91,8 @@ test("the team puts the portal under a path of its own site: its site forwards i
   const billing = await api("/collections", { name: "Billing" });
   const invoices = await api("/articles", { title: "Invoices", body: "Where to find them.", collection: billing.slug });
   await api(`/articles/${invoices.slug}/publish`, {});
-  await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
-  await api("/changelog/1/publish", {});
+  const update = await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
+  await api(`/changelog/${update.number}/publish`, {});
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/support", { inbox: true }, "PATCH");
   await api("/widget", { aiFirst: false }, "PATCH");
