@@ -170,7 +170,7 @@ test("after setup, Settings → Import brings what's in Featurebase across any t
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).press("Enter");
-  await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.", { timeout: 15_000 });
+  await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts, 1 profile picture brought across.", { timeout: 15_000 });
   // With no Continue here, focus is on the import's progress, not lost with the form.
   await expect(owner.locator(":focus")).toContainText("Imported from Featurebase");
   await expect(owner.getByText("Importing again brings only what's new since: nothing comes twice.")).toBeVisible();
