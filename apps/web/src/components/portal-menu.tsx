@@ -6,7 +6,7 @@ import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, 
 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { PortalLogo, usePortalLook } from "@/components/portal-look";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
@@ -35,15 +35,15 @@ const within = (path: string, href: string) => path === href || path.startsWith(
 
 /**
  * The header's menu on phones and tablets (wider screens show it all already): the current part's
- * navigation (from the page: the docs' tree, the changelog's entries by date; the boards on Feedback), then the team's header links and
- * contact button (Customize → Navigation), which the header leaves out at those widths. Opening a link
+ * navigation (from the page: the docs' tree, the changelog's entries by date; the boards on Feedback), then the team's header links
+ * (Customize → Navigation), which the header leaves out at those widths. Opening a link
  * closes it. Left out when there's nothing to put in it.
  */
 export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref: string; boards: { slug: string; name: string }[] }) {
   const [open, setOpen] = useState(false);
   const path = usePortalPath();
   const at = usePortalHref();
-  const { headerLinks, contact } = usePortalLook();
+  const { headerLinks } = usePortalLook();
   const page = useContext(PartContext)?.part ?? null;
 
   // What the page gave it (the docs' tree, the changelog's entries), or the boards on Feedback.
@@ -67,7 +67,7 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
       })}
     </nav>
   ) : null;
-  if (!part && headerLinks.length === 0 && !contact) {
+  if (!part && headerLinks.length === 0) {
     return null;
   }
 
@@ -100,23 +100,14 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {/* A size up from the sidebar: these are taps on a phone. */}
           {part && <div className="border-b px-4 py-5 [&_nav]:text-base [&_ul[aria-label=Links]]:text-base">{part}</div>}
-          {(headerLinks.length > 0 || contact) && (
-            <div className="flex flex-col gap-1 px-4 py-5">
-              {headerLinks.length > 0 && (
-                <nav aria-label="Links" className="flex flex-col gap-0.5">
-                  {headerLinks.map((link, i) => (
-                    <a key={i} href={link.url} className="rounded-md px-2 py-2 break-words text-muted-foreground hover:text-foreground">
-                      {link.label}
-                    </a>
-                  ))}
-                </nav>
-              )}
-              {contact && (
-                <a href={contact.url} className={buttonVariants({ size: "lg", className: "mt-3 w-full" })}>
-                  {contact.label || "Contact us"}
+          {headerLinks.length > 0 && (
+            <nav aria-label="Links" className="flex flex-col gap-0.5 px-4 py-5">
+              {headerLinks.map((link, i) => (
+                <a key={i} href={link.url} className="rounded-md px-2 py-2 break-words text-muted-foreground hover:text-foreground">
+                  {link.label}
                 </a>
-              )}
-            </div>
+              ))}
+            </nav>
           )}
         </div>
       </SheetContent>

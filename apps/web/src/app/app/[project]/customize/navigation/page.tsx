@@ -9,7 +9,7 @@ import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
 import { portalAccess } from "@/server/operations/portal";
 
-/** Customize → Navigation: what the portal's address opens, links in its header, footer and docs sidebar, and a "Contact us" button. */
+/** Customize → Navigation: what the portal's address opens, links in its header, footer and docs sidebar. */
 export default async function NavigationPage(props: PageProps<"/app/[project]/customize/navigation">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
@@ -34,7 +34,6 @@ export default async function NavigationPage(props: PageProps<"/app/[project]/cu
         headerLinks={brand.headerLinks}
         footerLinks={brand.footerLinks}
         sidebarLinks={brand.sidebarLinks}
-        contact={brand.contact}
       />
     </CustomizeShell>
   );

@@ -10,9 +10,7 @@ import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts"
 import {
   COLOR_SCHEMES,
   type ColorScheme,
-  CONTACT_LABEL_MAX,
   CUSTOM_CODE_MAX,
-  type ContactButton,
   type ContentActions,
   DOCS_SUBTITLE_MAX,
   DOCS_TITLE_MAX,
@@ -62,7 +60,6 @@ export type Branding = {
   /** Above the docs' tree. */
   sidebarLinks: WidgetLink[];
   /** The header's "Contact us" button, or null for none. */
-  contact: ContactButton | null;
   /** How the portal shows in search results and where it's shared: its title (empty: the project's name) and description. */
   seo: { title: string; description: string };
   /** The image a link to the portal shows (Open Graph); null for none. */
@@ -106,8 +103,6 @@ export async function branding(where: { id: string } | { slug: string }): Promis
         logoText: true,
         logoLink: true,
         sidebarLinks: true,
-        contactLabel: true,
-        contactUrl: true,
         seoTitle: true,
         seoDescription: true,
         headingFont: true,
@@ -158,7 +153,6 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     logoText: project.logoText,
     logoLink: project.logoLink,
     sidebarLinks: links(project.sidebarLinks),
-    contact: project.contactUrl ? { label: project.contactLabel, url: project.contactUrl } : null,
     seo: { title: project.seoTitle, description: project.seoDescription },
     seoImage: shareImage(project.seoImage),
     fonts: { heading: isPortalFont(project.headingFont) ? project.headingFont : null, body: isPortalFont(project.bodyFont) ? project.bodyFont : null },
@@ -181,12 +175,6 @@ const docsHome = z
   })
   .partial();
 const httpsUrl = z.string().trim().max(500, "Keep links under 500 characters").pipe(z.url({ protocol: /^https$/, error: "Links need a full https:// address" }));
-/** Where "Contact us" goes: a page (https) or an email address (mailto:). */
-const contactUrl = z
-  .string()
-  .trim()
-  .max(500, "Keep links under 500 characters")
-  .pipe(z.url({ protocol: /^(https|mailto)$/, error: "Contact us needs a full https:// address or a mailto: link" }));
 const fontId = z.enum(PORTAL_FONTS.map((font) => font.id) as [PortalFont, ...PortalFont[]]).nullable();
 const fonts = z.object({ heading: fontId, body: fontId }).partial();
 const seo = z
@@ -209,7 +197,7 @@ export const getBranding = defineOperation({
 
 export const updateBranding = defineOperation({
   name: "branding.update",
-  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} at its top, empty for the defaults, and popular to list each tab's most-read articles on its overview, once there are three, on for new projects), colorScheme (system, light or dark: for readers who haven't picked one), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, contact (the header's "Contact us" button: a label, empty for "Contact us", and an https or mailto: url; null for none), seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}), seoImage (an uploaded image for links to the portal, null to remove) and fonts (heading and body: one of ${PORTAL_FONTS.map((font) => font.id).join(", ")}, or null for the page's own), customCss (CSS on every portal page) and customHtml (HTML, scripts too, at the end of each page only where the portal is on your own domain or a path of your site: never on its Tuti address, in the widget or on the app's own domain); each up to ${CUSTOM_CODE_MAX} characters. Fields left out stay as they are`,
+  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} at its top, empty for the defaults, and popular to list each tab's most-read articles on its overview, once there are three, on for new projects), colorScheme (system, light or dark: for readers who haven't picked one), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}), seoImage (an uploaded image for links to the portal, null to remove) and fonts (heading and body: one of ${PORTAL_FONTS.map((font) => font.id).join(", ")}, or null for the page's own), customCss (CSS on every portal page) and customHtml (HTML, scripts too, at the end of each page only where the portal is on your own domain or a path of your site: never on its Tuti address, in the widget or on the app's own domain); each up to ${CUSTOM_CODE_MAX} characters. Fields left out stay as they are`,
   method: "PATCH",
   path: "/branding",
   scope: "write",
@@ -228,10 +216,6 @@ export const updateBranding = defineOperation({
     logoText: z.string().trim().max(LOGO_TEXT_MAX, `The logo text is up to ${LOGO_TEXT_MAX} characters`).optional(),
     logoLink: httpsUrl.nullable().optional(),
     sidebarLinks: links("sidebar"),
-    contact: z
-      .object({ label: z.string().trim().max(CONTACT_LABEL_MAX, `The button's label is up to ${CONTACT_LABEL_MAX} characters`), url: contactUrl })
-      .nullable()
-      .optional(),
     seo: seo.optional(),
     seoImage: upload,
     fonts: fonts.optional(),
@@ -293,7 +277,6 @@ export const updateBranding = defineOperation({
             ...(input.logoText !== undefined && { logoText: input.logoText }),
             ...(input.logoLink !== undefined && { logoLink: input.logoLink }),
             ...(input.sidebarLinks !== undefined && { sidebarLinks: input.sidebarLinks }),
-            ...(input.contact !== undefined && { contactLabel: input.contact?.label ?? "", contactUrl: input.contact?.url ?? null }),
             ...(input.seo?.title !== undefined && { seoTitle: input.seo.title }),
             ...(input.seo?.description !== undefined && { seoDescription: input.seo.description }),
             ...(input.fonts?.heading !== undefined && { headingFont: input.fonts.heading ?? "" }),

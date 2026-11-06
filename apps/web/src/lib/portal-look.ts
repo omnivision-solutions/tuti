@@ -26,14 +26,10 @@ export type DocsHome = { title: string; subtitle: string; popular: boolean };
 export const COLOR_SCHEMES = ["system", "light", "dark"] as const;
 export type ColorScheme = (typeof COLOR_SCHEMES)[number];
 
-/** The header's "Contact us" button: its label (empty for "Contact us") and where it goes. */
-export type ContactButton = { label: string; url: string };
-
 export const DOCS_TITLE_MAX = 80;
 /** The most the team's CSS and HTML can be (Customize → Custom code). */
 export const CUSTOM_CODE_MAX = 50_000;
 export const LOGO_TEXT_MAX = 40;
-export const CONTACT_LABEL_MAX = 30;
 export const DOCS_SUBTITLE_MAX = 200;
 
 export type PortalLook = {
@@ -53,7 +49,6 @@ export type PortalLook = {
   logoLink: string | null;
   /** Above the docs' tree. */
   sidebarLinks: LookLink[];
-  contact: ContactButton | null;
   /** For headings and for text; null for the page's own. */
   fonts: { heading: PortalFont | null; body: PortalFont | null };
   /** The team's own CSS (Customize → Custom code), after everything else. */
@@ -80,7 +75,6 @@ export const DEFAULT_LOOK: PortalLook = {
   logoText: "",
   logoLink: null,
   sidebarLinks: [],
-  contact: null,
   fonts: { heading: null, body: null },
   customCss: "",
 };
@@ -169,10 +163,6 @@ export function webOnly(look: Partial<PortalLook>): Partial<PortalLook> {
   }
   if (look.logoLink === null || web(look.logoLink)) {
     checked.logoLink = look.logoLink;
-  }
-  const contact = look.contact;
-  if (contact === null || (contact && typeof contact.label === "string" && (web(contact.url) || /^mailto:/i.test(String(contact.url))))) {
-    checked.contact = contact && { label: contact.label.slice(0, CONTACT_LABEL_MAX), url: contact.url };
   }
   const fonts = look.fonts;
   const font = (value: unknown) => value === null || isPortalFont(value);
