@@ -133,7 +133,7 @@ jobs:
           # The description and the patch go public: never a credential or the hub's address,
           # whatever a package talked Claude into.
           # Nothing the agent started may change the tree after the check.
-          sudo pkill -KILL -u claude-updater || true
+          while sudo pkill -KILL -u claude-updater; do sleep 0.2; done # until none is left, forks included
           # The values go to grep on stdin, never on a command line the agent's leftovers could read.
           host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
           case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
