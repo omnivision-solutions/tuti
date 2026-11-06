@@ -13,7 +13,7 @@ export const FAKE_FEATUREBASE_SLOW_KEY = "sk_fake_featurebase_slow";
 type Row = Record<string, unknown>;
 
 /** What the fake serves, made up. Imports of more parts add theirs (boards, posts, articles, conversations, …). */
-export type FeaturebaseFixtures = { contacts: (Row | null)[]; admins: Row[]; boards: Row[]; posts: Row[]; comments: Row[]; voters: Record<string, Row[]> };
+export type FeaturebaseFixtures = { contacts: (Row | null)[]; admins: Row[]; boards: Row[]; posts: Row[]; comments: Row[]; voters: Record<string, Row[]>; conversations: Row[] };
 
 /**
  * Where the fixtures' images are: the fake serves its files (`file`, and FAKE_FEATUREBASE_FILES' own) at this address,
@@ -25,6 +25,127 @@ const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAGAAAABACAIAAABqVuVZAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAaUlEQVR42u3QMQ0AAAgDsInDE55QiQNujiZV0NQ0hygQJEiQIEGCBAlCkCBBggQJEiQIQYIECRIkSJAgBAkSJEiQIEGCBCFIkCBBggQJEoQgQYIECRIkSBCCBAkSJEiQIEGCECRIkKB/Flv/efAam8K1AAAAAElFTkSuQmCC",
   "base64",
 );
+
+const DAY_MS = 86_400_000;
+/** An ISO date `days` ago, `minutes` on. */
+const ago = (days: number, minutes = 0) => new Date(Date.now() - days * DAY_MS + minutes * 60_000).toISOString();
+const part = (id: string, partType: string, createdAt: string, rest: Row = {}) => ({ object: "conversation_part", id, partType, createdAt, updatedAt: createdAt, ...rest });
+const contact = (id: string, name: string, email: string | null) => ({ id, type: "customer", name, email, profilePicture: null });
+const admin = (id: string, name: string) => ({ id, type: "admin", name, profilePicture: null });
+
+/**
+ * Made-up conversations, newest first as Featurebase lists them: one open where the user wrote last (assigned to the
+ * owner, read up to the team's reply, a note, an image), one snoozed after the team's unread reply by email (assigned
+ * to the former admin), one closed lately with the bot (and every kind of part that isn't a message), and one closed
+ * two years ago.
+ */
+const conversationFixtures = (): Row[] => {
+  const mira = contact("65f000000000000000000001", "Mira Fenwick", "e2e-mira@example.com");
+  const tobias = contact("65f000000000000000000002", "Tobias Quill", "e2e-tobias@example.com");
+  const juno = { ...contact("65f000000000000000000003", "Juno Park", null), type: "lead" };
+  const olive = admin("65f0000000000000000000a1", "Olive Owner");
+  const fern = admin("65f0000000000000000000a2", "Fern Former");
+  const row = (id: string, rest: Row) => ({ object: "conversation", id, priority: false, teamAssigneeId: null, snoozedUntil: null, tags: [], ...rest });
+  return [
+    row("1004", {
+      title: "Exporting to CSV",
+      state: "open",
+      adminAssigneeId: olive.id,
+      participants: [{ id: mira.id, type: "customer" }],
+      source: { channel: "desktop", deliveredAs: "customer_initiated", bodyHtml: "<p>Can I export my data to CSV?</p>", author: { id: mira.id, type: "customer" } },
+      createdAt: ago(2),
+      updatedAt: ago(1),
+      lastActivityAt: ago(1),
+      waitingSince: ago(1),
+      readReceipts: [
+        { id: mira.id, userType: "customer", lastReadPartId: "p1003" },
+        { id: olive.id, userType: "admin", lastReadPartId: "p1005" },
+      ],
+      conversationParts: [
+        part("p1001", "user_msg", ago(2, 0.02), { bodyHtml: "<p>Can I export my data to CSV?</p>", bodyMarkdown: "Can I export my data to CSV?", channel: "desktop", author: mira, redacted: false }),
+        part("p1002", "assign", ago(2, 1), { adminAssigneeId: olive.id, adminAssignerId: olive.id, teamAssigneeId: null }),
+        part("p1003", "admin_msg", ago(2, 5), {
+          bodyHtml: '<p>Yes: Settings → Export. See <a href="https://docs.example.com/export">the guide</a>.</p>',
+          bodyMarkdown: "Yes: Settings → Export. See [the guide](https://docs.example.com/export).",
+          channel: "desktop",
+          author: olive,
+          redacted: null,
+        }),
+        part("p1004", "admin_note", ago(2, 6), { bodyHtml: "<p>They're on the pro plan.</p>", bodyMarkdown: "They're on the pro plan.", author: olive, redacted: false }),
+        part("p1005", "user_msg", ago(1), {
+          bodyHtml: `<p>Here's what I see:</p><p><img src="${FAKE_FEATUREBASE_FILES}shot.png?X-Amz-Expires=3600&amp;X-Amz-Signature=abc" alt="Export screen" width="8" height="8"></p>`,
+          bodyMarkdown: "Here's what I see:\n\n![Export screen]( =8x8)",
+          channel: "desktop",
+          author: mira,
+          redacted: false,
+        }),
+      ],
+    }),
+    row("1003", {
+      state: "snoozed",
+      snoozedUntil: ago(-7),
+      adminAssigneeId: fern.id,
+      participants: [{ id: tobias.id, type: "customer" }],
+      source: { channel: "email", deliveredAs: "customer_initiated", subject: "Invoice for October", bodyHtml: "<p>Could you send October's invoice again?</p>", author: { id: tobias.id, type: "customer" } },
+      createdAt: ago(3),
+      updatedAt: ago(3, 31),
+      lastActivityAt: ago(3, 31),
+      waitingSince: null,
+      readReceipts: [{ id: tobias.id, userType: "customer", lastReadPartId: "p2001" }],
+      conversationParts: [
+        part("p2001", "email_msg", ago(3, 0.02), { bodyHtml: "<p>Could you send October's invoice again?</p>", bodyMarkdown: "Could you send October's invoice again?", channel: "email", author: tobias, redacted: false }),
+        part("p2002", "admin_msg", ago(3, 30), { bodyHtml: "<p>Sent again: it's in your inbox.</p>", bodyMarkdown: "Sent again: it's in your inbox.", channel: "email", author: fern, redacted: false }),
+        part("p2003", "status", ago(3, 31), { status: "snoozed", snoozedUntil: ago(-7) }),
+      ],
+    }),
+    row("1002", {
+      state: "closed",
+      adminAssigneeId: null,
+      participants: [{ id: juno.id, type: "lead" }],
+      source: { channel: "desktop", deliveredAs: "customer_initiated", bodyHtml: "<p>How do I reset my password?</p><p>It says the link expired.</p>", author: { id: juno.id, type: "lead" } },
+      createdAt: ago(10),
+      updatedAt: ago(10, 9),
+      lastActivityAt: ago(10, 9),
+      waitingSince: null,
+      readReceipts: [],
+      conversationParts: [
+        part("p3001", "user_msg", ago(10, 0.02), { bodyHtml: "<p>How do I reset my password?</p><p>It says the link expired.</p>", channel: "desktop", author: juno, redacted: false }),
+        part("p3002", "bot_msg", ago(10, 1), {
+          bodyHtml: "<p>Use <strong>Forgot password</strong> on the sign-in page:</p><ol><li><p>Open sign in</p></li><li><p>Ask for a new link</p></li></ol>",
+          author: { id: null, type: "bot", profilePicture: null },
+          redacted: false,
+        }),
+        part("p3003", "quick_reply_opts", ago(10, 2), { replyOptions: [{ id: "yes", text: "That helped" }] }),
+        part("p3004", "quick_reply_resp", ago(10, 3), { bodyHtml: "<p>That helped</p>", selectedOptionId: "yes", author: juno }),
+        part("p3005", "rating_requested", ago(10, 4)),
+        part("p3006", "rating_submitted", ago(10, 4)),
+        part("p3007", "workflow_wait", ago(10, 5), { workflowWait: { eventType: "wait", workflowId: "w1", workflowName: "Bot", occurredAt: ago(10, 5) } }),
+        part("p3008", "attr_prompt", ago(10, 6)),
+        part("p3009", "attr_complete", ago(10, 6)),
+        part("p3010", "priority", ago(10, 7)),
+        part("p3011", "part_add", ago(10, 7), { participant: { id: juno.id, type: "lead" } }),
+        part("p3012", "tags", ago(10, 8), { action: "added", tagId: "t1", occurredAt: ago(10, 8) }),
+        part("p3013", "status", ago(10, 9), { status: "closed", snoozedUntil: null }),
+      ],
+    }),
+    row("1001", {
+      title: "Dark mode?",
+      state: "closed",
+      adminAssigneeId: olive.id,
+      participants: [{ id: mira.id, type: "customer" }],
+      source: { channel: "desktop", deliveredAs: "customer_initiated", bodyHtml: "<p>Is there a dark mode?</p>", author: { id: mira.id, type: "customer" } },
+      createdAt: ago(800),
+      updatedAt: ago(790),
+      lastActivityAt: ago(790),
+      waitingSince: null,
+      readReceipts: [],
+      conversationParts: [
+        part("p4001", "user_msg", ago(800, 0.02), { bodyHtml: "<p>Is there a dark mode?</p>", channel: "desktop", author: mira, redacted: false }),
+        part("p4002", "admin_msg", ago(800, 10), { bodyHtml: "<p>Not yet.</p>", channel: "desktop", author: olive, redacted: false }),
+      ],
+    }),
+  ];
+};
 
 /** Made-up contacts: one with everything (properties of each kind, two companies, an uploaded avatar), one with Featurebase's placeholder avatar, a lead with no email or id of their own, and an empty row (Featurebase sends some). */
 export const featurebaseFixtures = (): FeaturebaseFixtures => ({
@@ -60,6 +181,7 @@ export const featurebaseFixtures = (): FeaturebaseFixtures => ({
     { object: "admin", id: "65f0000000000000000000a2", name: "Fern Former", email: "e2e-featurebase-former@example.com", profilePicture: null, roleId: "admin" },
   ],
   ...feedbackFixtures(),
+  conversations: conversationFixtures(),
 });
 
 const MIRA = { id: "65f000000000000000000001", name: "Mira Fenwick", email: "e2e-mira@example.com", profilePicture: null, type: "customer" };
@@ -178,13 +300,17 @@ function feedbackFixtures(): Pick<FeaturebaseFixtures, "boards" | "posts" | "com
   };
 }
 
-/** Lists the fake serves, by path: paged ones as Featurebase pages them; unpaged ones (admins) in one; bare ones (boards) as an array. */
-const LISTS: Record<string, { fixtures: Exclude<keyof FeaturebaseFixtures, "voters">; paged: boolean; bare?: true }> = {
+/**
+ * Lists the fake serves, by path: paged ones as Featurebase pages them; unpaged ones (admins) in one; bare ones (boards)
+ * as an array. `detail`: fields only one item's own GET has (a conversation's parts).
+ */
+const LISTS: Record<string, { fixtures: Exclude<keyof FeaturebaseFixtures, "voters">; paged: boolean; bare?: true; detail?: string[] }> = {
   "/v2/contacts": { fixtures: "contacts", paged: true },
   "/v2/admins": { fixtures: "admins", paged: false },
   "/v2/boards": { fixtures: "boards", paged: false, bare: true },
   "/v2/posts": { fixtures: "posts", paged: true },
   "/v2/comments": { fixtures: "comments", paged: true },
+  "/v2/conversations": { fixtures: "conversations", paged: true, detail: ["conversationParts"] },
 };
 const VOTERS = /^\/v2\/posts\/([^/]+)\/voters$/;
 
@@ -218,6 +344,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
   const files = new Map<string, { type: string; body: Buffer }>([
     ["whiteboard.png", { type: "image/png", body: PNG }],
     ["mira.png", { type: "image/png", body: PNG }],
+    ["shot.png", { type: "image/png", body: PNG }],
   ]);
   let failing: { status: number; times: number; headers: Record<string, string>; body?: string } | undefined;
   /** The slow key's held pages, each with its fallback timer. */
@@ -281,7 +408,8 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
       return send(404, { error: { type: "invalid_request_error", code: "resource_not_found", message: "Post not found", status: 404 } });
     }
     if (list) {
-      const { rows } = list;
+      const detail = "detail" in list ? list.detail : undefined;
+      const rows = (list.rows as (Row | null)[]).map((row) => (row && detail ? Object.fromEntries(Object.entries(row).filter(([key]) => !detail.includes(key))) : row));
       if (!list.paged) {
         return send(200, "bare" in list ? rows : { object: "list", data: rows, nextCursor: null });
       }

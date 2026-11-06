@@ -15,6 +15,7 @@ export const IMPORT_PARTS = {
     media: true,
     see: { label: "See feedback", page: "feedback" },
   },
+  inbox: { label: "Inbox", description: "Conversations with their messages, notes and images, as the Inbox.", needs: ["contacts"], media: true, see: { label: "See conversations", page: "inbox" } },
 } as const satisfies Record<string, ImportPartInfo>;
 
 /** `see`: where what it brought is in the app (Home's link once an import ends: the first picked part's). */
@@ -68,6 +69,8 @@ const KINDS: Record<string, [string, string]> = {
   files: ["file", "files"],
   videos: ["video", "videos"],
   avatars: ["avatar", "avatars"],
+  conversations: ["conversation", "conversations"],
+  attachments: ["attachment", "attachments"],
 };
 
 /** An import's count of a kind, in words ("12 contacts"). */
