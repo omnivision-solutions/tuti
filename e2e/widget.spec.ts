@@ -2019,7 +2019,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
     }).observe(document, { childList: true, subtree: true });
   });
   // Messages loads under a skeleton shaped like its list (its answers held here, from before the page
-  // loads: the panel may read it as soon as it opens), the team above it: Olive's face, and the reply line
+  // loads: the panel may read it as soon as it opens), the team above it: Olive's face, and no reply line
   // (fewer than five answered, so no time yet). Screen readers are told.
   // Held reads go on as `release` says; reads after it as `reads` says.
   let reads: "hold" | "fail" | "pass" = "hold";
