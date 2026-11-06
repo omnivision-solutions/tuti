@@ -168,6 +168,11 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(moved.getByText("Saved", { exact: true })).toBeVisible();
   await expect(moved.getByText(/One email at 8 am \(Pacific\/Chatham\)/)).toBeVisible();
   await expect(moved.getByText(/Pick it again/)).toHaveCount(0);
+  // The first tab, still open: refreshed (saving the profile), it shows the zone saved elsewhere, and offers its own.
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Profile updated")).toBeVisible();
+  await expect(owner.getByText(/One email at 8 am \(Pacific\/Chatham\)/)).toBeVisible();
+  await expect(owner.getByText(/Pick it again to use /)).toBeVisible();
   const { rows: zone } = await db.query<{ autopilotTimeZone: string }>(`SELECT "autopilotTimeZone" FROM "user" WHERE email = $1`, [owner.email]);
   expect(zone[0]!.autopilotTimeZone).toBe("Pacific/Chatham");
   await moved.context().close();
