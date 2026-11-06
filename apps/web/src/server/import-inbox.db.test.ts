@@ -435,6 +435,17 @@ test("a conversation started by a forwarded email keeps it whole, on import and 
   expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: asked!.id } })).toMatchObject({ body: asked!.body, original: null });
 });
 
+test("a titled conversation started by a forwarded email keeps it whole on import, by its email's subject", async () => {
+  const snoozed = fake.fixtures.conversations[1]!;
+  snoozed.title = "Payment failed";
+  snoozed.source = { ...snoozed.source!, subject: "Fwd: Payment failed" };
+  (snoozed.conversationParts as { bodyHtml: string }[])[0]!.bodyHtml =
+    "<p>FYI, from our bank.</p><p>On Mon, Oct 12, 2026 at 6:51 AM, Example Bank &lt;e2e-bank@example.com&gt; wrote:</p><p>Your payment failed.</p>";
+  await importInbox();
+  const conversation = (await conversations()).find((c) => c.subject === "Payment failed")!;
+  expect(conversation.messages[0]).toMatchObject({ body: "FYI, from our bank.\nOn Mon, Oct 12, 2026 at 6:51 AM, Example Bank <e2e-bank@example.com> wrote:\nYour payment failed.", original: null });
+});
+
 /** An import's row at the conversations step, as if Contacts had been picked and skipped over. */
 const atConversations = (parts = ["contacts", "inbox"]) =>
   prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealedKey(), parts, step: "conversations" } });

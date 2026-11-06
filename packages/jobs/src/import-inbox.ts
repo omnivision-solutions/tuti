@@ -196,9 +196,9 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
     }
     const { body: text, urls, media, unshown } = await messageText(part);
     // An email shows its new part, as a received one does, the whole of it kept behind it (a widget message never quotes);
-    // one that starts the conversation (its first message that isn't a note) as a forward is kept whole, by its subject
-    // as saveConversation stores it: what cutImportedQuotes checks later too.
-    const subject = messages.every((m) => m.note) ? conversation.title?.trim() || source?.subject?.trim() || "" : "";
+    // one that starts the conversation (its first message that isn't a note) as a forward is kept whole, by its email's
+    // subject (the conversation's title only without one).
+    const subject = messages.every((m) => m.note) ? source?.subject?.trim() || conversation.title?.trim() || "" : "";
     const { text: body, stripped } = part.channel === "email" && !kind.note ? stripQuotes(text, subject) : { text, stripped: false };
     const files: StoredFile[] = [];
     let dropped = unshown;
@@ -405,8 +405,10 @@ const subjectFrom = (text: string) => {
 
 /**
  * Cuts the quotes from emails imported before imports cut them, the whole email kept behind each, as an import does now
- * (a conversation's first message that isn't a note by its stored subject, a forward kept whole). Run once by apps/worker's `cut:imported-quotes`,
- * a page at a time; nothing is lost, so running it again changes nothing.
+ * (a conversation's first message that isn't a note by its subject, a forward kept whole). Run once by apps/worker's `cut:imported-quotes`,
+ * a page at a time; nothing is lost, so running it again changes nothing. Only the stored subject is left to go by, which is
+ * Featurebase's title when it had one: a titled conversation started by a forward has its quote cut here, where an import
+ * keeps it whole (its email's subject), the whole email still behind "Show the whole email".
  */
 export async function cutImportedQuotes(): Promise<number> {
   let cut = 0;
