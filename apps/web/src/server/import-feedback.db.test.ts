@@ -354,6 +354,30 @@ test("past a page's time, what's left of it goes to the next page; one post's im
   expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 2 } } });
 });
 
+test("a comment whose images run past a page's time goes to the next page whole, its images with it, once", async () => {
+  // A comment with two images after the first: the page's time runs out as its first image is fetched.
+  const png = Buffer.from(await (await fetch(`${fake.url}/files/mira.png`)).arrayBuffer());
+  const [late, later] = [fake.file("late.png", "image/png", png), fake.file("later.png", "image/png", png)];
+  const [first] = fake.fixtures.comments;
+  fake.fixtures.comments.splice(1, 0, { ...structuredClone(first!), id: "65f0000000000000000000cz", createdAt: "2024-01-11T10:00:00.000Z", content: `<p>Two more:</p><img src="${late}"><img src="${later}">` });
+  let now = 0;
+  Object.assign(FEEDBACK_PAGE, { softMs: 100, now: () => now });
+  fake.onFile = (name) => {
+    if (name === "late.png") {
+      now += 1000;
+    }
+  };
+  try {
+    await importFeedback();
+  } finally {
+    fake.onFile = undefined;
+  }
+  const comment = await prisma.comment.findMany({ where: { projectId: project.id, body: { contains: "Two more:" } }, select: { content: true } });
+  expect(comment).toHaveLength(1);
+  expect(JSON.stringify(comment[0]!.content).match(/"type":"image"/g)).toHaveLength(2);
+  expect((await call(getImport, asOwner(), {})).import!.counts.comments).toMatchObject({ imported: 4 });
+});
+
 test("a page of comments cut short goes on after the last one done, even when one before it is gone from Featurebase meanwhile", async () => {
   const importStep = handlers.importStep;
   let cut = false;
