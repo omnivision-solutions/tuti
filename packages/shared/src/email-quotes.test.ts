@@ -37,6 +37,7 @@ test("Featurebase's attribution and footer, and Yahoo's app signature, are cut",
   expect(stripQuotes("Ask Aaron (e2e-aaron@example.com), who wrote on Monday: it's fixed.").stripped).toBe(false);
   // "wrote on" without Featurebase's date and time: their own words, kept.
   expect(stripQuotes("Hi, same problem as my colleague.\nSam Lee (e2e-sam@example.com) wrote on your forum last week:\nExports fail with a 500.\nAny news?").stripped).toBe(false);
+  expect(stripQuotes("Same here.\nAaron Example (e2e-aaron@example.com) wrote on 2 tickets before 10:30 today:\nBoth failed.").stripped).toBe(false);
   // Featurebase's in other locales: day-first with a spaced "p. m.", and Korean.
   expect(stripQuotes("Is it fixed?\nAaron Example (e2e-aaron@example.com) wrote on 30/9/2026, 1:47:14 p. m.:\nIt crashes.").text).toBe("Is it fixed?");
   expect(stripQuotes("Is it fixed?\nAaron Example (e2e-aaron@example.com) wrote on 2026. 9. 30. 오후 1:47:14:\nIt crashes.").text).toBe("Is it fixed?");
