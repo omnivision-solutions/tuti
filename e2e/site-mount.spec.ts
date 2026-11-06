@@ -86,16 +86,20 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await visitor.goto("/portal/docs");
   await expect(visitor.locator("#team-html")).toHaveText("From the team");
   await expect(visitor.locator("body")).toHaveAttribute("data-team-script", "ran");
-  // Not the project's own widget (Customize → Widget) yet: its panel's links don't keep the path. The tag is in the page as sent.
-  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(0);
+  // The project's own widget (Customize → Widget): its panel is the path's /widget, on the site. The tag is in the page as sent.
+  await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("data-base", "/portal");
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${siteUrl()}/portal/widget`);
+  await expect(visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" })).toBeVisible();
+  await checkpoint(visitor, "portal-on-site-widget");
   const direct = await newPerson(browser, portalUrl(slug));
   await direct.goto("/portal/docs");
   await expect(direct.getByRole("heading", { name: "Docs" }).first()).toBeVisible();
   await expect(direct.locator("#team-html")).toHaveCount(0);
   await expect(direct.locator("body")).not.toHaveAttribute("data-team-script", "ran");
-  // Customize → Widget says so beside its switch.
+  // Customize → Widget has no "not yet" beside its switch.
   await owner.goto(`/app/${slug}/customize/widget`);
-  await expect(owner.getByText("The launcher on every page of your portal too. Not yet while your portal is under a path of your site.")).toBeVisible();
+  await expect(owner.getByText("The launcher on every page of your portal too, opening the same panel as on your site.")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/domain`);
 
   // Signing up, posting and signing out there, all under the path.
@@ -133,6 +137,17 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await visitor.getByRole("main").getByRole("button", { name: "Sign in" }).click();
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/roadmap`);
   await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
+  // Signed in there, they post from the widget's Feedback as themselves.
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const panel = visitor.frameLocator('iframe[title="Feedback"]');
+  await panel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await panel.getByLabel("Title").fill("Export to CSV from our site");
+  await panel.getByRole("button", { name: "Submit post" }).click();
+  await expect(panel.getByText("Feedback posted")).toBeVisible();
+  await checkpoint(visitor, "portal-on-site-widget-posted");
+  await visitor.goto("/portal/feedback/feature-requests");
+  await visitor.getByRole("link", { name: "Export to CSV from our site" }).click();
+  await expect(visitor.getByRole("main").getByText("Ada", { exact: true })).toBeVisible();
   // The rest of the site is the site's.
   await visitor.goto("/pricing");
   await expect(visitor.getByRole("heading", { name: "The site's own page" })).toBeVisible();

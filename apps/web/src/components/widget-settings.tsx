@@ -51,7 +51,6 @@ export function WidgetSettings({
   greeting,
   hidden,
   onPortal,
-  underSitePath,
   aiFirst,
 }: {
   projectSlug: string;
@@ -68,8 +67,6 @@ export function WidgetSettings({
   greeting: string;
   hidden: WidgetPart[];
   onPortal: boolean;
-  /** The portal is under a path of the team's site (Customize → Address), where it doesn't show the widget yet. */
-  underSitePath: boolean;
   /** Null where the server has no AI answers: the switch isn't there (it would do nothing). */
   aiFirst: boolean | null;
 }) {
@@ -171,11 +168,7 @@ export function WidgetSettings({
             <SwitchRow
               name="onPortal"
               label="Show on your portal"
-              description={
-                underSitePath
-                  ? "The launcher on every page of your portal too. Not yet while your portal is under a path of your site."
-                  : "The launcher on every page of your portal too, opening the same panel as on your site."
-              }
+              description="The launcher on every page of your portal too, opening the same panel as on your site."
               defaultChecked={onPortal}
             />
           </FieldGroup>

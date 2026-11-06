@@ -389,6 +389,46 @@ test("the portal's own tag (data-on-portal): the panel is the page's own address
   expect((site.window.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url))).toContain("https://app.tuti.example/api/widget/latest?project=acme");
 });
 
+test("the portal under a path of the team's site (data-base): its panels are that path's /widget, tokens still go to the page's origin", async () => {
+  const onSite = (attributes: Record<string, string>) =>
+    loadWidget({
+      attributes: { "data-on-portal": "", ...attributes },
+      settings: { identify: token },
+      before: (page) => {
+        Object.assign(page.window, { location: { origin: "https://acme.example" } });
+        inlineMount(page, "docs");
+      },
+    });
+  const page = onSite({ "data-base": "/help/center" });
+  await settled();
+  page.Tuti.open();
+  expect(page.frame!.src).toBe("https://acme.example/help/center/widget");
+  expect(page.inlineFrames.map((frame) => frame.src)).toEqual(["https://acme.example/help/center/widget?tab=docs&display=inline"]);
+  // The token and messages go to the page's origin, not one made from the path.
+  const frameWindow = page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  page.message(frameWindow, { type: "tuti:ready" }, "https://acme.example");
+  await settled();
+  expect(frameWindow.postMessage).toHaveBeenCalledWith({ type: "tuti:identify", token: "sso-token" }, "https://acme.example");
+
+  // Not a path of lowercase segments: an error, and the panel at the page's own /widget.
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  for (const base of ["//evil.example", "/Help", "/a/../b", "https://x", "/help/"]) {
+    const bad = onSite({ "data-base": base });
+    await settled();
+    bad.Tuti.open();
+    expect(bad.frame!.src).toBe("https://acme.example/widget");
+  }
+  expect(error).toHaveBeenCalledTimes(5);
+  expect(error).toHaveBeenCalledWith('Tuti widget: data-base is a path of lowercase segments, e.g. data-base="/help"');
+  error.mockRestore();
+
+  // Only on the portal's own tag: another site's data-base changes nothing.
+  const site = loadWidget({ attributes: { "data-base": "/help" } });
+  await settled();
+  site.Tuti.open();
+  expect(site.frame!.src).toBe("https://acme.tuti.example/widget");
+});
+
 test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; unknown tabs are reported", async () => {
   const page = loadWidget({});
   page.Tuti.open({ tab: "whats-new" });

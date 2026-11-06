@@ -115,6 +115,9 @@ export default {
 - **One path, or a domain.** The portal can be under one path of one site, or on a domain of
   its own, not both: to switch, remove the one it has first. Its Tuti address keeps working for
   the widget, which your site embeds from there.
+- **The widget on your portal** (Customize → Widget, "Show on your portal") opens
+  `example.com/portal/widget` in a frame on your site. If your site adds `X-Frame-Options: DENY`, or a
+  `frame-ancestors` that leaves out your site, to the forwarded paths, its panel is blank (`SAMEORIGIN` is fine).
 - **Sign-in.** People sign in on your site, under the path. Their Tuti session is a cookie
   on your site, named `tuti.…` so it can't clash with yours. Browsers send it with every
   request to your site, so your own servers see it too; it only signs people in to your

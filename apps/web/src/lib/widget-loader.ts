@@ -1,3 +1,4 @@
+import { BASE_PATTERN } from "./portal-base";
 import { SLUG_PATTERN } from "./project-slugs";
 import { WIDGET_ICONS } from "./widget-icons";
 import {
@@ -33,7 +34,9 @@ import {
  *
  * `data-on-portal` is the portal's own tag (Customize → Widget): the panel is the page's own
  * origin's `/widget` (a custom domain's too, where the reader's session is), and the page
- * isn't one of the team's sites for Home's "Get set up".
+ * isn't one of the team's sites for Home's "Get set up". With it, `data-base` is the path of the
+ * team's site the portal is under (SiteMount, e.g. "/help": the panel is `/help/widget`), checked
+ * against BASE_PATTERN (otherwise an error and no path); tokens and messages still go to the page's origin.
  *
  * `data-theme` (or `TutiSettings.theme`) picks light or dark for every panel and the button, unless it has the team's own colour ("auto", the default,
  * is the project's colour scheme, from Customize → Branding: by default the visitor's setting); the panels' frames
@@ -87,7 +90,13 @@ export function widgetLoader(portalTemplate: string): string {
   var sidebar = display === "sidebar";
   var hideLauncher = display === "inline" || script.hasAttribute("data-hide-launcher") || settings.hideLauncher === true;
   var onPortal = script.hasAttribute("data-on-portal");
-  var portal = onPortal ? window.location.origin : ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
+  // A portal under a path of the team's site (data-base, e.g. /help): its panel is that path's /widget, on the page's own origin.
+  var base = (onPortal && script.getAttribute("data-base")) || "";
+  if (base && !${BASE_PATTERN}.test(base)) {
+    console.error("Tuti widget: data-base is a path of lowercase segments, e.g. data-base=\\"/help\\"");
+    base = "";
+  }
+  var portal = onPortal ? window.location.origin + base : ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
   var origin = new URL(portal).origin;
   var api = new URL(script.src).origin;
   var seenKey = "tuti:seen:" + slug;
