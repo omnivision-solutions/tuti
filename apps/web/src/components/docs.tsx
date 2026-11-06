@@ -373,7 +373,7 @@ export function ArticleActions({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(deleteArticle, "Deleted")}>
+            <AlertDialogAction variant="destructive" disabled={pending} focusableWhenDisabled onClick={() => run(deleteArticle, "Deleted")}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -394,7 +394,7 @@ export function ArticleActions({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction disabled={pending} onClick={() => run(unpublishArticle, "Unpublished")}>
+              <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={() => run(unpublishArticle, "Unpublished")}>
                 Unpublish
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -426,7 +426,7 @@ export function ArticleActions({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction disabled={pending} onClick={() => run(publishArticle, "Published")}>
+              <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={() => run(publishArticle, "Published")}>
                 Publish
               </AlertDialogAction>
             </AlertDialogFooter>
