@@ -196,12 +196,7 @@ export function DocsAssistantProvider({
         (typeof answered.answer === "string" || answered.answer === null || answered.answer === undefined)
       ) {
         const { question, answer } = turn as { question: string; answer: DocsAnswer };
-        if (!turnsRef.current.some((each) => each.answer?.id === answer.id)) {
-          const added = { key: crypto.randomUUID(), question, answer };
-          // In the turns at once too, so a question asked with it follows up on it.
-          turnsRef.current = [...turnsRef.current, added];
-          setTurns((all) => (all.some((each) => each.answer?.id === answer.id) ? all : [...all, added]));
-        }
+        setTurns((all) => (all.some((each) => each.answer?.id === answer.id) ? all : [...all, { key: crypto.randomUUID(), question, answer }]));
       }
       if (data.ask.trim()) {
         assistant.ask(data.ask.slice(0, MAX_QUESTION));
