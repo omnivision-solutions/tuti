@@ -20,7 +20,7 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
   const form = (
     // The form stays (and its button keeps focus), with what was typed if it's refused; the answer is read out from here.
     <form {...keepingFields(action)} className="flex flex-col gap-2">
-      <p className="text-sm text-muted-foreground">The changelog entries emailed to subscribers, in your inbox. Unsubscribe from any of them.</p>
+      <p className="text-sm text-muted-foreground">The changelog entries sent to subscribers come to your inbox, each with a link to unsubscribe.</p>
       <div className="flex flex-wrap gap-2">
         <Input
           name="email"

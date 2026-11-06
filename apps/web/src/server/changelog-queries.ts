@@ -35,11 +35,11 @@ export function entryPosts(projectId: string, listed: number[]) {
 }
 
 /**
- * How many people publishing an entry told: those its posts' shipped emails reached, and the subscribers it was
- * emailed to (each address once), or null when publishing completed none of its posts (sample ones don't count, or
- * did before that was recorded) and didn't email subscribers.
+ * How many people publishing an entry told: those who asked (its posts' shipped emails reached), and the other
+ * subscribers it was emailed to (each address once, counted as one who asked if both), or null when publishing
+ * completed none of its posts (sample ones don't count, or did before that was recorded) and didn't email subscribers.
  */
-export async function entryTold(entryId: string): Promise<number | null> {
+export async function entryTold(entryId: string): Promise<{ asked: number; subscribers: number } | null> {
   const [events, entry] = await Promise.all([
     prisma.postEvent.count({ where: { changelogEntryId: entryId, post: { sample: false } } }),
     prisma.changelogEntry.findUniqueOrThrow({ where: { id: entryId }, select: { projectId: true, subscribersEmailedAt: true } }),
@@ -59,15 +59,18 @@ export async function entryTold(entryId: string): Promise<number | null> {
   const shippedTo = people.map(({ user }) =>
     (user.ssoIdentity?.projectId === entry.projectId && user.ssoIdentity.email ? user.ssoIdentity.email : user.email).toLowerCase(),
   );
-  return new Set([...shippedTo, ...subscribers.map((s) => s.subscriber.email)]).size;
+  const asked = new Set(shippedTo);
+  const others = new Set(subscribers.map((s) => s.subscriber.email).filter((email) => !asked.has(email)));
+  return { asked: asked.size, subscribers: others.size };
 }
 
 /**
- * The draft whose release notes wait to be written ("Next release is ready to write"): the one the newest GitHub
- * release closed, while it's unpublished; else the running draft, once merged pull requests are in it. Null for none.
+ * The draft whose release notes wait to be written: the one the newest GitHub release closed, while it's
+ * unpublished ("Next release is ready to write"); else the running draft, once merged pull requests are in it
+ * (`collecting`: still gathering them). Null for none.
  */
 export async function draftToWrite(projectId: string) {
-  const select = { number: true, title: true, _count: { select: { pullRequests: true } } } as const;
+  const select = { number: true, title: true, collecting: true, _count: { select: { pullRequests: true } } } as const;
   return (
     (await prisma.changelogEntry.findFirst({
       where: { projectId, publishedAt: null, releasedAt: { not: null }, pullRequests: { some: {} } },

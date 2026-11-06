@@ -101,7 +101,7 @@ test("a board's Get updates offers the changelog by email: the form, or where a 
 
   actAs(null);
   const signedOut = await getUpdates();
-  expect(signedOut).toContain("The changelog entries emailed to subscribers, in your inbox.");
+  expect(signedOut).toContain("The changelog entries sent to subscribers come to your inbox, each with a link to unsubscribe.");
   expect(signedOut).toMatch(/<input[^>]*name="email"/);
   expect(signedOut).toContain("Subscribe");
 
@@ -114,10 +114,10 @@ test("a board's Get updates offers the changelog by email: the form, or where a 
   const subscribed = await getUpdates();
   expect(subscribed).toContain(`emails to subscribers go to ${email}.`);
   expect(subscribed).toMatch(/href="[^"]*\/account"[^>]*>Manage<\/a>/);
-  expect(subscribed).not.toContain("The changelog entries emailed to subscribers, in your inbox.");
+  expect(subscribed).not.toContain("The changelog entries sent to subscribers come to your inbox, each with a link to unsubscribe.");
 
   // A private portal emails no changelog: nothing offered.
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
   actAs(owner);
-  expect(await getUpdates()).not.toContain("The changelog entries emailed to subscribers, in your inbox.");
+  expect(await getUpdates()).not.toContain("The changelog entries sent to subscribers come to your inbox, each with a link to unsubscribe.");
 });

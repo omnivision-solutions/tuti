@@ -71,7 +71,11 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
     return (
       <Message>
         <h1 className={heading}>Get {name}&apos;s updates by email?</h1>
-        <p className={text}>{reachSentence(request.reach, name, request.email)}</p>
+        {/* Not confirmed yet (reach is where confirming leaves them: gets, or paused): what happens once they are. */}
+        <p className={text}>
+          Once you confirm, the changelog entries {name} emails to subscribers will go to {request.email}
+          {request.reach === "paused" && <> when {name}&apos;s emails, paused for now, are resumed</>}.
+        </p>
         <form method="post" action={action}>
           <Button type="submit">Get updates by email</Button>
         </form>

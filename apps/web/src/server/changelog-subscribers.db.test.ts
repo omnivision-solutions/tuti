@@ -179,7 +179,17 @@ describe("subscribing", () => {
     const link = await confirmationTo(kim);
     // It promises only the entries the team emails (publishing asks each time).
     expect((await mailbox.latestTo(kim)).text).toContain(`Confirm to get the changelog entries ${project.name} emails to subscribers`);
-    expect(await page({ confirm: link })).toContain(`Get ${project.name}'s updates by email? The changelog entries ${project.name} emails to subscribers go to ${kim}.`);
+    expect(await page({ confirm: link })).toContain(
+      `Get ${project.name}'s updates by email? Once you confirm, the changelog entries ${project.name} emails to subscribers will go to ${kim}.`,
+    );
+    // The project's emails paused (with plans: pausing is the cloud's): they'd go once they're resumed.
+    vi.stubEnv("PLANS", "on");
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+    expect(await page({ confirm: link })).toContain(
+      `Once you confirm, the changelog entries ${project.name} emails to subscribers will go to ${kim} when ${project.name}'s emails, paused for now, are resumed.`,
+    );
+    await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: null } });
+    vi.unstubAllEnvs();
 
     // Lee never confirms.
     const token = await tokenOf(kim);
@@ -195,9 +205,9 @@ describe("subscribing", () => {
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/changelog/subscription?token=${token}`);
     expect(email!.headers["list-unsubscribe"]).toBe(`<http://${project.slug}.localhost:3100/changelog/subscription/unsubscribe?token=${token}>`);
     expect(email!.headers["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
-    // How many it told: the subscriber emailed.
+    // How many it told: the subscriber emailed (a subscriber, not someone who asked).
     const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
-    expect(await entryTold(entry.id)).toBe(1);
+    expect(await entryTold(entry.id)).toEqual({ asked: 0, subscribers: 1 });
   });
 
   test("unsubscribing (the email's link, or one click from a mail app) stops them; subscribing again asks to confirm again", async () => {
@@ -762,7 +772,7 @@ describe("publishing with Email subscribers", () => {
     await call(publishChangelogEntry, team(), { number: entry.number, emailSubscribers: true });
     expect(emailsTo(sso).map((email) => email.subject)).toEqual(expect.arrayContaining([`Done: Dark mode`, `${project.name}: Dark mode`]));
     const { id } = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } });
-    expect(await entryTold(id)).toBe(1);
+    expect(await entryTold(id)).toEqual({ asked: 1, subscribers: 0 });
   });
 
   test("turned all of the project's emails off after confirming: no changelog either; the long-lived link (forwarded, say) can't turn them back on, only a fresh one emailed to the address", async () => {

@@ -72,8 +72,8 @@ type Entry = {
   cover: { id: string; url: string } | null;
   /** The cover at the text column's width (the editor shows it there as readers see it); null without one. */
   wideCoverUrl?: string | null;
-  /** Published: how many people it told, by its posts' shipped emails and to subscribers (entryTold); null if that isn't known. */
-  told: number | null;
+  /** Published: how many people it told, those who asked (its posts' shipped emails) and other subscribers (entryTold); null if that isn't known. */
+  told: { asked: number; subscribers: number } | null;
   /** Published as new (the widget's and the portal's dot), or quietly. */
   announced: boolean;
   /** Emailed to subscribers already (the first time it was published with Email subscribers): never again. */
@@ -342,6 +342,15 @@ export function ChangelogForm({
 /** "3 subscribers", "1 subscriber". */
 const subscriberCountText = (n: number) => `${n} ${n === 1 ? "subscriber" : "subscribers"}`;
 
+/** Who publishing told: the people who asked, the subscribers, or both. */
+const toldText = ({ asked, subscribers }: { asked: number; subscribers: number }) => {
+  const people = `${asked} ${asked === 1 ? "person" : "people"} who asked`;
+  if (subscribers === 0) {
+    return `Told ${people}.`;
+  }
+  return asked === 0 ? `Told ${subscriberCountText(subscribers)}.` : `Told ${people} and ${subscriberCountText(subscribers)}.`;
+};
+
 /** The subscribers an entry is still to be emailed to, by how many. */
 const stillToEmail = (n: number) => (n === 1 ? "the subscriber who hasn't had it yet" : `the ${n} subscribers who haven't had it yet`);
 
@@ -412,7 +421,8 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
                 : `Emailed to ${subscriberCountText(entry.subscribersSent)}.`}
           </p>
           <p>{entry.announced ? "Marked new in your widget's What's new." : "In your widget's What's new, not marked new."}</p>
-          {entry.told !== null && <p className="text-muted-foreground">{`Told ${people(entry.told)} who asked.`}</p>}
+          {/* Nobody told yet (still being emailed, say): the line above says so. */}
+          {entry.told !== null && entry.told.asked + entry.told.subscribers > 0 && <p className="text-muted-foreground">{toldText(entry.told)}</p>}
         </>
       ) : entry.sample ? (
         // changelog.publish: a sample entry is never announced or emailed.
@@ -438,7 +448,7 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
               { checked: announce.email && !!subscribers, disabled: !subscribers, onChange: (event) => pick({ email: event.target.checked }) },
             )
           )}
-          {choice("Mark it new", "It's in your widget's What's new either way. Marked new, the widget and your portal show a dot until people see it.", {
+          {choice("Mark it new", "It's in your widget's What's new either way. Marked new, the widget shows a dot and your portal's Changelog tab says New to signed-in readers, until they see it.", {
             checked: announce.markNew,
             onChange: (event) => pick({ markNew: event.target.checked }),
           })}
@@ -942,7 +952,7 @@ export function ChangelogEntryActions({
         <AlertDialogHeader>
           <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
           <AlertDialogDescription>
-            AI writes release notes from the entry&apos;s pull requests and the posts it completes. They replace
+            AI writes release notes from the entry&apos;s saved text, its pull requests and the posts it completes. They replace
             the current text, including changes you haven&apos;t saved.
           </AlertDialogDescription>
         </AlertDialogHeader>

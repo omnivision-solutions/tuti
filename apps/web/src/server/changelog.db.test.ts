@@ -296,9 +296,9 @@ describe("the cover and who was told", () => {
       await call(publishChangelogEntry, as(owner), { number });
     }
     expect(mailbox.emails.filter((e) => e.subject.startsWith("Done: ") && [visitor.email, voter.email].some((to) => e.to.includes(to)))).toHaveLength(4);
-    expect(await entryTold(themes!.id)).toBe(2);
+    expect(await entryTold(themes!.id)).toEqual({ asked: 2, subscribers: 0 });
     expect(await entryTold(search!.id)).toBeNull();
-    expect(await entryTold(exported!.id)).toBe(0);
+    expect(await entryTold(exported!.id)).toEqual({ asked: 0, subscribers: 0 });
   });
 });
 
