@@ -29,7 +29,7 @@ RUN --mount=type=cache,id=tuti-pnpm-store,target=/pnpm-store \
     && chmod +x /prod/worker/start.sh
 
 FROM base AS runner
-ARG INFISICAL_CLI_VERSION=0.44.15
+ARG INFISICAL_CLI_VERSION=0.45.3
 # BusyBox's wget fetches the setup script. npm comes with the Node image but
 # nothing here runs it, and its bundled packages carry known vulnerabilities.
 RUN apk add --no-cache bash \

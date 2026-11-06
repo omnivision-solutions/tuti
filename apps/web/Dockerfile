@@ -32,7 +32,7 @@ RUN --mount=type=cache,id=tuti-next-cache,target=/app/apps/web/.next/cache \
 FROM base AS runner
 # Infisical CLI, used only when INFISICAL_TOKEN is set (the maintainers' deployment,
 # docs/secrets.md). Pinned so an upgrade is a deliberate change.
-ARG INFISICAL_CLI_VERSION=0.44.15
+ARG INFISICAL_CLI_VERSION=0.45.3
 # BusyBox's wget fetches the setup script. npm comes with the Node image but
 # nothing here runs it, and its bundled packages carry known vulnerabilities.
 RUN apk add --no-cache bash \
