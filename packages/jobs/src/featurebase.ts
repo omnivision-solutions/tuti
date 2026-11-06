@@ -155,6 +155,8 @@ export type FeaturebaseBoard = {
   id: string;
   name: string;
   access?: { adminOnly?: boolean; allowedRoles?: string[]; deniedRoles?: string[]; segments?: string[] } | null;
+  /** Who its new posts are for: everyone, only their author (and the team), or the author's company. */
+  postDefaults?: { visibility?: "public" | "authorOnly" | "companyOnly" } | null;
   localization?: { name?: FeaturebaseLocalized; description?: FeaturebaseLocalized; formPlaceholder?: FeaturebaseLocalized; submitButtonText?: FeaturebaseLocalized } | null;
 };
 

@@ -81,6 +81,9 @@ const importer = (job: ImportJob): MediaImporter | undefined => (job.startedById
 /** Seen by only some people in Featurebase (admins, some roles, all but some roles, a segment): left out, with their posts. */
 const restricted = ({ access }: FeaturebaseBoard) => Boolean(access?.adminOnly || access?.allowedRoles?.length || access?.deniedRoles?.length || access?.segments?.length);
 
+/** A board made from Featurebase's: one whose new posts are only their author's makes them Private here too. */
+const boardVisibility = (board: FeaturebaseBoard) => (board.postDefaults?.visibility === "authorOnly" ? { postVisibility: "PRIVATE" as const } : {});
+
 /** As apps/web lib/board-texts.ts BOARD_TEXT_LIMITS, and the board form's description. */
 const LIMITS = { description: 280, postButton: 30, detailsPlaceholder: 120 };
 
@@ -161,12 +164,12 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
               update: { boardId: spare.id },
             });
           }
-          await tx.board.update({ where: { id: spare.id }, data: { name, slug, ...words } });
+          await tx.board.update({ where: { id: spare.id }, data: { name, slug, ...words, ...boardVisibility(board) } });
           Object.assign(spare, { name, slug });
           id = spare.id;
           spare = undefined;
         } else {
-          const created = await tx.board.create({ data: { projectId: job.projectId, name, slug, ...words }, select: { id: true, name: true, slug: true } });
+          const created = await tx.board.create({ data: { projectId: job.projectId, name, slug, ...words, ...boardVisibility(board) }, select: { id: true, name: true, slug: true } });
           existing.push(created);
           id = created.id;
         }
@@ -211,10 +214,13 @@ function etaMonth(eta: string | null): Date | null {
   return date && !Number.isNaN(date.getTime()) ? new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)) : null;
 }
 
-/** Why a post stays out (null: it comes), its board's too. */
+/**
+ * Why a post stays out (null: it comes), its board's too. One only some people see comes as Private (its author and the
+ * team: Featurebase's "only the author"), unless it's a company's (Tuti has no companies' posts).
+ */
 function postLeftOut(post: FeaturebasePost, boards: Map<string, FeaturebaseBoard>): string | null {
   const board = boards.get(post.boardId);
-  if (!board || restricted(board) || post.access?.userIds?.length || post.access?.companyExternalIds?.length) {
+  if (!board || restricted(board) || post.access?.companyExternalIds?.length) {
     return "only some people see";
   }
   return post.portalHidden ? "hidden from the portal" : post.inReview ? "waiting for moderation" : null;
@@ -333,7 +339,8 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
           data: {
             projectId: job.projectId,
             boardId: boardIds.get(post.boardId)!,
-            visibility: visibilityOf.get(boardIds.get(post.boardId)!),
+            // Featurebase's "only the author" (and whoever else it named): Private, its author and the team.
+            visibility: post.access?.userIds?.length ? "PRIVATE" : visibilityOf.get(boardIds.get(post.boardId)!),
             authorId,
             number,
             title: (post.title ?? "").trim().slice(0, 120) || "Untitled",
