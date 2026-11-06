@@ -176,14 +176,14 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
 });
 
 /**
- * Whoever's reading on this request (the portal's user, or the widget's). The team previewing the
- * portal as a reader (PREVIEW) reads it as people signed out do; for anyone else the preview
- * changes nothing, so it never shows more than they may read.
+ * Whoever's reading on this request (the portal's user, or the widget's). Previewing the portal as a reader (PREVIEW)
+ * reads it as people signed out do, whoever's looking (a team member's portal session is a reader's too): it only ever
+ * shows less.
  */
 export async function currentReader(projectId: string): Promise<Reader> {
   const { userId, session } = await reader(projectId);
   const read = await readerOf(projectId, userId, session);
-  return read === null && (await headers()).get(PREVIEW.header) === PREVIEW.value ? SIGNED_OUT : read;
+  return (await headers()).get(PREVIEW.header) === PREVIEW.value ? SIGNED_OUT : read;
 }
 
 /**

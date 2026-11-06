@@ -10,6 +10,7 @@ import { GET as robots } from "@/app/portal/[project]/(site)/robots.txt/route";
 import SignUpPage from "@/app/portal/[project]/(site)/sign-up/page";
 import WidgetPage from "@/app/portal/[project]/widget/page";
 import { WidgetLocked } from "@/components/widget-locked";
+import { PREVIEW } from "@/lib/portal-base";
 import { previewToken } from "@/lib/preview-session";
 import { widgetToken } from "@/lib/widget-session";
 import { proxy } from "@/proxy";
@@ -315,6 +316,12 @@ test("Customize's preview of a private portal works for a team member who's also
   request.cookie = `${owner.cookie}; ${PREVIEW_READER_COOKIE}=${previewToken(project.id, owner.id)}`;
   expect(await mayRead(project.id)).toBe(true);
   expect((await currentPostViewer(project.id)).team).toBe(true);
+  // Previewing it as a reader, they see what people signed out do, not what their own (reader's) session would.
+  request.headers = { [PREVIEW.header]: PREVIEW.value };
+  expect(await currentPostViewer(project.id)).toEqual({ team: false, userId: null });
+  request.cookie = owner.cookie;
+  expect(await currentPostViewer(project.id)).toEqual({ team: false, userId: null });
+  request.headers = {};
   // A preview token alone lets nobody else in on that session.
   request.cookie = `${owner.cookie}; ${PREVIEW_READER_COOKIE}=${previewToken(project.id, visitors["signed up"]!.id)}`;
   expect(await mayRead(project.id)).toBe(false);
