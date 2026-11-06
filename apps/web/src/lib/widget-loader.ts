@@ -661,11 +661,13 @@ export function widgetLoader(portalTemplate: string): string {
       closable = false;
       frame = newFrame(src);
       loading = src;
+      settled = false;
       // Named before it's in the page, so its first page has the name too.
       frame.name = ${JSON.stringify(WIDGET_PANEL_NAME)} + themed;
       panel.appendChild(frame);
       frame.addEventListener("load", function () {
         frameLoaded = true;
+        settled = true;
         release();
       });
     } else if (query !== null) {
@@ -673,6 +675,7 @@ export function widgetLoader(portalTemplate: string): string {
       // Another page: an ask waits for that one to listen, not the one on its way out (which may still say it is).
       listening = false;
       loading = src;
+      settled = false;
       frame.src = src;
     }
     showStandIn();
@@ -694,8 +697,10 @@ export function widgetLoader(portalTemplate: string): string {
   // The ask waiting for the floating panel's assistant, sent once it's listening.
   var listening = false;
   var pendingAsk = null;
-  // The page the floating panel was last given: only it may say it's listening (its address as the browser writes it).
+  // The page the floating panel was last given: until a page has loaded in it since, only that one may say it's listening
+  // (not the one on its way out); after, whichever page it's on (it may have gone to another itself).
   var loading = null;
+  var settled = false;
   function sameAddress(a, b) {
     try {
       return new URL(a).href === new URL(b).href;
@@ -885,7 +890,8 @@ export function widgetLoader(portalTemplate: string): string {
       }
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_ASK_READY_MESSAGE)}) {
-      if (from === frame && sameAddress(event.data.href, loading)) {
+      if (from === frame && event.data.listening === false) listening = false;
+      else if (from === frame && (settled || sameAddress(event.data.href, loading))) {
         listening = true;
         sendAsk();
       }

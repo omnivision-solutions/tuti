@@ -175,7 +175,7 @@ panel instead of leaving the page.
 | `Tuti.open()` | Opens the panel where it was (Home the first time). |
 | `Tuti.open({ tab })` | Opens it at a tab: `"home"`, `"messages"`, `"docs"` (Help center), `"feedback"` or `"whats-new"` (Home's What's new list). |
 | `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
-| `Tuti.open({ ask: "<question>" })` | Opens it with the AI assistant answering the question (up to 300 characters; over Home the first time), following on from the visitor's conversation so far. `ask: true` opens the assistant as it was. Your portal's Ask AI uses this. |
+| `Tuti.open({ ask: "<question>" })` | Where the server has AI answers on: opens it with the AI assistant answering the question (up to 300 characters; over Home the first time), following on from the visitor's conversation so far. `ask: true` opens the assistant as it was. Your portal's Ask AI uses this. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.setTheme(theme)` | `"light"`, `"dark"` or `"auto"` (your portal's colour scheme): every panel changes now, and the button unless it has its own colour (see [Light or dark](#light-or-dark)). |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |

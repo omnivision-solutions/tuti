@@ -442,6 +442,21 @@ test("an ask while the panel loads another page waits for that page to listen, n
   expect(asked().map(([data]) => (data as { ask: string }).ask)).toEqual(["How do refunds work?"]);
 });
 
+test("a panel that went to another page itself (before it was ready, say) still takes asks once its new page listens", () => {
+  const page = loadWidget({});
+  const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
+  page.Tuti.open();
+  loaded(page);
+  // Its page goes, and another (a tab, the Help center's search) loads in its place, at an address of its own.
+  page.message(frameWindow(), { type: "tuti:ask-ready", listening: false });
+  page.Tuti.open({ ask: "How do I export?" });
+  expect(asked()).toEqual([]);
+  loaded(page);
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=docs&q=export" });
+  expect(asked().map(([data]) => (data as { ask: string }).ask)).toEqual(["How do I export?"]);
+});
+
 test("on a Tuti portal's page, another copy (the team's Custom code) gives way to the portal's own tag, whichever runs first", () => {
   const page = loadWidget({
     before: (page) => Object.assign(page.document, { querySelector: (selector: string) => (selector === "script[data-on-portal]" ? {} : null) }),

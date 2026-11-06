@@ -205,11 +205,16 @@ export function DocsAssistantProvider({
       }
     };
     window.addEventListener("message", onMessage);
+    // Saying which page, so the loader doesn't take it from one it has replaced; and that it's stopped, as the page goes.
+    const stopped = () => window.parent.postMessage({ type: WIDGET_ASK_READY_MESSAGE, listening: false }, "*");
     if (window.parent !== window) {
-      // Saying which page, so the loader doesn't take it from one it has replaced.
       window.parent.postMessage({ type: WIDGET_ASK_READY_MESSAGE, href: window.location.href }, "*");
+      window.addEventListener("pagehide", stopped);
     }
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("pagehide", stopped);
+    };
   }, [assistant]);
 
   const retry = (turn: Turn) => {

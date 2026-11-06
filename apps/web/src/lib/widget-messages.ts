@@ -31,7 +31,7 @@ export const WIDGET_THEME_ASK_MESSAGE = "tuti:widget-theme-ask";
  * to follow up on), sent once the panel says it's listening (WIDGET_ASK_READY_MESSAGE) (Tuti.open({ ask })).
  */
 export const WIDGET_ASK_MESSAGE = "tuti:ask";
-/** Panel → loader: its assistant is listening for WIDGET_ASK_MESSAGE (each page of it, once it's ready; `href`, which page). */
+/** Panel → loader: its assistant is listening for WIDGET_ASK_MESSAGE (each page of it, once it's ready; `href`, which page), or `listening: false` as its page goes. */
 export const WIDGET_ASK_READY_MESSAGE = "tuti:ask-ready";
 /** The name of an inline panel's iframe (its `window.name`): there's nothing to close. */
 export const WIDGET_INLINE_NAME = "tuti-inline";
