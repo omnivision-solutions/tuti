@@ -215,10 +215,13 @@ async function userWithAddress(projectId: string, address: string): Promise<stri
   return sso?.userId ?? null;
 }
 
-/** The name in an email's From ("Kim Lee <kim@…>"), trimmed and cut short; none when it's only the address again. */
-function fromName(mail: Mail, sender: string) {
+/**
+ * The name in an email's From ("Kim Lee <kim@…>"), trimmed and cut short. None when it has an address in it: the
+ * sender's own again, or another one it would pass for in the Inbox's list and the team's emails.
+ */
+function fromName(mail: Mail) {
   const name = mail.from?.value[0]?.name?.trim().slice(0, 100).trim();
-  return name && name.toLowerCase() !== sender ? name : null;
+  return name && !name.includes("@") ? name : null;
 }
 
 /** Another request read this email first. */
@@ -336,7 +339,7 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     const started = await startConversation(projectId, {
       userId,
       email: userId ? null : sender,
-      name: userId ? null : fromName(mail, sender),
+      name: userId ? null : fromName(mail),
       subject: subject.replace(REPLY_PREFIXES, "").trim().slice(0, 200) || undefined,
       body,
       origin: "EMAIL",

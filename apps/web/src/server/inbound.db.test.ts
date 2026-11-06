@@ -135,14 +135,20 @@ test("with DMARC passed, a known user's address is theirs; otherwise the address
   expect(posing).toMatchObject({ userId: null, email: "e2e-sam@example.com", emailVerified: false, spam: false });
 });
 
-test("an email's From name is who the conversation is with, trimmed and cut short; none when it's only the address", async () => {
+test("an email's From name is who the conversation is with, trimmed and cut short; none when it's an address, its own or another", async () => {
   const { project, address } = await setup();
-  const from = ["Carlos Mendes <e2e-carlos@example.com>", "e2e-bare@example.com", '"E2E-Same@example.com" <e2e-same@example.com>', `"  ${"Long ".repeat(40)}" <e2e-long@example.com>`];
+  const from = [
+    "Carlos Mendes <e2e-carlos@example.com>",
+    "e2e-bare@example.com",
+    '"E2E-Same@example.com" <e2e-same@example.com>',
+    `"  ${"Long ".repeat(40)}" <e2e-long@example.com>`,
+    '"e2e-ceo@acme.example" <e2e-spoof@example.com>',
+  ];
   for (const sender of from) {
     await postEmail(rawEmail({ from: sender, to: address }), { recipient: address });
   }
   const people = (await conversations(project.id)).map((c) => conversationPerson({ ...c, user: null }).name);
-  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim()]);
+  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim(), null]);
   // The team's email about it names them too.
   expect(mailbox.emails.some((email) => email.text.includes("Carlos Mendes started a conversation"))).toBe(true);
 });
