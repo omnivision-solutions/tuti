@@ -1,5 +1,5 @@
 import { htmlToContent, type HtmlContent } from "@tuti/content/html";
-import { type ChangelogTag, prisma } from "@tuti/db";
+import { type ChangelogTag, type Prisma, prisma } from "@tuti/db";
 import { MAX_ENTRY_LENGTH } from "@tuti/shared";
 
 import type { FeaturebaseChangelog } from "./featurebase";
@@ -42,13 +42,14 @@ const dateOf = (value: string | null | undefined) => (value && !Number.isNaN(Dat
 export async function changelogPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = Date.now();
   const { items, next } = await job.featurebase.page<FeaturebaseChangelog>("/changelogs", cursor, { state: "all", sortBy: "date", sortOrder: "asc", limit: CHANGELOG_PAGE.entries });
-  const recorded = async () =>
+  // Read again in the page's transaction, under its lock: what the check before copying saw may have changed.
+  const recorded = async (db: Prisma.TransactionClient) =>
     new Set(
-      (await prisma.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: { in: items.map((entry) => entry.id) } }, select: { externalId: true } })).map(
+      (await db.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: { in: items.map((entry) => entry.id) } }, select: { externalId: true } })).map(
         (record) => record.externalId,
       ),
     );
-  const known = await recorded();
+  const known = await recorded(prisma);
   const copy = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById }) : undefined;
   const media: typeof copy = copy && (async (source) => (Date.now() - begun > CHANGELOG_PAGE.hardMs ? { leftOut: "unreachable" } : copy(source)));
   // Images copied first, outside the page's transaction and lock.
@@ -63,7 +64,7 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
   return {
     next,
     save: async (tx) => {
-      const saved = await recorded();
+      const saved = await recorded(tx);
       for (const entry of items) {
         const made = copied.get(entry.id);
         if (restricted(entry)) {
