@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { ResumeAllButton, ScheduledButtons } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
+import { WaitingNotice } from "@/components/dns-setup";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -150,6 +151,8 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                     </div>
                     {/* The project's name is in some: a long one wraps rather than running out of the card. */}
                     <p className="text-sm wrap-anywhere text-muted-foreground">{step.description}</p>
+                    {/* Started, and waiting on something outside the app (the support inbox's first email). */}
+                    {step.waiting && <WaitingNotice>{step.waiting}</WaitingNotice>}
                     {/* Each step left to do with its own action, a button rather than a link in the text. */}
                     {!step.done && (
                       // Described by its step, which screen readers then read with it ("Connect", Connect GitHub).

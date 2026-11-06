@@ -4,8 +4,9 @@ import { expect, type Page, test } from "@playwright/test";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL, portalUrl } from "./env";
+import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
+import { rawEmail, receive } from "./inbound";
 
 /** The kinds "Needs your attention" lists, in order. */
 const groups = (page: Page) => page.getByRole("main").locator("section[aria-label]").evaluateAll((sections) => sections.map((s) => s.getAttribute("aria-label")));
@@ -212,4 +213,33 @@ test("a new project: Home leads with sample content and each setup step's action
   await expect(owner.getByRole("region", { name: "Queries that found nothing" })).toBeVisible();
   await expect(attention.getByRole("button", { name: "Add sample content" })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(1);
+});
+
+test("Get set up's support step waits for the inbox's first email once it's on, and is done when it arrives", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/setup?step=use`);
+  await owner.getByRole("checkbox", { name: /^Support/ }).check();
+  await owner.getByRole("button", { name: "Continue" }).click();
+  await owner.waitForURL(`**/app/${slug}/setup?step=widget`);
+
+  // On (which gives it its address): still to do, waiting for the first email.
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(owner.getByText("Messages on")).toBeVisible();
+  await expect(owner.getByText("No email received yet.")).toBeVisible();
+  await owner.goto(`/app/${slug}`);
+  const card = owner.getByRole("list", { name: "Get set up" }).getByRole("listitem").filter({ hasText: "Set up your support inbox" });
+  await expect(card).toContainText("(to do)");
+  await expect(card).toContainText("Waiting for your first email");
+  await expect(card.getByRole("link", { name: "Set up" })).toBeVisible();
+  await checkpoint(owner, "home-support-waiting");
+
+  // The first email in: done.
+  await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail("Kim Lee <e2e-kim@example.com>", "Hello", "Is this the right address?"));
+  await owner.reload();
+  await expect(card).toContainText("(done)");
+  await expect(card).not.toContainText("Waiting for your first email");
 });
