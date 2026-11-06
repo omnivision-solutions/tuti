@@ -86,6 +86,10 @@ test("the changelog comes across quietly: entries everyone sees in date order, p
   // Emailed, then unpublished in Featurebase: still marked emailed.
   expect(sso).toMatchObject({ number: 3, title: "Single sign-on", tags: [], publishedAt: null, subscribersEmailedAt: new Date("2024-03-05T09:00:00.000Z") });
   expect(mailbox.emails.length).toBe(emailed);
+  // Those Featurebase emailed are marked so (their sidebar says so); one Tuti emails later isn't.
+  const marked = await prisma.importedRecord.findMany({ where: { projectId: project.id, kind: "changelog-emailed" }, select: { localId: true } });
+  const ids = Object.fromEntries((await prisma.changelogEntry.findMany({ where: { projectId: project.id }, select: { id: true, title: true } })).map((entry) => [entry.id, entry.title]));
+  expect(marked.map((record) => ids[record.localId]).sort()).toEqual(["Dark mode is here", "Single sign-on"]);
 });
 
 test("importing again brings nothing twice", async () => {

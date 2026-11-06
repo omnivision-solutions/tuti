@@ -116,6 +116,10 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
           select: { id: true },
         });
         await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: entry.id, localId: created.id } });
+        // Emailed by Featurebase, not Tuti: its sidebar says so (a send Tuti makes later is its own).
+        if (entry.emailSentToSubscribers) {
+          await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "changelog-emailed", externalId: entry.id, localId: created.id } });
+        }
         tally(job.counts, "changelogEntries", null);
         // Images only (the changelog takes no files), each once: a cover that's also in the text too.
         const copies = new Set([...content.mediaIds, ...(cover && "mediaId" in cover ? [cover.mediaId] : [])]);
