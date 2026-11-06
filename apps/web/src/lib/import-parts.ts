@@ -146,7 +146,7 @@ const KINDS: Record<string, [string, string]> = {
   articleFiles: ["file in an article", "files in articles"],
   articleVideos: ["video in an article", "videos in articles"],
   conversations: ["conversation", "conversations"],
-  messages: ["new message in conversations brought earlier", "new messages in conversations brought earlier"],
+  messages: ["new message in conversations already here", "new messages in conversations already here"],
   attachments: ["attachment", "attachments"],
 };
 
