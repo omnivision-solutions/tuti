@@ -1,4 +1,4 @@
-/** Tuti's help center, where each guide below is an article (the "Support email" collection). */
+/** Tuti's help center, where each guide below is an article (the "Support inbox" collection). */
 const HELP = "https://tuti.so/help/docs";
 
 /** Using a team's own address, both ways, and forwarding it with any other provider. */

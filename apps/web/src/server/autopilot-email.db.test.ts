@@ -143,7 +143,7 @@ test("the email: what goes out by itself and when, what needs you (Edit on its p
   expect(email!.text).toContain("+ Out soon");
   expect(email!.html).toContain(`/app/${project.slug}/autopilot/activity/${one.id}"`);
   const waiting = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, kind: "RESOLVES" }, select: { id: true, postId: true } });
-  expect(email!.html).toContain(`/app/${project.slug}/autopilot/feedback/${waiting.postId}?select=${waiting.id}`);
+  expect(email!.html).toContain(`/app/${project.slug}/autopilot/feedback/${waiting.postId}"`);
   // Once.
   expect(await sendAutopilotEmails(later())).toBe(0);
   expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id, sentAt: { not: null } } })).toBe(1);
@@ -889,7 +889,8 @@ test("an update a teammate stopped is in the email with Edit only, not a one-cli
   expect(buttons).not.toContain(`approve:${progress.id}`);
   // The request it closes (not stopped) keeps its Approve.
   expect(buttons.filter((button) => button.startsWith("approve:"))).toHaveLength(1);
-  expect(to(owner)[0]!.html).toContain(`select=${progress.id}`);
+  // Edit: its post's review.
+  expect(to(owner)[0]!.html).toContain(`/autopilot/feedback/${progress.postId}"`);
 });
 
 test("an email claimed just before the runner took an update, but read once it had, doesn't count as having told it", async () => {

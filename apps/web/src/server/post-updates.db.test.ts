@@ -175,7 +175,7 @@ test("the email shows the post's whole update, and its one click approves only t
   // A third lands before the click: the click does nothing, and the review says the update changed.
   await part("MOVES_FORWARD", "Yearly ones next.");
   const landed = await click(second.codeChangeId!, token);
-  expect(landed).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${second.id}&select=${second.id}`);
+  expect(landed).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${second.id}`);
   expect((await postNow()).comments).toEqual([]);
 });
 
@@ -257,7 +257,7 @@ test("a part a teammate stopped: the email has no one-click Approve for its upda
   expect(email.text).toMatch(/\+ Weekly repeats are out\.\s+Monthly ones are out too\./);
   expect(email.text).not.toMatch(/Approve http/);
   expect(email.text).toMatch(/Edit http\S+\/autopilot\/feedback\//);
-  expect(await click(first.codeChangeId!, before)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
+  expect(await click(first.codeChangeId!, before)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}`);
   expect((await postNow()).comments).toEqual([]);
 });
 
@@ -266,7 +266,7 @@ test("an email's Approve from before posts' updates were one (no version): only 
   const second = await part("MOVES_FORWARD", "Monthly ones are out too.");
   // It showed the first part alone: the update is more than that now, so nothing's done and its review says so.
   const old = signAutopilotButton(owner.id, first.codeChangeId!, `approve:${first.id}`)!;
-  expect(await click(first.codeChangeId!, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
+  expect(await click(first.codeChangeId!, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}`);
   expect(await statuses(first.id, second.id)).toEqual(["PENDING", "PENDING"]);
   expect((await postNow()).comments).toEqual([]);
   // Just that part again (the other dismissed): it goes, as it did.
@@ -286,7 +286,7 @@ test("an email's version-less Approve for a part alone is pinned to that part: a
     landed = await part("MOVES_FORWARD", "Monthly ones are out too.");
     return read;
   }) as never);
-  expect(await click(first.codeChangeId!, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}&select=${first.id}`);
+  expect(await click(first.codeChangeId!, old)).toBe(`/app/${project.slug}/autopilot/feedback/${post.id}?done=changed&button=approve&update=${first.id}`);
   expect(await statuses(first.id, landed!.id)).toEqual(["PENDING", "PENDING"]);
   expect((await postNow()).comments).toEqual([]);
 });

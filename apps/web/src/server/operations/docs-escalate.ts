@@ -57,7 +57,7 @@ export async function askAPerson(projectSlug: string): Promise<{ email: string }
  * Where this project answers messages, for the portal's "Contact us" (StillStuck), as the Inbox gets
  * them: Messages in the widget (toInbox), and its email address where this server receives email (the
  * team's own that forwards to it, once an email has come through it, else the project's support
- * address, Settings → Support, once the inbox is on or an email to it has started a conversation: every project sending email
+ * address, Settings → Inbox and email, once the inbox is on or an email to it has started a conversation: every project sending email
  * gets that address, whether it answers it or not). Null with neither.
  */
 export async function supportContact(projectSlug: string): Promise<{ messages: boolean; email: string | null } | null> {

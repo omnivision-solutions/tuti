@@ -16,7 +16,7 @@ import { widgetUser } from "@/lib/widget-session";
 import { getSession } from "./session";
 
 /**
- * Who may read a project's portal (Settings → Portal access). Public: anyone. Private: only
+ * Who may read a project's portal (Settings → Access). Public: anyone. Private: only
  * its team, the people its own app signs in (SSO) and the readers the team added by email (once
  * that email is verified); signing up, a sign-in link or any other Tuti account gets an account,
  * not a way in. proxy.ts applies this to every portal page and

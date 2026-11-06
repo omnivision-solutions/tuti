@@ -103,7 +103,7 @@ test("signed out (a mail scanner, or the recipient on another device): sign in f
   expect(await statusOf(link.id)).toBe("PENDING");
 });
 
-test("an email sent before Autopilot reviewed by post and article: its Edit opens that update's review, ticked; the rest its activity page", async () => {
+test("an email sent before Autopilot reviewed by post and article: its Edit opens that update's review; the rest its activity page", async () => {
   const { id, actions } = await change();
   const link = actions.find((action) => action.kind === "LINKS")!;
   const open = (searchParams: Record<string, string>) =>
@@ -111,27 +111,27 @@ test("an email sent before Autopilot reviewed by post and article: its Edit open
       () => "no redirect",
       (error: { digest?: string }) => error.digest?.match(/^NEXT_REDIRECT;\w+;([^;]+);/)?.[1] ?? Promise.reject(error),
     );
-  expect(await open({ select: link.id })).toBe(`/app/${project.slug}/autopilot/feedback/${link.postId}?select=${link.id}`);
+  expect(await open({ select: link.id })).toBe(`/app/${project.slug}/autopilot/feedback/${link.postId}`);
   expect(await open({ select: "likely" })).toBe(`/app/${project.slug}/autopilot/activity/${id}?select=likely`);
   expect(await open({})).toBe(`/app/${project.slug}/autopilot/activity/${id}`);
   // Another change's update, or one replaced since: its activity page.
   expect(await open({ select: "gone" })).toBe(`/app/${project.slug}/autopilot/activity/${id}?select=gone`);
 });
 
-test("someone else's button, or an old one, only opens Approve's update ticked on its review, or the activity page", async () => {
+test("someone else's button, or an old one, only opens Approve's update's review, or the activity page", async () => {
   const { id, actions } = await change();
   const link = actions.find((action) => action.kind === "LINKS")!;
   const teammate = await signUp("Tess Team");
   await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "ADMIN" } });
   actAs(teammate);
-  expect(await click(id, signAutopilotButton(owner.id, id, `approve:${link.id}`)!)).toBe(`/app/${project.slug}/autopilot/feedback/${link.postId}?select=${link.id}`);
+  expect(await click(id, signAutopilotButton(owner.id, id, `approve:${link.id}`)!)).toBe(`/app/${project.slug}/autopilot/feedback/${link.postId}`);
   // Stop or Publish now: the pull request's activity page, each post or article a link to its review.
   const scheduled = actions.find((action) => action.status === "SCHEDULED")!;
   expect(await click(id, signAutopilotButton(owner.id, id, `stop:${scheduled.id}`)!)).toBe(`/app/${project.slug}/autopilot/activity/${id}`);
   expect(await statusOf(scheduled.id)).toBe("SCHEDULED");
   actAs(owner);
   const old = signAutopilotButton(owner.id, id, `approve:${link.id}`, new Date(Date.now() - 8 * 86_400_000))!;
-  expect(await click(id, old)).toBe(`/app/${project.slug}/autopilot/feedback/${link.postId}?select=${link.id}`);
+  expect(await click(id, old)).toBe(`/app/${project.slug}/autopilot/feedback/${link.postId}`);
   expect(await click(id, "not-a-token")).toBe(`/app/${project.slug}/autopilot/activity/${id}`);
   expect(await statusOf(link.id)).toBe("PENDING");
 });

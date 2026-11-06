@@ -13,7 +13,7 @@ import { getSession } from "@/server/session";
  * A button in Autopilot's email (Approve, Publish now, Stop): one click acts for the person it was sent
  * to, signed in, then shows what was done (`done`): Approve on its post's or article's review, the others on the pull
  * request's activity page. Signed out, they sign in first and it's done after. Anyone else (a forwarded email, a
- * teammate), or a token out of date, gets Approve's update ticked on its review, to confirm there, or the activity
+ * teammate), or a token out of date, gets Approve's update's review, to approve there, or the activity
  * page. Mail scanners open links without a session: they only reach the sign-in page.
  */
 export async function GET(request: Request, context: RouteContext<"/app/[project]/autopilot/[id]/act">) {
@@ -40,9 +40,9 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     redirect(`/sign-in?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
   }
   if (session.user.id !== userId || expired) {
-    // Approve's update, ticked on its review; Publish now's or Stop's, on the activity page, each a link to its review.
+    // Approve's update, on its review; Publish now's or Stop's, on the activity page, each a link to its review.
     if (actionId) {
-      review(`?select=${encodeURIComponent(actionId)}`);
+      review("");
     }
     page("");
   }
@@ -58,7 +58,7 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
   if (actionId && !revision && approving && POST_UPDATE.includes(approving.kind) && approving.postId) {
     const { parts } = await postUpdate(approving.postId);
     if (parts.length > 1 && parts.some((part) => part.id === actionId)) {
-      review(`?done=changed&button=approve&update=${encodeURIComponent(actionId)}&select=${encodeURIComponent(actionId)}`);
+      review(`?done=changed&button=approve&update=${encodeURIComponent(actionId)}`);
     }
     pinned = postVersion([actionId]);
   }
@@ -70,9 +70,9 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     }
     // Couldn't tell whether it went (check it first), or failed for now (try again): said so; refused: done already, or why not.
     const failed = result?.status === "failed" ? result.code : null;
-    // The article changed since the email: nothing done, and the page says so (with it ticked, to review again).
+    // The article changed since the email: nothing done, and its review says so, to review again.
     if (failed === "changed") {
-      review(`?done=changed&button=approve&update=${encodeURIComponent(actionId)}&select=${encodeURIComponent(actionId)}`);
+      review(`?done=changed&button=approve&update=${encodeURIComponent(actionId)}`);
     }
     const done = result?.status === "applied" ? "approved" : failed === "unknown" ? "unknown" : failed === "internal" ? "failed" : "already";
     review(`?done=${done}&button=approve&update=${encodeURIComponent(actionId)}`);

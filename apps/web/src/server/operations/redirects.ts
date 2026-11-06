@@ -11,7 +11,7 @@ import { forgetRedirects } from "../portal-redirects";
 import { projectSlug } from "./read";
 import { defineOperation, OperationError } from "./define";
 
-/** Customize → Redirects (lib/portal-redirects.ts): old addresses on the portal sent on to new ones (proxy.ts). */
+/** Settings → Domain → Redirects (lib/portal-redirects.ts): old addresses on the portal sent on to new ones (proxy.ts). */
 
 const view = { id: true, from: true, to: true } as const;
 

@@ -9,7 +9,7 @@ import { createRedirect, deleteRedirect, listRedirects } from "./operations/redi
 import { call } from "./operations/run";
 import { removeRedirect, saveRedirect } from "./portal-settings";
 
-/** Customize → Redirects: old addresses on a portal sent on to new ones, by proxy.ts. */
+/** Settings → Domain → Redirects: old addresses on a portal sent on to new ones, by proxy.ts. */
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;

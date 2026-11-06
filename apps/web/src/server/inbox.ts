@@ -171,7 +171,7 @@ export async function linkPostToConversation(projectSlug: string, conversation: 
   });
 }
 
-/** Settings → Support: turns the inbox on or off (owners and admins). */
+/** Settings → Inbox and email: turns the inbox on or off (owners and admins). */
 export async function setSupportInbox(projectSlug: string, on: boolean): Promise<FormState> {
   return asAdmin(projectSlug, "Only project owners and admins can change support settings", async (context) =>
     call(updateSupportSettings, context, { inbox: on === true }),
@@ -191,7 +191,7 @@ export async function setNewConversationEmails(projectSlug: string, on: boolean)
   });
 }
 
-/** Settings → Support: gives the project its support email address (owners and admins). */
+/** Settings → Inbox and email: gives the project its support email address (owners and admins). */
 export async function getSupportAddress(projectSlug: string): Promise<FormState> {
   return asAdmin(projectSlug, "Only project owners and admins can change support settings", async (context) =>
     call(updateSupportSettings, context, { email: true }),
@@ -200,7 +200,7 @@ export async function getSupportAddress(projectSlug: string): Promise<FormState>
 
 const SUPPORT_DENIED = "Only project owners and admins can change support settings";
 
-/** Settings → Support → Your own address (support.setEmailDomain): replies from the team's own address. */
+/** Settings → Inbox and email → Your own address (support.setEmailDomain): replies from the team's own address. */
 export async function saveEmailDomain(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   return asAdmin(projectSlug, SUPPORT_DENIED, (context) => call(setEmailDomain, context, { address: String(formData.get("address") ?? "").trim() }));
 }

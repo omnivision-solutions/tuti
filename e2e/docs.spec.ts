@@ -1741,7 +1741,7 @@ test("with Messages on, a visitor the AI couldn't help asks a person on the port
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
 
-  // "Ask a person" starts a conversation in the inbox, so it's on with Messages in the widget (Settings → Support).
+  // "Ask a person" starts a conversation in the inbox, so it's on with Messages in the widget (Settings → Inbox and email).
   await team.goto(`/app/${slug}/settings/ask-a-person`);
   await team.waitForURL(`**/app/${slug}/settings/support`);
   await expect(team.getByText("“Ask a person” after an AI answer starts a conversation here too")).toBeVisible();

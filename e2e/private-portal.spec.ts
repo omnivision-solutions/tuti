@@ -95,7 +95,7 @@ test("the team lets someone outside it read the private portal by email: they're
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
 
-  // Added in Settings → Portal access → Readers.
+  // Added in Settings → Access → Readers.
   const email = `e2e-${randomUUID()}@example.com`;
   const readers = owner.getByRole("region", { name: "Readers" });
   await readers.getByLabel("Email addresses").fill(email.toUpperCase());

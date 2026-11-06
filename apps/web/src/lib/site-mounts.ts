@@ -45,7 +45,7 @@ export function normalizeSiteUrl(input: string): { origin: string; path: string 
 export const SITE_FIELD_MAX = 600;
 
 /**
- * Customize → Address → Sub-folder's two fields as one address for site.set (which adds https:// to
+ * Settings → Domain → Sub-folder's two fields as one address for site.set (which adds https:// to
  * a site typed without it), or an error without a site. Each is cut to SITE_FIELD_MAX first: trimming
  * slashes backtracks on a long run of them, and anyone can post the form.
  */

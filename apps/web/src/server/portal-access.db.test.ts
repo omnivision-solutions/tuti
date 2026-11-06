@@ -28,7 +28,7 @@ import { confirmSignInLink, emailSignInLink } from "./sign-in-link";
 import * as similarPosts from "./similar-posts";
 
 /**
- * A private portal (Settings → Portal access): every reader of a portal's content, for each
+ * A private portal (Settings → Access): every reader of a portal's content, for each
  * kind of visitor, on a public and a private portal. Only the team, the project's SSO users and
  * the readers it added by email (verified) read a private one; signing up, a sign-in link, an
  * unverified reader's address or another project's team gets nobody in.

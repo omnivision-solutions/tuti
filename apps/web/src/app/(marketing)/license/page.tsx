@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: 'Remove "Powered by tuti"', robots: {
 const LICENSE_EMAIL = "hello@tuti.so";
 
 /**
- * tuti.so/license?installation=…&project=… is where "Get a licence" in Customize → Branding goes,
+ * tuti.so/license?installation=…&project=… is where "Get a licence" in Customize → Branding → Powered by tuti goes,
  * on any installation: a licence is for that project on that installation, so the page shows both
  * ids, and buys it for them with Stripe Checkout (or, without Stripe, says to email). Only on Tuti's
  * own installation, the licence server.

@@ -16,7 +16,7 @@ export type AutopilotEmailUpdate = {
   goesOut?: string;
   /** How sure Autopilot is that it's right, in percent: none for what isn't its guess (a changelog line). */
   sure?: number;
-  /** One click for its recipient (signed in): approve it. And its review page, with it ticked, to edit first. */
+  /** One click for its recipient (signed in): approve it. And its post's or article's review, to edit first. */
   approveUrl?: string;
   editUrl?: string;
 };
@@ -26,7 +26,7 @@ export type AutopilotEmailChange = {
   title: string;
   pullRequest: string;
   summary: string;
-  /** Its review page, with the likely updates ticked. */
+  /** Its activity page: every post and article it updates, each a link to its review. */
   reviewUrl: string;
   /** One click for its recipient: what goes out by itself goes now, or waits for the team. */
   publishUrl?: string;

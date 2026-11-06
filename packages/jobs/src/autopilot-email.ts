@@ -334,8 +334,8 @@ function emailChange(
                 : `approve:${action.id}`,
           ),
         }),
-      // Its post's or article's review, with it ticked.
-      editUrl: `${autopilot}/${reviewPath(action) ?? `activity/${codeChange.id}`}?select=${action.id}`,
+      // Its post's or article's review.
+      editUrl: `${autopilot}/${reviewPath(action) ?? `activity/${codeChange.id}`}`,
     }));
   return {
     title: codeChange.title,

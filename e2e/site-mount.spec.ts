@@ -15,8 +15,8 @@ test("the team puts the portal under a path of its own site: its site forwards i
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  await owner.goto(`/app/${slug}/customize/address`);
-  // Customize → Address: the Tuti address, a domain of its own or a sub-folder of the site: they pick the sub-folder.
+  await owner.goto(`/app/${slug}/settings/domain`);
+  // Settings → Domain: the Tuti address, a domain of its own or a sub-folder of the site: they pick the sub-folder.
   await checkpoint(owner, "settings-own-address-choice");
   await owner.getByRole("radio", { name: /Sub-folder/ }).click();
   await owner.getByRole("textbox", { name: "Your site" }).fill(siteUrl());
@@ -90,7 +90,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   // Customize → Widget says so beside its switch.
   await owner.goto(`/app/${slug}/customize/widget`);
   await expect(owner.getByText("The launcher on every page of your portal too. Not yet while your portal is under a path of your site.")).toBeVisible();
-  await owner.goto(`/app/${slug}/customize/address`);
+  await owner.goto(`/app/${slug}/settings/domain`);
 
   // Signing up, posting and signing out there, all under the path.
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();

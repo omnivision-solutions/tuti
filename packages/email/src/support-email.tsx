@@ -8,7 +8,7 @@ const value = { ...body, margin: "4px 0 0", whiteSpace: "pre-line" as const };
 
 type EmailDomainTestProps = { projectName: string; address: string };
 
-/** To an admin who asked for it on Settings → Support: the team's own address sends (docs/plan.md, Support inbox, item 11). */
+/** To an admin who asked for it on Settings → Inbox and email: the team's own address sends (docs/plan.md, Support inbox, item 11). */
 export function EmailDomainTestEmail({ projectName, address }: EmailDomainTestProps) {
   return (
     <Layout preview={`Replies from ${projectName}'s support inbox now come from ${address}.`}>
