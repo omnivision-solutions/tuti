@@ -21,12 +21,15 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await owner.keyboard.press("ArrowRight");
   await expect(owner.getByRole("radio", { name: "Yearly" })).toBeChecked();
   await expect(owner.getByText("$32 a month, billed yearly")).toBeVisible();
+  // What yearly saves, as on the pricing page.
+  await expect(owner.getByText("Save up to 20%")).toBeVisible();
   await owner.getByText("Monthly", { exact: true }).click();
   await expect(owner.getByText("$39 a month", { exact: true })).toBeVisible();
   // Free beside Pro and Business, each with what it includes, as on the pricing page; Pro's button is the page's one primary.
   await expect(owner.getByText("3 team members")).toBeVisible();
   await expect(owner.getByText("Unlimited team members")).toBeVisible();
   await expect(owner.getByText("A private help center")).toBeVisible();
+  await expect(owner.getByText("Email from your own domain")).toBeVisible();
   await expect(owner.getByText("2 versions kept per help article")).toBeVisible();
   const primary = await owner.getByRole("main").locator('[data-slot="button"]').evaluateAll((buttons) =>
     buttons.filter((button) => button.className.includes("bg-primary ")).map((button) => button.textContent),

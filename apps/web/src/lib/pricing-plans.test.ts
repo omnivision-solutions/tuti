@@ -85,3 +85,10 @@ test("Pro lists Reporting up to a month, Business every range, Free none", () =>
   vi.stubEnv("PLANS", "on");
   expect(["Free", "Pro", "Business"].map((plan) => line(plan, "Reporting")?.text)).toEqual([undefined, "Reporting, up to a month", "Reporting, every range"]);
 });
+
+test("Pro lists email from your own domain and the launcher's icon, which Free doesn't have", () => {
+  vi.stubEnv("PLANS", "on");
+  const texts = (plan: string) => lines(plan).map(({ text }) => text);
+  expect(texts("Pro")).toEqual(expect.arrayContaining(["Email from your own domain", "Your own widget launcher icon"]));
+  expect(texts("Free")).not.toContain("Email from your own domain");
+});

@@ -1,4 +1,4 @@
-/** How Settings → Usage and AI models write features and amounts. */
+/** How Usage (on Settings → Billing) and AI models write features and amounts. */
 
 /** Each AI feature's name. */
 export const AI_FEATURE_NAMES: Record<string, string> = {

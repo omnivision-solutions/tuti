@@ -646,7 +646,19 @@ function AiHelpers({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button id={EDIT_WITH_AI} type="button" variant="outline" size="sm" disabled={pending || paused} focusableWhenDisabled />}>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              id={EDIT_WITH_AI}
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pending || paused}
+              focusableWhenDisabled
+              title={paused ? "This project is out of AI credits" : undefined}
+            />
+          }
+        >
           <SparklesIcon />
           {pending && !rewrite ? "Writing…" : "Edit with AI"}
         </DropdownMenuTrigger>

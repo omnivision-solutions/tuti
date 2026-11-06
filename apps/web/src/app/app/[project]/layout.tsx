@@ -1,4 +1,5 @@
 import { aiPaused } from "@tuti/jobs";
+import { CREDIT_FEATURES } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { CUSTOMIZE_GROUPS } from "@/app/app/[project]/customize/sections";
@@ -45,7 +46,7 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
     <>
       <CommandMenu projectSlug={project} items={commands} />
       {(await aiPaused(membership.project.id)) && (
-        <AiPaused projectSlug={project} stops="AI answers, changelog drafts and Autopilot are paused" admin={admin} />
+        <AiPaused projectSlug={project} stops={`${CREDIT_FEATURES} are paused`} admin={admin} />
       )}
       <LiveRefresh projectSlug={project} />
       {children}

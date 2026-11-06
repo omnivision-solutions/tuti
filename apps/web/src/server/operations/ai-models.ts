@@ -4,7 +4,6 @@ import {
   AI_FEATURES,
   type AiFeature,
   type AiModelListing,
-  aiProvider,
   AUTOPILOT_STEPS,
   type AutopilotStep,
   defaultModel,
@@ -83,7 +82,7 @@ export const updateAiModels = defineOperation({
       for (const [pick, id] of chosen.filter(([, id]) => id !== "off")) {
         const model = listed.get(id);
         if (!model) {
-          throw new OperationError(400, "unknown_model", `${aiProvider()} has no model “${id}”`);
+          throw new OperationError(400, "unknown_model", `There's no model “${id}”`);
         }
         if (!withinModelCap(model)) {
           const price = model.output === null ? "has no price" : `costs $${Number((model.output * 1e6).toFixed(4))} per million output tokens`;

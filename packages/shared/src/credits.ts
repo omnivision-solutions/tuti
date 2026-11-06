@@ -6,6 +6,9 @@ export function creditsEnabled(): boolean {
   return process.env.AI_CREDITS === "on";
 }
 
+/** Everything that spends AI credits, as one phrase for Billing, Usage, the out-of-credits banner and the credits emails. */
+export const CREDIT_FEATURES = "AI answers, inbox drafts and summaries, changelog drafts and Autopilot";
+
 /** A positive number from the environment, or the default (unset, or not a positive number). */
 const positive = (name: string, fallback: number) => {
   const value = Number(process.env[name]);

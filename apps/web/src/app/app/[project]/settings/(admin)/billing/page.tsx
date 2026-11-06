@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { creditsEnabled, creditsPerTopupDollar, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
+import { CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
@@ -114,7 +114,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
       <CardHeader>
         <CardTitle>{credits(balance)} AI credits</CardTitle>
         <CardDescription>
-          AI answers, changelog drafts and Autopilot spend credits as they&apos;re used; what each spent is in{" "}
+          {CREDIT_FEATURES} spend credits as they&apos;re used; what each spent is in{" "}
           <a href="#usage" className="underline underline-offset-4">
             Usage
           </a>

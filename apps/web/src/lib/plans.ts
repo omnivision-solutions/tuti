@@ -1,12 +1,15 @@
 /**
  * What tuti.so's plans cost and include, as shown on Settings → Billing and the pricing page (docs/plan.md,
- * Plans). Stripe's prices (STRIPE_PRICE_*) are what's charged: change both together. The yearly prices
- * are still proposed (about two months free).
+ * Plans). Stripe's prices (STRIPE_PRICE_*) are what's charged: change both together. Yearly is about two
+ * months free.
  */
 export const PLAN_PRICES = {
   PRO: { name: "Pro", month: 39, year: 32 },
   BUSINESS: { name: "Business", month: 99, year: 79 },
 } as const;
+
+/** Beside the Yearly toggle: "Save up to 20%", the most a plan saves billed yearly. */
+export const YEARLY_NOTE = `Save up to ${Math.max(...Object.values(PLAN_PRICES).map(({ month, year }) => Math.round((1 - year / month) * 100)))}%`;
 
 /** "$39 a month", or for yearly "$32 a month, billed yearly". */
 export const planPriceText = (plan: keyof typeof PLAN_PRICES, interval: "month" | "year") =>
