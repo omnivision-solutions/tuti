@@ -43,6 +43,20 @@ test("an admin's key stops working once they're removed from the team", async ()
   expect(await get("/users")).toBe(401);
 });
 
+test("a key whose creator left the team without it being revoked (a key from before keys were revoked on leaving) is refused", async () => {
+  await prisma.teamMember.delete({ where: { id: admin.memberId } });
+  expect(await prisma.apiKey.count({ where: { projectId: project.id, revokedAt: null } })).toBe(1);
+  expect(await get("/users")).toBe(401);
+  const mcp = await POST(
+    new Request("http://tuti.localhost:3100/mcp", {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    }),
+  );
+  expect(mcp.status).toBe(401);
+});
+
 test("an admin's key loses admin operations once they're made a member", async () => {
   expect(await get("/ai-models")).toBe(200);
   expect(await changeTeamRole(project.slug, admin.memberId, "MEMBER")).toEqual({});
