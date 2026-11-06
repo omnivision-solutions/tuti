@@ -20,6 +20,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Where are you coming from: Featurebase, with a key and what to bring.
   await owner.waitForURL(`**/app/${slug}/setup`);
   await expect(owner.getByText("Step 1 of 4")).toBeVisible();
+  await expect(owner.getByText("Bring what you have in another tool across, or start fresh. You can always import later, in Settings → Import.")).toBeVisible();
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
   // Where the key is made, beside its field, in a new tab.
   const keysLink = owner.getByRole("link", { name: /^Get your API key.*opens in a new tab/ });
@@ -150,6 +151,34 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(rows.filter({ hasText: "Tobias Quill" })).toBeVisible();
   await expect(rows.filter({ hasText: "Juno Park" })).toBeVisible();
   await checkpoint(owner, "users-imported");
+});
+
+test("after setup, Settings → Import brings what's in Featurebase across any time; importing again brings nothing twice", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  await owner.goto(`/app/${slug}/settings/general`);
+  await owner.getByRole("link", { name: "Import", exact: true }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/import`);
+  // Only the tools to import from: starting fresh is the first run's.
+  await expect(owner.getByRole("radio", { name: /^Featurebase/ })).toBeChecked();
+  await expect(owner.getByRole("radio", { name: /^Starting fresh/ })).toHaveCount(0);
+  await checkpoint(owner, "settings-import");
+
+  const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await owner.getByRole("button", { name: "Check the key and start" }).click();
+  await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.", { timeout: 15_000 });
+  await expect(owner.getByText("Importing again brings only what's new since: nothing comes twice.")).toBeVisible();
+  await checkpoint(owner, "settings-import-done");
+
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await owner.getByRole("button", { name: "Import again" }).click();
+  await expect(status).toContainText("Nothing brought across.", { timeout: 15_000 });
+  await expect(status).toContainText("3 contacts already brought across earlier");
+  await checkpoint(owner, "settings-import-again");
 });
 
 test("Feedback comes across with Contacts: the posts with their dates, votes and comments on the portal, and the team's private comment as a note in the app", async ({ browser }, testInfo) => {

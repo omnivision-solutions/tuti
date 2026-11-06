@@ -55,7 +55,7 @@ export const IMPORT_PARTS = {
     media: true,
     see: { label: "See conversations", page: "inbox" },
     steps: { conversations: "Conversations" },
-    kinds: ["conversations", "attachments"],
+    kinds: ["conversations", "messages", "attachments"],
   },
   // Last, so nothing waits for it: the least of it, and the slowest.
   avatars: {
@@ -146,6 +146,7 @@ const KINDS: Record<string, [string, string]> = {
   articleFiles: ["file in an article", "files in articles"],
   articleVideos: ["video in an article", "videos in articles"],
   conversations: ["conversation", "conversations"],
+  messages: ["new message in conversations brought earlier", "new messages in conversations brought earlier"],
   attachments: ["attachment", "attachments"],
 };
 

@@ -214,12 +214,14 @@ test("a page run twice, at once or again later, and a second import, bring nothi
 test("a repeat import after a post was deleted in Featurebase goes on: the post and its votes here stay, and the rest come across", async () => {
   await importFeedback();
   const gone = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Sync with calendars" }, select: { id: true, voteCount: true } });
-  // Gone from Featurebase since (its voters answer 404), and a new vote on another post meanwhile.
+  // Gone from Featurebase since (its voters answer 404), and a new vote and a new comment on another post meanwhile.
   fake.fixtures.posts = fake.fixtures.posts.filter((post) => post.title !== "Sync with calendars");
   fake.fixtures.voters["65f0000000000000000000p2"]!.push({ object: "contact", ...fake.fixtures.contacts[1]!, type: "customer", createdAt: "2024-03-01T00:00:00.000Z" });
+  fake.fixtures.comments.push({ ...fake.fixtures.comments[0]!, id: "65f0000000000000000000cz", postId: "65f0000000000000000000p2", content: "<p>Any news?</p>", createdAt: "2024-03-03T09:00:00.000Z" });
   await importFeedback();
   const { import: again } = await call(getImport, asOwner(), {});
-  expect(again).toMatchObject({ state: "done", error: null, counts: { votes: { imported: 1 } } });
+  expect(again).toMatchObject({ state: "done", error: null, counts: { votes: { imported: 1 }, comments: { imported: 1 } } });
+  expect(await prisma.comment.findFirst({ where: { body: "Any news?" }, select: { post: { select: { title: true, commentCount: true } } } })).toMatchObject({ post: { title: "Export fails on Safari", commentCount: 1 } });
   expect(await prisma.post.findUniqueOrThrow({ where: { id: gone.id }, select: { voteCount: true } })).toEqual({ voteCount: gone.voteCount });
   expect(await prisma.vote.count({ where: { post: { projectId: project.id, title: "Export fails on Safari" } } })).toBe(3);
 });

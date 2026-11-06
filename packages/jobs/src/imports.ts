@@ -327,10 +327,45 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
   const known = await recordedUsers(tx, job, "contact", contacts.map((contact) => contact.id));
   const fresh = contacts.filter((contact) => !known.has(contact.id));
   if (fresh.length > 0) {
-    // One per id in their app: two Featurebase contacts with the same one are one user.
-    const details = new Map(fresh.map((contact) => [contactDetails(contact).externalId, contactDetails(contact)]));
+    // One per id in their app: two Featurebase contacts with the same one are one user. And one per address in a
+    // project: a contact new by its id whose address a user here has (signed in, or brought by any import) is that
+    // user, and two new ones with one address are one.
+    const all = fresh.map((contact) => contactDetails(contact));
+    const existing = new Set(
+      (await tx.ssoIdentity.findMany({ where: { projectId: job.projectId, externalId: { in: all.map((d) => d.externalId) } }, select: { externalId: true } })).map((row) => row.externalId),
+    );
+    const emails = [...new Set(all.flatMap((d) => (d.email ? [d.email.toLowerCase()] : [])))];
+    const byEmail = new Map(
+      (
+        await tx.$queryRaw<{ email: string; userId: string }[]>`
+          SELECT DISTINCT ON (email) email, "userId" FROM sso_identity
+          WHERE "projectId" = ${job.projectId} AND email = ANY(${emails}::text[]) ORDER BY email, "createdAt" ASC`
+      ).map((row) => [row.email, row.userId]),
+    );
+    const details = new Map<string, UserDetails>();
+    const firstWith = new Map<string, string>();
+    const linked = new Map<string, { userId: string } | { externalId: string }>();
+    fresh.forEach((contact, i) => {
+      const d = all[i]!;
+      const email = d.email?.toLowerCase();
+      const first = email && firstWith.get(email);
+      if (email && !existing.has(d.externalId) && byEmail.has(email)) {
+        linked.set(contact.id, { userId: byEmail.get(email)! });
+      } else if (first && first !== d.externalId && !existing.has(d.externalId)) {
+        linked.set(contact.id, { externalId: first });
+      } else {
+        details.set(d.externalId, d);
+        linked.set(contact.id, { externalId: d.externalId });
+        if (email && !firstWith.has(email)) {
+          firstWith.set(email, d.externalId);
+        }
+      }
+    });
     const { userIds } = await syncUsersIn(tx, job.projectId, [...details.values()]);
-    const records = fresh.map((contact) => ({ externalId: contact.id, localId: userIds.get(contactDetails(contact).externalId)! }));
+    const records = fresh.map((contact) => {
+      const to = linked.get(contact.id)!;
+      return { externalId: contact.id, localId: "userId" in to ? to.userId : userIds.get(to.externalId)! };
+    });
     await tx.importedRecord.createMany({ data: records.map((record) => ({ projectId: job.projectId, source: job.source, kind: "contact", ...record })), skipDuplicates: true });
     records.forEach((record) => known.set(record.externalId, record.localId));
   }

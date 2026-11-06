@@ -170,6 +170,47 @@ test("a page run again, or another import, brings nothing twice; a number once g
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(1);
 });
 
+test("imported again, a conversation that changed in Featurebase gets its new messages, waiting for a reply again; one that didn't isn't read again", async () => {
+  await importInbox();
+  const before = await conversations();
+  const emailed = mailbox.emails.length;
+  // Tobias writes again on his snoozed invoice conversation, in Featurebase.
+  const invoice = fake.fixtures.conversations.find((c) => c.id === "1003")!;
+  const wrote = new Date(Date.now() - 86_400_000).toISOString();
+  Object.assign(invoice, { state: "open", snoozedUntil: null, lastActivityAt: wrote, updatedAt: wrote });
+  (invoice.conversationParts as object[]).push({
+    object: "conversation_part",
+    id: "p2004",
+    partType: "email_msg",
+    createdAt: wrote,
+    updatedAt: wrote,
+    bodyHtml: "<p>Still not here, sorry.</p>",
+    channel: "email",
+    author: { id: "65f000000000000000000002", type: "customer", name: "Tobias Quill", email: "e2e-tobias@example.com", profilePicture: null },
+  });
+  fake.requests.length = 0;
+  const again = await importInbox();
+
+  expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r))).toEqual(["GET /v2/conversations/1003"]);
+  expect(again.counts).toMatchObject({ messages: { imported: 1 }, conversations: { imported: 0, leftOut: { "already brought across earlier": 3 } } });
+  const after = await conversations();
+  expect(after.map((c) => [c.number, c.subject, c.messages.length])).toEqual(before.map((c) => [c.number, c.subject, c.messages.length + (c.subject === "Invoice for October" ? 1 : 0)]));
+  expect(after.find((c) => c.subject === "Invoice for October")).toMatchObject({
+    status: "OPEN",
+    waitingSince: new Date(wrote),
+    lastMessageAt: new Date(wrote),
+    snoozedUntil: null,
+    messages: expect.arrayContaining([expect.objectContaining({ body: "Still not here, sorry.", author: "USER", authorUser: { name: "Tobias Quill" } })]),
+  });
+  expect(mailbox.emails.length).toBe(emailed);
+
+  // And again, with nothing new: nothing read, nothing added.
+  fake.requests.length = 0;
+  await importInbox();
+  expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r))).toEqual([]);
+  expect((await conversations()).flatMap((c) => c.messages)).toHaveLength(after.flatMap((c) => c.messages).length);
+});
+
 test("an import that fails partway and is started again goes on numbering where it stopped, each conversation once", async () => {
   fake.pageSize = 1;
   // Featurebase refuses the second conversation once: the import fails there, the first saved.

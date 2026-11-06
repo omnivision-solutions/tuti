@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type Prisma, Prisma as PrismaNamespace, prisma } from "@tuti/db";
-import { adminMember, contactUsers, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, loadAdmins, lockProject } from "@tuti/jobs";
+import { adminMember, contactUsers, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, loadAdmins, lockProject, upsertProjectUser } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { openValue, sealValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -270,6 +270,25 @@ const inPage = <T,>(fn: (tx: Prisma.TransactionClient) => Promise<T>) =>
     await lockProject(tx, project.id);
     return fn(tx);
   });
+
+test("one person per address in a project: a contact whose address a user here has is that user, and two contacts with one address are one", async () => {
+  // Signed in from the team's app before, under another id than Featurebase knows them by.
+  const mira = await upsertProjectUser(project.id, "signed-in-mira", { name: "Mira", email: "E2E-Mira@example.com" });
+  fake.fixtures.contacts[3]!.email = "e2e-juno@example.com";
+  fake.fixtures.contacts.push({ object: "contact", id: "65f000000000000000000004", type: "lead", name: "Juno P.", email: "E2E-Juno@example.com", profilePicture: null, customFields: {}, companies: [] });
+  await start();
+  await importsSettled();
+
+  expect((await usersOf()).map((u) => [u.externalId, u.email])).toEqual([
+    ["app-user-2", "e2e-tobias@example.com"],
+    ["featurebase:65f000000000000000000003", "e2e-juno@example.com"],
+    ["signed-in-mira", "e2e-mira@example.com"],
+  ]);
+  const records = new Map((await prisma.importedRecord.findMany({ where: { projectId: project.id, kind: "contact" } })).map((r) => [r.externalId, r.localId]));
+  expect(records.get("65f000000000000000000001")).toBe(mira);
+  expect(records.get("65f000000000000000000004")).toBe(records.get("65f000000000000000000003"));
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ counts: { contacts: { imported: 4 } } });
+});
 
 test("a contact the contacts step didn't bring is brought when a page needs them; one Featurebase doesn't have is missing", async () => {
   const job = await pageJob();

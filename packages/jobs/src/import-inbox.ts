@@ -84,7 +84,8 @@ const lastActive = (c: FeaturebaseConversation) => new Date(c.lastActivityAt ?? 
 /**
  * Conversations, a page at a time. Each is numbered as it's saved, in the order Featurebase lists them (the newest
  * first), so a number never changes once given, whatever fails and is started again; an older one a later import
- * brings gets the next number.
+ * brings gets the next number. One an earlier import brought is read again once it changed there since, for its new
+ * messages (addMessages).
  */
 export async function conversationsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const started = Date.now();
@@ -98,8 +99,13 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
   const tooOld = (c: FeaturebaseConversation) => c.state === "closed" && days !== null && lastActive(c).getTime() < Date.now() - days * DAY_MS;
   const kept = items.filter((c) => !tooOld(c));
   const known = await recorded(prisma, job, kept.map((c) => c.id));
+  const here = await broughtBefore(prisma, job, [...known.keys()]);
+  const changed = (c: FeaturebaseConversation) => {
+    const before = here.get(c.id);
+    return before !== undefined && (before.seen === null || lastActive(c) > before.seen);
+  };
   const read: Read[] = [];
-  for (const listed of kept.filter((c) => !known.has(c.id))) {
+  for (const listed of kept.filter((c) => !known.has(c.id) || changed(c))) {
     if (read.length > 0 && Date.now() - started > READ_FOR_MS) {
       cut = true;
       break;
@@ -112,7 +118,7 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
       throw error;
     });
     if (conversation) {
-      read.push(await readConversation(job, conversation, started + COPY_FOR_MS));
+      read.push(await readConversation(job, conversation, started + COPY_FOR_MS, here.get(listed.id)?.since));
     }
   }
   const contacts = await contactUsers(job, read.flatMap((r) => [r.contactId, ...r.messages.map((m) => m.contactId)].filter((id) => id !== null)));
@@ -123,12 +129,20 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
       // Saved by a run of this page that got there first: once.
       const saved = await recorded(tx, job, read.map((r) => r.conversation.id));
       const fresh = read.filter((r) => !saved.has(r.conversation.id));
+      // Those brought before, as they are now: a run of this page that got there first added their new messages already.
+      const before = await broughtBefore(tx, job, read.filter((r) => known.has(r.conversation.id)).map((r) => r.conversation.id));
       for (const r of fresh) {
         await saveConversation(tx, job, r, users);
       }
+      for (const r of read) {
+        const brought = before.get(r.conversation.id);
+        if (brought) {
+          await addMessages(tx, job, r, users, brought);
+        }
+      }
       tally(job.counts, "conversations", null, fresh.length);
       // Read again, the list page was counted the first time: only what it reads now counts.
-      const already = (again ? 0 : known.size) + read.length - fresh.length;
+      const already = (again ? 0 : known.size) + read.filter((r) => !known.has(r.conversation.id)).length - fresh.length;
       if (already > 0) {
         tally(job.counts, "conversations", ALREADY_HERE, already);
       }
@@ -144,6 +158,25 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
 async function recorded(tx: Tx | typeof prisma, job: ImportJob, ids: string[]): Promise<Map<string, string>> {
   const rows = await tx.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "conversation", externalId: { in: ids } }, select: { externalId: true, localId: true } });
   return new Map(rows.map((row) => [row.externalId, row.localId]));
+}
+
+/**
+ * Conversations of these Featurebase ids an import brought that are still here, by those ids: theirs, the newest
+ * message an import brought into it (else when it began), and when it was last active in Featurebase as an import last
+ * read it (null: not kept then).
+ */
+async function broughtBefore(db: Tx | typeof prisma, job: ImportJob, ids: string[]): Promise<Map<string, { id: string; since: Date; seen: Date | null }>> {
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const rows = await db.$queryRaw<{ externalId: string; id: string; since: Date; seen: Date | null }[]>`
+    SELECT r."externalId", c.id, COALESCE(max(m."createdAt"), c."createdAt") AS since, r."sourceUpdatedAt" AS seen
+    FROM imported_record r
+    JOIN conversation c ON c.id = r."localId"
+    LEFT JOIN conversation_message m ON m."conversationId" = c.id AND m."importId" IS NOT NULL
+    WHERE r."projectId" = ${job.projectId} AND r.source = ${job.source}::"ImportSource" AND r.kind = 'conversation' AND r."externalId" = ANY(${ids}::text[])
+    GROUP BY r."externalId", c.id, r."sourceUpdatedAt"`;
+  return new Map(rows.map(({ externalId, ...row }) => [externalId, row]));
 }
 
 /** What a part is here (null: an event, a quick reply, a rating, an attribute prompt: not a message). */
@@ -164,13 +197,16 @@ function kindOf(part: FeaturebasePart): { author: MessageAuthor; note: boolean }
   }
 }
 
-/** A conversation's messages, its person and its files (copied now), before the page's transaction. */
-async function readConversation(job: ImportJob, conversation: FeaturebaseConversation, copyUntil: number): Promise<Read> {
+/**
+ * A conversation's messages, its person and its files (copied now), before the page's transaction; `since`: only its
+ * messages after then (one brought before).
+ */
+async function readConversation(job: ImportJob, conversation: FeaturebaseConversation, copyUntil: number, since?: Date): Promise<Read> {
   const parts = [...(conversation.conversationParts ?? [])].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
   // The first part repeats the conversation's source. Featurebase sends the newest 500: only when that cut off the start
   // (its oldest part well after the conversation began) is the source needed, and the conversation counted as cut.
   const source = conversation.source;
-  const cutShort = parts.length >= MAX_PARTS && Date.parse(parts[0]!.createdAt) - Date.parse(conversation.createdAt) > OPENING_MS;
+  const cutShort = !since && parts.length >= MAX_PARTS && Date.parse(parts[0]!.createdAt) - Date.parse(conversation.createdAt) > OPENING_MS;
   if (cutShort && source?.bodyHtml) {
     parts.unshift({ id: "source", partType: "user_msg", createdAt: conversation.createdAt, bodyHtml: source.bodyHtml, channel: source.channel, author: source.author });
   }
@@ -186,7 +222,7 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
   const leftOut: string[] = [];
   for (const [i, part] of parts.entries()) {
     const kind = kindOf(part);
-    if (!kind) {
+    if (!kind || (since && Date.parse(part.createdAt) <= since.getTime())) {
       continue;
     }
     const { body, urls, media, unshown } = await messageText(part);
@@ -303,28 +339,29 @@ async function copyAttachment(job: ImportJob, url: string): Promise<StoredFile |
   return prisma.conversationAttachment.create({ data: { projectId: job.projectId, key, filename, contentType, size: body.byteLength }, select: { id: true } });
 }
 
+/**
+ * Where a conversation stands after these messages, as the inbox moves one on with each: the team's reply answers the
+ * person, theirs waits for one (since `waiting`, the person's earlier unanswered message, if any); then as Featurebase
+ * has it, closed or snoozed.
+ */
+function standing(read: Read, spoken: Message[], waiting: Date | null = null) {
+  const c = read.conversation;
+  let waitingSince = waiting;
+  for (const m of spoken) {
+    waitingSince = m.author === "TEAM" ? null : m.author === "USER" ? (waitingSince ?? m.createdAt) : waitingSince;
+  }
+  const status: ConversationStatus = c.state === "closed" ? "CLOSED" : spoken.at(-1)?.author === "USER" ? "OPEN" : "WAITING";
+  const snoozedUntil = c.state === "snoozed" && c.snoozedUntil ? new Date(c.snoozedUntil) : null;
+  return { status, waitingSince: status === "OPEN" ? waitingSince : null, snoozedUntil, snoozedAt: snoozedUntil && (read.snoozedAt ?? new Date()) };
+}
+
 /** Saves a conversation read before, under the project's lock: its people looked up here, nothing emailed. */
 async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<string, string>) {
   const { conversation: c, messages } = read;
   const userId = (read.contactId && users.get(read.contactId)) || null;
   // Held by a teammate there: assigned when they're on the team, else held by their placeholder (handed over when they join).
   const held = c.adminAssigneeId ? await adminMember(tx, job, c.adminAssigneeId) : null;
-  const admins = new Map<string, string>();
-  for (const { admin } of messages) {
-    if (admin && !admins.has(admin.id!)) {
-      admins.set(admin.id!, (await adminMember(tx, job, admin.id!, admin)).userId);
-    }
-  }
-
-  // As the inbox moves a conversation on with each message: the team's reply answers the person, theirs waits for one.
   const spoken = messages.filter((m) => !m.note);
-  let waitingSince: Date | null = null;
-  for (const m of spoken) {
-    waitingSince = m.author === "TEAM" ? null : m.author === "USER" ? (waitingSince ?? m.createdAt) : waitingSince;
-  }
-  const status: ConversationStatus = c.state === "closed" ? "CLOSED" : spoken.at(-1)?.author === "USER" ? "OPEN" : "WAITING";
-  const snoozedUntil = c.state === "snoozed" && c.snoozedUntil ? new Date(c.snoozedUntil) : null;
-
   const { conversationCount: number } = await tx.project.update({ where: { id: job.projectId }, data: { conversationCount: { increment: 1 } }, select: { conversationCount: true } });
   // From what the user can see (the subject shows in the widget and their emails): never a note.
   const subject = c.title?.trim() || c.source?.subject?.trim() || subjectFrom(messages.find((m) => !m.note && m.body)?.body ?? "") || "Conversation";
@@ -333,7 +370,7 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
       projectId: job.projectId,
       number,
       subject: subject.slice(0, 200),
-      status,
+      ...standing(read, spoken),
       origin: c.source?.channel === "email" ? "EMAIL" : "WIDGET",
       userId,
       email: userId ? null : read.email,
@@ -342,21 +379,61 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
       createdAt: new Date(c.createdAt),
       lastMessageAt: spoken.at(-1)?.createdAt ?? new Date(c.createdAt),
       activeAt: lastActive(c),
-      waitingSince: status === "OPEN" ? waitingSince : null,
-      snoozedUntil,
-      snoozedAt: snoozedUntil && (read.snoozedAt ?? new Date()),
       // The team was told of it in Featurebase: nothing in its history is owed a notice (resubmitConversationNotices).
       notifiedAt: messages.at(-1)?.createdAt ?? new Date(c.createdAt),
     },
     select: { id: true },
   });
-  // One write for them all, ids made here so files go to theirs: a page's save under the lock stays short.
+  await saveMessages(tx, job, id, read, messages, users, userId);
+  if (read.cutShort) {
+    tally(job.counts, "conversations", "whose messages before their newest 500 are missing: Featurebase gives no more");
+  }
+  await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "conversation", externalId: c.id, localId: id, sourceUpdatedAt: lastActive(c) } });
+}
+
+/**
+ * A conversation an import brought before, read again as it changed in Featurebase: its messages after the newest one
+ * brought (`since`, read under the lock) are added, nothing emailed, and it stands as they leave it (a person's new
+ * message waits for a reply); what the team did here meanwhile stays.
+ */
+async function addMessages(tx: Tx, job: ImportJob, read: Read, users: Map<string, string>, brought: { id: string; since: Date }) {
+  const messages = read.messages.filter((m) => m.createdAt > brought.since);
+  if (messages.length > 0) {
+    const here = await tx.conversation.findUniqueOrThrow({ where: { id: brought.id }, select: { userId: true, status: true, waitingSince: true, lastMessageAt: true, activeAt: true, notifiedAt: true } });
+    const spoken = messages.filter((m) => !m.note);
+    const latest = (a: Date | null, b: Date) => (a && a > b ? a : b);
+    await tx.conversation.update({
+      where: { id: brought.id },
+      data: {
+        ...(spoken.length > 0 && { ...standing(read, spoken, here.status === "OPEN" ? here.waitingSince : null), lastMessageAt: latest(here.lastMessageAt, spoken.at(-1)!.createdAt) }),
+        activeAt: latest(here.activeAt, lastActive(read.conversation)),
+        // Told of in Featurebase, as the rest of its history.
+        notifiedAt: latest(here.notifiedAt, messages.at(-1)!.createdAt),
+      },
+    });
+    await saveMessages(tx, job, brought.id, read, messages, users, here.userId);
+    tally(job.counts, "messages", null, messages.length);
+  }
+  await tx.importedRecord.updateMany({
+    where: { projectId: job.projectId, source: job.source, kind: "conversation", externalId: read.conversation.id },
+    data: { sourceUpdatedAt: lastActive(read.conversation) },
+  });
+}
+
+/** A conversation's messages from an import, with their files, in one write (ids made here so files go to theirs): a page's save under the lock stays short. */
+async function saveMessages(tx: Tx, job: ImportJob, conversationId: string, read: Read, messages: Message[], users: Map<string, string>, userId: string | null) {
+  const admins = new Map<string, string>();
+  for (const { admin } of messages) {
+    if (admin && !admins.has(admin.id!)) {
+      admins.set(admin.id!, (await adminMember(tx, job, admin.id!, admin)).userId);
+    }
+  }
   const rows = messages.map((m) => ({ m, id: randomUUID() }));
   await tx.conversationMessage.createMany({
     data: rows.map(({ m, id: messageId }) => ({
       id: messageId,
       projectId: job.projectId,
-      conversationId: id,
+      conversationId,
       author: m.author,
       authorId: m.author === "USER" ? (m.contactId && users.get(m.contactId)) || userId : m.admin ? admins.get(m.admin.id!)! : null,
       channel: m.channel,
@@ -379,10 +456,6 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
     tally(job.counts, "attachments", null, files.length);
   }
   read.leftOut.forEach((reason) => tally(job.counts, "attachments", reason));
-  if (read.cutShort) {
-    tally(job.counts, "conversations", "whose messages before their newest 500 are missing: Featurebase gives no more");
-  }
-  await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "conversation", externalId: c.id, localId: id } });
 }
 
 /** A subject from a message: its first line, cut (apps/web lib/format.ts subjectFrom). */
