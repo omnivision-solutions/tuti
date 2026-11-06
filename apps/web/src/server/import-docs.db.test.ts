@@ -256,20 +256,37 @@ test("an article renamed in Featurebase between the passes isn't taken for the t
   expect(await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "article", localId: paying.id }, select: { contentLanded: true } })).toEqual({ contentLanded: true });
 });
 
-test("an empty draft for an article deleted in Featurebase after the first pass goes, counted; one the team touched stays", async () => {
+test("an article deleted in Featurebase after the first pass is counted as gone, its empty draft left as it is, even one the team moved", async () => {
   await structureOnly();
+  // The team moves an empty draft to another collection; then Featurebase deletes the article.
   const roadmap = await article("Roadmap notes");
-  // The team retitles another, which Featurebase then deletes too.
-  const paying = await article("Paying by card");
-  await call(updateArticle, asOwner(), { slug: paying.slug, title: "Card payments" });
-  fake.fixtures.articles = fake.fixtures.articles.filter((a) => a.id !== "0200003" && a.id !== "0200002");
+  await call(updateArticle, asOwner(), { slug: roadmap.slug, collection: "billing" });
+  fake.fixtures.articles = fake.fixtures.articles.filter((a) => a.id !== "0200003");
 
   const done = await importDocs();
-  expect(done.counts.articles).toEqual({ imported: 1, leftOut: { "gone from Featurebase": 1 } });
-  expect(importSummary(done)).toContain("1 article gone from Featurebase");
-  expect(await prisma.article.findUnique({ where: { id: roadmap.id } })).toBeNull();
-  expect(await prisma.importedRecord.count({ where: { projectId: project.id, kind: "article", localId: roadmap.id } })).toBe(0);
-  expect(await prisma.article.findUniqueOrThrow({ where: { id: paying.id }, select: { title: true } })).toEqual({ title: "Card payments" });
+  expect(done.counts.articles).toEqual({ imported: 2, leftOut: { "gone from Featurebase (left as empty drafts)": 1 } });
+  expect(importSummary(done)).toContain("1 article gone from Featurebase (left as empty drafts)");
+  // Nothing deleted: the draft, where the team put it, and its record.
+  expect(await prisma.article.findUniqueOrThrow({ where: { id: roadmap.id }, select: { content: true, deletedAt: true, collection: { select: { slug: true } } } })).toEqual({ content: null, deletedAt: null, collection: { slug: "billing" } });
+  expect(await prisma.importedRecord.count({ where: { projectId: project.id, kind: "article", localId: roadmap.id } })).toBe(1);
+});
+
+test("an article Featurebase still has that the content pass didn't reach (its list shifted) is counted as not reached, and the next import fills it", async () => {
+  await structureOnly();
+  // Featurebase's list leaves out a never-published article it still has (reading it as a draft finds it).
+  const [welcome, paying, roadmap, sso] = fake.fixtures.articles;
+  fake.fixtures.articles = [welcome!, paying!, sso!];
+  fake.fixtures.articleDrafts.push(roadmap!);
+
+  const done = await importDocs();
+  expect(done.counts.articles).toEqual({ imported: 2, leftOut: { "not reached (import again to bring their text)": 1 } });
+  expect(await article("Roadmap notes")).toMatchObject({ content: null });
+
+  // The list has it again: the next import brings its text.
+  fake.fixtures.articles = [welcome!, paying!, roadmap!, sso!];
+  const again = await importDocs();
+  expect(again.counts.articles).toEqual({ imported: 1, leftOut: { "already brought across earlier": 3 } });
+  expect(await article("Roadmap notes")).toMatchObject({ body: "Not ready yet." });
 });
 
 test("an article deleted here before its content came stays deleted; restored, the next import fills it in", async () => {

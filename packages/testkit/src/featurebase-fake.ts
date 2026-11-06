@@ -537,8 +537,14 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     const items = LISTS[parent];
     if (items) {
       const id = decodeURIComponent(url.pathname.slice(parent.length + 1));
+      // One article takes state=live (the default) or draft, as Featurebase does: never all.
+      if (items.fixtures === "articles" && state === "all") {
+        return send(400, { error: { type: "invalid_request_error", code: "invalid_parameter", message: "Invalid state", status: 400 } });
+      }
       const draft = items.fixtures === "articles" && state === "draft" ? fake.fixtures.articleDrafts.find((item) => item.id === id) : undefined;
-      const row = draft ?? (fake.fixtures[items.fixtures] as (Row | null)[]).find((item) => item?.id === id);
+      const found = draft ?? (fake.fixtures[items.fixtures] as (Row | null)[]).find((item) => item?.id === id);
+      // Read live (the default), a never-published article isn't found.
+      const row = items.fixtures === "articles" && state === "live" && found?.state === "draft" ? undefined : found;
       return row ? send(200, row) : send(404, { error: { type: "invalid_request_error", code: "resource_not_found", message: "Not found", status: 404 } });
     }
     return send(404, { message: `the fake doesn't serve ${req.method} ${url.pathname}` });

@@ -42,7 +42,11 @@ export const DOCS_STEPS = [
   { name: "docs-collections", page: collectionsPage },
   { name: "docs-articles", page: articlesPage },
   { name: "docs-content", page: contentPage },
+  { name: "docs-unreached", page: unreachedPage },
 ];
+
+/** Articles checked against Featurebase a page at a time, once the content pass is done (unreachedPage). */
+const UNREACHED_PAGE = 50;
 
 /** Featurebase's predefined icons (Heroicons' names) that have an obvious Lucide one; the rest are left out. */
 export const FEATUREBASE_ICONS: Record<string, string> = {
@@ -138,31 +142,6 @@ async function articleRows(db: Tx, ids: string[]) {
   const rows = await db.article.findMany({ where: { id: { in: ids } }, select: { id: true, slug: true, title: true, deletedAt: true, createdById: true } });
   const saved = await db.article.findMany({ where: { id: { in: ids }, OR: [{ content: { not: Prisma.DbNull } }, { changes: { isNot: null } }] }, select: { id: true } });
   return rows.map(({ deletedAt, ...row }) => [row.id, { ...row, deleted: deletedAt !== null, saved: saved.some((s) => s.id === row.id) }] as const);
-}
-
-/**
- * Once the content pass has read every page: articles this import made empty that Featurebase no longer lists (none of
- * its pages decided them, so `countedIn` isn't this import) go, if they're still as it made them (no text, no
- * unpublished changes, its title, not deleted or published here): nobody can read an empty draft, and the summary
- * counts them. One the team touched stays.
- */
-async function removeGone(tx: Tx, job: ImportJob) {
-  const records = await tx.importedRecord.findMany({
-    where: { projectId: job.projectId, source: job.source, kind: "article", contentLanded: false, madeTitle: { not: null }, OR: [{ countedIn: null }, { countedIn: { not: job.id } }] },
-    select: { id: true, localId: true, madeTitle: true },
-  });
-  const rows = new Map(await articleRows(tx, records.map((record) => record.localId)));
-  const gone = records.filter((record) => {
-    const row = rows.get(record.localId);
-    return row && !row.deleted && !row.saved && row.title === record.madeTitle;
-  });
-  if (gone.length === 0) {
-    return;
-  }
-  // Checked again in the delete itself: empty and unpublished.
-  await tx.article.deleteMany({ where: { id: { in: gone.map((record) => record.localId) }, content: { equals: Prisma.DbNull }, changes: { is: null }, publishedAt: null } });
-  await tx.importedRecord.deleteMany({ where: { id: { in: gone.map((record) => record.id) } } });
-  tally(job.counts, "articles", "gone from Featurebase", gone.length);
 }
 
 /** An article's title as the import gives it. */
@@ -485,14 +464,79 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       }
       await tx.importedRecord.updateMany({ where: { id: { in: countedRecords } }, data: { countedIn: job.id } });
       await tx.importedRecord.updateMany({ where: { id: { in: landedRecords } }, data: { contentLanded: true } });
-      if (!next) {
-        await removeGone(tx, job);
-      }
     },
     // As publishing does (indexArticle): never twice, as only a page's saved run gets here, and only for what it filled.
     after: async () => {
       for (const articleId of published) {
         await enqueue("articleChanged", { articleId }).catch(() => {});
+      }
+    },
+  };
+}
+
+/** Whether Featurebase still has an article: its draft (every article has one; a never-published one only that), else its live version. */
+async function stillThere(job: ImportJob, id: string): Promise<boolean> {
+  const path = `/help_center/articles/${encodeURIComponent(id)}`;
+  for (const query of [{ state: "draft" }, {}]) {
+    const found = await job.featurebase.get(path, query).then(
+      () => true,
+      (error: unknown) => {
+        if (error instanceof FeaturebaseError && error.status === 404) {
+          return false;
+        }
+        throw error;
+      },
+    );
+    if (found) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * After the content pass: the articles it made empty that no page of it reached (not landed, not counted by this
+ * import) and that are still empty here, checked against Featurebase a page at a time (by their record, reading with
+ * no lock held). Nothing is deleted: one Featurebase no longer has is counted as gone and left as the empty draft it is
+ * (the team can delete it); one it still has (its list shifted while the import read it) is counted as not reached and
+ * left unlanded, so the next import fills it.
+ */
+async function unreachedPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
+  const records = await prisma.importedRecord.findMany({
+    where: {
+      projectId: job.projectId,
+      source: job.source,
+      kind: "article",
+      contentLanded: false,
+      OR: [{ countedIn: null }, { countedIn: { not: job.id } }],
+      ...(cursor && { id: { gt: cursor } }),
+    },
+    orderBy: { id: "asc" },
+    take: UNREACHED_PAGE,
+    select: { id: true, externalId: true, localId: true },
+  });
+  // Still empty here (one with text or unpublished changes is the team's; one deleted here, theirs too).
+  const empty = await prisma.article.findMany({
+    where: { id: { in: records.map((record) => record.localId) }, deletedAt: null, content: { equals: Prisma.DbNull }, changes: { is: null } },
+    select: { id: true },
+  });
+  let gone = 0;
+  let there = 0;
+  for (const record of records.filter((r) => empty.some((article) => article.id === r.localId))) {
+    if (await stillThere(job, record.externalId)) {
+      there++;
+    } else {
+      gone++;
+    }
+  }
+  return {
+    next: records.length === UNREACHED_PAGE ? records.at(-1)!.id : null,
+    save: async () => {
+      if (gone > 0) {
+        tally(job.counts, "articles", "gone from Featurebase (left as empty drafts)", gone);
+      }
+      if (there > 0) {
+        tally(job.counts, "articles", "not reached (import again to bring their text)", there);
       }
     },
   };
