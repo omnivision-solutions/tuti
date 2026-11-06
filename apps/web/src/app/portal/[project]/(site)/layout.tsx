@@ -7,7 +7,7 @@ import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
-import { PortalContact, PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLookProvider } from "@/components/portal-look";
+import { PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLookProvider } from "@/components/portal-look";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
@@ -129,11 +129,10 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
           {/* On Docs; on phones and tablets a line of its own, the whole width. */}
           {canRead && <DocsSearch askAI={answersEnabled()} />}
-          {/* On the right; on phones and tablets the links and contact button are in the menu. It doesn't shrink: the logo does.
+          {/* On the right; on phones and tablets the links are in the menu. It doesn't shrink: the logo does.
               As tall without JavaScript as with its menu button, so the header doesn't grow once the page's script runs. */}
           <div className="ml-auto flex min-h-8 shrink-0 items-center gap-2 sm:gap-3">
             <PortalHeaderLinks />
-            <PortalContact />
             {session ? (
               // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.
               <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? `${appUrl().origin}/app/account` : "/account"} />
@@ -142,13 +141,13 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
                 Sign in
               </SignInLink>
             )}
-            {/* For everyone: on a private portal's sign-in page it has the team's links and contact button (no parts). */}
+            {/* For everyone: on a private portal's sign-in page it has the team's links (no parts). */}
             <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={canRead ? project.boards : []} />
           </div>
         </header>
         {canRead && <PartRows boards={project.boards} docsTabs={docsTabs} />}
         </PortalTop>
-        {/* Without JavaScript the menu can't open: on phones and tablets, the team's links and contact button under the
+        {/* Without JavaScript the menu can't open: on phones and tablets, the team's links under the
             header. Not in it: however many lines they take, the header stays the height its scroll-padding allows for. */}
         <noscript>
           <PortalLinksRow />

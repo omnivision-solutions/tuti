@@ -94,14 +94,13 @@ test("on a phone, the header stays at the top and its buttons on its first line 
   };
   const article = await api("/articles", { title: "Getting started", content });
   await api(`/articles/${article.slug}/publish`, {});
-  // And header links and a contact button, so they're there on every page (the logo's too): long
+  // And header links, so they're there on every page (the logo's too): long
   // ones, which take several lines where they're in a row of their own (without JavaScript).
   const long = (word: string) => `${word}: everything you need to know`;
   await api(
     "/branding",
     {
       headerLinks: [{ label: "Pricing", url: "https://example.com/pricing" }, ...["Status", "Security", "Careers", "Community"].map((word) => ({ label: long(word), url: "https://example.com/more" }))],
-      contact: { label: "Talk to our support team", url: "mailto:e2e-support@example.com" },
     },
     "PATCH",
   );

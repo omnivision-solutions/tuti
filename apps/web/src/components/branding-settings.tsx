@@ -17,7 +17,7 @@ import { linksFrom } from "@/lib/forms";
 import { LICENSE_UNREACHABLE, licenseCheckOutcome } from "@/lib/license-check";
 import { BADGE_PRICE } from "@/lib/plans";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
-import { COLOR_SCHEMES, type ColorScheme, CONTACT_LABEL_MAX, LOGO_TEXT_MAX } from "@/lib/portal-look";
+import { COLOR_SCHEMES, type ColorScheme, LOGO_TEXT_MAX } from "@/lib/portal-look";
 import { uploadImage } from "@/lib/upload-image";
 import { cn } from "@/lib/utils";
 import { checkBrandingLicense, saveBranding } from "@/server/branding";
@@ -199,47 +199,28 @@ function FontSelect({ id, name, label, font }: { id: string; name: string; label
   );
 }
 
-/** Customize → Navigation (see branding.update): links in the header, the footer and above the docs' tree, and a "Contact us" button. */
+/** Customize → Navigation (see branding.update): links in the header, the footer and above the docs' tree. */
 export function NavigationSettings({
   projectSlug,
   headerLinks,
   footerLinks,
   sidebarLinks,
-  contact,
 }: {
   projectSlug: string;
   headerLinks: { label: string; url: string }[];
   footerLinks: { label: string; url: string }[];
   sidebarLinks: { label: string; url: string }[];
-  contact: { label: string; url: string } | null;
 }) {
-  const { state, form } = useBrandingForm(projectSlug, "Navigation saved", (data) => {
-    const url = text(data, "contactUrl").trim();
-    return {
-      headerLinks: shownLinks(data, "headerLink"),
-      footerLinks: shownLinks(data, "footerLink"),
-      sidebarLinks: shownLinks(data, "sidebarLink"),
-      contact: /^(https:\/\/[^/\s]+\.[^/\s]+|mailto:\S+@\S+)/i.test(url) ? { label: text(data, "contactLabel").trim(), url } : null,
-    };
-  });
+  const { state, form } = useBrandingForm(projectSlug, "Navigation saved", (data) => ({
+    headerLinks: shownLinks(data, "headerLink"),
+    footerLinks: shownLinks(data, "footerLink"),
+    sidebarLinks: shownLinks(data, "sidebarLink"),
+  }));
   return (
     <form {...form} className="flex flex-col gap-6">
       <input type="hidden" name="part" value="links" />
       <CustomizeSection title="Header links" description="Up to 5, such as your website or pricing.">
         <LinkRows name="headerLink" item="Header link" legend="Header links" links={headerLinks} />
-      </CustomizeSection>
-      <CustomizeSection title="Contact us" description="A button at the right of the header, to a page or an email address.">
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="contact-url">Goes to</FieldLabel>
-            <Input id="contact-url" name="contactUrl" defaultValue={contact?.url ?? ""} placeholder="https://example.com/contact or mailto:help@example.com" autoComplete="off" />
-            <FieldDescription>Leave it empty for no button.</FieldDescription>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="contact-label">Label</FieldLabel>
-            <Input id="contact-label" name="contactLabel" defaultValue={contact?.label ?? ""} maxLength={CONTACT_LABEL_MAX} placeholder="Contact us" autoComplete="off" />
-          </Field>
-        </FieldGroup>
       </CustomizeSection>
       <CustomizeSection title="Docs sidebar links" description="Up to 5 above your docs' tree, such as your status page or changelog.">
         <LinkRows name="sidebarLink" item="Sidebar link" legend="Docs sidebar links" links={sidebarLinks} />

@@ -2178,16 +2178,11 @@ test("an article ends with the previous and next in reading order, related ones,
   await expect(visitor.locator("body")).toHaveAttribute("data-opened", '{"tab":"messages"}');
   await expect(visitor).toHaveURL(/\/docs\/installing$/);
 
-  // With a contact button (Customize → Navigation), that one instead.
-  await api("/branding", { contact: { label: "Talk to us", url: "mailto:e2e-support@example.com" } }, "PATCH");
-  await visitor.reload();
-  await expect(stuck.getByRole("link", { name: "Talk to us" })).toHaveAttribute("href", "mailto:e2e-support@example.com");
-  await expect(contactUs).toHaveCount(0);
   await checkpoint(visitor, "portal-article-end");
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "portal-article-end-dark");
   await visitor.setViewportSize({ width: 390, height: 844 });
-  await expect(stuck.getByRole("link", { name: "Talk to us" })).toBeVisible();
+  await expect(contactUs).toBeVisible();
   await checkpoint(visitor, "portal-article-end-phone-dark");
   await visitor.emulateMedia({ colorScheme: "light" });
   await checkpoint(visitor, "portal-article-end-phone");

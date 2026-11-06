@@ -7,7 +7,6 @@ import { createContext, type CSSProperties, type ReactNode, useContext, useEffec
 
 import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@/components/tuti-logo";
-import { buttonVariants } from "@/components/ui/button";
 import { PORTAL_FONT_CLASSES } from "@/components/portal-fonts";
 import { brandCss } from "@/lib/colors";
 import { fontVariable } from "@/lib/portal-fonts";
@@ -155,20 +154,6 @@ export function PortalLogo({ name, href }: { name: string; href: string }) {
   );
 }
 
-/** The header's "Contact us" button (Customize → Navigation), when the team set where it goes. */
-export function PortalContact() {
-  const { contact } = usePortalLook();
-  if (!contact) {
-    return null;
-  }
-  return (
-    // On phones and tablets it's in the header's menu (PortalMenu).
-    <a href={contact.url} className={buttonVariants({ size: "sm", className: "max-md:hidden" })}>
-      {contact.label || "Contact us"}
-    </a>
-  );
-}
-
 /** The team's links above the docs' tree, or alone beside a tab's overview (Customize → Navigation). */
 export function DocsSidebarLinks({ className }: { className?: string }) {
   const { sidebarLinks } = usePortalLook();
@@ -212,10 +197,10 @@ export function PortalHeaderLinks() {
   );
 }
 
-/** Without JavaScript (where the header's menu can't open), on phones and tablets: the team's header links and contact button in a row of their own. */
+/** Without JavaScript (where the header's menu can't open), on phones and tablets: the team's header links in a row of their own. */
 export function PortalLinksRow() {
-  const { headerLinks, contact } = usePortalLook();
-  if (headerLinks.length === 0 && !contact) {
+  const { headerLinks } = usePortalLook();
+  if (headerLinks.length === 0) {
     return null;
   }
   return (
@@ -225,11 +210,6 @@ export function PortalLinksRow() {
           {link.label}
         </a>
       ))}
-      {contact && (
-        <a href={contact.url} className={buttonVariants({ size: "sm" })}>
-          {contact.label || "Contact us"}
-        </a>
-      )}
     </nav>
   );
 }
