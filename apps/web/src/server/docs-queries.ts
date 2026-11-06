@@ -77,12 +77,16 @@ export const accessChoices = cache(async (projectId: string) => {
       return [c.slug, [tabId ? tabOf.get(tabId) : undefined, ...up.toReversed()]];
     }),
   ];
-  const words = (chain: (Level | undefined)[]) => describeAccess(chain.flatMap((level) => (level ? [namedLevel(level, names)] : [])));
-  const inherits: Record<string, string> = Object.fromEntries(chains.map(([slug, chain]) => [slug, words(chain)]));
+  /** Each tab's and collection's levels with everything above it, its groups by name. */
+  const levels: Record<string, NamedLevel[]> = Object.fromEntries(
+    chains.map(([slug, chain]) => [slug, chain.flatMap((level) => (level ? [namedLevel(level, names)] : []))]),
+  );
+  const inherits: Record<string, string> = Object.fromEntries(Object.entries(levels).map(([slug, chain]) => [slug, describeAccess(chain)]));
   /** What the rest see of a page that inherits "People without access" there. */
   const shows: Record<string, "lock" | "hide"> = Object.fromEntries(chains.map(([slug, chain]) => [slug, locks(...chain) ? "lock" : "hide"]));
   return {
     groups,
+    levels,
     inherits,
     shows,
     firstTab: tabs[0] ? { slug: tabs[0].slug, name: tabs[0].name } : null,

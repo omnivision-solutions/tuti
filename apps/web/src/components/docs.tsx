@@ -318,13 +318,14 @@ function NewestVersion({ newest, merged = false }: { newest: NewestVersionData; 
   );
 }
 
-/** Publish (or take down) and delete an article; publishing and deleting ask first. */
+/** Publish, unpublish and delete an article; each asks first. */
 export function ArticleActions({
   projectSlug,
   slug,
   title,
   published,
   part,
+  readers = "",
   autopilotEdits = [],
 }: {
   projectSlug: string;
@@ -333,6 +334,8 @@ export function ArticleActions({
   published: boolean;
   /** Delete (behind the top bar's "More actions"), or Publish / Unpublish (in the bar). */
   part: "delete" | "publish";
+  /** Publish's sentence on who can read it once it's published (publishReaders). */
+  readers?: string;
   /** The ids of Autopilot's edits waiting in the draft as the page loaded: publishing it takes those live (and only those). */
   autopilotEdits?: string[];
 }) {
@@ -343,6 +346,11 @@ export function ArticleActions({
   // Typing not saved: the editor may not show the newest text (Autopilot's edits in it included), and publishing would
   // drop the typing anyway, so Publish asks for a save first.
   const unsaved = useContext(ArticleEditorContext)?.unsaved ?? false;
+  // Publish / Unpublish: one dialog, closed once its action is done (an action doesn't close it), so focus goes back to
+  // its button, which stays (as the other) when the article is published or unpublished.
+  const [open, setOpen] = useState(false);
+  // What the dialog was opened for: it says so till it's closed, though the article changes under it once it's done.
+  const [unpublishing, setUnpublishing] = useState(published);
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
       // The edits shown: one landing since refuses it.
@@ -352,6 +360,7 @@ export function ArticleActions({
         // Changed since (an edit landed): shown as it is now.
         router.refresh();
       } else {
+        setOpen(false);
         toast.success(done);
       }
     });
@@ -370,7 +379,7 @@ export function ArticleActions({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(deleteArticle, "Deleted")}>
+            <AlertDialogAction variant="destructive" disabled={pending} focusableWhenDisabled onClick={() => run(deleteArticle, "Deleted")}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -378,43 +387,59 @@ export function ArticleActions({
       </AlertDialog>
     );
   }
-  return published ? (
-        <Button variant="outline" disabled={pending} onClick={() => run(unpublishArticle, "Unpublished")}>
-          Unpublish
-        </Button>
-      ) : (
-        <AlertDialog>
-          <AlertDialogTrigger
-            render={<Button disabled={pending} />}
-            onClick={(event) => {
-              if (unsaved) {
-                event.preventBaseUIHandler();
-                toast.error("Save your changes first");
-              }
-            }}
-          >
-            Publish
-          </AlertDialogTrigger>
-          <AlertDialogContent closeDisabled={pending}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Anyone can read it in your portal&apos;s docs, and search engines can find it.
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          setUnpublishing(published);
+        }
+        setOpen(next);
+      }}
+    >
+      <AlertDialogTrigger
+        render={<Button variant={published ? "outline" : "default"} disabled={pending} focusableWhenDisabled />}
+        onClick={(event) => {
+          if (!published && unsaved) {
+            event.preventBaseUIHandler();
+            toast.error("Save your changes first");
+          }
+        }}
+      >
+        {published ? "Unpublish" : "Publish"}
+      </AlertDialogTrigger>
+      <AlertDialogContent closeDisabled={pending}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {unpublishing ? "Unpublish" : "Publish"} “{title}”?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {unpublishing ? (
+              "Until you publish it again, readers can't open it and AI answers don't use it."
+            ) : (
+              <>
+                {readers}
                 {shown.length > 0 &&
                   (shown.length === 1
                     ? " It includes 1 edit Autopilot suggested; it goes live too."
                     : ` It includes ${shown.length} edits Autopilot suggested; they go live too.`)}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction disabled={pending} onClick={() => run(publishArticle, "Published")}>
-                Publish
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      );
+              </>
+            )}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={pending}
+            focusableWhenDisabled
+            onClick={() => (unpublishing ? run(unpublishArticle, "Unpublished") : run(publishArticle, "Published"))}
+          >
+            {unpublishing ? "Unpublish" : "Publish"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
 /**

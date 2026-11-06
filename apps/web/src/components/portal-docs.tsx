@@ -8,7 +8,7 @@ import Link from "next/link";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { StillStuck, type SupportContact } from "@/components/docs-assistant";
-import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
+import { DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { OnThisPage } from "@/components/on-this-page";
 import { DocsSidebarLinks, IfSidebarLinks, PortalFooter } from "@/components/portal-look";
 import { ArticleFeedback, ArticleViewCount } from "@/components/article-feedback";
@@ -129,7 +129,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
   const popular = (await shownPopularArticles(project, tab ?? docs, { preview })).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title }));
   return (
     <div className="flex flex-col gap-8">
-      {home ? <DocsHomeHeader /> : <PageHeader title={tab.name} description={DOCS_HEADING.subtitle} />}
+      {home ? <DocsHomeHeader /> : <PageHeader title={tab.name} />}
       <PopularArticles articles={popular} />
       {collections.length === 0 && uncollected.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />

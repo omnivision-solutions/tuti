@@ -82,7 +82,7 @@ function Place({
         checked={place.showUpdatedDate}
         onChange={(showUpdatedDate) => onChange({ ...place, showUpdatedDate })}
         label="Show the updated date"
-        description="Readers see when you last changed it after it was published."
+        description="Under its heading: when you last published changes to it. None shows until you do."
       />
     </FieldGroup>
   );
@@ -212,7 +212,8 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
                 checked={customSlug}
                 onChange={setCustomSlug}
                 label="Custom slug"
-                description="Set the end of the URL instead of using the title."
+                // Published, its address stays when the box is unticked: said in its label, so it's read out too.
+                description={`Set the end of the URL instead of using the title.${article.published && !customSlug ? " Its address stays as it is; links to it keep working." : ""}`}
               />
               {customSlug && (
                 <Input

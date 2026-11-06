@@ -1114,6 +1114,9 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await docsTabs.getByRole("link", { name: "Guides" }).click();
   await expect(visitor).toHaveURL(/\/docs\/guides$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+  // A tab has its name, without the docs home's subtitle.
+  await expect(main.getByRole("heading", { level: 1 })).toHaveText("Guides");
+  await expect(main).not.toContainText("Guides and answers to common questions.");
   await checkpoint(visitor, "portal-docs-tab");
   // A collection has a page, in its tab, marked in the tree; so does an article.
   await main.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Billing/ }).click();
@@ -1379,6 +1382,8 @@ test("an article's settings: its own address (the old one redirects), keywords r
     })
     .toEqual([0, 1280, 720, true]);
   await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveCount(0);
+  // Published, with the box off: its address stays as it is, and the checkbox says so.
+  await expect(dialog.getByRole("checkbox", { name: /^Custom slug/ })).toHaveAccessibleName(/Its address stays as it is; links to it keep working\.$/);
   await dialog.getByRole("checkbox", { name: /^Custom slug/ }).check();
   const slugBox = dialog.getByRole("textbox", { name: "Slug" });
   await expect(slugBox).toHaveValue("inviting-your-team");

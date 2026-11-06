@@ -261,6 +261,25 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await checkpoint(owner, "team-docs-article-who-can-read", { fullPage: false });
   await articleSettings.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Settings saved")).toBeVisible();
+  // Unpublishing asks first; publishing again says who can read it.
+  await owner.getByRole("button", { name: "Unpublish" }).click();
+  const unpublishing = owner.getByRole("alertdialog", { name: "Unpublish “Pricing”?" });
+  await expect(unpublishing).toContainText("Until you publish it again, readers can't open it and AI answers don't use it.");
+  await checkpoint(owner, "team-docs-article-unpublish", { fullPage: false });
+  await unpublishing.getByRole("button", { name: "Unpublish" }).click();
+  await expect(owner.getByText("Unpublished", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
+  // Focus goes back to the button, now Publish.
+  const publish = owner.getByRole("main").getByRole("button", { name: "Publish", exact: true });
+  await expect(publish).toBeFocused();
+  await publish.click();
+  const publishing = owner.getByRole("alertdialog", { name: "Publish “Pricing”?" });
+  await expect(publishing).toContainText("Signed-in readers can read it in your portal's docs.");
+  await expect(publishing).not.toContainText("search engines");
+  await checkpoint(owner, "team-docs-article-publish-signed-in", { fullPage: false });
+  await publishing.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(owner.getByText("Published", { exact: true }).first()).toBeVisible();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner.getByRole("region", { name: "Basics" }).getByRole("listitem").filter({ hasText: "Pricing" }).getByText("Signed-in", { exact: true })).toBeVisible();
 

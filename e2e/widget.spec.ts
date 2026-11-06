@@ -1089,6 +1089,7 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
 
   // Search: results come as the visitor types, with no button to press. Cleared, the docs are back.
   const search = widget.getByRole("searchbox", { name: "Search the docs" });
+  await expect(search).toHaveAttribute("placeholder", "Search docs");
   await expect(widget.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
   await search.pressSequentially("invi");
   const results = widget.getByRole("list", { name: "Search results" });
