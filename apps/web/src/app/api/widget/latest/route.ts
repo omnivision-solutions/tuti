@@ -41,8 +41,9 @@ export async function GET(request: Request) {
   };
   // On a site of the team's (not the app or the portal, at Tuti's address or its own domain): the widget
   // is set up (Home's "Get set up"). Once: the domain is only looked up until then. A portal under a
-  // path of the team's site (acme.com/portal) shares that site's origin, which counts.
-  const from = siteOrigin(request.headers.get("origin") ?? request.headers.get("referer"));
+  // path of the team's site (acme.com/portal) shares that site's origin, which counts. Not the portal's own
+  // tag (`from=portal`, Customize → Widget), on whatever address the portal is.
+  const from = new URL(request.url).searchParams.get("from") === "portal" ? null : siteOrigin(request.headers.get("origin") ?? request.headers.get("referer"));
   if (project && !project.widgetSeenAt && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin && !(await isOwnDomain(slug, from))) {
     await prisma.project.updateMany({ where: { slug, widgetSeenAt: null }, data: { widgetSeenAt: new Date() } });
   }

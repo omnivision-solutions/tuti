@@ -97,6 +97,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       : target.kind === "portal" && target.customDomain
         ? `${new URL(portalUrl(slug)).protocol}//${requestHeaders.get("host")}`
         : null;
+  // The project's own widget (Customize → Widget). Not where the team's Custom code adds it its own way (that runs later,
+  // and the first copy wins). ponytail: not under a path of the team's site until /widget keeps the base in its links.
+  const widgetHere = canRead && project.widgetOnPortal && !base && !brand.customHtml.includes("widget.js");
   // The docs' assistant (AI answers as a conversation), for readers, when the server has AI answers.
   const assistant = canRead && answersEnabled();
   const firstBoard = project.boards[0];
@@ -156,11 +159,12 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalFooter />
         {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new. */}
         {/* Its launcher under the portal's sheets and dialogs (z-50: the assistant, the menu), still over the page; on phones
-            the page ends clear of it. A plain script tag, in the page as sent: the loader reads its data-project. */}
-        {canRead && project.widgetOnPortal && (
+            the page ends clear of it. A plain script tag, in the page as sent; its panel is this address's /widget, where the
+            reader's session is. */}
+        {widgetHere && (
           <>
             <style>{`body > button[aria-controls="tuti-widget"] { z-index: 40 !important; } @media (width < 48rem) { body { padding-bottom: 5.5rem; } }`}</style>
-            <script src={`${appUrl().origin}/widget.js`} data-project={slug} async />
+            <script src={`${appUrl().origin}/widget.js`} data-project={slug} data-on-portal="" async />
           </>
         )}
         </PortalMenuProvider>

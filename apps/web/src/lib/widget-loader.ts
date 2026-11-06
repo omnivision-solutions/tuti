@@ -31,6 +31,10 @@ import {
  * `data-hide-launcher` (or `TutiSettings.hideLauncher`) leaves it out, for sites with
  * their own button.
  *
+ * `data-on-portal` is the portal's own tag (Customize → Widget): the panel is the page's own
+ * origin's `/widget` (a custom domain's too, where the reader's session is), and the page
+ * isn't one of the team's sites for Home's "Get set up".
+ *
  * `data-theme` (or `TutiSettings.theme`) picks light or dark for every panel and the button, unless it has the team's own colour ("auto", the default,
  * is the project's colour scheme, from Customize → Branding: by default the visitor's setting); the panels' frames
  * carry it in their names (WIDGET_FRAME_NAME). `Tuti.setTheme(theme)` changes it, panels already open too.
@@ -82,7 +86,8 @@ export function widgetLoader(portalTemplate: string): string {
   }
   var sidebar = display === "sidebar";
   var hideLauncher = display === "inline" || script.hasAttribute("data-hide-launcher") || settings.hideLauncher === true;
-  var portal = ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
+  var onPortal = script.hasAttribute("data-on-portal");
+  var portal = onPortal ? window.location.origin : ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
   var origin = new URL(portal).origin;
   var api = new URL(script.src).origin;
   var seenKey = "tuti:seen:" + slug;
@@ -554,7 +559,7 @@ export function widgetLoader(portalTemplate: string): string {
     showLauncher();
   }
   // Settles once what this visitor has seen is final: latest loaded, this browser's read, the person's looked up (or not).
-  var ready = (window.fetch ? fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug))
+  var ready = (window.fetch ? fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug) + (onPortal ? "&from=portal" : ""))
     .then(function (response) { return response.ok ? response.json() : null; })
     .catch(function () { return null; }) : Promise.resolve(null))
     .then(function (data) {

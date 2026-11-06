@@ -374,6 +374,21 @@ test("data-hide-launcher or TutiSettings.hideLauncher leaves the button out; Tut
   }
 });
 
+test("the portal's own tag (data-on-portal): the panel is the page's own address, and it says so when it asks for the settings", async () => {
+  const page = loadWidget({ attributes: { "data-on-portal": "" }, before: (page) => Object.assign(page.window, { location: { origin: "https://help.acme.example" } }) });
+  await settled();
+  page.Tuti.open();
+  expect(page.frame!.src).toBe("https://help.acme.example/widget");
+  const latest = (page.window.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url)).find((url) => url.includes("/api/widget/latest"));
+  expect(latest).toBe("https://app.tuti.example/api/widget/latest?project=acme&from=portal");
+  // Any other site's tag: the portal's Tuti address, as before.
+  const site = loadWidget({});
+  await settled();
+  site.Tuti.open();
+  expect(site.frame!.src).toBe("https://acme.tuti.example/widget");
+  expect((site.window.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url))).toContain("https://app.tuti.example/api/widget/latest?project=acme");
+});
+
 test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; unknown tabs are reported", async () => {
   const page = loadWidget({});
   page.Tuti.open({ tab: "whats-new" });
