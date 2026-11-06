@@ -472,7 +472,8 @@ function ConversationList({
         {loading ? (
           NEW_MESSAGE_SKELETON
         ) : (
-          <Button ref={newMessage} size="lg" onClick={onNew} className="w-full">
+          // Where the assistant's focus goes back to when what opened it (Send, AI first) is gone.
+          <Button ref={newMessage} size="lg" onClick={onNew} className="w-full" data-assistant-return>
             <SquarePenIcon data-icon="inline-start" />
             New message
           </Button>

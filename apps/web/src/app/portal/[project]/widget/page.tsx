@@ -27,7 +27,7 @@ import { appUrl } from "@/lib/hosts";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
 import { publishedEntries } from "@/server/changelog-queries";
-import { listedArticle } from "@/server/docs-queries";
+import { answerableArticle, listedArticle } from "@/server/docs-queries";
 import { brandCss, branding } from "@/server/operations/branding";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -76,6 +76,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         name: true,
         boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, postButton: true, titlePlaceholder: true, detailsPlaceholder: true } },
         articles: { where: listedArticle, take: 1, select: { id: true } },
+        // Something for the AI to answer from, for Messages' AI first.
+        _count: { select: { articles: { where: answerableArticle } } },
         supportInbox: true,
       },
     }),
@@ -173,7 +175,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
           />
         )}
         {/* AI first (Customize → Widget) where the assistant is here and has docs to answer from. */}
-        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} aiFirst={settings.aiFirst && !!assistant && hasDocs} />}
+        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} aiFirst={settings.aiFirst && !!assistant && project._count.articles > 0} />}
         {tab === "feedback" && (
           <Feedback slug={slug} projectId={project.id} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
         )}

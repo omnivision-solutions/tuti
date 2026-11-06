@@ -233,6 +233,8 @@ export function AskAPerson({
   question,
   defaultEmail,
   widget,
+  sent: sentBefore,
+  onSent,
   onLeave,
 }: {
   projectSlug: string;
@@ -240,11 +242,15 @@ export function AskAPerson({
   question: string;
   defaultEmail: string;
   widget: boolean;
+  /** Passed to the team already (the assistant keeps that with the turn): it says so, and doesn't offer it again. */
+  sent?: boolean;
+  onSent?: () => void;
   /** Closes the assistant around it when "Open Messages" leaves for the Messages tab. */
   onLeave?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sentHere, setSent] = useState(false);
+  const sent = sentHere || !!sentBefore;
   /** The email as the visitor typed it; null until they type. */
   const [typed, setTyped] = useState<string | null>(null);
   const [error, setError] = useState<string>();
@@ -278,6 +284,7 @@ export function AskAPerson({
         visitorStore.write(projectSlug, { token: visitorToken, email: email.trim() });
       }
       setSent(true);
+      onSent?.();
     });
   };
 

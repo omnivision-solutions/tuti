@@ -743,7 +743,8 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   const question = `How do I add a colleague to Acme ${slug}?`;
   const body = "Owners and admins send invites from the Team page.";
   await similar(question, `Inviting your team\n\n${body}`, 0.8);
-  const article = await api("/articles", { title: "Inviting your team", body });
+  // AI only (no page, in no list): still something for the AI to answer from.
+  const article = await api("/articles", { title: "Inviting your team", body, listing: "ai_only" });
   await api(`/articles/${article.slug}/publish`, {});
   await api("/support", { inbox: true }, "PATCH");
 
@@ -790,12 +791,15 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await expect(ai.getByRole("form", { name: "Ask a person" }).getByRole("textbox", { name: "Your email" })).toHaveValue(`e2e-asker-${slug}@example.com`);
   await ai.getByRole("form", { name: "Ask a person" }).getByRole("button", { name: "Cancel" }).click();
   await close.click();
+  // Its Send went with the form (sending went back to the list): focus goes to New message there.
+  await expect(widget.getByRole("button", { name: "New message" })).toBeFocused();
 
   // Asking the AI fails (here, the request is cut off): Ask a person still reaches the team, with the message as it was.
   const third = `Do you have an API for Acme ${slug}?`;
   let cut = false;
   await visitor.route("**/widget**", async (route) => {
-    if (!cut && route.request().method() === "POST" && route.request().headers()["next-action"]) {
+    // Only asking the AI the third question (a server action with it in its body), not the panel's own requests meanwhile.
+    if (!cut && route.request().method() === "POST" && route.request().postData()?.includes(third)) {
       cut = true;
       await route.abort();
     } else {
@@ -813,8 +817,11 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await expect(direct.getByRole("textbox", { name: "Your email" })).toHaveValue(`e2e-asker-${slug}@example.com`);
   await direct.getByRole("button", { name: "Send to the team" }).click();
   await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toBeVisible();
+  // Passed to the team, it isn't asked again (that would be a second way to the team for it).
+  await expect(ai.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await visitor.unroute("**/widget**");
-  await ai.getByRole("link", { name: "Open Messages" }).click();
+  // (The first question, passed to the team before, still says so: the latest.)
+  await ai.getByRole("link", { name: "Open Messages" }).last().click();
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(third);
 
   // Longer than a question, a message goes straight to the team.
