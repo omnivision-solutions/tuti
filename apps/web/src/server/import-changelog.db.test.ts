@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { CHANGELOG_PAGE, importsSettled } from "@tuti/jobs";
+import { CHANGELOG_PAGE, handlers, importsSettled } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -115,6 +115,28 @@ test("past a page's soft limit the rest of its entries are the next page's, ever
   const done = await importChangelog();
   expect(done.counts.changelogEntries).toEqual({ imported: 3, leftOut: { "only some people see": 2, "longer than 20,000 characters, Tuti's most": 1 } });
   expect(done.counts.changelogImages).toEqual({ imported: 2, leftOut: {} });
+  expect((await entries()).map((entry) => entry.title)).toEqual(["Dark mode is here", "Faster exports", "Single sign-on"]);
+});
+
+test("a page cut short goes on after the last entry done, even when one before it is gone from Featurebase meanwhile", async () => {
+  // One entry a page; after the first page, the oldest is deleted in Featurebase, so the list shifts up by one.
+  let now = 0;
+  Object.assign(CHANGELOG_PAGE, { softMs: 0, now: () => ++now });
+  const importStep = handlers.importStep;
+  let cut = false;
+  handlers.importStep = async (input, log) => {
+    const result = await importStep(input, log);
+    if (!cut) {
+      cut = true;
+      fake.fixtures.changelogs = fake.fixtures.changelogs.filter((entry) => entry.title !== "Dark mode is here");
+    }
+    return result;
+  };
+  try {
+    await importChangelog();
+  } finally {
+    handlers.importStep = importStep;
+  }
   expect((await entries()).map((entry) => entry.title)).toEqual(["Dark mode is here", "Faster exports", "Single sign-on"]);
 });
 

@@ -23,8 +23,8 @@ import { ALREADY_HERE, type ImportJob, type StepPage, tally } from "./imports";
  */
 export const CHANGELOG_PAGE = { entries: 10, softMs: 120_000, hardMs: 210_000, now: () => Date.now() };
 
-/** Where the step got to: Featurebase's list page (its cursor) and how many of its entries are done. */
-type ChangelogAt = { page: string | null; done: number };
+/** Where the step got to: Featurebase's list page (its cursor) and the last of its entries done (null: none yet). */
+type ChangelogAt = { page: string | null; after: { id: string; date: string } | null };
 
 /** The changelog's images, files and videos, counted apart from feedback's and the help center's, so each part says its own. */
 const CHANGELOG_MEDIA = { image: "changelogImages", file: "changelogFiles", video: "changelogVideos" } as const;
@@ -45,9 +45,12 @@ const dateOf = (value: string | null | undefined) => (value && !Number.isNaN(Dat
 
 export async function changelogPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = CHANGELOG_PAGE.now();
-  const at: ChangelogAt = cursor ? JSON.parse(cursor) : { page: null, done: 0 };
+  const at: ChangelogAt = cursor ? JSON.parse(cursor) : { page: null, after: null };
   const listed = await job.featurebase.page<FeaturebaseChangelog>("/changelogs", at.page, { state: "all", sortBy: "date", sortOrder: "asc", limit: CHANGELOG_PAGE.entries });
-  const rest = listed.items.slice(at.done);
+  // After the last one done; one gone since (deleted, made a segment's), after where it was by date.
+  const index = at.after ? listed.items.findIndex((entry) => entry.id === at.after!.id) : -1;
+  const later = at.after ? listed.items.findIndex((entry) => (entry.date ?? "") > at.after!.date) : 0;
+  const rest = listed.items.slice(index >= 0 ? index + 1 : later >= 0 ? later : listed.items.length);
   // Read again in the page's transaction, under its lock: what the check before copying saw may have changed.
   const recorded = async (db: Prisma.TransactionClient) =>
     new Set(
@@ -76,7 +79,10 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
   }
   const items = rest.slice(0, done);
   return {
-    next: done < rest.length ? JSON.stringify({ page: at.page, done: at.done + done }) : listed.next && JSON.stringify({ page: listed.next, done: 0 }),
+    next:
+      done < rest.length
+        ? JSON.stringify({ page: at.page, after: { id: items.at(-1)!.id, date: items.at(-1)!.date ?? "" } })
+        : listed.next && JSON.stringify({ page: listed.next, after: null }),
     save: async (tx) => {
       const saved = await recorded(tx);
       for (const entry of items) {
