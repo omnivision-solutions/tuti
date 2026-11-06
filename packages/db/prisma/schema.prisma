@@ -1038,8 +1038,9 @@ model Conversation {
   origin        ConversationOrigin
   /// Who's writing, when Tuti knows them (an SSO user or a portal account)…
   userId        String?
-  /// …otherwise just their email, lowercase, and whether it's verified.
+  /// …otherwise just their email, lowercase, and whether it's verified, and the name their email came from (From's), if any.
   email         String?
+  name          String?
   emailVerified Boolean            @default(false)
   /// A signed-out visitor's widget token (SHA-256 of its id; lib/visitor-session.ts): who may read it in the widget.
   visitorHash   String?

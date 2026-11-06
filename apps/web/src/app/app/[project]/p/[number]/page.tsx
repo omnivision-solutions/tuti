@@ -69,6 +69,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                 subject: true,
                 status: true,
                 email: true,
+                name: true,
                 emailVerified: true,
                 user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
               },

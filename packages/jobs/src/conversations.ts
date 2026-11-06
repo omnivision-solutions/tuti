@@ -40,6 +40,7 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
           subject: true,
           spam: true,
           email: true,
+          name: true,
           notifiedAt: true,
           assigneeId: true,
           user: { select: { name: true } },
@@ -69,7 +70,7 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   });
   const email = conversationEmail({
     projectName: conversation.project.name,
-    from: conversation.user?.name ?? conversation.email ?? "Someone",
+    from: conversation.user?.name ?? conversation.name ?? conversation.email ?? "Someone",
     // The user's first message is the conversation's start.
     isNew: earlier === 0,
     subject: conversation.subject,

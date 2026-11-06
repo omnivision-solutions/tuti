@@ -4,8 +4,10 @@ import { beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
+import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
+import { conversationPerson } from "./operations/conversations";
 import { upsertProjectUser } from "./project-users";
 
 /** Receiving email (server/inbound.ts, /api/inbound/email): fixture emails as the receiver posts them. */
@@ -131,6 +133,18 @@ test("with DMARC passed, a known user's address is theirs; otherwise the address
   const [mine, posing] = await conversations(project.id);
   expect(mine).toMatchObject({ userId: sam, email: null });
   expect(posing).toMatchObject({ userId: null, email: "e2e-sam@example.com", emailVerified: false, spam: false });
+});
+
+test("an email's From name is who the conversation is with, trimmed and cut short; none when it's only the address", async () => {
+  const { project, address } = await setup();
+  const from = ["Carlos Mendes <e2e-carlos@example.com>", "e2e-bare@example.com", '"E2E-Same@example.com" <e2e-same@example.com>', `"  ${"Long ".repeat(40)}" <e2e-long@example.com>`];
+  for (const sender of from) {
+    await postEmail(rawEmail({ from: sender, to: address }), { recipient: address });
+  }
+  const people = (await conversations(project.id)).map((c) => conversationPerson({ ...c, user: null }).name);
+  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim()]);
+  // The team's email about it names them too.
+  expect(mailbox.emails.some((email) => email.text.includes("Carlos Mendes started a conversation"))).toBe(true);
 });
 
 test("auto-replies, bounces, our own mail and loops are kept as ignored, with the reason", async () => {

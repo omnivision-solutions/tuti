@@ -70,6 +70,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         spam: true,
         sample: true,
         email: true,
+        name: true,
         emailVerified: true,
         snoozedUntil: true,
         assigneeId: true,

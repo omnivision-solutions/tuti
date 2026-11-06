@@ -191,6 +191,7 @@ async function conversationAddresses(conversationId: string) {
     where: { id: conversationId },
     select: {
       email: true,
+      name: true,
       emailVerified: true,
       user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
       messages: { where: { fromAddress: { not: null } }, select: { fromAddress: true }, distinct: ["fromAddress"] },
@@ -212,6 +213,12 @@ async function userWithAddress(projectId: string, address: string): Promise<stri
   }
   const sso = await prisma.ssoIdentity.findFirst({ where: { projectId, email: address }, orderBy: { updatedAt: "desc" }, select: { userId: true } });
   return sso?.userId ?? null;
+}
+
+/** The name in an email's From ("Kim Lee <kim@…>"), trimmed and cut short; none when it's only the address again. */
+function fromName(mail: Mail, sender: string) {
+  const name = mail.from?.value[0]?.name?.trim().slice(0, 100).trim();
+  return name && name.toLowerCase() !== sender ? name : null;
 }
 
 /** Another request read this email first. */
@@ -329,6 +336,7 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     const started = await startConversation(projectId, {
       userId,
       email: userId ? null : sender,
+      name: userId ? null : fromName(mail, sender),
       subject: subject.replace(REPLY_PREFIXES, "").trim().slice(0, 200) || undefined,
       body,
       origin: "EMAIL",

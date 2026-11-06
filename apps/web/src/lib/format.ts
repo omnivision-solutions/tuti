@@ -125,3 +125,14 @@ export function rowLine(subject: string, body: string): string | undefined {
   const line = firstLine(body);
   return line !== undefined && line !== firstLine(subject) && subjectFrom(body) !== subject ? line : undefined;
 }
+
+/**
+ * Who wrote the latest message an Inbox row shows, said before it when it isn't the person: "AI", "You" (the team
+ * member looking), another team member's first name, or "Tuti" (as the conversation says, when nobody's named: Tuti's own).
+ */
+export function rowBy(message: { author: "USER" | "TEAM" | "AI" | "TUTI"; authorId: string | null; name: string | null }, me: string): string | undefined {
+  if (message.author === "USER" || message.author === "AI") {
+    return message.author === "AI" ? "AI" : undefined;
+  }
+  return message.authorId === me ? "You" : message.name?.trim().split(/\s+/)[0] || "Tuti";
+}

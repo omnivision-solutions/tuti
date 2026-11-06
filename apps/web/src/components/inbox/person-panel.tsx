@@ -91,9 +91,9 @@ export async function PersonPanel({
   slug: string;
   /**
    * Someone Tuti knows (their account; with `accounts`, every account that is them, theirs first, as Users counts
-   * them), or only their address (verified or not).
+   * them), or only their address (verified or not), with the name its email came from.
    */
-  person: { userId: string | null; email: string | null; emailVerified: boolean; accounts?: string[] };
+  person: { userId: string | null; email: string | null; name?: string | null; emailVerified: boolean; accounts?: string[] };
   /** The conversation it's beside, left out of theirs. */
   besides?: number;
   /**
@@ -190,7 +190,7 @@ export async function PersonPanel({
             <h2 className="min-w-0 text-base font-semibold break-words phonebar:hidden">{user.name}</h2>
           </div>
         ) : (
-          <p className="font-medium break-words">{user?.name ?? shownEmail ?? "Unknown"}</p>
+          <p className="font-medium break-words">{user?.name ?? person.name ?? shownEmail ?? "Unknown"}</p>
         )}
         {shownEmail && (
           // A long address breaks anywhere; "(not verified)" only between its words.
