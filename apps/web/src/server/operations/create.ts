@@ -1,3 +1,4 @@
+import { isEmptyDoc } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
@@ -161,7 +162,8 @@ export const createComment = defineOperation({
     if (text.error !== undefined) {
       throw new OperationError(400, "invalid_content", text.error);
     }
-    if (text.text === "") {
+    // An image alone will do.
+    if (isEmptyDoc(text.doc)) {
       throw new OperationError(400, "invalid_content", "Write something first");
     }
     if (input.internal && input.emailVoters) {
@@ -184,9 +186,13 @@ export const createComment = defineOperation({
       const member = await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } });
       // A note: its own table, so nothing that reads comments shows it; no count, no webhook.
       const note = await saving(() =>
-        prisma.postNote.create({
-          data: { postId: post.id, authorId: userId, body: text.text, content: text.doc },
-          select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
+        prisma.$transaction(async (tx) => {
+          const created = await tx.postNote.create({
+            data: { postId: post.id, authorId: userId, body: text.text, content: text.doc },
+            select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
+          });
+          await attachMedia(tx, projectId, text.mediaIds);
+          return created;
         }),
       );
       return { id: note.id, author: { name: note.author.name, team: !!member }, body: note.body, content: displayDoc(note), createdAt: note.createdAt.toISOString(), internal: true as const };
@@ -201,7 +207,6 @@ export const createComment = defineOperation({
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
         });
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });
-        // Comments can't have images yet (see the comment profile); this keeps them safe from cleanup once they can.
         await attachMedia(tx, projectId, text.mediaIds);
         return created;
       }),

@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { mediaStorage } from "@tuti/shared/storage";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { ArrowLeftIcon, ArrowUpRightIcon, XIcon } from "lucide-react";
@@ -122,7 +123,14 @@ export async function FeedbackPane({
           <div className="flex flex-col gap-2 border-t pt-4">
             <h3 className="font-medium">Reply</h3>
             {/* Keyed by post: J and K start each one's reply afresh. */}
-            <CommentForm key={post.id} postId={post.id} placeholder="Reply as the team…" notes voters={toEmail} />
+            <CommentForm
+              key={post.id}
+              postId={post.id}
+              placeholder="Reply as the team…"
+              notes
+              voters={toEmail}
+              uploads={mediaStorage() ? { projectSlug, mediaUrls: {} } : undefined}
+            />
           </div>
         </>
       )}
