@@ -95,22 +95,10 @@ const LISTED = {
   user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
 } as const;
 
-/** A view's first hundred conversations: the latest message first; in Needs reply, who's waited longest. */
+/** A view's first hundred conversations, the latest message first. */
 async function listed(view: View, projectId: string, userId: string, history: Date | null) {
   const where = viewWhere(view, projectId, userId, history);
-  if (view !== "open") {
-    return prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], take: 100, select: LISTED });
-  }
-  // Set back to Open by hand, or woken from a snooze while it waited on the user, one has no `waitingSince`: its latest
-  // message says how long (as on Home). The oldest of both kinds, merged.
-  const [waiting, others] = await Promise.all([
-    prisma.conversation.findMany({ where: { AND: [where, { waitingSince: { not: null } }] }, orderBy: [{ waitingSince: "asc" }, { number: "asc" }], take: 100, select: LISTED }),
-    prisma.conversation.findMany({ where: { AND: [where, { waitingSince: null }] }, orderBy: [{ lastMessageAt: "asc" }, { number: "asc" }], take: 100, select: LISTED }),
-  ]);
-  const since = (c: (typeof waiting)[number]) => (c.waitingSince ?? c.lastMessageAt).getTime();
-  // Once each: one they wrote to between the two reads is in both.
-  const once = [...new Map([...others, ...waiting].map((c) => [c.number, c])).values()];
-  return once.sort((a, b) => since(a) - since(b) || a.number - b.number).slice(0, 100);
+  return prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], take: 100, select: LISTED });
 }
 
 /**

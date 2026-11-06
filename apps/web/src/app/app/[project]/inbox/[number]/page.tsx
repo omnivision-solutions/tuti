@@ -12,7 +12,7 @@ import { ConversationPosts } from "@/components/inbox/conversation-posts";
 import { AssignMenu, CloseButton, MarkStatusButton, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageText } from "@/components/inbox/message-text";
-import { PersonDetails } from "@/components/inbox/person-details";
+import { AboutButton, PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
 import { RefreshAt } from "@/components/inbox/refresh-at";
 import { ReplyForm } from "@/components/inbox/reply-form";
@@ -206,6 +206,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           }
           more={
             <>
+              <AboutButton name={personName} />
               {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
               {conversation.status === "WAITING" && <MarkStatusButton projectSlug={slug} number={conversation.number} status="open" />}
               {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}

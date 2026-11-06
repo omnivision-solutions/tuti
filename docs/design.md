@@ -142,7 +142,7 @@ the list picks none to approve at once.
   its age at the right, short ("4m": how long they've waited, or since the latest
   message), the subject and the latest message's first line in two at most, then
   "Needs reply" (the highlight colour, no time in it; not in the Needs reply view, where every row would say it), its number and assignee.
-  Needs reply lists who's waited longest first; the other views, the latest message first. A conversation keeps
+  Every view lists the latest message first, Needs reply too. A conversation keeps
   its own address (`/inbox/<number>`), the list beside it where it was, its row
   marked; J and K open the next and the previous one. Until one opens, the pane
   beside the list has the Inbox's numbers (`StatTile`, as Home's): who's waiting
