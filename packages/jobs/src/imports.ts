@@ -82,7 +82,7 @@ const STALE_MS = 24 * 60 * 60_000;
 const PAGE_READ_MS = 3 * 60_000;
 const AGAIN = "Start it again to go on: what came across already is skipped.";
 /** Why records an earlier import (or an earlier try of this one) brought aren't brought again, as the summary says it. */
-const ALREADY_HERE = "already brought across earlier";
+export const ALREADY_HERE = "already brought across earlier";
 
 /** Imports' next pages not waited for (continueImport's `wait: false`), till each chain ends. */
 const inBackground = new Set<Promise<void>>();

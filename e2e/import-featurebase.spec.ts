@@ -101,7 +101,7 @@ test("Feedback comes across with Contacts: the posts with their dates, votes and
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await expect(status).toContainText("Imported from Featurebase", { timeout: 30_000 });
-  for (const count of ["3 contacts", "2 boards", "5 posts", "6 votes", "3 comments", "1 note", "1 avatar"]) {
+  for (const count of ["3 contacts", "2 boards", "5 posts", "8 votes", "3 comments", "1 note", "1 avatar"]) {
     await expect(status).toContainText(count);
   }
   await expect(status).toContainText("3 boards only some people see");

@@ -88,7 +88,8 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
     boards: { imported: 2, leftOut: { "only some people see": 3 } },
     posts: { imported: 5, leftOut: { "only some people see": 3, "hidden from the portal": 1, "waiting for moderation": 1 } },
     images: { imported: 1, leftOut: { "in comments, which have none in Tuti": 1 } },
-    votes: { imported: 6, leftOut: { "by guests": 1 } },
+    // Each author's own (5), and the others' (3).
+    votes: { imported: 8, leftOut: { "by guests": 1 } },
     comments: { imported: 3, leftOut: { "private but not by the team": 1, "deleted or spam": 2, "waiting for moderation": 1, "on posts left out": 1 } },
     notes: { imported: 1, leftOut: {} },
     avatars: { imported: 1, leftOut: {} },
@@ -191,6 +192,15 @@ test("a page run twice, at once or again later, and a second import, bring nothi
   await importFeedback();
   expect(await made()).toEqual(before);
   expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).postCount).toBe(5);
+  // The second import says so.
+  const already = { imported: 0, leftOut: expect.objectContaining({ "already brought across earlier": expect.any(Number) }) };
+  expect((await call(getImport, asOwner(), {})).import!.counts).toMatchObject({
+    boards: { imported: 0, leftOut: { "already brought across earlier": 2, "only some people see": 3 } },
+    posts: already,
+    votes: { imported: 0, leftOut: { "already brought across earlier": 3, "by guests": 1 } },
+    comments: already,
+    notes: { imported: 0, leftOut: { "already brought across earlier": 1 } },
+  });
 });
 
 test("past the plan's board limit, a board's posts go into the last board imported; without media storage images are left out, counted, and avatars stay links", async () => {
@@ -229,6 +239,20 @@ test("what didn't happen isn't counted: no boards left out, no images, and two b
   expect(done!.counts.boards).toEqual({ imported: 3, leftOut: {} });
   expect(done!.counts).not.toHaveProperty("images");
   expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
+});
+
+test("a page of Featurebase's with more posts than one of ours takes comes across in several, numbered in date order", async () => {
+  fake.pageSize = 100;
+  const template = fake.fixtures.posts[1]!;
+  for (let n = 1; n <= 30; n++) {
+    fake.fixtures.posts.push({ ...structuredClone(template), id: `65f00000000000000000c${String(n).padStart(3, "0")}`, title: `Idea ${n}`, createdAt: new Date(Date.UTC(2025, 0, n)).toISOString() });
+  }
+  await importFeedback();
+  expect((await call(getImport, asOwner(), {})).import!.counts.posts).toMatchObject({ imported: 35 });
+  const posts = await prisma.post.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true } });
+  expect(posts.map((post) => post.title).slice(-3)).toEqual(["Idea 28", "Idea 29", "Idea 30"]);
+  // Featurebase's page read again for the rest of it.
+  expect(fake.requests.filter((request) => request.startsWith("GET /v2/posts?")).length).toBeGreaterThan(1);
 });
 
 test("a key that can't read the boards or the posts isn't accepted for Feedback", async () => {

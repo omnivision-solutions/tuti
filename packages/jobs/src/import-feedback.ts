@@ -8,7 +8,7 @@ import { mediaStorage } from "@tuti/shared/storage";
 import { embedPosts } from "./duplicates";
 import type { FeaturebaseAuthor, FeaturebaseBoard, FeaturebaseComment, FeaturebaseLocalized, FeaturebasePost, FeaturebaseVoter } from "./featurebase";
 import { mediaImporter } from "./import-media";
-import { adminMember, contactUsers, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
+import { adminMember, ALREADY_HERE, contactUsers, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
 import { lastingMediaUrl } from "./lasting-media";
 import { syncUsersIn } from "./project-users";
 
@@ -21,6 +21,11 @@ import { syncUsersIn } from "./project-users";
 
 type Tx = Prisma.TransactionClient;
 const NOTHING: StepPage["save"] = async () => {};
+/**
+ * How long a page may spend copying media before it saves what it has and leaves the rest to the next one: well within
+ * import-step's time limit, with Featurebase's reads (each page has 3 minutes for them: imports.ts PAGE_READ_MS).
+ */
+const MEDIA_MS = 60_000;
 
 /** What the project's imports from this source made of these Featurebase ids (`kind`: board, post, comment). */
 async function recorded(db: Tx, job: ImportJob, kind: string, externalIds: string[]): Promise<Map<string, string>> {
@@ -88,11 +93,13 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
   let last: string | undefined;
   for (const board of visible) {
     let id = known.get(board.id);
+    let here = id !== undefined;
     // Its posts went into another board for want of room (now, or by an earlier page or import while the plan was full).
     let folded = id !== undefined && limit !== null && used.has(id);
     // One deleted since is made again.
     if (!id || !existing.some((b) => b.id === id)) {
       await tx.importedRecord.deleteMany({ where: { projectId: job.projectId, source: job.source, kind: "board", externalId: board.id } });
+      here = false;
       const name = board.name.trim().slice(0, 60) || "Feedback";
       const same = existing.find((b) => b.name.trim().toLowerCase() === name.toLowerCase());
       const words = boardWords(board);
@@ -119,7 +126,7 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
     }
     known.set(board.id, id);
     if (count) {
-      tally(job.counts, "boards", folded ? "past the plan's board limit, their posts in the last board" : null);
+      tally(job.counts, "boards", folded ? "past the plan's board limit, their posts in the last board" : here ? ALREADY_HERE : null);
     }
     used.add(id);
     last = id;
@@ -191,31 +198,42 @@ async function authorOf(tx: Tx, job: ImportJob, author: FeaturebaseAuthor, conta
   return userIds.get(externalId)!;
 }
 
+/** Where the posts step got to: Featurebase's page (its cursor) and the first of its posts not done yet. */
+type PostsAt = { page: string | null; from: number };
+/** A page does at most this many posts (their images copied within MEDIA_MS); the rest of Featurebase's page is next. */
+const POSTS = 25;
+
 /**
- * Posts, a page at a time in date order (numbered so), with their boards: content (images copied first, outside the
+ * Posts in date order (numbered so), a few at a time, with their boards: content (images copied first, outside the
  * lock), author, date, status (with its event, as sample content writes one) and ETA, and the author's vote, as Tuti
  * gives every author (Featurebase counts it among the voters too). Merged posts aren't listed: Featurebase moved their
  * votes and comments already.
  */
 async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
+  const at = cursor ? (JSON.parse(cursor) as PostsAt) : { page: null, from: 0 };
   const boards = await job.featurebase.get<FeaturebaseBoard[]>("/boards");
-  const { items, next } = await job.featurebase.page<FeaturebasePost>("/posts", cursor, { sortBy: "createdAt", sortOrder: "asc" });
+  const { items, next } = await job.featurebase.page<FeaturebasePost>("/posts", at.page, { sortBy: "createdAt", sortOrder: "asc" });
   const byId = new Map(boards.map((board) => [board.id, board]));
   const known = await recorded(prisma, job, "post", items.map((post) => post.id));
-  const fresh = items.filter((post) => !known.has(post.id) && !postLeftOut(post, byId));
   const media = importer(job);
   const contents = new Map<string, HtmlContent | { error: string }>();
-  for (const post of fresh) {
-    contents.set(post.id, await htmlToContent("post", post.content ?? "", { media }));
+  const started = Date.now();
+  let end = at.from;
+  for (; end < items.length && end - at.from < POSTS && Date.now() - started < MEDIA_MS; end++) {
+    const post = items[end]!;
+    if (!known.has(post.id) && !postLeftOut(post, byId)) {
+      contents.set(post.id, await htmlToContent("post", post.content ?? "", { media }));
+    }
   }
-  const contacts = await people(job, fresh.map((post) => post.author));
+  const chunk = items.slice(at.from, end);
+  const contacts = await people(job, chunk.filter((post) => contents.has(post.id)).map((post) => post.author));
   return {
-    next,
+    next: end < items.length ? JSON.stringify({ page: at.page, from: end }) : next && JSON.stringify({ page: next, from: 0 }),
     save: async (tx) => {
       const boardIds = await importBoards(tx, job, boards, cursor === null);
       const users = await contacts.save(tx);
-      const saved = await recorded(tx, job, "post", items.map((post) => post.id));
-      for (const post of items) {
+      const saved = await recorded(tx, job, "post", chunk.map((post) => post.id));
+      for (const post of chunk) {
         const leftOut = postLeftOut(post, byId);
         const content = contents.get(post.id);
         if (leftOut || (content && "error" in content)) {
@@ -223,7 +241,7 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
           continue;
         }
         if (saved.has(post.id) || !content) {
-          tally(job.counts, "posts", null);
+          tally(job.counts, "posts", ALREADY_HERE);
           continue;
         }
         const authorId = await authorOf(tx, job, post.author, users, post.id);
@@ -252,6 +270,7 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
         });
         await remember(tx, job, "post", post.id, created.id);
         tally(job.counts, "posts", null);
+        tally(job.counts, "votes", null);
         countMedia(job, content, "post");
       }
     },
@@ -276,7 +295,8 @@ async function recount(tx: Tx, postIds: string[]) {
 /**
  * Voters as votes, a few posts at a time (those imported, in Featurebase's id order; a post with many voters over
  * several pages). Featurebase keeps no vote's date: a vote is dated by the post, or the voter's joining if later.
- * voteCount is counted from the votes, the author's own among them.
+ * voteCount is counted from the votes, the author's own among them (made and counted with the post). A vote already
+ * here (an earlier import's) is counted as such.
  */
 async function votesPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const at = cursor ? (JSON.parse(cursor) as VotesAt) : null;
@@ -311,10 +331,11 @@ async function votesPage(job: ImportJob, cursor: string | null): Promise<StepPag
     next: next && JSON.stringify(next),
     save: async (tx) => {
       const users = await contacts.save(tx);
-      const dates = new Map((await tx.post.findMany({ where: { projectId: job.projectId, id: { in: read.map((page) => page.postId) } }, select: { id: true, createdAt: true } })).map((post) => [post.id, post.createdAt]));
+      const posts = new Map((await tx.post.findMany({ where: { projectId: job.projectId, id: { in: read.map((page) => page.postId) } }, select: { id: true, createdAt: true, authorId: true } })).map((post) => [post.id, post]));
       const votes: Prisma.VoteCreateManyInput[] = [];
       for (const { postId, voters } of read) {
-        const posted = dates.get(postId);
+        const post = posts.get(postId);
+        const posted = post?.createdAt;
         for (const voter of posted ? voters : []) {
           const userId =
             voter.type === "admin" ? (await adminMember(tx, job, voter.id, voter)).userId : voter.type === "customer" || voter.type === "lead" ? users.get(voter.id) : undefined;
@@ -322,13 +343,21 @@ async function votesPage(job: ImportJob, cursor: string | null): Promise<StepPag
             tally(job.counts, "votes", voter.type === "customer" || voter.type === "lead" ? "by people Featurebase no longer has" : "by guests");
             continue;
           }
+          if (userId === post!.authorId) {
+            continue;
+          }
           const joined = dateOf(voter.createdAt, posted!);
           votes.push({ postId, userId, projectId: job.projectId, createdAt: joined > posted! ? joined : posted! });
-          tally(job.counts, "votes", null);
         }
       }
-      await tx.vote.createMany({ data: votes, skipDuplicates: true });
-      await recount(tx, [...dates.keys()]);
+      const { count } = await tx.vote.createMany({ data: votes, skipDuplicates: true });
+      if (count > 0) {
+        tally(job.counts, "votes", null, count);
+      }
+      if (count < votes.length) {
+        tally(job.counts, "votes", ALREADY_HERE, votes.length - count);
+      }
+      await recount(tx, [...posts.keys()]);
     },
   };
 }
@@ -382,7 +411,7 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
           continue;
         }
         if (saved.has(comment.id) || !content) {
-          tally(job.counts, kind, null);
+          tally(job.counts, kind, ALREADY_HERE);
           continue;
         }
         const createdAt = dateOf(comment.createdAt, new Date());
@@ -422,11 +451,15 @@ async function avatarsPage(job: ImportJob, cursor: string | null): Promise<StepP
       AND u."imageId" IS NULL AND u.image ~ '^https?://' AND u.id > ${cursor ?? ""}
     ORDER BY u.id LIMIT ${AVATARS}`;
   const copies: { user: (typeof users)[number]; copy: Awaited<ReturnType<MediaImporter>> }[] = [];
+  const started = Date.now();
   for (const user of users) {
+    if (Date.now() - started > MEDIA_MS) {
+      break;
+    }
     copies.push({ user, copy: await media({ kind: "image", url: user.image, key: user.image }) });
   }
   return {
-    next: users.length === AVATARS ? users.at(-1)!.id : null,
+    next: copies.length < users.length || users.length === AVATARS ? copies.at(-1)!.user.id : null,
     save: async (tx) => {
       for (const { user, copy } of copies) {
         const width = "mediaId" in copy ? copy.width : null;
