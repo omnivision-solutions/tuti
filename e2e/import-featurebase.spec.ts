@@ -170,7 +170,7 @@ test("Feedback comes across with Contacts: the posts with their dates, votes and
   await expect(post.getByText("Night owls need it.")).toBeVisible();
   await expect(post.getByRole("img", { name: "A sketch" })).toBeVisible();
   await expect(post.locator('time[datetime="2024-01-10T08:00:00.000Z"]')).toBeVisible();
-  await expect(visitor.getByRole("button", { name: "Upvote" })).toHaveText("3");
+  await expect(visitor.getByRole("link", { name: "Sign in to vote (3 votes)" })).toHaveText("3");
   const activity = visitor.getByRole("region", { name: "Comments" });
   await expect(activity.getByText("Yes please!")).toBeVisible();
   await expect(activity.locator('time[datetime="2024-01-11T09:00:00.000Z"]')).toBeVisible();
