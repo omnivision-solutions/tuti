@@ -415,7 +415,7 @@ test("similar ideas under a portal post: those like it still open to votes, with
   await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode" } });
 
   expect(await postsLike(project.id, dark, SIGNED_OUT_VIEWER, { open: true })).toEqual([
-    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", sample: false, boardSlug: "editor" },
+    { id: expect.any(String), number: 2, title: "Dark mode in the editor", voteCount: 0, status: "PLANNED", sample: false, boardSlug: "editor", visibility: "PUBLIC", authorId: expect.any(String) },
   ]);
   // Nothing like it: nothing to show.
   expect(await postsLike(project.id, await post(6, "Exports"), SIGNED_OUT_VIEWER, { open: true })).toEqual([]);

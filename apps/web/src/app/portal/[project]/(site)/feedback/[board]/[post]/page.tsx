@@ -197,7 +197,12 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
                       {like.title}
                     </Link>
                   }
-                  badges={<PostStatusBadge status={like.status} />}
+                  badges={
+                    <>
+                      <VisibilityBadge visibility={like.visibility} />
+                      <PostStatusBadge status={like.status} />
+                    </>
+                  }
                   meta={`${like.voteCount} ${like.voteCount === 1 ? "vote" : "votes"}`}
                 />
               ))}
