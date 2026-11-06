@@ -51,6 +51,7 @@ export function WidgetSettings({
   greeting,
   hidden,
   onPortal,
+  underSitePath,
 }: {
   projectSlug: string;
   label: string;
@@ -66,6 +67,8 @@ export function WidgetSettings({
   greeting: string;
   hidden: WidgetPart[];
   onPortal: boolean;
+  /** The portal is under a path of the team's site (Customize → Address), where it doesn't show the widget yet. */
+  underSitePath: boolean;
 }) {
   const [icon, setIcon] = useState(initialIcon);
   const iconChoices = useRef<HTMLDivElement>(null);
@@ -165,7 +168,11 @@ export function WidgetSettings({
             <SwitchRow
               name="onPortal"
               label="Show on your portal"
-              description="The launcher on every page of your portal too, opening the same panel as on your site."
+              description={
+                underSitePath
+                  ? "The launcher on every page of your portal too. Not yet while your portal is under a path of your site."
+                  : "The launcher on every page of your portal too, opening the same panel as on your site."
+              }
               defaultChecked={onPortal}
             />
           </FieldGroup>

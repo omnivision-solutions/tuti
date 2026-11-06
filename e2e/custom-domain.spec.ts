@@ -93,6 +93,11 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
     await expect(visitor.getByRole("heading", { name: "Feature requests" })).toBeVisible({ timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
 
+  // The project's own widget (Customize → Widget, on by default): its panel is on this domain, where the reader's session is.
+  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(1);
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${domainUrl}/widget`);
+
   // The team's own HTML (Customize → Custom code) runs on their domain, scripts too, and never on a Tuti address.
   await owner.goto(`/app/${slug}/customize/custom-code`);
   await expect(owner.getByText(`It runs on ${domain}`, { exact: false })).toBeVisible();
@@ -114,6 +119,19 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(onTuti.getByRole("heading", { name: "Feature requests" })).toBeVisible();
   await expect(onTuti.locator("#team-html")).toHaveCount(0);
   await expect(onTuti.locator("body")).not.toHaveAttribute("data-team-script", "ran");
+
+  // Custom code that adds the widget its own way (its options): the portal leaves its own tag out there, so theirs is the
+  // one that runs. On the Tuti address, where their code doesn't run, the portal's stays.
+  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  // Saved once it has nothing left to save (the first save's toast may still be up).
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(0);
+  await expect(visitor.locator('script[src$="/widget.js"]')).toHaveCount(1);
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(0);
+  await onTuti.reload();
+  await expect(onTuti.locator("script[data-on-portal]")).toHaveCount(1);
 
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(visitor).toHaveURL(`${domainUrl}/sign-in?next=%2Ffeedback%2Ffeature-requests`);
