@@ -1029,6 +1029,9 @@ test("readers get the changelog by email: confirmed first, each entry published 
   const confirmation = await latestEmailTo(address, { subject: /^Confirm Acme's updates by email$/ });
   await reader.goto(linkIn(confirmation, portalUrl(slug)));
   await expect(reader.getByRole("heading", { name: "Get Acme's updates by email?" })).toBeVisible();
+  // Not confirmed yet: it says what happens once they are.
+  await expect(reader.getByText(`Once you confirm, the changelog entries Acme emails to subscribers will go to ${address}.`)).toBeVisible();
+  await checkpoint(reader, "portal-changelog-subscribe-confirm");
   await reader.getByRole("button", { name: "Get updates by email" }).click();
   await expect(reader.getByRole("heading", { name: "You get Acme's updates by email" })).toBeVisible();
   await checkpoint(reader, "portal-changelog-subscribed");
