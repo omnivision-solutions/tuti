@@ -1,5 +1,4 @@
 import { prisma } from "@tuti/db";
-import { codeChangesEnabled } from "@tuti/shared";
 
 import { githubConfig } from "@/lib/github";
 import { treeOrder } from "@/lib/autopilot-words";
@@ -182,14 +181,12 @@ export async function homeOverview(projectId: string, slug: string) {
   // What the team said it will use after "Create project" picks the steps; nothing picked (projects from before, or skipped), today's five.
   const picked = new Set(setup.uses);
   const uses = (...any: string[]) => picked.size === 0 || any.some((use) => picked.has(use));
-  // Each with what it's for, in a line under its title.
+  // Each with what it's for, in a line under its title: what the step gets a team using every part of Tuti, the same
+  // whatever the server or the project has turned on (a product choice: most teams will use it all).
   const steps = [
-    { key: "widget", title: "Add the widget to your site", description: `Users give feedback right inside ${setup.name}.`, action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
+    { key: "widget", title: "Add the widget to your site", description: `Users give feedback, get help and see what's new right inside ${setup.name}.`, action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
     // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.
-    { key: "github", title: "Connect GitHub", // Without Autopilot (no AI, or no Decisions API) merged pull requests only go into the changelog's draft.
-      description: codeChangesEnabled()
-        ? "Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog."
-        : "Your merged pull requests go into your changelog's next draft.", action: "Connect", done: setup.githubInstallation !== null, href: `${base}/settings/integrations`, shown: githubConfig() !== null && uses("feedback", "docs", "changelog") },
+    { key: "github", title: "Connect GitHub", description: "Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog.", action: "Connect", done: setup.githubInstallation !== null, href: `${base}/settings/integrations`, shown: githubConfig() !== null && uses("feedback", "docs", "changelog") },
     // Who's posting and who's writing in, signed in from the team's own app.
     { key: "sso", title: "Set up single sign-on", description: `Users sign in with their ${setup.name} account, so every post and message says who it's from.`, action: "Set up", done: setup.ssoSecret !== null, href: `${base}/settings/sso`, shown: uses("feedback", "support") },
     // Steps of their own only once picked.
