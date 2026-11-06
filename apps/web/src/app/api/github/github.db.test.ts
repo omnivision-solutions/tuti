@@ -346,7 +346,7 @@ describe("repositories", () => {
     // Another site, a portal (a subdomain), a link opened from a chat or mail app ("none") or a browser that
     // doesn't say can't start it (nor Connect GitHub) for a signed-in admin.
     for (const site of ["cross-site", "same-site", "none", undefined]) {
-      const fromElsewhere = { headers: site ? { "sec-fetch-site": site } : {} };
+      const fromElsewhere: RequestInit = { headers: site ? { "sec-fetch-site": site } : {} };
       expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, fromElsewhere)))).toMatch(/github=expired$/);
       expect(location(await install(new Request(`${APP}/api/github/install?project=${project.slug}`, fromElsewhere)))).toMatch(/github=expired$/);
     }
