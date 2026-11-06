@@ -200,6 +200,17 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("List refreshed: 2 repositories")).toBeVisible();
   expect(owner.url()).toBe(url);
   await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
+  // A repository given access since is listed once they reconnect (GitHub says they can access it), not on a refresh.
+  await nextInstall(owner, { ...account, repositories: [...account.repositories, { id: id + 3, fullName: "acme-e2e/docs" }] });
+  await expect(owner.getByText("List refreshed: 2 repositories")).toHaveCount(0);
+  await owner.getByRole("button", { name: "Refresh list" }).click();
+  await expect(owner.getByText("List refreshed: 2 repositories")).toBeVisible();
+  await owner.getByRole("link", { name: "Reconnect" }).click();
+  await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=connected`);
+  await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
+  await owner.getByRole("button", { name: "Add repository" }).click();
+  await expect(owner.getByRole("list", { name: "Repositories to add" }).getByRole("button", { name: "acme-e2e/docs", exact: true })).toBeEnabled();
+  await owner.keyboard.press("Escape");
 
   // Integrations lists it as connected, with Manage.
   await owner.getByRole("link", { name: "Back to integrations" }).click();

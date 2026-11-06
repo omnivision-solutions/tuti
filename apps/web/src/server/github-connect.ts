@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { syncRepositories } from "@tuti/jobs";
+import { type GithubRepo, syncRepositories } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { NextResponse } from "next/server";
 
@@ -66,10 +66,13 @@ export async function adminProject(where: { id: string } | { slug: string }) {
 }
 
 /**
- * Connects the project to the installation. Its list is every repository the App can see on the
- * account (read with the App's own access); a project starts with none of them, for the team to add.
+ * Connects the project to the installation (again, to list repositories given access since). Its
+ * list is the installation's repositories the person who connected can access on GitHub
+ * (`accessible`), and those the project already has; a project starts with none of them, for the
+ * team to add. Seeing an installation takes access to only one of its repositories, so the list
+ * mustn't be what the App can see.
  */
-export async function saveConnection(project: { id: string; userId: string }, installationId: number, account: GithubAccount) {
+export async function saveConnection(project: { id: string; userId: string }, installationId: number, account: GithubAccount, accessible: GithubRepo[]) {
   const connection = await prisma.$transaction(async (tx) => {
     const existing = await tx.githubInstallation.findUnique({ where: { projectId: project.id }, select: { id: true, installationId: true } });
     const switched = existing !== null && existing.installationId !== installationId;
@@ -77,7 +80,11 @@ export async function saveConnection(project: { id: string; userId: string }, in
       // Connected to another account before: its repositories go, and so does its list.
       await tx.githubRepository.deleteMany({ where: { connectionId: existing.id } });
     }
-    const data = { installationId, accountLogin: account.login, accountType: account.type, ...(switched && { repositories: [] }) };
+    // The project's repositories stay listed, even if this person can't access them: someone who could added them.
+    const included = existing && !switched ? await tx.githubRepository.findMany({ where: { connectionId: existing.id }, select: { repoId: true, fullName: true } }) : [];
+    const ids = new Set(accessible.map((repo) => repo.id));
+    const repositories = [...accessible, ...included.filter((repo) => !ids.has(repo.repoId)).map((repo) => ({ id: repo.repoId, fullName: repo.fullName }))];
+    const data = { installationId, accountLogin: account.login, accountType: account.type, repositories };
     return tx.githubInstallation.upsert({
       where: { projectId: project.id },
       update: data,
@@ -85,7 +92,7 @@ export async function saveConnection(project: { id: string; userId: string }, in
       select: { id: true },
     });
   });
-  // Best effort: connected either way, and Refresh list tries again.
+  // Best effort (drops what the App can't see any more): connected either way, and Refresh list tries again.
   await syncRepositories(connection.id, installationId).catch((error: unknown) =>
     log.warn("Couldn't list a GitHub installation's repositories", { error, installationId }),
   );

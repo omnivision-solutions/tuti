@@ -159,6 +159,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
                 ? installationSettingsUrl(github, installation.installationId, { login: installation.accountLogin, type: installation.accountType })
                 : null
             }
+            reconnectUrl={`/api/github/use?${new URLSearchParams({ project: project.slug, installation: String(installation.installationId) })}`}
           />
         </CardContent>
       </Card>

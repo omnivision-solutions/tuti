@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -6,9 +7,10 @@ import { appUrl } from "@/lib/hosts";
 import { accountsFromCookie, ACCOUNTS_COOKIE, adminProject, authorizeRedirect } from "@/server/github-connect";
 
 /**
- * A GitHub account picked after "Connect GitHub": one GitHub said the person has the App on.
- * GitHub's web authorization flow (which comes straight back once they've authorized the App)
- * then confirms it again, and the callback connects it.
+ * A GitHub account picked after "Connect GitHub": one GitHub said the person has the App on, or
+ * the one the project is on ("Reconnect", to list repositories given access since). GitHub's web
+ * authorization flow (which comes straight back once they've authorized the App) then confirms
+ * it again, and the callback connects it.
  */
 export async function GET(request: Request) {
   const config = githubConfig();
@@ -22,7 +24,8 @@ export async function GET(request: Request) {
   }
   const installationId = Number(params.get("installation"));
   const offered = accountsFromCookie((await cookies()).get(ACCOUNTS_COOKIE)?.value ?? "", project.id);
-  if (!offered.some((installation) => installation.id === installationId)) {
+  const current = await prisma.githubInstallation.count({ where: { projectId: project.id, installationId } });
+  if (!current && !offered.some((installation) => installation.id === installationId)) {
     return NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=expired`, appUrl()));
   }
   return authorizeRedirect(config, project.id, installationId, "install");

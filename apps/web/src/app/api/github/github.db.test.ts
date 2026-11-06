@@ -94,6 +94,8 @@ async function installAndConnect(projectSlug: string, installationId: number, co
   return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(stateOf(authorize))}`)));
 }
 
+const NOT_LISTED = "Reconnect to update the list: that repository isn't one this project can include";
+
 const connected = (projectId: string) => prisma.githubInstallation.findUnique({ where: { projectId } });
 
 describe("connecting", () => {
@@ -236,7 +238,7 @@ describe("repositories", () => {
     // Her project's list must not name acme/billing, nor may she add it (it'd feed its pull
     // requests, code and Verify's reads of it into her project).
     expect.soft(listedRepositories((await connected(theirs.id))!.repositories).map((repo) => repo.fullName)).not.toContain("acme/billing");
-    expect(await add(theirs.slug, billing)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
+    expect(await add(theirs.slug, billing)).toEqual({ error: NOT_LISTED });
     expect(await included(theirs.id)).toEqual([]);
   });
 
@@ -274,24 +276,39 @@ describe("repositories", () => {
     expect(await included(other.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
-  test("the list is what the app can see on the account; Refresh list reads it again, without a trip to GitHub", async () => {
+  /** "Reconnect": GitHub's authorization again for the account the project is on, as the person with `code`. */
+  async function reconnect(projectSlug: string, installationId: number, code: string) {
+    const authorize = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`));
+    return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(stateOf(authorize))}`)));
+  }
+
+  test("the list is what the person who connected can access; Refresh list keeps to it, and Reconnect lists what they've been given since", async () => {
     github.user("code-r3", [{ id: 703, account: "acme", repositories: [web] }]);
     await connect(project.slug, 703, "code-r3");
-    expect(await add(project.slug, mobile)).toEqual({
-      error: "Refresh the list: that repository isn't one this project can include",
-    });
+    expect(await add(project.slug, mobile)).toEqual({ error: NOT_LISTED });
     expect(await setGithubRepository(project.slug, Number.NaN, true)).toEqual({ error: "Unknown repository" });
-    // The app gets access to another repository on GitHub.
+    // The app and someone else can access another repository on GitHub: Refresh list (the app's access) doesn't add it.
+    github.user("code-r3-other", [{ id: 703, account: "acme", repositories: [web, mobile] }]);
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 1 });
+    expect(await add(project.slug, mobile)).toEqual({ error: NOT_LISTED });
+    // They're given access too, and reconnect (no account cookie needed: it's the project's own).
     github.user("code-r3", [{ id: 703, account: "acme", repositories: [web, mobile] }]);
-    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 2 });
+    expect(await reconnect(project.slug, 703, "code-r3")).toMatch(/github=connected$/);
     expect(await connected(project.id)).toMatchObject({ repositories: [web, mobile] });
     expect(await add(project.slug, mobile)).toEqual({});
+    expect(await included(project.id)).toEqual(["acme/mobile"]);
+    // Someone who can access less reconnects: the project's repositories stay (and listed), the others go from the list.
+    github.user("code-r3-less", [{ id: 703, account: "acme", repositories: [] }]);
+    expect(await reconnect(project.slug, 703, "code-r3-less")).toMatch(/github=connected$/);
+    expect(await connected(project.id)).toMatchObject({ repositories: [mobile] });
     expect(await included(project.id)).toEqual(["acme/mobile"]);
     // GitHub not answering changes nothing.
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
     expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
     expect(await included(project.id)).toEqual(["acme/mobile"]);
+    // Reconnecting goes only to the project's own account, or one GitHub offered them.
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=799`)))).toMatch(/github=expired$/);
   });
 
   test("repositories no project has are ignored, even added on GitHub; removed ones leave their project", async () => {
@@ -325,18 +342,18 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual(["acme/web"]);
     // Nor listed, so it can't be added again until a refresh lists it.
     expect(await connected(project.id)).toMatchObject({ repositories: [web] });
-    expect(await add(project.slug, api)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
+    expect(await add(project.slug, api)).toEqual({ error: NOT_LISTED });
   });
 
-  test("switching to another account clears the list, even if GitHub can't list the new one yet", async () => {
+  test("switching to another account lists only the new one's repositories, even if the app can't read it yet", async () => {
     github.user("code-r12", [{ id: 730, account: "acme", repositories: [web] }]);
     await connect(project.slug, 730, "code-r12");
     github.user("code-r12b", [{ id: 731, account: "elsewhere", repositories: [mobile] }]);
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
     expect(await connect(project.slug, 731, "code-r12b")).toMatch(/github=connected$/);
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
-    expect(await connected(project.id)).toMatchObject({ installationId: 731, repositories: [] });
-    expect(await add(project.slug, web)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
+    expect(await connected(project.id)).toMatchObject({ installationId: 731, repositories: [mobile] });
+    expect(await add(project.slug, web)).toEqual({ error: NOT_LISTED });
   });
 
   test("a list GitHub didn't give in full (over 10,000) changes nothing", async () => {

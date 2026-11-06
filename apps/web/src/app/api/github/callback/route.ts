@@ -9,7 +9,8 @@ import { ACCOUNTS_COOKIE, adminProject, INSTALL_COOKIE, saveConnection } from "@
  * The App's Callback URL (step 3 of 3): GitHub's web authorization flow returns
  * `code` and our `state`. The installation is connected only if the state is ours
  * and fresh, the signed-in account administers the project, and GitHub says the
- * person who authorized can see the installation, so nobody can claim another's.
+ * person who authorized can see the installation, so nobody can claim another's. The
+ * repositories of it they can access are the ones the project can add.
  */
 export async function GET(request: Request) {
   const config = githubConfig();
@@ -58,10 +59,10 @@ export async function GET(request: Request) {
   }
 
   const installationId = Number(installation);
-  const account = code && (await installationForUser(config, code, redirectUri, installationId).catch(() => null));
-  if (!account) {
+  const found = code && (await installationForUser(config, code, redirectUri, installationId).catch(() => null));
+  if (!found) {
     return done("unconfirmed");
   }
-  await saveConnection(project, installationId, account);
+  await saveConnection(project, installationId, found.account, found.repositories);
   return done("connected");
 }
