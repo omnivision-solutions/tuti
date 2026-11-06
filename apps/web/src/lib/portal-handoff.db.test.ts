@@ -2,7 +2,10 @@ import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
 import { GET as startContinue } from "@/app/portal/[project]/(site)/continue/route";
+import { forgetCustomDomain } from "@/server/custom-domains";
+import { getOwnerProject } from "@/server/membership";
 import { continueToPortal } from "@/server/portal-handoff";
+import { getAccountSession } from "@/server/session";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 
 import { auth } from "./auth";
@@ -115,4 +118,36 @@ test("without a Tuti account there is nothing to continue with", async () => {
   });
   expect(await continueToPortal("no-such-project", randomSecret(), "/")).toEqual({ error: "Project not found." });
   expect(await prisma.portalHandoff.count()).toBe(before);
+});
+
+test("a session a portal on its team's own site starts doesn't work on the app host", async () => {
+  // Ada owns a project of her own; the portal's team puts its portal under a path of their site,
+  // whose server sees every request and response there (cookies included).
+  const own = await createProject(ada);
+  const portal = await prisma.project.findUniqueOrThrow({ where: { slug } });
+  await prisma.siteMount.create({
+    data: { projectId: portal.id, origin: "https://attacker.example", path: "/portal", verificationToken: "t", verifiedAt: new Date() },
+  });
+  forgetCustomDomain("");
+
+  // The team picked the state; Ada clicks Continue on the app host, and the code goes to their site.
+  const state = randomSecret();
+  const url = await confirm(state);
+  expect(url.origin).toBe("https://attacker.example");
+
+  // The site's server passes the callback on to Tuti and reads the session cookie Tuti sets.
+  const headers = new Headers({ host: portalHost(), cookie: `${HANDOFF_STATE_COOKIE}=${state}` });
+  const path = url.pathname.replace(/^\/portal/, "");
+  const response = await auth.handler(new Request(`http://${portalHost()}${path}${url.search}`, { headers }));
+  const stolen = response.headers
+    .getSetCookie()
+    .filter((c) => !c.startsWith(`${HANDOFF_STATE_COOKIE}=`))
+    .map((c) => c.split(";")[0])
+    .join("; ");
+  expect(stolen).toMatch(/session_token=/);
+
+  // Presented on the app host, that portal session must not be Ada's account.
+  actAs({ ...ada, cookie: stolen });
+  expect(await getAccountSession()).toBeNull();
+  expect(await getOwnerProject(own.slug)).toBeNull();
 });
