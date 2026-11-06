@@ -35,7 +35,7 @@ const teamPostSelect = {
   sample: true,
   visibility: true,
   authorId: true,
-  board: { select: { slug: true, name: true } },
+  board: { select: { slug: true, name: true, off: true } },
   author: { select: { name: true } },
   _count: { select: { duplicateSuggestions: { where: possibleDuplicateOf } } },
 } satisfies Prisma.PostSelect;
@@ -324,9 +324,12 @@ type Like = {
  * The project's posts (not merged ones, and as `where` narrows them) whose titles have the words of `title`, the likest
  * first. Only those of `sample`'s kind: sample content (server/sample-content.ts) never mixes with the team's.
  */
+/** Who sees it (seenAs, as merging warns of it): Team only on a board turned off (`b`), else the post's own (`p`). */
+const SEEN_AS = Prisma.sql`CASE WHEN b.off THEN 'TEAM' ELSE p.visibility::text END`;
+
 function postsTitledLike(projectId: string, title: string, sample: boolean, where: Prisma.Sql, limit: number) {
   return prisma.$queryRaw<Like[]>`
-    SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug", p.visibility, p."authorId"
+    SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug", ${SEEN_AS} AS visibility, p."authorId"
     FROM post p
     JOIN board b ON b.id = p."boardId"
     WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.sample = ${sample} ${where}
@@ -370,7 +373,7 @@ export async function postsLike(
   const status = Prisma.sql`${open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty} AND ${visiblePostsSql(viewer)}`;
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug", p.visibility, p."authorId"
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug", ${SEEN_AS} AS visibility, p."authorId"
       FROM post_embedding mine
       JOIN post_embedding e ON e."projectId" = mine."projectId" AND e."postId" <> mine."postId"
       JOIN post p ON p.id = e."postId"

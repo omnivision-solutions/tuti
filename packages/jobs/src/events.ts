@@ -6,6 +6,7 @@ import { postPath } from "@tuti/shared/post-urls";
 
 import { enqueue } from "./index";
 import type { PortalAddress } from "./portal-address";
+import { seenAs } from "./post-audience";
 
 /**
  * Tells a project's webhooks that something happened: one delivery per webhook
@@ -104,7 +105,7 @@ export type PostRow = {
   commentCount: number;
   createdAt: Date;
   visibility: PostVisibility;
-  board: { slug: string };
+  board: { slug: string; off: boolean };
   author: { name: string };
 };
 
@@ -116,7 +117,7 @@ export const postSummarySelect = {
   commentCount: true,
   createdAt: true,
   visibility: true,
-  board: { select: { slug: true } },
+  board: { select: { slug: true, off: true } },
   author: { select: { name: true } },
 } as const;
 
@@ -146,8 +147,8 @@ export const postSummary = (post: PostRow, portal: PortalAddress) => ({
   votes: post.voteCount,
   comments: post.commentCount,
   author: { name: post.author.name },
-  /** Who sees it besides the team: everyone (public), its author (private), nobody (team). */
-  visibility: post.visibility.toLowerCase() as "public" | "private" | "team",
+  /** Who sees it besides the team: everyone (public), its author (private), nobody (team, or on a board turned off: seenAs). */
+  visibility: seenAs(post).toLowerCase() as "public" | "private" | "team",
   createdAt: post.createdAt.toISOString(),
   url: portalPostUrl(portal, post),
 });

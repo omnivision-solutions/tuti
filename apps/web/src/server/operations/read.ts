@@ -39,9 +39,10 @@ export const listBoards = defineOperation({
     const boards = await prisma.board.findMany({
       where: { projectId, ...shownBoards(viewer) },
       orderBy: { createdAt: "asc" },
-      select: { slug: true, name: true, postVisibility: true, _count: { select: { posts: { where: { duplicateOfId: null, ...visiblePosts(viewer) } } } } },
+      select: { slug: true, name: true, postVisibility: true, off: true, _count: { select: { posts: { where: { duplicateOfId: null, ...visiblePosts(viewer) } } } } },
     });
-    return { boards: boards.map((b) => ({ slug: b.slug, name: b.name, posts: b._count.posts, postVisibility: toApiVisibility(b.postVisibility) })) };
+    // `off`: turned off, the team's alone (only the team and its keys see one).
+    return { boards: boards.map((b) => ({ slug: b.slug, name: b.name, posts: b._count.posts, postVisibility: toApiVisibility(b.postVisibility), off: b.off })) };
   },
 });
 
@@ -101,8 +102,6 @@ export async function findPost(projectId: string, number: number) {
       sample: true,
       authorId: true,
       visibility: true,
-      // The summary's board, and whether it's turned off (canSeePost).
-      board: { select: { ...postSummarySelect.board.select, off: true } },
       duplicateOf: { select: { number: true, authorId: true, visibility: true, board: { select: { off: true } } } },
     },
   });
@@ -200,7 +199,7 @@ export const ROADMAP = [
  * each. The team's roadmap narrows to a board, and Completed to what finished in its last `completedDays`.
  */
 export async function roadmapColumns(projectId: string, viewer: PostViewer, { board, completedDays }: { board?: string; completedDays?: number } = {}) {
-  const select = { ...postSummarySelect, id: true, board: { select: { slug: true, name: true } } } as const;
+  const select = { ...postSummarySelect, id: true, board: { select: { slug: true, name: true, off: true } } } as const;
   // Only the posts `viewer` may see (post-visibility.ts).
   const onBoard = { ...(board ? { board: { slug: board } } : {}), ...visiblePosts(viewer) };
   return Promise.all(

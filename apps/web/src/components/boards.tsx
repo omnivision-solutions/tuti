@@ -293,6 +293,7 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
  */
 export function BoardOffButton({ projectSlug, boardId, name, off, stuck }: { projectSlug: string; boardId: string; name: string; off: boolean; stuck: boolean }) {
   const [pending, startTransition] = useTransition();
+  const [asking, setAsking] = useState(false);
   const turn = () =>
     startTransition(async () => {
       const result = await setBoardOff(projectSlug, boardId, !off);
@@ -302,30 +303,35 @@ export function BoardOffButton({ projectSlug, boardId, name, off, stuck }: { pro
         toast.success(off ? `${name} is on the portal` : `${name} is off the portal`);
       }
     });
-  if (off) {
-    return (
-      <Button variant="ghost" size="sm" disabled={pending} onClick={turn}>
-        Turn on
-      </Button>
-    );
-  }
+  // One button either way, so focus stays on it as it turns from Turn off to Turn on and back.
   return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>Turn off</AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Turn off {name}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            It leaves your portal, and only your team sees its posts, votes and comments.{" "}
-            {stuck ? "Your plan is past its board limit, so turning it on again needs an upgrade." : "You can turn it on again any time."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={turn}>Turn off</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <>
+      <Button variant="ghost" size="sm" disabled={pending} onClick={() => (off ? turn() : setAsking(true))}>
+        {off ? "Turn on" : "Turn off"}
+      </Button>
+      <AlertDialog open={asking} onOpenChange={setAsking}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Turn off {name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It leaves your portal, and only your team sees its posts, votes and comments.{" "}
+              {stuck ? "Your plan is past its board limit, so turning it on again needs an upgrade." : "You can turn it on again any time."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setAsking(false);
+                turn();
+              }}
+            >
+              Turn off
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

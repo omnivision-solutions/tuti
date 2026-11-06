@@ -1,6 +1,6 @@
-import { prisma } from "@tuti/db";
+import { type PostVisibility, prisma } from "@tuti/db";
 import { mediaStorage } from "@tuti/shared/storage";
-import { historySince, visibleConversations } from "@tuti/jobs";
+import { historySince, seenAs, visibleConversations } from "@tuti/jobs";
 import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -108,8 +108,10 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
   ]);
   const total = totals.get(post.id);
-  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true, visibility: true, authorId: true } as const;
-  const [candidates, suggestions] = post.duplicateOf
+  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true, visibility: true, authorId: true, board: { select: { off: true } } } as const;
+  // Who sees each, as merging warns of it: a post on a board turned off is the team's only (seenAs).
+  const seen = <T extends { visibility: PostVisibility; board: { off: boolean } }>(row: T) => ({ ...row, visibility: seenAs(row) });
+  const [candidateRows, suggestionRows] = post.duplicateOf
     ? [[], []]
     : await Promise.all([
         prisma.post.findMany({
@@ -132,6 +134,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           select: { id: true, similarity: true, post: { select: postRef }, original: { select: postRef } },
         }),
       ]);
+  const candidates = candidateRows.map(seen);
+  const suggestions = suggestionRows.map((s) => ({ ...s, post: seen(s.post), original: seen(s.original) }));
 
   return (
     <>
@@ -161,7 +165,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </a>
           </>
         }
-        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={likeFirst<PickablePost>(like, candidates)} />}
+        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={seen(post)} candidates={likeFirst<PickablePost>(like, candidates)} />}
       />
 
       {post.duplicateOf ? (

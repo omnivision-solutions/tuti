@@ -288,20 +288,25 @@ describe("how many boards a plan has (where plans are sold)", () => {
     expect(await updateBoard(project.slug, boardId, {}, board({ name: "Renamed", slug: "feature-requests" }))).toEqual({});
   });
 
-  test("boards turned off don't count: one turns on only while there's room, as after an upgrade", async () => {
-    const ideas = await prisma.board.create({ data: { projectId: project.id, slug: "ideas", name: "Ideas", off: true } });
-    expect(await createBoard(project.slug, {}, board({ slug: "bugs" }))).toEqual({});
-    expect(await setBoardOff(project.slug, ideas.id, false)).toEqual({
+  test("a board turned off turns on only while there's room for one more that's on, as after an upgrade; off, it still counts for new ones", async () => {
+    // Two boards an import brought past the limit, off.
+    const [ideas, bugs] = await Promise.all(
+      ["ideas", "bugs"].map((slug) => prisma.board.create({ data: { projectId: project.id, slug, name: slug, off: true } })),
+    );
+    expect(await setBoardOff(project.slug, ideas!.id, false)).toEqual({});
+    expect(await setBoardOff(project.slug, bugs!.id, false)).toEqual({
       error: "Projects on the Free plan have up to 2 feedback boards. Upgrade to Pro in Settings → Billing to turn it on.",
     });
     await setPlan("PRO");
-    expect(await setBoardOff(project.slug, ideas.id, false)).toEqual({});
+    expect(await setBoardOff(project.slug, bugs!.id, false)).toEqual({});
     expect(await prisma.board.count({ where: { projectId: project.id, off: false } })).toBe(3);
-    // Turning one off frees its place.
+    // Turning one off makes room to turn another on, never to make another: else boards turned off would be a way
+    // past the limit.
     await setPlan("FREE");
-    expect(await setBoardOff(project.slug, ideas.id, true)).toEqual({});
-    expect(await setBoardOff(project.slug, boardId, true)).toEqual({});
-    expect(await createBoard(project.slug, {}, board({ slug: "more" }))).toEqual({});
+    expect(await setBoardOff(project.slug, ideas!.id, true)).toEqual({});
+    expect(await setBoardOff(project.slug, bugs!.id, true)).toEqual({});
+    expect((await createBoard(project.slug, {}, board({ slug: "more" }))).error).toMatch(/up to 2 feedback boards/);
+    expect(await setBoardOff(project.slug, ideas!.id, false)).toEqual({});
   });
 
   test("two boards at once for the last place: only one is made", async () => {

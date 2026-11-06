@@ -52,11 +52,12 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
   const count = (boardId: string, statuses?: PostStatus[]) =>
     counts.filter((c) => c.boardId === boardId && (!statuses || statuses.includes(c.status))).reduce((n, c) => n + c._count, 0);
 
-  // A project past its plan's limit (after a downgrade) keeps its boards; it just can't add more. Boards turned off
-  // (an import's past the limit) don't count, and turn on while there's room.
+  // A project past its plan's limit (after a downgrade, or an import's boards, brought off) keeps its boards; it just
+  // can't add more. One that's off turns on while there's room for one more that's on.
   const limit = boardLimit(plan);
   const on = boards.filter((board) => !board.off).length;
-  const full = limit !== null && on >= limit;
+  const full = limit !== null && boards.length >= limit;
+  const room = limit === null || on < limit;
   const someOff = boards.some((board) => board.off);
 
   return (
@@ -75,7 +76,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
               <Link href={`/app/${project.slug}/settings/billing`} className="underline underline-offset-4">
                 Upgrade to {plan === "FREE" ? "Pro" : "Business"}
               </Link>{" "}
-              {someOff ? "to add more, or to turn on the boards that are off." : "to add more."}
+              {someOff && !room ? "to add more, or to turn on the boards that are off." : "to add more."}
             </p>
           </AlertDescription>
         </Alert>
@@ -86,6 +87,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
           <ItemList>
             {boards.map((board) => (
               <ItemRow
+                wideActions
                 key={board.id}
                 title={
                   <Link href={`/app/${project.slug}/feedback?board=${board.slug}&status=all`} className="hover:underline">
@@ -94,8 +96,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                 }
                 badges={
                   board.off ? (
-                    <Badge variant="outline" className="text-muted-foreground" title="Not on the portal: only the team sees it and its posts">
-                      Off<span className="sr-only">: not on the portal, only the team sees it and its posts</span>
+                    <Badge variant="outline" className="text-muted-foreground">
+                      Off
                     </Badge>
                   ) : (
                     <VisibilityBadge visibility={board.postVisibility} of="board" />
@@ -103,6 +105,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                 }
                 meta={
                   <>
+                    {/* What Off means, in words everyone sees (not a hover). */}
+                    {board.off && "Not on the portal: only the team sees it and its posts · "}
                     <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="hover:underline">
                       /feedback/{board.slug}
                     </a>
@@ -116,7 +120,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                   isAdmin && (
                     <>
                       <EditBoardDialog projectSlug={project.slug} board={board} />
-                      {(!board.off || !full) && <BoardOffButton projectSlug={project.slug} boardId={board.id} name={board.name} off={board.off} stuck={limit !== null && on > limit} />}
+                      {(!board.off || room) && <BoardOffButton projectSlug={project.slug} boardId={board.id} name={board.name} off={board.off} stuck={limit !== null && on > limit} />}
                       {count(board.id) === 0 && boards.length > 1 && (
                         <DeleteBoardButton projectSlug={project.slug} boardId={board.id} name={board.name} />
                       )}

@@ -26,7 +26,7 @@ import { call } from "./operations/run";
 import { firstBoardPath, portalHomePath } from "./portal-home";
 import { addSampleContent } from "./sample-content";
 import { accountPosts, boardsWithCounts, postsLike, recentlyShipped, votersToEmail } from "./post-lists";
-import { postViewer, SIGNED_OUT_VIEWER } from "./post-visibility";
+import { postViewer, SIGNED_OUT_VIEWER, TEAM_VIEWER } from "./post-visibility";
 import { findSimilarPosts } from "./similar-posts";
 import { widgetIdeas } from "./widget";
 import { ideaNews } from "./widget-home";
@@ -96,7 +96,7 @@ test("the API's posts, a post, its comments, the roadmap and the boards' counts:
 
   expect(numbers((await call(getRoadmap, as(bob), {})).planned)).toEqual([1]);
   expect(numbers((await call(getRoadmap, key, {})).planned)).toEqual([1, 2, 3]);
-  expect((await call(listBoards, as(bob), {})).boards).toEqual([{ slug: "feature-requests", name: "Feature requests", posts: 1, postVisibility: "public" }]);
+  expect((await call(listBoards, as(bob), {})).boards).toEqual([{ slug: "feature-requests", name: "Feature requests", posts: 1, postVisibility: "public", off: false }]);
   expect((await call(listBoards, as(ada), {})).boards[0]!.posts).toBe(2);
 });
 
@@ -234,6 +234,21 @@ test("Similar ideas, typing suggestions, the widget's ideas and news, Account an
 
   await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "COMPLETED" } });
   expect(titles(await recentlyShipped(open.boardId, bobViews))).toEqual(["Dark mode for the editor"]);
+
+  // Its board turned off: the public post is nobody else's either, wherever it would show.
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "PLANNED" } });
+  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PRIVATE" } });
+  expect(titles(await findSimilarPosts(project.slug, "Dark mode for the editor"))).toEqual(["Dark mode crashes the editor", "Dark mode for the editor"]);
+  await prisma.board.update({ where: { id: open.boardId }, data: { off: true } });
+  expect(titles(await findSimilarPosts(project.slug, "Dark mode for the editor"))).toEqual([]);
+  expect(titles(await postsLike(project.id, open, adaViews, { open: true }))).toEqual([]);
+  expect(titles(await ideaNews(project.id, bob.id))).toEqual([]);
+  expect(titles(await widgetIdeas(project.slug, null))).toEqual([]);
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "COMPLETED" } });
+  expect(titles(await recentlyShipped(open.boardId, bobViews))).toEqual([]);
+  // The team's merge dialog warns from who sees each: Team only, on a board that's off.
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "PLANNED" } });
+  expect(await postsLike(project.id, open, TEAM_VIEWER, { open: true })).toEqual(expect.arrayContaining([expect.objectContaining({ title: "Dark mode crashes the editor", visibility: "TEAM" })]));
 });
 
 test("emails about a post reach only people who may see it: a private post's author, nobody about a Team only one", async () => {
@@ -261,6 +276,12 @@ test("the changelog lists only an entry's public posts to readers; boards that a
   expect((await call(getChangelogEntry, key, { number: 1 })).posts.map((post) => post.number).sort()).toEqual([1, 2]);
   expect((await call(listChangelog, as(bob), {})).entries[0]!.posts.map((post) => post.number)).toEqual([1]);
   expect((await call(listChangelog, key, {})).entries[0]!.posts.map((post) => post.number).sort()).toEqual([1, 2]);
+  // Its public post on a board turned off: gone from what readers see of the entry, there for the team.
+  await prisma.board.update({ where: { id: open.boardId }, data: { off: true } });
+  expect((await publishedEntries(project.slug, { number: entry.number }))[0]!.posts).toEqual([]);
+  expect((await call(getChangelogEntry, as(bob), { number: 1 })).posts).toEqual([]);
+  expect((await call(getChangelogEntry, key, { number: 1 })).posts.map((post) => post.number).sort()).toEqual([1, 2]);
+  await prisma.board.update({ where: { id: open.boardId }, data: { off: false } });
 
   // A Team only board, older than the rest: never the portal's first.
   await prisma.board.create({ data: { projectId: project.id, slug: "security", name: "Security", postVisibility: "TEAM", createdAt: new Date(0) } });
@@ -298,12 +319,16 @@ test("sample content takes its board's visibility, as any new post", async () =>
 });
 
 /** Runs `run` with the post made `visibility` as the job claims its first email (after it read who to tell). */
-async function changedAtFirstClaim(postId: string, visibility: PostVisibility, run: () => Promise<unknown>) {
+async function changedAtFirstClaim(postId: string, visibility: PostVisibility | "board off", run: () => Promise<unknown>) {
   const transaction = prisma.$transaction.bind(prisma);
   let claims = 0;
   const spy = vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof transaction>) => {
     if (++claims === 1) {
-      await prisma.post.update({ where: { id: postId }, data: { visibility } });
+      if (visibility === "board off") {
+        await prisma.board.updateMany({ where: { posts: { some: { id: postId } } }, data: { off: true } });
+      } else {
+        await prisma.post.update({ where: { id: postId }, data: { visibility } });
+      }
     }
     return transaction(...args);
   }) as never);
@@ -334,6 +359,21 @@ test("a post made private while the team's reply is emailed to its voters isn't 
   const reply = await prisma.comment.findFirstOrThrow({ where: { postId: mine.id } });
   await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date() } });
   await changedAtFirstClaim(mine.id, "PRIVATE", () => handlers.replyEmailed({ commentId: reply.id }, log));
+  await handlers.replyEmailed({ commentId: reply.id }, log);
+  expect(await prisma.replyEmail.count({ where: { commentId: reply.id } })).toBe(0);
+});
+
+test("a board turned off while a post's shipped email or the team's reply goes out: nobody is emailed", async () => {
+  const { mine } = await fixture();
+  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PUBLIC", status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+  await changedAtFirstClaim(mine.id, "board off", () => handlers.postShipped({ postId: mine.id }, log));
+  await handlers.postShipped({ postId: mine.id }, log);
+  expect(await prisma.shippedEmail.count({ where: { postId: mine.id, sentAt: { not: null } } })).toBe(0);
+
+  await prisma.board.updateMany({ data: { off: false } });
+  const reply = await prisma.comment.findFirstOrThrow({ where: { postId: mine.id } });
+  await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date() } });
+  await changedAtFirstClaim(mine.id, "board off", () => handlers.replyEmailed({ commentId: reply.id }, log));
   await handlers.replyEmailed({ commentId: reply.id }, log);
   expect(await prisma.replyEmail.count({ where: { commentId: reply.id } })).toBe(0);
 });
@@ -375,6 +415,9 @@ test("a board turned off is the team's: its posts, public ones too, are nobody e
   // Named, too: a board filter of the caller's own never takes the off check's place.
   expect(numbers((await call(listPosts, as(bob), { board: board.slug })).posts)).toEqual([]);
   expect(numbers((await call(listPosts, key, {})).posts)).toEqual([1, 2, 3]);
+  // The API and webhooks say who sees it now: the team only, though it's public on a board that's on.
+  expect(await call(getPost, key, { number: 1 })).toMatchObject({ visibility: "team" });
+  expect((await call(listBoards, key, {})).boards).toEqual([expect.objectContaining({ off: true, postVisibility: "public" })]);
   await expect(call(getPost, as(bob), { number: 1 })).rejects.toMatchObject({ status: 404 });
   await expect(call(setVote, as(bob), { number: 1, voted: true })).rejects.toMatchObject({ status: 404 });
   await expect(call(createPost, as(bob), { board: board.slug, title: "Export fails" })).rejects.toMatchObject({ status: 404 });

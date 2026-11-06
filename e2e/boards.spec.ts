@@ -108,7 +108,7 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(owner.getByRole("alertdialog")).toContainText("You can turn it on again any time.");
   await owner.getByRole("alertdialog").getByRole("button", { name: "Turn off" }).click();
   await expect(owner.getByText("Bug reports is off the portal")).toBeVisible();
-  await expect(row("Bug reports")).toContainText("Off");
+  await expect(row("Bug reports")).toContainText("Not on the portal: only the team sees it and its posts · /feedback/bugs");
   await checkpoint(owner, "team-board-off");
   expect((await visitor.goto("/feedback/bugs"))?.status()).toBe(404);
   await row("Bug reports").getByRole("button", { name: "Turn on" }).click();

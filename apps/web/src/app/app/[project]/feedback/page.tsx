@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { seenAs } from "@tuti/jobs";
 import { ExternalLinkIcon, LayoutListIcon, MapIcon } from "lucide-react";
 import Link from "next/link";
 
@@ -149,7 +150,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       {/* The list and, beside it, the post a row opened (the whole width); on a phone, one or the other. */}
       <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
         {/* Rows picked for Set status, Move to board and Merge, the bar in the filters' place once some are. */}
-        <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: post.visibility, authorId: post.authorId }))}>
+        <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
           <div className={cn("@container flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
             <SubNav
               label="Statuses"
@@ -229,7 +230,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                         selected={post.number === open}
                         leading={
                           <>
-                            <SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: post.visibility, authorId: post.authorId }} />
+                            <SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }} />
                             <VoteCount count={post.voteCount} />
                           </>
                         }
@@ -241,7 +242,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                         badges={
                           <>
                             {post.sample && <SampleBadge />}
-                            <VisibilityBadge visibility={post.visibility} />
+                            <VisibilityBadge visibility={seenAs(post)} />
                             {post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>}
                           </>
                         }
