@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { importSummary } from "@/lib/import-parts";
-import { deleteArticle, publishArticle, restoreArticle, updateArticle } from "@/server/operations/docs";
+import { articleRevisions, deleteArticle, publishArticle, restoreArticle, updateArticle } from "@/server/operations/docs";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -270,6 +270,9 @@ test("an article deleted here before its content came stays deleted; restored, t
   const again = await importDocs();
   expect(again.counts.articles).toEqual({ imported: 1, leftOut: { "already brought across earlier": 3 } });
   expect(await article("Roadmap notes")).toMatchObject({ body: "Not ready yet.", publishedAt: null });
+  // Its newest version is the imported text, not the empty one the restore recorded (dated after it, not as in Featurebase).
+  const [newest] = await articleRevisions(roadmap.id);
+  expect(newest).toMatchObject({ body: "Not ready yet." });
 });
 
 test("each article is counted once, on the run of a page that decides it: one left by the time cut and skipped when the page is read again is counted then", async () => {

@@ -384,6 +384,8 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       const { plan } = await tx.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { plan: true } });
       const limit = articleLimit(plan);
       let room = limit === null ? Infinity : limit - (await tx.article.count({ where: { projectId: job.projectId, publishedAt: { not: null }, deletedAt: null } }));
+      const countedRecords: string[] = [];
+      const landedRecords: string[] = [];
       for (const article of items) {
         const local = locals.get(article.id);
         const text = texts.find((t) => t.article === article);
@@ -395,11 +397,17 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         // again or not), which marks it so in the same save.
         const first = local.countedIn !== job.id;
         const count = (kind: string, reason: string | null) => first && tally(job.counts, kind, reason);
-        const decided = (data: { contentLanded?: true } = {}) => tx.importedRecord.update({ where: { id: local.record }, data: { countedIn: job.id, ...data } });
+        // Marked after the loop, all at once.
+        const decided = ({ contentLanded = false } = {}) => {
+          countedRecords.push(local.record);
+          if (contentLanded) {
+            landedRecords.push(local.record);
+          }
+        };
         // Deleted here before its content landed: left deleted and not landed, so if it's restored, a later import fills it in.
         if (local.deleted && !local.landed) {
           count("articles", "deleted here since");
-          await decided();
+          decided();
           continue;
         }
         // Landed before (or by a run of this page that got in first), deleted here since it landed, or saved by the team
@@ -407,15 +415,15 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         // isn't marked landed: nothing of Featurebase's landed; it's told as theirs by its title and text each time.
         if (!local.landed && !local.deleted && teamSaved(local)) {
           count("articles", "edited here before their text came, so left as they are");
-          await decided();
+          decided();
           continue;
         }
         if (local.landed || local.deleted || !text) {
           count("articles", ALREADY_HERE);
-          await decided();
+          decided();
           continue;
         }
-        await decided({ contentLanded: true });
+        decided({ contentLanded: true });
         if ("error" in text.live) {
           count("articles", `${text.live.error} (they're empty drafts)`);
           continue;
@@ -441,12 +449,17 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
           data: { title, content: content.doc, body: content.text, publishedAt: publish ? at : null, updatedAt: at },
           select: { collectionId: true },
         });
-        await recordRevision(tx, local.id, local.createdById, undefined, at);
+        // Dated as in Featurebase, unless the article has a revision here already (the empty one a restore records): then
+        // now, so the imported text is its newest version for its history, Autopilot and Verify.
+        const before = await tx.articleRevision.findFirst({ where: { articleId: local.id }, select: { id: true } });
+        await recordRevision(tx, local.id, local.createdById, undefined, before ? new Date() : at);
         if (changes) {
           await tx.articleChanges.create({ data: { articleId: local.id, title: changes.title, content: changes.content.doc, body: changes.content.text, collectionId: saved.collectionId } });
           await recordRevision(tx, local.id, local.createdById);
         }
       }
+      await tx.importedRecord.updateMany({ where: { id: { in: countedRecords } }, data: { countedIn: job.id } });
+      await tx.importedRecord.updateMany({ where: { id: { in: landedRecords } }, data: { contentLanded: true } });
     },
     // As publishing does (indexArticle): never twice, as only a page's saved run gets here, and only for what it filled.
     after: async () => {
