@@ -70,7 +70,7 @@ test("secret-looking strings are masked; ordinary code stays as it was", () => {
   const masked = maskSecrets(
     [
       '+const token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";',
-      "+OPENROUTER_API_KEY=sk-or-v1-0123456789abcdef0123456789abcdef",
+      "+OPENAI_API_KEY=sk-or-v1-0123456789abcdef0123456789abcdef",
       "+  url: postgres://tuti:hunter2hunter2@db.internal:5432/tuti",
       "+aws = AKIAABCDEFGHIJKLMNOP",
       '+  password: "correct-horse-battery"',
@@ -84,7 +84,7 @@ test("secret-looking strings are masked; ordinary code stays as it was", () => {
   );
   expect(masked.split("\n")).toEqual([
     '+const token = "[secret]";',
-    "+OPENROUTER_API_KEY=[secret]",
+    "+OPENAI_API_KEY=[secret]",
     "+  url: postgres://tuti:[secret]@db.internal:5432/tuti",
     "+aws = [secret]",
     '+  password: "[secret]"',

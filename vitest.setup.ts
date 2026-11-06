@@ -1,5 +1,5 @@
 /**
- * Tests are offline by default: they never see a real database, an AI provider (OPENAI_*, OPENROUTER_*),
+ * Tests are offline by default: they never see a real database, an AI provider (OPENAI_*; the old OPENROUTER_* only earn a warning, still kept out),
  * Hatchet, mail server, media storage, GitHub, Stripe or Amazon SES (nor the AI_ settings: models, their cap, credits; nor Autopilot's, CODE_CHANGES_; nor plans and their limits: PLANS, ARTICLE_VERSIONS_, ARTICLE_LIMIT_), whatever is in the shell or a .env file. Tests that need one of
  * these set it up themselves (e.g. the database tests start their own Postgres).
  */
