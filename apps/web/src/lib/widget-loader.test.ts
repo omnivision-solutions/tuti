@@ -437,7 +437,8 @@ test("an ask while the panel loads another page waits for that page to listen, n
   // The page on its way out, still saying it's listening.
   page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=docs&article=billing" });
   expect(asked()).toEqual([]);
-  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=docs&article=refunds" });
+  // The new page, its address as the browser writes it (a default port).
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example:443/widget?tab=docs&article=refunds" });
   expect(asked().map(([data]) => (data as { ask: string }).ask)).toEqual(["How do refunds work?"]);
 });
 

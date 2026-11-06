@@ -694,8 +694,15 @@ export function widgetLoader(portalTemplate: string): string {
   // The ask waiting for the floating panel's assistant, sent once it's listening.
   var listening = false;
   var pendingAsk = null;
-  // The page the floating panel was last given: only it may say it's listening.
+  // The page the floating panel was last given: only it may say it's listening (its address as the browser writes it).
   var loading = null;
+  function sameAddress(a, b) {
+    try {
+      return new URL(a).href === new URL(b).href;
+    } catch (error) {
+      return false;
+    }
+  }
   function sendAsk() {
     if (!pendingAsk || !frame || !frame.contentWindow) return;
     frame.contentWindow.postMessage(pendingAsk, origin);
@@ -878,7 +885,7 @@ export function widgetLoader(portalTemplate: string): string {
       }
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_ASK_READY_MESSAGE)}) {
-      if (from === frame && event.data.href === loading) {
+      if (from === frame && sameAddress(event.data.href, loading)) {
         listening = true;
         sendAsk();
       }
