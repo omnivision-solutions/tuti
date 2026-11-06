@@ -87,6 +87,8 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(details.getByRole("listitem").filter({ hasText: "Team" })).not.toContainText("2 invitations.");
   await expect(details.getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("3 contacts.");
   await expect(details.getByRole("link", { name: "See users" })).toBeVisible();
+  // Each row says it's done to screen readers too, beside its link.
+  await expect(details.getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("Done");
   await checkpoint(owner, "home-import-details");
   await owner.keyboard.press("Escape");
   await expect(details).toHaveCount(0);

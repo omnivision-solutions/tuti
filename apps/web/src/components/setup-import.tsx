@@ -55,17 +55,16 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
           const info = IMPORT_PARTS[part];
           const steps = Object.entries(info.steps as Record<string, string>);
           const at = steps.findIndex(([name]) => name === step);
+          const toSendHere = part === "team" && state === "done" && invitations > 0;
           const said = state === "now" ? (brought ? `${brought} so far.` : "Starting…") : state === "done" || state === "stopped" ? (brought ? `${brought}.` : "Nothing new.") : info.brings;
           return (
             <li key={part} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
               <span className="mt-0.5 shrink-0">{PART_STATE[state].icon}</span>
               <div className="min-w-0 flex-1">
                 <p className={cn("text-sm font-medium", (state === "next" || state === "waiting") && "text-muted-foreground")}>{info.label}</p>
-                {/* The team's invitations waiting to be sent say it, with their link, instead. */}
-                {(part !== "team" || invitations === 0 || leftOut) && (
-                  <p className="text-sm text-muted-foreground">
-                    {[(part !== "team" || invitations === 0) && said, leftOut && `Left out: ${leftOut}.`].filter(Boolean).join(" ")}
-                  </p>
+                {/* Once the team's part is done, the invitations waiting to be sent say it, with their link, instead. */}
+                {(!toSendHere || leftOut) && (
+                  <p className="text-sm text-muted-foreground">{[!toSendHere && said, leftOut && `Left out: ${leftOut}.`].filter(Boolean).join(" ")}</p>
                 )}
                 {state === "now" && steps.length > 1 && (
                   <ol aria-label={`${info.label}'s steps`} className="mt-1.5 flex flex-wrap gap-1.5">
@@ -82,12 +81,16 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
                     ))}
                   </ol>
                 )}
-                {part === "team" && toSend}
+                {toSendHere && toSend}
               </div>
               {run.state === "done" ? (
-                <Link href={`/app/${projectSlug}/${info.see.page}`} className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline">
-                  {info.see.label}
-                </Link>
+                <>
+                  {/* Its state, heard in the row as the tag says it while it runs. */}
+                  <span className="sr-only">{PART_STATE.done.tag}</span>
+                  <Link href={`/app/${projectSlug}/${info.see.page}`} className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline">
+                    {info.see.label}
+                  </Link>
+                </>
               ) : (
                 // Neutral, as states that aren't a post's status are (docs/design.md); the icon carries the colour.
                 <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-xs", (state === "next" || state === "waiting") && "text-muted-foreground")}>
