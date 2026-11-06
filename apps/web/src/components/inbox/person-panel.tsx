@@ -203,7 +203,7 @@ export async function PersonPanel({
             {!verified && " (not verified)"}
           </p>
         )}
-        {blocked && <p className="text-xs text-muted-foreground">Marked your email as spam, so replies reach them only in the widget.</p>}
+        {blocked && <p className="text-xs text-muted-foreground">Marked your email as spam, so replies aren&apos;t emailed to them any more.</p>}
         {view && <p className="text-xs break-all text-muted-foreground">id {view.id}</p>}
         {!user && <p className="text-xs text-muted-foreground">Known only by this address.</p>}
         {lookalike && (

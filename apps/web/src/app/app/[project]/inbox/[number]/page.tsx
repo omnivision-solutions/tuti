@@ -39,7 +39,7 @@ const EMAIL_STATUS: Record<EmailStatus, (error: string | null) => string> = {
   SENT: () => "Emailed",
   DELIVERED: () => "Emailed and delivered",
   BOUNCED: (error) => `The email bounced${error ? `: ${error}` : ""}`,
-  COMPLAINED: () => "They marked the email as spam: replies reach them only in the widget now",
+  COMPLAINED: () => "They marked the email as spam, so replies aren't emailed to them any more",
   FAILED: (error) => `Couldn't email it${error ? `: ${error}` : ""}`,
 };
 

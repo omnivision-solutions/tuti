@@ -42,7 +42,7 @@ test("a user's page lists what they did with every account that is them, as User
   expect(html).not.toContain("Cheap pills");
 });
 
-test("someone who marked the project's email as spam says so: replies reach them only in the widget", async () => {
+test("someone who marked the project's email as spam says so: replies aren't emailed to them any more", async () => {
   const project = await createProject(await signUp());
   const userId = await upsertProjectUser(project.id, "ann-3", { name: "Ann Ash", email: "E2E-Ann@example.com" });
   const panel = async () =>
@@ -50,5 +50,5 @@ test("someone who marked the project's email as spam says so: replies reach them
   expect(await panel()).not.toContain("as spam");
   // As SES's complaint saves it: lowercase.
   await prisma.emailBlock.create({ data: { projectId: project.id, email: "e2e-ann@example.com" } });
-  expect(await panel()).toContain("Marked your email as spam, so replies reach them only in the widget.");
+  expect(await panel()).toContain("Marked your email as spam, so replies aren&#x27;t emailed to them any more.");
 });
