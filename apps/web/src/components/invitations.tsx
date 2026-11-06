@@ -6,6 +6,17 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -94,27 +105,44 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
   );
 }
 
-/** Revoke on a pending invite; Remove (`unsent`) on one an import made that wasn't sent. */
-export function RevokeInvitationButton({ projectSlug, invitationId, unsent = false }: { projectSlug: string; invitationId: string; unsent?: boolean }) {
+/**
+ * Revoke on a pending invite; Remove on one an import made that wasn't sent (`unsent`: its address), which asks first, as
+ * a later import won't bring it back.
+ */
+export function RevokeInvitationButton({ projectSlug, invitationId, unsent }: { projectSlug: string; invitationId: string; unsent?: string }) {
   const [pending, startTransition] = useTransition();
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          const result = await revokeInvitation(projectSlug, invitationId);
-          if (result.error) {
-            toast.error(result.error);
-          } else {
-            toast.success(unsent ? "Invite removed" : "Invite revoked");
-          }
-        })
+  const revoke = () =>
+    startTransition(async () => {
+      const result = await revokeInvitation(projectSlug, invitationId);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(unsent ? "Invite removed" : "Invite revoked");
       }
-    >
-      {unsent ? "Remove" : "Revoke"}
-    </Button>
+    });
+  if (!unsent) {
+    return (
+      <Button variant="ghost" size="sm" disabled={pending} onClick={revoke}>
+        Revoke
+      </Button>
+    );
+  }
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>Remove</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove the invite for {unsent}?</AlertDialogTitle>
+          <AlertDialogDescription>They won&apos;t be invited, and importing from Featurebase again won&apos;t bring them back. You can still invite them yourself.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={revoke}>
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

@@ -3,13 +3,13 @@ import { teamLimit } from "@tuti/shared";
 
 import type { FeaturebaseAdmin } from "./featurebase";
 import { ALREADY_HERE, type ImportJob, type StepPage, tally } from "./imports";
-import { generateInvitationToken, hashInvitationToken, invitationExpiry, teamPlacesTaken } from "./invitations";
+import { generateInvitationToken, hashInvitationToken, pendingInvitation, teamPlacesTaken, UNSENT_EXPIRY } from "./invitations";
 
 /**
  * Team (docs/plan.md, Switching from Featurebase, I6): every Featurebase admin with an email becomes an invitation to the
  * project, as a member (Featurebase's roles are its own names, which can't be mapped), not sent: an owner or admin
- * reviews and sends them from Team & roles (`sentAt` null; its token is one nobody has, so it can't be accepted till
- * then). Left out, and counted: whoever started the import, people already on the team (by verified address) or
+ * reviews and sends them from Team & roles (`sentAt` null; its token is one nobody has, and it "expired" long ago for the
+ * release before, so it can't be accepted till then: UNSENT_EXPIRY). Unsent, it waits till it's sent or removed. Left out, and counted: whoever started the import, people already on the team (by verified address) or
  * already invited, admins without an address, and those past the plan's room for the team. An admin is remembered
  * (ImportedRecord "invite"), so another import never invites them again, even once the team removed the invitation.
  */
@@ -46,7 +46,7 @@ async function inviteAdmins(tx: Tx, job: ImportJob, admins: FeaturebaseAdmin[]) 
   );
   // Pending invites, sent or not, as Team & roles lists them; addresses the same email twice in Featurebase join them.
   const invited = new Set(
-    (await tx.invitation.findMany({ where: { projectId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, email: { not: null } }, select: { email: true } })).map((invitation) => invitation.email!),
+    (await tx.invitation.findMany({ where: { projectId, ...pendingInvitation(), email: { not: null } }, select: { email: true } })).map((invitation) => invitation.email!),
   );
   const { plan } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
   const limit = teamLimit(plan);
@@ -67,7 +67,7 @@ async function inviteAdmins(tx: Tx, job: ImportJob, admins: FeaturebaseAdmin[]) 
       leaveOut(TEAM_LEFT_OUT.full);
     } else {
       const invitation = await tx.invitation.create({
-        data: { projectId, email, role: "MEMBER", tokenHash: hashInvitationToken(generateInvitationToken()), createdById: by.id, expiresAt: invitationExpiry(), sentAt: null },
+        data: { projectId, email, role: "MEMBER", tokenHash: hashInvitationToken(generateInvitationToken()), createdById: by.id, expiresAt: UNSENT_EXPIRY, sentAt: null },
         select: { id: true },
       });
       await tx.importedRecord.create({ data: { projectId, source: job.source, kind: "invite", externalId: admin.id, localId: invitation.id } });

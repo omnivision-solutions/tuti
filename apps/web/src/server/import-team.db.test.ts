@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { generateInvitationToken, handlers, hashInvitationToken, IMPORT_KEY, importsSettled } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handlers, hashInvitationToken, IMPORT_KEY, importsSettled } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -14,7 +14,7 @@ import { mailbox } from "@/test/mailbox";
 
 import { homeOverview } from "./home";
 import { pendingInvitationsFor } from "./invitation-lookup";
-import { acceptInvitation, acceptInvitationById, revokeInvitation, sendAllInvitations, sendInvitation } from "./invitations";
+import { acceptInvitation, acceptInvitationById, createInvitation, revokeInvitation, sendAllInvitations, sendInvitation } from "./invitations";
 
 /**
  * The team from Featurebase (docs/plan.md, Switching from Featurebase, I6): its admins as invitations to the project, not
@@ -160,6 +160,56 @@ test("Send emails one invitation, once, from whoever sends it, with a link that 
   actAs(ada2);
   expect(await redirectTarget(acceptInvitation(link))).toBe(`/app/${project.slug}`);
   expect(await prisma.teamMember.count({ where: { projectId: project.id, userId: ada2.id } })).toBe(1);
+});
+
+/** Invitations this project emailed today, `n` of them, as if sent earlier. */
+const sentEarlier = (n: number) =>
+  prisma.invitation.createMany({
+    data: Array.from({ length: n }, () => ({ projectId: project.id, email: newAddress(), tokenHash: hashInvitationToken(generateInvitationToken()), createdById: owner.id, expiresAt: new Date(Date.now() + 60_000) })),
+  });
+
+test("sending stops at the day's cap, counted under the project's lock: two Send alls at once send the one place left once", async () => {
+  await sentEarlier(DAILY_INVITE_LIMIT - 1);
+  admins(newAddress(), newAddress(), newAddress());
+  await importTeam();
+  const results = await Promise.all([sendAllInvitations(project.slug), sendAllInvitations(project.slug)]);
+  expect(results.map((result) => result.sent).sort()).toEqual([0, 1]);
+  expect(results).toContainEqual({ error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`, sent: 1, waiting: 2 });
+  expect((await invitationsOf()).filter((invitation) => invitation.sentAt === null)).toHaveLength(2);
+  const [waiting] = (await invitationsOf()).filter((invitation) => invitation.sentAt === null);
+  expect(await sendInvitation(project.slug, waiting!.id)).toEqual({ error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.` });
+  expect(await prisma.invitation.findUniqueOrThrow({ where: { id: waiting!.id } })).toMatchObject({ sentAt: null });
+});
+
+test("an invite whose email fails goes back to not sent, said so, to be sent again", async () => {
+  const ada = newAddress();
+  admins(ada);
+  await importTeam();
+  const [invitation] = await invitationsOf();
+  mailbox.refuseNext(ada, { code: 554 });
+  expect(await sendInvitation(project.slug, invitation!.id)).toEqual({ error: "Couldn't email an invite: try again in a moment.", sent: 0, waiting: 1 });
+  expect(await prisma.invitation.findUniqueOrThrow({ where: { id: invitation!.id } })).toMatchObject({ sentAt: null, revokedAt: null });
+  expect(await sendInvitation(project.slug, invitation!.id)).toEqual({ sent: 1, waiting: 0 });
+  expect(emailsTo(ada)).toHaveLength(1);
+});
+
+test("a big team imported doesn't use up the day's invites: they count only once sent", async () => {
+  admins(...Array.from({ length: DAILY_INVITE_LIMIT + 5 }, newAddress));
+  expect((await importTeam()).invitationsToSend).toBe(DAILY_INVITE_LIMIT + 5);
+  expect(await createInvitation(project.slug, newAddress(), "MEMBER")).toMatchObject({ emailSent: true });
+});
+
+test("unsent, an invitation never lapses: weeks later it's listed and can be sent; the release before (which doesn't know sentAt) sees it long expired", async () => {
+  const ada = newAddress();
+  admins(ada);
+  await importTeam();
+  const [invitation] = await invitationsOf();
+  await prisma.invitation.update({ where: { id: invitation!.id }, data: { createdAt: new Date(Date.now() - 30 * 24 * 60 * 60_000) } });
+  // How the release before lists pending invites, on a dashboard or Team & roles, and joins one: never this one.
+  expect(await prisma.invitation.count({ where: { projectId: project.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } } })).toBe(0);
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ invitationsToSend: 1 });
+  expect(await sendInvitation(project.slug, invitation!.id)).toEqual({ sent: 1, waiting: 0 });
+  expect((await prisma.invitation.findUniqueOrThrow({ where: { id: invitation!.id } })).expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * 24 * 60 * 60_000);
 });
 
 test("an invitation not sent yet can't be accepted: it isn't on the admin's dashboard, nor taken by its id", async () => {

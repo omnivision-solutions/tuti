@@ -49,7 +49,7 @@ async function importView(row: ImportRow) {
     finishedAt: row.finishedAt?.toISOString() ?? null,
     /** With Team: the invitations the project has waiting to be sent, as Team & roles lists them (an owner or admin sends them). */
     invitationsToSend: row.parts.includes("team")
-      ? await prisma.invitation.count({ where: { projectId: row.projectId, sentAt: null, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } } })
+      ? await prisma.invitation.count({ where: { projectId: row.projectId, sentAt: null, acceptedAt: null, revokedAt: null } })
       : 0,
   };
 }

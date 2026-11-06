@@ -1,4 +1,5 @@
 import { type TeamRole, prisma } from "@tuti/db";
+import { pendingInvitation } from "@tuti/jobs";
 import { teamLimit } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -34,9 +35,9 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
   const isOnlyOwner = myRole === "OWNER" && members.filter((m) => m.role === "OWNER").length === 1;
   const invitations = isAdmin
     ? await prisma.invitation.findMany({
-        where: { projectId: project.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        where: { projectId: project.id, ...pendingInvitation() },
         orderBy: { createdAt: "desc" },
-        select: { id: true, email: true, role: true, expiresAt: true, sentAt: true, createdBy: { select: { name: true } } },
+        select: { id: true, email: true, role: true, expiresAt: true, sentAt: true, createdAt: true, createdBy: { select: { name: true } } },
       })
     : [];
   // An import's invitations (docs/plan.md, Switching from Featurebase) wait apart until someone sends them.
@@ -151,7 +152,8 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
           <CardHeader>
             <CardTitle>From Featurebase, not sent yet</CardTitle>
             <CardDescription>
-              Your team in Featurebase, invited as members. Nothing has been emailed: send the ones you want here; they take a place on your plan until removed.
+              Your team in Featurebase, invited as members. Nothing has been emailed: send the ones you want here.
+              {limit !== null && " Until you remove them, they count toward your plan's team members."}
             </CardDescription>
             {unsent.length > 1 && (
               <CardAction>
@@ -165,12 +167,12 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
                 <ItemRow
                   key={invitation.id}
                   title={`${invitation.email} · ${ROLE_LABELS[invitation.role]}`}
-                  meta={`Expires ${invitation.expiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} unless sent`}
+                  meta={`Imported ${invitation.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} by ${invitation.createdBy.name}`}
                   actions={
                     canAssignRole(myRole, invitation.role) && (
                       <>
                         <SendInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
-                        <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} unsent />
+                        <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} unsent={invitation.email!} />
                       </>
                     )
                   }

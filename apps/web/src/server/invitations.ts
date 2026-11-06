@@ -2,7 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { inviteEmail, sendEmail } from "@tuti/email";
-import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverOnVerified, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, teamPlacesTaken } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverOnVerified, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, pendingInvitation, teamPlacesTaken } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -98,7 +98,7 @@ export async function createInvitation(
 const DAILY_LIMIT = `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`;
 
 /** Invites the project emailed in the last day: inviting emails any address, so it's capped (DAILY_INVITE_LIMIT). */
-const sentToday = (projectId: string) => prisma.invitation.count({ where: { projectId, sentAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } });
+const sentToday = (projectId: string, db: Prisma.TransactionClient = prisma) => db.invitation.count({ where: { projectId, sentAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } });
 
 /** Emails an invite's link from `inviter` (replies reach them); false when the email couldn't be sent. */
 async function emailInvite({ to, role, url, inviter, projectName }: { to: string; role: TeamRole; url: string; inviter: { name: string; email: string }; projectName: string }) {
@@ -124,10 +124,11 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
     return { error: "Only project owners and admins can send invites" };
   }
   const projectId = membership.project.id;
-  const room = DAILY_INVITE_LIMIT - (await sentToday(projectId));
-  const unsent = { projectId, sentAt: null, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, ...(ids && { id: { in: ids } }) };
+  const unsent = { projectId, sentAt: null, acceptedAt: null, revokedAt: null, ...(ids && { id: { in: ids } }) };
   const claimed = await prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
+    // The day's cap counted under the lock, so two sends at once can't both use the same room.
+    const room = DAILY_INVITE_LIMIT - (await sentToday(projectId, tx));
     const waiting = await tx.invitation.findMany({ where: unsent, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true, role: true } });
     // Only roles the sender may give (an import's are all members).
     const mine = waiting.filter((invitation) => invitation.email && canAssignRole(membership.role, invitation.role)).slice(0, Math.max(room, 0));
@@ -138,10 +139,10 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
       await tx.invitation.update({ where: { id: invitation.id }, data: { tokenHash: hashInvitationToken(token), sentAt: now, createdById: session.user.id, expiresAt: invitationExpiry(now.getTime()) } });
       sending.push({ ...invitation, email: invitation.email!, token });
     }
-    return { sending, waiting: waiting.length - sending.length };
+    return { sending, waiting: waiting.length - sending.length, capped: room <= sending.length };
   });
   if (ids && claimed.sending.length === 0) {
-    return { error: room <= 0 && claimed.waiting > 0 ? DAILY_LIMIT : "That invite was sent already, or removed" };
+    return { error: claimed.capped && claimed.waiting > 0 ? DAILY_LIMIT : "That invite was sent already, or removed" };
   }
   let sent = 0;
   for (const invitation of claimed.sending) {
@@ -157,7 +158,7 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
   if (sent < claimed.sending.length) {
     return { error: `Couldn't email ${claimed.sending.length - sent === 1 ? "an invite" : `${claimed.sending.length - sent} invites`}: try again in a moment.`, sent, waiting };
   }
-  return waiting > 0 && room <= claimed.sending.length ? { error: DAILY_LIMIT, sent, waiting } : { sent, waiting };
+  return waiting > 0 && claimed.capped ? { error: DAILY_LIMIT, sent, waiting } : { sent, waiting };
 }
 
 /** Team & roles' Send on an invite an import made: emails it. */
