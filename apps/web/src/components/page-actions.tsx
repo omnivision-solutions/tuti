@@ -112,10 +112,10 @@ export function PageActions({ children, more, pinned = false }: { children?: Rea
       >
         {pinned ? (
           // The app's page leaves room for it at the bottom (AppShell, data-pinned-actions), and what's focused scrolls
-          // above it (globals.css). Its buttons stop short of Tuti's chat launcher.
+          // above it (globals.css). Its buttons stop left of Tuti's chat launcher, a row more if they need it.
           <div
             data-pinned-actions
-            className="contents phonebar:fixed phonebar:inset-x-0 phonebar:bottom-0 phonebar:z-20 phonebar:flex phonebar:justify-end phonebar:gap-2 phonebar:border-t phonebar:bg-background phonebar:px-4 phonebar:pt-3 phonebar:pb-[max(0.75rem,env(safe-area-inset-bottom))] launcher:phonebar:pr-24"
+            className="contents phonebar:fixed phonebar:inset-x-0 phonebar:bottom-0 phonebar:z-20 phonebar:flex phonebar:justify-end phonebar:gap-2 phonebar:border-t phonebar:bg-background phonebar:px-4 phonebar:pt-3 phonebar:pb-[max(0.75rem,env(safe-area-inset-bottom))] launcher:phonebar:flex-wrap launcher:phonebar:pr-24"
           >
             {children}
           </div>
