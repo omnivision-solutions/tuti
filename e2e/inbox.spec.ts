@@ -1034,6 +1034,27 @@ test("an Inbox row reads in four lines at most: who on one, cut short, and the m
 });
 
 /** A project whose inbox has Sam's conversation (#1) and another (#2), its owner on it at 1440px, and its API. */
+test("on a phone, a long conversation's title shows in the top bar once it's scrolled up under it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { owner, api, messages } = await twoConversations(browser);
+  for (let i = 1; i <= 8; i++) {
+    await api("/conversations/1/messages", { body: `Follow-up ${i}: still wondering whether the export covers last year's reports too.`, author: { id: "user-42" } });
+  }
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.reload();
+  const barTitle = owner.locator('[data-slot="bar-title"]');
+  await expect(messages).toHaveCount(9);
+  // It opens at its newest message, the title scrolled up under the bar: the bar says it.
+  await expect(owner.getByRole("heading", { level: 1, name: "Can I export?" })).not.toBeInViewport();
+  await expect(barTitle).toHaveText("Can I export?");
+  await expect(barTitle).toBeVisible();
+  await checkpoint(owner, "inbox-phone-bar-title", { fullPage: false });
+  // Back at the top, the title is on the page: the bar has the project's name again.
+  await owner.getByRole("heading", { level: 1, name: "Can I export?" }).scrollIntoViewIfNeeded();
+  await expect(barTitle).toHaveCount(0);
+  await expect(owner.locator("header").getByText("Acme", { exact: true })).toBeVisible();
+});
+
 async function twoConversations(browser: Browser) {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
