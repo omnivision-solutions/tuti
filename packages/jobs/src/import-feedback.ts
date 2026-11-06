@@ -102,7 +102,7 @@ function boardWords(board: FeaturebaseBoard) {
 /**
  * The project's board for each Featurebase board everyone sees: one of the same name (a new project's Feature requests),
  * else a new one while the plan has room (boardLimit), else the last one imported, which takes its posts. A new
- * project's untouched board (its only one, without posts, matched by none and no import's) becomes the first one made,
+ * project's untouched board (its only one, without posts of its own, matched by none and no import's) becomes the first one made,
  * renamed, so it costs the plan no slot. Remembered,
  * so every page (and a later import) puts them in the same place; one that went into another board for want of room
  * is remembered so too (`board-past-limit`), not guessed from sharing a board (two of the same name do, with room).
@@ -121,7 +121,8 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
   let spare =
     only &&
     !visible.some((board) => sameName(board.name.slice(0, 60), only.name)) &&
-    (await tx.post.count({ where: { boardId: only.id } })) === 0 &&
+    // Sample content (setup's "Add sample content", likely while this runs) doesn't count: "Remove sample content" takes it.
+    (await tx.post.count({ where: { boardId: only.id, sample: false } })) === 0 &&
     (await tx.importedRecord.count({ where: { projectId: job.projectId, source: job.source, kind: "board", localId: only.id } })) === 0
       ? only
       : undefined;

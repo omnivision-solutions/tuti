@@ -12,6 +12,8 @@ import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
+import { addSampleContent } from "./sample-content";
+
 /** Feedback from Featurebase (docs/plan.md, Switching from Featurebase, I3), against the Featurebase, S3 and OpenAI fakes. */
 
 const log = { info: () => {}, warn: () => {} };
@@ -331,6 +333,36 @@ test("a new project's untouched board becomes the first of Featurebase's, costin
   expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Dark mode" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Ideas" } });
   // Its old address leads to it, as after a rename in the app.
   expect(await prisma.boardRedirect.findMany({ where: { projectId: project.id }, select: { slug: true, boardId: true } })).toEqual([{ slug: "feature-requests", boardId: project.boards[0]!.id }]);
+});
+
+test("sample content added during setup (on the new project's board) doesn't stop that board being reused: both of Featurebase's boards come across on the free plan", async () => {
+  vi.stubEnv("PLANS", "on");
+  await addSampleContent(project.id, owner.id);
+  expect(await prisma.post.count({ where: { boardId: project.boards[0]!.id, sample: true } })).toBeGreaterThan(0);
+  const ideas = fake.fixtures.boards[0]!;
+  Object.assign(ideas, { name: "Ideas", localization: { ...(ideas.localization as object), name: { en: "Ideas" } } });
+  await importFeedback();
+  expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 2, leftOut: { "only some people see": 3 } });
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } })).toEqual([
+    { id: project.boards[0]!.id, name: "Ideas" },
+    { id: expect.any(String), name: "Bugs" },
+  ]);
+});
+
+test("on the free plan, a board matching the new project's by name keeps it wherever it comes; the plan's other slot goes to the first of the rest", async () => {
+  vi.stubEnv("PLANS", "on");
+  // Three distinct boards for two slots: one is folded whichever order they're resolved in. The new project's board is
+  // one of the two, matched by name ("Feature requests", last here), so the first of the others comes and the second folds.
+  const [requests, bugs] = fake.fixtures.boards;
+  const ideas = { ...structuredClone(bugs!), id: "65f0000000000000000000b8", name: "Ideas", localization: { name: { en: "Ideas" } } };
+  fake.fixtures.boards = [ideas, bugs!, requests!];
+  await importFeedback();
+  expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 2, leftOut: { "past the plan's board limit, their posts in the last board": 1 } });
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } })).toEqual([
+    { id: project.boards[0]!.id, name: "Feature requests" },
+    { id: expect.any(String), name: "Ideas" },
+  ]);
+  expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Export fails on Safari" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Ideas" } });
 });
 
 test("an embedding provider failing leaves the posts unembedded; the import still ends done, everything brought", async () => {
