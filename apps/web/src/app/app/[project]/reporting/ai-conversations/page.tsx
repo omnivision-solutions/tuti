@@ -6,7 +6,7 @@ import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { count, countTrend, DailyChart, percent, plural, ReportBody, ReportHeading, shareTrend, Stat, Stats } from "@/components/reports";
 import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { PageNav } from "@/components/page-nav";
 import { timeAgo } from "@/lib/format";
 import { withRange } from "@/lib/report-range";
 import { isAdminRole } from "@/lib/roles";
@@ -150,29 +150,13 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
         )}
         {/* Also on a page past the last (an old link, fewer since): Newer goes to the last. */}
         {(report.listed > PER_PAGE || page > 1) && (
-          <nav aria-label="Pages" className="flex items-center justify-between gap-2">
-            {page > 1 ? (
-              <Link href={`${pageHref(Math.min(page - 1, Math.max(1, Math.ceil(report.listed / PER_PAGE))))}#ai-history`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                Newer
-              </Link>
-            ) : (
-              <span />
-            )}
-            {report.conversations.length > 0 ? (
-              <span className="text-sm text-muted-foreground tabular-nums">
-                {count((page - 1) * PER_PAGE + 1)}–{count((page - 1) * PER_PAGE + report.conversations.length)} of {count(report.listed)}
-              </span>
-            ) : (
-              <span />
-            )}
-            {page * PER_PAGE < report.listed ? (
-              <Link href={`${pageHref(page + 1)}#ai-history`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                Older
-              </Link>
-            ) : (
-              <span />
-            )}
-          </nav>
+          <PageNav
+            back={page > 1 ? { href: `${pageHref(Math.min(page - 1, Math.max(1, Math.ceil(report.listed / PER_PAGE))))}#ai-history`, label: "Newer" } : null}
+            on={page * PER_PAGE < report.listed ? { href: `${pageHref(page + 1)}#ai-history`, label: "Older" } : null}
+          >
+            {report.conversations.length > 0 &&
+              `${count((page - 1) * PER_PAGE + 1)}–${count((page - 1) * PER_PAGE + report.conversations.length)} of ${count(report.listed)}`}
+          </PageNav>
         )}
       </section>
     </ReportBody>

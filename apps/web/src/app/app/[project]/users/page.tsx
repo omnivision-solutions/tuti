@@ -6,6 +6,7 @@ import { CompaniesTable } from "@/components/companies-table";
 import { EmptyState } from "@/components/empty-state";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
+import { PageNav } from "@/components/page-nav";
 import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -73,7 +74,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   const group = groups.find((g) => g.key === searchParams.group)?.key;
   const sort: Sort = USER_SORTS.find((s) => s === searchParams.sort) ?? "name";
   const { userColumns } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { userColumns: true } });
-  const [{ users, nextCursor }, named, picked] = await Promise.all([
+  const [{ users, nextCursor, total }, named, picked] = await Promise.all([
     call(listUsers, context, { q: q || undefined, group, company, sort, limit: PER_PAGE, cursor: (page - 1) * PER_PAGE }),
     // For Columns, which only owners and admins have.
     isAdminRole(membership.role) ? propertyNames(project.id) : [],
@@ -89,6 +90,14 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
     const params = new URLSearchParams({ ...(q && { q }), ...(group && { group }), ...(company && { company }), ...(by !== "name" && { sort: by }), ...(to > 1 && { page: String(to) }) });
     return params.size > 0 ? `?${params}` : `/app/${slug}/users`;
   };
+  const count = (n: number) => n.toLocaleString("en-GB");
+  /** Previous, which of them these are ("51–100 of 1,250"), and Next; above the table and below it. */
+  const pages = (label: string) =>
+    (page > 1 || nextCursor) && (
+      <PageNav label={label} back={page > 1 ? { href: href({ to: page - 1 }), label: "Previous" } : null} on={nextCursor ? { href: href({ to: page + 1 }), label: "Next" } : null}>
+        {users.length > 0 && `${count((page - 1) * PER_PAGE + 1)}–${count((page - 1) * PER_PAGE + users.length)} of ${count(total)}`}
+      </PageNav>
+    );
   /** A column's heading: a link that sorts by it (from the first page), marked while it does. */
   const sortHeading = ({ by, label, className }: { by: Sort; label: string; className?: string }) => (
     <th key={by} scope="col" aria-sort={sort === by ? (by === "name" ? "ascending" : "descending") : undefined} className={className}>
@@ -153,96 +162,84 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
           />
         )
       ) : (
-        // The whole width (data-wide), for the team's columns.
-        <Card size="sm" data-wide>
-          <CardContent className="overflow-x-auto">
-            {/* On phones, who they are (no id) and when they were last seen; the rest from tablet width up. */}
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs font-medium text-muted-foreground">
-                <tr className="[&>th]:px-2 [&>th]:pb-2 [&>th]:font-medium">
-                  {sortHeading({ by: "name", label: "User" })}
-                  {columns.map((name) => (
-                    <th key={name} scope="col" className="hidden break-all md:table-cell">
-                      {headings.get(name)}
-                    </th>
-                  ))}
-                  {groups.length > 0 && (
-                    <th scope="col" className="hidden md:table-cell">
-                      Groups
-                    </th>
-                  )}
-                  {COUNTS.map((count) => sortHeading({ by: count.sort, label: count.label, className: "hidden text-right md:table-cell" }))}
-                  {sortHeading({ by: "lastSeen", label: "Last seen", className: "text-right" })}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr key={user.id} className="border-t align-top [&>td]:px-2 [&>td]:py-2">
-                    <td className="min-w-48">
-                      <div className="flex items-start gap-2">
-                        <Avatar className="size-8">
-                          {user.avatar && <AvatarImage src={user.avatar} alt="" />}
-                          <AvatarFallback>{initial(user.name)}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex min-w-0 flex-col gap-0.5">
-                          <Link href={`/app/${slug}/users/${encodeURIComponent(user.id)}`} className="font-medium break-words hover:underline">
-                            {user.name}
-                          </Link>
-                          <span className="text-xs break-all text-muted-foreground">
-                            {user.email}
-                            <span className="max-md:hidden">
-                              {user.email && " · "}id {user.id}
-                            </span>
-                          </span>
-                        </div>
-                      </div>
-                    </td>
+        <>
+          {pages("Pages")}
+          {/* The whole width (data-wide), for the team's columns. */}
+          <Card size="sm" data-wide>
+            <CardContent className="overflow-x-auto">
+              {/* On phones, who they are (no id) and when they were last seen; the rest from tablet width up. */}
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs font-medium text-muted-foreground">
+                  <tr className="[&>th]:px-2 [&>th]:pb-2 [&>th]:font-medium">
+                    {sortHeading({ by: "name", label: "User" })}
                     {columns.map((name) => (
-                      <td key={name} className="hidden break-words md:table-cell">
-                        {Object.hasOwn(user.properties, name) ? formatProperty(formats, name, user.properties[name]!) : <span className="text-muted-foreground">–</span>}
-                      </td>
+                      <th key={name} scope="col" className="hidden break-all md:table-cell">
+                        {headings.get(name)}
+                      </th>
                     ))}
                     {groups.length > 0 && (
-                      <td className="hidden md:table-cell">
-                        <span className="flex flex-wrap gap-1">
-                          {user.groups.map((key) => (
-                            <Badge key={key} variant="secondary" className="h-auto max-w-full whitespace-normal break-words">
-                              {names.get(key) ?? key}
-                            </Badge>
-                          ))}
-                        </span>
-                      </td>
+                      <th scope="col" className="hidden md:table-cell">
+                        Groups
+                      </th>
                     )}
-                    {COUNTS.map((count) => (
-                      <td key={count.key} className="hidden text-right tabular-nums md:table-cell">
-                        {user.activity[count.key]}
-                      </td>
-                    ))}
-                    <td className="text-right whitespace-nowrap text-muted-foreground">{user.activity.lastSeenAt ? timeAgo(user.activity.lastSeenAt) : "Never"}</td>
+                    {COUNTS.map((count) => sortHeading({ by: count.sort, label: count.label, className: "hidden text-right md:table-cell" }))}
+                    {sortHeading({ by: "lastSeen", label: "Last seen", className: "text-right" })}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+                </thead>
+                <tbody>
+                  {users.map((user) => (
+                    <tr key={user.id} className="border-t align-top [&>td]:px-2 [&>td]:py-2">
+                      <td className="min-w-48">
+                        <div className="flex items-start gap-2">
+                          <Avatar className="size-8">
+                            {user.avatar && <AvatarImage src={user.avatar} alt="" />}
+                            <AvatarFallback>{initial(user.name)}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex min-w-0 flex-col gap-0.5">
+                            <Link href={`/app/${slug}/users/${encodeURIComponent(user.id)}`} className="font-medium break-words hover:underline">
+                              {user.name}
+                            </Link>
+                            <span className="text-xs break-all text-muted-foreground">
+                              {user.email}
+                              <span className="max-md:hidden">
+                                {user.email && " · "}id {user.id}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      {columns.map((name) => (
+                        <td key={name} className="hidden break-words md:table-cell">
+                          {Object.hasOwn(user.properties, name) ? formatProperty(formats, name, user.properties[name]!) : <span className="text-muted-foreground">–</span>}
+                        </td>
+                      ))}
+                      {groups.length > 0 && (
+                        <td className="hidden md:table-cell">
+                          <span className="flex flex-wrap gap-1">
+                            {user.groups.map((key) => (
+                              <Badge key={key} variant="secondary" className="h-auto max-w-full whitespace-normal break-words">
+                                {names.get(key) ?? key}
+                              </Badge>
+                            ))}
+                          </span>
+                        </td>
+                      )}
+                      {COUNTS.map((count) => (
+                        <td key={count.key} className="hidden text-right tabular-nums md:table-cell">
+                          {user.activity[count.key]}
+                        </td>
+                      ))}
+                      <td className="text-right whitespace-nowrap text-muted-foreground">{user.activity.lastSeenAt ? timeAgo(user.activity.lastSeenAt) : "Never"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </>
       )}
 
-      {(page > 1 || nextCursor) && (
-        <nav aria-label="Pages" className="flex justify-between gap-2">
-          {page > 1 ? (
-            <Link href={href({ to: page - 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              Previous
-            </Link>
-          ) : (
-            <span />
-          )}
-          {nextCursor && (
-            <Link href={href({ to: page + 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              Next
-            </Link>
-          )}
-        </nav>
-      )}
+      {pages("More pages")}
     </>
   );
 }

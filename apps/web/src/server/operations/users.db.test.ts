@@ -123,13 +123,13 @@ test("listed by name, with the groups they're in; found by name, email or id, or
     { id: "user-a", name: "Ada", email: "e2e-ada@other.example", properties: { plan: "free" } },
     { id: "user-c", name: "Cy", email: "e2e-cy@acme.example" },
   ]);
-  const { users, nextCursor } = await list();
+  const { users, nextCursor, total } = await list();
   expect(users.map((user) => [user.id, user.groups])).toEqual([
     ["user-a", []],
     ["user-b", ["pro"]],
     ["user-c", []],
   ]);
-  expect(nextCursor).toBeNull();
+  expect([nextCursor, total]).toEqual([null, 3]);
   expect((await list({ q: "ACME.example" })).users.map((user) => user.id)).toEqual(["user-b", "user-c"]);
   expect((await list({ q: "bea" })).users.map((user) => user.id)).toEqual(["user-b"]);
   expect((await list({ q: "user-c" })).users.map((user) => user.id)).toEqual(["user-c"]);
@@ -146,8 +146,12 @@ test("listed by name, with the groups they're in; found by name, email or id, or
   // % and _ in a search are plain text.
   expect((await list({ q: "%" })).users).toEqual([]);
   const first = await list({ limit: 2 });
-  expect([first.users.map((user) => user.id), first.nextCursor]).toEqual([["user-a", "user-b"], "2"]);
-  expect((await list({ limit: 2, cursor: 2 })).users.map((user) => user.id)).toEqual(["user-c"]);
+  expect([first.users.map((user) => user.id), first.nextCursor, first.total]).toEqual([["user-a", "user-b"], "2", 3]);
+  expect(await list({ limit: 2, cursor: 2 })).toMatchObject({ users: [{ id: "user-c" }], total: 3 });
+  // All of them on every page, past the last too; those a search or group keeps.
+  expect(await list({ limit: 2, cursor: 10 })).toMatchObject({ users: [], nextCursor: null, total: 3 });
+  expect(await list({ q: "acme.example", limit: 1 })).toMatchObject({ users: [{ id: "user-b" }], total: 2 });
+  expect(await list({ q: "nobody" })).toMatchObject({ users: [], total: 0 });
   // Whoever has the id searched for comes first, whatever their name.
   await sync([{ id: "acme", name: "Zed", email: "e2e-zed@zed.example" }]);
   expect((await list({ q: "acme" })).users.map((user) => user.id)).toEqual(["acme", "user-b", "user-c"]);

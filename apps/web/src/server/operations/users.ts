@@ -117,10 +117,17 @@ export async function viewsOf(projectId: string, users: { externalId: string; em
   });
 }
 
+/** How many of the project's users (`s`, with their account `u`) `filters` keep. */
+async function countUsers(filters: Prisma.Sql[]) {
+  const [row] = await prisma.$queryRaw<[{ total: number }]>`
+    SELECT count(*)::int AS total FROM sso_identity s JOIN "user" u ON u.id = s."userId" WHERE ${Prisma.join(filters, " AND ")}`;
+  return row.total;
+}
+
 export const listUsers = defineOperation({
   name: "users.list",
   summary:
-    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties, the reader groups they're in now and their `activity` (posts, votes, conversations, when last seen); `q` finds them by name, email or id (whoever has that id first), `group` (a key) keeps those in that group, `company` those at that company (their `company` property), and `sort` puts the most posts, votes or conversations, or the latest seen, first",
+    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties, the reader groups they're in now and their `activity` (posts, votes, conversations, when last seen); `q` finds them by name, email or id (whoever has that id first), `group` (a key) keeps those in that group, `company` those at that company (their `company` property), and `sort` puts the most posts, votes or conversations, or the latest seen, first; `total` counts all of them, every page",
   method: "GET",
   path: "/users",
   scope: "read",
@@ -156,8 +163,10 @@ export const listUsers = defineOperation({
     }
     // ponytail: offset cursors, like posts.list; switch to keyset pagination if projects get very large.
     // By name, the page is picked first and its activity worked out after; an activity sort needs everyone's.
-    const page = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT s.id FROM sso_identity s JOIN "user" u ON u.id = s."userId" ${input.sort === "name" ? Prisma.empty : accountsOf}
+    // Every match is sorted anyway, so counting them all here (`total`) adds little: holding them for the count took about
+    // a tenth more on 100k+ users, where a count of its own took over half as long again (and could disagree with the page).
+    const page = await prisma.$queryRaw<{ id: string; total: number }[]>`
+      SELECT s.id, count(*) OVER ()::int AS total FROM sso_identity s JOIN "user" u ON u.id = s."userId" ${input.sort === "name" ? Prisma.empty : accountsOf}
       WHERE ${Prisma.join(filters, " AND ")}
       ORDER BY ${input.q ? Prisma.sql`(s."externalId" = ${input.q}) DESC, ` : Prisma.empty}${
         input.sort === "name" ? Prisma.empty : Prisma.sql`${activity[input.sort]} DESC NULLS LAST, `
@@ -177,6 +186,8 @@ export const listUsers = defineOperation({
     return {
       users: views.map((view, i) => ({ ...view, activity: activityOf.get(ids[i]!)! })),
       nextCursor: page.length > input.limit ? String(input.cursor + input.limit) : null,
+      // Past the last page there's no row to count on: counted on its own.
+      total: page[0]?.total ?? (input.cursor === 0 ? 0 : await countUsers(filters)),
     };
   },
 });
