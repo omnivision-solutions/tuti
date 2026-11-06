@@ -2529,6 +2529,9 @@ model ImportedRecord {
   /// For a record made empty first and filled later (an article: its title first, so links to it resolve, then its
   /// content): whether it's filled. A retried or repeated import fills those that aren't.
   contentLanded Boolean      @default(false)
+  /// An article's title as the import made it (empty, before its content): one whose title here isn't this any more
+  /// was retitled by the team, and is theirs (Featurebase's own renames don't change it).
+  madeTitle     String?
   createdAt     DateTime     @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

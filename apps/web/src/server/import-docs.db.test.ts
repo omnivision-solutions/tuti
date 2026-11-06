@@ -234,6 +234,24 @@ test("an empty article the team only retitled while the import was stopped stays
   const done = await importDocs();
   expect(done.counts.articles).toMatchObject({ leftOut: { "already brought across earlier": 1 } });
   expect(await prisma.article.findUniqueOrThrow({ where: { id: paying.id }, select: { title: true, content: true, publishedAt: true } })).toEqual({ title: "Card payments", content: null, publishedAt: null });
+  // Nothing of Featurebase's landed in it: not marked so; told as theirs by its title each time.
+  expect(await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "article", localId: paying.id }, select: { contentLanded: true } })).toEqual({ contentLanded: false });
+  expect((await importDocs()).counts.articles).toMatchObject({ leftOut: { "already brought across earlier": 4 } });
+  expect(await prisma.article.findUniqueOrThrow({ where: { id: paying.id }, select: { title: true, content: true } })).toEqual({ title: "Card payments", content: null });
+});
+
+test("an article renamed in Featurebase between the passes isn't taken for the team's: its content comes in under the new name", async () => {
+  await structureOnly();
+  const paying = await article("Paying by card");
+  fake.fixtures.articles[1]!.title = "Card payments";
+
+  await importDocs();
+  expect(await prisma.article.findUniqueOrThrow({ where: { id: paying.id }, select: { title: true, body: true, publishedAt: true } })).toEqual({
+    title: "Card payments",
+    body: "Cards are charged on the 1st. See Welcome to Acme.",
+    publishedAt: expect.any(Date),
+  });
+  expect(await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "article", localId: paying.id }, select: { contentLanded: true } })).toEqual({ contentLanded: true });
 });
 
 test("an article deleted here before its content came stays deleted; restored, the next import fills it in", async () => {

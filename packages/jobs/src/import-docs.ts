@@ -119,7 +119,7 @@ const orderOf = (order: number | null | undefined) => (Number.isFinite(order) ? 
 async function recorded(db: Tx, job: ImportJob, kind: "collection" | "article", externalIds?: string[]) {
   const records = await db.importedRecord.findMany({
     where: { projectId: job.projectId, source: job.source, kind, ...(externalIds && { externalId: { in: externalIds } }) },
-    select: { id: true, externalId: true, localId: true, contentLanded: true },
+    select: { id: true, externalId: true, localId: true, contentLanded: true, madeTitle: true },
   });
   const where = { id: { in: records.map((record) => record.localId) } };
   const rows = new Map<string, { id: string; slug: string; deleted: boolean; createdById: string | null; title?: string; saved?: boolean }>(
@@ -127,7 +127,7 @@ async function recorded(db: Tx, job: ImportJob, kind: "collection" | "article", 
       ? (await db.collection.findMany({ where, select: { id: true, slug: true } })).map((row) => [row.id, { ...row, deleted: false, createdById: null }] as const)
       : await articleRows(db, records.map((record) => record.localId)),
   );
-  return new Map(records.filter((record) => rows.has(record.localId)).map((record) => [record.externalId, { record: record.id, landed: record.contentLanded, ...rows.get(record.localId)! }]));
+  return new Map(records.filter((record) => rows.has(record.localId)).map((record) => [record.externalId, { record: record.id, landed: record.contentLanded, madeTitle: record.madeTitle, ...rows.get(record.localId)! }]));
 }
 
 /**
@@ -145,14 +145,16 @@ const titleOf = (version: { title?: string | null }) => version.title?.trim().sl
 
 /**
  * Whether the team saved an imported article since it was made empty: the team's now, never written over. A save gives
- * it text or unpublished changes, or a title of its own (a title-only save writes it straight to the article); the
- * import's content pass changes none of what it made but those (its collection and order stay), and restoring an
- * empty one from the trash keeps its title.
+ * it text or unpublished changes, or a title of its own (a title-only save writes it straight to the article), told
+ * from the title the import made it with (`madeTitle`), so a rename in Featurebase meanwhile isn't taken for one. The
+ * import's content pass changes none of what it made but those (its collection and order stay), and restoring an empty
+ * one from the trash keeps its title.
  */
-const teamSaved = (local: { saved?: boolean; title?: string }, article: FeaturebaseArticle) => Boolean(local.saved) || (local.title !== undefined && local.title !== titleOf(article));
+const teamSaved = (local: { saved?: boolean; title?: string; madeTitle?: string | null }) =>
+  Boolean(local.saved) || (local.madeTitle != null && local.title !== undefined && local.title !== local.madeTitle);
 
 /** Saves what `kind` records became here; one whose row was deleted since is replaced. */
-async function remember(tx: Tx, job: ImportJob, kind: "collection" | "article", made: { externalId: string; localId: string }[]) {
+async function remember(tx: Tx, job: ImportJob, kind: "collection" | "article", made: { externalId: string; localId: string; madeTitle?: string }[]) {
   const where = { projectId: job.projectId, source: job.source, kind };
   await tx.importedRecord.deleteMany({ where: { ...where, externalId: { in: made.map((record) => record.externalId) } } });
   await tx.importedRecord.createMany({ data: made.map((record) => ({ ...where, ...record })) });
@@ -250,7 +252,7 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
     return;
   }
   const collections = await recorded(tx, job, "collection", fresh.flatMap((article) => (article.parentId ? [article.parentId] : [])));
-  const made: { externalId: string; localId: string }[] = [];
+  const made: { externalId: string; localId: string; madeTitle: string }[] = [];
   for (const article of fresh) {
     const title = titleOf(article);
     const author = article.author?.authorId ? await adminMember(tx, job, article.author.authorId, { name: article.author.name }) : null;
@@ -267,7 +269,7 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
       },
       select: { id: true },
     });
-    made.push({ externalId: article.id, localId: id });
+    made.push({ externalId: article.id, localId: id, madeTitle: title });
   }
   await remember(tx, job, "article", made);
 }
@@ -332,7 +334,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
   const todo = items.filter((article) => {
     const local = known.get(article.id);
-    return !local || (!local.landed && !local.deleted && !teamSaved(local, article));
+    return !local || (!local.landed && !local.deleted && !teamSaved(local));
   });
   const portal = todo.length > 0 ? await portalAddress((await prisma.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { slug: true } })).slug) : "";
   // Those of imports that ended without their last page (failed, or failed as stale) go.
@@ -399,11 +401,9 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
           continue;
         }
         // Landed before (or by a run of this page that got in first), deleted here since it landed, or saved by the team
-        // since it was made empty (an import that stopped between its passes, started again): as it is.
-        if (!local || local.landed || local.deleted || teamSaved(local, article) || !text) {
-          if (local && !local.landed) {
-            await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
-          }
+        // since it was made empty (an import that stopped between its passes, started again): as it is. The team's
+        // isn't marked landed: nothing of Featurebase's landed; it's told as theirs by its title and text each time.
+        if (!local || local.landed || local.deleted || teamSaved(local) || !text) {
           if (!again) {
             tally(job.counts, "articles", ALREADY_HERE);
           }
