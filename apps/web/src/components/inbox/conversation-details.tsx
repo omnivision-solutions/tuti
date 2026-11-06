@@ -33,10 +33,10 @@ export function ConversationDetails({ hidden, children }: { hidden: boolean; chi
  * where that column is there: its pane wide enough for it (`#conversation`'s grid, an @container), not where the person
  * is a sheet. `hidden`: the cookie, as the page read it.
  *
- * In its place from the first render, so the buttons beside it don't move as it comes: until it's known whether the
- * column is there (null), it's guessed from the window (laptop width up, where the conversation's pane is beside the
- * list); checked before the page is painted (a layout effect), so a conversation opened from the list never shows the
- * guess, and the first page load only where the guess is wrong.
+ * Its room is kept from the first render wherever the header's actions are in the top bar, so the buttons beside it
+ * never move as the page's scripts start: there and without the column, it's there but unseen (and not in the
+ * keyboard's way). Whether the column is there is checked before the page is painted (a layout effect); until then
+ * it shows, as it does at most widths.
  */
 export function DetailsToggle({ hidden: server }: { hidden: boolean }) {
   const hidden = useHidden(server);
@@ -53,15 +53,13 @@ export function DetailsToggle({ hidden: server }: { hidden: boolean }) {
     observer.observe(conversation);
     return () => observer.disconnect();
   }, []);
-  if (beside === false) {
-    return null;
-  }
   const label = hidden ? "Show details" : "Hide details";
   return (
     <Button
       variant="ghost"
       size="icon-sm"
-      className={cn(beside === null && "max-lg:hidden")}
+      // On phones the actions are a menu: not in it at all.
+      className={cn("phonebar:hidden", beside === false && "invisible")}
       aria-label={label}
       title={label}
       aria-expanded={!hidden}

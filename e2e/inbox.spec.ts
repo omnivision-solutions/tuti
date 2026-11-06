@@ -705,6 +705,23 @@ test("the details beside a conversation hide for every conversation, after a rel
   await expect(hide).toBeVisible();
   expect((await messages.boundingBox())!.width).toBeCloseTo(width, 0);
 
+  // As the page's scripts start, Close doesn't move: where it is in the page the server sends (no scripts) is where it
+  // stays, with the column beside the messages (1440px, and a tablet-wide 960px) and without it (1100px, the list taking
+  // the room), the toggle's room kept either way.
+  const serverOnly = await browser.newContext({ javaScriptEnabled: false, storageState: await owner.context().storageState() });
+  const plain = await serverOnly.newPage();
+  for (const width of [1440, 960, 1100]) {
+    await plain.setViewportSize({ width, height: 900 });
+    await plain.goto(`${APP_URL}/app/${slug}/inbox/1`);
+    const before = (await plain.getByRole("button", { name: "Close", exact: true }).boundingBox())!;
+    await owner.setViewportSize({ width, height: 900 });
+    await owner.goto(`/app/${slug}/inbox/1`);
+    // Checked once the scripts have run: at 1100px the toggle is there but unseen.
+    await (width === 1100 ? expect(hide).toBeHidden() : expect(hide).toBeVisible());
+    expect((await owner.getByRole("button", { name: "Close", exact: true }).boundingBox())!.x).toBe(before.x);
+  }
+  await serverOnly.close();
+
   // On a phone the person is a sheet: no toggle, in the menu or under the title.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/inbox/1`);
