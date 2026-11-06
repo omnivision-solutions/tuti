@@ -161,6 +161,15 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await visitor.goto("/feedback/feature-requests");
   await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("data-hide-launcher", "");
   await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(0);
+  // Nor hidden through TutiSettings.
+  await owner
+    .getByLabel("Custom HTML")
+    .fill(`<script>window.TutiSettings = { hideLauncher: true };</script><script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`);
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("data-hide-launcher", "");
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(0);
   await api("/widget", { onPortal: true }, "PATCH");
 
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
