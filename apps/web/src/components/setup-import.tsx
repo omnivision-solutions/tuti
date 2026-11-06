@@ -89,7 +89,8 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
                   {info.see.label}
                 </Link>
               ) : (
-                <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-xs", state === "now" ? "bg-soft text-primary" : state === "done" ? "text-primary" : "text-muted-foreground")}>
+                // Neutral, as states that aren't a post's status are (docs/design.md); the icon carries the colour.
+                <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-xs", (state === "next" || state === "waiting") && "text-muted-foreground")}>
                   {state === "waiting" && run.state === "failed" ? "Not started" : PART_STATE[state].tag}
                 </span>
               )}
