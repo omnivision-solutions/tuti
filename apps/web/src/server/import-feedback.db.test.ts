@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { FEEDBACK_PAGE, handlers, importsSettled } from "@tuti/jobs";
+import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled } from "@tuti/jobs";
+import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -188,7 +189,7 @@ test("a page run twice, at once or again later, and a second import, bring nothi
 
   // Each of feedback's steps again from its first page, twice at once: one of them saves.
   for (const step of ["posts", "votes", "comments", "avatars", "embeddings"]) {
-    await prisma.dataImport.update({ where: { id: started.id }, data: { state: "RUNNING", apiKey: FAKE_FEATUREBASE_KEY, step, cursor: null, counts: {} } });
+    await prisma.dataImport.update({ where: { id: started.id }, data: { state: "RUNNING", apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), step, cursor: null, counts: {} } });
     const results = await Promise.all([handlers.importStep({ importId: started.id }, log), handlers.importStep({ importId: started.id }, log)]);
     expect(results).toContainEqual({ skipped: true });
     await importsSettled();

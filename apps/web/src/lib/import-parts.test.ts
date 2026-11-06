@@ -30,7 +30,8 @@ test("an import's summary: what came across, what was left out and why, and why 
   expect(importSummary({ state: "running", counts: {}, error: null } as never)).toBe("Starting…");
   expect(importSummary({ state: "failed", counts: { contacts: { imported: 1, leftOut: { "without a name": 2 } } }, error: "Featurebase couldn't be reached." } as never)).toBe(
     "1 contact brought across. Left out: 2 contacts without a name. Featurebase couldn't be reached.",
-  );  // In the import's order whatever order the counts are kept in; a kind only left out isn't said to be brought.
+  );
+  // In the import's order whatever order the counts are kept in; a kind only left out isn't said to be brought.
   const feedback = { notes: { imported: 1, leftOut: {} }, posts: { imported: 5, leftOut: {} }, images: { imported: 0, leftOut: { "too large": 1 } }, contacts: { imported: 3, leftOut: {} } };
   expect(importSummary({ state: "done", counts: feedback, error: null } as never)).toBe("3 contacts, 5 posts, 1 note brought across. Left out: 1 image too large.");
 });
