@@ -9,14 +9,14 @@ import { GoesOut } from "@/components/goes-out";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
-import { InvitationsToSend, RefreshWhile } from "@/components/setup-import";
+import { ImportDetails, InvitationsToSend, RefreshWhile } from "@/components/setup-import";
 import { AddSampleContent, RemoveSampleContent } from "@/components/sample-content";
 import { StatTile } from "@/components/stat-tile";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
-import { homeInvitationsToSend, importSee, importSummary, importTitle, onHome } from "@/lib/import-parts";
+import { homeInvitationsToSend, importBrief, importSummary, importTitle, onHome } from "@/lib/import-parts";
 import { homeOverview } from "@/server/home";
 import { hasSampleContent } from "@/server/sample-content";
 import { getMembership, isAdminRole } from "@/server/membership";
@@ -86,24 +86,20 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
           <RefreshWhile on={imported.state === "running"} />
           <CardHeader>
             <CardTitle>{importTitle(imported)}</CardTitle>
-            <CardDescription>{importSummary(imported)}</CardDescription>
+            <CardDescription>{importBrief(imported)}</CardDescription>
             {/* Heard when it starts and ends, not with each page's count while it runs. */}
             <p role="status" className="sr-only">
               {imported.state === "running" ? importTitle(imported) : `${importTitle(imported)}. ${importSummary(imported)}`}
             </p>
-            {imported.state === "failed" ? (
-              <CardAction>
+            {/* Stacked on a phone, so two buttons leave the title room. */}
+            <CardAction className="flex flex-col items-end gap-2 sm:flex-row">
+              <ImportDetails projectSlug={slug} run={imported} invitations={homeInvitationsToSend(imported, admin)} />
+              {imported.state === "failed" && (
                 <Link href={`/app/${slug}/setup`} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   Start again
                 </Link>
-              </CardAction>
-            ) : imported.state === "done" && importSee(imported) ? (
-              <CardAction>
-                <Link href={`/app/${slug}/${importSee(imported)!.page}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                  {importSee(imported)!.label}
-                </Link>
-              </CardAction>
-            ) : null}
+              )}
+            </CardAction>
           </CardHeader>
           {homeInvitationsToSend(imported, admin) > 0 && (
             <CardContent>

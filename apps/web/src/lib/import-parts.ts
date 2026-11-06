@@ -10,24 +10,70 @@ export const IMPORT_PARTS = {
   team: {
     label: "Team",
     description: "Your Featurebase team, as invitations you review and send. They join as members; owners can change roles in Team & roles.",
+    brings: "Your team, as invitations to send",
     needs: [],
     media: false,
     see: { label: "See team", page: "settings/team" },
+    steps: { team: "Team" },
+    kinds: ["invitations"],
   },
-  contacts: { label: "Contacts", description: "Your users, with their custom fields and company, as Users.", needs: [], media: false, see: { label: "See users", page: "users" } },
+  contacts: {
+    label: "Contacts",
+    description: "Your users, with their custom fields and company, as Users.",
+    brings: "Your users, with their custom fields",
+    needs: [],
+    media: false,
+    see: { label: "See users", page: "users" },
+    steps: { contacts: "Contacts" },
+    kinds: ["contacts"],
+  },
   feedback: {
     label: "Feedback",
     description: "Boards, posts, votes and comments, with their dates; the team's private comments as notes.",
+    brings: "Boards, posts, votes and comments",
     needs: ["contacts"],
     media: true,
     see: { label: "See feedback", page: "feedback" },
+    steps: { posts: "Posts", votes: "Votes", comments: "Comments", avatars: "Avatars", embeddings: "Duplicate check" },
+    kinds: ["boards", "posts", "votes", "comments", "notes", "images", "files", "videos", "avatars"],
   },
-  docs: { label: "Help center", description: "Collections and articles, with their images, files and the links between them.", needs: [], media: true, see: { label: "See docs", page: "docs" } },
-  inbox: { label: "Inbox", description: "Conversations with their messages, notes and images, as the Inbox.", needs: ["contacts"], media: true, see: { label: "See conversations", page: "inbox" } },
+  docs: {
+    label: "Help center",
+    description: "Collections and articles, with their images, files and the links between them.",
+    brings: "Collections and articles, with their images",
+    needs: [],
+    media: true,
+    see: { label: "See docs", page: "docs" },
+    steps: { "docs-collections": "Collections", "docs-articles": "Articles", "docs-content": "Their content", "docs-unreached": "Last check" },
+    kinds: ["collections", "articles", "privateDrafts", "limitDrafts", "unpublishedChanges", "articleImages", "articleFiles", "articleVideos"],
+  },
+  inbox: {
+    label: "Inbox",
+    description: "Conversations with their messages, notes and images, as the Inbox.",
+    brings: "Conversations and their messages",
+    needs: ["contacts"],
+    media: true,
+    see: { label: "See conversations", page: "inbox" },
+    steps: { conversations: "Conversations" },
+    kinds: ["conversations", "attachments"],
+  },
 } as const satisfies Record<string, ImportPartInfo>;
 
-/** `see`: where what it brought is in the app (Home's link once an import ends: the first picked part's). */
-export type ImportPartInfo = { label: string; description: string; needs: readonly string[]; media: boolean; see: { label: string; page: string } };
+/**
+ * `brings`: what it brings, in a few words, while it waits its turn. `see`: where what it brought is in the app, once the
+ * import ends. `steps`: its steps (@tuti/jobs IMPORT_PARTS) and what each is called; `kinds`: what it counts (imports'
+ * counts), in the order it brings them.
+ */
+export type ImportPartInfo = {
+  label: string;
+  description: string;
+  brings: string;
+  needs: readonly string[];
+  media: boolean;
+  see: { label: string; page: string };
+  steps: Record<string, string>;
+  kinds: readonly string[];
+};
 export type ImportPart = keyof typeof IMPORT_PARTS;
 
 /**
@@ -83,6 +129,10 @@ const KINDS: Record<string, [string, string]> = {
   files: ["file", "files"],
   videos: ["video", "videos"],
   avatars: ["avatar", "avatars"],
+  // The help center's, counted apart from feedback's.
+  articleImages: ["image in an article", "images in articles"],
+  articleFiles: ["file in an article", "files in articles"],
+  articleVideos: ["video in an article", "videos in articles"],
   conversations: ["conversation", "conversations"],
   attachments: ["attachment", "attachments"],
 };
@@ -97,15 +147,65 @@ export const kindCount = (kind: string, n: number) => {
 export const importTitle = (run: ImportView) =>
   run.state === "running" ? "Importing from Featurebase" : run.state === "done" ? "Imported from Featurebase" : "The import from Featurebase stopped";
 
+/** What `counts` brought of `kinds` ("12 contacts") and what they left out and why ("2 contacts without a name"), in `kinds`' order. */
+function described(counts: ImportView["counts"], kinds: readonly string[]) {
+  const present = kinds.filter((kind) => counts[kind]);
+  return {
+    brought: present.flatMap((kind) => (counts[kind]!.imported > 0 ? [kindCount(kind, counts[kind]!.imported)] : [])).join(", "),
+    leftOut: present.flatMap((kind) => Object.entries(counts[kind]!.leftOut).map(([reason, n]) => `${kindCount(kind, n)} ${reason}`)).join("; "),
+  };
+}
+
 /** What an import brought so far, and what it left out and why, in a sentence or two. */
 export function importSummary(run: ImportView) {
   // In the order the import brings them (the database keeps them in its own); a kind only left out isn't "brought".
-  const rank = (kind: string) => (kind in KINDS ? Object.keys(KINDS).indexOf(kind) : Infinity);
-  const kinds = Object.entries(run.counts).sort(([a], [b]) => rank(a) - rank(b));
-  const brought = kinds.flatMap(([kind, count]) => (count.imported > 0 ? [kindCount(kind, count.imported)] : [])).join(", ");
-  const leftOut = kinds.flatMap(([kind, count]) => Object.entries(count.leftOut).map(([reason, n]) => `${kindCount(kind, n)} ${reason}`));
+  const known = Object.values(IMPORT_PARTS).flatMap((part) => part.kinds as readonly string[]);
+  const { brought, leftOut } = described(run.counts, [...known, ...Object.keys(run.counts).filter((kind) => !known.includes(kind))]);
   const done = run.state === "running" ? (brought ? `${brought} so far.` : "Starting…") : `${brought || "Nothing"} brought across.`;
-  return [done, leftOut.length > 0 && `Left out: ${leftOut.join("; ")}.`, run.error].filter(Boolean).join(" ");
+  return [done, leftOut && `Left out: ${leftOut}.`, run.error].filter(Boolean).join(" ");
+}
+
+/**
+ * Where each picked part of an import is, in the order it runs them: done, under way (`now`, at `step`, one of its
+ * `steps`), `next`, waiting, or where a failed import `stopped` (and `waiting` after it); what it brought and left out.
+ */
+export function importProgress(run: ImportView) {
+  const picked = (Object.keys(IMPORT_PARTS) as ImportPart[]).filter((part) => run.parts.includes(part));
+  const at = run.step ? picked.findIndex((part) => run.step! in IMPORT_PARTS[part].steps) : -1;
+  return picked.map((part, i) => {
+    const state =
+      run.state === "done" || i < at ? "done" : i === at ? (run.state === "running" ? "now" : "stopped") : run.state === "running" && i === at + 1 ? "next" : "waiting";
+    // Imports from before the help center counted its media apart kept it as feedback's kinds: the help center's when
+    // there's no feedback.
+    const kinds = part === "docs" && !picked.includes("feedback") ? [...IMPORT_PARTS.docs.kinds, "images", "files", "videos"] : IMPORT_PARTS[part].kinds;
+    return { part, state, step: i === at ? run.step : null, ...described(run.counts, kinds) } as const;
+  });
+}
+
+/** Which part of how many is under way ("Part 2 of 5"), while an import runs (null: none). */
+export function importAt(run: ImportView) {
+  const parts = importProgress(run);
+  const at = parts.findIndex((part) => part.state === "now");
+  return at < 0 ? null : `Part ${at + 1} of ${parts.length}`;
+}
+
+/** What's said under an import's title: the part under way, or why it stopped. */
+export const importNote = (run: ImportView) => (run.state === "running" ? importAt(run) && `${importAt(run)}.` : run.state === "failed" ? run.error : null);
+
+/** An import in a line, as Home's card says it: the part under way, the parts it brought, or where it stopped and why. */
+export function importBrief(run: ImportView) {
+  const progress = importProgress(run);
+  const at = progress.find(({ state }) => state === "now" || state === "stopped");
+  const label = at && IMPORT_PARTS[at.part].label;
+  if (run.state === "running") {
+    return at ? `${importAt(run)}: ${label}, ${at.brought ? `${at.brought} so far` : at.leftOut ? "nothing new so far" : "starting"}.` : "Starting…";
+  }
+  if (run.state === "failed") {
+    return [at && `Stopped at ${label}.`, run.error].filter(Boolean).join(" ");
+  }
+  // Only the parts that brought something: one that only left things out (all of them already here, on importing again) didn't.
+  const brought = progress.filter((part) => part.brought).map(({ part }) => IMPORT_PARTS[part].label);
+  return brought.length > 0 ? `${new Intl.ListFormat("en").format(brought)} brought across.` : "Nothing new brought across.";
 }
 
 /** How long Home shows an import's result once it ended. */
@@ -113,15 +213,6 @@ const SHOWN_MS = 3 * 24 * 60 * 60_000;
 
 /** Whether Home shows an import: while it runs, and for a few days after it ended. */
 export const onHome = (run: ImportView, now = Date.now()) => run.state === "running" || now - new Date(run.finishedAt!).getTime() < SHOWN_MS;
-
-/**
- * Where an ended import's link on Home goes: the first part it brought, in the order the import runs them, but the team
- * when there's another (its invitations to send have a link of their own).
- */
-export const importSee = (run: ImportView) => {
-  const picked = (Object.entries(IMPORT_PARTS) as [ImportPart, ImportPartInfo][]).filter(([part]) => run.parts.includes(part));
-  return (picked.find(([part]) => part !== "team") ?? picked[0])?.[1].see ?? null;
-};
 
 /** How many invitations Home says wait to be sent, once an import ended: only to owners and admins, who can send them. */
 export const homeInvitationsToSend = (run: ImportView, admin: boolean) => (admin && run.state !== "running" ? run.invitationsToSend : 0);

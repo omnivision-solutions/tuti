@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { homeInvitationsToSend, IMPORT_PARTS, importSee, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
+import { homeInvitationsToSend, importAt, importBrief, IMPORT_PARTS, importProgress, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -50,13 +50,47 @@ test("Home shows an import while it runs and for three days after it ended", () 
   expect(onHome({ state: "failed", finishedAt: "2026-11-02T11:00:00Z" } as never, now)).toBe(false);
 });
 
-test("an ended import's link on Home is to what it brought: the first picked part's page, none for a part this release lacks", () => {
-  const run = (parts: string[]) => ({ parts }) as unknown as Parameters<typeof importSee>[0];
-  expect(importSee(run(["contacts"]))).toEqual({ label: "See users", page: "users" });
-  // The team's invitations have a link of their own: the other part's page, unless it's the team alone.
-  expect(importSee(run(["team", "contacts"]))).toEqual({ label: "See users", page: "users" });
-  expect(importSee(run(["team"]))).toEqual({ label: "See team", page: "settings/team" });
-  expect(importSee(run(["a-part-from-the-future"]))).toBeNull();
+test("each part's place: done before the step under way, the next one after it, the rest waiting; what each brought and left out", () => {
+  const counts = {
+    invitations: { imported: 2, leftOut: { "for people already invited": 1 } },
+    contacts: { imported: 1300, leftOut: {} },
+    posts: { imported: 4, leftOut: {} },
+    images: { imported: 1, leftOut: {} },
+    // The help center's images are its own, never feedback's.
+    articleImages: { imported: 0, leftOut: { "too large": 2 } },
+  };
+  const run = (state: string, step: string | null) => ({ state, step, parts: ["inbox", "docs", "feedback", "contacts", "team"], counts }) as never;
+  const states = (r: never) => importProgress(r).map(({ part, state }) => `${part} ${state}`);
+  // In the order the import runs them, whatever order they were picked in.
+  expect(states(run("running", "contacts"))).toEqual(["team done", "contacts now", "feedback next", "docs waiting", "inbox waiting"]);
+  expect(importAt(run("running", "contacts"))).toBe("Part 2 of 5");
+  // A part's later step is still that part.
+  expect(states(run("running", "votes"))).toEqual(["team done", "contacts done", "feedback now", "docs next", "inbox waiting"]);
+  expect(importProgress(run("running", "votes"))[2]).toMatchObject({ step: "votes", brought: "4 posts, 1 image", leftOut: "" });
+  expect(importProgress(run("running", "docs-content"))[3]).toMatchObject({ state: "now", brought: "", leftOut: "2 images in articles too large" });
+  // An import from before they were counted apart, without feedback: its images are the help center's.
+  const older = { state: "done", step: null, parts: ["docs"], counts: { articles: { imported: 3, leftOut: {} }, images: { imported: 0, leftOut: { "too large": 1 } } } } as never;
+  expect(importProgress(older)).toEqual([{ part: "docs", state: "done", step: null, brought: "3 articles", leftOut: "1 image too large" }]);
+  expect(importProgress(run("running", "contacts"))[0]).toMatchObject({ brought: "2 invitations", leftOut: "1 invitation for people already invited" });
+  // Failed, where it stopped; done, all of them.
+  expect(states(run("failed", "posts"))).toEqual(["team done", "contacts done", "feedback stopped", "docs waiting", "inbox waiting"]);
+  expect(importAt(run("failed", "posts"))).toBeNull();
+  expect(states(run("done", null))).toEqual(["team done", "contacts done", "feedback done", "docs done", "inbox done"]);
+});
+
+test("an import in a line, as Home's card says it", () => {
+  const counts = { contacts: { imported: 1300, leftOut: {} } };
+  const run = (state: string, step: string | null, error: string | null = null) => ({ state, step, error, parts: ["team", "contacts", "feedback"], counts }) as never;
+  expect(importBrief(run("running", "contacts"))).toBe("Part 2 of 3: Contacts, 1,300 contacts so far.");
+  expect(importBrief(run("running", "posts"))).toBe("Part 3 of 3: Feedback, starting.");
+  expect(importBrief(run("failed", "posts", "Featurebase couldn't be reached."))).toBe("Stopped at Feedback. Featurebase couldn't be reached.");
+  // Only the parts that brought something.
+  expect(importBrief(run("done", null))).toBe("Contacts brought across.");
+  // Importing again: everything already here is left out, page after page, which isn't "starting".
+  const again = (state: string, step: string | null) =>
+    ({ state, step, error: null, parts: ["team", "contacts"], counts: { invitations: { imported: 0, leftOut: { x: 1 } }, contacts: { imported: 0, leftOut: { "already brought across earlier": 1300 } } } }) as never;
+  expect(importBrief(again("running", "contacts"))).toBe("Part 2 of 2: Contacts, nothing new so far.");
+  expect(importBrief(again("done", null))).toBe("Nothing new brought across.");
 });
 
 test("the team needs nothing, and nothing needs it: unticking Contacts leaves it ticked; its invitations are counted in words", () => {

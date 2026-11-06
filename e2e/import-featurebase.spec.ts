@@ -51,6 +51,17 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(continueLink).toBeFocused();
   // The key isn't left in the page.
   await expect(key).toHaveCount(0);
+  // Each part says where it is, in the order they run: the team done, contacts under way.
+  const parts = owner.getByRole("list", { name: "What's brought across" });
+  const part = (name: string) => parts.getByRole("listitem").filter({ has: owner.getByText(name, { exact: true }) });
+  await expect(owner.getByText("Part 2 of 2.", { exact: false })).toBeVisible();
+  await expect(part("Team")).toContainText("2 invitations ready to send.");
+  // Said once, with their link: no count of its own besides.
+  await expect(part("Team")).not.toContainText("2 invitations.");
+  await expect(part("Team")).toContainText("Done");
+  await expect(part("Contacts")).toContainText("Starting…");
+  await expect(part("Contacts")).toContainText("In progress");
+  await checkpoint(owner, "setup-featurebase-importing");
   // Featurebase answers now; done, Continue still has focus (one Continue, kept as the import ends), and the summary is said.
   await fetch(`${process.env.E2E_FEATUREBASE_URL}/_fake/release`, { method: "POST" });
   await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.", { timeout: 15_000 });
@@ -68,7 +79,19 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Home says what came across, and the contacts are the project's users, with their company.
   await owner.waitForURL(`**/app/${slug}`);
   await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
-  await expect(owner.getByText("2 invitations, 3 contacts brought across.", { exact: true })).toBeVisible();
+  await expect(owner.getByText("Team and Contacts brought across.", { exact: true })).toBeVisible();
+  // Its card is a line; View details opens each part's progress, as the setup step shows it.
+  await owner.getByRole("button", { name: "View details" }).click();
+  const details = owner.getByRole("dialog", { name: "Imported from Featurebase" });
+  await expect(details.getByRole("listitem").filter({ hasText: "Team" })).toContainText("2 invitations ready to send.");
+  await expect(details.getByRole("listitem").filter({ hasText: "Team" })).not.toContainText("2 invitations.");
+  await expect(details.getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("3 contacts.");
+  await expect(details.getByRole("link", { name: "See users" })).toBeVisible();
+  // Each row says it's done to screen readers too, beside its link.
+  await expect(details.getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("Done");
+  await checkpoint(owner, "home-import-details");
+  await owner.keyboard.press("Escape");
+  await expect(details).toHaveCount(0);
   // Screen readers hear it in one status: the title and, once it's over, the summary.
   await expect(owner.getByRole("status").filter({ hasText: "Featurebase" })).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.");
   await checkpoint(owner, "home-imported");
@@ -114,7 +137,8 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await owner.goto(`/app/${slug}`);
   await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
   await expect(owner.getByText(/ready to send/)).toHaveCount(0);
-  await owner.getByRole("link", { name: "See users" }).click();
+  await owner.getByRole("button", { name: "View details" }).click();
+  await owner.getByRole("dialog").getByRole("link", { name: "See users" }).click();
   await owner.waitForURL(`**/app/${slug}/users`);
   const rows = owner.getByRole("main").getByRole("table").locator("tbody").getByRole("row");
   await expect(rows).toHaveCount(3);

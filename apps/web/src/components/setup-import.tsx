@@ -1,15 +1,17 @@
 "use client";
 
-import { ExternalLinkIcon } from "lucide-react";
+import { CircleCheckIcon, CircleDashedIcon, CircleXIcon, ExternalLinkIcon, LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { IMPORT_PARTS, type ImportPart, importSummary, importTitle, pickPart } from "@/lib/import-parts";
+import { IMPORT_PARTS, type ImportPart, importNote, importProgress, importSummary, importTitle, pickPart } from "@/lib/import-parts";
+import { cn } from "@/lib/utils";
 import { startImport } from "@/server/imports";
 import type { ImportView } from "@/server/operations/imports";
 
@@ -27,6 +29,97 @@ export function InvitationsToSend({ projectSlug, count }: { projectSlug: string;
         </Link>
       </p>
     )
+  );
+}
+
+const PART_STATE = {
+  done: { tag: "Done", icon: <CircleCheckIcon aria-hidden className="size-4.5 text-primary" /> },
+  now: { tag: "In progress", icon: <LoaderCircleIcon aria-hidden className="size-4.5 animate-spin text-primary" /> },
+  next: { tag: "Next", icon: <CircleDashedIcon aria-hidden className="size-4.5 text-muted-foreground" /> },
+  waiting: { tag: "Waiting", icon: <CircleDashedIcon aria-hidden className="size-4.5 text-muted-foreground" /> },
+  stopped: { tag: "Stopped", icon: <CircleXIcon aria-hidden className="size-4.5 text-destructive" /> },
+} as const;
+
+/**
+ * An import's parts, in the order it runs them: each one done, under way (with its steps, when it has several), next or
+ * waiting, with what it brought and left out; once it's over, a link to each part's page. The setup step and Home show it.
+ * `invitations`: the invitations waiting to be sent (said under the team's part; 0: not said).
+ */
+export function ImportProgress({ projectSlug, run, invitations }: { projectSlug: string; run: ImportView; invitations: number }) {
+  const progress = importProgress(run);
+  const toSend = <InvitationsToSend projectSlug={projectSlug} count={invitations} />;
+  return (
+    <>
+      <ol aria-label="What's brought across" className="flex flex-col divide-y">
+        {progress.map(({ part, state, step, brought, leftOut }) => {
+          const info = IMPORT_PARTS[part];
+          const steps = Object.entries(info.steps as Record<string, string>);
+          const at = steps.findIndex(([name]) => name === step);
+          const toSendHere = part === "team" && (state === "done" || state === "stopped") && invitations > 0;
+          const said = state === "now" ? (brought ? `${brought} so far.` : leftOut ? "Nothing new so far." : "Starting…") : state === "done" || state === "stopped" ? (brought ? `${brought}.` : "Nothing new.") : info.brings;
+          return (
+            <li key={part} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
+              <span className="mt-0.5 shrink-0">{PART_STATE[state].icon}</span>
+              <div className="min-w-0 flex-1">
+                <p className={cn("text-sm font-medium", (state === "next" || state === "waiting") && "text-muted-foreground")}>{info.label}</p>
+                {/* Once the team's part is done (or stopped), the invitations waiting to be sent say it, with their link, instead. */}
+                {(!toSendHere || leftOut) && (
+                  <p className="text-sm text-muted-foreground">{[!toSendHere && said, leftOut && `Left out: ${leftOut}.`].filter(Boolean).join(" ")}</p>
+                )}
+                {state === "now" && steps.length > 1 && (
+                  <ol aria-label={`${info.label}'s steps`} className="mt-1.5 flex flex-wrap gap-1.5">
+                    {steps.map(([name, label], i) => (
+                      <li
+                        key={name}
+                        aria-current={i === at ? "step" : undefined}
+                        className={cn("rounded-md border px-2 py-0.5 text-xs", i === at ? "border-primary/50 text-primary" : i < at ? "text-muted-foreground" : "border-dashed text-muted-foreground")}
+                      >
+                        {i < at && <CircleCheckIcon aria-hidden className="mr-1 inline size-3 text-primary" />}
+                        {label}
+                        <span className="sr-only">{i < at ? " (done)" : i === at ? " (in progress)" : ""}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {toSendHere && toSend}
+              </div>
+              {run.state === "done" ? (
+                <>
+                  {/* Its state, heard in the row as the tag says it while it runs. */}
+                  <span className="sr-only">{PART_STATE.done.tag}</span>
+                  <Link href={`/app/${projectSlug}/${info.see.page}`} className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline">
+                    {info.see.label}
+                  </Link>
+                </>
+              ) : (
+                // Neutral, as states that aren't a post's status are (docs/design.md); the icon carries the colour.
+                <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-xs", (state === "next" || state === "waiting") && "text-muted-foreground")}>
+                  {state === "waiting" && run.state === "failed" ? "Not started" : PART_STATE[state].tag}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {/* From an earlier import that brought the team, when this one didn't. */}
+      {!progress.some(({ part }) => part === "team") && toSend}
+    </>
+  );
+}
+
+/** Home's way into an import's full progress (ImportProgress), in a dialog that follows it while it runs. */
+export function ImportDetails({ projectSlug, run, invitations }: { projectSlug: string; run: ImportView; invitations: number }) {
+  return (
+    <Dialog>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>{run.state === "running" ? "View progress" : "View details"}</DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{importTitle(run)}</DialogTitle>
+          {importNote(run) && <DialogDescription>{importNote(run)}</DialogDescription>}
+        </DialogHeader>
+        <ImportProgress projectSlug={projectSlug} run={run} invitations={invitations} />
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -130,10 +223,13 @@ export function SetupImport({
       <CardContent className={from === "featurebase" && latest ? undefined : "sr-only"}>
         {from === "featurebase" && latest && (
           <div className="rounded-xl border p-4">
-            <p className="text-sm font-medium">{importTitle(latest)}</p>
-            <p className="text-sm text-muted-foreground">{importSummary(latest)}</p>
-            <InvitationsToSend projectSlug={projectSlug} count={latest.invitationsToSend} />
-            {running && <p className="mt-1 text-sm text-muted-foreground">It goes on while you finish setting up; Home shows how it&apos;s going.</p>}
+            <p className="mb-3 text-sm font-medium">
+              {importTitle(latest)}
+              <span className="block font-normal text-muted-foreground">
+                {[importNote(latest), running && "It goes on while you finish setting up; Home shows how it's going."].filter(Boolean).join(" ")}
+              </span>
+            </p>
+            <ImportProgress projectSlug={projectSlug} run={latest} invitations={latest.invitationsToSend} />
           </div>
         )}
       </CardContent>

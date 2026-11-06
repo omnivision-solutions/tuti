@@ -97,6 +97,9 @@ export const FEATUREBASE_ICONS: Record<string, string> = {
   UsersIcon: "users",
 };
 
+/** The help center's images, files and videos are counted apart from feedback's, so each part says its own. */
+const DOCS_MEDIA = { image: "articleImages", file: "articleFiles", video: "articleVideos" } as const;
+
 /** Why an image, file or video was left out, as the summary says it ("3 images that couldn't be fetched"). */
 const MEDIA_LEFT_OUT: Record<LeftOutReason, string> = {
   unsupported: "with nowhere to keep them",
@@ -446,7 +449,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         const { title, content } = publish ? text.live : (text.draft ?? text.live);
         const changes = publish ? text.draft : null;
         const leftOut = new Map<string, LeftOut>([...content.leftOut, ...(changes?.content.leftOut ?? [])].map((item) => [item.url, item]));
-        leftOut.forEach((item) => count(`${item.kind}s`, MEDIA_LEFT_OUT[item.reason]));
+        leftOut.forEach((item) => count(DOCS_MEDIA[item.kind], MEDIA_LEFT_OUT[item.reason]));
         const at = dateOf(article.updatedAt) ?? dateOf(article.createdAt) ?? new Date();
         const saved = await tx.article.update({
           where: { id: local.id },
