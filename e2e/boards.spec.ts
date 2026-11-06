@@ -27,8 +27,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await owner.waitForURL(`**/app/${slug}/feedback/boards`);
   // A new project starts with one board, which can't be deleted while it's the only one.
   const row = (name: string) => owner.getByRole("listitem").filter({ hasText: name });
-  // Each row says what it counts: the posts Feedback lists, the open ones as the portal counts them, and the merged duplicates.
-  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 2 posts · 1 open · 1 merged");
+  // Each row says what it counts: the posts Feedback lists (merged duplicates aside), and the open ones as the portal counts them.
+  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 2 posts · 1 open");
   await expect(row("Feature requests").getByRole("button", { name: "Delete" })).toHaveCount(0);
 
   // Add a board ("New board", in a dialog); its URL follows the name. On a short screen the dialog scrolls to its button.
@@ -103,6 +103,11 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(menu).toBeHidden();
   await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
 
+  // A merged duplicate doesn't keep a board: deleting it moves the duplicate to the board of the post it was merged into.
+  await api("/posts", { board: "bugs", title: "Crash on dark mode" });
+  await api("/posts/4/merge", { into: 1 });
+  await owner.reload();
+  await expect(row("Bug reports")).toContainText("/feedback/bugs · 0 posts");
   // Delete the empty board: gone from the team's list and from the portal.
   await row("Bug reports").getByRole("button", { name: "Delete" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();

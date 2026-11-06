@@ -137,26 +137,38 @@ export async function updateBoard(
   return {};
 }
 
-/** Only empty boards can be deleted, and a project always keeps at least one. */
+/**
+ * Only empty boards can be deleted, and a project always keeps at least one. Merged duplicates don't count (they're in
+ * no list, and Move to board can't reach them): they move to the boards of the posts they were merged into.
+ */
 export async function deleteBoard(projectSlug: string, boardId: string): Promise<FormState> {
   const project = await getAdminProject(projectSlug);
   if (!project) {
     return ADMIN_ONLY;
   }
-  const board = await prisma.board.findFirst({
-    where: { id: boardId, projectId: project.id },
-    select: { id: true, _count: { select: { posts: true } } },
-  });
+  const board = await prisma.board.findFirst({ where: { id: boardId, projectId: project.id }, select: { id: true } });
   if (!board) {
     return { error: "Board not found" };
-  }
-  if (board._count.posts > 0) {
-    return { error: "Only empty boards can be deleted. Move its posts to another board first." };
   }
   if ((await prisma.board.count({ where: { projectId: project.id } })) <= 1) {
     return { error: "A project needs at least one board" };
   }
-  await prisma.board.delete({ where: { id: board.id } });
+  const error = await prisma.$transaction(async (tx) => {
+    // The board's row locked holds off posts moved or added to it; its posts' rows, merges and unmerges of them.
+    await tx.$executeRaw`SELECT 1 FROM board WHERE id = ${board.id} FOR UPDATE`;
+    const posts = await tx.$queryRaw<{ duplicateOfId: string | null }[]>`
+      SELECT "duplicateOfId" FROM post WHERE "boardId" = ${board.id} ORDER BY id FOR UPDATE`;
+    if (posts.some((post) => !post.duplicateOfId)) {
+      return "Only empty boards can be deleted. Move its posts to another board first.";
+    }
+    await tx.$executeRaw`
+      UPDATE post SET "boardId" = original."boardId" FROM post original
+      WHERE post."boardId" = ${board.id} AND original.id = post."duplicateOfId"`;
+    await tx.board.delete({ where: { id: board.id } });
+  });
+  if (error) {
+    return { error };
+  }
   refresh();
   return {};
 }

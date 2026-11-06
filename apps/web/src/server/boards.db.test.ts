@@ -99,6 +99,36 @@ describe("deleting boards", () => {
     expect(await prisma.board.count({ where: { id: boardId } })).toBe(1);
   });
 
+  test("a board whose posts were all merged into posts elsewhere can be deleted: they move to their originals' boards", async () => {
+    await createBoard(project.slug, {}, board({ slug: "bugs" }));
+    const bugs = await prisma.board.findFirstOrThrow({ where: { projectId: project.id, slug: "bugs" } });
+    const post = (boardId: string, number: number, duplicateOfId?: string) =>
+      prisma.post.create({
+        data: { projectId: project.id, boardId, authorId: project.team[0]!.userId, number, title: "A post", body: "", duplicateOfId },
+      });
+    const original = await post(boardId, 1);
+    const duplicate = await post(bugs.id, 2, original.id);
+
+    expect(await deleteBoard(project.slug, bugs.id)).toEqual({});
+    expect(await prisma.board.count({ where: { id: bugs.id } })).toBe(0);
+    expect(await prisma.post.findUniqueOrThrow({ where: { id: duplicate.id }, select: { boardId: true, duplicateOfId: true } })).toEqual({
+      boardId,
+      duplicateOfId: original.id,
+    });
+  });
+
+  test("a merged post's original on the same board keeps the board", async () => {
+    await createBoard(project.slug, {}, board({ slug: "bugs" }));
+    const author = project.team[0]!.userId;
+    const original = await prisma.post.create({ data: { projectId: project.id, boardId, authorId: author, number: 1, title: "A post", body: "" } });
+    await prisma.post.create({
+      data: { projectId: project.id, boardId, authorId: author, number: 2, title: "A post", body: "", duplicateOfId: original.id },
+    });
+    expect(await deleteBoard(project.slug, boardId)).toEqual({
+      error: "Only empty boards can be deleted. Move its posts to another board first.",
+    });
+  });
+
   test("a project keeps at least one board", async () => {
     expect(await deleteBoard(project.slug, boardId)).toEqual({ error: "A project needs at least one board" });
   });
