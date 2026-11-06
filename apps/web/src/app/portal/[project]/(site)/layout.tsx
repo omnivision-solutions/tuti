@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { after } from "next/server";
 import { notFound } from "next/navigation";
+import Script from "next/script";
 import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
@@ -65,7 +66,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const [project, brand] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
-      select: { id: true, name: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
+      select: { id: true, name: true, widgetOnPortal: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
     }),
     portalBranding(slug),
   ]);
@@ -154,6 +155,14 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         </noscript>
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
+        {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new. */}
+        {/* Its launcher under the portal's sheets and dialogs (z-50: the assistant, the menu), still over the page. */}
+        {canRead && project.widgetOnPortal && (
+          <>
+            <style>{`body > button[aria-controls="tuti-widget"] { z-index: 40 !important; }`}</style>
+            <Script src={`${appUrl().origin}/widget.js`} data-project={slug} strategy="lazyOnload" />
+          </>
+        )}
         </PortalMenuProvider>
         </WithAssistant>
       </PortalLookProvider>

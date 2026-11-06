@@ -50,6 +50,7 @@ export function WidgetSettings({
   title,
   greeting,
   hidden,
+  onPortal,
 }: {
   projectSlug: string;
   label: string;
@@ -64,6 +65,7 @@ export function WidgetSettings({
   title: string;
   greeting: string;
   hidden: WidgetPart[];
+  onPortal: boolean;
 }) {
   const [icon, setIcon] = useState(initialIcon);
   const iconChoices = useRef<HTMLDivElement>(null);
@@ -160,6 +162,12 @@ export function WidgetSettings({
                 />
               </div>
             </fieldset>
+            <SwitchRow
+              name="onPortal"
+              label="Show on your portal"
+              description="The launcher on every page of your portal, so readers can message you, send feedback and see what's new."
+              defaultChecked={onPortal}
+            />
           </FieldGroup>
         </CardContent>
       </Card>

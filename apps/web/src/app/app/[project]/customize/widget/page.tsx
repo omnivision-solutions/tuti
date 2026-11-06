@@ -65,6 +65,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
         title={widget.title}
         greeting={widget.greeting}
         hidden={widget.hidden}
+        onPortal={widget.onPortal}
       />
     </CustomizeShell>
   );

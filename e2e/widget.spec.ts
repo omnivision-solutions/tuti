@@ -7,7 +7,7 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, png, postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, png, postFeedback, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -632,6 +632,33 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await checkpoint(laptop, "widget-seen-on-another-device");
   await phone.context().close();
   await laptop.context().close();
+});
+
+test("the portal shows the project's own widget, until the team turns it off in Customize → Widget", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  // On by default: the launcher on the portal's pages opens the panel.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/");
+  const launcher = visitor.getByRole("button", { name: "Feedback" });
+  await launcher.click();
+  await expect(visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" })).toBeVisible();
+  await checkpoint(visitor, "portal-widget-open");
+
+  // Turned off, the portal has no launcher.
+  await owner.goto(`/app/${slug}/customize/widget`);
+  const onPortal = owner.getByRole("switch", { name: "Show on your portal" });
+  await expect(onPortal).toBeChecked();
+  await onPortal.click();
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await visitor.reload();
+  await expect(visitor.getByRole("banner")).toBeVisible();
+  await expect(visitor.locator('script[src$="/widget.js"]')).toHaveCount(0);
+  await expect(launcher).toHaveCount(0);
 });
 
 test("someone signed in on the portal opens What's new in its widget: what's new to them stays marked while their visit is recorded", async ({ browser }, testInfo) => {
