@@ -358,14 +358,15 @@ test("a page of comments cut short goes on after the last one done, even when on
   const importStep = handlers.importStep;
   let cut = false;
   handlers.importStep = async (input, log) => {
-    const step = (await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } })).step;
-    const result = await importStep(input, log);
-    // After the first comments page: the first comment deleted in Featurebase, so the list shifts up by one.
-    if (step === "comments" && !cut) {
+    // Before the second comments page (pages run one inside another, inline): the last comment done is deleted in
+    // Featurebase, so the list shifts up by one.
+    const { step, cursor } = await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } });
+    const after = step === "comments" && cursor?.startsWith("{") && (JSON.parse(cursor) as { after: { id: string } | null }).after;
+    if (after && !cut) {
       cut = true;
-      fake.fixtures.comments.shift();
+      fake.fixtures.comments = fake.fixtures.comments.filter((comment) => comment.id !== after.id);
     }
-    return result;
+    return importStep(input, log);
   };
   let now = 0;
   Object.assign(FEEDBACK_PAGE, { softMs: 0, now: () => ++now });
