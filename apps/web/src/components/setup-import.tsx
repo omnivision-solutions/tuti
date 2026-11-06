@@ -273,7 +273,6 @@ export function SetupImport({
                 </label>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground">Your team, contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.</p>
             {latest && <p className="text-sm text-muted-foreground">Importing again brings only what&apos;s new since: nothing comes twice.</p>}
             {boardsNote && picked.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}

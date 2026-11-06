@@ -88,6 +88,13 @@ test("each part's place: done before the step under way, the next one after it, 
   expect(importProgress(stopped)[0]).toMatchObject({ brought: "3 contacts" });
 });
 
+test("the changelog runs after feedback and says its own images, apart from feedback's and the help center's", () => {
+  const counts = { images: { imported: 4, leftOut: {} }, changelogEntries: { imported: 29, leftOut: {} }, changelogImages: { imported: 6, leftOut: { "that couldn't be fetched": 1 } } };
+  const run = { state: "running", step: "changelog", parts: ["docs", "changelog", "feedback", "contacts"], counts } as never;
+  expect(importProgress(run).map(({ part, state }) => `${part} ${state}`)).toEqual(["contacts done", "feedback done", "changelog now", "docs next"]);
+  expect(importProgress(run)[2]).toMatchObject({ brought: "29 changelog entries, 6 images in the changelog", leftOut: "1 image in the changelog that couldn't be fetched" });
+});
+
 test("an import in a line, as Home's card says it", () => {
   const counts = { contacts: { imported: 1300, leftOut: {} } };
   const run = (state: string, step: string | null, error: string | null = null) => ({ state, step, error, parts: ["team", "contacts", "feedback"], counts }) as never;

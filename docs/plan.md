@@ -832,7 +832,7 @@ Decided (2026-11-05):
 
 ## Switching from Featurebase (asked 2026-11-05)
 
-Teams with years of feedback, docs and support conversations in another tool won't switch if they lose them. The first run asks where the team is coming from and brings their team, contacts, feedback, help center and inbox across, starting with Featurebase. Featurebase's changelog isn't brought across yet (see Later), and the setup step says so.
+Teams with years of feedback, docs and support conversations in another tool won't switch if they lose them. The first run asks where the team is coming from and brings their team, contacts, feedback, changelog, help center and inbox across, starting with Featurebase.
 
 Decided (2026-11-05):
 - **Asked in the first run.** Setup's first step is "Where are you coming from?": Starting fresh, or Featurebase (other tools later). Featurebase asks for an API key (where to make one in Featurebase, in a sentence) and what to bring: Contacts, Feedback (boards, posts, votes and comments), Help center (collections and articles) and Inbox (conversations). Feedback and Inbox need Contacts, so the right people wrote each post, vote, comment and message: ticking either ticks Contacts, and unticking Contacts unticks both. Setup's later steps follow; the import runs meanwhile.
@@ -867,7 +867,7 @@ One PR per item; 2 doesn't need 1, and 3, 4 and 5 need both:
 - [ ] Preview deployments per PR
 - [ ] Featurebase's help center in its other languages (the import brings its default locale only), once articles keep a locale
 - [ ] AI translations of the help center and widget, with a glossary; keep a locale on articles from the start (from the Ferndesk review, 2026-10-19)
-- [ ] Featurebase's changelog as a part of the import (entries with their dates, covers and linked posts; subscribers with Contacts; nothing emailed), once I1–I5 are in
+- [x] Featurebase's changelog as a part of the import (entries with their dates, covers and linked posts; subscribers with Contacts; nothing emailed), once I1–I5 are in. Done (2026-11-06): the `changelog` part (`@tuti/jobs` import-changelog.ts; checked by reading `/changelogs` once), written straight to the database as sample content is (nothing announced, emailed or sent to webhooks): entries in date order (numbered so), ten a page, published at their date or drafts as drafts, content through `htmlToContent("changelog")` with images copied, the featured image as the cover, categories as tags by their words (new, improved, fixed, breaking; others none), one Featurebase emailed to subscribers marked emailed (`subscribersEmailedAt`) so publishing it again doesn't email it twice; entries only some segments or roles see left out, and comments on entries counted (Tuti's changelog has none). Not brought: linked posts and subscribers, which Featurebase's API doesn't list
 - [ ] Import from other help centers (crawl a public URL, keep URLs with redirects) and feedback boards (Canny; Featurebase is under "Switching from Featurebase") (from the Ferndesk review, 2026-10-19)
 - [ ] A generic "support endpoint" (JSON of conversations) as a source for docs gaps, before any native helpdesk integration (from the Ferndesk review, 2026-10-19)
 - [ ] Slack and Linear: start an agent task ("draft docs from this thread") (from the Ferndesk review, 2026-10-19)

@@ -6,6 +6,7 @@ import { openValue } from "@tuti/shared/signed";
 import { type PropertyChanges, propertyChanges } from "@tuti/shared/user-properties";
 
 import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseContact, FeaturebaseError } from "./featurebase";
+import { changelogPage } from "./import-changelog";
 import { checkDocs, DOCS_STEPS } from "./import-docs";
 import { avatarsPage, feedbackSteps } from "./import-feedback";
 import { conversationsPage } from "./import-inbox";
@@ -71,6 +72,7 @@ export const IMPORT_PARTS: Record<string, { check: (api: Featurebase) => Promise
   team: { check: (api) => api.get("/admins"), steps: [{ name: "team", page: teamPage }] },
   contacts: { check: (api) => api.get("/contacts", { limit: 1, contactType: "all" }), steps: [{ name: "contacts", page: contactsPage }] },
   feedback: { check: (api) => Promise.all([api.get("/boards"), api.get("/posts", { limit: 1 })]), steps: feedbackSteps },
+  changelog: { check: (api) => api.get("/changelogs", { limit: 1, state: "all" }), steps: [{ name: "changelog", page: changelogPage }] },
   docs: { check: checkDocs, steps: DOCS_STEPS },
   inbox: { check: (api) => api.get("/conversations", { limit: 1 }), steps: [{ name: "conversations", page: conversationsPage }] },
   // Last: the least of it, and the slowest, so nothing waits for it (it reads only what's here: nothing to check).
