@@ -31,7 +31,7 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   await owner.waitForURL(`${own}/docs`);
   // The project's own widget, its panel under the path too, and its links.
   await owner.getByRole("button", { name: "Feedback" }).click();
-  await expect(owner.locator('iframe[title="Feedback"]')).toHaveAttribute("src", new RegExp(`^${own.replace(/[.:]/g, "\\$&")}/widget`));
+  await expect(owner.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${own}/widget`);
   const panel = owner.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" });
   await panel.getByRole("link", { name: "Feedback" }).click();
   await expect(panel.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
