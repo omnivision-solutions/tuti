@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -159,8 +160,8 @@ test("the widget's panel under a path of the team's site keeps the path in its t
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  // Articles for the Help center (one in a collection, close to a question for the AI), ideas for Feedback, an update
-  // for What's new that completes one, and Messages on.
+  // The Help center: two docs tabs, a collection with one in it (and one in the other tab), and articles (one close to a question for the AI, one
+  // read today, so Home suggests it). Ideas for Feedback, an update for What's new that completes one, and Messages on.
   const api = await apiFor(owner, slug);
   const collection = await api("/collections", { name: "Getting started" });
   const question = `How do I add a colleague to Acme ${slug}?`;
@@ -169,6 +170,21 @@ test("the widget's panel under a path of the team's site keeps the path in its t
   await api(`/articles/${inviting.slug}/publish`, {});
   const exporting = await api("/articles", { title: "Exporting your data", body: "Download a CSV of every post." });
   await api(`/articles/${exporting.slug}/publish`, {});
+  const advanced = await api("/collections", { name: "Advanced", parent: collection.slug });
+  const roles = await api("/articles", { title: "Roles", body: "Who can do what.", collection: advanced.slug });
+  await api(`/articles/${roles.slug}/publish`, {});
+  await api("/tabs", { name: "Guides" });
+  await api("/tabs", { name: "API" });
+  const endpoints = await api("/collections", { name: "Endpoints", tab: "api" });
+  const keys = await api("/articles", { title: "API keys", body: "Make one in Settings.", collection: endpoints.slug });
+  await api(`/articles/${keys.slug}/publish`, {});
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `INSERT INTO article_view_day ("articleId", day, views) SELECT a.id, (now() AT TIME ZONE 'UTC')::date, 1 FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = $2`,
+    [slug, exporting.slug],
+  );
+  await db.end();
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/posts", { board: "feature-requests", title: "CSV export" });
   await api("/changelog", { title: "CSV export is here", posts: [2] });
@@ -202,6 +218,14 @@ test("the widget's panel under a path of the team's site keeps the path in its t
   const under = (params: Record<string, string>) => (url: URL) =>
     url.origin === siteUrl() && url.pathname === "/help/widget" && Object.entries(params).every(([key, value]) => url.searchParams.get(key) === value);
 
+  // Home's cards and suggested article.
+  await expect(visitor.getByRole("link", { name: /^Send us a message/ })).toHaveAttribute("href", "/help/widget?tab=messages");
+  await expect(visitor.getByRole("link", { name: /^Share an idea/ })).toHaveAttribute("href", "/help/widget?tab=feedback");
+  await expect(visitor.getByRole("list", { name: "Suggested articles" }).getByRole("link", { name: "Exporting your data" })).toHaveAttribute(
+    "href",
+    `/help/widget?tab=docs&article=${exporting.slug}`,
+  );
+
   // What's new, an update and back.
   await visitor.getByRole("link", { name: /^What's new/ }).click();
   await expect(visitor).toHaveURL(at("?tab=whats-new"));
@@ -221,15 +245,29 @@ test("the widget's panel under a path of the team's site keeps the path in its t
     "href",
     `/help/widget?tab=docs&q=export&article=${exporting.slug}`,
   );
-  await visitor.getByRole("searchbox", { name: "Search the docs" }).fill("invite");
-  await visitor.getByRole("searchbox", { name: "Search the docs" }).press("Enter");
+  // Once the page's script runs (its Search button goes), the box searches in the page; nothing found, it offers all
+  // articles; cleared, it's back to them.
+  const docsSearch = visitor.getByRole("searchbox", { name: "Search the docs" });
+  await expect(visitor.getByRole("search").filter({ has: docsSearch })).toHaveAttribute("action", "/help/widget");
+  await expect(visitor.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
+  await docsSearch.fill("invite");
+  await docsSearch.press("Enter");
   await expect(visitor).toHaveURL(at("?tab=docs&q=invite"));
+  await docsSearch.fill("qwxyz");
+  await docsSearch.press("Enter");
+  await expect(visitor).toHaveURL(at("?tab=docs&q=qwxyz"));
+  await expect(visitor.getByRole("link", { name: "All articles" })).toHaveAttribute("href", "/help/widget?tab=docs");
+  await docsSearch.fill("");
+  await expect(visitor).toHaveURL(at("?tab=docs"));
 
   // The tabs, a collection, an article and the ways back.
   await tabs.getByRole("link", { name: "Help center" }).click();
   await expect(visitor).toHaveURL(at("?tab=docs"));
+  await expect(visitor.getByRole("navigation", { name: "Docs tabs" }).getByRole("link", { name: "API" })).toHaveAttribute("href", "/help/widget?tab=docs&docsTab=api");
+  await expect(visitor.getByRole("link", { name: "Exporting your data" })).toHaveAttribute("href", `/help/widget?tab=docs&docsTab=guides&article=${exporting.slug}`);
   await visitor.getByRole("link", { name: /^Getting started/ }).click();
   await expect(visitor).toHaveURL(under({ tab: "docs", collection: collection.slug }));
+  await expect(visitor.getByRole("link", { name: /^Advanced/ })).toHaveAttribute("href", `/help/widget?tab=docs&docsTab=guides&collection=${advanced.slug}`);
   await visitor.getByRole("link", { name: "Inviting your team" }).click();
   await expect(visitor).toHaveURL(under({ tab: "docs", collection: collection.slug, article: inviting.slug }));
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
