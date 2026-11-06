@@ -44,11 +44,17 @@ test("a user's page lists what they did with every account that is them, as User
 
 test("someone who marked the project's email as spam says so: replies aren't emailed to them any more", async () => {
   const project = await createProject(await signUp());
-  const userId = await upsertProjectUser(project.id, "ann-3", { name: "Ann Ash", email: "E2E-Ann@example.com" });
-  const panel = async () =>
-    renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true }, page: true }));
-  expect(await panel()).not.toContain("as spam");
+  const other = await createProject(await signUp());
+  const ids = await Promise.all([project, other].map((p) => upsertProjectUser(p.id, "ann-3", { name: "Ann Ash", email: "E2E-Ann@example.com" })));
+  // Their page in Users, and beside a conversation in the Inbox.
+  const panel = async (p: typeof project, userId: string, page: boolean) =>
+    renderToStaticMarkup(await PersonPanel({ projectId: p.id, slug: p.slug, person: { userId, email: null, emailVerified: true }, page }));
+  const notice = "Marked your email as spam, so replies aren&#x27;t emailed to them any more.";
+  expect(await panel(project, ids[0]!, true)).not.toContain(notice);
   // As SES's complaint saves it: lowercase.
   await prisma.emailBlock.create({ data: { projectId: project.id, email: "e2e-ann@example.com" } });
-  expect(await panel()).toContain("Marked your email as spam, so replies aren&#x27;t emailed to them any more.");
+  expect(await panel(project, ids[0]!, true)).toContain(notice);
+  expect(await panel(project, ids[0]!, false)).toContain(notice);
+  // Only that project's.
+  expect(await panel(other, ids[1]!, true)).not.toContain(notice);
 });
