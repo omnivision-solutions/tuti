@@ -110,8 +110,8 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
   const [rows, setRows] = useState<Row[]>(() => rowsOf(group));
   const [match, setMatch] = useState<Match>(group?.match ?? "all");
   const [preview, setPreview] = useState<GroupPreview | { error: string } | null>(null);
-  // Each property's values, as its users have them, once its name is typed (names fetched once each).
-  const [values, setValues] = useState<Record<string, string[]>>({});
+  // Each property's values, as its users have them, once its name is typed (names fetched once each). A Map: any name, "constructor" too.
+  const [values, setValues] = useState(() => new Map<string, string[]>());
   const latest = useRef(0);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveGroup(projectSlug, group?.key ?? null, prev, formData);
@@ -139,14 +139,14 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
     return () => clearTimeout(timer);
   }, [previewable, projectSlug, rows, match]);
 
-  const wanted = [...new Set(rows.map((row) => row.property.trim()).filter((name) => name !== "" && !Object.hasOwn(values, name)))].join("\n");
+  const wanted = [...new Set(rows.map((row) => row.property.trim()).filter((name) => name !== "" && !values.has(name)))].join("\n");
   useEffect(() => {
     if (!open || wanted === "") {
       return;
     }
     const timer = setTimeout(async () => {
       const found = await Promise.all(wanted.split("\n").map(async (name) => [name, await suggestValues(projectSlug, name)] as const));
-      setValues((current) => ({ ...current, ...Object.fromEntries(found.map(([name, result]) => [name, "values" in result ? result.values : []])) }));
+      setValues((current) => new Map([...current, ...found.map(([name, result]) => [name, "values" in result ? result.values : []] as const)]));
     }, PREVIEW_DELAY_MS);
     return () => clearTimeout(timer);
   }, [open, projectSlug, wanted]);
@@ -163,7 +163,7 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
           setRows(rowsOf(group));
           setMatch(group?.match ?? "all");
           setPreview(null);
-          setValues({});
+          setValues(new Map());
         }
         setOpen(next);
       }}
@@ -287,7 +287,7 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
                         )}
                         {suggestsValues(row.op) && (
                           <datalist id={`group-values-${id}-${i}`}>
-                            {(values[row.property.trim()] ?? []).map((value) => (
+                            {(values.get(row.property.trim()) ?? []).map((value) => (
                               <option key={value} value={value} />
                             ))}
                           </datalist>

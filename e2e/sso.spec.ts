@@ -449,6 +449,9 @@ test("a group from conditions: readers whose properties match read its collectio
   await expect(preview).toHaveText("Complete a condition to see who matches.");
   // A new group starts with one condition to fill in.
   const condition = dialog.getByRole("group", { name: "Condition 1" });
+  // Any name is a property's, even one every object has.
+  await condition.getByLabel("Property").fill("constructor");
+  await expect(condition.getByLabel("Value")).toBeVisible();
   await condition.getByLabel("Property").fill("plan");
   await expect(preview).toHaveText("Complete a condition to see who matches.");
   // Its value field suggests the values the app's users have.
