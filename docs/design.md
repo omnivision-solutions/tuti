@@ -356,6 +356,9 @@ Use these instead of hand-rolling layout:
   main action must stay in reach on phones (Save and Publish) pins `actions` to a
   bar at the bottom of the screen there (`pinActions`), the menu keeping `more`;
   the bar steps aside while text is being typed (the keyboard is up then).
+  Where Tuti's own chat launcher shows in the app (its cloud), what's held at the
+  bottom of the screen (that bar, the Inbox's reply box, Autopilot's Approve) keeps
+  its buttons clear of the launcher's corner (`launcher:`).
 - **`BackLink`**: "← Feedback" above a detail page's header; in the app it's
   `PageHeader`'s `back`, before the title in the top bar.
 - **`ItemList` + `ItemRow`** (`leading`, `title`, `badges`, `meta`, `actions`):

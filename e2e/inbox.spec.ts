@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { type Browser, expect, type Locator, type Page, test } from "@playwright/test";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
@@ -1535,4 +1535,66 @@ test("on a server selling plans, a conversation closed before the plan's history
   await expect(owner.getByText("Nothing has happened in it for more than 7 days, longer than your plan keeps inbox history. Upgrade to see it again.")).toBeVisible();
   await expect(owner.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "conversation-past-plan-history");
+});
+
+// On Tuti's cloud, whose team app shows its own chat launcher at the bottom right (APP_WIDGET_PROJECT).
+test("on a phone with Tuti's chat launcher, the reply box's buttons and a page's pinned Save stay clear of it, all of them clickable (the reply's on a laptop too)", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-long@example.com", body: "Message 1" });
+  for (let i = 2; i <= 12; i++) {
+    await api("/conversations/1/messages", { body: `Message ${i}\n\nwith a few lines\nto make it tall` });
+  }
+  const launcher = owner.locator('body > button[aria-controls="tuti-widget"]');
+  // The middle of each is what's there: nothing over it.
+  const clickable = (locator: Locator) =>
+    locator.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    });
+  const expectClear = async (buttons: Locator) => {
+    const pad = (await launcher.boundingBox())!;
+    expect(await clickable(launcher)).toBe(true);
+    for (const button of await buttons.all()) {
+      const box = (await button.boundingBox())!;
+      const apart = box.x + box.width <= pad.x || pad.x + pad.width <= box.x || box.y + box.height <= pad.y || pad.y + pad.height <= box.y;
+      expect(apart, `${await button.textContent()} is under the launcher`).toBe(true);
+      expect(await clickable(button)).toBe(true);
+    }
+  };
+
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  const buttons = owner.locator("form").filter({ has: reply }).getByRole("button");
+  await expect(owner.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
+  await expect(launcher).toBeVisible();
+  // At the newest message, then scrolled up, where the reply box is held at the bottom of the screen.
+  await checkpoint(owner, "inbox-phone-launcher", { fullPage: false });
+  await expectClear(buttons);
+  await owner.getByRole("list", { name: "Messages" }).locator(":scope > li").first().scrollIntoViewIfNeeded();
+  await expect(reply).toBeInViewport();
+  await checkpoint(owner, "inbox-phone-launcher-scrolled-up", { fullPage: false });
+  await expectClear(buttons);
+  // At its end, where the reply box is, it ends with the page: no gap under it.
+  await owner.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const send = owner.getByRole("button", { name: "Send", exact: true });
+  const y = (await send.boundingBox())!.y;
+  await owner.getByRole("list", { name: "Messages" }).locator(":scope > li").first().scrollIntoViewIfNeeded();
+  expect((await send.boundingBox())!.y).toBe(y);
+  // On a laptop the conversation beside the list is one column too, its Send at the window's right edge.
+  await owner.setViewportSize({ width: 1024, height: 768 });
+  await expect(owner.getByRole("navigation", { name: "Views" })).toBeVisible();
+  await checkpoint(owner, "inbox-laptop-launcher", { fullPage: false });
+  await expectClear(buttons);
+  await owner.setViewportSize({ width: 390, height: 844 });
+
+  // A page whose Save is pinned to the bottom of the screen on phones.
+  await owner.goto(`/app/${slug}/changelog/new`);
+  await expect(owner.locator("[data-pinned-actions]")).toBeVisible();
+  await checkpoint(owner, "changelog-phone-launcher", { fullPage: false });
+  await expectClear(owner.locator("[data-pinned-actions]").getByRole("button"));
 });

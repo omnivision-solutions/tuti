@@ -162,7 +162,7 @@ export function PostReview({
       {notice}
       {/* One bar: while a part waits for someone, none goes out by itself (Approve takes them all). */}
       {update.status === "scheduled" && (
-        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between launcher:max-sm:pb-22 launcher:sm:pr-24">
           <p className="text-sm font-medium">{update.dueAt && <GoesOut at={update.dueAt} />}</p>
           <ScheduledButtons
             projectSlug={projectSlug}
@@ -176,7 +176,7 @@ export function PostReview({
       )}
       {waiting && (
         // Stays at the bottom of the screen.
-        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end launcher:max-sm:pb-22 launcher:sm:pr-24">
           <DismissButton disabled={pending} onDismiss={dismiss} />
           <Button className="w-full sm:w-auto" disabled={pending || says.blocked} focusableWhenDisabled onClick={() => setConfirming(true)}>
             Approve
