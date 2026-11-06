@@ -270,6 +270,31 @@ test("an article deleted here before its content came stays deleted; restored, t
   expect(await article("Roadmap notes")).toMatchObject({ body: "Not ready yet.", publishedAt: null });
 });
 
+test("each article is counted once, on the run of a page that decides it: one left by the time cut and skipped when the page is read again is counted then", async () => {
+  await structureOnly();
+  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["docs"], step: "docs-content" } });
+  const job = importJob(row)!;
+  const step = STEPS.docs!.steps[2]!;
+  const budget = contentBudget.ms;
+  contentBudget.ms = -1;
+  try {
+    // The page converts its first article, then is out of time: the rest are left to the page read again.
+    let page = await step.page(job, null);
+    await prisma.$transaction((tx) => page.save(tx));
+    expect(page.next).toMatch(/^again:/);
+    // Before then, the team deletes one of those.
+    await call(deleteArticle, asOwner(), { slug: (await article("Roadmap notes")).slug });
+    while (page.next) {
+      page = await step.page(job, page.next);
+      await prisma.$transaction((tx) => page.save(tx));
+    }
+  } finally {
+    contentBudget.ms = budget;
+  }
+  // Four articles, each counted once: two brought, one only some could see, one deleted here.
+  expect(job.counts).toEqual({ articles: { imported: 2, leftOut: { "deleted here since": 1 } }, privateDrafts: { imported: 1, leftOut: {} } });
+});
+
 test("an article whose content didn't land is filled in by the next import; the others stay as they are", async () => {
   await importDocs();
   const welcome = await article("Welcome to Acme");

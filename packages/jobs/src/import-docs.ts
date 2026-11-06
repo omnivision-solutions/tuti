@@ -32,7 +32,10 @@ const CONTENT_PAGE = 20;
  * one article a page, so it always gets on. Changeable for tests.
  */
 export const contentBudget = { ms: 90_000 };
-/** A content page's cursor that reads the list's page at the cursor after it again (none: the first). */
+/**
+ * A content page's cursor that reads the list's page at the cursor after it again (none: the first), with the ids of
+ * the articles left to it (`again:<cursor>|<id>,<id>`): only those are counted then, whatever becomes of them.
+ */
 const AGAIN = "again:";
 
 /** The key is checked against the help center's lists before an import starts. */
@@ -326,9 +329,11 @@ type Text = { title: string; content: HtmlContent };
  */
 async function contentPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const started = Date.now();
-  // A page read again counts only what it converts: it counted the rest the first time.
+  // A page read again counts only the articles left to it: the run before counted what it decided.
   const again = cursor?.startsWith(AGAIN) ?? false;
-  const listCursor = again ? cursor!.slice(AGAIN.length) || null : cursor;
+  const [againCursor = "", leftToIt = ""] = again ? cursor!.slice(AGAIN.length).split("|") : [];
+  const listCursor = again ? againCursor || null : cursor;
+  const counted = (article: FeaturebaseArticle) => !again || leftToIt.split(",").includes(article.id);
   const { items, next: listNext } = await job.featurebase.page<FeaturebaseArticle>("/help_center/articles", listCursor, { state: "all", limit: CONTENT_PAGE });
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
@@ -371,7 +376,8 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
     texts.push({ article, live, draft: differs ? (draft as Text) : null, draftLost: draft && "error" in draft ? draft.error : null });
   }
-  const next = texts.length < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
+  const left = todo.filter((article) => !texts.some((t) => t.article === article));
+  const next = left.length > 0 ? `${AGAIN}${listCursor ?? ""}|${left.map((article) => article.id).join(",")}` : listNext;
   if (!next) {
     mediaCaches.delete(job.id);
   }
@@ -387,6 +393,8 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       const limit = articleLimit(plan);
       let room = limit === null ? Infinity : limit - (await tx.article.count({ where: { projectId: job.projectId, publishedAt: { not: null }, deletedAt: null } }));
       for (const article of items) {
+        // Counted on the run that decides what becomes of it, once.
+        const count = (kind: string, reason: string | null) => counted(article) && tally(job.counts, kind, reason);
         const local = locals.get(article.id);
         const text = texts.find((t) => t.article === article);
         // Not converted for want of time: the page read again does it.
@@ -395,37 +403,31 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         }
         // Deleted here before its content landed: left deleted and not landed, so if it's restored, a later import fills it in.
         if (local?.deleted && !local.landed) {
-          if (!again) {
-            tally(job.counts, "articles", "deleted here since");
-          }
+          count("articles", "deleted here since");
           continue;
         }
         // Landed before (or by a run of this page that got in first), deleted here since it landed, or saved by the team
         // since it was made empty (an import that stopped between its passes, started again): as it is. The team's
         // isn't marked landed: nothing of Featurebase's landed; it's told as theirs by its title and text each time.
         if (local && !local.landed && !local.deleted && teamSaved(local)) {
-          if (!again) {
-            tally(job.counts, "articles", "edited here before their text came, so left as they are");
-          }
+          count("articles", "edited here before their text came, so left as they are");
           continue;
         }
         if (!local || local.landed || local.deleted || !text) {
-          if (!again) {
-            tally(job.counts, "articles", ALREADY_HERE);
-          }
+          count("articles", ALREADY_HERE);
           continue;
         }
         await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
         if ("error" in text.live) {
-          tally(job.counts, "articles", `${text.live.error} (they're empty drafts)`);
+          count("articles", `${text.live.error} (they're empty drafts)`);
           continue;
         }
         const everyone = isDeepStrictEqual(article.visibleBy ?? ["everyone"], ["everyone"]);
         const wasPublished = article.isPublished ?? article.state === "live";
         const publish = wasPublished && everyone && room > 0;
-        tally(job.counts, wasPublished && !everyone ? "privateDrafts" : wasPublished && !publish ? "limitDrafts" : "articles", null);
+        count(wasPublished && !everyone ? "privateDrafts" : wasPublished && !publish ? "limitDrafts" : "articles", null);
         if (text.draftLost) {
-          tally(job.counts, "unpublishedChanges", `${text.draftLost} (the published version came in)`);
+          count("unpublishedChanges", `${text.draftLost} (the published version came in)`);
         }
         if (publish) {
           room--;
@@ -434,7 +436,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         const { title, content } = publish ? text.live : (text.draft ?? text.live);
         const changes = publish ? text.draft : null;
         const leftOut = new Map<string, LeftOut>([...content.leftOut, ...(changes?.content.leftOut ?? [])].map((item) => [item.url, item]));
-        leftOut.forEach((item) => tally(job.counts, `${item.kind}s`, MEDIA_LEFT_OUT[item.reason]));
+        leftOut.forEach((item) => count(`${item.kind}s`, MEDIA_LEFT_OUT[item.reason]));
         const at = dateOf(article.updatedAt) ?? dateOf(article.createdAt) ?? new Date();
         const saved = await tx.article.update({
           where: { id: local.id },
