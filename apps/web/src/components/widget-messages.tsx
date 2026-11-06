@@ -9,6 +9,7 @@ import { useDocsAssistant } from "@/components/docs-assistant-context";
 import { EmptyState } from "@/components/empty-state";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageText } from "@/components/inbox/message-text";
+import { usePortalHref } from "@/components/portal-base";
 import { useScrollToEnd } from "@/components/scroll-to-end";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -318,6 +319,7 @@ type Live = { connected: boolean; version: number };
  */
 function useLive(projectSlug: string, auth: WidgetAuth): Live {
   const [live, setLive] = useState<Live>({ connected: false, version: 0 });
+  const at = usePortalHref();
   useEffect(() => {
     const controller = new AbortController();
     const authorization = auth.token ? `Widget ${auth.token}` : auth.visitor ? `Visitor ${auth.visitor}` : null;
@@ -325,7 +327,7 @@ function useLive(projectSlug: string, auth: WidgetAuth): Live {
     void (async () => {
       while (!controller.signal.aborted) {
         try {
-          const response = await fetch(`/api/widget/live?project=${encodeURIComponent(projectSlug)}`, {
+          const response = await fetch(at(`/api/widget/live?project=${encodeURIComponent(projectSlug)}`), {
             headers: authorization ? { authorization } : {},
             signal: controller.signal,
           });
@@ -359,7 +361,7 @@ function useLive(projectSlug: string, auth: WidgetAuth): Live {
       }
     })();
     return () => controller.abort();
-  }, [projectSlug, auth.token, auth.visitor]);
+  }, [projectSlug, auth.token, auth.visitor, at]);
   return live;
 }
 
@@ -725,12 +727,13 @@ function FirstMessage({
   onSignedIn: (number: number) => void;
 }) {
   const askFirst = useAskFirst();
+  const at = usePortalHref();
   return (
     <div className="flex flex-col gap-4">
       <TeamCard team={team} />
       <p className="text-sm text-muted-foreground">
         {askFirst ? "Ask anything: you'll get an answer right away, and a person if you need one." : "Leave your email so the team can get back to you."}{" "}
-        <a href="/sign-in" target="_blank" rel="noreferrer" className="underline underline-offset-4">
+        <a href={at("/sign-in")} target="_blank" rel="noreferrer" className="underline underline-offset-4">
           Sign in
         </a>{" "}
         to see your past conversations.

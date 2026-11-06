@@ -6,7 +6,7 @@ import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } fro
 
 import { AskAIButton } from "@/components/docs-assistant";
 import { LockedMark } from "@/components/docs-collections";
-import { usePortalSlug } from "@/components/portal-base";
+import { usePortalHref, usePortalSlug } from "@/components/portal-base";
 import { EmptyState } from "@/components/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,11 +20,12 @@ const SEARCH_DELAY_MS = 150;
 
 /** Search results in the widget's Docs tab, each opening the article with the search kept, so going back returns to them. */
 export function WidgetSearchResults({ query, results }: { query: string; results: DocsSearchResult[] }) {
+  const at = usePortalHref();
   return (
     <ul aria-label="Search results" className="flex flex-col gap-4">
       {results.map((result) => (
         <li key={result.slug} className="flex flex-col gap-0.5">
-          <Link href={docsHref({ q: query, article: result.slug })} className="break-words text-primary hover:underline">
+          <Link href={at(docsHref({ q: query, article: result.slug }))} className="break-words text-primary hover:underline">
             {result.title}
             {result.locked && <LockedMark />}
           </Link>
@@ -37,12 +38,13 @@ export function WidgetSearchResults({ query, results }: { query: string; results
 
 /** What the Docs tab says when nothing matches the search. */
 export function WidgetNoResults({ query, onBrowse }: { query: string; onBrowse?: () => void }) {
+  const at = usePortalHref();
   return (
     <EmptyState
       title={`No articles match “${query}”`}
       description="Try other words, or browse all articles."
       action={
-        <Link href={docsHref({})} onClick={onBrowse} className={buttonVariants({ variant: "outline" })}>
+        <Link href={at(docsHref({}))} onClick={onBrowse} className={buttonVariants({ variant: "outline" })}>
           All articles
         </Link>
       }
@@ -61,6 +63,7 @@ export function WidgetNoResults({ query, onBrowse }: { query: string; onBrowse?:
  */
 export function WidgetDocsSearch({ query, children }: { query: string; children: ReactNode }) {
   const slug = usePortalSlug();
+  const at = usePortalHref();
   const router = useRouter();
   // Once the page's script runs (false while rendering on the server and hydrating).
   const enhanced = useSyncExternalStore(
@@ -131,14 +134,14 @@ export function WidgetDocsSearch({ query, children }: { query: string; children:
       <div className="flex flex-wrap gap-2">
         <form
           role="search"
-          action="/widget"
+          action={at("/widget")}
           onSubmit={(event) => {
             event.preventDefault();
             // `?q=` counts it itself, so a search as typed still on its way isn't kept to count again.
             latest.current++;
             searched.current = null;
             setSent(q);
-            router.push(docsHref({ q }));
+            router.push(at(docsHref({ q })));
           }}
           className="flex min-w-0 flex-1 basis-60 gap-2"
         >
@@ -152,7 +155,7 @@ export function WidgetDocsSearch({ query, children }: { query: string; children:
               // Cleared after a search at `?q=`: back to the docs.
               if (!event.target.value.trim() && query) {
                 setSent("");
-                router.replace(docsHref({}));
+                router.replace(at(docsHref({})));
               }
             }}
             maxLength={200}

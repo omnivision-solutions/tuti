@@ -294,7 +294,7 @@ export function AskAPerson({
       <div role="status" className="flex w-full flex-col items-start gap-2 text-foreground">
         <p className="font-semibold">We&apos;ve passed this to the team. Their reply will show in Messages.</p>
         {widget ? (
-          <Link href="/widget?tab=messages" onClick={onLeave} className={button}>
+          <Link href={at("/widget?tab=messages")} onClick={onLeave} className={button}>
             Open Messages
           </Link>
         ) : (

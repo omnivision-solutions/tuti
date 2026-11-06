@@ -25,6 +25,7 @@ import { WidgetMessages } from "@/components/widget-messages";
 import { UnreadCount, UnreadDot, WidgetUnread } from "@/components/widget-whats-new";
 import { widgetHeaderStyle } from "@/lib/colors";
 import { appUrl } from "@/lib/hosts";
+import { withBase } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
 import { publishedEntries } from "@/server/changelog-queries";
@@ -37,6 +38,7 @@ import { widgetSettings } from "@/server/operations/widget";
 import { widgetIdeas } from "@/server/widget";
 import { canActIn } from "@/server/membership";
 import { mayRead } from "@/server/portal-access";
+import { portalBase, portalHref, portalLinks } from "@/server/portal-base";
 import { getSession } from "@/server/session";
 import { portalReaderHome, suggestedArticles, teamFaces, usualReplyMs, whatsNewSeen } from "@/server/widget-home";
 import { mediaUrls } from "@/server/media-urls";
@@ -69,7 +71,7 @@ const TABS = [
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
   const [{ project: slug }, { tab: tabParam, q, article, docsTab, collection, title, display, entry }] = await Promise.all([props.params, props.searchParams]);
-  const [project, settings, brand] = await Promise.all([
+  const [project, settings, brand, base] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
       select: {
@@ -84,6 +86,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
     }),
     widgetSettings({ slug }),
     branding({ slug }),
+    portalBase(),
   ]);
   if (!project || !settings || !brand) {
     notFound();
@@ -93,14 +96,16 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   // A private portal shows nothing until whoever's here may read it (see portal-access.ts).
   if (!(await mayRead(project.id))) {
     return (
-      <main className="flex flex-col gap-4 p-4">
-        <WidgetThemeScript scheme={brand.colorScheme} />
-        {css && <style>{css}</style>}
-        <div className="flex justify-end">
-          <WidgetClose inline={display === "inline"} />
-        </div>
-        <WidgetLocked projectSlug={slug} />
-      </main>
+      <PortalBaseProvider base={base} slug={slug}>
+        <main className="flex flex-col gap-4 p-4">
+          <WidgetThemeScript scheme={brand.colorScheme} />
+          {css && <style>{css}</style>}
+          <div className="flex justify-end">
+            <WidgetClose inline={display === "inline"} />
+          </div>
+          <WidgetLocked projectSlug={slug} />
+        </main>
+      </PortalBaseProvider>
     );
   }
   // Docs once an article is listed, or when asked for one (Tuti.open({ article }) may open an unlisted one).
@@ -126,7 +131,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   const aiFirst = tab === "messages" && settings.aiFirst && !!assistant?.askAPerson && project._count.articles > 0 && !(await aiPaused(project.id));
 
   return (
-    <PortalBaseProvider base="" slug={slug}>
+    <PortalBaseProvider base={base} slug={slug}>
       <WithAssistant assistant={assistant}>
       <WidgetHomeVisitor projectSlug={slug} enabled={tab === "home" && !whatsNew} portalReader={tab === "home" && !whatsNew ? await portalReaderHome(project.id) : null}>
       <WidgetLookProvider saved={{ links: settings.links, title: settings.title, greeting: settings.greeting, hidden: settings.hidden }} appOrigin={appUrl().origin}>
@@ -191,7 +196,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             const link = (
               <Link
                 key={key}
-                href={href}
+                href={withBase(base, href)}
                 // In What's new, Home is lit as its section, not the page they're on.
                 aria-current={active ? (whatsNew ? "true" : "page") : undefined}
                 className={cn(
@@ -250,7 +255,7 @@ async function Home({
   docs: boolean;
   feedback: boolean;
 }) {
-  const [latest, suggested, faces, replyMs, seen] = await Promise.all([
+  const [latest, suggested, faces, replyMs, seen, at] = await Promise.all([
     prisma.changelogEntry.findFirst({
       where: { project: { slug }, publishedAt: { not: null } },
       orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
@@ -261,6 +266,7 @@ async function Home({
     messages ? usualReplyMs(projectId) : null,
     // The portal's signed-in reader's, on its own site (see WhatsNew).
     getSession().then((session) => whatsNewSeen(projectId, session?.user.id ?? null)),
+    portalLinks(),
   ]);
   const row = "flex items-center gap-3 px-4 py-3 text-left hover:bg-accent";
   return (
@@ -269,7 +275,7 @@ async function Home({
         <WidgetPart part="docs">
           <div className="flex flex-col gap-2">
             {/* A plain GET form: the Help center tab searches as it opens. */}
-            <form action="/widget" role="search" aria-label="Help center" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+            <form action={at("/widget")} role="search" aria-label="Help center" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
               <input type="hidden" name="tab" value="docs" />
               <input
                 type="search"
@@ -287,7 +293,7 @@ async function Home({
               <ul aria-label="Suggested articles" className="flex flex-col divide-y rounded-xl border bg-card">
                 {suggested.map((article) => (
                   <li key={article.slug}>
-                    <Link href={docsHref({ article: article.slug })} className={cn(row, "text-sm break-words first:rounded-t-xl last:rounded-b-xl")}>
+                    <Link href={at(docsHref({ article: article.slug }))} className={cn(row, "text-sm break-words first:rounded-t-xl last:rounded-b-xl")}>
                       <span className="min-w-0 flex-1">{article.title}</span>
                       <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                     </Link>
@@ -300,7 +306,7 @@ async function Home({
       )}
       {messages && (
         <WidgetPart part="messages">
-          <Link href="/widget?tab=messages" className={cn(row, "rounded-xl border bg-card")}>
+          <Link href={at("/widget?tab=messages")} className={cn(row, "rounded-xl border bg-card")}>
             <TeamFaces faces={faces} />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="font-medium">Send us a message</span>
@@ -315,7 +321,7 @@ async function Home({
       </WidgetPart>
       {feedback && (
         <WidgetPart part="feedback">
-          <Link href="/widget?tab=feedback" className={cn(row, "rounded-xl border bg-card")}>
+          <Link href={at("/widget?tab=feedback")} className={cn(row, "rounded-xl border bg-card")}>
             <span className="flex flex-1 flex-col">
               <span className="font-medium">Share an idea</span>
               <span className="text-sm text-muted-foreground">Suggest a feature or report a problem</span>
@@ -328,7 +334,7 @@ async function Home({
         <WidgetPart part="whatsNew">
           {/* "2 new" once the widget's script says what this visitor has seen; the latest update either way. */}
           <WidgetUnread {...seen}>
-            <Link href="/widget?tab=whats-new" className={cn(row, "rounded-xl border bg-card")}>
+            <Link href={at("/widget?tab=whats-new")} className={cn(row, "rounded-xl border bg-card")}>
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="flex items-center gap-2">
                   <span className="font-medium">What&apos;s new</span>
@@ -427,7 +433,7 @@ async function Messages({ projectId, projectName, slug, aiFirst }: { projectId: 
 async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }) {
   // Only on the portal's own site: elsewhere its cookies aren't sent, and the page's script
   // records it for people it signs in (Tuti.identify).
-  const session = await getSession();
+  const [session, link] = await Promise.all([getSession(), portalLinks()]);
   const [recent, announced, seen] = await Promise.all([
     publishedEntries(slug, { take: 10 }),
     prisma.changelogEntry.findFirst({
@@ -445,7 +451,7 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
   // Older than the ten newest, so after them; newest first too.
   const entries = [...recent, ...older];
   const at = announced?.publishedAt?.toISOString() ?? null;
-  const back = <BackLink href="/widget">Home</BackLink>;
+  const back = <BackLink href={link("/widget")}>Home</BackLink>;
   if (entries.length === 0) {
     return (
       <>
@@ -477,7 +483,7 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
                 {entry.title}
               </h2>
               <p className="line-clamp-2 text-sm break-words text-muted-foreground">{toPlainText(entry.doc).slice(0, 400)}</p>
-              <Link href={`/widget?tab=whats-new&entry=${entry.number}`} className="self-start text-sm font-medium text-primary hover:underline">
+              <Link href={link(`/widget?tab=whats-new&entry=${entry.number}`)} className="self-start text-sm font-medium text-primary hover:underline">
                 Read more<span className="sr-only"> about {entry.title}</span>
               </Link>
             </div>
@@ -491,7 +497,7 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
 /** One entry, from its card's Read more, with the way back to the list. */
 async function WhatsNewEntry({ slug, number }: { slug: string; number: number }) {
   const [entry] = await publishedEntries(slug, { number, take: 1 });
-  const back = <BackLink href="/widget?tab=whats-new">What&apos;s new</BackLink>;
+  const back = <BackLink href={await portalHref("/widget?tab=whats-new")}>What&apos;s new</BackLink>;
   if (!entry) {
     return (
       <>
@@ -503,7 +509,7 @@ async function WhatsNewEntry({ slug, number }: { slug: string; number: number })
   return (
     <div className="flex flex-col gap-4">
       {back}
-      <ChangelogEntryView entry={entry} heading="h1" mediaUrls={await mediaUrls(entry.doc, entry.cover)} linkTarget="_blank" />
+      <ChangelogEntryView entry={entry} heading="h1" mediaUrls={await mediaUrls(entry.doc, entry.cover)} linkTarget="_blank" base={await portalBase()} />
     </div>
   );
 }

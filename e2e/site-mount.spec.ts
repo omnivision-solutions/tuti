@@ -2,11 +2,15 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
+import { seedArticles } from "./articles";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 import { forwardToPortal, siteUrl } from "./site";
+
+// One at a time: the site fake has one forward for /_tuti, and "Check setup" asks through it for the portal it goes to.
+test.describe.configure({ mode: "default" });
 
 test("the team puts the portal under a path of its own site: its site forwards it, Tuti checks it, and people read it there", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -146,4 +150,75 @@ test("the team puts the portal under a path of its own site: its site forwards i
     await elsewhere.goto("/roadmap");
     expect(elsewhere.url()).toBe(`${portalUrl(slug)}/roadmap`);
   }).toPass({ timeout: 20_000 });
+});
+
+test("the widget's panel under a path of the team's site keeps the path in its tabs, searches, links and live updates", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  // An article for the Help center, an idea for Feedback, and Messages on.
+  await seedArticles(slug, 1);
+  const api = await apiFor(owner, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(owner.getByText("Messages on")).toBeVisible();
+
+  // The portal under /help on the team's site.
+  await owner.goto(`/app/${slug}/customize/address`);
+  await owner.getByRole("radio", { name: /Sub-folder/ }).click();
+  await owner.getByRole("textbox", { name: "Your site" }).fill(siteUrl());
+  await owner.getByRole("textbox", { name: "Path" }).fill("/help");
+  await owner.getByRole("button", { name: "Set up sub-folder" }).click();
+  await expect(owner.getByText("Waiting for your site")).toBeVisible();
+  await forwardToPortal("/help", portalUrl(slug));
+  await forwardToPortal("/_tuti", portalUrl(slug));
+  await owner.getByRole("button", { name: "Check setup" }).click();
+  await expect(owner.getByText("Verified", { exact: true })).toBeVisible();
+
+  // The panel, opened there.
+  const visitor = await newPerson(browser, siteUrl());
+  const tabs = visitor.getByRole("navigation", { name: "Widget" });
+  await expect(async () => {
+    await visitor.goto("/help/widget");
+    await expect(tabs).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+
+  // Home's search, a plain form, searches in the Help center there.
+  await visitor.getByRole("searchbox", { name: "Search for help" }).fill("Seeded");
+  await visitor.getByRole("searchbox", { name: "Search for help" }).press("Enter");
+  await expect(visitor).toHaveURL(`${siteUrl()}/help/widget?tab=docs&q=Seeded`);
+
+  // The tabs, and an article from the Help center.
+  await tabs.getByRole("link", { name: "Help center" }).click();
+  await expect(visitor).toHaveURL(`${siteUrl()}/help/widget?tab=docs`);
+  await visitor.getByRole("link", { name: "Seeded 1" }).click();
+  await expect(visitor).toHaveURL(new RegExp(`^${siteUrl().replace(/[.:]/g, "\\$&")}/help/widget\\?tab=docs.*&article=seeded-1$`));
+  await expect(visitor.getByRole("heading", { name: "Seeded 1" })).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Open in new tab" })).toHaveAttribute("href", "/help/docs/seeded-1");
+  await checkpoint(visitor, "widget-under-path-article");
+  await tabs.getByRole("link", { name: "Feedback" }).click();
+  await expect(visitor).toHaveURL(`${siteUrl()}/help/widget?tab=feedback`);
+  // Ideas and signing in to vote open the portal there, in a new tab.
+  await expect(visitor.getByRole("link", { name: "Dark mode" })).toHaveAttribute("href", /^\/help\/feedback\/feature-requests\//);
+  await expect(visitor.getByRole("link", { name: /^Sign in to vote/ })).toHaveAttribute("href", /^\/help\/sign-in\?next=%2Ffeedback%2Ffeature-requests%2F/);
+  await tabs.getByRole("link", { name: "Messages" }).click();
+  await expect(visitor).toHaveURL(`${siteUrl()}/help/widget?tab=messages`);
+  await expect(visitor.getByRole("region", { name: "Messages" }).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/help/sign-in");
+  await tabs.getByRole("link", { name: "Home" }).click();
+  await expect(visitor).toHaveURL(`${siteUrl()}/help/widget`);
+
+  // Signed in there, Messages listens for changes through the site too.
+  await visitor.goto("/help/sign-up");
+  await visitor.getByLabel("Name").fill("Ada");
+  await visitor.getByLabel("Email").fill(`e2e-${randomUUID()}@example.com`);
+  await visitor.getByLabel("Password").fill("correct horse battery staple");
+  await visitor.getByRole("button", { name: "Sign up" }).click();
+  await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
+  const live = visitor.waitForRequest((request) => request.url().includes("/api/widget/live"));
+  await visitor.goto("/help/widget?tab=messages");
+  expect(new URL((await live).url()).pathname).toBe("/help/api/widget/live");
+  await checkpoint(visitor, "widget-under-path-messages");
 });

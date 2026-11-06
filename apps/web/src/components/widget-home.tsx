@@ -3,6 +3,7 @@
 import { ExternalLinkIcon } from "lucide-react";
 import { createContext, type ReactNode, use, useEffect, useMemo, useState } from "react";
 
+import { usePortalHref } from "@/components/portal-base";
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { useWidgetLook } from "@/components/widget-look";
@@ -79,6 +80,7 @@ export function WidgetGreeting() {
 /** The news of their ideas ("Dark mode is now Planned"), each opening its post on the portal in a new tab. */
 export function WidgetIdeaNews() {
   const { news } = use(Visitor);
+  const at = usePortalHref();
   if (news.length === 0) {
     return null;
   }
@@ -91,7 +93,7 @@ export function WidgetIdeaNews() {
         {news.map((item) => (
           <li key={item.href}>
             <a
-              href={item.href}
+              href={at(item.href)}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-3 px-4 py-3 hover:bg-accent first:rounded-t-xl last:rounded-b-xl"
