@@ -640,9 +640,11 @@ test("the portal shows the project's own widget, until the team turns it off in 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  // On by default: the launcher on the portal's pages opens the panel.
+  // On by default: the launcher on the portal's pages opens the panel. Its script tag is in the page as sent.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/");
+  const script = visitor.locator('script[src$="/widget.js"][data-project]');
+  await expect(script).toHaveCount(1);
   const launcher = visitor.getByRole("button", { name: "Feedback" });
   await launcher.click();
   await expect(visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" })).toBeVisible();
@@ -657,7 +659,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await visitor.reload();
   await expect(visitor.getByRole("banner")).toBeVisible();
-  await expect(visitor.locator('script[src$="/widget.js"]')).toHaveCount(0);
+  await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
 });
 

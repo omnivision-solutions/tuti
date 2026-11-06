@@ -37,7 +37,7 @@ The launcher is a round button with an icon. In the Tuti app, your project's
   that moves to the free plan keeps its choice, and the launcher shows the chat bubble until
   the plan is back. Self-hosted, every project can pick one.
 - **Show on your portal** (on by default): the launcher on every page of your Tuti portal too,
-  so readers can message you, send feedback and see what's new there.
+  opening the same panel as on your site.
 
 And the panel's **Home**:
 

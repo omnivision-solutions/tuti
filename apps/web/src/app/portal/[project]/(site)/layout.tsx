@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { after } from "next/server";
 import { notFound } from "next/navigation";
-import Script from "next/script";
 import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
@@ -156,11 +155,12 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
         {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new. */}
-        {/* Its launcher under the portal's sheets and dialogs (z-50: the assistant, the menu), still over the page. */}
+        {/* Its launcher under the portal's sheets and dialogs (z-50: the assistant, the menu), still over the page; on phones
+            the page ends clear of it. A plain script tag, in the page as sent: the loader reads its data-project. */}
         {canRead && project.widgetOnPortal && (
           <>
-            <style>{`body > button[aria-controls="tuti-widget"] { z-index: 40 !important; }`}</style>
-            <Script src={`${appUrl().origin}/widget.js`} data-project={slug} strategy="lazyOnload" />
+            <style>{`body > button[aria-controls="tuti-widget"] { z-index: 40 !important; } @media (width < 48rem) { body { padding-bottom: 5.5rem; } }`}</style>
+            <script src={`${appUrl().origin}/widget.js`} data-project={slug} async />
           </>
         )}
         </PortalMenuProvider>

@@ -165,7 +165,7 @@ export function WidgetSettings({
             <SwitchRow
               name="onPortal"
               label="Show on your portal"
-              description="The launcher on every page of your portal, so readers can message you, send feedback and see what's new."
+              description="The launcher on every page of your portal too, opening the same panel as on your site."
               defaultChecked={onPortal}
             />
           </FieldGroup>
