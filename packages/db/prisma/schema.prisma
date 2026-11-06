@@ -677,8 +677,9 @@ model GithubInstallation {
   accountLogin   String
   /// GitHub's type for that account: "Organization" or "User" (their settings live at different addresses).
   accountType    String   @default("Organization")
-  /// The installation's repositories listed in this project's settings ([{ id, fullName }]): every
-  /// one the Tuti app can see on the account, as of the last refresh. Only these can be added.
+  /// The installation's repositories listed in this project's settings ([{ id, fullName }]): those
+  /// the person who connected can access on GitHub (and the project's own), less any the Tuti app
+  /// can't see any more. Only these can be added.
   repositories   Json     @default("[]")
   createdById    String
   createdAt      DateTime @default(now())

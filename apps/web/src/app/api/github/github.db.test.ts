@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { type Prisma, prisma } from "@tuti/db";
 import { listedRepositories, syncRepositories } from "@tuti/jobs";
 import { type GithubFake, startGithubFake } from "@tuti/testkit";
@@ -11,6 +13,7 @@ import { call } from "@/server/operations/run";
 import { disconnectGithub, refreshGithubRepositories, setGithubRepository } from "@/server/github";
 import { accountsFromCookie } from "@/server/github-connect";
 
+import { GithubRepositories } from "@/components/github-connection";
 import GithubIntegrationPage from "@/app/app/[project]/settings/(admin)/integrations/github/page";
 
 import { GET as callback } from "./callback/route";
@@ -50,6 +53,9 @@ const cookieOf = (response: Response, name: string) => {
   return `${name}=${decodeURIComponent(cookie.slice(name.length + 1))}`;
 };
 
+/** A request from one of the app's own pages, as Connect GitHub and Reconnect are. */
+const FROM_APP = { headers: { "sec-fetch-site": "same-origin" } };
+
 /**
  * The connect flow for an account that has the App already, as the browser goes through it:
  * Connect GitHub → GitHub's authorize page → our callback (`code`: whoever authorizes on GitHub)
@@ -57,7 +63,7 @@ const cookieOf = (response: Response, name: string) => {
  * callback connects it. Returns where it ends.
  */
 async function connect(projectSlug: string, installationId: number, code: string) {
-  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}`));
+  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}`, FROM_APP));
   if (!location(started).startsWith(`${github.url}/login/oauth/authorize`)) {
     return location(started);
   }
@@ -67,7 +73,7 @@ async function connect(projectSlug: string, installationId: number, code: string
   }
   const session = request.cookie;
   request.cookie = `${session}; ${cookieOf(listed, "tuti_github_accounts")}`;
-  const picked = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`));
+  const picked = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`, FROM_APP));
   request.cookie = session;
   if (!location(picked).startsWith(`${github.url}/login/oauth/authorize`)) {
     return location(picked);
@@ -80,7 +86,7 @@ async function connect(projectSlug: string, installationId: number, code: string
  * (`installation_id`) → GitHub's authorize page → our callback.
  */
 async function installAndConnect(projectSlug: string, installationId: number, code: string) {
-  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}&new=1`));
+  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}&new=1`, FROM_APP));
   if (!location(started).startsWith(github.url)) {
     return location(started);
   }
@@ -94,19 +100,21 @@ async function installAndConnect(projectSlug: string, installationId: number, co
   return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(stateOf(authorize))}`)));
 }
 
+const NOT_LISTED = "Reconnect to update the list: that repository isn't one this project can include";
+
 const connected = (projectId: string) => prisma.githubInstallation.findUnique({ where: { projectId } });
 
 describe("connecting", () => {
   test("Connect GitHub offers the accounts the person has the app on; without any, it's on to installing it", async () => {
     github.user("code-0", []);
-    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`));
+    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`, FROM_APP));
     const listed = await callback(new Request(`${APP}/api/github/callback?code=code-0&state=${encodeURIComponent(stateOf(started))}`));
     expect(location(listed)).toBe(`${github.url}/apps/tuti-test/installations/new`);
     // The project is remembered for the Setup URL GitHub comes back to.
     expect(cookieOf(started, "tuti_github_install")).toBeTruthy();
 
     github.user("code-0", [{ id: 520, account: "acme" }, { id: 521, account: "olive", type: "User" }]);
-    const again = await install(new Request(`${APP}/api/github/install?project=${project.slug}`));
+    const again = await install(new Request(`${APP}/api/github/install?project=${project.slug}`, FROM_APP));
     const offered = await callback(new Request(`${APP}/api/github/callback?code=code-0&state=${encodeURIComponent(stateOf(again))}`));
     expect(location(offered)).toBe(`${APP}/app/${project.slug}/settings/integrations?github=choose`);
     expect(accountsFromCookie(cookieOf(offered, "tuti_github_accounts").slice("tuti_github_accounts=".length), project.id)).toEqual([
@@ -116,9 +124,9 @@ describe("connecting", () => {
     expect(await connected(project.id)).toBeNull();
     // Only an offered account can be picked, and only for this project.
     request.cookie = `${request.cookie}; ${cookieOf(offered, "tuti_github_accounts")}`;
-    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=999`)))).toMatch(/github=expired$/);
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=999`, FROM_APP)))).toMatch(/github=expired$/);
     const other = await createProject(owner);
-    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${other.slug}&installation=520`)))).toMatch(/github=expired$/);
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${other.slug}&installation=520`, FROM_APP)))).toMatch(/github=expired$/);
   });
 
   test("a first install comes back through the Setup URL and connects", async () => {
@@ -136,7 +144,7 @@ describe("connecting", () => {
   test("Switch account offers the accounts on the GitHub page, and connects the one picked", async () => {
     github.user("code-sw", [{ id: 540, account: "acme" }, { id: 541, account: "acme-labs" }]);
     await connect(project.slug, 540, "code-sw");
-    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`));
+    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`, FROM_APP));
     const offered = await callback(new Request(`${APP}/api/github/callback?code=code-sw&state=${encodeURIComponent(stateOf(started))}`));
     expect(location(offered)).toBe(`${APP}/app/${project.slug}/settings/integrations/github?github=choose`);
     expect(await connect(project.slug, 541, "code-sw")).toMatch(/github=connected$/);
@@ -171,6 +179,8 @@ describe("connecting", () => {
       `${project.id}.502.9999999999.forged`,
       signValue("callback", [project.id, "502"], Date.now() - 60 * 60 * 1000),
       signValue("install", [project.id, "502"]),
+      // Started by another admin of the project (their link, opened by the owner).
+      signValue("callback", [project.id, "502", "install", (await addMember(project.id, "ADMIN")).id]),
     ]) {
       const response = await callback(new Request(`${APP}/api/github/callback?code=code-3&state=${encodeURIComponent(state)}`));
       expect(location(response)).toBe(`${APP}/app?github=expired`);
@@ -222,6 +232,34 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual(["acme/web"]);
   });
 
+  test("someone who can access one of an account's repositories doesn't get the others it has the app on", async () => {
+    const docs = { id: 7091, fullName: "acme/docs" };
+    const billing = { id: 7092, fullName: "acme/billing" };
+    // Acme installed the app on both; Mallory, an outside collaborator on acme/docs only, sees the
+    // installation in GitHub's /user/installations because she can access one of its repositories.
+    github.user("code-acme", [{ id: 790, account: "acme", repositories: [docs, billing] }]);
+    github.user("code-mallory", [{ id: 790, account: "acme", repositories: [docs] }]);
+    const mallory = await signUp("Mallory Outsider");
+    const theirs = await createProject(mallory);
+    actAs(mallory);
+    expect(await connect(theirs.slug, 790, "code-mallory")).toMatch(/github=connected$/);
+    // Her project's list must not name acme/billing, nor may she add it (it'd feed its pull
+    // requests, code and Verify's reads of it into her project).
+    expect.soft(listedRepositories((await connected(theirs.id))!.repositories).map((repo) => repo.fullName)).not.toContain("acme/billing");
+    expect(await add(theirs.slug, billing)).toEqual({ error: NOT_LISTED });
+    expect(await included(theirs.id)).toEqual([]);
+  });
+
+  test("a list saved before it was the connecting person's keeps only the project's own repositories", async () => {
+    github.user("code-r18", [{ id: 791, account: "acme", repositories: [web, mobile] }]);
+    await connect(project.slug, 791, "code-r18");
+    await add(project.slug, web);
+    const migration = readFileSync(new URL("../../../../../../packages/db/prisma/migrations/20261106180000_github_lists_narrowed/migration.sql", import.meta.url), "utf8");
+    await prisma.$executeRawUnsafe(migration);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web] });
+    expect(await add(project.slug, mobile)).toEqual({ error: NOT_LISTED });
+  });
+
   test("an account with thousands of repositories lists them all", async () => {
     const many = Array.from({ length: 2_050 }, (_, i) => ({ id: 900_000 + i, fullName: `acme/repo-${i}` }));
     github.user("code-r9", [{ id: 714, account: "acme", repositories: many }]);
@@ -256,24 +294,67 @@ describe("repositories", () => {
     expect(await included(other.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
-  test("the list is what the app can see on the account; Refresh list reads it again, without a trip to GitHub", async () => {
+  /** The rows Settings → Integrations → GitHub shows (the GithubRepositories element's). */
+  async function settingsRows(projectSlug: string) {
+    const find = (node: unknown): unknown => {
+      if (!node || typeof node !== "object") {
+        return undefined;
+      }
+      if (Array.isArray(node)) {
+        return node.map(find).find(Boolean);
+      }
+      const element = node as { type?: unknown; props?: { repositories?: unknown; children?: unknown } };
+      return element.type === GithubRepositories ? element.props!.repositories : find(element.props?.children);
+    };
+    return find(await GithubIntegrationPage({ params: Promise.resolve({ project: projectSlug }), searchParams: Promise.resolve({}) } as never));
+  }
+
+  /** "Reconnect": GitHub's authorization again for the account the project is on, as the person with `code`. */
+  async function reconnect(projectSlug: string, installationId: number, code: string) {
+    const authorize = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`, FROM_APP));
+    return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(stateOf(authorize))}`)));
+  }
+
+  test("the list is what the person who connected can access; Refresh list keeps to it, and Reconnect lists what they've been given since", async () => {
     github.user("code-r3", [{ id: 703, account: "acme", repositories: [web] }]);
     await connect(project.slug, 703, "code-r3");
-    expect(await add(project.slug, mobile)).toEqual({
-      error: "Refresh the list: that repository isn't one this project can include",
-    });
+    expect(await add(project.slug, mobile)).toEqual({ error: NOT_LISTED });
     expect(await setGithubRepository(project.slug, Number.NaN, true)).toEqual({ error: "Unknown repository" });
-    // The app gets access to another repository on GitHub.
+    // The app and someone else can access another repository on GitHub: Refresh list (the app's access) doesn't add it.
+    github.user("code-r3-other", [{ id: 703, account: "acme", repositories: [web, mobile] }]);
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 1 });
+    expect(await add(project.slug, mobile)).toEqual({ error: NOT_LISTED });
+    // They're given access too, and reconnect (no account cookie needed: it's the project's own).
     github.user("code-r3", [{ id: 703, account: "acme", repositories: [web, mobile] }]);
-    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 2 });
+    expect(await reconnect(project.slug, 703, "code-r3")).toMatch(/github=connected$/);
     expect(await connected(project.id)).toMatchObject({ repositories: [web, mobile] });
     expect(await add(project.slug, mobile)).toEqual({});
     expect(await included(project.id)).toEqual(["acme/mobile"]);
+    // Someone who can access less reconnects: the project's repositories stay (and listed), the others go from the list.
+    github.user("code-r3-less", [{ id: 703, account: "acme", repositories: [] }]);
+    expect(await reconnect(project.slug, 703, "code-r3-less")).toMatch(/github=connected$/);
+    expect(await connected(project.id)).toMatchObject({ repositories: [mobile] });
+    expect(await included(project.id)).toEqual(["acme/mobile"]);
+    // One the project has but isn't listed (added while a reconnect read the list) still shows, to remove.
+    await prisma.githubInstallation.update({ where: { projectId: project.id }, data: { repositories: [] } });
+    expect(await settingsRows(project.slug)).toEqual([expect.objectContaining({ fullName: "acme/mobile", included: true })]);
     // GitHub not answering changes nothing.
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
     expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
     expect(await included(project.id)).toEqual(["acme/mobile"]);
+    // Another site, a portal (a subdomain), a link opened from a chat or mail app ("none") or a browser that
+    // doesn't say can't start it (nor Connect GitHub) for a signed-in admin.
+    for (const site of ["cross-site", "same-site", "none", undefined]) {
+      const fromElsewhere: RequestInit = { headers: site ? { "sec-fetch-site": site } : {} };
+      expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, fromElsewhere)))).toMatch(/github=expired$/);
+      expect(location(await install(new Request(`${APP}/api/github/install?project=${project.slug}`, fromElsewhere)))).toMatch(/github=expired$/);
+    }
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, FROM_APP)))).toContain("/login/oauth/authorize");
+    // Reconnecting goes only to the project's own account, or one GitHub offered them.
+    for (const other of ["799", "abc"]) {
+      expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=${other}`, FROM_APP)))).toMatch(/github=expired$/);
+    }
   });
 
   test("repositories no project has are ignored, even added on GitHub; removed ones leave their project", async () => {
@@ -307,18 +388,18 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual(["acme/web"]);
     // Nor listed, so it can't be added again until a refresh lists it.
     expect(await connected(project.id)).toMatchObject({ repositories: [web] });
-    expect(await add(project.slug, api)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
+    expect(await add(project.slug, api)).toEqual({ error: NOT_LISTED });
   });
 
-  test("switching to another account clears the list, even if GitHub can't list the new one yet", async () => {
+  test("switching to another account lists only the new one's repositories, even if the app can't read it yet", async () => {
     github.user("code-r12", [{ id: 730, account: "acme", repositories: [web] }]);
     await connect(project.slug, 730, "code-r12");
     github.user("code-r12b", [{ id: 731, account: "elsewhere", repositories: [mobile] }]);
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
     expect(await connect(project.slug, 731, "code-r12b")).toMatch(/github=connected$/);
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
-    expect(await connected(project.id)).toMatchObject({ installationId: 731, repositories: [] });
-    expect(await add(project.slug, web)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
+    expect(await connected(project.id)).toMatchObject({ installationId: 731, repositories: [mobile] });
+    expect(await add(project.slug, web)).toEqual({ error: NOT_LISTED });
   });
 
   test("a list GitHub didn't give in full (over 10,000) changes nothing", async () => {

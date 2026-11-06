@@ -9,7 +9,8 @@ import { ACCOUNTS_COOKIE, adminProject, INSTALL_COOKIE, saveConnection } from "@
  * The App's Callback URL (step 3 of 3): GitHub's web authorization flow returns
  * `code` and our `state`. The installation is connected only if the state is ours
  * and fresh, the signed-in account administers the project, and GitHub says the
- * person who authorized can see the installation, so nobody can claim another's.
+ * person who authorized can see the installation, so nobody can claim another's. The
+ * repositories of it they can access are the ones the project can add.
  */
 export async function GET(request: Request) {
   const config = githubConfig();
@@ -17,9 +18,10 @@ export async function GET(request: Request) {
     return new NextResponse(null, { status: 404 });
   }
   const params = new URL(request.url).searchParams;
-  const [projectId, installation, purpose] = verifyValue("callback", params.get("state") ?? "") ?? [];
+  const [projectId, installation, purpose, startedBy] = verifyValue("callback", params.get("state") ?? "") ?? [];
   const project = projectId && (await adminProject({ id: projectId }));
-  if (!project) {
+  // Finished by whoever started it: another admin sent someone else's link would make the list theirs.
+  if (!project || project.userId !== startedBy) {
     return NextResponse.redirect(new URL("/app?github=expired", appUrl()));
   }
   // Connected: on to its settings; otherwise back to the integrations, to try again.
@@ -58,10 +60,10 @@ export async function GET(request: Request) {
   }
 
   const installationId = Number(installation);
-  const account = code && (await installationForUser(config, code, redirectUri, installationId).catch(() => null));
-  if (!account) {
+  const found = code && (await installationForUser(config, code, redirectUri, installationId).catch(() => null));
+  if (!found) {
     return done("unconfirmed");
   }
-  await saveConnection(project, installationId, account);
+  await saveConnection(project, installationId, found.account, found.repositories);
   return done("connected");
 }

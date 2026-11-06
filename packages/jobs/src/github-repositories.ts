@@ -107,14 +107,18 @@ const installationRepositoryIds = async (installationId: number) =>
   new Set((await installationRepositories(installationId)).map((repo) => repo.id));
 
 /**
- * The connection's list, from GitHub now: every repository the App can see on the account.
- * The project's repositories that GitHub no longer has leave it (once two reads agree). Throws if
- * GitHub can't say.
+ * The connection's list, from GitHub now: those of its repositories the App can still see (under
+ * their names now). It never gains one: the list is what the person who connected can access, and
+ * only their own authorization on GitHub can say that (reconnecting). The project's repositories
+ * that GitHub no longer has leave it (once two reads agree). Throws if GitHub can't say.
  */
 export async function syncRepositories(connectionId: string, installationId: number): Promise<GithubRepo[]> {
-  const repositories = await installationRepositories(installationId);
-  const ids = repositories.map((repo) => repo.id);
-  // The project's repositories the list doesn't have would leave it. GitHub's pages aren't one
+  const saved = (await prisma.githubInstallation.findUnique({ where: { id: connectionId }, select: { repositories: true } }))?.repositories ?? [];
+  const listed = new Set(listedRepositories(saved).map((repo) => repo.id));
+  const current = await installationRepositories(installationId);
+  const repositories = current.filter((repo) => listed.has(repo.id));
+  const ids = current.map((repo) => repo.id);
+  // The project's repositories GitHub doesn't have would leave it. GitHub's pages aren't one
   // snapshot, so one read can skip a repository: they go only if a second read agrees.
   const missing = await prisma.githubRepository.findMany({ where: { connectionId, repoId: { notIn: ids } }, select: { repoId: true } });
   if (missing.length > 0) {
@@ -124,8 +128,12 @@ export async function syncRepositories(connectionId: string, installationId: num
     }
   }
   await prisma.$transaction(async (tx) => {
-    // Only if the project is still on that installation: it may have switched while GitHub answered.
-    const { count } = await tx.githubInstallation.updateMany({ where: { id: connectionId, installationId }, data: { repositories } });
+    // Only if the project is still on that installation, with that list: it may have switched or
+    // reconnected while GitHub answered.
+    const { count } = await tx.githubInstallation.updateMany({
+      where: { id: connectionId, installationId, repositories: { equals: saved as Prisma.InputJsonValue } },
+      data: { repositories },
+    });
     if (count === 0) {
       throw new Error("The project's GitHub connection changed while its repositories were read");
     }
