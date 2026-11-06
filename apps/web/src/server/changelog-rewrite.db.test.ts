@@ -295,3 +295,20 @@ test(`a project gets ${AI_EDITS_PER_HOUR} AI edits a clock hour, the whole team 
   model.reply(reply("Shorter."));
   await call(rewriteOperation, { ...team(), projectId: other.id }, { number: await plainEntry(other.id), mode: "shorten" });
 });
+
+test("a rewrite keeps links only to the entry's public posts: one to a Team only post it links is dropped", async () => {
+  const { number, postUrl } = await entry();
+  const secret = await call(createPost, team(), { board: "feature-requests", title: "Tokens logged in plain text", visibility: "team" });
+  await call(updateChangelogEntry, team(), { number, posts: [...(await get(number)).posts.map((post) => post.number), secret.number] });
+  const secretUrl = (await get(number)).posts.find((post) => post.number === secret.number)!.url;
+  model.reply(
+    reply(
+      `We shipped 3 things in **v2.4**.\n\n## Dark mode\n\nThe app follows your system's theme ([Dark mode](${postUrl})), and [tokens](${secretUrl}) are no longer logged.\n\n{{media 1}}\n\n## Search\n\n- Faster`,
+    ),
+  );
+
+  const result = await rewrite({ number, mode: "shorten" });
+
+  expect(JSON.stringify(result.proposed.content)).toContain(postUrl);
+  expect(JSON.stringify(result.proposed.content)).not.toContain(secretUrl);
+});

@@ -9,6 +9,7 @@ import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
 import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
 import { MergePostDialog } from "@/components/merge-post-dialog";
+import type { PickablePost } from "@/components/post-picker";
 import { MovePostSelect } from "@/components/move-post-select";
 import { PostEtaSelect, PostOwnerSelect, PostVisibilitySelect } from "@/components/post-planning";
 import { VisibilityBadge } from "@/components/visibility-badge";
@@ -107,7 +108,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
   ]);
   const total = totals.get(post.id);
-  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true } as const;
+  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true, visibility: true } as const;
   const [candidates, suggestions] = post.duplicateOf
     ? [[], []]
     : await Promise.all([
@@ -160,7 +161,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </a>
           </>
         }
-        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={likeFirst(like, candidates)} />}
+        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={likeFirst<PickablePost>(like, candidates)} />}
       />
 
       {post.duplicateOf ? (

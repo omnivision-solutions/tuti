@@ -1,5 +1,6 @@
 "use client";
 
+import type { PostVisibility } from "@tuti/db";
 import { MergeIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -16,6 +17,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { type PickablePost, PostPicker } from "@/components/post-picker";
+import { mergeExposure } from "@/lib/visibility-labels";
 import { mergePost } from "@/server/manage-posts";
 
 /** Team-only: pick the original post and merge this one into it. */
@@ -25,7 +27,7 @@ export function MergePostDialog({
   candidates,
 }: {
   projectSlug: string;
-  post: { id: string; number: number; title: string };
+  post: { id: string; number: number; title: string; visibility?: PostVisibility };
   candidates: PickablePost[];
 }) {
   const router = useRouter();
@@ -66,6 +68,7 @@ export function MergePostDialog({
               <DialogDescription>
                 “{post.title}” will be merged into “{target.title}”. Its votes (counted once per person) and comments
                 move over, and its link will point to #{target.number}. This can&apos;t be undone.
+                {mergeExposure(post.visibility, target.visibility, target.number) && <> {mergeExposure(post.visibility, target.visibility, target.number)}</>}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

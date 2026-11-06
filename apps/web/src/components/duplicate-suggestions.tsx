@@ -1,5 +1,6 @@
 "use client";
 
+import type { PostVisibility } from "@tuti/db";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -19,9 +20,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { VisibilityBadge } from "@/components/visibility-badge";
+import { mergeExposure } from "@/lib/visibility-labels";
 import { dismissDuplicate, mergePost } from "@/server/manage-posts";
 
-type PostRef = { id: string; number: number; title: string; voteCount: number };
+type PostRef = { id: string; number: number; title: string; voteCount: number; visibility?: PostVisibility };
 
 export type Suggestion = {
   id: string;
@@ -90,9 +93,12 @@ function SuggestionRow({ projectSlug, postId, suggestion }: { projectSlug: strin
     <ItemRow
       wideActions
       title={
-        <Link href={`/app/${projectSlug}/p/${other.number}`} className="hover:underline">
-          {other.title}
-        </Link>
+        <>
+          <Link href={`/app/${projectSlug}/p/${other.number}`} className="hover:underline">
+            {other.title}
+          </Link>{" "}
+          {other.visibility && <VisibilityBadge visibility={other.visibility} />}
+        </>
       }
       meta={
         <>
@@ -117,6 +123,7 @@ function SuggestionRow({ projectSlug, postId, suggestion }: { projectSlug: strin
                 <AlertDialogDescription>
                   “{duplicate.title}” will be merged into “{original.title}”. Its votes (counted once per person) and
                   comments move over, and its link will point to #{original.number}. This can&apos;t be undone.
+                  {mergeExposure(duplicate.visibility, original.visibility, original.number) && <> {mergeExposure(duplicate.visibility, original.visibility, original.number)}</>}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

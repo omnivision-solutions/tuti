@@ -11,6 +11,17 @@ export const VISIBILITY_DESCRIPTIONS: Record<PostVisibility, string> = {
 
 export const POST_VISIBILITIES = Object.keys(VISIBILITY_LABELS) as PostVisibility[];
 
+/** How widely each is seen: Team only, then Private (its author too), then Public. */
+const REACH: Record<PostVisibility, number> = { TEAM: 0, PRIVATE: 1, PUBLIC: 2 };
+
+/**
+ * What a merge's dialog says when the merged post is seen by fewer people than the one it goes into (null: nothing to
+ * say): its comments move over, so everyone who sees the other one sees them.
+ */
+export function mergeExposure(from: PostVisibility | undefined, into: PostVisibility | undefined, intoNumber: number): string | null {
+  return from && into && REACH[into] > REACH[from] ? `It's ${VISIBILITY_LABELS[from]}: its comments will be seen by everyone who sees #${intoNumber}.` : null;
+}
+
 /** A board's choice for its new posts, in words. */
 export const BOARD_VISIBILITY_DESCRIPTIONS: Record<PostVisibility, string> = {
   PUBLIC: "Everyone who can see your portal sees them.",
