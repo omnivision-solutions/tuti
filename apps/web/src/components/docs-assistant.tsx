@@ -204,9 +204,12 @@ export function DocsAssistantProvider({
     if (opening !== undefined && !openedToAsk.current) {
       openedToAsk.current = true;
       askOrOpen(opening);
-      const url = new URL(window.location.href);
-      url.searchParams.delete("ask");
-      window.history.replaceState(window.history.state, "", url);
+      // After the router's own first entry for the page, which would put it back.
+      setTimeout(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("ask");
+        window.history.replaceState(window.history.state, "", url);
+      });
     }
     const onMessage = (event: MessageEvent) => {
       const data = event.data as { type?: unknown; ask?: unknown } | null;

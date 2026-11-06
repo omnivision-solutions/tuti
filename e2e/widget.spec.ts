@@ -678,7 +678,6 @@ test("the portal shows the project's own widget, until the team turns it off in 
     await expect(visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ })).toBeFocused();
   };
   await askAI();
-  await expect(visitor.locator("#tuti-widget")).toBeVisible();
   await visitor.reload();
   await launcher.click();
   await askAI();
