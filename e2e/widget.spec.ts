@@ -1925,7 +1925,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await visitor.goto(sitePage("customer.localhost", slug));
   await visitor.getByRole("button", { name: "Feedback" }).click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
-  // Home's way in, then the tab.
+  // Home's way in (no reply time yet, so nothing under it), then the tab.
+  await expect(widget.getByRole("link", { name: /Send us a message/ })).not.toContainText(/repl/i);
   await widget.getByRole("link", { name: /Send us a message/ }).click();
   await expect(widget.getByText("No messages yet")).toBeVisible();
   await widget.getByRole("button", { name: "New message" }).click();
@@ -2018,7 +2019,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
     }).observe(document, { childList: true, subtree: true });
   });
   // Messages loads under a skeleton shaped like its list (its answers held here, from before the page
-  // loads: the panel may read it as soon as it opens), the team above it: Olive's face, and the reply line
+  // loads: the panel may read it as soon as it opens), the team above it: Olive's face, and no reply line
   // (fewer than five answered, so no time yet). Screen readers are told.
   // Held reads go on as `release` says; reads after it as `reads` says.
   let reads: "hold" | "fail" | "pass" = "hold";
@@ -2055,7 +2056,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await widget.getByRole("link", { name: "Messages" }).click();
   const team = widget.getByRole("region", { name: "The team" });
   await expect(team).toContainText("The Acme team");
-  await expect(team).toContainText("We'll reply here and by email");
+  // Too few answered conversations for a reply time: no line under the team's name.
+  await expect(team).not.toContainText(/repl/i);
   await expect(team.locator('[data-slot="avatar"]')).toHaveCount(1);
   const skeleton = widget.locator("[data-loading-skeleton]");
   await expect(skeleton).toBeVisible();

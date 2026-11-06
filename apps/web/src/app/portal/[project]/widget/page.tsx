@@ -304,7 +304,7 @@ async function Home({
             <TeamFaces faces={faces} />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="font-medium">Send us a message</span>
-              <span className="text-sm text-muted-foreground">{replyLine(replyMs)}</span>
+              {replyMs !== null && <span className="text-sm text-muted-foreground">Usually replies in {replyTime(replyMs)}</span>}
             </span>
             <MessageCircleIcon aria-hidden className="size-5 shrink-0 text-primary" />
           </Link>
@@ -364,9 +364,6 @@ function TeamFaces({ faces }: { faces: Awaited<ReturnType<typeof teamFaces>> }) 
   );
 }
 
-/** When the team usually replies (usualReplyMs), or, before that's known, that they will. */
-const replyLine = (ms: number | null) => (ms === null ? "We'll reply here and by email" : `Usually replies in ${replyTime(ms)}`);
-
 /**
  * Suggesting an idea (starting with `title`, a question from Docs' "Post this as feedback") and the
  * trending ideas, for anyone; voting and posting once they're signed in (see WidgetFeedback).
@@ -415,7 +412,7 @@ async function Messages({ projectId, projectName, slug, aiFirst }: { projectId: 
       <TeamFaces faces={faces} />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="font-medium break-words">The {projectName} team</span>
-        <span className="text-sm text-muted-foreground">{replyLine(replyMs)}</span>
+        {replyMs !== null && <span className="text-sm text-muted-foreground">Usually replies in {replyTime(replyMs)}</span>}
       </span>
     </section>
   );
