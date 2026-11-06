@@ -154,6 +154,13 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   // Its panel is the portal's, on this domain.
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${domainUrl}/widget`);
+  // Added without its launcher (data-hide-launcher), it brings none back.
+  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("data-hide-launcher", "");
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(0);
   await api("/widget", { onPortal: true }, "PATCH");
 
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
