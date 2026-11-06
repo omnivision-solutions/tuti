@@ -120,7 +120,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                   isAdmin && (
                     <>
                       <EditBoardDialog projectSlug={project.slug} board={board} />
-                      {(!board.off || room) && <BoardOffButton projectSlug={project.slug} boardId={board.id} name={board.name} off={board.off} stuck={limit !== null && on > limit} />}
+                      {/* Always there, so focus stays on it; without room, Turn on says how to get it. */}
+                      <BoardOffButton projectSlug={project.slug} boardId={board.id} name={board.name} off={board.off} teamOnly={board.postVisibility === "TEAM"} stuck={limit !== null && on > limit} />
                       {count(board.id) === 0 && boards.length > 1 && (
                         <DeleteBoardButton projectSlug={project.slug} boardId={board.id} name={board.name} />
                       )}

@@ -32,14 +32,14 @@ async function claim(postId: string, userId: string, visibility: PostVisibility)
     // already may still go. A visibility change since the audience was read (under the same lock) fails the run: its
     // retry reads who may see it now.
     // Its board's row held first (as deleting a board locks it, then its posts): turning the board off waits for this
-    // claim, or this claim sees it off.
-    await tx.$executeRaw`SELECT 1 FROM board WHERE id = (SELECT "boardId" FROM post WHERE id = ${postId}) FOR SHARE`;
-    const [post] = await tx.$queryRaw<{ status: string; due: Date | null; visibility: PostVisibility }[]>`
-      SELECT status, "shippedEmailsDueAt" AS due, ${SEEN_AS_SQL} AS visibility FROM post WHERE id = ${postId} FOR UPDATE`;
+    // claim, or this claim sees it off. Moved to another board meanwhile, it's read again (the run's retry).
+    const [board] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM board WHERE id = (SELECT "boardId" FROM post WHERE id = ${postId}) FOR SHARE`;
+    const [post] = await tx.$queryRaw<{ status: string; due: Date | null; visibility: PostVisibility; boardId: string }[]>`
+      SELECT status, "shippedEmailsDueAt" AS due, ${SEEN_AS_SQL} AS visibility, "boardId" FROM post WHERE id = ${postId} FOR UPDATE`;
     if (post?.status !== "COMPLETED" || post.due === null) {
       return null;
     }
-    if (post.visibility !== visibility) {
+    if (post.visibility !== visibility || post.boardId !== board?.id) {
       throw visibilityChanged(postId);
     }
     // For this completion (its activity counts who it reached), read under the same lock.

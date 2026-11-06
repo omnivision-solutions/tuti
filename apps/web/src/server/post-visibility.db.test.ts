@@ -14,6 +14,7 @@ import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { setBoardOff } from "./boards";
 import { publishedEntries } from "./changelog-queries";
 import { getChangelogEntry, listChangelog } from "./operations/changelog";
 import { emailedOnCompletion } from "./operations/code-changes";
@@ -376,6 +377,34 @@ test("a board turned off while a post's shipped email or the team's reply goes o
   await changedAtFirstClaim(mine.id, "board off", () => handlers.replyEmailed({ commentId: reply.id }, log));
   await handlers.replyEmailed({ commentId: reply.id }, log);
   expect(await prisma.replyEmail.count({ where: { commentId: reply.id } })).toBe(0);
+});
+
+test("turning a board off drops emails still due about its posts; completing one there again drops an earlier completion's", async () => {
+  const { owner, open, board, project, as, key } = await fixture();
+  // Hatchet, unreachable: the emails' jobs aren't queued, and their due times wait for the resubmit cron.
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+  await call(updatePost, key, { number: 1, status: "completed" });
+  const reply = await call(createComment, as(owner), { number: 1, body: "Shipped", emailVoters: true });
+  const due = async () => ({
+    shipped: (await prisma.post.findUniqueOrThrow({ where: { id: open.id }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt !== null,
+    reply: (await prisma.comment.findUniqueOrThrow({ where: { id: reply.id }, select: { votersEmailDueAt: true } })).votersEmailDueAt !== null,
+  });
+  expect(await due()).toEqual({ shipped: true, reply: true });
+  actAs(owner);
+  expect(await setBoardOff(project.slug, board.id, true)).toEqual({});
+  expect(await due()).toEqual({ shipped: false, reply: false });
+
+  // Completed while on (still due), reopened, then completed again on a board turned off: the earlier due time goes.
+  await prisma.board.update({ where: { id: board.id }, data: { off: false } });
+  await call(updatePost, key, { number: 1, status: "planned" });
+  await call(updatePost, key, { number: 1, status: "completed" });
+  expect((await due()).shipped).toBe(true);
+  await call(updatePost, key, { number: 1, status: "planned" });
+  await prisma.board.update({ where: { id: board.id }, data: { off: true } });
+  await call(updatePost, key, { number: 1, status: "completed" });
+  expect((await due()).shipped).toBe(false);
+  vi.unstubAllEnvs();
 });
 
 test("a portal whose boards are all the team's opens on its changelog", async () => {

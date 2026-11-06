@@ -86,8 +86,10 @@ export async function postStatusChanged(
   }
   await emitEvent(projectId, "post.status_changed", { post, previousStatus: toApiStatus(previousStatus) });
   // Not for a post only the team sees (Team only, or on a board turned off): nobody is to be told, and turning its board
-  // on later mustn't find its emails still due.
-  if (post.status === toApiStatus("COMPLETED") && post.visibility !== "team") {
+  // on later mustn't find its emails still due, an earlier completion's either.
+  if (post.status === toApiStatus("COMPLETED") && post.visibility === "team") {
+    await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: null } });
+  } else if (post.status === toApiStatus("COMPLETED")) {
     try {
       // Saved first: if queueing fails, the shipped-emails-resubmit cron finds it.
       await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });

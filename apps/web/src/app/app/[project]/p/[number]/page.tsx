@@ -145,7 +145,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         titleOnPage
         meta={
           <>
-            {post.sample && <SampleBadge />} <VisibilityBadge visibility={post.visibility} /> #{post.number} · {post.author.name} · {timeAgo(post.createdAt)}
+            {post.sample && <SampleBadge />} <VisibilityBadge visibility={seenAs(post)} /> #{post.number} · {post.author.name} · {timeAgo(post.createdAt)}
             {/* A merged post's votes moved with it. */}
             {!post.duplicateOf && ` · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`}
             {total !== undefined && ` · ${asking(total, project.askingProperty!, formats)}`}

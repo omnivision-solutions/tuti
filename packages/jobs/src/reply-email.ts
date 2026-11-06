@@ -30,16 +30,17 @@ async function claim(commentId: string, userId: string, visibility: PostVisibili
     // Its post's row held first (as a merge locks posts, then their comments): a visibility change since the audience
     // was read fails the run (its retry reads who may see it now), and one made meanwhile waits for this claim.
     // Before it, its board's row (as deleting a board locks it, then its posts): turning the board off waits for this
-    // claim, or this claim sees it off.
-    await tx.$executeRaw`SELECT 1 FROM board WHERE id = (SELECT p."boardId" FROM post p JOIN comment c ON c."postId" = p.id WHERE c.id = ${commentId}) FOR SHARE`;
-    const [post] = await tx.$queryRaw<{ id: string; visibility: PostVisibility }[]>`
-      SELECT id, ${SEEN_AS_SQL} AS visibility FROM post WHERE id = (SELECT "postId" FROM comment WHERE id = ${commentId}) FOR SHARE`;
+    // claim, or this claim sees it off. Moved to another board meanwhile, it's read again (the run's retry).
+    const [board] = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM board WHERE id = (SELECT p."boardId" FROM post p JOIN comment c ON c."postId" = p.id WHERE c.id = ${commentId}) FOR SHARE`;
+    const [post] = await tx.$queryRaw<{ id: string; visibility: PostVisibility; boardId: string }[]>`
+      SELECT id, ${SEEN_AS_SQL} AS visibility, "boardId" FROM post WHERE id = (SELECT "postId" FROM comment WHERE id = ${commentId}) FOR SHARE`;
     // The reply's row locked, so a resume that drops a pause's emails waits for this claim, or this claim sees it.
     const [comment] = await tx.$queryRaw<{ due: Date | null }[]>`SELECT "votersEmailDueAt" AS due FROM comment WHERE id = ${commentId} FOR UPDATE`;
     if (!comment?.due || !post) {
       return null;
     }
-    if (post.visibility !== visibility) {
+    if (post.visibility !== visibility || post.boardId !== board?.id) {
       throw visibilityChanged(post.id);
     }
     const claimedAt = new Date();

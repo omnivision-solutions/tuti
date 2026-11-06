@@ -291,7 +291,22 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
  * Turns a board off (the team's alone, off the portal), asking first, or on again. `stuck`: the project is past its
  * plan's board limit, so turning it on again would need an upgrade.
  */
-export function BoardOffButton({ projectSlug, boardId, name, off, stuck }: { projectSlug: string; boardId: string; name: string; off: boolean; stuck: boolean }) {
+export function BoardOffButton({
+  projectSlug,
+  boardId,
+  name,
+  off,
+  teamOnly,
+  stuck,
+}: {
+  projectSlug: string;
+  boardId: string;
+  name: string;
+  off: boolean;
+  /** Team only: never on the portal, on or off; off makes its posts the team's too, whatever their own visibility. */
+  teamOnly: boolean;
+  stuck: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState(false);
   const turn = () =>
@@ -300,7 +315,7 @@ export function BoardOffButton({ projectSlug, boardId, name, off, stuck }: { pro
       if (result.error) {
         toast.error(result.error);
       } else {
-        toast.success(off ? `${name} is on the portal` : `${name} is off the portal`);
+        toast.success(teamOnly ? `${name} is turned ${off ? "on" : "off"}` : off ? `${name} is on the portal` : `${name} is off the portal`);
       }
     });
   // One button either way, so focus stays on it as it turns from Turn off to Turn on and back.
@@ -315,7 +330,7 @@ export function BoardOffButton({ projectSlug, boardId, name, off, stuck }: { pro
           <AlertDialogHeader>
             <AlertDialogTitle>Turn off {name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              It leaves your portal, and only your team sees its posts, votes and comments.{" "}
+              {teamOnly ? "Only your team sees its posts, votes and comments, even those that are public." : "It leaves your portal, and only your team sees its posts, votes and comments."}{" "}
               {stuck ? "Your plan is past its board limit, so turning it on again needs an upgrade." : "You can turn it on again any time."}
             </AlertDialogDescription>
           </AlertDialogHeader>

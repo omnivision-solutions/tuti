@@ -688,7 +688,7 @@ export const publishChangelogEntry = defineOperation({
         if (!current || sample !== current.sample || current.status === "COMPLETED" || current.status === "CLOSED") {
           continue;
         }
-        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && current.seen !== "TEAM" && { shippedEmailsDueAt: new Date() }) } });
+        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: current.seen === "TEAM" ? null : new Date() }) } });
         // Its shipped emails are counted on this event: the entry's "told" (entryTold).
         await tx.postEvent.create({
           data: { postId, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: current.status, to: "COMPLETED", changelogEntryId: entry.id },
