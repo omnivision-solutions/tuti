@@ -32,10 +32,13 @@ RUN --mount=type=cache,id=tuti-next-cache,target=/app/apps/web/.next/cache \
 FROM base AS runner
 # Infisical CLI, used only when INFISICAL_TOKEN is set (the maintainers' deployment,
 # docs/secrets.md). Pinned so an upgrade is a deliberate change.
-ARG INFISICAL_CLI_VERSION=0.43.137
-RUN apk add --no-cache bash wget \
+ARG INFISICAL_CLI_VERSION=0.44.15
+# BusyBox's wget fetches the setup script. npm comes with the Node image but
+# nothing here runs it, and its bundled packages carry known vulnerabilities.
+RUN apk add --no-cache bash \
     && wget -qO- 'https://artifacts-cli.infisical.com/setup.apk.sh' | sh \
-    && apk add --no-cache infisical=${INFISICAL_CLI_VERSION}
+    && apk add --no-cache infisical=${INFISICAL_CLI_VERSION} \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
