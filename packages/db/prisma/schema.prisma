@@ -2540,6 +2540,9 @@ model ImportedRecord {
   /// The import that last counted what became of it (an article's content: brought, or why not), so each import counts
   /// it once however its pages are read, again or shifted.
   countedIn     String?
+  /// When the source last changed it, as an import last read it (a conversation's last activity): a later import reads
+  /// it again only once it changed since, for what's new in it (a conversation's new messages).
+  sourceUpdatedAt DateTime?
   createdAt     DateTime     @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

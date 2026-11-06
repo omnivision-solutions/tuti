@@ -101,6 +101,17 @@ test("an import in a line, as Home's card says it", () => {
     ({ state, step, error: null, parts: ["team", "contacts"], counts: { invitations: { imported: 0, leftOut: { x: 1 } }, contacts: { imported: 0, leftOut: { "already brought across earlier": 1300 } } } }) as never;
   expect(importBrief(again("running", "contacts"))).toBe("Part 2 of 2: Contacts, nothing new so far.");
   expect(importBrief(again("done", null))).toBe("Nothing new brought across.");
+  // Only new messages in conversations brought earlier: Inbox brought them.
+  const messages = {
+    state: "done",
+    step: null,
+    error: null,
+    parts: ["contacts", "inbox"],
+    counts: { messages: { imported: 2, leftOut: {} }, conversations: { imported: 0, leftOut: { "already brought across earlier": 3 } } },
+  } as never;
+  expect(importSummary(messages)).toBe("2 new messages in conversations already here brought across. Left out: 3 conversations already brought across earlier.");
+  expect(importProgress(messages)[1]).toMatchObject({ part: "inbox", brought: "2 new messages in conversations already here" });
+  expect(importBrief(messages)).toBe("Inbox brought across.");
 });
 
 test("the team needs nothing, and nothing needs it: unticking Contacts leaves it ticked; its invitations are counted in words", () => {

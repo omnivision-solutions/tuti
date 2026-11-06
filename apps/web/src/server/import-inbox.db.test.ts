@@ -170,6 +170,126 @@ test("a page run again, or another import, brings nothing twice; a number once g
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(1);
 });
 
+test("imported again, a conversation that changed in Featurebase gets its new messages, waiting for a reply again unless something was said here since; one that didn't change isn't read again", async () => {
+  await importInbox();
+  const before = await conversations();
+  const emailed = mailbox.emails.length;
+  // Tobias writes again on his snoozed invoice conversation, in Featurebase.
+  const invoice = fake.fixtures.conversations.find((c) => c.id === "1003")!;
+  const wrote = new Date(Date.now() - 86_400_000).toISOString();
+  Object.assign(invoice, { state: "open", snoozedUntil: null, lastActivityAt: wrote, updatedAt: wrote });
+  (invoice.conversationParts as object[]).push({
+    object: "conversation_part",
+    id: "p2004",
+    partType: "email_msg",
+    createdAt: wrote,
+    updatedAt: wrote,
+    bodyHtml: "<p>Still not here, sorry.</p>",
+    channel: "email",
+    author: { id: "65f000000000000000000002", type: "customer", name: "Tobias Quill", email: "e2e-tobias@example.com", profilePicture: null },
+  });
+  // Mira writes again in Featurebase too, but here the team has answered her since: that's the latest word.
+  const csv = fake.fixtures.conversations.find((c) => c.id === "1004")!;
+  const miraWrote = new Date(Date.now() - 43_200_000).toISOString();
+  Object.assign(csv, { lastActivityAt: miraWrote, updatedAt: miraWrote });
+  (csv.conversationParts as object[]).push({ object: "conversation_part", id: "p1006", partType: "user_msg", createdAt: miraWrote, updatedAt: miraWrote, bodyHtml: "<p>Thanks!</p>", channel: "desktop", author: { id: "65f000000000000000000001", type: "customer" } });
+  const answered = before.find((c) => c.subject === "Exporting to CSV")!;
+  const now = new Date();
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: answered.id, author: "TEAM", authorId: owner.id, channel: "WIDGET", body: "Glad it helped.", createdAt: now } });
+  await prisma.conversation.update({ where: { id: answered.id }, data: { status: "WAITING", waitingSince: null, lastMessageAt: now } });
+  fake.requests.length = 0;
+  const again = await importInbox();
+
+  expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r)).sort()).toEqual(["GET /v2/conversations/1003", "GET /v2/conversations/1004"]);
+  expect((await conversations()).find((c) => c.id === answered.id)).toMatchObject({
+    status: "WAITING",
+    waitingSince: null,
+    lastMessageAt: now,
+    messages: expect.arrayContaining([expect.objectContaining({ body: "Thanks!", author: "USER" })]),
+  });
+  expect(again.counts).toMatchObject({ messages: { imported: 2 }, conversations: { imported: 0, leftOut: { "already brought across earlier": 3 } } });
+  const after = await conversations();
+  // The team's reply here, and Mira's and Tobias's new messages.
+  expect(after.map((c) => [c.number, c.subject, c.messages.length])).toEqual(before.map((c) => [c.number, c.subject, c.messages.length + ({ "Exporting to CSV": 2, "Invoice for October": 1 }[c.subject] ?? 0)]));
+  expect(after.find((c) => c.subject === "Invoice for October")).toMatchObject({
+    status: "OPEN",
+    waitingSince: new Date(wrote),
+    lastMessageAt: new Date(wrote),
+    snoozedUntil: null,
+    messages: expect.arrayContaining([expect.objectContaining({ body: "Still not here, sorry.", author: "USER", authorUser: { name: "Tobias Quill" } })]),
+  });
+  expect(mailbox.emails.length).toBe(emailed);
+
+  // And again, with nothing new: nothing read, nothing added.
+  fake.requests.length = 0;
+  await importInbox();
+  expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r))).toEqual([]);
+  expect((await conversations()).flatMap((c) => c.messages)).toHaveLength(after.flatMap((c) => c.messages).length);
+});
+
+test("imported again, a conversation the team closed here after Featurebase's newest message stays closed, its new message added", async () => {
+  await importInbox();
+  // A teammate replies in Featurebase; later, with no reply here, the team closes it in Tuti.
+  const csv = fake.fixtures.conversations.find((c) => c.id === "1004")!;
+  const replied = new Date(Date.now() - 43_200_000).toISOString();
+  Object.assign(csv, { lastActivityAt: replied, updatedAt: replied });
+  (csv.conversationParts as object[]).push({ object: "conversation_part", id: "p1006", partType: "admin_msg", createdAt: replied, updatedAt: replied, bodyHtml: "<p>Anything else?</p>", channel: "desktop", author: { id: "65f0000000000000000000a1", type: "admin", name: "Olive Owner" } });
+  const closed = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  await prisma.conversation.update({ where: { id: closed.id }, data: { status: "CLOSED", waitingSince: null, activeAt: new Date() } });
+  await importInbox();
+
+  expect((await conversations()).find((c) => c.id === closed.id)).toMatchObject({
+    status: "CLOSED",
+    lastMessageAt: new Date(replied),
+    messages: expect.arrayContaining([expect.objectContaining({ body: "Anything else?", author: "TEAM" })]),
+  });
+});
+
+test("one brought before Tuti kept when it last saw it goes by when it was brought: closed or snoozed after its last message, it isn't read again", async () => {
+  await importInbox();
+  await prisma.importedRecord.updateMany({ where: { projectId: project.id, kind: "conversation" }, data: { sourceUpdatedAt: null } });
+  fake.requests.length = 0;
+  await importInbox();
+  expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r))).toEqual([]);
+});
+
+test("a close here while the import's page saves the same conversation is never undone by what the page read before it", async () => {
+  await importInbox();
+  // Mira writes again in Featurebase; as the import saves it, the team closes it here (a status change locks only the
+  // conversation, not the project as a reply's message does).
+  const csv = fake.fixtures.conversations.find((c) => c.id === "1004")!;
+  const wrote = new Date(Date.now() - 43_200_000).toISOString();
+  Object.assign(csv, { lastActivityAt: wrote, updatedAt: wrote });
+  (csv.conversationParts as object[]).push({ object: "conversation_part", id: "p1006", partType: "user_msg", createdAt: wrote, updatedAt: wrote, bodyHtml: "<p>Thanks!</p>", channel: "desktop", author: { id: "65f000000000000000000001", type: "customer" } });
+  const closed = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  const now = new Date();
+  let imported!: Promise<unknown>;
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM conversation WHERE id = ${closed.id} FOR NO KEY UPDATE`;
+      await tx.conversation.update({ where: { id: closed.id }, data: { status: "CLOSED", waitingSince: null, activeAt: now } });
+      let settled = false;
+      imported = importInbox().finally(() => (settled = true));
+      // Until the import's page waits for this close's lock: then the close commits.
+      await expect
+        .poll(
+          async () =>
+            settled ||
+            (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n > 0,
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+    },
+    { timeout: 20_000 },
+  );
+  await imported;
+  expect((await conversations()).find((c) => c.id === closed.id)).toMatchObject({
+    status: "CLOSED",
+    activeAt: now,
+    messages: expect.arrayContaining([expect.objectContaining({ body: "Thanks!" })]),
+  });
+});
+
 test("an import that fails partway and is started again goes on numbering where it stopped, each conversation once", async () => {
   fake.pageSize = 1;
   // Featurebase refuses the second conversation once: the import fails there, the first saved.

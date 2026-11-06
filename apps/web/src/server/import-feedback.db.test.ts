@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled } from "@tuti/jobs";
+import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled, upsertProjectUser } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -227,15 +227,27 @@ test("a page run twice, at once or again later, and a second import, bring nothi
   });
 });
 
+test("a contact matched by address to a user the team's app signed in keeps that user's own avatar: the import doesn't copy or clear it", async () => {
+  const image = "http://127.0.0.1:9/avatars/42.png";
+  const signedIn = await upsertProjectUser(project.id, "signed-in-mira", { name: "Mira", email: "e2e-mira@example.com", image });
+  fake.fixtures.contacts[0]!.userId = null;
+  await importFeedback();
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: signedIn }, select: { image: true, imageId: true } })).toEqual({ image, imageId: null });
+  const { import: done } = await call(getImport, asOwner(), {});
+  expect(done!.counts.avatars).toBeUndefined();
+});
+
 test("a repeat import after a post was deleted in Featurebase goes on: the post and its votes here stay, and the rest come across", async () => {
   await importFeedback();
   const gone = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Sync with calendars" }, select: { id: true, voteCount: true } });
-  // Gone from Featurebase since (its voters answer 404), and a new vote on another post meanwhile.
+  // Gone from Featurebase since (its voters answer 404), and a new vote and a new comment on another post meanwhile.
   fake.fixtures.posts = fake.fixtures.posts.filter((post) => post.title !== "Sync with calendars");
   fake.fixtures.voters["65f0000000000000000000p2"]!.push({ object: "contact", ...fake.fixtures.contacts[1]!, type: "customer", createdAt: "2024-03-01T00:00:00.000Z" });
+  fake.fixtures.comments.push({ ...fake.fixtures.comments[0]!, id: "65f0000000000000000000cz", postId: "65f0000000000000000000p2", content: "<p>Any news?</p>", createdAt: "2024-03-03T09:00:00.000Z" });
   await importFeedback();
   const { import: again } = await call(getImport, asOwner(), {});
-  expect(again).toMatchObject({ state: "done", error: null, counts: { votes: { imported: 1 } } });
+  expect(again).toMatchObject({ state: "done", error: null, counts: { votes: { imported: 1 }, comments: { imported: 1 } } });
+  expect(await prisma.comment.findFirst({ where: { body: "Any news?" }, select: { post: { select: { title: true, commentCount: true } } } })).toMatchObject({ post: { title: "Export fails on Safari", commentCount: 1 } });
   expect(await prisma.post.findUniqueOrThrow({ where: { id: gone.id }, select: { voteCount: true } })).toEqual({ voteCount: gone.voteCount });
   expect(await prisma.vote.count({ where: { post: { projectId: project.id, title: "Export fails on Safari" } } })).toBe(3);
 });

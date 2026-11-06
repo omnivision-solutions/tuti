@@ -567,6 +567,7 @@ export async function avatarsPage(job: ImportJob, cursor: string | null): Promis
   const users = await prisma.$queryRaw<{ id: string; image: string }[]>`
     SELECT u.id, u.image FROM imported_record r JOIN "user" u ON u.id = r."localId"
     WHERE r."projectId" = ${job.projectId} AND r.source = ${job.source}::"ImportSource" AND r.kind = 'contact'
+      AND NOT EXISTS (SELECT 1 FROM imported_record l WHERE l."projectId" = r."projectId" AND l.source = r.source AND l.kind = 'linked' AND l."externalId" = r."externalId")
       AND u."imageId" IS NULL AND u.image ~ '^https?://' AND u.id > ${cursor ?? ""}
     ORDER BY u.id LIMIT ${FEEDBACK_PAGE.avatars}`;
   // One copy for contacts with the same picture, begun together or not (the importer's cache has only finished ones).
