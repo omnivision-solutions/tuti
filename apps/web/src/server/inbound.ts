@@ -226,17 +226,28 @@ function fromName(mail: Mail) {
     ?.normalize("NFKC")
     .replace(/(?![\u200C\u200D])[\p{Cc}\p{Cf}]/gu, "")
     .trim();
-  // Cut by what a reader sees as one character (grapheme), so a flag or an emoji at the cut isn't left in half.
-  const name =
-    cleaned &&
-    Array.from(new Intl.Segmenter().segment(cleaned), ({ segment }) => segment)
-      .slice(0, 100)
-      .join("")
-      .trim();
+  const name = cleaned && cutName(cleaned);
   // Something to show: a letter, number, symbol or punctuation once what draws nothing is set aside (joiners, Hangul
   // fillers, variation selectors, a blank braille cell). And no address in it.
   const shown = name?.replace(/[\s\p{Default_Ignorable_Code_Point}\u2800]/gu, "");
   return name && shown && /[\p{L}\p{N}\p{S}\p{P}]/u.test(shown) && !name.includes("@") ? name : null;
+}
+
+/**
+ * Up to 100 of what a reader sees as one character (graphemes), so a flag or an emoji at the cut isn't left in half,
+ * and never more than 200 UTF-16 units (one grapheme can carry any number of combining marks).
+ */
+function cutName(name: string) {
+  let cut = "";
+  let count = 0;
+  for (const { segment } of new Intl.Segmenter().segment(name)) {
+    if (count === 100 || cut.length + segment.length > 200) {
+      break;
+    }
+    cut += segment;
+    count++;
+  }
+  return cut.trim();
 }
 
 /** Another request read this email first. */

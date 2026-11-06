@@ -152,12 +152,14 @@ test("an email's From name is who the conversation is with, trimmed and cut shor
     `=?UTF-8?B?${Buffer.from("\u2800\u034F").toString("base64")}?= <e2e-blank@example.com>`,
     // Cut at 100 characters, not in the middle of the flag there (two code points, one character).
     `=?UTF-8?B?${Buffer.from(`${"x".repeat(99)}\u{1F1EB}\u{1F1F7}more`).toString("base64")}?= <e2e-emoji@example.com>`,
+    // One letter with a thousand combining marks is one character, but not a thousand: cut at 200 units.
+    `=?UTF-8?B?${Buffer.from(`Zoe a${"\u0301".repeat(1000)}`).toString("base64")}?= <e2e-marks@example.com>`,
   ];
   for (const sender of from) {
     await postEmail(rawEmail({ from: sender, to: address }), { recipient: address });
   }
   const people = (await conversations(project.id)).map((c) => conversationPerson({ ...c, user: null }).name);
-  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim(), null, null, "Kim Lee", "Mehr\u200Cnaz", null, null, null, `${"x".repeat(99)}\u{1F1EB}\u{1F1F7}`]);
+  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim(), null, null, "Kim Lee", "Mehr\u200Cnaz", null, null, null, `${"x".repeat(99)}\u{1F1EB}\u{1F1F7}`, "Zoe"]);
   // The team's email about it names them too.
   expect(mailbox.emails.some((email) => email.text.includes("Carlos Mendes started a conversation"))).toBe(true);
 });
