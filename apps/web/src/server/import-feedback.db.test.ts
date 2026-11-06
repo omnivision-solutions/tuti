@@ -92,16 +92,17 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   expect(done!.counts).toEqual({
     contacts: { imported: 3, leftOut: {} },
     boards: { imported: 2, leftOut: { "only some people see": 3 } },
-    posts: { imported: 5, leftOut: { "only some people see": 3, "hidden from the portal": 1, "waiting for moderation": 1 } },
+    // The post only its author sees comes as Private (below); the board-restricted ones stay out.
+    posts: { imported: 6, leftOut: { "only some people see": 2, "hidden from the portal": 1, "waiting for moderation": 1 } },
     // The post's and the comment's.
     images: { imported: 2, leftOut: {} },
     // Each author's own (5), a guest author's among them, and the others' (3); only the guest who isn't the author left out.
-    votes: { imported: 8, leftOut: { "by guests": 1 } },
+    votes: { imported: 9, leftOut: { "by guests": 1 } },
     comments: { imported: 3, leftOut: { "private but not by the team": 1, "deleted or spam": 2, "waiting for moderation": 1, "on posts left out": 1 } },
     notes: { imported: 1, leftOut: {} },
     avatars: { imported: 1, leftOut: {} },
   });
-  expect(importSummary(done!)).toContain("8 votes");
+  expect(importSummary(done!)).toContain("9 votes");
   expect(importSummary(done!)).toContain("1 vote by guests;");
 
   // The new project's board is Featurebase's of the same name, with its words; the other is made; hidden ones aren't.
@@ -129,12 +130,15 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
       events: [{ from: "OPEN", to: "PLANNED", createdAt: new Date("2024-01-10T08:00:00.000Z") }],
     },
     expect.objectContaining({ number: 2, title: "Export fails on Safari", status: "IN_PROGRESS", board: { name: "Bugs" }, author: { name: "Fern Former" }, voteCount: 2, commentCount: 0 }),
-    expect.objectContaining({ number: 3, title: "Sync with calendars", status: "CLOSED", author: { name: "Juno Park" }, voteCount: 1, commentCount: 1 }),
+    // Featurebase showed it only to its author: Private here, its author's and the team's.
+    expect.objectContaining({ number: 3, title: "Only for one customer", board: { name: "Bugs" }, author: { name: "Tobias Quill" } }),
+    expect.objectContaining({ number: 4, title: "Sync with calendars", status: "CLOSED", author: { name: "Juno Park" }, voteCount: 1, commentCount: 1 }),
     // Guests', each under their own name; "In Review" isn't one of Tuti's names, so by its type.
-    expect.objectContaining({ number: 4, title: "Keyboard shortcuts", status: "UNDER_REVIEW", author: { name: "Visitor" }, voteCount: 1, commentCount: 0, events: [expect.objectContaining({ to: "UNDER_REVIEW" })] }),
-    expect.objectContaining({ number: 5, title: "Export to PDF", author: { name: "Another visitor" } }),
+    expect.objectContaining({ number: 5, title: "Keyboard shortcuts", status: "UNDER_REVIEW", author: { name: "Visitor" }, voteCount: 1, commentCount: 0, events: [expect.objectContaining({ to: "UNDER_REVIEW" })] }),
+    expect.objectContaining({ number: 6, title: "Export to PDF", author: { name: "Another visitor" } }),
   ]);
-  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).postCount).toBe(5);
+  expect((await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: 3 }, select: { visibility: true } })).visibility).toBe("PRIVATE");
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).postCount).toBe(6);
 
   // The post's image is a copy in media storage, with its size; its heading a bold line (posts have none).
   const dark = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: 1 }, select: { id: true, content: true } });
@@ -183,7 +187,7 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   expect(await prisma.media.findUniqueOrThrow({ where: { id: mira.user.imageId! } })).toMatchObject({ attachedAt: expect.any(Date) });
 
   // Embedded for duplicates, as the post-created job would.
-  expect(await prisma.postEmbedding.count({ where: { projectId: project.id } })).toBe(5);
+  expect(await prisma.postEmbedding.count({ where: { projectId: project.id } })).toBe(6);
   // Quietly: nothing emailed, no webhook.
   expect(mailbox.emails.length).toBe(emailed);
   expect(await prisma.webhookDelivery.count({ where: { webhook: { projectId: project.id } } })).toBe(0);
@@ -206,13 +210,85 @@ test("posts imported into a board the team made private take its visibility, as 
   const posts = await prisma.post.findMany({ where: { projectId: project.id }, select: { visibility: true, board: { select: { name: true } } } });
   expect(posts.filter((post) => post.board.name === "Feature requests").map((post) => post.visibility)).toEqual(expect.arrayContaining(["PRIVATE"]));
   expect(posts.filter((post) => post.board.name === "Feature requests").every((post) => post.visibility === "PRIVATE")).toBe(true);
-  expect(posts.filter((post) => post.board.name === "Bugs").every((post) => post.visibility === "PUBLIC")).toBe(true);
+  // The other board's posts keep its visibility, but for the one Featurebase showed only to its author.
+  expect(posts.filter((post) => post.board.name === "Bugs").map((post) => post.visibility).sort()).toEqual(["PRIVATE", "PUBLIC", "PUBLIC"]);
+});
+
+test("a Featurebase board whose new posts only their author sees becomes a Private board, its posts Private", async () => {
+  fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
+  await importFeedback();
+  const bugs = await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Bugs" }, select: { postVisibility: true, posts: { select: { visibility: true } } } });
+  expect(bugs.postVisibility).toBe("PRIVATE");
+  expect(bugs.posts.map((post) => post.visibility)).toEqual(["PRIVATE", "PRIVATE", "PRIVATE"]);
+  // The other keeps Public.
+  expect((await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Feature requests" }, select: { postVisibility: true } })).postVisibility).toBe("PUBLIC");
+});
+
+test("a board matched by name whose Featurebase posts were only their author's becomes Private too", async () => {
+  fake.fixtures.boards.find((board) => board.name === "Feature requests")!.postDefaults = { visibility: "authorOnly" };
+  await importFeedback();
+  const requests = await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Feature requests" }, select: { id: true, postVisibility: true } });
+  // The new project's own board, matched by name.
+  expect(requests).toEqual({ id: project.boards[0]!.id, postVisibility: "PRIVATE" });
+});
+
+test("past the plan's board limit, posts everyone saw folded into a board made Private for its author-only posts stay public", async () => {
+  vi.stubEnv("PLANS", "on");
+  fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
+  // A third board everyone sees: the free plan has room for two, so its posts go into the last one, Bugs.
+  const ideas = structuredClone(fake.fixtures.boards.find((board) => board.name === "Bugs")!);
+  Object.assign(ideas, { id: "65f0000000000000000000b5", name: "Ideas", localization: { name: { en: "Ideas" } }, postDefaults: { visibility: "public" } });
+  fake.fixtures.boards.push(ideas);
+  fake.fixtures.posts.push({ ...structuredClone(fake.fixtures.posts[0]!), id: "65f0000000000000000000pa", boardId: ideas.id, title: "Offline mode", createdAt: "2024-04-01T10:00:00.000Z" });
+  await importFeedback();
+  const posts = await prisma.post.findMany({ where: { projectId: project.id, board: { name: "Bugs" } }, select: { title: true, visibility: true } });
+  expect(posts.find((post) => post.title === "Offline mode")).toEqual({ title: "Offline mode", visibility: "PUBLIC" });
+  expect(posts.find((post) => post.title === "Export fails on Safari")).toEqual({ title: "Export fails on Safari", visibility: "PRIVATE" });
+});
+
+test("a board the team made Private or Team only keeps its choice: posts folded into it stay Private, an author-only post on a Team only board stays the team's", async () => {
+  vi.stubEnv("PLANS", "on");
+  // The team's own Bugs board, Private before the import: Featurebase's Bugs (author-only) matches it by name.
+  await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs", postVisibility: "PRIVATE" } });
+  fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
+  const ideas = structuredClone(fake.fixtures.boards.find((board) => board.name === "Bugs")!);
+  Object.assign(ideas, { id: "65f0000000000000000000b5", name: "Ideas", localization: { name: { en: "Ideas" } }, postDefaults: { visibility: "public" } });
+  fake.fixtures.boards.push(ideas);
+  fake.fixtures.posts.push({ ...structuredClone(fake.fixtures.posts[0]!), id: "65f0000000000000000000pa", boardId: ideas.id, title: "Offline mode", createdAt: "2024-04-01T10:00:00.000Z" });
+  await importFeedback();
+  expect(await prisma.post.findFirst({ where: { projectId: project.id, title: "Offline mode" }, select: { visibility: true, board: { select: { name: true } } } })).toEqual({ visibility: "PRIVATE", board: { name: "Bugs" } });
+
+  // Team only: the author-only post on it is the team's.
+  project = await createProject(owner);
+  await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs", postVisibility: "TEAM" } });
+  await importFeedback();
+  expect(await prisma.post.findFirst({ where: { projectId: project.id, title: "Only for one customer" }, select: { visibility: true } })).toEqual({ visibility: "TEAM" });
+});
+
+test("a post Featurebase shows to some people, not its author among them, stays out, counted", async () => {
+  const forOthers = fake.fixtures.posts.find((post) => post.title === "Only for one customer")!;
+  forOthers.access = { userIds: ["65f00000000000000000beef"], companyExternalIds: [] };
+  await importFeedback();
+  expect((await call(getImport, asOwner(), {})).import!.counts.posts).toMatchObject({ imported: 5, leftOut: expect.objectContaining({ "only some people see": 3 }) });
+  expect(await prisma.post.count({ where: { projectId: project.id, title: "Only for one customer" } })).toBe(0);
+});
+
+test("importing again makes a board an earlier import brought Public Private, once Featurebase's posts there are their author's", async () => {
+  await importFeedback();
+  expect((await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Bugs" }, select: { postVisibility: true } })).postVisibility).toBe("PUBLIC");
+  fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
+  await importFeedback();
+  expect((await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Bugs" }, select: { postVisibility: true } })).postVisibility).toBe("PRIVATE");
+  // Once: the team makes it Public again, and a later import leaves it so.
+  await prisma.board.updateMany({ where: { projectId: project.id, name: "Bugs" }, data: { postVisibility: "PUBLIC" } });
+  await importFeedback();
+  expect((await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Bugs" }, select: { postVisibility: true } })).postVisibility).toBe("PUBLIC");
 });
 
 test("a page run twice, at once or again later, and a second import, bring nothing twice", async () => {
   const started = await importFeedback();
   const before = await made();
-  expect(before).toMatchObject({ boards: 2, posts: 5, votes: 8, comments: 3, notes: 1, events: 5 });
+  expect(before).toMatchObject({ boards: 2, posts: 6, votes: 9, comments: 3, notes: 1, events: 6 });
 
   // Each of feedback's steps again from its first page, twice at once: one of them saves.
   for (const step of ["posts", "votes", "comments", "avatars", "embeddings"]) {
@@ -224,7 +300,7 @@ test("a page run twice, at once or again later, and a second import, bring nothi
   }
   await importFeedback();
   expect(await made()).toEqual(before);
-  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).postCount).toBe(5);
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).postCount).toBe(6);
   // The second import says so.
   const already = { imported: 0, leftOut: expect.objectContaining({ "already brought across earlier": expect.any(Number) }) };
   expect((await call(getImport, asOwner(), {})).import!.counts).toMatchObject({
@@ -276,7 +352,7 @@ test("past the plan's board limit, a board's posts go into the last board import
   const { import: done } = await call(getImport, asOwner(), {});
   expect(done!.counts).toMatchObject({
     boards: { imported: 2, leftOut: { "only some people see": 3, "past the plan's board limit, their posts in the last board": 1 } },
-    posts: { imported: 6 },
+    posts: { imported: 7 },
     images: { imported: 0, leftOut: { "with no media storage on this server": 3 } },
   });
   expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
@@ -332,7 +408,7 @@ test("a page of Featurebase's with more posts than one of ours takes comes acros
   await importFeedback();
   // 40 posts in one of Featurebase's pages: read twice, 25 posts a time.
   expect(reads()).toHaveLength(2);
-  expect((await call(getImport, asOwner(), {})).import!.counts.posts).toMatchObject({ imported: 35 });
+  expect((await call(getImport, asOwner(), {})).import!.counts.posts).toMatchObject({ imported: 36 });
   const titles = (await prisma.post.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true } })).map((post) => post.title);
   expect(titles.slice(-30)).toEqual(Array.from({ length: 30 }, (_, n) => `Idea ${n + 1}`));
 });
@@ -359,7 +435,7 @@ test("past a page's time, what's left of it goes to the next page; one post's im
   }
   let counts = (await call(getImport, asOwner(), {})).import!.counts;
   // The post's image and the comment's.
-  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { imported: 2 }, avatars: { imported: 2 } });
+  expect(counts).toMatchObject({ posts: { imported: 6 }, images: { imported: 2 }, avatars: { imported: 2 } });
   expect(await prisma.user.count({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } } })).toBe(2);
   // One post a page (Featurebase's 10, 2 to its page: 5 pages without the limit), one avatar a page (else 1).
   expect(pages.filter((step) => step === "posts")).toHaveLength(10);
@@ -372,7 +448,7 @@ test("past a page's time, what's left of it goes to the next page; one post's im
   Object.assign(FEEDBACK_PAGE, { ...limits, hardMs: -1 });
   await importFeedback();
   counts = (await call(getImport, asOwner(), {})).import!.counts;
-  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 2 } } });
+  expect(counts).toMatchObject({ posts: { imported: 6 }, images: { leftOut: { "that couldn't be fetched": 2 } } });
 });
 
 test("a comment whose images run past a page's time goes to the next page whole, its images with it, once", async () => {
@@ -540,7 +616,7 @@ test("an embedding provider failing leaves the posts unembedded; the import stil
   openai.failNext(500);
   await importFeedback();
   const { import: done } = await call(getImport, asOwner(), {});
-  expect(done).toMatchObject({ state: "done", error: null, counts: { posts: { imported: 5 }, comments: { imported: 3 }, avatars: { imported: 1 } } });
+  expect(done).toMatchObject({ state: "done", error: null, counts: { posts: { imported: 6 }, comments: { imported: 3 }, avatars: { imported: 1 } } });
   expect(await prisma.postEmbedding.count({ where: { projectId: project.id } })).toBe(0);
 });
 

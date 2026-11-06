@@ -213,7 +213,7 @@ test("Feedback comes across with Contacts: the posts with their dates, votes and
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await expect(status).toContainText("Imported from Featurebase", { timeout: 30_000 });
-  for (const count of ["3 contacts", "2 boards", "5 posts", "8 votes", "3 comments", "1 note", "1 profile picture"]) {
+  for (const count of ["3 contacts", "2 boards", "6 posts", "9 votes", "3 comments", "1 note", "1 profile picture"]) {
     await expect(status).toContainText(count);
   }
   await expect(status).toContainText("3 boards only some people see");
@@ -226,6 +226,10 @@ test("Feedback comes across with Contacts: the posts with their dates, votes and
   await expect(visitor.getByRole("link", { name: /Dark mode/ })).toBeVisible();
   await expect(visitor.getByText("Hidden from the portal")).toHaveCount(0);
   await checkpoint(visitor, "portal-board-imported");
+  // The post Featurebase showed only to its author came as Private: not on the portal for anyone else.
+  await visitor.goto("/feedback/bugs");
+  await expect(visitor.getByRole("link", { name: /Export fails on Safari/ })).toBeVisible();
+  await expect(visitor.getByText("Only for one customer")).toHaveCount(0);
   await visitor.goto("/feedback/feature-requests/dark-mode-1");
   const post = visitor.getByRole("article");
   await expect(post.getByRole("heading", { name: "Dark mode" })).toBeVisible();
