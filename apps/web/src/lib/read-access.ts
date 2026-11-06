@@ -108,26 +108,24 @@ export function accessBadge(level: NamedLevel): string | null {
  * Publish's sentence on who reads an article: `levels` are its tab's, collections' and its own "Who can read", `listing`
  * where it's served (lib/article-listing.ts). On a private portal "anyone" is its readers; on a plan without private
  * portals and reader groups (`groupsOn` false), a private portal and content for groups are the team's only
- * (server/portal-access.ts). Search engines only for one listed everywhere, for anyone, on a public portal, not `noindex`.
+ * (server/portal-access.ts). Search engines only for one listed everywhere, for anyone, on a public portal, that they
+ * may index (`indexed`: not noindex, nor sample content).
  */
 export function publishReaders(
   levels: NamedLevel[],
-  { privatePortal, groupsOn, listing, noindex }: { privatePortal: boolean; groupsOn: boolean; listing: Listing; noindex: boolean },
+  { privatePortal, groupsOn, listing, indexed }: { privatePortal: boolean; groupsOn: boolean; listing: Listing; indexed: boolean },
 ): string {
   if (listing === "hidden") {
     return "It isn't shown anywhere in your portal, not even at its link.";
   }
-  if (listing === "ai_only") {
-    return "AI answers use it, but it has no page in your portal's docs.";
-  }
-  const where = listing === "unlisted" ? "at its link" : "in your portal's docs";
   const who =
     privatePortal && !groupsOn ? "Only your team" : describeAccess(groupsOn ? levels : levels.map((level) => (level.access === "GROUPS" ? { ...level, groups: [] } : level)));
-  if (who !== ANYONE) {
-    return `${who} can read it ${where}.`;
+  const anyone = who === ANYONE;
+  const subject = !anyone ? who : privatePortal ? "Anyone who can open your private portal" : "Anyone";
+  if (listing === "ai_only") {
+    return `${subject} can get it in AI answers, but it has no page in your portal's docs.`;
   }
-  if (privatePortal) {
-    return `Anyone who can open your private portal can read it ${where}.`;
-  }
-  return listing === "everywhere" && !noindex ? `Anyone can read it ${where}, and search engines can find it.` : `Anyone can read it ${where}.`;
+  const where = listing === "unlisted" ? "at its link" : "in your portal's docs";
+  const found = anyone && !privatePortal && listing === "everywhere" && indexed;
+  return `${subject} can read it ${where}${found ? ", and search engines can find it" : ""}.`;
 }

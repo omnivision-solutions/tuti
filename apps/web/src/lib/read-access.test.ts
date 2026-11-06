@@ -116,11 +116,11 @@ describe("publishReaders: Publish's sentence on who reads it", () => {
   const signedInOnly = [...anyone, { access: "SIGNED_IN" as const, groups: [] }];
   const enterpriseOnly = [{ access: "GROUPS" as const, groups: ["Enterprise", "Pro"] }, ...anyone];
   const teamOnly = [{ access: "GROUPS" as const, groups: [] }];
-  const portal: Parameters<typeof publishReaders>[1] = { privatePortal: false, groupsOn: true, listing: "everywhere", noindex: false };
+  const portal: Parameters<typeof publishReaders>[1] = { privatePortal: false, groupsOn: true, listing: "everywhere", indexed: true };
   const listed = (listing: Listing) => ({ ...portal, listing });
   test.each([
     ["anyone, on a public portal", anyone, portal, "Anyone can read it in your portal's docs, and search engines can find it."],
-    ["anyone, kept from search engines", anyone, { ...portal, noindex: true }, "Anyone can read it in your portal's docs."],
+    ["anyone, kept from search engines", anyone, { ...portal, indexed: false }, "Anyone can read it in your portal's docs."],
     ["anyone, unlisted", anyone, listed("unlisted"), "Anyone can read it at its link."],
     ["anyone, on a private portal", anyone, { ...portal, privatePortal: true }, "Anyone who can open your private portal can read it in your portal's docs."],
     ["a private portal, on a plan without it", anyone, { ...portal, privatePortal: true, groupsOn: false }, "Only your team can read it in your portal's docs."],
@@ -130,7 +130,9 @@ describe("publishReaders: Publish's sentence on who reads it", () => {
     ["groups, on a plan without them", enterpriseOnly, { ...portal, groupsOn: false }, "Only your team can read it in your portal's docs."],
     ["the team only", teamOnly, portal, "Only your team can read it in your portal's docs."],
     ["hidden", anyone, listed("hidden"), "It isn't shown anywhere in your portal, not even at its link."],
-    ["AI only", signedInOnly, listed("ai_only"), "AI answers use it, but it has no page in your portal's docs."],
+    ["AI only", anyone, listed("ai_only"), "Anyone can get it in AI answers, but it has no page in your portal's docs."],
+    ["AI only, for signed-in readers", signedInOnly, listed("ai_only"), "Signed-in readers can get it in AI answers, but it has no page in your portal's docs."],
+    ["AI only, for the team", teamOnly, listed("ai_only"), "Only your team can get it in AI answers, but it has no page in your portal's docs."],
   ])("%s", (_, levels, options, expected) => {
     expect(publishReaders(levels, options)).toBe(expected);
   });

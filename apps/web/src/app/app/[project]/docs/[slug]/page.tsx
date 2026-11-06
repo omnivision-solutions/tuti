@@ -65,6 +65,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
       description: true,
       keywords: true,
       noindex: true,
+      sample: true,
       collection: { select: { slug: true, name: true } },
       changes: { select: { title: true, body: true, content: true, updatedAt: true, collection: { select: { slug: true, name: true } } } },
     },
@@ -86,7 +87,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   // Who reads it once published: everything above it, and its own "Who can read".
   const readers = publishReaders(
     [...(access.levels[parent?.slug ?? ""] ?? access.levels[""]!), namedLevel(article, new Map(access.groups.map((g) => [g.key, g.name])))],
-    { privatePortal: portalAccess === "PRIVATE", groupsOn: planIncludes(plan, "privatePortal"), listing, noindex: article.noindex },
+    { privatePortal: portalAccess === "PRIVATE", groupsOn: planIncludes(plan, "privatePortal"), listing, indexed: !article.noindex && !article.sample },
   );
 
   return (
