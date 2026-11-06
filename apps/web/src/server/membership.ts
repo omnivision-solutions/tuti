@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 
+import { lastingImage } from "./media-urls";
 import { toReviewCounts } from "./operations/code-changes";
 import { awake } from "./operations/conversations";
 import { canReadPortal } from "./portal-access";
@@ -34,10 +35,25 @@ export async function getAdminProject(slug: string) {
   return membership && (ADMIN_ROLES as readonly string[]).includes(membership.role) ? membership.project : null;
 }
 
+type LogoImage = Parameters<typeof lastingImage>[0];
+/** At most twice as wide as it's tall: still legible in a square. */
+const fitsSquare = (image: LogoImage) => !!image?.width && !!image.height && image.width <= 2 * image.height;
+
+/**
+ * The project switcher's mark, from Customize → Branding: the logo (and its dark one) where it fits a
+ * square, else the favicon (a wide wordmark would shrink to a sliver); null for the project's initial.
+ */
+function projectMark(logo: LogoImage, logoDark: LogoImage, favicon: LogoImage) {
+  const url = (image: LogoImage) => lastingImage(image)?.url ?? null;
+  return fitsSquare(logo) ? { logo: url(logo), logoDark: fitsSquare(logoDark) ? url(logoDark) : null } : { logo: url(favicon), logoDark: null };
+}
+
+const logoImage = { select: { id: true, status: true, width: true, height: true } } as const;
+
 export async function listMyProjects(userId: string) {
   const memberships = await prisma.teamMember.findMany({
     where: { userId },
-    select: { role: true, project: { select: { id: true, slug: true, name: true } } },
+    select: { role: true, project: { select: { id: true, slug: true, name: true, brandLogo: logoImage, brandLogoDark: logoImage, brandFavicon: logoImage } } },
     orderBy: { createdAt: "asc" },
   });
   const projectIds = memberships.map((m) => m.project.id);
@@ -50,9 +66,10 @@ export async function listMyProjects(userId: string) {
   ]);
   const count = (rows: { projectId: string; _count: number }[]) => new Map(rows.map((row) => [row.projectId, row._count]));
   const [openCounts, triageCounts] = [count(open), count(triage)];
-  return memberships.map(({ role, project: { id, ...project } }) => ({
+  return memberships.map(({ role, project: { id, brandLogo, brandLogoDark, brandFavicon, ...project } }) => ({
     ...project,
     role,
+    ...projectMark(brandLogo, brandLogoDark, brandFavicon),
     openConversations: openCounts.get(id) ?? 0,
     toTriage: triageCounts.get(id) ?? 0,
     changesWaiting: waitingCounts.get(id) ?? 0,
