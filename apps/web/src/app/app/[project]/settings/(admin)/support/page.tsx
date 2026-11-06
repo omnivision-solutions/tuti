@@ -1,3 +1,4 @@
+import { pausedNotice } from "@tuti/email";
 import { notFound } from "next/navigation";
 
 import { CopyField } from "@/components/copy-button";
@@ -65,9 +66,7 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
                 {settings.email.paused && (
                   <div className="rounded-lg border border-destructive/40 p-3">
                     <p className="text-sm">
-                      Email sending is paused because of high bounces or spam reports: {settings.email.paused.reason}. No emails
-                      go out until an admin reviews it, except sign-in links. Changelog and post emails held meanwhile won&apos;t be
-                      sent; replies still reach your users in the widget.
+                      {pausedNotice(settings.email.paused.reason)}
                     </p>
                   </div>
                 )}

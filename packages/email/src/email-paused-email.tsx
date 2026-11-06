@@ -33,17 +33,16 @@ export const emailPausedEmail = (props: PausedProps & { portalUrl: string; url: 
   body: <EmailPausedEmail {...props} />,
 });
 
+/** What the team is told of a pause (its email, Settings → Inbox and email), from its reason: bounces or complaints. */
+export const pausedNotice = (reason: string) =>
+  `Email sending is paused because of ${reason.includes("spam") ? "too many spam reports" : "a high bounce rate"}. An admin needs to review it before sending can be enabled again.`;
+
 /** To the project's owners and admins: its email was paused, and what that means. */
 export function EmailPausedTeamEmail({ projectName, reason, url }: PausedProps & { url: string }) {
   return (
     <Layout preview={`Email sending for ${projectName} is paused.`}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        We paused email sending for <strong>{projectName}</strong> because of high bounces or spam reports: {reason}. No emails go
-        out until an admin reviews it, except sign-in links. Changelog and post emails held meanwhile won&apos;t be sent; replies
-        still reach your users in the widget.
-      </Text>
-      <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        We&apos;re looking at it. If you know what happened, reply to this email.
+        {pausedNotice(reason)} If you know what happened, reply to this email.
       </Text>
       <Button href={url} style={buttonStyle}>
         Open settings
