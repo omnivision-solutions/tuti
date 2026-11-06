@@ -9,6 +9,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, newPerson, png, postFeedback, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
+import { latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
 
@@ -712,6 +713,24 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await outsider.goto("/sign-in");
   await expect(outsider.getByRole("banner")).toBeVisible();
   await expect(outsider.locator("script[data-on-portal]")).toHaveCount(0);
+  // A reader signed in there gets it; signing out lands on that sign-in page without it.
+  const email = `e2e-${randomUUID()}@example.com`;
+  await api("/portal/readers", { emails: [email], notify: false });
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.goto("/sign-in");
+  await reader.getByLabel("Email").fill(email);
+  await reader.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(reader.getByText("Check your email")).toBeVisible();
+  await reader.goto(linkIn(await latestEmailTo(email), `${portalUrl(slug)}/sign-in/link?`));
+  await reader.getByRole("main").getByRole("button", { name: "Sign in" }).click();
+  await expect(reader.getByRole("button", { name: "Account" })).toBeVisible();
+  const readerLauncher = reader.locator('body > button[aria-controls="tuti-widget"]');
+  await expect(readerLauncher).toBeVisible();
+  await reader.getByRole("button", { name: "Account" }).click();
+  await reader.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(reader.getByText("Acme is private. Sign in to see it.")).toBeVisible();
+  await expect(reader.locator("script[data-on-portal]")).toHaveCount(0);
+  await expect(readerLauncher).toHaveCount(0);
 });
 
 test("someone signed in on the portal opens What's new in its widget: what's new to them stays marked while their visit is recorded", async ({ browser }, testInfo) => {
