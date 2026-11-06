@@ -1049,8 +1049,15 @@ test("on a phone, a long conversation's title shows in the top bar once it's scr
   await expect(barTitle).toHaveText("Can I export?");
   await expect(barTitle).toBeVisible();
   await checkpoint(owner, "inbox-phone-bar-title", { fullPage: false });
+  // Its text changed in place while it's up there, as a page's refresh does after a rename (a help article's, saved):
+  // the bar follows.
+  await owner.getByRole("heading", { level: 1, name: "Can I export?" }).evaluate((heading) => {
+    const text = [...heading.childNodes].find((node) => node.nodeType === Node.TEXT_NODE)!;
+    text.textContent = "Can I export to PDF?";
+  });
+  await expect(barTitle).toHaveText("Can I export to PDF?");
   // Back at the top, the title is on the page: the bar has the project's name again.
-  await owner.getByRole("heading", { level: 1, name: "Can I export?" }).scrollIntoViewIfNeeded();
+  await owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" }).scrollIntoViewIfNeeded();
   await expect(barTitle).toHaveCount(0);
   await expect(owner.locator("header").getByText("Acme", { exact: true })).toBeVisible();
 });

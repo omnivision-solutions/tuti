@@ -37,13 +37,24 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
       return;
     }
     const bar = ref.current!.offsetHeight;
+    let under = false;
+    const show = () => setScrolled({ pathname, title: under ? heading.textContent : null });
     const observer = new IntersectionObserver(
-      // Gone up under the bar, not down past the screen's bottom.
-      ([entry]) => setScrolled({ pathname, title: !entry.isIntersecting && entry.boundingClientRect.top < bar ? heading.textContent : null }),
+      ([entry]) => {
+        // Gone up under the bar, not down past the screen's bottom.
+        under = !entry.isIntersecting && entry.boundingClientRect.top < bar;
+        show();
+      },
       { rootMargin: `-${bar}px 0px 0px 0px` },
     );
+    // Renamed while it's up there (a help article's title, saved): the page's refresh changes its text in place.
+    const renamed = new MutationObserver(show);
     observer.observe(heading);
-    return () => observer.disconnect();
+    renamed.observe(heading, { childList: true, characterData: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      renamed.disconnect();
+    };
   }, [pathname]);
 
   return (
