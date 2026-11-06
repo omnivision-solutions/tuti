@@ -421,7 +421,7 @@ test("a question asked while the panel loads another page goes in its address, n
   // Loaded: asked by message, the panel as it is.
   page.Tuti.open({ ask: "Do you refund?" });
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs&article=billing");
-  expect(page.frame!.contentWindow!.postMessage).toHaveBeenCalledWith({ type: "tuti:ask", ask: "Do you refund?" }, "https://acme.tuti.example");
+  expect((page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> }).postMessage).toHaveBeenCalledWith({ type: "tuti:ask", ask: "Do you refund?" }, "https://acme.tuti.example");
   // Loading another page: in its address.
   page.Tuti.open({ article: "refunds" });
   page.Tuti.open({ ask: "How do refunds work?" });
