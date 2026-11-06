@@ -255,7 +255,7 @@ test("a changelog line or a link waiting (left by the previous release) isn't co
   await update(one.id, "LINKS", { postId: linked.id }, "PENDING", { probability: 0.7 });
   await update((await pullRequest(2, 1)).id, "LINKS", { postId: linked.id }, "PENDING", { probability: 0.66 });
   const counts = async () => {
-    const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+    const home = await homeOverview(project.id, project.slug);
     const sidebar = (await listMyProjects(owner.id)).find((mine) => mine.slug === project.slug)!;
     return { updates: home.numbers.toReview, home: home.attention.find((group) => group.key === "autopilot")?.items.length ?? 0, sidebar: sidebar.changesWaiting };
   };
@@ -269,7 +269,7 @@ test("a changelog line or a link waiting (left by the previous release) isn't co
   const waiting = await post("Dark mode");
   await update(one.id, "MOVES_FORWARD", { postId: waiting.id }, "PENDING", { payload: { comment: "Dark is on its way." } });
   expect(await counts()).toEqual({ updates: 1, home: 1, sidebar: 1 });
-  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = await homeOverview(project.id, project.slug);
   expect(home.attention.find((group) => group.key === "autopilot")?.items[0]).toMatchObject({ href: `/app/${project.slug}/autopilot/feedback/${waiting.id}` });
 });
 
@@ -292,7 +292,7 @@ test("one count of what waits: the sidebar, Home's number, Home's rows and To re
   await prisma.post.update({ where: { id: sample.id }, data: { sample: true } });
   await update(two.id, "MOVES_FORWARD", { postId: sample.id }, "PENDING", { payload: { comment: "Soon." } });
 
-  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = await homeOverview(project.id, project.slug);
   const sidebar = (await listMyProjects(owner.id)).find((mine) => mine.slug === project.slug)!;
   const toReview = await call(listCodeChangeTargets, team(), {});
   const group = home.attention.find((g) => g.key === "autopilot")!;
@@ -327,7 +327,7 @@ test("Home's Autopilot rows keep To review's order when a sample post leads a bo
     await update(change.id, "MOVES_FORWARD", { postId: target.id }, "PENDING", { payload: { comment: "Soon." } });
   }
   // To review: the first board (led by the sample post), then Bugs. Home: the same, the sample post left out.
-  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = await homeOverview(project.id, project.slug);
   expect(home.attention.find((group) => group.key === "autopilot")!.items.map((item) => item.title)).toEqual(["Week numbers", "Reminder emails"]);
 });
 
@@ -343,7 +343,7 @@ test("a post's review with a progress update and links Autopilot wasn't sure of 
   expect(review.update).toMatchObject({ parts: [progress.id], kind: "moves_forward", comment: "Dark is on its way." });
   // In the list, one update waits on it, from one pull request.
   expect((await call(listCodeChangeTargets, team(), {})).feedback).toEqual([expect.objectContaining({ path: `feedback/${dark.id}`, waiting: 1, pullRequests: [expect.objectContaining({ number: 1 })] })]);
-  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = await homeOverview(project.id, project.slug);
   expect(home.numbers.toReview).toBe(1);
 });
 

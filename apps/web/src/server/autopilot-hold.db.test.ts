@@ -597,7 +597,7 @@ test("Home's Publish now says how many people a request it completes emails", as
   await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
   const reader = await signUp("Rae Reader");
   await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
-  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = await homeOverview(project.id, project.slug);
   expect(home.attention.find((group) => group.key === "autopilot")?.items[0]?.scheduled).toMatchObject({ ids: [action.id], emails: 1, posts: 1 });
 });
 
@@ -615,7 +615,7 @@ test("Home's Publish now, on a row per post as To review lists them: each counts
     const reader = await signUp(name);
     await prisma.post.update({ where: { id }, data: { authorId: reader.id } });
   }
-  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = await homeOverview(project.id, project.slug);
   const rows = home.attention.find((group) => group.key === "autopilot")!.items;
   // The first post, completed twice: one row, both its updates, its people once.
   expect(rows.find((item) => item.scheduled?.ids.includes(action.id))?.scheduled).toMatchObject({ ids: expect.arrayContaining([action.id, more[1]!.id]), emails: 1, posts: 1 });

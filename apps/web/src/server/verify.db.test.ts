@@ -404,7 +404,7 @@ test("a waiting Verify fix is on Home's list of what needs the team, opening its
   model.reply(PICK);
   model.reply(CHECK);
   await call(verifyArticle, team(), { slug: article.slug });
-  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = await homeOverview(project.id, project.slug);
   const autopilot = home.attention.find((group) => group.key === "autopilot");
   expect(autopilot).toMatchObject({ total: 1, items: [expect.objectContaining({ title: "Your team", action: "Review", href: `/app/${project.slug}/autopilot/articles/${article.id}` })] });
 });
@@ -496,7 +496,7 @@ test("a Verify fix on a sample article isn't on Home: neither listed nor counted
   model.reply(PICK);
   model.reply(CHECK);
   expect(await call(verifyArticle, team(), { slug: article.slug })).toMatchObject({ fix: { status: "waiting" } });
-  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = await homeOverview(project.id, project.slug);
   expect(home.attention.find((group) => group.key === "autopilot")).toBeUndefined();
   expect(home.numbers.toReview).toBe(0);
 });

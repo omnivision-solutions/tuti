@@ -20,7 +20,6 @@ import { homeInvitationsToSend, importSee, importSummary, importTitle, onHome } 
 import { homeOverview } from "@/server/home";
 import { hasSampleContent } from "@/server/sample-content";
 import { getMembership, isAdminRole } from "@/server/membership";
-import { getSession } from "@/server/session";
 import { codeChangeList } from "@/server/operations/code-changes";
 import { latestImport } from "@/server/operations/imports";
 
@@ -40,9 +39,8 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
     notFound();
   }
   const admin = isAdminRole(membership.role);
-  const session = await getSession();
   const [overview, paused, pausedCount, sample] = await Promise.all([
-    homeOverview(membership.project.id, slug, { emailVerified: session?.user.emailVerified ?? false }),
+    homeOverview(membership.project.id, slug),
     codeChangeList(membership.project.id, { paused: true }),
     prisma.codeChange.count({ where: { projectId: membership.project.id, state: "PAUSED" } }),
     hasSampleContent(membership.project.id),

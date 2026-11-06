@@ -141,7 +141,7 @@ test("a new project: Home leads with sample content and each setup step's action
   await expect(owner.getByRole("button", { name: "Add sample content" })).toHaveCount(1);
   // Get set up: each step left with its own button, done ones without.
   const setup = owner.getByRole("list", { name: "Get set up" });
-  await expect(setup.getByRole("link")).toHaveText(["Verify", "Get snippet", "Connect", "Set up", "New article", "Invite"]);
+  await expect(setup.getByRole("link")).toHaveText(["Get snippet", "Connect", "Set up", "New article", "Invite"]);
   await expect(setup.getByRole("link", { name: "New article" })).toHaveAttribute("href", `/app/${slug}/docs/new`);
   await expect(setup.getByRole("link", { name: "Invite" })).toHaveAttribute("href", `/app/${slug}/settings/team`);
   // Each button is read with its step.

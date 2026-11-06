@@ -84,7 +84,7 @@ test("Featurebase's admins become invitations to send, as members, by the person
   );
   expect(emailsTo(ada, bo)).toEqual([]);
   // Not sent, so not yet the team invited: Home's Get set up still has it to do.
-  const { setup } = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const { setup } = await homeOverview(project.id, project.slug);
   expect(setup?.find((step) => step.key === "team")).toMatchObject({ done: false });
 });
 
