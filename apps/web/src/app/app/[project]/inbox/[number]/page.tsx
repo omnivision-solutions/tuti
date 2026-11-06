@@ -88,6 +88,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             fromAddress: true,
             original: true,
             seenAt: true,
+            importId: true,
             emailStatus: true,
             emailError: true,
             createdAt: true,
@@ -246,15 +247,18 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                             <MessageText text={message.body} ugc={message.author === "USER"} />
                           </p>
                           <MessageAttachments attachments={message.attachments.map((a) => links.get(a.id)!)} dropped={message.attachmentsDropped} />
-                          {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus || waitsForPause || capped) && (
+                          {message.author === "TEAM" && !message.note && (message.seenAt || message.importId || message.emailStatus || waitsForPause || capped) && (
                             <p className="text-xs text-muted-foreground">
+                              {/* Imported history was never emailed: no email status for it (docs/plan.md, Switching from Featurebase). */}
                               {message.seenAt
                                 ? "Seen"
-                                : message.emailStatus
-                                  ? EMAIL_STATUS[message.emailStatus](message.emailError)
-                                  : waitsForPause
-                                    ? "Not emailed while your project's email is paused (Settings → Inbox and email)"
-                                    : `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`}
+                                : message.importId
+                                  ? "Imported from Featurebase"
+                                  : message.emailStatus
+                                    ? EMAIL_STATUS[message.emailStatus](message.emailError)
+                                    : waitsForPause
+                                      ? "Not emailed while your project's email is paused (Settings → Inbox and email)"
+                                      : `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`}
                             </p>
                           )}
                           {message.original && (

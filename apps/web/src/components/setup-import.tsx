@@ -153,7 +153,7 @@ export function SetupImport({
                 </label>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground">Contacts and feedback come across for now: the help center and the inbox follow in a later version, and the changelog after them.</p>
+            <p className="text-sm text-muted-foreground">Contacts, feedback and the inbox come across for now: the help center follows in a later version, and the changelog after it.</p>
             {boardsNote && picked.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
           </div>
