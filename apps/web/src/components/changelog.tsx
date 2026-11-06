@@ -939,7 +939,7 @@ export function ChangelogEntryActions({
         <AlertDialogHeader>
           <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
           <AlertDialogDescription>
-            AI writes release notes from the entry&apos;s text so far, its pull requests and the posts it completes. They replace
+            AI writes release notes from the entry&apos;s saved text, its pull requests and the posts it completes. They replace
             the current text, including changes you haven&apos;t saved.
           </AlertDialogDescription>
         </AlertDialogHeader>
