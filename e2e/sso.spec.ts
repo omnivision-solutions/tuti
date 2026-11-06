@@ -494,6 +494,27 @@ test("a group from conditions: readers whose properties match read its collectio
   await expect(groups).toContainText("plan is any of pro, enterprise · 1 user: Ada from Acme");
   await checkpoint(owner, "team-settings-groups-with-conditions", { fullPage: false });
 
+  // Any one of its conditions: saved, listed with "or", and still "any" when it's opened and saved again.
+  await groups.getByRole("button", { name: "New group" }).click();
+  await dialog.getByLabel("Name", { exact: true }).fill("Pro or seatless");
+  await dialog.getByRole("group", { name: "Condition 1" }).getByLabel("Property").fill("plan");
+  await dialog.getByRole("group", { name: "Condition 1" }).getByLabel("Value").fill("pro");
+  await dialog.getByRole("button", { name: "Add condition" }).click();
+  const seatless = dialog.getByRole("group", { name: "Condition 2" });
+  await seatless.getByLabel("Property").fill("seats");
+  await seatless.getByRole("combobox", { name: "Operator" }).click();
+  await owner.getByRole("option", { name: "is not set" }).click();
+  await dialog.getByRole("combobox", { name: "Which must match" }).click();
+  await owner.getByRole("option", { name: "Any can match" }).click();
+  await expect(preview).toHaveText("2 matching users");
+  await dialog.getByRole("button", { name: "Add group" }).click();
+  await expect(groups).toContainText("plan is pro or seats is not set · 2 users: Ada from Acme and Bea from Acme");
+  await groups.getByRole("button", { name: "Edit Pro or seatless" }).click();
+  await expect(dialog.getByRole("combobox", { name: "Which must match" })).toContainText("Any can match");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Group saved")).toBeVisible();
+  await expect(groups).toContainText("plan is pro or seats is not set · 2 users");
+
   // A collection for it, with an article.
   await api("/collections", { name: "Pro guides", groups: ["pro-customers"] });
   const article = await api("/articles", { title: "Bulk export", body: "Export everything at once.", collection: "pro-guides" });
