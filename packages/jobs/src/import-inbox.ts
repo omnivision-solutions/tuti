@@ -19,11 +19,15 @@ import { ALREADY_HERE, adminMember, contactUsers, type ImportJob, loadAdmins, ty
 
 type Tx = Prisma.TransactionClient;
 
-/**
- * Conversations a page reads: each is read on its own and its files copied, within import-step's 5 minutes.
- * ponytail: a fixed small page; one with many large files can still be slow. Stop reading early by time if pages time out.
- */
+/** Conversations a list page has: each is read on its own and its files copied. */
 const PAGE = 10;
+/**
+ * A page stops reading conversations after this long, saves those it read and reads the same list page again (its
+ * cursor marked AGAIN), so Featurebase's reads end within the page's budget (imports.ts PAGE_READ_MS) however long
+ * files take to copy. It always reads one, so it gets on.
+ */
+const READ_FOR_MS = 90_000;
+const AGAIN = "again:";
 const DAY_MS = 86_400_000;
 /** Featurebase sends at most this many parts of a conversation, the newest: one with that many has lost its start. */
 const MAX_PARTS = 500;
@@ -59,7 +63,11 @@ const lastActive = (c: FeaturebaseConversation) => new Date(c.lastActivityAt ?? 
 
 /** Conversations, a page at a time; the last page numbers what came across in date order. */
 export async function conversationsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
-  const { items, next } = await job.featurebase.page<FeaturebaseConversation>("/conversations", cursor, { limit: PAGE });
+  const again = cursor?.startsWith(AGAIN) ?? false;
+  const listCursor = again ? cursor!.slice(AGAIN.length) || null : cursor;
+  const { items, next } = await job.featurebase.page<FeaturebaseConversation>("/conversations", listCursor, { limit: PAGE });
+  const started = Date.now();
+  let cut = false;
   // Closed ones older than Tuti keeps would be deleted by the daily history job: counted, not imported.
   const days = historyKeptDays();
   const tooOld = (c: FeaturebaseConversation) => c.state === "closed" && days !== null && lastActive(c).getTime() < Date.now() - days * DAY_MS;
@@ -67,6 +75,10 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
   const known = await recorded(prisma, job, kept.map((c) => c.id));
   const read: Read[] = [];
   for (const listed of kept.filter((c) => !known.has(c.id))) {
+    if (read.length > 0 && Date.now() - started > READ_FOR_MS) {
+      cut = true;
+      break;
+    }
     // Read and its files copied at once: their signed addresses expire within the hour. One deleted since is skipped.
     const conversation = await job.featurebase.get<FeaturebaseConversation>(`/conversations/${encodeURIComponent(listed.id)}`).catch((error: unknown) => {
       if (error instanceof FeaturebaseError && error.status === 404) {
@@ -81,7 +93,7 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
   await loadAdmins(job);
   const contacts = await contactUsers(job, read.flatMap((r) => [r.contactId, ...r.messages.map((m) => m.contactId)].filter((id) => id !== null)));
   return {
-    next,
+    next: cut ? AGAIN + (listCursor ?? "") : next,
     save: async (tx) => {
       const users = await contacts.save(tx);
       // Saved by a run of this page that got there first: once.
@@ -91,15 +103,16 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
         await saveConversation(tx, job, r, users);
       }
       tally(job.counts, "conversations", null, fresh.length);
-      const already = known.size + read.length - fresh.length;
+      // Read again, the list page was counted the first time: only what it reads now counts.
+      const already = (again ? 0 : known.size) + read.length - fresh.length;
       if (already > 0) {
         tally(job.counts, "conversations", ALREADY_HERE, already);
       }
       const old = items.length - kept.length;
-      if (old > 0) {
+      if (old > 0 && !again) {
         tally(job.counts, "conversations", `closed more than ${days} days ago, past what Tuti keeps`, old);
       }
-      if (!next) {
+      if (!next && !cut) {
         await renumber(tx, job);
       }
     },

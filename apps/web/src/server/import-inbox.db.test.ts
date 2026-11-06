@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { handlers, importsSettled } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
@@ -23,6 +23,10 @@ beforeAll(async () => {
   [fake, s3] = await Promise.all([startFeaturebaseFake(), startS3Fake()]);
 });
 afterAll(() => Promise.all([fake.close(), s3.close()]));
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 beforeEach(async () => {
   vi.stubEnv("FEATUREBASE_API_URL", fake.url);
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
@@ -32,6 +36,7 @@ beforeEach(async () => {
   }
   Object.assign(fake, { fixtures: featurebaseFixtures(), pageSize: 100 });
   fake.forbidden.clear();
+  fake.requests.length = 0;
   owner = await signUp("Olive Owner");
   // The fixtures' owner is this team member, by their verified address; the former admin isn't on the team.
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
@@ -218,4 +223,14 @@ test("a part this worker doesn't know (picked on a newer release mid-deploy) fai
     apiKey: null,
     error: "Tuti was being updated while it ran. Start it again to go on: what came across already is skipped.",
   });
+});
+
+test("a page that has read for a while saves what it read and reads its list page again, counting each conversation once", async () => {
+  // A minute and a half passes once the first conversation has been read (its files copying slowly, say).
+  const now = Date.now.bind(Date);
+  vi.spyOn(Date, "now").mockImplementation(() => now() + (fake.requests.some((r) => r.startsWith("GET /v2/conversations/")) ? 100_000 : 0));
+  const done = await importInbox();
+  expect(done.counts).toMatchObject({ conversations: { imported: 3, leftOut: { "closed more than 365 days ago, past what Tuti keeps": 1 } } });
+  expect(fake.requests.filter((r) => r.startsWith("GET /v2/conversations?")).length).toBe(3);
+  expect((await conversations()).map((c) => c.number)).toEqual([1, 2, 3]);
 });
