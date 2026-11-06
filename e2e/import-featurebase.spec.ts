@@ -339,7 +339,7 @@ test("the changelog comes across from Featurebase: its entries on the portal at 
   // The changelog alone.
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
   await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
-  await expect(owner.getByText("Your updates, published at their dates (drafts stay drafts), with their images and categories. Nothing is emailed.")).toBeVisible();
+  await expect(owner.getByText("Your updates, published at their dates (drafts stay drafts), with their images; categories like New, Improved and Fixed become tags. Nothing is emailed.")).toBeVisible();
   await owner.getByRole("checkbox", { name: /^Team/ }).uncheck();
   await owner.getByRole("checkbox", { name: /^Contacts/ }).uncheck();
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
@@ -363,6 +363,13 @@ test("the changelog comes across from Featurebase: its entries on the portal at 
   await expect(visitor.getByText("Single sign-on")).toHaveCount(0);
   await expect(visitor.getByText("For our beta group")).toHaveCount(0);
   await checkpoint(visitor, "portal-changelog-imported");
+
+  // In the app: the entry Featurebase emailed says so, and isn't emailed again; the one it didn't, says that.
+  await owner.goto(`/app/${slug}/changelog/1`);
+  await expect(owner.getByText("Emailed to your subscribers from Featurebase.")).toBeVisible();
+  await owner.goto(`/app/${slug}/changelog/2`);
+  await expect(owner.getByText("Not emailed to subscribers.")).toBeVisible();
+  await checkpoint(owner, "app-changelog-imported-entry");
 });
 
 test("the inbox comes across from Featurebase: its conversations with their messages, notes, images and statuses, history marked as imported", async ({ browser }, testInfo) => {

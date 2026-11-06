@@ -39,7 +39,7 @@ export const IMPORT_PARTS = {
   },
   changelog: {
     label: "Changelog",
-    description: "Your updates, published at their dates (drafts stay drafts), with their images and categories. Nothing is emailed.",
+    description: "Your updates, published at their dates (drafts stay drafts), with their images; categories like New, Improved and Fixed become tags. Nothing is emailed.",
     brings: "Your updates, with their images",
     needs: [],
     media: true,

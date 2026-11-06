@@ -126,6 +126,13 @@ test("a cover that's also in the entry's text, signed apart, is copied once", as
   expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(1);
 });
 
+test("a cover that's also in the text and can't be copied is counted left out once", async () => {
+  const dark = fake.fixtures.changelogs.find((entry) => entry.title === "Dark mode is here")!;
+  Object.assign(dark, { featuredImage: `${fake.url}/files/gone.png?X-Amz-Signature=a`, content: `<p><img src="${fake.url}/files/gone.png?X-Amz-Signature=b" alt="Gone"></p>` });
+  const done = await importChangelog();
+  expect(done.counts.changelogImages).toEqual({ imported: 0, leftOut: { "that couldn't be fetched": 1 } });
+});
+
 test("a key that can't read the changelog isn't accepted for it", async () => {
   fake.forbidden.add("/v2/changelogs");
   await expect(call(startImport, asOwner(), { source: "featurebase", key: FAKE_FEATUREBASE_KEY, parts: ["changelog"] })).rejects.toMatchObject({

@@ -127,7 +127,8 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
           tally(job.counts, "changelogImages", null, copies.size);
         }
         content.leftOut.forEach((item) => tally(job.counts, CHANGELOG_MEDIA[item.kind], MEDIA_LEFT_OUT[item.reason]));
-        if (cover && "leftOut" in cover) {
+        // Left out from the text already (the same file): counted once.
+        if (cover && "leftOut" in cover && !content.leftOut.some((item) => sameFile(item.url) === sameFile(entry.featuredImage!))) {
           tally(job.counts, "changelogImages", MEDIA_LEFT_OUT[cover.leftOut]);
         }
         if (entry.commentCount) {
