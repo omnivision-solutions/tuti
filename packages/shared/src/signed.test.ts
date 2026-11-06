@@ -35,7 +35,11 @@ test("a sealed value opens only with the same secret and purpose, and not once c
   expect(sealValue("import-key", "sk_live_example")).not.toBe(sealed);
   expect(openValue("import-key", sealed)).toBe("sk_live_example");
   expect(() => openValue("other", sealed)).toThrow();
-  expect(() => openValue("import-key", `${sealed.slice(0, -2)}AA`)).toThrow();
+  // One character changed, a few from the end (the last may be padding bits that decode the same).
+  const at = sealed.length - 3;
+  const tampered = `${sealed.slice(0, at)}${sealed[at] === "A" ? "B" : "A"}${sealed.slice(at + 1)}`;
+  expect(tampered).not.toBe(sealed);
+  expect(() => openValue("import-key", tampered)).toThrow();
   vi.stubEnv("BETTER_AUTH_SECRET", "another-secret-at-least-32-characters");
   expect(() => openValue("import-key", sealed)).toThrow();
 });
