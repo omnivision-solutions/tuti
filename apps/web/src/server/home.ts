@@ -47,7 +47,7 @@ export async function homeOverview(projectId: string, slug: string) {
   const toTriage = { projectId, sample: false, duplicateOfId: null, status: "OPEN" as const };
   // As Feedback's Possible duplicates lists them: neither post merged since.
   const duplicate = { projectId, status: "PENDING" as const, post: { duplicateOfId: null }, original: { duplicateOfId: null } };
-  const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, targets, failedSearches, failedQueries, failedTotal, setup, trendingVotes, started] =
+  const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, targets, failedSearches, failedQueries, failedTotal, setup, trendingVotes, started, [firstEmail]] =
     await Promise.all([
     prisma.post.count({ where: { projectId, sample: false, duplicateOfId: null, createdAt: { gte: week } } }),
     // Set back to Open by hand, one has no `waitingSince`: its last message says how long. Both kinds' oldest, merged below.
@@ -83,8 +83,6 @@ export async function homeOverview(projectId: string, slug: string) {
         supportInbox: true,
         uses: true,
         githubInstallation: { select: { projectId: true } },
-        // Whether any email has come in: one is enough.
-        inboundEmails: { take: 1, select: { id: true } },
         _count: {
           select: {
             team: true,
@@ -98,6 +96,9 @@ export async function homeOverview(projectId: string, slug: string) {
     }),
     prisma.vote.groupBy({ by: ["postId"], where: { projectId, createdAt: { gte: week }, post: { sample: false } }, _count: { postId: true }, orderBy: { _count: { postId: "desc" } }, take: 5 }),
     hasOwnContent(projectId),
+    // An email that started a conversation in the Inbox (not one ignored or refused, nor an email reply to a widget's): the support
+    // email works. Imported conversations come with no email received.
+    prisma.$queryRaw<[{ found: boolean }]>`SELECT EXISTS (SELECT 1 FROM inbound_email i JOIN conversation c ON c.id = i."conversationId" WHERE i."projectId" = ${projectId} AND i.status = 'ADDED' AND c.origin = 'EMAIL') AS found`,
   ]);
 
   // Publish now on what completes a post emails people: Home asks first, saying how many.
@@ -187,7 +188,7 @@ export async function homeOverview(projectId: string, slug: string) {
   // Each with what it's for, in a line under its title: what the step gets a team using every part of Tuti, the same
   // whatever the server or the project has turned on (a product choice: most teams will use it all).
   // Support is set up once its first email is in (the address forwarded), or once the inbox is on where the server takes no email.
-  const supportSet = setup.supportInbox && (setup.inboundEmails.length > 0 || supportDomain() === null);
+  const supportSet = setup.supportInbox && (firstEmail.found || supportDomain() === null);
   const steps = [
     { key: "widget", title: "Add the widget to your site", description: `Users give feedback, get help and see what's new right inside ${setup.name}.`, action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
     // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.

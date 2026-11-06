@@ -6,9 +6,11 @@ import { getProject } from "@/server/operations/more";
 import { call } from "@/server/operations/run";
 import { addSampleContent, setProjectUses } from "@/server/projects";
 import { actAs, createProject, signUp } from "@/test/helpers";
+import { postEmail, rawEmail } from "@/test/inbound";
 
 import { dismissDocsGap } from "./docs";
 import { homeOverview } from "./home";
+import { mailSubdomain, supportAddress } from "./inbound";
 
 const DAY = 86_400_000;
 const ago = (days: number) => new Date(Date.now() - days * DAY);
@@ -177,11 +179,20 @@ test("Get set up follows what the team picked after Create project; a project wi
 
     // Done once its first email is in: on, it waits for one; one arrives, done.
     vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email.example");
+    vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
+    const address = supportAddress(await mailSubdomain(project.id), "tuti.email.example");
+    const receive = (to: string, headers: Record<string, string> = {}) =>
+      postEmail(rawEmail({ from: "e2e-kim@example.com", to, headers }), { recipient: to });
     const support = async () => (await homeOverview(project.id, project.slug)).setup!.find((step) => step.key === "support")!;
     expect(await support()).toMatchObject({ done: false, waiting: undefined });
     await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
     expect(await support()).toMatchObject({ done: false, waiting: "Waiting for your first email" });
-    await prisma.inboundEmail.create({ data: { projectId: project.id, recipient: "e2e-support@example.com", sender: "e2e-ada@example.com", dedupeKey: "first", size: 1 } });
+    // Not by mail that never reached the Inbox (an auto-reply), nor an email reply to a widget conversation (its own address).
+    expect((await receive(address, { "Auto-Submitted": "auto-replied" })).body).toEqual({ outcome: "auto_submitted" });
+    const widget = await prisma.conversation.create({ data: { projectId: project.id, number: 99, subject: "From the widget", origin: "WIDGET", email: "e2e-kim@example.com" } });
+    expect((await receive(supportAddress(await mailSubdomain(project.id), "tuti.email.example", widget.replyToken))).body).toEqual({ outcome: "added" });
+    expect(await support()).toMatchObject({ done: false, waiting: "Waiting for your first email" });
+    expect((await receive(address)).body).toEqual({ outcome: "added" });
     expect(await support()).toMatchObject({ done: true, waiting: undefined });
     // A server that takes no email: done once the inbox is on.
     await prisma.inboundEmail.deleteMany({ where: { projectId: project.id } });
