@@ -13,6 +13,7 @@ import { docsHref } from "@/lib/widget-docs";
 import { articleCount, type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { mediaUrls } from "@/server/media-urls";
+import { portalHref, portalLinks } from "@/server/portal-base";
 
 /**
  * What a page this reader may not read, but sees with a lock, says in the panel: to sign in (as
@@ -47,11 +48,12 @@ export async function WidgetDocs({
   collection?: string;
 }) {
   if (article) {
+    const link = await portalLinks();
     return (
       <WidgetArticle
         projectSlug={projectSlug}
         slug={article}
-        back={docsHref(query ? { q: query } : { docsTab, collection })}
+        back={link(docsHref(query ? { q: query } : { docsTab, collection }))}
         backLabel={query ? "Search results" : "All articles"}
         from={query ? undefined : collection}
       />
@@ -113,19 +115,19 @@ function CollectionLinks({ collections, label, href }: { collections: DocsCollec
  * none. A collection's list (`collection`): the way back, its articles, then the collections in it.
  */
 async function Collections({ projectSlug, docsTab, collection: slug }: { projectSlug: string; docsTab?: string; collection?: string }) {
-  const docs = await docsContents(projectSlug);
+  const [docs, link] = await Promise.all([docsContents(projectSlug), portalLinks()]);
   // One this reader may read, else the top level.
   const found = slug ? findCollection(docs, slug) : null;
   const tab = found ? found.tab : (docs.tabs.find((t) => t.slug === docsTab) ?? docs.tabs[0]);
   const at = { docsTab: tab?.slug };
-  const tabs = tab && <DocsTabs tabs={docs.tabs} active={tab.slug} href={(t) => docsHref({ docsTab: t })} compact />;
+  const tabs = tab && <DocsTabs tabs={docs.tabs} active={tab.slug} href={(t) => link(docsHref({ docsTab: t }))} compact />;
   if (found) {
     const { collection, parent } = found;
     return (
       <>
         {tabs}
         <div className="flex flex-col gap-2">
-          <BackLink href={docsHref(parent ? { ...at, collection: parent.slug } : at)}>{parent ? parent.name : "All articles"}</BackLink>
+          <BackLink href={link(docsHref(parent ? { ...at, collection: parent.slug } : at))}>{parent ? parent.name : "All articles"}</BackLink>
           <h2 className="flex items-center gap-2 font-heading text-lg font-bold tracking-tight break-words">
             <CollectionIcon name={collection.icon} />
             <span className="min-w-0">{collection.name}</span>
@@ -133,12 +135,12 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
           {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
         </div>
         {collection.locked && <LockedMessage projectSlug={projectSlug} signedIn={docs.signedIn} />}
-        {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={(article) => docsHref({ ...at, collection: collection.slug, article })} />}
+        {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={(article) => link(docsHref({ ...at, collection: collection.slug, article }))} />}
         {collection.collections.length > 0 && (
           <CollectionLinks
             collections={collection.collections}
             label={`Collections in ${collection.name}`}
-            href={(child) => docsHref({ ...at, collection: child })}
+            href={(child) => link(docsHref({ ...at, collection: child }))}
           />
         )}
       </>
@@ -149,7 +151,7 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
     <>
       {tabs}
       {tab?.locked && <LockedMessage projectSlug={projectSlug} signedIn={docs.signedIn} />}
-      {collections.length > 0 && <CollectionLinks collections={collections} label="Collections" href={(c) => docsHref({ ...at, collection: c })} />}
+      {collections.length > 0 && <CollectionLinks collections={collections} label="Collections" href={(c) => link(docsHref({ ...at, collection: c }))} />}
       {uncollected.length > 0 && (
         <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-2">
           {collections.length > 0 && (
@@ -157,7 +159,7 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
               More articles
             </h2>
           )}
-          <ArticleLinks articles={uncollected} href={(article) => docsHref({ ...at, article })} />
+          <ArticleLinks articles={uncollected} href={(article) => link(docsHref({ ...at, article }))} />
         </section>
       )}
     </>
@@ -201,7 +203,7 @@ async function WidgetArticle({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <BackLink href={back}>{from && article.collection?.slug === from ? article.collection.name : backLabel}</BackLink>
         <Link
-          href={`/docs/${slug}`}
+          href={await portalHref(`/docs/${slug}`)}
           target="_blank"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground [&>svg]:size-4"
         >

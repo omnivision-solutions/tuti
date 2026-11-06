@@ -384,7 +384,7 @@ function AssistantReply({
     />
   );
   // In the widget, an article opens in the panel's Docs tab (the portal's page is a link away from there).
-  const sourceHref = widget ? (article: string) => `/widget?${new URLSearchParams({ tab: "docs", article })}` : undefined;
+  const sourceHref = widget ? (article: string) => at(`/widget?${new URLSearchParams({ tab: "docs", article })}`) : undefined;
   if (answer.status === "failed") {
     return (
       <div className="flex flex-col items-start gap-2 text-sm">

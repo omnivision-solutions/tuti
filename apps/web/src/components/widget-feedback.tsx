@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
+import { usePortalHref } from "@/components/portal-base";
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -171,6 +172,7 @@ export function WidgetFeedback({
   detailsPlaceholder?: string;
 }) {
   const { signedIn, error, known, pending } = useWidgetSignIn(projectSlug, !portalSignedIn);
+  const link = usePortalHref();
   const token = signedIn?.token ?? null;
   const viewer = portalSignedIn || !!signedIn;
   // Who votes here: what's known of their votes is theirs only.
@@ -237,7 +239,7 @@ export function WidgetFeedback({
           }
           return result;
         }}
-        signInHref={known && !viewer ? signInTo(postPath(post)) : undefined}
+        signInHref={known && !viewer ? link(signInTo(postPath(post))) : undefined}
       />
     );
   };
@@ -302,7 +304,7 @@ export function WidgetFeedback({
               <li key={idea.id} className="flex items-center gap-3 py-3">
                 {voteFor(idea)}
                 <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-                  <a href={postPath(idea)} target="_blank" rel="noreferrer" className="font-medium break-words hover:underline">
+                  <a href={link(postPath(idea))} target="_blank" rel="noreferrer" className="font-medium break-words hover:underline">
                     {idea.title}
                   </a>
                   {/* Where it stands, once that says something: Trending's open ideas leave it out (most are). */}
