@@ -127,6 +127,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("menuitem", { name: "Draft with AI…" }).click();
   const confirm = team.getByRole("alertdialog");
   await expect(confirm).toContainText("Replace the text with an AI draft?");
+  await expect(confirm).toContainText("AI writes release notes from the entry's saved text, its pull requests and the posts it completes.");
   await checkpoint(team, "team-changelog-ai-draft-confirm", { fullPage: false });
   await confirm.getByRole("button", { name: "Replace the text" }).click();
   await expect(team.getByText("Drafted with AI")).toBeVisible();
@@ -294,6 +295,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // each with its model and what a draft costs with it (Best is only offered where the endpoint lists its model),
   // or a custom model id.
   await team.goto(`/app/${slug}/settings/ai-models`);
+  // Settings' menu names the page as its heading does.
+  await expect(team.getByRole("link", { name: "AI models", exact: true })).toHaveAttribute("aria-current", "page");
   const changelogModels = team.getByRole("radiogroup", { name: "Changelog drafts and edits" });
   await expect(changelogModels.getByRole("radio", { name: /^Fast/ })).toBeChecked();
   await expect(changelogModels.getByRole("radio")).toHaveCount(3); // Fast, Balanced, Custom model
