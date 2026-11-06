@@ -143,6 +143,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   // With the portal's own turned off, the Custom code's is the one, launcher and all; the portal adds none of its own.
   const api = await apiFor(owner, slug);
   await api("/widget", { onPortal: false }, "PATCH");
+  await owner.goto(`/app/${slug}/customize/custom-code`);
   await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
