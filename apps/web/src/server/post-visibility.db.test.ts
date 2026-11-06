@@ -410,6 +410,33 @@ test("turning a board off drops emails still due about its posts; completing one
   vi.unstubAllEnvs();
 });
 
+test("a post moved to another board while its email is claimed: the claim, holding the old board, tries again", async () => {
+  const { owner, project, open, mine } = await fixture();
+  const other = await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+  const waiting = (sql: string) => async () =>
+    (await prisma.$queryRaw<[{ n: number }]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE ${`%${sql}%`}`)[0].n > 0;
+  // The post's row held while the claim, its board locked already, waits on it; moved meanwhile, then let go.
+  const movedWhileClaiming = async (postId: string, sql: string, run: () => Promise<unknown>) => {
+    let job: Promise<unknown> | undefined;
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT 1 FROM post WHERE id = ${postId} FOR UPDATE`;
+      job = run().catch((error: Error) => error);
+      await expect.poll(waiting(sql)).toBe(true);
+      await tx.post.update({ where: { id: postId }, data: { boardId: other.id } });
+    });
+    expect(await job).toMatchObject({ message: expect.stringMatching(/visibility changed/) });
+  };
+
+  await prisma.post.update({ where: { id: open.id }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+  await movedWhileClaiming(open.id, `"shippedEmailsDueAt" AS due`, () => handlers.postShipped({ postId: open.id }, log));
+  expect(await prisma.shippedEmail.count({ where: { postId: open.id } })).toBe(0);
+
+  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PUBLIC" } });
+  const reply = await prisma.comment.create({ data: { projectId: project.id, postId: mine.id, authorId: owner.id, body: "Fixed", votersEmailDueAt: new Date() } });
+  await movedWhileClaiming(mine.id, `AS visibility, "boardId" FROM post`, () => handlers.replyEmailed({ commentId: reply.id }, log));
+  expect(await prisma.replyEmail.count({ where: { commentId: reply.id } })).toBe(0);
+});
+
 test("a portal whose boards are all the team's opens on its changelog", async () => {
   const { project } = await fixture();
   await prisma.board.updateMany({ where: { projectId: project.id }, data: { postVisibility: "TEAM" } });
