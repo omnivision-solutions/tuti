@@ -13,6 +13,7 @@ import { call } from "@/server/operations/run";
 import { disconnectGithub, refreshGithubRepositories, setGithubRepository } from "@/server/github";
 import { accountsFromCookie } from "@/server/github-connect";
 
+import { GithubRepositories } from "@/components/github-connection";
 import GithubIntegrationPage from "@/app/app/[project]/settings/(admin)/integrations/github/page";
 
 import { GET as callback } from "./callback/route";
@@ -288,6 +289,21 @@ describe("repositories", () => {
     expect(await included(other.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
+  /** The rows Settings → Integrations → GitHub shows (the GithubRepositories element's). */
+  async function settingsRows(projectSlug: string) {
+    const find = (node: unknown): unknown => {
+      if (!node || typeof node !== "object") {
+        return undefined;
+      }
+      if (Array.isArray(node)) {
+        return node.map(find).find(Boolean);
+      }
+      const element = node as { type?: unknown; props?: { repositories?: unknown; children?: unknown } };
+      return element.type === GithubRepositories ? element.props!.repositories : find(element.props?.children);
+    };
+    return find(await GithubIntegrationPage({ params: Promise.resolve({ project: projectSlug }), searchParams: Promise.resolve({}) } as never));
+  }
+
   /** "Reconnect": GitHub's authorization again for the account the project is on, as the person with `code`. */
   async function reconnect(projectSlug: string, installationId: number, code: string) {
     const authorize = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`));
@@ -314,11 +330,18 @@ describe("repositories", () => {
     expect(await reconnect(project.slug, 703, "code-r3-less")).toMatch(/github=connected$/);
     expect(await connected(project.id)).toMatchObject({ repositories: [mobile] });
     expect(await included(project.id)).toEqual(["acme/mobile"]);
+    // One the project has but isn't listed (added while a reconnect read the list) still shows, to remove.
+    await prisma.githubInstallation.update({ where: { projectId: project.id }, data: { repositories: [] } });
+    expect(await settingsRows(project.slug)).toEqual([expect.objectContaining({ fullName: "acme/mobile", included: true })]);
     // GitHub not answering changes nothing.
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
     expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
     expect(await included(project.id)).toEqual(["acme/mobile"]);
+    // Another site can't start it (nor Connect GitHub) for a signed-in admin.
+    const fromElsewhere = { headers: { "sec-fetch-site": "cross-site" } };
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, fromElsewhere)))).toMatch(/github=expired$/);
+    expect(location(await install(new Request(`${APP}/api/github/install?project=${project.slug}`, fromElsewhere)))).toMatch(/github=expired$/);
     // Reconnecting goes only to the project's own account, or one GitHub offered them.
     expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=799`)))).toMatch(/github=expired$/);
   });

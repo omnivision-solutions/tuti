@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { githubConfig } from "@/lib/github";
 import { appUrl } from "@/lib/hosts";
-import { accountsFromCookie, ACCOUNTS_COOKIE, adminProject, authorizeRedirect } from "@/server/github-connect";
+import { accountsFromCookie, ACCOUNTS_COOKIE, adminProject, authorizeRedirect, crossSite } from "@/server/github-connect";
 
 /**
  * A GitHub account picked after "Connect GitHub": one GitHub said the person has the App on, or
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     return new NextResponse(null, { status: 404 });
   }
   const params = new URL(request.url).searchParams;
-  const project = await adminProject({ slug: params.get("project") ?? "" });
+  const project = !crossSite(request) && (await adminProject({ slug: params.get("project") ?? "" }));
   if (!project) {
     return NextResponse.redirect(new URL("/app?github=expired", appUrl()));
   }

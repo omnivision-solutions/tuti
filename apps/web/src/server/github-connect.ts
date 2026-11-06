@@ -40,6 +40,13 @@ export function authorizeRedirect(config: GithubConfig, projectId: string, insta
   return NextResponse.redirect(authorize);
 }
 
+/**
+ * Whether the browser says another site sent it here. Connecting starts only from Tuti's own pages:
+ * another site mustn't start it for a signed-in admin, whose access on GitHub would then make the
+ * project's list. (GitHub's own returns go to the Setup and Callback URLs.)
+ */
+export const crossSite = (request: Request) => request.headers.get("sec-fetch-site") === "cross-site";
+
 /** Remembers the project for 15 minutes while the person installs the App on GitHub. */
 export function rememberInstall(response: NextResponse, projectId: string) {
   response.cookies.set(INSTALL_COOKIE, signValue("install", [projectId]), {

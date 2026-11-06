@@ -43,7 +43,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
       accountType: true,
       repositories: true,
       createdAt: true,
-      included: { select: { repoId: true } },
+      included: { select: { repoId: true, fullName: true } },
       project: { select: { analyseCodeChanges: true, autoApplyLinks: true, plan: true } },
     },
   });
@@ -61,7 +61,12 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
           (account) => account.id !== installation.installationId,
         )
       : null;
-  const repositories = listedRepositories(installation.repositories);
+  // The list, and the project's own even if it isn't on it (a reconnect by someone who can't access one, as it was added), to remove.
+  const listed = listedRepositories(installation.repositories);
+  const repositories = [
+    ...listed,
+    ...installation.included.filter((row) => !listed.some((repo) => repo.id === row.repoId)).map((row) => ({ id: row.repoId, fullName: row.fullName })),
+  ];
   const elsewhere = await prisma.githubRepository.findMany({
     where: { repoId: { in: repositories.map((repo) => repo.id) }, connectionId: { not: installation.id } },
     select: {

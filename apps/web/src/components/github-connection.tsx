@@ -184,8 +184,7 @@ export function GithubRepositories({
       {manageUrl && (
         <div className="flex flex-col gap-2 border-t pt-4">
           <span className="text-muted-foreground">
-            Missing a repository? Give the Tuti app access to it on GitHub, then reconnect. The list has the repositories the person who
-            connected can open on GitHub.
+            Missing a repository? Give the Tuti app access to it on GitHub, then reconnect to list the ones you have access to there.
           </span>
           <div className="flex flex-wrap gap-2">
             <a href={manageUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
