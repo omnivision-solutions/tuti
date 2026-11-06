@@ -142,7 +142,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                 const Icon = step.done ? CheckCircle2Icon : SETUP_ICONS[step.key]!;
                 const next = i === 0 && !step.done;
                 return (
-                  <li key={step.key} className={`flex flex-col gap-3 rounded-xl border p-4 ${next ? "border-primary/50" : ""}`}>
+                  <li key={step.key} className={`flex min-w-0 flex-col gap-3 rounded-xl border p-4 ${next ? "border-primary/50" : ""}`}>
                     <div className="flex items-center gap-3">
                       <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${step.done ? "text-primary" : next ? "bg-soft text-soft-foreground" : "bg-muted text-muted-foreground"}`}>
                         <Icon aria-hidden className="size-[18px]" />
@@ -152,7 +152,8 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                       </span>
                       <span className="sr-only">{step.done ? "(done)" : "(to do)"}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground">{step.description}</p>
+                    {/* The project's name is in some: a long one wraps rather than running out of the card. */}
+                    <p className="text-sm wrap-anywhere text-muted-foreground">{step.description}</p>
                     {/* Each step left to do with its own action, a button rather than a link in the text. */}
                     {!step.done && (
                       // Described by its step, which screen readers then read with it ("Connect", Connect GitHub).

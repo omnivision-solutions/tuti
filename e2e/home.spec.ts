@@ -121,6 +121,24 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await expect(owner.getByRole("main").getByRole("listitem").getByRole("link", { name: /^(Dark mode|Exports)$/ })).toHaveText(["Exports", "Dark mode"]);
 });
 
+test("Get set up's cards wrap a long project name inside the card, on a phone and two to a row", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "AcmeAnalyticsPlatformForEnterpriseTeamsAndPartnersWorldwide", slug);
+  const list = owner.getByRole("list", { name: "Get set up" });
+  const card = list.getByRole("listitem").filter({ hasText: "Set up single sign-on" });
+  await expect(card).toContainText("Users sign in with their AcmeAnalyticsPlatformForEnterpriseTeamsAndPartnersWorldwide account");
+  // The card stays inside the list, and its text inside the card.
+  const fits = async () => {
+    const [box, outer] = [(await card.boundingBox())!, (await list.boundingBox())!];
+    expect(box.x + box.width).toBeLessThanOrEqual(outer.x + outer.width + 0.5);
+    expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  };
+  await fits();
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await fits();
+});
+
 test("a new project: Home leads with sample content and each setup step's action, no numbers; empty Feedback and Changelog each say what to do", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
