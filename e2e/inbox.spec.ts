@@ -7,7 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { publishMx } from "./dns";
 import { setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, expectOneRowOfTabs, png, signUp } from "./helpers";
+import { afterIntersections, apiFor, createProject, expectOneRowOfTabs, png, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
@@ -1031,6 +1031,43 @@ test("an Inbox row reads in four lines at most: who on one, cut short, and the m
     expect((await row.getByText("Exports stopped working").locator("..").boundingBox())!.height).toBeLessThanOrEqual(2 * 16 + 1);
     expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   }
+});
+
+test("on a phone, a long conversation's title shows in the top bar once it's scrolled up under it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { owner, api, messages } = await twoConversations(browser);
+  for (let i = 1; i <= 8; i++) {
+    await api("/conversations/1/messages", { body: `Follow-up ${i}: still wondering whether the export covers last year's reports too.`, author: { id: "user-42" } });
+  }
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.reload();
+  const barTitle = owner.locator('[data-slot="bar-title"]');
+  await expect(messages).toHaveCount(9);
+  // It opens at its newest message, the title scrolled up under the bar: the bar says it.
+  await expect(owner.getByRole("heading", { level: 1, name: "Can I export?" })).not.toBeInViewport();
+  await expect(barTitle).toHaveText("Can I export?");
+  await expect(barTitle).toBeVisible();
+  await checkpoint(owner, "inbox-phone-bar-title", { fullPage: false });
+  // Its text changed in place while it's up there, as a page's refresh does after a rename (a help article's, saved):
+  // the bar follows.
+  await owner.getByRole("heading", { level: 1, name: "Can I export?" }).evaluate((heading) => {
+    const text = [...heading.childNodes].find((node) => node.nodeType === Node.TEXT_NODE)!;
+    text.textContent = "Can I export to PDF?";
+  });
+  await expect(barTitle).toHaveText("Can I export to PDF?");
+  // Wider than a phone (turned on its side), the title is in the bar itself: no copy of it is left behind.
+  await owner.setViewportSize({ width: 900, height: 844 });
+  await afterIntersections(owner);
+  await expect(barTitle).toHaveCount(0);
+  await owner.setViewportSize({ width: 390, height: 844 });
+  // Back at the top, the title is on the page: the bar has the project's name again.
+  await owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" }).scrollIntoViewIfNeeded();
+  await expect(barTitle).toHaveCount(0);
+  await expect(owner.locator("header").getByText("Acme", { exact: true })).toBeVisible();
+  // A heading taken off the page in sight (a page's refresh replacing it) isn't one gone up under the bar.
+  await owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" }).evaluate((heading) => heading.remove());
+  await afterIntersections(owner);
+  await expect(barTitle).toHaveCount(0);
 });
 
 /** A project whose inbox has Sam's conversation (#1) and another (#2), its owner on it at 1440px, and its API. */
