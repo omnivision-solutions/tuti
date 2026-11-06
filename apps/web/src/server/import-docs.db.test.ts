@@ -153,6 +153,8 @@ test("imported again, nothing comes twice: not a collection, article, revision, 
   // Said as what it is: nothing new, everything there from before.
   expect(again.counts).toEqual({ collections: { imported: 0, leftOut: { "already brought across earlier": 3 } }, articles: { imported: 0, leftOut: { "already brought across earlier": 4 } } });
   expect(importSummary(again)).toBe("Nothing brought across. Left out: 3 collections already brought across earlier; 4 articles already brought across earlier.");
+  // Its own fates, marked as counted by it (the first import's marks don't stop it).
+  expect(new Set((await prisma.importedRecord.findMany({ where: { projectId: project.id, kind: "article" }, select: { countedIn: true } })).map((r) => r.countedIn))).toEqual(new Set([again.id]));
   expect({ collections: await collections(), articles: await articles(), media: await prisma.media.count({ where: { projectId: project.id } }) }).toEqual(before);
   expect(openai.inputs.length).toBe(embedded);
 });
@@ -318,6 +320,34 @@ test("an article new on a page by the time it's read again is counted there, onc
   // Five articles, each counted once: four brought (the new one too), one only some could see.
   expect(job.counts).toEqual({ articles: { imported: 4, leftOut: {} }, privateDrafts: { imported: 1, leftOut: {} } });
   expect(await article("What's new")).toMatchObject({ body: "New here.", publishedAt: expect.any(Date) });
+});
+
+test("an article that moves onto a page read again from a later page is counted, once", async () => {
+  await structureOnly();
+  // Two articles a page: Welcome and Paying by card, then Roadmap notes and Single sign-on.
+  fake.pageSize = 2;
+  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["docs"], step: "docs-content" } });
+  const job = importJob(row)!;
+  const step = STEPS.docs!.steps[2]!;
+  const budget = contentBudget.ms;
+  contentBudget.ms = -1;
+  try {
+    // The first page converts Welcome and leaves Paying by card for when it's read again.
+    let page = await step.page(job, null);
+    await prisma.$transaction((tx) => page.save(tx));
+    // Meanwhile, Single sign-on moves up from the second page to head the first (Paying by card moves down).
+    const sso = fake.fixtures.articles.pop()!;
+    fake.fixtures.articles.unshift(sso);
+    while (page.next) {
+      page = await step.page(job, page.next);
+      await prisma.$transaction((tx) => page.save(tx));
+    }
+  } finally {
+    contentBudget.ms = budget;
+  }
+  // Four articles, each counted once: three brought, one only some could see.
+  expect(job.counts).toEqual({ articles: { imported: 3, leftOut: {} }, privateDrafts: { imported: 1, leftOut: {} } });
+  expect(await prisma.importedRecord.count({ where: { projectId: project.id, kind: "article", contentLanded: true } })).toBe(4);
 });
 
 test("an article whose content didn't land is filled in by the next import; the others stay as they are", async () => {

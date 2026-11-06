@@ -32,10 +32,7 @@ const CONTENT_PAGE = 20;
  * one article a page, so it always gets on. Changeable for tests.
  */
 export const contentBudget = { ms: 90_000 };
-/**
- * A content page's cursor that reads the list's page at the cursor after it again (none: the first), with the ids of
- * the articles left to it (`again:<cursor>|<id>,<id>`): only those are counted then, whatever becomes of them.
- */
+/** A content page's cursor that reads the list's page at the cursor after it again (none: the first): `again:<cursor>`. */
 const AGAIN = "again:";
 
 /** The key is checked against the help center's lists before an import starts. */
@@ -122,7 +119,7 @@ const orderOf = (order: number | null | undefined) => (Number.isFinite(order) ? 
 async function recorded(db: Tx, job: ImportJob, kind: "collection" | "article", externalIds?: string[]) {
   const records = await db.importedRecord.findMany({
     where: { projectId: job.projectId, source: job.source, kind, ...(externalIds && { externalId: { in: externalIds } }) },
-    select: { id: true, externalId: true, localId: true, contentLanded: true, madeTitle: true },
+    select: { id: true, externalId: true, localId: true, contentLanded: true, madeTitle: true, countedIn: true },
   });
   const where = { id: { in: records.map((record) => record.localId) } };
   const rows = new Map<string, { id: string; slug: string; deleted: boolean; createdById: string | null; title?: string; saved?: boolean }>(
@@ -130,7 +127,7 @@ async function recorded(db: Tx, job: ImportJob, kind: "collection" | "article", 
       ? (await db.collection.findMany({ where, select: { id: true, slug: true } })).map((row) => [row.id, { ...row, deleted: false, createdById: null }] as const)
       : await articleRows(db, records.map((record) => record.localId)),
   );
-  return new Map(records.filter((record) => rows.has(record.localId)).map((record) => [record.externalId, { record: record.id, landed: record.contentLanded, madeTitle: record.madeTitle, ...rows.get(record.localId)! }]));
+  return new Map(records.filter((record) => rows.has(record.localId)).map((record) => [record.externalId, { record: record.id, landed: record.contentLanded, madeTitle: record.madeTitle, countedIn: record.countedIn, ...rows.get(record.localId)! }]));
 }
 
 /**
@@ -329,15 +326,10 @@ type Text = { title: string; content: HtmlContent };
  */
 async function contentPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const started = Date.now();
-  // A page read again counts the articles left to it (counted below): the run before counted what it decided.
-  const again = cursor?.startsWith(AGAIN) ?? false;
-  const [againCursor = "", leftToIt = ""] = again ? cursor!.slice(AGAIN.length).split("|") : [];
-  const listCursor = again ? againCursor || null : cursor;
+  const listCursor = cursor?.startsWith(AGAIN) ? cursor.slice(AGAIN.length) || null : cursor;
   const { items, next: listNext } = await job.featurebase.page<FeaturebaseArticle>("/help_center/articles", listCursor, { state: "all", limit: CONTENT_PAGE });
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
-  // Read again, the articles left to it, and any new on the page since (with no record yet, nothing counted it).
-  const counted = (article: FeaturebaseArticle) => !again || leftToIt.split(",").includes(article.id) || !known.has(article.id);
   const todo = items.filter((article) => {
     const local = known.get(article.id);
     return !local || (!local.landed && !local.deleted && !teamSaved(local));
@@ -377,8 +369,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
     texts.push({ article, live, draft: differs ? (draft as Text) : null, draftLost: draft && "error" in draft ? draft.error : null });
   }
-  const left = todo.filter((article) => !texts.some((t) => t.article === article));
-  const next = left.length > 0 ? `${AGAIN}${listCursor ?? ""}|${left.map((article) => article.id).join(",")}` : listNext;
+  const next = texts.length < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
   if (!next) {
     mediaCaches.delete(job.id);
   }
@@ -394,31 +385,37 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       const limit = articleLimit(plan);
       let room = limit === null ? Infinity : limit - (await tx.article.count({ where: { projectId: job.projectId, publishedAt: { not: null }, deletedAt: null } }));
       for (const article of items) {
-        // Counted on the run that decides what becomes of it, once.
-        const count = (kind: string, reason: string | null) => counted(article) && tally(job.counts, kind, reason);
         const local = locals.get(article.id);
         const text = texts.find((t) => t.article === article);
         // Not converted for want of time: the page read again does it.
-        if (!text && todo.includes(article)) {
+        if (!local || (!text && todo.includes(article))) {
           continue;
         }
+        // What becomes of it is counted once an import, by the run that first decides it (whichever page it's on, read
+        // again or not), which marks it so in the same save.
+        const first = local.countedIn !== job.id;
+        const count = (kind: string, reason: string | null) => first && tally(job.counts, kind, reason);
+        const decided = (data: { contentLanded?: true } = {}) => tx.importedRecord.update({ where: { id: local.record }, data: { countedIn: job.id, ...data } });
         // Deleted here before its content landed: left deleted and not landed, so if it's restored, a later import fills it in.
-        if (local?.deleted && !local.landed) {
+        if (local.deleted && !local.landed) {
           count("articles", "deleted here since");
+          await decided();
           continue;
         }
         // Landed before (or by a run of this page that got in first), deleted here since it landed, or saved by the team
         // since it was made empty (an import that stopped between its passes, started again): as it is. The team's
         // isn't marked landed: nothing of Featurebase's landed; it's told as theirs by its title and text each time.
-        if (local && !local.landed && !local.deleted && teamSaved(local)) {
+        if (!local.landed && !local.deleted && teamSaved(local)) {
           count("articles", "edited here before their text came, so left as they are");
+          await decided();
           continue;
         }
-        if (!local || local.landed || local.deleted || !text) {
+        if (local.landed || local.deleted || !text) {
           count("articles", ALREADY_HERE);
+          await decided();
           continue;
         }
-        await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
+        await decided({ contentLanded: true });
         if ("error" in text.live) {
           count("articles", `${text.live.error} (they're empty drafts)`);
           continue;
