@@ -195,8 +195,10 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
       continue;
     }
     const { body: text, urls, media, unshown } = await messageText(part);
-    // An email shows its new part, as a received one does, the whole of it kept behind it (a widget message never quotes).
-    const { text: body, stripped } = part.channel === "email" && !kind.note ? stripQuotes(text) : { text, stripped: false };
+    // An email shows its new part, as a received one does, the whole of it kept behind it (a widget message never quotes);
+    // one that starts the conversation as a forward is kept whole, by its subject.
+    const subject = messages.length === 0 ? (source?.subject ?? conversation.title ?? "") : "";
+    const { text: body, stripped } = part.channel === "email" && !kind.note ? stripQuotes(text, subject) : { text, stripped: false };
     const files: StoredFile[] = [];
     let dropped = unshown;
     for (const url of urls) {
@@ -401,21 +403,30 @@ const subjectFrom = (text: string) => {
 };
 
 /**
- * Cuts the quotes from emails imported before imports cut them, the whole email kept behind each, as an import does now.
- * Run once by apps/worker's `cut:imported-quotes`; nothing is lost, so running it again changes nothing.
+ * Cuts the quotes from emails imported before imports cut them, the whole email kept behind each, as an import does now
+ * (a conversation's first message by its subject, a forward kept whole). Run once by apps/worker's `cut:imported-quotes`,
+ * a page at a time; nothing is lost, so running it again changes nothing.
  */
 export async function cutImportedQuotes(): Promise<number> {
-  const messages = await prisma.conversationMessage.findMany({
-    where: { importId: { not: null }, channel: "EMAIL", note: false, original: null },
-    select: { id: true, body: true },
-  });
   let cut = 0;
-  for (const { id, body } of messages) {
-    const { text, stripped } = stripQuotes(body);
-    if (stripped) {
-      await prisma.conversationMessage.update({ where: { id }, data: { body: text, original: body } });
-      cut++;
+  let after: string | undefined;
+  for (;;) {
+    const messages = await prisma.conversationMessage.findMany({
+      where: { importId: { not: null }, channel: "EMAIL", note: false, original: null, ...(after && { id: { gt: after } }) },
+      orderBy: { id: "asc" },
+      take: 200,
+      select: { id: true, body: true, conversation: { select: { subject: true, messages: { orderBy: { createdAt: "asc" }, take: 1, select: { id: true } } } } },
+    });
+    for (const { id, body, conversation } of messages) {
+      const { text, stripped } = stripQuotes(body, conversation.messages[0]?.id === id ? conversation.subject : "");
+      if (stripped) {
+        await prisma.conversationMessage.update({ where: { id }, data: { body: text, original: body } });
+        cut++;
+      }
     }
+    if (messages.length < 200) {
+      return cut;
+    }
+    after = messages.at(-1)!.id;
   }
-  return cut;
 }

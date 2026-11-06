@@ -409,6 +409,27 @@ test("emails imported before imports cut quotes are cut once, the whole email ke
   expect(await cutImportedQuotes()).toBe(0);
 });
 
+test("a conversation started by a forwarded email keeps it whole, on import and when cut later; replies after it are cut", async () => {
+  const snoozed = fake.fixtures.conversations[1]!;
+  const forward = "FYI, from our bank.\n\nOn Mon, Oct 12, 2026 at 6:51 AM, Example Bank <e2e-bank@example.com> wrote:\nYour payment failed.";
+  snoozed.source = { ...snoozed.source!, subject: "Fwd: Payment failed" };
+  (snoozed.conversationParts as { bodyHtml: string }[])[0]!.bodyHtml = forward
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => `<p>${line.replace(/</g, "&lt;")}</p>`)
+    .join("");
+  await importInbox();
+  const conversation = (await conversations()).find((c) => c.subject === "Fwd: Payment failed")!;
+  const [asked, replied] = conversation.messages;
+  expect(asked).toMatchObject({ body: "FYI, from our bank.\nOn Mon, Oct 12, 2026 at 6:51 AM, Example Bank <e2e-bank@example.com> wrote:\nYour payment failed.", original: null });
+  expect(replied).toMatchObject({ body: "Sent again: it's in your inbox." });
+
+  // Imported before quotes were cut: the forward stays whole, the reply is cut.
+  await prisma.conversationMessage.update({ where: { id: replied!.id }, data: { body: replied!.original!, original: null } });
+  expect(await cutImportedQuotes()).toBe(1);
+  expect(await prisma.conversationMessage.findUniqueOrThrow({ where: { id: asked!.id } })).toMatchObject({ body: asked!.body, original: null });
+});
+
 /** An import's row at the conversations step, as if Contacts had been picked and skipped over. */
 const atConversations = (parts = ["contacts", "inbox"]) =>
   prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealedKey(), parts, step: "conversations" } });
