@@ -63,6 +63,16 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
             <a href={REPO_URL} className="flex items-center gap-1.5 hover:text-foreground">
               <GithubMark className="size-3.5" /> GitHub
             </a>
+            {plansEnabled() && (
+              <>
+                <Link href="/terms" className="hover:text-foreground">
+                  Terms
+                </Link>
+                <Link href="/privacy" className="hover:text-foreground">
+                  Privacy
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       </footer>
