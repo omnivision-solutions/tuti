@@ -306,7 +306,8 @@ export function BoardOffButton({ projectSlug, boardId, name, off, stuck }: { pro
   // One button either way, so focus stays on it as it turns from Turn off to Turn on and back.
   return (
     <>
-      <Button variant="ghost" size="sm" disabled={pending} onClick={() => (off ? turn() : setAsking(true))}>
+      {/* aria-disabled, not disabled: a disabled button drops keyboard focus while it works. */}
+      <Button variant="ghost" size="sm" aria-disabled={pending} onClick={() => !pending && (off ? turn() : setAsking(true))}>
         {off ? "Turn on" : "Turn off"}
       </Button>
       <AlertDialog open={asking} onOpenChange={setAsking}>
