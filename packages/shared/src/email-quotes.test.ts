@@ -35,6 +35,10 @@ test("Featurebase's attribution and footer, and Yahoo's app signature, are cut",
   expect(stripQuotes("Thanks!\n\nYahoo Mail: Search, Organize, Conquer (https://mail.onelink.me/107872968?pid=nativeplacement)\n\nOn Mon, Oct 12, 2026 at 6:51 AM, Acme Support <e2e-support@example.com> wrote:").text).toBe("Thanks!");
   // Their own words that only mention someone's address are theirs.
   expect(stripQuotes("Ask Aaron (e2e-aaron@example.com), who wrote on Monday: it's fixed.").stripped).toBe(false);
+  // "wrote on" without Featurebase's date and time: their own words, kept.
+  expect(stripQuotes("Hi, same problem as my colleague.\nSam Lee (e2e-sam@example.com) wrote on your forum last week:\nExports fail with a 500.\nAny news?").stripped).toBe(false);
+  // Featurebase's in a 24-hour, day-first locale.
+  expect(stripQuotes("Is it fixed?\nAaron Example (e2e-aaron@example.com) wrote on 30.09.2026, 13:47:14:\nIt crashes.").text).toBe("Is it fixed?");
 });
 
 test("kept whole: a forward, text with no quote, and a reply that's only a quote", () => {

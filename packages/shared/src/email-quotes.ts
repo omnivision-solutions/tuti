@@ -13,8 +13,8 @@
 /** "On <date>, <name> wrote:" (any character, line breaks too, in the gaps) in English, French, German, Spanish, Dutch, Italian, Portuguese and Danish/Norwegian. */
 const ON_WROTE =
   /^\s*(on\s[\s\S]{1,300}\swrote\s?:|le\s[\s\S]{1,300}\sa\s[ée]crit\s?:|am\s[\s\S]{1,300}\sschrieb[\s\S]{0,100}:|el\s[\s\S]{1,300}\sescribi[óo]\s?:|op\s[\s\S]{1,300}\sschreef[\s\S]{0,60}:|il\s[\s\S]{1,300}\sha\sscritto\s?:|em\s[\s\S]{1,300}\sescreveu\s?:|den\s[\s\S]{1,300}\sskrev[\s\S]{0,60}:)\s*$/i;
-/** Featurebase's attribution in the emails it sends: "<name> (<email>) wrote on <date>:". */
-const WROTE_ON = /^\S.{0,200}\s\((mailto:)?[^\s()@]+@[^\s()]+\)\s+wrote on\s.{1,100}:$/i;
+/** Featurebase's attribution in the emails it sends: "<name> (<email>) wrote on <date>, <time>:" (9/30/2026, 1:47:14 PM). */
+const WROTE_ON = /^\S.{0,200}\s\((mailto:)?[^\s()@]+@[^\s()]+\)\s+wrote on\s+\d{1,4}[./-]\d{1,2}[./-]\d{1,4},?\s+\d{1,2}:\d{2}(:\d{2})?(\s?[ap]\.?m\.?)?\s*:$/i;
 /** The footer of Featurebase's emails, its link's address after the words: what follows is theirs. */
 const FEATUREBASE_FOOTER = /^powered by\b.{0,40}\(https?:\/\/(www\.)?featurebase\.app\b[^)]*\)$/i;
 const ORIGINAL_MESSAGE = /^\s*-{2,}\s*(original message|ursprüngliche nachricht|message d'origine|mensaje original|messaggio originale)\s*-{2,}/i;
