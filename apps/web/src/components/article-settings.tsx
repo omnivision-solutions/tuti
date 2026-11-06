@@ -82,7 +82,7 @@ function Place({
         checked={place.showUpdatedDate}
         onChange={(showUpdatedDate) => onChange({ ...place, showUpdatedDate })}
         label="Show the updated date"
-        description="Under its title: when you last published changes to it. None shows until you do."
+        description="Under its heading: when you last published changes to it. None shows until you do."
       />
     </FieldGroup>
   );

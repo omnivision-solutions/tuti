@@ -59,7 +59,7 @@ export function ContentActionsSettings({ projectSlug, actions }: { projectSlug: 
         <h2 id="content-actions-date" className="font-semibold">
           Last updated date
         </h2>
-        <SwitchRow name="updatedDate" label="Show the last updated date" description="Under each article's title: when you last published changes to it. None shows until you do." defaultChecked={actions.updatedDate} />
+        <SwitchRow name="updatedDate" label="Show the last updated date" description="Under each article's heading: when you last published changes to it. None shows until you do." defaultChecked={actions.updatedDate} />
       </section>
       {state.error && <FieldError>{state.error}</FieldError>}
     </form>
