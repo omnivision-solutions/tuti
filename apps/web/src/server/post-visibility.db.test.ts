@@ -354,7 +354,11 @@ test("a public post on a Team only board leads readers back to the portal's feed
           : undefined;
     return find((await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-for-the-editor-1" }), searchParams: Promise.resolve({}) } as never)) as ReactNode);
   };
+  // Its only board is the team's: back to the portal's home.
   actAs(null);
+  expect(await backLink()).toMatch(/\/$/);
+  // Another board on the portal: back to its feedback.
+  await prisma.board.create({ data: { projectId: project.id, slug: "ideas", name: "Ideas" } });
   expect(await backLink()).toMatch(/\/feedback$/);
   actAs(owner);
   expect(await backLink()).toMatch(/\/feedback\/feature-requests$/);

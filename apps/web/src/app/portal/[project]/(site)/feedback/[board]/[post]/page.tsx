@@ -20,6 +20,7 @@ import { etaOnPortal, formatMonth, timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { currentPostViewer } from "@/server/portal-access";
+import { firstBoardPath } from "@/server/portal-home";
 import { canSeePost } from "@/server/post-visibility";
 import { postsLike } from "@/server/post-lists";
 import { getSession } from "@/server/session";
@@ -118,8 +119,17 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
 
   return (
     <div className="flex flex-col gap-6">
-      {/* A public post on a Team only board: back to the portal's feedback, not to a board only the team may open. */}
-      {post.board.postVisibility === "TEAM" && !viewer.team ? <BackLink href={at("/feedback")}>Feedback</BackLink> : <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>}
+      {/* A public post on a Team only board: back to the portal's feedback (its home, when it has no board of its own), not
+          to a board only the team may open. */}
+      {post.board.postVisibility === "TEAM" && !viewer.team ? (
+        (await firstBoardPath(projectSlug)) ? (
+          <BackLink href={at("/feedback")}>Feedback</BackLink>
+        ) : (
+          <BackLink href={at("/")}>Home</BackLink>
+        )
+      ) : (
+        <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
+      )}
 
       <article className="flex items-start gap-4">
         <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
