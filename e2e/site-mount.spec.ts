@@ -188,6 +188,19 @@ test("the widget's panel under a path of the team's site keeps the path in its t
   const endpoints = await api("/collections", { name: "Endpoints", tab: "api" });
   const keys = await api("/articles", { title: "API keys", body: "Make one in Settings.", collection: endpoints.slug });
   await api(`/articles/${keys.slug}/publish`, {});
+  // One that links to others: by the portal's Tuti address, and by its address on the site (once that's set up).
+  const text = (words: string, href?: string) => ({ type: "text", text: words, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
+  const content = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [text("Start with "), text("inviting people", `${portalUrl(slug)}/docs/${inviting.slug}`), text(", then "), text("roles", `${siteUrl()}/help/docs/${roles.slug}`)],
+      },
+    ],
+  };
+  const setup = await api("/articles", { title: "Team setup", content });
+  await api(`/articles/${setup.slug}/publish`, {});
   const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await db.connect();
   await db.query(
@@ -352,6 +365,17 @@ test("the widget's panel under a path of the team's site keeps the path in its t
     "href",
     "/help/feedback/feature-requests/dark-mode-1",
   );
+
+  // An article's links to others, at either address, stay under the path: on its page, and in the panel.
+  const linkReader = await newPerson(browser, siteUrl());
+  await linkReader.goto(`/help/docs/${setup.slug}`);
+  const page = linkReader.getByRole("article");
+  for (const [name, article] of [["inviting people", inviting.slug], ["roles", roles.slug]]) {
+    await expect(page.getByRole("link", { name, exact: true })).toHaveAttribute("href", `/help/docs/${article}`);
+    await expect(page.getByRole("link", { name, exact: true })).not.toHaveAttribute("target", /.*/);
+  }
+  await linkReader.goto(`/help/widget?tab=docs&article=${setup.slug}`);
+  await expect(linkReader.getByRole("article").getByRole("link", { name: "roles", exact: true })).toHaveAttribute("href", `/help/widget?tab=docs&article=${roles.slug}`);
 
   // Private, the panel asks people to sign in there.
   await owner.goto(`/app/${slug}/settings/access`);

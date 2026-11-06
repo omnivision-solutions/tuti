@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type Prisma, Prisma as PrismaNamespace, prisma } from "@tuti/db";
-import { adminMember, contactUsers, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, loadAdmins, lockProject } from "@tuti/jobs";
+import { adminMember, contactUsers, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, loadAdmins, lockProject, upsertProjectUser } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { openValue, sealValue } from "@tuti/shared/signed";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -123,7 +123,8 @@ test("Contacts come across as the project's users, page after page: their app's 
   const again = await start();
   await importsSettled();
   expect(await usersOf()).toHaveLength(3);
-  expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(3);
+  // Its three contacts, Juno remembered as a lead too.
+  expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(4);
   expect((await call(getImport, asOwner(), {})).import).toMatchObject({ id: again.id, state: "done", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
 });
 
@@ -157,7 +158,8 @@ test("a page run twice, at once or again later, brings nothing twice", async () 
   await prisma.dataImport.update({ where: { id: row.id }, data: { state: "RUNNING", apiKey: sealedKey(), step: "contacts", cursor: null, counts: {} } });
   await handlers.importStep({ importId: row.id }, log);
   expect(await usersOf()).toHaveLength(3);
-  expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(3);
+  // Its three contacts, Juno remembered as a lead too.
+  expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(4);
 });
 
 test("a page's save that loses a race to someone's first sign-in is tried again, its contacts counted once", async () => {
@@ -270,6 +272,67 @@ const inPage = <T,>(fn: (tx: Prisma.TransactionClient) => Promise<T>) =>
     await lockProject(tx, project.id);
     return fn(tx);
   });
+
+test("one person per address in a project: a customer without an id in the app whose address a user here has is that user, as are two such with one address; never a lead, nor someone with an id in the app", async () => {
+  // Signed in from the team's app before, under ids Featurebase doesn't know them by.
+  const tobias = await upsertProjectUser(project.id, "signed-in-tobias", { name: "Tobias", email: "E2E-Tobias@example.com" });
+  await upsertProjectUser(project.id, "signed-in-mira", { name: "Mira", email: "e2e-mira@example.com" });
+  const contacts = fake.fixtures.contacts;
+  contacts[1]!.userId = null;
+  contacts.push(
+    // Another Featurebase customer with Tobias's address, and two leads with it (anyone can type an address as a lead).
+    { object: "contact", id: "65f000000000000000000004", type: "customer", name: "T. Quill", email: "e2e-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
+    { object: "contact", id: "65f000000000000000000005", type: "lead", name: "Not Tobias", email: "e2e-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
+    // A lead the team's app knows: its user, as any contact with an id in the app.
+    { object: "contact", id: "65f000000000000000000009", userId: "signed-in-tobias", type: "lead", name: "Tobias", email: "e2e-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
+    // Two customers new here with one address: one user.
+    { object: "contact", id: "65f000000000000000000006", type: "customer", name: "Ada", email: "e2e-ada@example.com", profilePicture: null, customFields: {}, companies: [] },
+    { object: "contact", id: "65f000000000000000000007", type: "customer", name: "Ada L.", email: "E2E-Ada@example.com", profilePicture: null, customFields: {}, companies: [] },
+  );
+  await start();
+  await importsSettled();
+
+  const records = new Map((await prisma.importedRecord.findMany({ where: { projectId: project.id, kind: "contact" } })).map((r) => [r.externalId.slice(-1), r.localId]));
+  expect(records.get("2")).toBe(tobias);
+  expect(records.get("4")).toBe(tobias);
+  expect(records.get("5")).not.toBe(tobias);
+  expect(records.get("7")).toBe(records.get("6"));
+  // Mira keeps her id in the app, so its SSO finds her.
+  expect((await usersOf()).map((u) => u.externalId)).toEqual([
+    "app-user-1",
+    "featurebase:65f000000000000000000003",
+    "featurebase:65f000000000000000000005",
+    "featurebase:65f000000000000000000006",
+    "signed-in-mira",
+    "signed-in-tobias",
+  ]);
+  expect(records.get("9")).toBe(tobias);
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ counts: { contacts: { imported: 8 } } });
+
+  // A later customer with the address of a lead brought earlier is never that lead: theirs was unproven.
+  // One with the address of a user the app knows is still them, even one Featurebase had as a lead.
+  contacts.push(
+    { object: "contact", id: "65f000000000000000000008", type: "customer", name: "A customer", email: "e2e-not-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
+    { object: "contact", id: "65f00000000000000000000a", type: "customer", name: "Tobias Q.", email: "e2e-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
+  );
+  await prisma.ssoIdentity.updateMany({ where: { projectId: project.id, externalId: "featurebase:65f000000000000000000005" }, data: { email: "e2e-not-tobias@example.com" } });
+  await start();
+  await importsSettled();
+  const later = await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "contact", externalId: "65f000000000000000000008" } });
+  expect(later.localId).not.toBe(records.get("5"));
+  expect((await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "contact", externalId: "65f00000000000000000000a" } })).localId).toBe(tobias);
+});
+
+test("a lead whose user was deleted is made again on the next import, and noted as a lead again", async () => {
+  await start();
+  await importsSettled();
+  const lead = () => prisma.importedRecord.findFirst({ where: { projectId: project.id, kind: "lead", externalId: "65f000000000000000000003" } });
+  await prisma.user.delete({ where: { id: (await lead())!.localId } });
+  await start();
+  await importsSettled();
+  const contact = await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "contact", externalId: "65f000000000000000000003" } });
+  expect((await lead())?.localId).toBe(contact.localId);
+});
 
 test("a contact the contacts step didn't bring is brought when a page needs them; one Featurebase doesn't have is missing", async () => {
   const job = await pageJob();

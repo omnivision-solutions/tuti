@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { type Browser, expect, type Locator, type Page, test } from "@playwright/test";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
@@ -808,6 +808,90 @@ test("the team member's own action taking the open conversation out of its view 
   await api("/conversations", { email: "e2e-eighth@example.com", body: "An eighth question" });
   await expect(row(8)).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/6$`));
+});
+
+test("the details beside a conversation hide for every conversation, after a reload too, the messages taking their room; on a phone there's no toggle", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Can't export to CSV", body: "The export button does nothing." });
+  await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const posts = owner.getByRole("region", { name: "Linked posts" });
+  const about = owner.getByRole("complementary", { name: "About them" });
+  const messages = owner.getByRole("list", { name: "Messages" });
+  const hide = owner.getByRole("button", { name: "Hide details" });
+  const show = owner.getByRole("button", { name: "Show details" });
+
+  // Shown to start with, its toggle at the end of the header's actions.
+  await expect(posts).toBeVisible();
+  await expect(about).toBeVisible();
+  await expect(hide).toHaveAttribute("aria-expanded", "true");
+  const close = (await owner.getByRole("button", { name: "Close", exact: true }).boundingBox())!;
+  expect((await hide.boundingBox())!.x).toBeGreaterThan(close.x);
+  const width = (await messages.boundingBox())!.width;
+  await checkpoint(owner, "inbox-details-shown", { fullPage: false });
+
+  // Hidden: the messages and the reply box take the pane's whole width.
+  await hide.click();
+  await expect(posts).toBeHidden();
+  await expect(about).toBeHidden();
+  await expect(show).toHaveAttribute("aria-expanded", "false");
+  expect((await messages.boundingBox())!.width).toBeGreaterThan(width + 250);
+  await checkpoint(owner, "inbox-details-hidden", { fullPage: false });
+
+  // Still hidden in another conversation, and after a reload.
+  await owner.getByRole("region", { name: "Conversations", exact: true }).getByRole("link", { name: /discount for nonprofits/ }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await expect(show).toBeVisible();
+  await expect(about).toBeHidden();
+  await owner.reload();
+  await expect(show).toBeVisible();
+  await expect(posts).toBeHidden();
+  // Hidden as the server sends it, before any script runs: no flash of the column on load.
+  const html = await (await owner.request.get(`/app/${slug}/inbox/2`)).text();
+  expect(html).toContain('data-details="hidden"');
+  // Its toggle is in that page too, so Assign, Snooze and Close don't move as the page's scripts start.
+  expect(html).toMatch(/<button[^>]*aria-label="Show details"/);
+  await expect(about).toBeHidden();
+
+  // Shown again, as it was.
+  await show.click();
+  await expect(posts).toBeVisible();
+  await expect(about).toBeVisible();
+  await expect(hide).toBeVisible();
+  expect((await messages.boundingBox())!.width).toBeCloseTo(width, 0);
+
+  // As the page's scripts start, Close doesn't move: where it is in the page the server sends (no scripts) is where it
+  // stays, with the column beside the messages (1440px, and a tablet-wide 960px) and without it (1100px, the list taking
+  // the room), the toggle's room kept either way.
+  const serverOnly = await browser.newContext({ javaScriptEnabled: false, storageState: await owner.context().storageState() });
+  const plain = await serverOnly.newPage();
+  for (const width of [1440, 960, 1100]) {
+    await plain.setViewportSize({ width, height: 900 });
+    await plain.goto(`${APP_URL}/app/${slug}/inbox/1`);
+    const before = (await plain.getByRole("button", { name: "Close", exact: true }).boundingBox())!;
+    await owner.setViewportSize({ width, height: 900 });
+    await owner.goto(`/app/${slug}/inbox/1`);
+    // Checked once the scripts have run (React has taken over the toggle, its layout effect run in the same commit): at
+    // 1100px it's there but unseen.
+    const toggle = owner.locator('[aria-controls="conversation-details"]');
+    await expect.poll(() => toggle.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$")))).toBe(true);
+    await (width === 1100 ? expect(hide).toBeHidden() : expect(hide).toBeVisible());
+    expect((await owner.getByRole("button", { name: "Close", exact: true }).boundingBox())!.x).toBe(before.x);
+  }
+  await serverOnly.close();
+
+  // On a phone the person is a sheet: no toggle, in the menu or under the title.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(owner.getByRole("button", { name: "About Sam Smith" })).toBeVisible();
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await expect(owner.getByRole("button", { name: "Close", exact: true }).first()).toBeVisible();
+  await expect(owner.getByRole("button", { name: /(Hide|Show) details/ })).toHaveCount(0);
 });
 
 test("the Inbox's views are one row of tabs above the list, where they stay as a conversation opens: too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
@@ -1713,4 +1797,66 @@ test("on a server selling plans, a conversation closed before the plan's history
   await expect(owner.getByText("Nothing has happened in it for more than 7 days, longer than your plan keeps inbox history. Upgrade to see it again.")).toBeVisible();
   await expect(owner.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await checkpoint(owner, "conversation-past-plan-history");
+});
+
+// On Tuti's cloud, whose team app shows its own chat launcher at the bottom right (APP_WIDGET_PROJECT).
+test("on a phone with Tuti's chat launcher, the reply box's buttons and a page's pinned Save stay clear of it, all of them clickable (the reply's on a laptop too)", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-long@example.com", body: "Message 1" });
+  for (let i = 2; i <= 12; i++) {
+    await api("/conversations/1/messages", { body: `Message ${i}\n\nwith a few lines\nto make it tall` });
+  }
+  const launcher = owner.locator('body > button[aria-controls="tuti-widget"]');
+  // The middle of each is what's there: nothing over it.
+  const clickable = (locator: Locator) =>
+    locator.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    });
+  const expectClear = async (buttons: Locator) => {
+    const pad = (await launcher.boundingBox())!;
+    expect(await clickable(launcher)).toBe(true);
+    for (const button of await buttons.all()) {
+      const box = (await button.boundingBox())!;
+      const apart = box.x + box.width <= pad.x || pad.x + pad.width <= box.x || box.y + box.height <= pad.y || pad.y + pad.height <= box.y;
+      expect(apart, `${await button.textContent()} is under the launcher`).toBe(true);
+      expect(await clickable(button)).toBe(true);
+    }
+  };
+
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  const buttons = owner.locator("form").filter({ has: reply }).getByRole("button");
+  await expect(owner.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
+  await expect(launcher).toBeVisible();
+  // At the newest message, then scrolled up, where the reply box is held at the bottom of the screen.
+  await checkpoint(owner, "inbox-phone-launcher", { fullPage: false });
+  await expectClear(buttons);
+  await owner.getByRole("list", { name: "Messages" }).locator(":scope > li").first().scrollIntoViewIfNeeded();
+  await expect(reply).toBeInViewport();
+  await checkpoint(owner, "inbox-phone-launcher-scrolled-up", { fullPage: false });
+  await expectClear(buttons);
+  // At its end, where the reply box is, it ends with the page: no gap under it.
+  await owner.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const send = owner.getByRole("button", { name: "Send", exact: true });
+  const y = (await send.boundingBox())!.y;
+  await owner.getByRole("list", { name: "Messages" }).locator(":scope > li").first().scrollIntoViewIfNeeded();
+  expect((await send.boundingBox())!.y).toBe(y);
+  // On a laptop the conversation beside the list is one column too, its Send at the window's right edge.
+  await owner.setViewportSize({ width: 1024, height: 768 });
+  await expect(owner.getByRole("navigation", { name: "Views" })).toBeVisible();
+  await checkpoint(owner, "inbox-laptop-launcher", { fullPage: false });
+  await expectClear(buttons);
+  await owner.setViewportSize({ width: 390, height: 844 });
+
+  // A page whose Save is pinned to the bottom of the screen on phones.
+  await owner.goto(`/app/${slug}/changelog/new`);
+  await expect(owner.locator("[data-pinned-actions]")).toBeVisible();
+  await checkpoint(owner, "changelog-phone-launcher", { fullPage: false });
+  await expectClear(owner.locator("[data-pinned-actions]").getByRole("button"));
 });

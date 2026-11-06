@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, type Locator, type Request, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Request, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -14,6 +14,30 @@ import { similar } from "./openai";
 // One at a time: runAutopilot runs Autopilot's minute for every project, so a journey beside
 // another here would publish what that one is still looking at.
 test.describe.configure({ mode: "default" });
+
+
+/**
+ * With Tuti's chat launcher in the window's bottom-right corner (56px, 20px in), a bar held at the bottom of the screen
+ * (the one with `button`) keeps its buttons out of that corner. The launcher only shows on Tuti's cloud: a stand-in for
+ * what marks it (`launcher:` only looks for `data-app-widget` in the page), taken away after.
+ */
+async function expectClearOfLauncher(page: Page, button: Locator) {
+  await page.evaluate(() => {
+    const mark = document.createElement("style");
+    mark.dataset.appWidget = "stand-in";
+    document.body.append(mark);
+  });
+  const { width, height } = page.viewportSize()!;
+  const corner = { left: width - 76, top: height - 76, right: width - 20, bottom: height - 20 };
+  const buttons = await button.locator("xpath=ancestor::div[contains(concat(' ', @class, ' '), ' sticky ')][1]").getByRole("button").all();
+  expect(buttons.length).toBeGreaterThan(0);
+  for (const each of buttons) {
+    const box = (await each.boundingBox())!;
+    const apart = box.x + box.width <= corner.left || corner.right <= box.x || box.y + box.height <= corner.top || corner.bottom <= box.y;
+    expect(apart, `${await each.textContent()} is under the launcher`).toBe(true);
+  }
+  await page.evaluate(() => document.querySelector('style[data-app-widget="stand-in"]')?.remove());
+}
 
 test("a merged pull request becomes a code change; the team completes the post it resolves and publishes the article edit", async ({ browser }, testInfo) => {
   // Two pull requests, three approvals and the post and article checked: longer than most.
@@ -222,6 +246,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await view.getByRole("tab", { name: "Changes" }).click();
   await expect(owner.getByRole("button", { name: "Approve and publish" })).toBeInViewport();
   await checkpoint(owner, "autopilot-article-phone-changes", { fullPage: false });
+  await expectClearOfLauncher(owner, owner.getByRole("button", { name: "Approve and publish" }));
   // On a phone it asks as every dialog does: left-aligned, with an × that cancels.
   await owner.getByRole("button", { name: "Approve and publish" }).click();
   const onPhone = owner.getByRole("alertdialog", { name: `Publish “${article}”?` });
@@ -279,6 +304,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await checkpoint(owner, "autopilot-post-phone-dark");
   await owner.emulateMedia({ colorScheme: "light" });
   await checkpoint(owner, "autopilot-post-phone");
+  await expectClearOfLauncher(owner, owner.getByRole("button", { name: "Approve", exact: true }));
   await owner.setViewportSize({ width: 1280, height: 720 });
   // The article is published now: nothing else from its pull request waits.
   await expect(owner.locator("li", { hasText: "Also from PR" })).toHaveCount(0);

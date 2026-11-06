@@ -135,6 +135,8 @@ export type FeaturebaseContact = {
   id: string;
   /** Their id in the team's own app (SSO), if it told Featurebase. */
   userId?: string | null;
+  /** customer, or lead (someone who left an address without signing in: unproven). */
+  type?: string | null;
   email?: string | null;
   name?: string | null;
   profilePicture?: string | null;

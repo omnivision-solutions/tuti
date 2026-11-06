@@ -142,7 +142,7 @@ export function RichEditor({
   const [uploadError, setUploadError] = useState<string>();
   /** Someone tried to submit while images were uploading. */
   const [held, setHeld] = useState(false);
-  const canUpload = profile !== "comment" && !!uploads;
+  const canUpload = !!uploads;
   // Files are attached to articles only.
   const canAttach = profile === "article" && !!uploads;
   // The image node reads these as it draws, so uploads add their URLs here first.
@@ -391,7 +391,7 @@ export function RichEditor({
         )}
       >
         {/* Not over text it can't read: its commands would change what's shown (none of it is sent). */}
-        {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} className="border-b px-1 py-1" />}
+        {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} className="border-b px-1 py-1" />}
         <EditorContent editor={editor} />
         {editor && bare && (
           <>
@@ -747,7 +747,8 @@ function SelectionBar({ editor, onPrompt, host }: { editor: Editor; onPrompt: (k
   );
 }
 
-function Toolbar({ editor, onPrompt, className }: { editor: Editor; onPrompt: (kind: Prompt) => void; className?: string }) {
+/** `onImage`: picks images to upload (with uploads set up). */
+function Toolbar({ editor, onPrompt, onImage, className }: { editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; className?: string }) {
   const active = useEditorState({
     editor,
     selector: ({ editor }) => ({
@@ -775,6 +776,7 @@ function Toolbar({ editor, onPrompt, className }: { editor: Editor; onPrompt: (k
             active={active.link}
             onClick={() => (active.link ? chain().extendMarkRange("link").unsetLink().run() : onPrompt("link"))}
           />
+          {onImage && <Tool icon={ImageIcon} label="Image" active={false} onClick={onImage} />}
         </>
       )}
       {active.image && (

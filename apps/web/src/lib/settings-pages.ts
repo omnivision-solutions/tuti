@@ -15,6 +15,7 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
         { title: "Access", href: at("access") },
         { title: "Single sign-on", href: at("sso") },
         { title: "Domain", href: at("domain") },
+        { title: "Import", href: at("import") },
       ],
     },
     {

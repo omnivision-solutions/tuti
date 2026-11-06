@@ -105,6 +105,7 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
       WITH content AS (
         SELECT content FROM post WHERE "projectId" = ${projectId}
         UNION ALL SELECT c.content FROM comment c JOIN post p ON p.id = c."postId" WHERE p."projectId" = ${projectId}
+        UNION ALL SELECT n.content FROM post_note n JOIN post p ON p.id = n."postId" WHERE p."projectId" = ${projectId}
         UNION ALL SELECT content FROM changelog_entry WHERE "projectId" = ${projectId}
         UNION ALL SELECT content FROM article WHERE "projectId" = ${projectId}
         UNION ALL SELECT r.content FROM article_revision r JOIN article a ON a.id = r."articleId" WHERE a."projectId" = ${projectId}

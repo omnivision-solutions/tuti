@@ -157,8 +157,17 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         )}
       </header>
       {/* What scrolls (a conversation scrolls itself to its newest message here). Each view (a tab, What's new, an
-          update opened from it) starts at its top: the same element would keep the scroll from the one before. */}
-      <div key={whatsNew ? `whats-new-${typeof entry === "string" ? entry : ""}` : tab} data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+          update opened from it, an article, from another's link too) starts at its top: the same element would keep the
+          scroll from the one before. */}
+      <div
+        key={
+          whatsNew
+            ? `whats-new-${typeof entry === "string" ? entry : ""}`
+            : tab === "docs" && typeof article === "string"
+              ? `docs-${article}`
+              : tab
+        }
+        data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {tab === "home" && !whatsNew && (
           <Home
             projectId={project.id}

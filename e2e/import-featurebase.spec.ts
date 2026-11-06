@@ -20,6 +20,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Where are you coming from: Featurebase, with a key and what to bring.
   await owner.waitForURL(`**/app/${slug}/setup`);
   await expect(owner.getByText("Step 1 of 4")).toBeVisible();
+  await expect(owner.getByText("Bring what you have in another tool across, or start fresh. You can always import later, in Settings → Import.")).toBeVisible();
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
   // Where the key is made, beside its field, in a new tab.
   const keysLink = owner.getByRole("link", { name: /^Get your API key.*opens in a new tab/ });
@@ -150,6 +151,36 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(rows.filter({ hasText: "Tobias Quill" })).toBeVisible();
   await expect(rows.filter({ hasText: "Juno Park" })).toBeVisible();
   await checkpoint(owner, "users-imported");
+});
+
+test("after setup, Settings → Import brings what's in Featurebase across any time; importing again brings nothing twice", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  await owner.goto(`/app/${slug}/settings/general`);
+  await owner.getByRole("link", { name: "Import", exact: true }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/import`);
+  // Only the tools to import from: starting fresh is the first run's.
+  await expect(owner.getByRole("radio", { name: /^Featurebase/ })).toBeChecked();
+  await expect(owner.getByRole("radio", { name: /^Starting fresh/ })).toHaveCount(0);
+  await checkpoint(owner, "settings-import");
+
+  const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await owner.getByRole("button", { name: "Check the key and start" }).press("Enter");
+  await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts, 1 profile picture brought across.", { timeout: 15_000 });
+  // With no Continue here, focus is on the import's progress, not lost with the form.
+  await expect(owner.locator(":focus")).toContainText("Imported from Featurebase");
+  await expect(owner.getByText("Importing again brings only what's new since: nothing comes twice.")).toBeVisible();
+  await checkpoint(owner, "settings-import-done");
+
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await owner.getByRole("button", { name: "Import again" }).click();
+  await expect(status).toContainText("Nothing brought across.", { timeout: 15_000 });
+  await expect(status).toContainText("3 contacts already brought across earlier");
+  await checkpoint(owner, "settings-import-again");
 });
 
 test("Feedback comes across with Contacts: the posts with their dates, votes and comments on the portal, and the team's private comment as a note in the app", async ({ browser }, testInfo) => {
@@ -286,14 +317,13 @@ test("the help center comes across from Featurebase: the portal's docs have its 
   await expect(tree.getByRole("link", { name: "Roadmap notes" })).toHaveCount(0);
   await checkpoint(visitor, "portal-imported-article");
 
-  // Its link to another imported article goes to that one's page here.
+  // Its link to another imported article goes to that one's page here, in the same tab (a link to the portal's own article).
   const link = welcome.getByRole("paragraph").getByRole("link", { name: "Paying by card" });
-  await expect(link).toHaveAttribute("href", `${portalUrl(slug)}/docs/paying-by-card`);
-  // Links in articles open in a new tab.
-  const [linked] = await Promise.all([visitor.context().waitForEvent("page"), link.click()]);
-  await linked.waitForURL(/\/docs\/paying-by-card$/);
-  await expect(linked.getByRole("article", { name: "Paying by card" })).toContainText("Cards are charged on the 1st.");
-  await checkpoint(linked, "portal-imported-linked-article");
+  await expect(link).toHaveAttribute("href", "/docs/paying-by-card");
+  await link.click();
+  await visitor.waitForURL(`${portalUrl(slug)}/docs/paying-by-card`);
+  await expect(visitor.getByRole("article", { name: "Paying by card" })).toContainText("Cards are charged on the 1st.");
+  await checkpoint(visitor, "portal-imported-linked-article");
 });
 
 test("the inbox comes across from Featurebase: its conversations with their messages, notes, images and statuses, history marked as imported", async ({ browser }, testInfo) => {
@@ -357,7 +387,13 @@ test("the inbox comes across from Featurebase: its conversations with their mess
   await expect(messages.nth(1)).toContainText("Sent again: it's in your inbox.");
   await expect(messages.nth(1)).toContainText("Imported from Featurebase");
   await expect(messages.nth(1)).not.toContainText("Emailed");
+  // Sent by email: only its new part shows, the quote it carried behind "Show the whole email".
+  const quote = messages.nth(1).getByText(/Tobias Quill <e2e-tobias@example\.com> wrote:/);
+  await expect(quote).toBeHidden();
   await checkpoint(owner, "conversation-imported-unread");
+  await messages.nth(1).getByText("Show the whole email").click();
+  await expect(quote).toBeVisible();
+  await checkpoint(owner, "conversation-imported-whole-email");
 
   // Closed: the bot's and the one from two years ago (this server keeps every closed conversation).
   await owner.goto(`/app/${slug}/inbox`);

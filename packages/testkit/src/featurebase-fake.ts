@@ -108,7 +108,15 @@ const conversationFixtures = (): Row[] => {
       readReceipts: [{ id: tobias.id, userType: "customer", lastReadPartId: "p2001" }],
       conversationParts: [
         part("p2001", "email_msg", ago(3, 0.02), { bodyHtml: "<p>Could you send October's invoice again?</p>", bodyMarkdown: "Could you send October's invoice again?", channel: "email", author: tobias, redacted: false }),
-        part("p2002", "admin_msg", ago(3, 30), { bodyHtml: "<p>Sent again: it's in your inbox.</p>", bodyMarkdown: "Sent again: it's in your inbox.", channel: "email", author: fern, redacted: false }),
+        // The team's reply by email, quoting theirs.
+        part("p2002", "email_msg", ago(3, 30), {
+          bodyHtml:
+            '<div dir="ltr">Sent again: it\'s in your inbox.</div><br><div class="gmail_quote"><div class="gmail_attr">On Mon, Oct 12, 2026 at 6:51 AM, Tobias Quill &lt;<a href="mailto:e2e-tobias@example.com">e2e-tobias@example.com</a>&gt; wrote:</div><blockquote class="gmail_quote"><div>Could you send October\'s invoice again?</div></blockquote></div>',
+          bodyMarkdown: "Sent again: it's in your inbox.\n\nOn Mon, Oct 12, 2026 at 6:51 AM, Tobias Quill <e2e-tobias@example.com> wrote:\n\n> Could you send October's invoice again?",
+          channel: "email",
+          author: fern,
+          redacted: false,
+        }),
         part("p2003", "status", ago(3, 31), { status: "snoozed", snoozedUntil: ago(-7) }),
       ],
     }),

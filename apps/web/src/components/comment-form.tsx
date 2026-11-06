@@ -1,12 +1,12 @@
 "use client";
 
-import { type Doc, readableBy } from "@tuti/content";
+import { type Doc, isEmptyDoc, readableBy } from "@tuti/content";
 import { useRouter } from "next/navigation";
 import { useActionState, useId, useRef, useState } from "react";
 
 import { votersNote } from "@/lib/format";
 import { keepingFields } from "@/lib/forms";
-import { RichEditor } from "@/components/rich-editor";
+import { type EditorUploads, RichEditor } from "@/components/rich-editor";
 import { useSignInHref } from "@/components/sign-in-link";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
@@ -41,6 +41,9 @@ const drafts = {
  * `signedIn`: the portal's public box (the team's forms leave it out). What's written in it is kept in
  * this tab till it's sent or emptied, and is back in the box when it opens again in this tab: signed out,
  * sending goes to sign in instead, coming back here to send it.
+ *
+ * `uploads`: images can be added (pasted, dropped or picked), as in a post; without it (signed out, or no media
+ * storage), text only.
  */
 export function CommentForm({
   postId,
@@ -48,12 +51,14 @@ export function CommentForm({
   notes = false,
   voters = 0,
   signedIn,
+  uploads,
 }: {
   postId: string;
   placeholder?: string;
   notes?: boolean;
   voters?: number | "paused";
   signedIn?: boolean;
+  uploads?: EditorUploads;
 }) {
   const router = useRouter();
   const signInHref = useSignInHref();
@@ -122,9 +127,14 @@ export function CommentForm({
               draftUnreadable.current = false;
               setDraftKept(false);
             }
-            drafts.save(draftKey, editor.isEmpty ? null : editor.getJSON());
+            // Its words only: a restored image would have no link to show it by (they're signed as a page renders).
+            // ponytail: an image added before leaving the page is gone from the draft; sign them on restore if that's missed.
+            const doc = editor.getJSON() as Doc;
+            const words = { ...doc, content: doc.content?.filter((node) => node.type !== "image") };
+            drafts.save(draftKey, isEmptyDoc(words) ? null : words);
           }}
           profile="comment"
+          uploads={uploads}
           name="content"
           label="Comment"
           placeholder={placeholder}

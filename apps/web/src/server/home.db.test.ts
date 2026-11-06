@@ -1,5 +1,4 @@
 import { prisma } from "@tuti/db";
-import { FAKE_MODEL_KEY } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createPost } from "@/server/operations/create";
@@ -158,12 +157,10 @@ test("Get set up follows what the team picked after Create project; a project wi
   try {
     // Nothing picked (projects from before, or the step skipped): the five steps as they were.
     expect(await steps()).toEqual(["widget", "github", "sso", "article", "team"]);
-    // GitHub's step says what merged pull requests do here: only the changelog's draft without Autopilot, Autopilot's updates with it.
-    const github = async () => (await homeOverview(project.id, project.slug)).setup!.find((step) => step.key === "github")!.description;
-    expect(await github()).toBe("Your merged pull requests go into your changelog's next draft.");
-    vi.stubEnv("OPENAI_API_KEY", FAKE_MODEL_KEY);
-    vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");
-    expect(await github()).toBe("Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog.");
+    // Each line is what the step gets a team using everything, here with no AI set up too.
+    expect((await homeOverview(project.id, project.slug)).setup!.find((step) => step.key === "github")!.description).toBe(
+      "Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog.",
+    );
 
     actAs(owner);
     expect(await setProjectUses(project.slug, ["support"])).toEqual({});
@@ -171,6 +168,12 @@ test("Get set up follows what the team picked after Create project; a project wi
     expect((await call(getProject, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {})).uses).toEqual(["support"]);
     // Support only: no GitHub (Autopilot updates feedback, docs and the changelog) and no article; the support inbox instead.
     expect(await steps()).toEqual(["widget", "sso", "support", "team"]);
+    // Its own setup: the inbox, and the support email that lands in it.
+    expect((await homeOverview(project.id, project.slug)).setup!.find((step) => step.key === "support")).toMatchObject({
+      title: "Set up your support inbox",
+      description: "Answer messages from the widget and your support email together, in one shared inbox.",
+      action: "Set up",
+    });
 
     // Done as it's done: the inbox once it's on.
     await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });

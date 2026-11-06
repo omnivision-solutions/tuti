@@ -67,7 +67,8 @@ export default function ApiDocsPage() {
           <li>
             Create a key in your project&apos;s <strong>Settings → Developers</strong> and send it as{" "}
             <code className="font-mono">Authorization: Bearer tuti_…</code>. Keep it on your server. A key works
-            for one project.
+            for one project, with the role of the person who created it: it stops working if they leave the team, and
+            project settings need them to still be an owner or admin.
           </li>
           <li>
             <strong>Read only</strong> keys can use the GET endpoints; changing anything needs a{" "}
