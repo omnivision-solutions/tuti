@@ -22,8 +22,9 @@ const getToken = () => (shown ? appWidgetToken().then((result) => result.token ?
  * it (docs/widget.md): the script tag, then `Tuti.identify` with a token for the signed-in account.
  * Leaving the team app (signing out goes to the home page without a reload, where the launcher
  * stays) signs its panels out, as does a script that loads only after that; coming back asks again.
- * Not on Customize, whose previews show the team's own widget: it isn't installed there, and if it
- * came from another page it's closed (on a phone its open panel makes the page inert) and hidden.
+ * Not on Customize, whose previews show the team's own widget, nor in the Inbox, where the team chats with its own
+ * customers: it isn't installed there, and if it came from another page it's closed (on a phone its open panel makes
+ * the page inert) and hidden.
  */
 export function AppWidget({ slug }: { slug: string }) {
   useEffect(() => {
@@ -34,13 +35,13 @@ export function AppWidget({ slug }: { slug: string }) {
       window.Tuti?.identify(getToken);
     };
   }, []);
-  const customizing = /^\/app\/[^/]+\/customize(\/|$)/.test(usePathname());
+  const away = /^\/app\/[^/]+\/(customize|inbox)(\/|$)/.test(usePathname());
   useEffect(() => {
-    if (customizing) {
+    if (away) {
       window.Tuti?.close();
     }
-  }, [customizing]);
-  if (customizing) {
+  }, [away]);
+  if (away) {
     return <style>{`#tuti-widget, body > button[aria-controls="tuti-widget"] { display: none !important; }`}</style>;
   }
   return (

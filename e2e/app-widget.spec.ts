@@ -70,6 +70,13 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await expect(appLauncher).toBeVisible();
   await expect(appLauncher).toHaveAttribute("aria-expanded", "false");
   await expect(owner.locator("#tuti-widget")).toBeHidden();
+  // Nor in the Inbox, where the team chats with its own customers.
+  await sidebar.getByRole("link", { name: /^Inbox/ }).click();
+  await expect(owner).toHaveURL(/\/inbox/);
+  await expect(appLauncher).toBeHidden();
+  await checkpoint(owner, "app-widget-not-in-inbox", { fullPage: false });
+  await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(appLauncher).toBeVisible();
 
   // On, the app signs them in to the widget (Tuti.identify), as any app does.
   await owner.goto(`/app/${APP_WIDGET_SLUG}/settings/sso`);

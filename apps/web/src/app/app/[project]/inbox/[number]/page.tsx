@@ -299,9 +299,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               {/* Opens at the newest message, and follows new ones. */}
               <ScrollToEnd count={conversation.messages.length} within="conversation" />
               {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the pane's own padding).
-                  Under Tuti's chat launcher, where it's one column (its Send at the right edge), its buttons stay above it;
-                  on phones it takes the room the page leaves at its end for it (AppShell), so it ends where the page does. */}
-              <div className="sticky bottom-0 -mb-6 mt-auto bg-background pt-2 pb-6 launcher:@max-3xl:pb-22 phonebar:launcher:-mb-28">
+                  Tuti's chat launcher isn't in the Inbox (AppWidget), so nothing sits over its buttons. */}
+              <div className="sticky bottom-0 -mb-6 mt-auto bg-background pt-2 pb-6">
                 <ReplyForm
                   projectSlug={slug}
                   number={conversation.number}
