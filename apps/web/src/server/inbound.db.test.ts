@@ -143,12 +143,15 @@ test("an email's From name is who the conversation is with, trimmed and cut shor
     '"E2E-Same@example.com" <e2e-same@example.com>',
     `"  ${"Long ".repeat(40)}" <e2e-long@example.com>`,
     '"e2e-ceo@acme.example" <e2e-spoof@example.com>',
+    // A look-alike at sign (fullwidth, in an encoded word) is an address too; a right-to-left override is dropped.
+    `=?UTF-8?B?${Buffer.from("e2e-ceo\uFF20acme.example").toString("base64")}?= <e2e-wide@example.com>`,
+    `=?UTF-8?B?${Buffer.from("Kim \u202ELee").toString("base64")}?= <e2e-bidi@example.com>`,
   ];
   for (const sender of from) {
     await postEmail(rawEmail({ from: sender, to: address }), { recipient: address });
   }
   const people = (await conversations(project.id)).map((c) => conversationPerson({ ...c, user: null }).name);
-  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim(), null]);
+  expect(people).toEqual(["Carlos Mendes", null, null, "Long ".repeat(20).trim(), null, null, "Kim Lee"]);
   // The team's email about it names them too.
   expect(mailbox.emails.some((email) => email.text.includes("Carlos Mendes started a conversation"))).toBe(true);
 });
