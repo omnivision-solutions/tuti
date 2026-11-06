@@ -1,7 +1,7 @@
 import { type PostVisibility, prisma } from "@tuti/db";
 import { handlers, postAudience } from "@tuti/jobs";
 import { isValidElement, type ReactNode } from "react";
-import { expect, test, vi } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 
 import { BackLink } from "@/components/back-link";
 import { ListFilters } from "@/components/list-filters";
@@ -384,6 +384,9 @@ test("turning a board off drops emails still due about its posts; completing one
   // Hatchet, unreachable: the emails' jobs aren't queued, and their due times wait for the resubmit cron.
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
   await call(updatePost, key, { number: 1, status: "completed" });
   const reply = await call(createComment, as(owner), { number: 1, body: "Shipped", emailVoters: true });
   const due = async () => ({
@@ -467,6 +470,9 @@ test("a board turned off is the team's: its posts, public ones too, are nobody e
   // the emails' jobs couldn't be queued (Hatchet, unreachable) and wait for the resubmit cron.
   vi.stubEnv("JOBS_DRIVER", "hatchet");
   vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
   await call(updatePost, key, { number: 1, status: "completed" });
   const reply = await call(createComment, as(owner), { number: 1, body: "Shipped", emailVoters: true });
   vi.unstubAllEnvs();
