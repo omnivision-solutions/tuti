@@ -194,6 +194,9 @@ test("Get set up follows what the team picked after Create project; a project wi
     expect(await support()).toMatchObject({ done: false, waiting: "Waiting for your first email" });
     expect((await receive(address)).body).toEqual({ outcome: "added" });
     expect(await support()).toMatchObject({ done: true, waiting: undefined });
+    // Its conversation deleted later (past the plan's history): still done.
+    await prisma.conversation.deleteMany({ where: { projectId: project.id, origin: "EMAIL" } });
+    expect(await support()).toMatchObject({ done: true, waiting: undefined });
     // A server that takes no email: done once the inbox is on.
     await prisma.inboundEmail.deleteMany({ where: { projectId: project.id } });
     vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
