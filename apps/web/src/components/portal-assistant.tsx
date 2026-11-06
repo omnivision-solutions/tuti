@@ -31,7 +31,8 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
     return () => document.removeEventListener("focusin", keep);
   }, []);
   const assistant = useMemo<DocsAssistant>(() => {
-    const open = (ask: string | true) => {
+    // `stay`: without the widget, nowhere else to go (a search's follow-up: the reader is on the search, with its answer).
+    const open = (ask: string | true, stay = false) => {
       const focused = document.activeElement;
       const returnFocus = focused instanceof HTMLElement && !focused.closest('[role="dialog"], #tuti-widget') ? focused : outsideDialogs.current;
       const since = Date.now();
@@ -51,7 +52,7 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
         }
         // No widget after all (its script failed, or an older copy took the page): the docs' search, with its AI answer;
         // not if the reader has gone on to another page meanwhile.
-        if (window.location.href !== from) {
+        if (stay || window.location.href !== from) {
           return;
         }
         window.location.assign(at(ask === true ? "/docs" : `/docs?${new URLSearchParams({ q: ask })}`));
@@ -63,7 +64,7 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
       open: () => open(true),
       continueWith: (question, answer) => {
         keepTurn(slug, viewer, question, answer);
-        open(true);
+        open(true, true);
       },
     };
   }, [slug, viewer, at]);

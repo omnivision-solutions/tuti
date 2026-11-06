@@ -720,24 +720,72 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await unloaded.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
   await unloaded.waitForURL(`${portalUrl(slug)}/docs?q=How+do+I+install+it%3F`);
   await unloaded.context().close();
-  // So too when it failed while the page was still loading (its events gone by before anyone asked).
+  // So too when it failed while the page was still loading (its events gone by before anyone asked): once 5 seconds have
+  // passed (the page's clock, run on).
   const stillLoading = await newPerson(browser, portalUrl(slug));
+  await stillLoading.clock.install();
   await stillLoading.route("**/widget.js*", (route) => route.abort());
   await stillLoading.addInitScript(() => Object.defineProperty(document, "readyState", { get: () => "interactive" }));
   await stillLoading.goto(`/docs/${article.slug}`);
-  await expect(stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" })).toBeVisible();
-  await stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" }).click();
-  await stillLoading.waitForURL(`${portalUrl(slug)}/docs`, { timeout: 10_000 });
-  // Gone on to another page meanwhile, the reader stays there (the clock run on past the wait).
-  await stillLoading.clock.install();
+  const stuckAskAI = stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" });
+  await stuckAskAI.click();
+  await stillLoading.clock.runFor(5_100);
+  await stillLoading.waitForURL(`${portalUrl(slug)}/docs`);
+  // Gone on to another page meanwhile, the reader stays there.
   await stillLoading.goto(`/docs/${article.slug}`);
-  await stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" }).click();
+  await stuckAskAI.click();
   await stillLoading.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
   await stillLoading.waitForURL(`${portalUrl(slug)}/roadmap`);
   await stillLoading.clock.runFor(6_000);
   await expect(stillLoading.getByRole("heading", { name: "Roadmap" })).toBeVisible();
   expect(stillLoading.url()).toBe(`${portalUrl(slug)}/roadmap`);
+  // A search's "Ask a follow-up" leaves the reader on the search, with its answer: they're where the fallback would take them.
+  const searched = `${portalUrl(slug)}/docs?${new URLSearchParams({ q: "Is there a dark mode?" })}`;
+  await stillLoading.goto(searched);
+  const answer = stillLoading.getByRole("region", { name: "AI answer" });
+  await answer.getByRole("button", { name: "Ask AI" }).click();
+  await expect(answer.getByText("I don't know")).toBeVisible();
+  await answer.getByRole("button", { name: "Ask a follow-up" }).click();
+  await stillLoading.clock.runFor(6_000);
+  await expect(answer.getByText("I don't know")).toBeVisible();
+  expect(stillLoading.url()).toBe(searched);
   await stillLoading.context().close();
+  // Asked twice while the widget is still loading: only the latest is asked, once it's there.
+  const late = await newPerson(browser, portalUrl(slug));
+  await late.clock.install();
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await late.route("**/widget.js*", async (route) => {
+    await released;
+    await route.continue();
+  });
+  await late.addInitScript(() => {
+    type Open = (options: { ask?: unknown }) => void;
+    let tuti: { open: Open } | undefined;
+    Object.defineProperty(window, "Tuti", {
+      configurable: true,
+      get: () => tuti,
+      set: (value: { open: Open }) => {
+        tuti = { ...value, open: (options) => ((window as unknown as { asked: unknown[] }).asked.push(options.ask), value.open(options)) };
+      },
+    });
+    (window as unknown as { asked: unknown[] }).asked = [];
+  });
+  await late.goto(`/docs/${article.slug}`, { waitUntil: "domcontentloaded" });
+  for (const question of ["How do I install it?", "Does it work offline?"]) {
+    await late.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+    await late.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).fill(question);
+    await late.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
+    await expect(late.getByRole("dialog", { name: "Search or ask AI" })).toBeHidden();
+  }
+  release();
+  await expect
+    .poll(async () => {
+      await late.clock.runFor(200);
+      return late.evaluate(() => (window as unknown as { asked: unknown[] }).asked);
+    })
+    .toEqual(["Does it work offline?"]);
+  await late.context().close();
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
   await visitor.setViewportSize({ width: 1280, height: 720 });
