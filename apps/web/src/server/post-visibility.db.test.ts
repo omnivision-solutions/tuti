@@ -4,6 +4,7 @@ import { isValidElement, type ReactNode } from "react";
 import { expect, test, vi } from "vitest";
 
 import { ListFilters } from "@/components/list-filters";
+import { VisibilityBadge } from "@/components/visibility-badge";
 import BoardPage from "@/app/portal/[project]/(site)/feedback/[board]/page";
 import PostPage from "@/app/portal/[project]/(site)/feedback/[board]/[post]/page";
 import RoadmapPage from "@/app/portal/[project]/(site)/roadmap/page";
@@ -151,6 +152,21 @@ test("the portal's board, post page and roadmap show each reader the posts they 
       hidden.forEach((title) => expect(page).not.toContain(title));
     }
   }
+
+  // On the roadmap her post is marked Private for her (and the team's own Team only one for the team): it reads as theirs.
+  const badges = (node: ReactNode): string[] =>
+    Array.isArray(node)
+      ? node.flatMap(badges)
+      : isValidElement<{ children?: ReactNode; visibility?: string }>(node)
+        ? node.type === VisibilityBadge
+          ? [node.props.visibility!]
+          : badges(node.props.children)
+        : [];
+  const roadmapBadges = async () => badges((await RoadmapPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never)) as ReactNode);
+  actAs(ada);
+  expect(await roadmapBadges()).toEqual(expect.arrayContaining(["PRIVATE"]));
+  actAs(owner);
+  expect(await roadmapBadges()).toEqual(expect.arrayContaining(["PRIVATE", "TEAM"]));
 
   // Ada's post: hers and the team's, with its comment; not found for anyone else.
   for (const user of [null, bob]) {

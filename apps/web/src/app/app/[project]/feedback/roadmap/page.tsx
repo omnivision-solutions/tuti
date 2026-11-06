@@ -61,6 +61,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
             status: post.status,
             votes: post.voteCount,
             board: post.board.name,
+            visibility: post.visibility,
             asking: totals.has(post.id) ? asking(totals.get(post.id)!, project.askingProperty!, storedPropertyFormats(project.propertyFormats)) : null,
             emails: emails.get(post.id) ?? 0,
             // "Dec 2026", in UTC as months are kept.

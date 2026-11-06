@@ -16,6 +16,7 @@ import { ROADMAP, roadmapColumns } from "@/server/operations/read";
 import { portalLinks } from "@/server/portal-base";
 import { getSession } from "@/server/session";
 import { currentPostViewer } from "@/server/portal-access";
+import { VisibilityBadge } from "@/components/visibility-badge";
 import { shownBoards } from "@/server/post-visibility";
 
 /** What each column means, under its name. */
@@ -148,7 +149,9 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                           <Link href={at(postPath(post))} className="font-medium break-words hover:underline">
                             {post.title}
                           </Link>
-                          <p className="text-xs text-muted-foreground">{post.board.name}</p>
+                          <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                            {post.board.name} <VisibilityBadge visibility={post.visibility} />
+                          </p>
                           {entry && (
                             <p className="text-xs text-muted-foreground">
                               Shipped in{" "}

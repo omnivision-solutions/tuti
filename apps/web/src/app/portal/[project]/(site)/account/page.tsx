@@ -8,6 +8,7 @@ import { EmailSettings } from "@/components/email-settings";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { VisibilityBadge } from "@/components/visibility-badge";
 import { SignInLink } from "@/components/sign-in-link";
 import { SignOutButton } from "@/components/user-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,7 +75,12 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
                     {post.title}
                   </Link>
                 }
-                badges={<PostStatusBadge status={post.status} />}
+                badges={
+                  <>
+                    <VisibilityBadge visibility={post.visibility} />
+                    <PostStatusBadge status={post.status} />
+                  </>
+                }
                 meta={`${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`}
               />
             ))}

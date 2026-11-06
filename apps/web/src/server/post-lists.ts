@@ -428,7 +428,7 @@ const ACCOUNT_POSTS_SHOWN = 50;
  */
 export async function accountPosts(projectId: string, userId: string, viewer: PostViewer) {
   // ponytail: the latest 50 of each, with no paging; add "Load more" when people have more than that.
-  const select = { id: true, number: true, title: true, status: true, voteCount: true, board: { select: { slug: true } } } as const;
+  const select = { id: true, number: true, title: true, status: true, voteCount: true, visibility: true, board: { select: { slug: true } } } as const;
   const [posts, votes] = await Promise.all([
     prisma.post.findMany({
       where: { projectId, authorId: userId, duplicateOfId: null, ...visiblePosts(viewer) },
