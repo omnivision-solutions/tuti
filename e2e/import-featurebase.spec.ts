@@ -278,14 +278,13 @@ test("the help center comes across from Featurebase: the portal's docs have its 
   await expect(tree.getByRole("link", { name: "Roadmap notes" })).toHaveCount(0);
   await checkpoint(visitor, "portal-imported-article");
 
-  // Its link to another imported article goes to that one's page here.
+  // Its link to another imported article goes to that one's page here, in the same tab (a link to the portal's own article).
   const link = welcome.getByRole("paragraph").getByRole("link", { name: "Paying by card" });
-  await expect(link).toHaveAttribute("href", `${portalUrl(slug)}/docs/paying-by-card`);
-  // Links in articles open in a new tab.
-  const [linked] = await Promise.all([visitor.context().waitForEvent("page"), link.click()]);
-  await linked.waitForURL(/\/docs\/paying-by-card$/);
-  await expect(linked.getByRole("article", { name: "Paying by card" })).toContainText("Cards are charged on the 1st.");
-  await checkpoint(linked, "portal-imported-linked-article");
+  await expect(link).toHaveAttribute("href", "/docs/paying-by-card");
+  await link.click();
+  await visitor.waitForURL(`${portalUrl(slug)}/docs/paying-by-card`);
+  await expect(visitor.getByRole("article", { name: "Paying by card" })).toContainText("Cards are charged on the 1st.");
+  await checkpoint(visitor, "portal-imported-linked-article");
 });
 
 test("the inbox comes across from Featurebase: its conversations with their messages, notes, images and statuses, history marked as imported", async ({ browser }, testInfo) => {
