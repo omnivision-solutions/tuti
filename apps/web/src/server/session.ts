@@ -25,12 +25,27 @@ export const getSession = cache(async () => sessionFrom(await headers()));
 export const actsIn = (session: Session, projectId: string) => session.session.boundTo === "app" || session.session.boundTo === projectId;
 
 /**
+ * The request's session (getSession), or none for work outside any request, such as instrumentation.ts's Autopilot
+ * timer: Next.js throws for next/headers there, and nobody's signed in.
+ */
+async function requestSession() {
+  try {
+    return await getSession();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("was called outside a request scope")) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
  * Whether `userId` is who this request's portal session signs in. A portal's session is a reader's, even a team member's
  * on their own project's portal: whoever runs a portal's site or domain sees its cookies (lib/auth.ts). `session`: the
  * request's, for proxy.ts (no getSession there).
  */
 export async function signedInAsReader(userId: string, session?: Session | null): Promise<boolean> {
-  const signedIn = session === undefined ? await getSession() : session;
+  const signedIn = session === undefined ? await requestSession() : session;
   return signedIn?.user.id === userId && signedIn.session.boundTo !== "app";
 }
 

@@ -23,7 +23,7 @@ import { createComment, createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
 import { ARTICLE_REVISIONS_KEPT, createArticle, deleteArticle, discardChanges, listRevisions, publishArticle, publishChanges, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, failTransaction, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, failTeamLookupAfterComment, failTransaction, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 let owner: TestUser;
@@ -153,7 +153,7 @@ describe("applying", () => {
   test("completing with the team's comment: if it can't be told whether the comment was saved, it waits again and says to check first", async () => {
     const { post, action } = await proposal("RESOLVES");
     // The comment is saved; the lookup right after it fails, and so does the check for it.
-    vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+    failTeamLookupAfterComment(post.id);
     vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("database blip"));
     // Unknown (what the review and the list say as "Couldn't tell whether it went out: check it before doing it again").
     await expect(call(applyCodeChangeAction, team(), { id: action.id, comment: "Dark is here." })).rejects.toMatchObject({ message: "database blip", saved: "unknown" });
@@ -190,7 +190,7 @@ describe("applying", () => {
   test("once the comment may be saved, a failure after it leaves the action applied, so it isn't posted twice", async () => {
     const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
     // The comment is saved; the lookup right after it fails.
-    vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+    failTeamLookupAfterComment(post.id);
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Someone already applied or dismissed this");
@@ -531,8 +531,11 @@ describe("approving several (applyMany)", () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
     // Saved, then reading who wrote it fails. Two paragraphs: a comment keeps them with one line between.
     const saved = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Weekly repeats are out.\n\nMonthly ones are next." });
-    vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
+    const failed = failTeamLookupAfterComment(saved.post.id, new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: saved.action.id }] })).results).toEqual([{ id: saved.action.id, status: "applied" }]);
+    expect(failed()).toBe(true);
+    vi.restoreAllMocks();
+    vi.spyOn(log, "error").mockImplementation(() => {});
     expect((await postOf(saved.post.id)).comments).toHaveLength(1);
     // Whether it was edited is recorded on this path too ("how it's doing" counts it): approved as Autopilot wrote it.
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: saved.action.id } })).payload).toMatchObject({ edited: false });

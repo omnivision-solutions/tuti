@@ -10,6 +10,7 @@ import { setAvatar } from "@/server/media";
 import { askAPerson } from "@/server/operations/docs-escalate";
 import { call } from "@/server/operations/run";
 import { getChangelogEntry } from "@/server/operations/changelog";
+import { createComment as createCommentOperation } from "@/server/operations/create";
 import { listComments } from "@/server/operations/read";
 import { currentPostViewer, mayRead, portalVisitor, readerOf } from "@/server/portal-access";
 import { addComment, createPost } from "@/server/posts";
@@ -322,14 +323,16 @@ test("on her own project's portal, a team member's session is a reader's: none o
     emailsVoters: { error: "Only your team can email a post's voters" },
     postsOnTeamBoard: { error: "Board not found" },
   });
-  // Her comment there is a reader's: not shown as the team's, there or on the app.
+  // Her comments there are a reader's: not shown as the team's when written (the answer, and comment.created's webhook),
+  // nor after, there or on the app.
   expect(await comment()).toEqual({});
+  expect((await call(createCommentOperation, context, { number: 1, body: "Also from the portal" })).author.team).toBe(false);
   const shownAsTeam = async () => (await call(listComments, context, { number: 1 })).comments.map((c) => c.author.team);
-  expect(await shownAsTeam()).toEqual([true, false]);
+  expect(await shownAsTeam()).toEqual([true, false, false]);
   request.host = APP_HOST;
   await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: "app" } });
   // On the app the team's note is there too: her reply, her note, then the portal's comment.
-  expect(await shownAsTeam()).toEqual([true, true, false]);
+  expect(await shownAsTeam()).toEqual([true, true, false, false]);
 
   // A private portal is hers to read only as one of its readers would be.
   await prisma.project.update({ where: { id: own.id }, data: { portalAccess: "PRIVATE" } });

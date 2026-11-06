@@ -145,3 +145,20 @@ export function failTransaction(error: Error, { skip = 0 } = {}) {
   }) as never);
   return spy;
 }
+
+/**
+ * Fails, with `error`, the first team lookup (server/session.ts onTeam) made once the post has a comment: something failing
+ * right after a comment was saved. Returns whether it has failed yet.
+ */
+export function failTeamLookupAfterComment(postId: string, error = new Error("database blip")) {
+  const findMember = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  let failed = false;
+  vi.spyOn(prisma.teamMember, "findUnique").mockImplementation((async (args: { where?: { projectId_userId?: unknown } }) => {
+    if (!failed && args?.where?.projectId_userId !== undefined && (await prisma.comment.count({ where: { postId } })) > 0) {
+      failed = true;
+      throw error;
+    }
+    return findMember(args);
+  }) as never);
+  return () => failed;
+}

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { NextRequest } from "next/server";
-import { beforeAll, beforeEach, expect, test } from "vitest";
+import { beforeAll, beforeEach, expect, onTestFinished, test } from "vitest";
 
 import { GET as api } from "@/app/api/v1/[...path]/route";
 import { GET as latest } from "@/app/api/widget/latest/route";
@@ -22,7 +22,7 @@ import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
 import * as docsReaders from "./docs-readers";
 import { canActIn } from "./membership";
-import { canReadPortal, mayRead, PREVIEW_READER_COOKIE, WIDGET_READER_COOKIE } from "./portal-access";
+import { canReadPortal, currentPostViewer, mayRead, PREVIEW_READER_COOKIE, WIDGET_READER_COOKIE } from "./portal-access";
 import * as posts from "./posts";
 import { confirmSignInLink, emailSignInLink } from "./sign-in-link";
 import * as similarPosts from "./similar-posts";
@@ -297,6 +297,27 @@ test("Customize's preview reads a private portal as the team member looking: its
   await prisma.teamMember.deleteMany({ where: { projectId: project.id, userId: admin.id } });
   expect((await open("/docs", `${PREVIEW_READER_COOKIE}=${theirs}`)).headers.get("x-middleware-rewrite")).toBeNull();
   await setAccess(project.id, "PUBLIC");
+});
+
+test("Customize's preview of a private portal works for a team member who's also signed in on it (a reader's session there)", async () => {
+  await setAccess(project.id, "PRIVATE");
+  // The owner signed in on the portal (say with "Continue as"), which their own private portal refuses; the preview's frame
+  // sends that session's cookie along with the preview's.
+  await prisma.session.updateMany({ where: { userId: owner.id }, data: { boundTo: project.id } });
+  request.host = `${project.slug}.localhost:3100`;
+  onTestFinished(async () => {
+    request.host = "";
+    await prisma.session.updateMany({ where: { userId: owner.id }, data: { boundTo: "app" } });
+    await setAccess(project.id, "PUBLIC");
+  });
+  request.cookie = owner.cookie;
+  expect(await mayRead(project.id)).toBe(false);
+  request.cookie = `${owner.cookie}; ${PREVIEW_READER_COOKIE}=${previewToken(project.id, owner.id)}`;
+  expect(await mayRead(project.id)).toBe(true);
+  expect((await currentPostViewer(project.id)).team).toBe(true);
+  // A preview token alone lets nobody else in on that session.
+  request.cookie = `${owner.cookie}; ${PREVIEW_READER_COOKIE}=${previewToken(project.id, visitors["signed up"]!.id)}`;
+  expect(await mayRead(project.id)).toBe(false);
 });
 
 test("sign-up is off on a private portal, and an account made by a sign-in link can't read it", async () => {
