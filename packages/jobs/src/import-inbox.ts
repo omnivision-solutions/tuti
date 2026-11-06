@@ -102,8 +102,7 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
   const here = await broughtBefore(prisma, job, [...known.keys()]);
   const changed = (c: FeaturebaseConversation) => {
     const before = here.get(c.id);
-    // Brought before Tuti kept when it last saw it: by its newest message brought.
-    return before !== undefined && lastActive(c) > (before.seen ?? before.since);
+    return before !== undefined && lastActive(c) > before.seen;
   };
   const read: Read[] = [];
   for (const listed of kept.filter((c) => !known.has(c.id) || changed(c))) {
@@ -164,19 +163,19 @@ async function recorded(tx: Tx | typeof prisma, job: ImportJob, ids: string[]): 
 /**
  * Conversations of these Featurebase ids an import brought that are still here, by those ids: theirs, the newest
  * message an import brought into it (else when it began), and when it was last active in Featurebase as an import last
- * read it (null: not kept then).
+ * read it (one brought before that was kept: when it was brought, as nothing it did there before is new).
  */
-async function broughtBefore(db: Tx | typeof prisma, job: ImportJob, ids: string[]): Promise<Map<string, { id: string; since: Date; seen: Date | null }>> {
+async function broughtBefore(db: Tx | typeof prisma, job: ImportJob, ids: string[]): Promise<Map<string, { id: string; since: Date; seen: Date }>> {
   if (ids.length === 0) {
     return new Map();
   }
-  const rows = await db.$queryRaw<{ externalId: string; id: string; since: Date; seen: Date | null }[]>`
-    SELECT r."externalId", c.id, COALESCE(max(m."createdAt"), c."createdAt") AS since, r."sourceUpdatedAt" AS seen
+  const rows = await db.$queryRaw<{ externalId: string; id: string; since: Date; seen: Date }[]>`
+    SELECT r."externalId", c.id, COALESCE(max(m."createdAt"), c."createdAt") AS since, COALESCE(r."sourceUpdatedAt", r."createdAt") AS seen
     FROM imported_record r
     JOIN conversation c ON c.id = r."localId"
     LEFT JOIN conversation_message m ON m."conversationId" = c.id AND m."importId" IS NOT NULL
     WHERE r."projectId" = ${job.projectId} AND r.source = ${job.source}::"ImportSource" AND r.kind = 'conversation' AND r."externalId" = ANY(${ids}::text[])
-    GROUP BY r."externalId", c.id, r."sourceUpdatedAt"`;
+    GROUP BY r."externalId", c.id, r."sourceUpdatedAt", r."createdAt"`;
   return new Map(rows.map(({ externalId, ...row }) => [externalId, row]));
 }
 
@@ -400,6 +399,8 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
 async function addMessages(tx: Tx, job: ImportJob, read: Read, users: Map<string, string>, brought: { id: string; since: Date }) {
   const messages = read.messages.filter((m) => m.createdAt > brought.since);
   if (messages.length > 0) {
+    // Locked before it's read, as a reply or status change here locks it: what's decided from it isn't undone by one in between.
+    await tx.$queryRaw`SELECT id FROM conversation WHERE id = ${brought.id} FOR NO KEY UPDATE`;
     const here = await tx.conversation.findUniqueOrThrow({ where: { id: brought.id }, select: { userId: true, status: true, waitingSince: true, lastMessageAt: true, activeAt: true, snoozedAt: true, notifiedAt: true } });
     const spoken = messages.filter((m) => !m.note);
     const latest = (a: Date | null, b: Date) => (a && a > b ? a : b);

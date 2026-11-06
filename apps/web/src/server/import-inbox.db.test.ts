@@ -220,9 +220,7 @@ test("imported again, a conversation that changed in Featurebase gets its new me
   });
   expect(mailbox.emails.length).toBe(emailed);
 
-  // And again, with nothing new: nothing read, nothing added; also for one brought before Tuti kept when it last saw
-  // it, which goes by its newest message brought.
-  await prisma.importedRecord.updateMany({ where: { projectId: project.id, kind: "conversation", externalId: "1003" }, data: { sourceUpdatedAt: null } });
+  // And again, with nothing new: nothing read, nothing added.
   fake.requests.length = 0;
   await importInbox();
   expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r))).toEqual([]);
@@ -244,6 +242,51 @@ test("imported again, a conversation the team closed here after Featurebase's ne
     status: "CLOSED",
     lastMessageAt: new Date(replied),
     messages: expect.arrayContaining([expect.objectContaining({ body: "Anything else?", author: "TEAM" })]),
+  });
+});
+
+test("one brought before Tuti kept when it last saw it goes by when it was brought: closed or snoozed after its last message, it isn't read again", async () => {
+  await importInbox();
+  await prisma.importedRecord.updateMany({ where: { projectId: project.id, kind: "conversation" }, data: { sourceUpdatedAt: null } });
+  fake.requests.length = 0;
+  await importInbox();
+  expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r))).toEqual([]);
+});
+
+test("a close here while the import's page saves the same conversation is never undone by what the page read before it", async () => {
+  await importInbox();
+  // Mira writes again in Featurebase; as the import saves it, the team closes it here (a status change locks only the
+  // conversation, not the project as a reply's message does).
+  const csv = fake.fixtures.conversations.find((c) => c.id === "1004")!;
+  const wrote = new Date(Date.now() - 43_200_000).toISOString();
+  Object.assign(csv, { lastActivityAt: wrote, updatedAt: wrote });
+  (csv.conversationParts as object[]).push({ object: "conversation_part", id: "p1006", partType: "user_msg", createdAt: wrote, updatedAt: wrote, bodyHtml: "<p>Thanks!</p>", channel: "desktop", author: { id: "65f000000000000000000001", type: "customer" } });
+  const closed = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  const now = new Date();
+  let imported!: Promise<unknown>;
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM conversation WHERE id = ${closed.id} FOR NO KEY UPDATE`;
+      await tx.conversation.update({ where: { id: closed.id }, data: { status: "CLOSED", waitingSince: null, activeAt: now } });
+      let settled = false;
+      imported = importInbox().finally(() => (settled = true));
+      // Until the import's page waits for this close's lock: then the close commits.
+      await expect
+        .poll(
+          async () =>
+            settled ||
+            (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n > 0,
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+    },
+    { timeout: 20_000 },
+  );
+  await imported;
+  expect((await conversations()).find((c) => c.id === closed.id)).toMatchObject({
+    status: "CLOSED",
+    activeAt: now,
+    messages: expect.arrayContaining([expect.objectContaining({ body: "Thanks!" })]),
   });
 });
 
