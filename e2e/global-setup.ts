@@ -70,6 +70,8 @@ export default async function globalSetup() {
   process.env.E2E_SES_URL = ses.url;
   // Featurebase's API, for imports: made-up contacts and admins, its key FAKE_FEATUREBASE_KEY.
   const featurebase = await startFeaturebaseFake();
+  // Journeys run in other processes; they let the slow key's pages answer through the fake's /_fake/release.
+  process.env.E2E_FEATUREBASE_URL = featurebase.url;
   const postgres = await startMigratedPostgres("tuti_e2e");
   // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
   process.env.E2E_DATABASE_URL = postgres.url;

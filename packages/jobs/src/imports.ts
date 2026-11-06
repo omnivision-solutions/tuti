@@ -6,6 +6,7 @@ import { type PropertyChanges, propertyChanges } from "@tuti/shared/user-propert
 
 import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseContact, FeaturebaseError } from "./featurebase";
 import { enqueue, type JobLogger, type JobResult } from "./index";
+import { lockConflict } from "./lock-retries";
 import { isUniqueViolation, placeholderEmail, syncUsersIn, type UserDetails } from "./project-users";
 import { lockProject } from "./running-draft";
 
@@ -153,12 +154,17 @@ async function locked<T>(projectId: string, fn: (tx: Tx) => Promise<T>): Promise
       },
       { timeout: 60_000 },
     );
-  return run().catch((error: unknown) => {
-    if (!isUniqueViolation(error)) {
-      throw error;
+  // Run again when it lost a race to someone's first sight (a sign-in making the same user: a unique key), or when
+  // Postgres gave up on it for its locks (a deadlock with that sign-in's foreign-key check on the project's row).
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      if (attempt >= 3 || !(isUniqueViolation(error) || lockConflict(error))) {
+        throw error;
+      }
     }
-    return run();
-  });
+  }
 }
 
 /**

@@ -83,10 +83,11 @@ test("an import with a part this worker doesn't have (a newer web started it mid
 
 test("a Featurebase that's slow or rate limited is said at once on starting, not waited out", async () => {
   // The answer asks for a minute's wait: the start doesn't wait it out, it says try again at once.
+  fake.requests.length = 0;
   fake.failNext(429, 1, { "retry-after": "60" });
-  const began = Date.now();
   expect(await refusal(start())).toMatchObject({ status: 502, code: "unavailable" });
-  expect(Date.now() - began).toBeLessThan(5_000);
+  // Asked once: neither waited the minute out nor tried again (without the deadline it waits, and the test times out).
+  expect(fake.requests.filter((request) => request.startsWith("GET /v2/admins"))).toHaveLength(1);
   expect(await prisma.dataImport.count({ where: { projectId: project.id } })).toBe(0);
 });
 
@@ -187,6 +188,14 @@ test("one that hasn't moved for a day is failed when it's looked at, not resumed
   await importsSettled();
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stale.id } })).toMatchObject({ state: "FAILED", apiKey: null });
   expect(await usersOf()).toEqual([]);
+});
+
+test("a page's save that Postgres aborts for its locks (a deadlock with a first sign-in) is tried again, not failed", async () => {
+  const row = await running();
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce((() =>
+    Promise.reject(new PrismaNamespace.PrismaClientKnownRequestError("deadlock detected (40P01)", { code: "P2034", clientVersion: "test" }))) as never);
+  await handlers.importStep({ importId: row.id }, log);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 3 } } });
 });
 
 test("the same page failing in another run while this one saves it waits for the save, then fails nothing", async () => {

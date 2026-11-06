@@ -3,7 +3,11 @@ import type { AddressInfo } from "node:net";
 
 /** The API key the fake accepts; any other is refused (401), as Featurebase refuses a bad one. */
 export const FAKE_FEATUREBASE_KEY = "sk_fake_featurebase";
-/** A key the fake also takes whose pages of a list (100 at a time, as an import reads; not a start's checks) answer 4 seconds late: an import that's still running when the page looks again. */
+/**
+ * A key the fake also takes whose pages of a list (100 at a time, as an import reads; not a start's checks) wait until
+ * `release()` (or a POST to `<url>/_fake/release`, for journeys in other processes): an import that's running for as long
+ * as a test needs. Held ones go on after a minute regardless, so nothing hangs.
+ */
 export const FAKE_FEATUREBASE_SLOW_KEY = "sk_fake_featurebase_slow";
 
 type Row = Record<string, unknown>;
@@ -70,6 +74,8 @@ export type FeaturebaseFake = {
   failNext(status: number, times?: number, headers?: Record<string, string>, body?: string): void;
   /** Runs between a failing answer's headers and its body (sent a moment later): time passing as the body is read. */
   beforeBody?: () => void;
+  /** Lets the slow key's held pages answer (FAKE_FEATUREBASE_SLOW_KEY). */
+  release(): void;
   /** Serves a file at `<url>/files/<name>` (no key, like Featurebase's attachments' links); returns its address. */
   file(name: string, type: string, body: Buffer): string;
   close(): Promise<void>;
@@ -79,6 +85,8 @@ export type FeaturebaseFake = {
 export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
   const files = new Map<string, { type: string; body: Buffer }>();
   let failing: { status: number; times: number; headers: Record<string, string>; body?: string } | undefined;
+  /** The slow key's held pages, each with its fallback timer. */
+  const held = new Map<() => void, NodeJS.Timeout>();
 
   const server = createServer((req, res) => {
     const send = (status: number, body: unknown) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
@@ -87,6 +95,10 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
       const file = files.get(decodeURIComponent(url.pathname.slice("/files/".length)));
       return file ? res.writeHead(200, { "Content-Type": file.type }).end(file.body) : send(404, { message: "no such file" });
     }
+    if (req.method === "POST" && url.pathname === "/_fake/release") {
+      fake.release();
+      return send(200, { released: true });
+    }
     fake.requests.push(`${req.method} ${url.pathname}${url.search}`);
     const slow = req.headers.authorization === `Bearer ${FAKE_FEATUREBASE_SLOW_KEY}`;
     if (req.headers.authorization !== `Bearer ${FAKE_FEATUREBASE_KEY}` && !slow) {
@@ -94,8 +106,10 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     }
     if (slow && url.searchParams.get("limit") === "100" && !req.headers["x-fake-late"]) {
       req.headers["x-fake-late"] = "1";
-      setTimeout(() => server.emit("request", req, res), 4_000);
       fake.requests.pop();
+      const go = () => server.emit("request", req, res);
+      const timer = setTimeout(() => held.delete(go) && go(), 60_000);
+      held.set(go, timer);
       return;
     }
     if (failing) {
@@ -154,6 +168,13 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     requests: [],
     forbidden: new Set(),
     failNext: (status, times = 1, headers = {}, body) => void (failing = { status, times, headers, body }),
+    release: () => {
+      for (const [go, timer] of held) {
+        clearTimeout(timer);
+        held.delete(go);
+        go();
+      }
+    },
     file: (name, type, body) => {
       files.set(name, { type, body });
       return `${url}/files/${encodeURIComponent(name)}`;

@@ -34,7 +34,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(owner.getByText("Featurebase didn't accept this API key. Check you copied all of it, or make a new one.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase-bad-key");
 
-  // A good one (Featurebase answering slowly, so the import is still running when the page looks again): it starts,
+  // A good one (Featurebase holding its pages until the journey lets them go, so the import is running when the page looks): it starts,
   // and its progress shows here until it's done.
   await key.fill(FAKE_FEATUREBASE_SLOW_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
@@ -45,7 +45,8 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(continueLink).toBeFocused();
   // The key isn't left in the page.
   await expect(key).toHaveCount(0);
-  // Done, Continue still has focus (one Continue, kept as the import ends), and the summary is said.
+  // Featurebase answers now; done, Continue still has focus (one Continue, kept as the import ends), and the summary is said.
+  await fetch(`${process.env.E2E_FEATUREBASE_URL}/_fake/release`, { method: "POST" });
   await expect(status).toHaveText("Imported from Featurebase. 3 contacts brought across.", { timeout: 15_000 });
   await expect(continueLink).toBeFocused();
   await checkpoint(owner, "setup-featurebase-imported");
