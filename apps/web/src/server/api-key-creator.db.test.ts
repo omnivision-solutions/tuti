@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
 import { GET } from "@/app/api/v1/[...path]/route";
@@ -36,6 +37,10 @@ test("an admin's key stops working once they're removed from the team", async ()
   expect(await removeMember(project.slug, admin.memberId)).toEqual({});
   // They aren't on the team any more: their key mustn't read its customers or inbox.
   expect(await get("/users")).not.toBe(200);
+  // Revoked, not just refused: it comes off Settings → Developers and stays dead if they're invited back.
+  expect(await prisma.apiKey.count({ where: { projectId: project.id, revokedAt: null } })).toBe(0);
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
+  expect(await get("/users")).toBe(401);
 });
 
 test("an admin's key loses admin operations once they're made a member", async () => {

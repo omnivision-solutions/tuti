@@ -53,12 +53,17 @@ export async function changeTeamRole(projectSlug: string, memberId: string, role
   return {};
 }
 
-/** Takes someone off the team; the conversations assigned to them become unassigned, and the posts they owned have no owner. */
+/**
+ * Takes someone off the team; the conversations assigned to them become unassigned, the posts they owned have no
+ * owner, and the API keys they created are revoked (they'd stop working anyway, without a role; revoked, they come off
+ * Settings → Developers and stay dead if the person is invited back).
+ */
 async function removeFromTeam(projectId: string, userId: string, member: Prisma.TeamMemberWhereUniqueInput) {
   await prisma.$transaction([
     prisma.teamMember.delete({ where: member }),
     prisma.conversation.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null, heldById: null } }),
     prisma.post.updateMany({ where: { projectId, ownerId: userId }, data: { ownerId: null } }),
+    prisma.apiKey.updateMany({ where: { projectId, createdById: userId, revokedAt: null }, data: { revokedAt: new Date() } }),
   ]);
 }
 

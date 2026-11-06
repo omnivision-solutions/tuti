@@ -63,8 +63,8 @@ export function refusal(key: ApiKey, operation: Pick<Operation, "scope" | "acces
   if (operation.scope === "write" && key.scope === "read") {
     return "This key can only read. Create a read + write key to change things.";
   }
-  if (operation.access === "admin" && key.role === "MEMBER") {
-    return "This key's creator is no longer a project admin, so it can't change project settings";
+  if (operation.access === "admin" && key.role !== "OWNER" && key.role !== "ADMIN") {
+    return "This key's creator is no longer a project owner or admin, so it can't use project settings";
   }
   if (operation.access === "owner" && key.role !== "OWNER") {
     return "Only project owners can change this";
