@@ -36,7 +36,7 @@ export function confidence(kind: ProposedKind, probability: number): "likely" | 
 
 /** The pull request as the models see it: the decision model with at most `DECISION_DIFF_CHARS` of its diff. */
 export function pullRequestState(pr: PullRequestRead, diffChars = Infinity) {
-  const diff = diffUpTo(pr.diff, diffChars);
+  const diff = diffUpTo(pr.diff, diffChars, pr.files.map((file) => file.path));
   // A file the cut left out says so, as one past the reading's own cap does.
   const cut = (path: string) => diff !== pr.diff && !`\n${diff}`.includes(`\n--- ${path} (`);
   return {
@@ -59,11 +59,12 @@ export function pullRequestState(pr: PullRequestRead, diffChars = Infinity) {
 export const DECISION_DIFF_CHARS = 20_000;
 
 /** The diff up to `max` characters, cut before the first file's part that doesn't fit (each starts "--- path ("). */
-function diffUpTo(diff: string, max: number) {
+function diffUpTo(diff: string, max: number, paths: string[]) {
   if (diff.length <= max) {
     return diff;
   }
-  const end = diff.lastIndexOf("\n--- ", max);
+  // At a file's own header only: a removed line can start "--- " too (a deleted `-- …` SQL comment, a Markdown rule).
+  const end = Math.max(-1, ...paths.map((path) => diff.lastIndexOf(`\n--- ${path} (`, max)));
   return `${diff.slice(0, end > 0 ? end : max)}\n[cut at ${max.toLocaleString("en")} characters]`;
 }
 

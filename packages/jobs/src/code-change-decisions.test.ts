@@ -75,6 +75,12 @@ test("the decision model's copy of the diff: cut before the first file that does
   });
   // One file bigger than the cap: its start.
   expect(pullRequestState(pr, 30).diff).toBe(`${pr.diff.slice(0, 30)}\n[cut at 30 characters]`);
+  // A removed line that starts "--- " (a deleted `-- …` SQL comment) isn't a file's header: the cut is still at one.
+  const sql = { ...pr, diff: [part("a"), `${part("b")}\n--- Previous release: safe`, part("c")].join("\n") };
+  expect(pullRequestState(sql, 150)).toMatchObject({
+    diff: `${part("a")}\n[cut at 150 characters]`,
+    files: ["src/a.ts (modified)", "src/b.ts (modified, not shown: size)", "src/c.ts (modified, not shown: size)"],
+  });
 });
 
 test("each post's decision gets the decision model's copy of a big diff, never the whole of it", () => {
