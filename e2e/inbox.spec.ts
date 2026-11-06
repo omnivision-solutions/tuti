@@ -721,7 +721,8 @@ test("the team member's own action taking the open conversation out of its view 
   await expect(owner.getByText("No closed conversations yet.")).toBeVisible();
   await expect(views.getByRole("link", { name: "Closed 0" })).toBeFocused();
 
-  // Closed, but the team went to another page before it was done (its answer held here): back on it, it stays open.
+  // Closed, but the team went to another page (Reporting) through ⌘K before it was done (its answer held here): they stay there,
+  // and back on it, it stays open.
   await owner.goto(`/app/${slug}/inbox/1`);
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
@@ -734,10 +735,16 @@ test("the team member's own action taking the open conversation out of its view 
     await route.fulfill({ response });
   });
   await owner.getByRole("button", { name: "Close", exact: true }).click();
-  await owner.getByRole("link", { name: "Changelog", exact: true }).click();
+  // Off Close, which keeps the keyboard's focus while it saves and takes keys meanwhile.
+  await owner.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await owner.keyboard.press("ControlOrMeta+k");
+  const search = owner.getByRole("dialog", { name: "Go to or do" }).getByRole("combobox", { name: "Search the project" });
+  await search.fill("reporting");
+  await search.press("Enter");
   release();
-  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/changelog$`));
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/reporting$`));
   await owner.unroute("**/*");
+  await expect(owner.getByRole("heading", { name: "Reporting", level: 1 })).toBeVisible();
   await owner.goBack();
   await expect(meta(owner)).toContainText("Closed · #1");
   // A later change shows in the list: a move to the next one, had it started on the way back, would have landed first.
