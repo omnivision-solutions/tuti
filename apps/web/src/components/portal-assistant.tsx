@@ -2,21 +2,21 @@
 
 import { useEffect, useMemo, useRef } from "react";
 
-import { keepTurn } from "@/components/docs-assistant";
 import { type DocsAssistant, DocsAssistantContext } from "@/components/docs-assistant-context";
-import { usePortalHref, usePortalSlug } from "@/components/portal-base";
+import { usePortalHref } from "@/components/portal-base";
+import type { DocsAnswer } from "@/server/operations/docs-ask";
 
-type Tuti = { open: (options: { ask: string | true; returnFocus?: HTMLElement | null }) => void };
+type Turn = { question: string; answer: DocsAnswer };
+type Tuti = { open: (options: { ask: string | true; turn?: Turn; returnFocus?: HTMLElement | null }) => void };
 
 /**
  * The portal's Ask AI (the header's search, "Still stuck?", a search's "Ask a follow-up"): the project's widget's assistant,
  * which the portal loads for it (its launcher hidden where the team turned the widget off on the portal). Its panel is on
- * the portal's own address, so it has the reader's sign-in and this tab's conversation. A follow-up keeps the search's
- * answer as the conversation's latest turn (`viewer`'s, signed out: null), for the assistant to go on from. Closing the
+ * the portal's own address, so it has the reader's sign-in and this tab's conversation. A follow-up hands it the search's
+ * question and answer, for the assistant to go on from. Closing the
  * panel gives focus back to what opened it, or, from the search dialog (gone by then), to what had it before.
  */
-export function PortalAssistant({ viewer, children }: { viewer: string | null; children: React.ReactNode }) {
-  const slug = usePortalSlug();
+export function PortalAssistant({ children }: { children: React.ReactNode }) {
   const at = usePortalHref();
   const outsideDialogs = useRef<HTMLElement | null>(null);
   // An ask still waiting for the widget: only the latest one waits.
@@ -32,7 +32,7 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
   }, []);
   const assistant = useMemo<DocsAssistant>(() => {
     // `stay`: without the widget, nowhere else to go (a search's follow-up: the reader is on the search, with its answer).
-    const open = (ask: string | true, stay = false) => {
+    const open = (ask: string | true, stay = false, turn?: Turn) => {
       const focused = document.activeElement;
       const returnFocus = focused instanceof HTMLElement && !focused.closest('[role="dialog"], #tuti-widget') ? focused : outsideDialogs.current;
       const since = Date.now();
@@ -41,7 +41,7 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
       const attempt = () => {
         const tuti = (window as { Tuti?: Tuti }).Tuti;
         if (tuti) {
-          tuti.open({ ask, returnFocus });
+          tuti.open({ ask, turn, returnFocus });
           return;
         }
         // Its script maybe still loading (the page's load waits for it), or done already (loaded or failed, its events
@@ -62,11 +62,8 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
     return {
       ask: (question) => open(question.trim() || true),
       open: () => open(true),
-      continueWith: (question, answer) => {
-        keepTurn(slug, viewer, question, answer);
-        open(true, true);
-      },
+      continueWith: (question, answer) => open(true, true, { question, answer }),
     };
-  }, [slug, viewer, at]);
+  }, [at]);
   return <DocsAssistantContext.Provider value={assistant}>{children}</DocsAssistantContext.Provider>;
 }

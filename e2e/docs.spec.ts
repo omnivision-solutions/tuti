@@ -1532,12 +1532,12 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const assistant = panel.getByRole("dialog", { name: "Assistant" });
   const conversation = assistant.getByRole("log", { name: "Conversation" });
   await expect(conversation).toContainText(question);
-  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${portalUrl(slug)}/widget?tab=messages&ask=${encodeURIComponent(question)}`);
+  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${portalUrl(slug)}/widget?tab=messages`);
   await expect(conversation.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
   await expect(conversation.getByRole("listitem").filter({ hasText: "Each invite is good for 7 days" })).toBeVisible();
   const source = conversation.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
   await expect(source).toHaveAttribute("href", "/widget?tab=docs&article=inviting-your-team");
-  // Asked, the question leaves the panel's address: going back or reloading it doesn't ask again.
+  // The question went by message, never in the panel's address: going back or reloading it doesn't ask again.
   const panelUrl = async () => (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!.url();
   await expect.poll(panelUrl).toBe(`${portalUrl(slug)}/widget?tab=messages`);
   await checkpoint(visitor, "portal-docs-assistant-answer", { fullPage: false });
@@ -1674,6 +1674,13 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await unstoredAssistant.getByRole("textbox", { name: "Ask a question" }).fill("Is there an API?");
   await unstoredAssistant.getByRole("button", { name: "Send" }).click();
   await expect(unstoredAssistant.getByText("I don't know")).toBeVisible();
+  // A search's "Ask a follow-up" there too: its answer goes to the assistant with it, not through storage.
+  await unstored.goto(`/docs?${new URLSearchParams({ q: "Is there a dark mode?" })}`);
+  const unstoredAnswer = unstored.getByRole("region", { name: "AI answer" });
+  await unstoredAnswer.getByRole("button", { name: "Ask AI" }).click();
+  await expect(unstoredAnswer.getByText("I don't know")).toBeVisible();
+  await unstoredAnswer.getByRole("button", { name: "Ask a follow-up" }).click();
+  await expect(unstoredAssistant.getByRole("log", { name: "Conversation" })).toContainText("Is there a dark mode?");
 
   // Asked on the search page (a link to /docs?q=), the answer can go on in the assistant: the same answer, not asked again.
   const ai = visitor.getByRole("region", { name: "AI answer" });

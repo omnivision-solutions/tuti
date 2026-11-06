@@ -404,28 +404,47 @@ test("the portal's own tag under a path of the team's site: the panel is under t
   }
 });
 
-test("Tuti.open({ ask }) opens Messages with the assistant asking the question (true: just the assistant), at most 300 characters", () => {
+test("Tuti.open({ ask }) opens Messages, and asks once the panel's assistant says it's listening: the latest ask, with its turn", () => {
   const page = loadWidget({});
+  const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
   page.Tuti.open({ ask: "How do I invite people?" });
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages&ask=How%20do%20I%20invite%20people%3F");
-  page.Tuti.open({ ask: true });
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages&ask=");
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages");
+  // Not listening yet (loaded, maybe, but not hydrated): it waits, the latest only.
+  loaded(page);
   page.Tuti.open({ ask: "x".repeat(400) });
-  expect(new URL(String(page.frame!.src)).searchParams.get("ask")).toHaveLength(300);
+  page.Tuti.open({ ask: "Can I invite a guest?", turn: { question: "Pricing?", answer: { id: "a1" } } });
+  expect(asked()).toEqual([]);
+  page.message(frameWindow(), { type: "tuti:ask-ready" });
+  expect(asked()).toEqual([[{ type: "tuti:ask", ask: "Can I invite a guest?", turn: { question: "Pricing?", answer: { id: "a1" } } }, "https://acme.tuti.example"]]);
+  // Listening: at once, where the panel is (no reload); true just opens the assistant; at most 300 characters.
+  page.Tuti.open({ ask: true });
+  page.Tuti.open({ ask: "y".repeat(400) });
+  expect(asked().slice(1).map(([data]) => (data as { ask: string }).ask)).toEqual(["", "y".repeat(300)]);
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages");
 });
 
-test("a question asked while the panel loads another page goes in its address, not to the page on its way out", () => {
+test("an ask while the panel loads another page waits for that page to listen, not the one on its way out", () => {
   const page = loadWidget({});
+  const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
   page.Tuti.open({ article: "billing" });
   loaded(page);
-  // Loaded: asked by message, the panel as it is.
-  page.Tuti.open({ ask: "Do you refund?" });
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs&article=billing");
-  expect((page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> }).postMessage).toHaveBeenCalledWith({ type: "tuti:ask", ask: "Do you refund?" }, "https://acme.tuti.example");
-  // Loading another page: in its address.
+  page.message(frameWindow(), { type: "tuti:ask-ready" });
   page.Tuti.open({ article: "refunds" });
   page.Tuti.open({ ask: "How do refunds work?" });
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages&ask=How%20do%20refunds%20work%3F");
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs&article=refunds");
+  expect(asked()).toEqual([]);
+  page.message(frameWindow(), { type: "tuti:ask-ready" });
+  expect(asked().map(([data]) => (data as { ask: string }).ask)).toEqual(["How do refunds work?"]);
+});
+
+test("on a Tuti portal's page, another copy (the team's Custom code) gives way to the portal's own tag, whichever runs first", () => {
+  const page = loadWidget({
+    before: (page) => Object.assign(page.document, { querySelector: (selector: string) => (selector === "script[data-on-portal]" ? {} : null) }),
+  });
+  expect(page.window.Tuti).toBeUndefined();
+  expect((page.window as { __tutiWidget?: boolean }).__tutiWidget).toBeUndefined();
 });
 
 test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; unknown tabs are reported", async () => {

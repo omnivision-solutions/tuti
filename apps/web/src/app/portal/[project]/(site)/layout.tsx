@@ -109,7 +109,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts and search get lines of their own (search on tablets too). */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
-        <WithAssistant assistant={assistant} viewer={session?.user.id ?? null}>
+        <WithAssistant assistant={assistant}>
         <PortalMenuProvider>
         <PortalTop>
         {/* On phones the parts' tabs sit on its bottom edge, under room for the first line. */}
@@ -178,6 +178,6 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
 const PORTAL_LOADER = 2;
 
 /** The page with Ask AI (the widget's assistant), where the portal has it. */
-function WithAssistant({ assistant, viewer, children }: { assistant: boolean; viewer: string | null; children: React.ReactNode }) {
-  return assistant ? <PortalAssistant viewer={viewer}>{children}</PortalAssistant> : children;
+function WithAssistant({ assistant, children }: { assistant: boolean; children: React.ReactNode }) {
+  return assistant ? <PortalAssistant>{children}</PortalAssistant> : children;
 }

@@ -4,6 +4,7 @@ import { SLUG_PATTERN } from "./project-slugs";
 import { WIDGET_ICONS } from "./widget-icons";
 import {
   WIDGET_ASK_MESSAGE,
+  WIDGET_ASK_READY_MESSAGE,
   WIDGET_CLOSABLE_MESSAGE,
   WIDGET_CLOSE_MESSAGE,
   WIDGET_IDENTIFY_MESSAGE,
@@ -57,8 +58,8 @@ import {
  * for one, and the token is sent only to the portal's origin.
  *
  * `Tuti.open()` opens the panel, `Tuti.open({ tab })` at a tab,
- * `Tuti.open({ ask: "<question>" })` at Messages with the AI assistant answering it (`ask: true`: the
- * assistant as it was; the portal's Ask AI), and `Tuti.open({ article: "<slug>" })` at a docs article, as does clicking any
+ * `Tuti.open({ ask: "<question>" })` with the AI assistant answering it (at Messages the first time; `ask: true`:
+ * the assistant as it was; the portal's Ask AI), and `Tuti.open({ article: "<slug>" })` at a docs article, as does clicking any
  * element with `data-tuti-article="<slug>"` (contextual help buttons; one listener
  * on the document, so elements added later work too). `Tuti.close()` closes it.
  *
@@ -638,19 +639,21 @@ export function widgetLoader(portalTemplate: string): string {
   var frame;
   var returnFocus;
 
-  // Opens the panel, at a tab or a docs article if asked (otherwise where it was), or at Messages with its
-  // assistant open, asking \`ask\` (true: just open); closing it gives focus back to \`from\`.
+  // Opens the panel, at a tab or a docs article if asked (otherwise where it was), or with its assistant asking
+  // \`ask\` (true: just open; at Messages, the first time), after \`turn\` (a question and answer to follow up on);
+  // closing it gives focus back to \`from\`.
   function open(options, from) {
     var article = options && typeof options.article === "string" ? options.article : "";
     var ask = options && (typeof options.ask === "string" || options.ask === true) ? (options.ask === true ? "" : options.ask.slice(0, ${MAX_QUESTION})) : null;
     var query =
-      ask !== null ? "?tab=messages&ask=" + encodeURIComponent(ask)
+      ask !== null ? (frame ? null : TABS.messages)
       : article ? "?tab=docs&article=" + encodeURIComponent(article)
       : tabQuery(options && options.tab);
-    // A panel already there asks it without reloading, so nothing in it is lost (an answer still coming).
-    if (ask !== null && frame && frameLoaded && frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_ASK_MESSAGE)}, ask: ask }, origin);
-      query = null;
+    // Asked by message, never by reloading (nothing in the panel is lost, an answer still coming), once it's listening:
+    // the latest ask waits for that.
+    if (ask !== null) {
+      pendingAsk = { type: ${JSON.stringify(WIDGET_ASK_MESSAGE)}, ask: ask, turn: options.turn && typeof options.turn === "object" ? options.turn : null };
+      if (listening) sendAsk();
     }
     var src = portal + "/widget" + (query || "");
     // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
@@ -666,8 +669,8 @@ export function widgetLoader(portalTemplate: string): string {
       });
     } else if (query !== null) {
       closable = false;
-      // Loading again: a question asked meanwhile goes in its address, not to the page on its way out.
-      frameLoaded = false;
+      // Another page: an ask waits for that one to listen, not the one on its way out.
+      listening = false;
       frame.src = src;
     }
     showStandIn();
@@ -684,6 +687,15 @@ export function widgetLoader(portalTemplate: string): string {
     layoutPanel();
     button.setAttribute("aria-expanded", "true");
     frame.focus();
+  }
+
+  // The ask waiting for the floating panel's assistant, sent once it's listening.
+  var listening = false;
+  var pendingAsk = null;
+  function sendAsk() {
+    if (!pendingAsk || !frame || !frame.contentWindow) return;
+    frame.contentWindow.postMessage(pendingAsk, origin);
+    pendingAsk = null;
   }
 
   // The floating panel, whether it's on screen: only then does it count the team's replies as seen.
@@ -859,6 +871,12 @@ export function widgetLoader(portalTemplate: string): string {
         // Up with its own Close, or going away (the next page may not have one).
         closable = event.data === ${JSON.stringify(WIDGET_CLOSABLE_MESSAGE)};
         showStandIn();
+      }
+    }
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_ASK_READY_MESSAGE)}) {
+      if (from === frame) {
+        listening = true;
+        sendAsk();
       }
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {

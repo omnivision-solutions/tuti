@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { MAX_QUESTION } from "@/lib/widget-docs";
-import { WIDGET_ASK_MESSAGE } from "@/lib/widget-messages";
+import { WIDGET_ASK_MESSAGE, WIDGET_ASK_READY_MESSAGE } from "@/lib/widget-messages";
 import { askDocs, rateDocsAnswer } from "@/server/docs-readers";
 import type { DocsAnswer } from "@/server/operations/docs-ask";
 
@@ -41,31 +41,13 @@ function storedTurns(slug: string, viewer: string): Turn[] {
   }
 }
 
-/**
- * Keeps `question` and its `answer` (from /docs?q=) as the latest turn of `viewer`'s conversation in this tab (null: signed
- * out), for the widget's assistant to show and follow up on: its panel is on the portal's own address, so it has the tab's
- * storage too (the portal's "Ask a follow-up").
- */
-export function keepTurn(slug: string, viewer: string | null, question: string, answer: DocsAnswer) {
-  const reader = viewer ?? "anonymous";
-  const turns = storedTurns(slug, reader);
-  if (turns.some((turn) => turn.answer?.id === answer.id)) {
-    return;
-  }
-  try {
-    window.sessionStorage.setItem(storageKey(slug, reader), JSON.stringify([...turns, { key: crypto.randomUUID(), question, answer }]));
-  } catch {
-    // Storage blocked or full: the assistant opens without it.
-  }
-}
-
 /** The answer a new question follows up on: the latest that was asked (an "I don't know" too). */
 const lastAsked = (turns: Turn[]) => turns.findLast((turn) => turn.answer)?.answer?.id;
 
 /**
  * The widget's docs assistant, the one place AI answers are a conversation (the portal's Ask AI opens it too: Tuti.open({ ask })).
- * It takes the panel. Its Help center's "Ask AI", Messages' AI first, and `opening` (a question asked as the panel opens; empty:
- * just opened) open it. Each question follows up on the ones before (docs.ask's `followUpTo`: the server reads the earlier turns,
+ * It takes the panel. Its Help center's "Ask AI", Messages' AI first, and the page around the panel (by message, once this
+ * says it's listening: a question, or none to just open it, after a question and answer from elsewhere to follow up on) open it. Each question follows up on the ones before (docs.ask's `followUpTo`: the server reads the earlier turns,
  * the browser only names the last). Answers come with their sources (opening in the panel's Help center) and a thumbs up or down,
  * "I don't know" with posting it as feedback (`feedbackPath`, the Feedback tab), and each with Ask a person (`askAPerson`). The
  * trash clears the conversation; the next question starts a new one.
@@ -75,7 +57,6 @@ export function DocsAssistantProvider({
   viewer,
   feedbackPath,
   askAPerson,
-  opening,
   children,
 }: {
   projectName: string;
@@ -83,7 +64,6 @@ export function DocsAssistantProvider({
   viewer: string | null;
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
-  opening?: string;
   children: React.ReactNode;
 }) {
   const slug = usePortalSlug();
@@ -196,36 +176,31 @@ export function DocsAssistantProvider({
     [run, show],
   );
 
-  // Asked by the page (Tuti.open({ ask }), the portal's Ask AI): as the panel opens (`opening`), once, the question then out
-  // of its address so going back or reloading doesn't ask it again; then, the panel open, by message, so nothing in it is lost.
-  const openedToAsk = useRef(false);
+  // Asked by the page around the panel (Tuti.open({ ask }), the portal's Ask AI): by message, once it hears this is listening.
+  // A question and answer from elsewhere (a search's "Ask a follow-up") come first, to follow up on.
   useEffect(() => {
-    const askOrOpen = (question: string) => (question.trim() ? assistant.ask(question.slice(0, MAX_QUESTION)) : assistant.open());
-    if (opening !== undefined && !openedToAsk.current) {
-      openedToAsk.current = true;
-      askOrOpen(opening);
-      // After the router's own first entry for the page; without state of the router's, so the router takes the address up
-      // (with it, the router keeps the one it had and puts it back on its next change).
-      setTimeout(() => {
-        const url = new URL(window.location.href);
-        url.searchParams.delete("ask");
-        window.history.replaceState(null, "", url);
-      });
-    }
     const onMessage = (event: MessageEvent) => {
-      const data = event.data as { type?: unknown; ask?: unknown } | null;
-      if (event.source === window.parent && data?.type === WIDGET_ASK_MESSAGE && typeof data.ask === "string") {
-        // What the page kept for it meanwhile (the portal's "Ask a follow-up": a search's answer), after what's here.
-        const kept = storedTurns(slug, reader).filter((stored) => !turnsRef.current.some((turn) => turn.key === stored.key));
-        if (kept.length > 0) {
-          setTurns((all) => [...all, ...kept]);
-        }
-        askOrOpen(data.ask);
+      const data = event.data as { type?: unknown; ask?: unknown; turn?: { question?: unknown; answer?: { id?: unknown } } | null } | null;
+      if (event.source !== window.parent || data?.type !== WIDGET_ASK_MESSAGE || typeof data.ask !== "string") {
+        return;
+      }
+      const turn = data.turn;
+      if (turn && typeof turn.question === "string" && typeof turn.answer?.id === "string") {
+        const { question, answer } = turn as { question: string; answer: DocsAnswer };
+        setTurns((all) => (all.some((each) => each.answer?.id === answer.id) ? all : [...all, { key: crypto.randomUUID(), question, answer }]));
+      }
+      if (data.ask.trim()) {
+        assistant.ask(data.ask.slice(0, MAX_QUESTION));
+      } else {
+        assistant.open();
       }
     };
     window.addEventListener("message", onMessage);
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: WIDGET_ASK_READY_MESSAGE }, "*");
+    }
     return () => window.removeEventListener("message", onMessage);
-  }, [opening, assistant, slug, reader]);
+  }, [assistant]);
 
   const retry = (turn: Turn) => {
     const before = turn.fresh ? [] : turnsRef.current.slice(0, turnsRef.current.findIndex((each) => each.key === turn.key));
