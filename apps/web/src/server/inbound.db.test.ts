@@ -164,6 +164,14 @@ test("an email's From name is who the conversation is with, trimmed and cut shor
   expect(mailbox.emails.some((email) => email.text.includes("Carlos Mendes (e2e-carlos@example.com) started a conversation"))).toBe(true);
 });
 
+test("an unverified email's From name isn't shown: it's its address, as anyone can give any name", async () => {
+  const { project, address } = await setup();
+  await postEmail(rawEmail({ from: "Kim Lee <e2e-not-kim@example.com>", to: address }), { recipient: address, auth: "spf=none dkim=none dmarc=none" });
+  const [conversation] = await conversations(project.id);
+  expect(conversation).toMatchObject({ name: "Kim Lee", emailVerified: false });
+  expect(conversationPerson({ ...conversation!, user: null })).toMatchObject({ name: null, email: "e2e-not-kim@example.com", verified: false });
+});
+
 test("auto-replies, bounces, our own mail and loops are kept as ignored, with the reason", async () => {
   const { project, address } = await setup();
   const post = (headers: Record<string, string>, from = "e2e-kim@example.com") =>

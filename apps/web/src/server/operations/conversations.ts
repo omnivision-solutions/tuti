@@ -75,7 +75,9 @@ export function conversationPerson(row: Pick<ConversationRow, "user" | "email" |
     const sso = row.user.ssoIdentity;
     return { id: sso?.externalId ?? null, name: row.user.name, email: sso ? sso.email : row.user.email, verified: true };
   }
-  return { id: null, name: row.name, email: row.email, verified: row.emailVerified };
+  // The name their email gave only once its address is verified: anyone can give any name, and the list would show it
+  // alone (as with the company, conversationCompanies). Unverified, they're their address.
+  return { id: null, name: row.emailVerified ? row.name : null, email: row.email, verified: row.emailVerified };
 }
 
 function view(row: ConversationRow, slug: string) {
