@@ -129,7 +129,10 @@ export function ListKeys({
   // Somewhere they go themselves (any link, Back or Forward): an action still saving doesn't move them on after it.
   useEffect(() => {
     const picked = (event: Event) => {
-      if (event.type === "popstate" || (event.target as Element).closest?.("a[href]")) {
+      // A link opening here: not one to a new tab or window (a modifier, target=_blank), nor a download, where they stay.
+      const link = event instanceof MouseEvent ? (event.target as Element).closest?.<HTMLAnchorElement>("a[href]") : null;
+      const here = link && !link.hasAttribute("download") && (!link.target || link.target === "_self");
+      if (event.type === "popstate" || (here && event instanceof MouseEvent && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey)) {
         picks++;
       }
     };
