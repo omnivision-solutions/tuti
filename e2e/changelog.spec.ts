@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest, publishRelease } from "./github";
-import { apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
+import { afterIntersections, apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { publishedOn } from "./changelog-dates";
 import { modelRequests, nextModelReply } from "./model";
@@ -98,6 +98,13 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.waitForURL(`**/app/${slug}/changelog/1`);
   await team.reload();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here");
+  // Its heading is only for screen readers here, the title field showing the title: scrolled until that heading is
+  // under the top bar, the field still in sight below it, the bar doesn't repeat the title above the field.
+  await team.evaluate(() => window.scrollTo(0, 160));
+  await afterIntersections(team);
+  await expect(team.getByLabel("Title")).toBeInViewport();
+  await expect(team.locator('[data-slot="bar-title"]')).toHaveCount(0);
+  await team.evaluate(() => window.scrollTo(0, 0));
   await expect(team.getByRole("checkbox", { name: "New", exact: true })).toBeChecked();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await expect(team.getByText("Draft", { exact: true })).toBeVisible();

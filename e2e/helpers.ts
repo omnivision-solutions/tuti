@@ -134,3 +134,20 @@ export function png(width: number, height: number): Buffer {
   for (let row = 0; row < height; row++) rows[row * (width + 1)] = 0;
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
 }
+
+/**
+ * Once the page has had its next round of intersection reports (one of its own), and two frames for what they change to
+ * render: for checking that something watching where things are on screen (the phone bar's title) did nothing.
+ */
+export async function afterIntersections(page: Page) {
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => {
+      const round = new IntersectionObserver(() => {
+        round.disconnect();
+        resolve();
+      });
+      round.observe(document.body);
+    });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+}

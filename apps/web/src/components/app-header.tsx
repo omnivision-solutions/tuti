@@ -37,12 +37,15 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
       return;
     }
     const bar = ref.current!.offsetHeight;
+    // From tablet width up the heading is in the bar (PageHeader), which this would take for gone up under it.
+    const phone = window.matchMedia("(width < 48rem)");
     let under = false;
     const show = () => setScrolled({ pathname, title: under ? heading.textContent : null });
     const observer = new IntersectionObserver(
       ([entry]) => {
-        // Gone up under the bar, not down past the screen's bottom. Not one taken off the page (its box is empty, at 0).
-        under = heading.isConnected && !entry.isIntersecting && entry.boundingClientRect.top < bar;
+        // Gone up under the bar, not down past the screen's bottom. Not one that takes no room: only for screen readers
+        // (a changelog entry's or help article's on phones, its title field showing the title), or taken off the page.
+        under = phone.matches && entry.boundingClientRect.height > 1 && !entry.isIntersecting && entry.boundingClientRect.top < bar;
         show();
       },
       { rootMargin: `-${bar}px 0px 0px 0px` },

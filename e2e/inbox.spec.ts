@@ -7,7 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { publishMx } from "./dns";
 import { setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, expectOneRowOfTabs, png, signUp } from "./helpers";
+import { afterIntersections, apiFor, createProject, expectOneRowOfTabs, png, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
@@ -1060,19 +1060,9 @@ test("on a phone, a long conversation's title shows in the top bar once it's scr
   await owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" }).scrollIntoViewIfNeeded();
   await expect(barTitle).toHaveCount(0);
   await expect(owner.locator("header").getByText("Acme", { exact: true })).toBeVisible();
-  // A heading taken off the page in sight (a page's refresh replacing it) isn't one gone up under the bar. Its last
-  // report comes with the next round of them: one of the page's own, then two frames for the bar to render.
-  await owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" }).evaluate(async (heading) => {
-    heading.remove();
-    await new Promise<void>((resolve) => {
-      const round = new IntersectionObserver(() => {
-        round.disconnect();
-        resolve();
-      });
-      round.observe(document.body);
-    });
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  });
+  // A heading taken off the page in sight (a page's refresh replacing it) isn't one gone up under the bar.
+  await owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" }).evaluate((heading) => heading.remove());
+  await afterIntersections(owner);
   await expect(barTitle).toHaveCount(0);
 });
 
