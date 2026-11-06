@@ -111,7 +111,7 @@ export function Webhooks({ projectSlug, webhooks }: { projectSlug: string; webho
       )}
 
       {webhooks.length === 0 ? (
-        <EmptyState title="No webhooks yet" description="Add an endpoint to hear about new posts, comments and status changes." />
+        <EmptyState title="No webhooks yet" description="Add an endpoint to hear about feedback, the changelog, Autopilot and the inbox as things happen." />
       ) : (
         <ItemList>
           {webhooks.map((webhook) => (

@@ -189,7 +189,7 @@ describe("on the free plan (where plans are sold)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
-  const FULL = "Projects on the free plan have up to 3 team members, invites included. Upgrade to Pro in Settings → Billing to invite more.";
+  const FULL = "Projects on the Free plan have up to 3 team members, invites included. Upgrade to Pro in Settings → Billing to invite more.";
 
   test("3 team members, invites still pending included; a new invite to the same address still replaces its own", async () => {
     await addMember(project.id, "MEMBER");

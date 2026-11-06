@@ -39,7 +39,7 @@ export default async function ContinuePage(props: PageProps<"/continue">) {
     <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
         <CardTitle>Continue to {project.name}</CardTitle>
-        <CardDescription>Use your Tuti account on {project.name}&apos;s feedback portal.</CardDescription>
+        <CardDescription>Use your Tuti account on {project.name}&apos;s portal.</CardDescription>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
         Signed in as <span className="break-all text-foreground">{session.user.email}</span>.

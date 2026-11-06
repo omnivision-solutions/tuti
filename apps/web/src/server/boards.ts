@@ -55,7 +55,7 @@ function isUniqueViolation(error: unknown) {
 const ADMIN_ONLY = { error: "Only project owners and admins can manage boards" };
 
 const boardsFull = (plan: "FREE" | "PRO" | "BUSINESS", limit: number) =>
-  `Projects on the ${plan === "FREE" ? "free" : "Pro"} plan have up to ${limit} feedback boards. Upgrade to ${plan === "FREE" ? "Pro" : "Business"} in Settings → Billing to add more.`;
+  `Projects on the ${plan === "FREE" ? "Free" : "Pro"} plan have up to ${limit} feedback boards. Upgrade to ${plan === "FREE" ? "Pro" : "Business"} in Settings → Billing to add more.`;
 
 export async function createBoard(projectSlug: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const project = await getAdminProject(projectSlug);

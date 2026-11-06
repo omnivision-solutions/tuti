@@ -88,7 +88,7 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
           </Link>
         ) : alreadyMember ? (
           <Link href={`/app/${invitation.projectSlug}`} className={buttonVariants()}>
-            You&apos;re already on the team — open project
+            You&apos;re on the team: open project
           </Link>
         ) : (
           <AcceptInvitationButton token={token} />
