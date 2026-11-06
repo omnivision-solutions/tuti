@@ -7,7 +7,10 @@ import { VISIBILITY_LABELS } from "@/lib/visibility-labels";
 /** Who sees it, in words that hold on the portal and in the app alike: a post, or a board's new posts. */
 const SEEN_BY = {
   post: { PRIVATE: "Only its author and the team see it", TEAM: "Only the team sees it" },
-  board: { PRIVATE: "Each new post is seen only by its author and the team", TEAM: "Only the team sees this board and its posts" },
+  board: {
+    PRIVATE: "Each new post is seen only by its author and the team; posts already on it keep their own",
+    TEAM: "The board isn't on the portal, and only the team sees new posts on it; posts already on it keep their own",
+  },
 } as const;
 
 /**

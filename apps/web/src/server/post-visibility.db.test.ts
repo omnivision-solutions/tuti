@@ -3,6 +3,7 @@ import { handlers, postAudience } from "@tuti/jobs";
 import { isValidElement, type ReactNode } from "react";
 import { expect, test, vi } from "vitest";
 
+import { BackLink } from "@/components/back-link";
 import { ListFilters } from "@/components/list-filters";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import BoardPage from "@/app/portal/[project]/(site)/feedback/[board]/page";
@@ -337,4 +338,24 @@ test("a portal whose boards are all the team's opens on its changelog", async ()
   const { project } = await fixture();
   await prisma.board.updateMany({ where: { projectId: project.id }, data: { postVisibility: "TEAM" } });
   expect(await portalHomePath(project.slug)).toBe("/changelog");
+});
+
+test("a public post on a Team only board leads readers back to the portal's feedback, not to the board they can't open", async () => {
+  const { owner, project, open } = await fixture();
+  await prisma.board.update({ where: { id: open.boardId }, data: { postVisibility: "TEAM" } });
+  const backLink = async () => {
+    const find = (node: ReactNode): string | undefined =>
+      Array.isArray(node)
+        ? node.map(find).find(Boolean)
+        : isValidElement<{ children?: ReactNode; href?: string }>(node)
+          ? node.type === BackLink
+            ? node.props.href
+            : find(node.props.children)
+          : undefined;
+    return find((await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-for-the-editor-1" }), searchParams: Promise.resolve({}) } as never)) as ReactNode);
+  };
+  actAs(null);
+  expect(await backLink()).toMatch(/\/feedback$/);
+  actAs(owner);
+  expect(await backLink()).toMatch(/\/feedback\/feature-requests$/);
 });

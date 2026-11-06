@@ -50,7 +50,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   const post = await prisma.post.findFirst({
     where: { number, project: { slug: projectSlug } },
     include: {
-      board: { select: { slug: true, name: true } },
+      board: { select: { slug: true, name: true, postVisibility: true } },
       author: { select: { id: true, name: true } },
       votes: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
       subscriptions: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
@@ -118,7 +118,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
 
   return (
     <div className="flex flex-col gap-6">
-      <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
+      {/* A public post on a Team only board: back to the portal's feedback, not to a board only the team may open. */}
+      {post.board.postVisibility === "TEAM" && !viewer.team ? <BackLink href={at("/feedback")}>Feedback</BackLink> : <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>}
 
       <article className="flex items-start gap-4">
         <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />

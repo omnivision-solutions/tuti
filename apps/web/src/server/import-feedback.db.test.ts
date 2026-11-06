@@ -200,6 +200,15 @@ test("a comment that's only an image comes across with it", async () => {
   expect(JSON.stringify(only!.content)).toContain('"type":"image"');
 });
 
+test("posts imported into a board the team made private take its visibility, as a new post there does", async () => {
+  await prisma.board.update({ where: { id: project.boards[0]!.id }, data: { postVisibility: "PRIVATE" } });
+  await importFeedback();
+  const posts = await prisma.post.findMany({ where: { projectId: project.id }, select: { visibility: true, board: { select: { name: true } } } });
+  expect(posts.filter((post) => post.board.name === "Feature requests").map((post) => post.visibility)).toEqual(expect.arrayContaining(["PRIVATE"]));
+  expect(posts.filter((post) => post.board.name === "Feature requests").every((post) => post.visibility === "PRIVATE")).toBe(true);
+  expect(posts.filter((post) => post.board.name === "Bugs").every((post) => post.visibility === "PUBLIC")).toBe(true);
+});
+
 test("a page run twice, at once or again later, and a second import, bring nothing twice", async () => {
   const started = await importFeedback();
   const before = await made();

@@ -13,6 +13,6 @@ test("a private post's badge says who sees it in words a screen reader reads, no
 });
 
 test("a board's badge says what happens to its new posts, not that the board is hidden", () => {
-  expect(render("PRIVATE", "board")).toContain('Private<span class="sr-only">: each new post is seen only by its author and the team</span>');
-  expect(render("TEAM", "board")).toContain('Team only<span class="sr-only">: only the team sees this board and its posts</span>');
+  expect(render("PRIVATE", "board")).toContain("Private<span class=\"sr-only\">: each new post is seen only by its author and the team; posts already on it keep their own</span>");
+  expect(render("TEAM", "board")).toContain("Team only<span class=\"sr-only\">: the board isn&#x27;t on the portal, and only the team sees new posts on it; posts already on it keep their own</span>");
 });
