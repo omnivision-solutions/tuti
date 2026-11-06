@@ -728,6 +728,15 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" })).toBeVisible();
   await stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" }).click();
   await stillLoading.waitForURL(`${portalUrl(slug)}/docs`, { timeout: 10_000 });
+  // Gone on to another page meanwhile, the reader stays there (the clock run on past the wait).
+  await stillLoading.clock.install();
+  await stillLoading.goto(`/docs/${article.slug}`);
+  await stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" }).click();
+  await stillLoading.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
+  await stillLoading.waitForURL(`${portalUrl(slug)}/roadmap`);
+  await stillLoading.clock.runFor(6_000);
+  await expect(stillLoading.getByRole("heading", { name: "Roadmap" })).toBeVisible();
+  expect(stillLoading.url()).toBe(`${portalUrl(slug)}/roadmap`);
   await stillLoading.context().close();
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");

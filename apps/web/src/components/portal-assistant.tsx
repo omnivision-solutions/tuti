@@ -19,6 +19,8 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
   const slug = usePortalSlug();
   const at = usePortalHref();
   const outsideDialogs = useRef<HTMLElement | null>(null);
+  // An ask still waiting for the widget: only the latest one waits.
+  const waiting = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     const keep = (event: FocusEvent) => {
       if (event.target instanceof HTMLElement && !event.target.closest('[role="dialog"], #tuti-widget')) {
@@ -33,6 +35,8 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
       const focused = document.activeElement;
       const returnFocus = focused instanceof HTMLElement && !focused.closest('[role="dialog"], #tuti-widget') ? focused : outsideDialogs.current;
       const since = Date.now();
+      const from = window.location.href;
+      clearTimeout(waiting.current);
       const attempt = () => {
         const tuti = (window as { Tuti?: Tuti }).Tuti;
         if (tuti) {
@@ -42,10 +46,14 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
         // Its script maybe still loading (the page's load waits for it), or done already (loaded or failed, its events
         // gone by): looked for again until it's there, the page has loaded, or 5 seconds have passed.
         if (document.querySelector("script[data-on-portal]") && document.readyState !== "complete" && Date.now() - since < 5_000) {
-          setTimeout(attempt, 100);
+          waiting.current = setTimeout(attempt, 100);
           return;
         }
-        // No widget after all (its script failed, or an older copy took the page): the docs' search, with its AI answer.
+        // No widget after all (its script failed, or an older copy took the page): the docs' search, with its AI answer;
+        // not if the reader has gone on to another page meanwhile.
+        if (window.location.href !== from) {
+          return;
+        }
         window.location.assign(at(ask === true ? "/docs" : `/docs?${new URLSearchParams({ q: ask })}`));
       };
       attempt();
