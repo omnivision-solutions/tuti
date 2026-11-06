@@ -5,7 +5,7 @@ import { FAKE_FEATUREBASE_KEY, FAKE_FEATUREBASE_SLOW_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl } from "./env";
-import { createProject, signUp } from "./helpers";
+import { createProject, newPerson, signUp } from "./helpers";
 
 test("in the first run the team comes from Featurebase: a bad key is refused, a good one brings its contacts across as Users while setup goes on", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -23,7 +23,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
   await expect(owner.getByRole("link", { name: "Settings → API" })).toHaveAttribute("href", "https://auth.featurebase.app/login?redirect=/settings/api");
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
-  await expect(owner.getByText("Contacts, feedback and the inbox come across for now: the help center follows in a later version, and the changelog after it.")).toBeVisible();
+  await expect(owner.getByText("Contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase");
 
   // A key Featurebase refuses: said under the field, nothing started.
@@ -157,6 +157,60 @@ test("on a plan with a board limit, the setup step says before starting what hap
   await checkpoint(owner, "setup-featurebase-board-limit");
   await owner.getByRole("checkbox", { name: /^Feedback/ }).uncheck();
   await expect(note).toHaveCount(0);
+});
+
+test("the help center comes across from Featurebase: the portal's docs have its collections, and its articles with their formatting, images and links to each other", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.goto("/app/new");
+  await owner.getByLabel("Name").fill("Acme");
+  await owner.getByLabel("URL").fill(slug);
+  await owner.getByRole("button", { name: "Create project" }).click();
+  await owner.waitForURL(`**/app/${slug}/setup`);
+
+  // The help center alone.
+  await owner.getByRole("radio", { name: /^Featurebase/ }).check();
+  await owner.getByRole("checkbox", { name: /^Help center/ }).check();
+  await owner.getByRole("checkbox", { name: /^Contacts/ }).uncheck();
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await checkpoint(owner, "setup-featurebase-help-center");
+  await owner.getByRole("button", { name: "Check the key and start" }).click();
+  const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
+  await expect(status).toContainText("Imported from Featurebase");
+  await expect(status).toContainText("3 collections, 3 articles, 1 article as a draft (only some people could see it) brought across.");
+  await checkpoint(owner, "setup-help-center-imported");
+
+  // On the portal: the collections at the top, with what's in them.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/docs");
+  const cards = visitor.getByRole("list", { name: "Collections" });
+  await expect(cards.getByRole("link", { name: /^Getting started/ })).toContainText("Your first steps.");
+  await expect(cards.getByRole("link", { name: /^Getting started/ }).locator("svg.lucide-lightbulb")).toBeVisible();
+  await expect(cards.getByRole("link", { name: /^Billing/ })).toBeVisible();
+  await checkpoint(visitor, "portal-docs-imported");
+
+  // An article with its formatting, image and document; its draft and the one only some could see aren't there.
+  await visitor.goto("/docs/welcome-to-acme");
+  const welcome = visitor.getByRole("article", { name: "Welcome to Acme" });
+  await expect(welcome.getByRole("heading", { name: "Start here", level: 2 })).toBeVisible();
+  await expect(welcome.locator("strong", { hasText: "every invoice" })).toBeVisible();
+  await expect(welcome.getByRole("listitem")).toHaveText(["Add your team", "Connect your bank"]);
+  await expect(welcome.getByRole("img", { name: "The dashboard" })).toBeVisible();
+  await expect(welcome.getByText("setup-guide.pdf")).toBeVisible();
+  const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
+  await expect(tree.getByRole("link", { name: "Roadmap notes" })).toHaveCount(0);
+  await checkpoint(visitor, "portal-imported-article");
+
+  // Its link to another imported article goes to that one's page here.
+  const link = welcome.getByRole("paragraph").getByRole("link", { name: "Paying by card" });
+  await expect(link).toHaveAttribute("href", `${portalUrl(slug)}/docs/paying-by-card`);
+  // Links in articles open in a new tab.
+  const [linked] = await Promise.all([visitor.context().waitForEvent("page"), link.click()]);
+  await linked.waitForURL(/\/docs\/paying-by-card$/);
+  await expect(linked.getByRole("article", { name: "Paying by card" })).toContainText("Cards are charged on the 1st.");
+  await checkpoint(linked, "portal-imported-linked-article");
 });
 
 test("the inbox comes across from Featurebase: its conversations with their messages, notes, images and statuses, history marked as imported", async ({ browser }, testInfo) => {

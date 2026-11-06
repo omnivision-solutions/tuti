@@ -15,6 +15,7 @@ export const IMPORT_PARTS = {
     media: true,
     see: { label: "See feedback", page: "feedback" },
   },
+  docs: { label: "Help center", description: "Collections and articles, with their images, files and the links between them.", needs: [], media: true, see: { label: "See docs", page: "docs" } },
   inbox: { label: "Inbox", description: "Conversations with their messages, notes and images, as the Inbox.", needs: ["contacts"], media: true, see: { label: "See conversations", page: "inbox" } },
 } as const satisfies Record<string, ImportPartInfo>;
 
@@ -65,6 +66,10 @@ const KINDS: Record<string, [string, string]> = {
   votes: ["vote", "votes"],
   comments: ["comment", "comments"],
   notes: ["note", "notes"],
+  collections: ["collection", "collections"],
+  articles: ["article", "articles"],
+  privateDrafts: ["article as a draft (only some people could see it)", "articles as drafts (only some people could see them)"],
+  limitDrafts: ["article as a draft (past the plan's article limit)", "articles as drafts (past the plan's article limit)"],
   images: ["image", "images"],
   files: ["file", "files"],
   videos: ["video", "videos"],

@@ -31,6 +31,10 @@ test("an import's summary: what came across, what was left out and why, and why 
   // In the kinds' order, however the database ordered them.
   const counts = { contacts: { imported: 3, leftOut: {} }, attachments: { imported: 1, leftOut: {} }, conversations: { imported: 4, leftOut: {} } };
   expect(importSummary({ state: "done", counts, error: null } as never)).toBe("3 contacts, 4 conversations, 1 attachment brought across.");
+  // In the kinds' order, whatever order the counts come in; a kind only left out isn't among what's brought.
+  expect(
+    importSummary({ state: "done", counts: { images: { imported: 0, leftOut: { "that couldn't be fetched": 1 } }, articles: { imported: 2, leftOut: {} }, collections: { imported: 1, leftOut: {} } }, error: null } as never),
+  ).toBe("1 collection, 2 articles brought across. Left out: 1 image that couldn't be fetched.");
   expect(importSummary({ state: "failed", counts: { contacts: { imported: 1, leftOut: { "without a name": 2 } } }, error: "Featurebase couldn't be reached." } as never)).toBe(
     "1 contact brought across. Left out: 2 contacts without a name. Featurebase couldn't be reached.",
   );
