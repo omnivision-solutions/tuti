@@ -114,6 +114,8 @@ export async function readableArticle(projectId: string, reader: Reader): Promis
 
 /** In the docs' lists, search, the sitemap and llms.txt: listed everywhere. */
 export const listedArticle = { ...published, listing: "EVERYWHERE" } satisfies Prisma.ArticleWhereInput;
+/** What the docs' AI can answer from (answerSections): published, not hidden (AI-only and unlisted ones too), and not sample content, which is never embedded. */
+export const answerableArticle = { ...published, listing: { not: "HIDDEN" }, sample: false } satisfies Prisma.ArticleWhereInput;
 /** Readable at its link (its page and .md): listed everywhere, or unlisted. Hidden and AI-only articles have no page. */
 export const servedArticle = { ...published, listing: { in: ["EVERYWHERE", "UNLISTED"] } } satisfies Prisma.ArticleWhereInput;
 

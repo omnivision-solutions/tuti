@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { aiPaused } from "@tuti/jobs";
 import { BookOpenIcon, ChevronRightIcon, HouseIcon, LightbulbIcon, MegaphoneIcon, MessageCircleIcon, SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -27,7 +28,7 @@ import { appUrl } from "@/lib/hosts";
 import { cn } from "@/lib/utils";
 import { docsHref } from "@/lib/widget-docs";
 import { publishedEntries } from "@/server/changelog-queries";
-import { listedArticle } from "@/server/docs-queries";
+import { answerableArticle, listedArticle } from "@/server/docs-queries";
 import { brandCss, branding } from "@/server/operations/branding";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -76,6 +77,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         name: true,
         boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, postButton: true, titlePlaceholder: true, detailsPlaceholder: true } },
         articles: { where: listedArticle, take: 1, select: { id: true } },
+        // Something for the AI to answer from, for Messages' AI first.
+        _count: { select: { articles: { where: answerableArticle } } },
         supportInbox: true,
       },
     }),
@@ -117,6 +120,10 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         askAPerson: await askAPerson(slug),
       }
     : null;
+  // Messages' AI first (Customize → Widget) where the assistant is here, has docs to answer from, can pass a question to the
+  // team (Ask a person: not with Messages turned off, though the page's own code may still open it), and isn't paused (out
+  // of AI credits, when it would only say it's unavailable). Only worked out on Messages, the one tab that uses it.
+  const aiFirst = tab === "messages" && settings.aiFirst && !!assistant?.askAPerson && project._count.articles > 0 && !(await aiPaused(project.id));
 
   return (
     <PortalBaseProvider base="" slug={slug}>
@@ -172,7 +179,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             collection={typeof collection === "string" ? collection : undefined}
           />
         )}
-        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} />}
+        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} aiFirst={aiFirst} />}
         {tab === "feedback" && (
           <Feedback slug={slug} projectId={project.id} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
         )}
@@ -400,7 +407,7 @@ async function Feedback({
  * Their conversations with the team: signed in on the portal itself, or by the customer's page (Tuti.identify).
  * Above them, who they're writing to: the team's faces and when they usually reply, as on Home.
  */
-async function Messages({ projectId, projectName, slug }: { projectId: string; projectName: string; slug: string }) {
+async function Messages({ projectId, projectName, slug, aiFirst }: { projectId: string; projectName: string; slug: string; aiFirst: boolean }) {
   const [session, faces, replyMs] = await Promise.all([getSession(), teamFaces(projectId), usualReplyMs(projectId)]);
   const team = (
     // Its card is WidgetMessages', with what to do next (New message) in it.
@@ -412,7 +419,7 @@ async function Messages({ projectId, projectName, slug }: { projectId: string; p
       </span>
     </section>
   );
-  return <WidgetMessages projectSlug={slug} portalSignedIn={!!session && (await canActIn(session.user.id, projectId))} team={team} />;
+  return <WidgetMessages projectSlug={slug} portalSignedIn={!!session && (await canActIn(session.user.id, projectId))} team={team} aiFirst={aiFirst} />;
 }
 
 /**

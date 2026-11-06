@@ -15,7 +15,7 @@ import { askDocs, rateDocsAnswer } from "@/server/docs-readers";
 import type { DocsAnswer } from "@/server/operations/docs-ask";
 
 /** One turn of the conversation: what they asked, and the answer once it's come (or why it didn't). */
-type Turn = { key: string; question: string; answer?: DocsAnswer; error?: string; rated?: boolean };
+type Turn = { key: string; question: string; answer?: DocsAnswer; error?: string; rated?: boolean; /** Passed to the team (Ask a person): once. */ escalated?: boolean; /** Asked on its own, following up on nothing (a new message in Messages). */ fresh?: boolean };
 
 /** The longest post title (MAX_POST_TITLE): "Post this as feedback" starts a post with the question as its title. */
 const MAX_TITLE = 120;
@@ -71,6 +71,17 @@ export function DocsAssistantProvider({
   const slug = usePortalSlug();
   const from = widget ? "widget" : "portal";
   const [open, setOpen] = useState(false);
+  // What had focus when it opened, for it to go back to; in the widget's Messages that may be gone by then (sending went
+  // back to the list), and the page's mark (data-assistant-return, its New message) takes it instead.
+  const opener = useRef<HTMLElement | null>(null);
+  const show = useCallback(() => {
+    const focused = document.activeElement;
+    // Asked from its own box (a follow-up), it's open already: what opened it stays the opener.
+    if (!(focused instanceof HTMLElement && focused.closest('[data-slot="sheet-content"]'))) {
+      opener.current = focused instanceof HTMLElement ? focused : null;
+    }
+    setOpen(true);
+  }, []);
   // In the widget, without the portal's sign-in: whoever the customer's site signs in (Tuti.identify),
   // asked once the assistant is first opened, since each asking costs the customer's app a token.
   const [opened, setOpened] = useState(false);
@@ -146,29 +157,29 @@ export function DocsAssistantProvider({
 
   const assistant = useMemo<DocsAssistant>(
     () => ({
-      ask: (question) => {
+      ask: (question, { fresh = false } = {}) => {
         const trimmed = question.trim();
-        setOpen(true);
+        show();
         if (!trimmed) {
           return;
         }
-        const before = turnsRef.current;
+        const before = fresh ? [] : turnsRef.current;
         const turn = crypto.randomUUID();
         setAskedHere((keys) => [...keys, turn]);
-        setTurns((all) => [...all, { key: turn, question: trimmed }]);
+        setTurns((all) => [...all, { key: turn, question: trimmed, ...(fresh && { fresh }) }]);
         void run(turn, trimmed, before);
       },
-      open: () => setOpen(true),
+      open: show,
       continueWith: (question, answer) => {
         setTurns((all) => (all.some((turn) => turn.answer?.id === answer.id) ? all : [...all, { key: crypto.randomUUID(), question, answer }]));
-        setOpen(true);
+        show();
       },
     }),
-    [run],
+    [run, show],
   );
 
   const retry = (turn: Turn) => {
-    const before = turnsRef.current.slice(0, turnsRef.current.findIndex((each) => each.key === turn.key));
+    const before = turn.fresh ? [] : turnsRef.current.slice(0, turnsRef.current.findIndex((each) => each.key === turn.key));
     update(turn.key, { answer: undefined, error: undefined });
     void run(turn.key, turn.question, before);
   };
@@ -177,7 +188,11 @@ export function DocsAssistantProvider({
     <DocsAssistantContext.Provider value={assistant}>
       {children}
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="right" showCloseButton={false} className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          finalFocus={() => (opener.current?.isConnected ? opener.current : (document.querySelector<HTMLElement>("[data-assistant-return]") ?? true))}
+          className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <AssistantPanel
             projectName={projectName}
             turns={turns}
@@ -187,6 +202,7 @@ export function DocsAssistantProvider({
             onAsk={assistant.ask}
             onRetry={retry}
             onRated={(turn, helpful) => update(turn.key, { rated: helpful })}
+            onEscalated={(turn) => update(turn.key, { escalated: true })}
             onClear={() => setTurns([])}
             onLeave={() => setOpen(false)}
           />
@@ -205,6 +221,7 @@ function AssistantPanel({
   onAsk,
   onRetry,
   onRated,
+  onEscalated,
   onClear,
   onLeave,
 }: {
@@ -216,6 +233,7 @@ function AssistantPanel({
   onAsk: (question: string) => void;
   onRetry: (turn: Turn) => void;
   onRated: (turn: Turn, helpful: boolean) => void;
+  onEscalated: (turn: Turn) => void;
   onClear: () => void;
   onLeave: () => void;
 }) {
@@ -267,6 +285,7 @@ function AssistantPanel({
               widget={widget}
               onRetry={() => onRetry(turn)}
               onRated={(helpful) => onRated(turn, helpful)}
+              onEscalated={() => onEscalated(turn)}
               onLeave={onLeave}
             />
           </div>
@@ -299,6 +318,7 @@ function AssistantReply({
   widget,
   onRetry,
   onRated,
+  onEscalated,
   onLeave,
 }: {
   turn: Turn;
@@ -307,6 +327,7 @@ function AssistantReply({
   widget: boolean;
   onRetry: () => void;
   onRated: (helpful: boolean) => void;
+  onEscalated: () => void;
   onLeave: () => void;
 }) {
   const slug = usePortalSlug();
@@ -317,10 +338,28 @@ function AssistantReply({
   if (error) {
     return (
       <div className="flex flex-col items-start gap-2 text-sm">
-        <p className="text-destructive">{error}</p>
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Try again
-        </Button>
+        {/* Passed to the team, it isn't asked again: that would be a second way to the team for it. */}
+        {!turn.escalated && (
+          <>
+            <p className="text-destructive">{error}</p>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Try again
+            </Button>
+          </>
+        )}
+        {/* In the widget, where Messages asks the AI first, the team is still a way through: the question as it was, unanswered. */}
+        {widget && askAPerson && (
+          <AskAPerson
+            projectSlug={slug}
+            questionId={null}
+            question={turn.question}
+            defaultEmail={askAPerson.email}
+            widget
+            sent={turn.escalated}
+            onSent={onEscalated}
+            onLeave={onLeave}
+          />
+        )}
       </div>
     );
   }
@@ -333,7 +372,16 @@ function AssistantReply({
     );
   }
   const person = askAPerson && (
-    <AskAPerson projectSlug={slug} questionId={answer.id} defaultEmail={askAPerson.email} widget={widget} onLeave={onLeave} />
+    <AskAPerson
+      projectSlug={slug}
+      questionId={answer.id}
+      question={turn.question}
+      defaultEmail={askAPerson.email}
+      widget={widget}
+      sent={turn.escalated}
+      onSent={onEscalated}
+      onLeave={onLeave}
+    />
   );
   // In the widget, an article opens in the panel's Docs tab (the portal's page is a link away from there).
   const sourceHref = widget ? (article: string) => `/widget?${new URLSearchParams({ tab: "docs", article })}` : undefined;
@@ -341,9 +389,13 @@ function AssistantReply({
     return (
       <div className="flex flex-col items-start gap-2 text-sm">
         <p className="text-muted-foreground">The AI couldn&apos;t answer just now.</p>
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Try again
-        </Button>
+        {!turn.escalated && (
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            Try again
+          </Button>
+        )}
+        {/* In the widget, where Messages asks the AI first; the portal's assistant is as it was. */}
+        {widget && person}
         {answer.sources.length > 0 && <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />}
       </div>
     );
@@ -404,7 +456,8 @@ function AssistantReply({
         ) : (
           <p>Thanks for letting us know.</p>
         )}
-        {turn.rated === false && person}
+        {/* In the widget it's always there (Messages asks the AI first); on the portal, once they say it didn't help. */}
+        {(turn.rated === false || widget) && person}
       </div>
       <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />
     </div>

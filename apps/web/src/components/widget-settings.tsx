@@ -52,6 +52,7 @@ export function WidgetSettings({
   hidden,
   onPortal,
   underSitePath,
+  aiFirst,
 }: {
   projectSlug: string;
   label: string;
@@ -69,6 +70,8 @@ export function WidgetSettings({
   onPortal: boolean;
   /** The portal is under a path of the team's site (Customize → Address), where it doesn't show the widget yet. */
   underSitePath: boolean;
+  /** Null where the server has no AI answers: the switch isn't there (it would do nothing). */
+  aiFirst: boolean | null;
 }) {
   const [icon, setIcon] = useState(initialIcon);
   const iconChoices = useRef<HTMLDivElement>(null);
@@ -200,6 +203,18 @@ export function WidgetSettings({
                 <SwitchRow key={part} name={`show-${part}`} label={PARTS[part].label} description={PARTS[part].description} defaultChecked={!hidden.includes(part)} />
               ))}
             </fieldset>
+            {aiFirst !== null && (
+              <>
+                {/* Sent with the switch, so saving without it (the server has no AI answers) leaves the setting as it is. */}
+                <input type="hidden" name="aiFirstShown" value="1" />
+                <SwitchRow
+                  name="aiFirst"
+                  label="Answer with AI first"
+                  description="Once you've published articles, a new message in Messages gets an answer from them right away, with Ask a person to send it to your team."
+                  defaultChecked={aiFirst}
+                />
+              </>
+            )}
             <LinkRows
               name="link"
               item="Link"

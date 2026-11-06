@@ -20,7 +20,7 @@ const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projec
 const update = (input: z.input<typeof updateWidgetSettings.input>) =>
   call(updateWidgetSettings, team(), input);
 
-const DEFAULTS = { label: "Feedback", color: null, position: "bottom-right", links: [], icon: "chat", iconImage: null, title: "", greeting: "", hidden: [], onPortal: true };
+const DEFAULTS = { label: "Feedback", color: null, position: "bottom-right", links: [], icon: "chat", iconImage: null, title: "", greeting: "", hidden: [], onPortal: true, aiFirst: true };
 
 test("the launcher starts as the green chat bubble named Feedback, bottom right, without links; Home shows every part, in its own words", async () => {
   expect(await call(getWidgetSettings, team(), {})).toEqual(DEFAULTS);
@@ -45,6 +45,7 @@ test("the team sets the label, colour, corner and up to 5 https links; each chan
     greeting: "",
     hidden: [],
     onPortal: true,
+    aiFirst: true,
   });
   expect(await update({ label: "Ideas" })).toMatchObject({ label: "Ideas", color: "#5b21b6", position: "bottom-left", links: [{ label: "Status" }, { label: "Docs" }] });
   // Picking the brand green (or null) is the default again, with its dark-mode shade.
@@ -100,8 +101,9 @@ test("the app's form saves the settings, skipping empty link rows and refusing h
     title: "",
     greeting: "",
     hidden: [],
-    // The form's switch for the portal, left off.
+    // The form's switch for the portal, left off; AI first's isn't on this form (no aiFirstShown), so it stays.
     onPortal: false,
+    aiFirst: true,
   });
   // With Home's fields, its heading, greeting and the parts switched on; the rest are turned off.
   const withHome = form([]);
@@ -175,4 +177,27 @@ test("the launcher shows on the project's own portal unless the team turns it of
   data.set("onPortal", "on");
   expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
   expect(await call(getWidgetSettings, team(), {})).toMatchObject({ onPortal: true });
+});
+
+test("a new message in Messages goes to the AI first unless the team turns it off; the form's switch sets it", async () => {
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ aiFirst: true });
+  expect(await update({ aiFirst: false })).toMatchObject({ aiFirst: false, onPortal: true });
+  expect(await update({ label: "Help" })).toMatchObject({ aiFirst: false });
+  actAs(owner);
+  const data = new FormData();
+  data.set("label", "Help");
+  data.set("color", "#5b21b6");
+  data.set("position", "bottom-right");
+  data.set("aiFirstShown", "1");
+  data.set("aiFirst", "on");
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ aiFirst: true, onPortal: false });
+  // Shown and switched off, it's off; a form without it (a server without AI answers) leaves it as it is.
+  data.delete("aiFirst");
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ aiFirst: false });
+  data.delete("aiFirstShown");
+  await update({ aiFirst: true });
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ aiFirst: true });
 });

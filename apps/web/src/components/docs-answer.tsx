@@ -13,6 +13,7 @@ import { useWidgetSignIn } from "@/components/widget-feedback";
 import { useVisitor, visitorStore } from "@/components/widget-messages";
 import { answerBlocks } from "@/lib/answer-text";
 import { askDocs, escalateDocs, rateDocsAnswer } from "@/server/docs-readers";
+import { widgetStartConversation } from "@/server/widget-inbox";
 import type { DocsAnswer as Answer } from "@/server/operations/docs-ask";
 import { useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref } from "@/components/portal-base";
@@ -64,7 +65,7 @@ export function DocsAnswer({
     });
 
   const person = askAPerson && answer && (
-    <AskAPerson projectSlug={projectSlug} questionId={answer.id} defaultEmail={askAPerson.email} widget={widget} />
+    <AskAPerson projectSlug={projectSlug} questionId={answer.id} question={question} defaultEmail={askAPerson.email} widget={widget} />
   );
 
   // On the portal, the conversation can go on in the assistant (the widget has none).
@@ -223,23 +224,33 @@ export function AnswerSources({
  * "Ask a person": the visitor's email (prefilled when we know it: their account, or in the widget
  * the email the customer's page signs them in with) and an optional note, then the question starts a
  * conversation in the team's inbox (docs.escalate), whose reply shows in Messages. Opens in place, taking the row's width.
+ * Without `questionId` (in the widget, when asking the AI failed: nothing was recorded), the question and their note start
+ * the conversation as a message of theirs, as Messages would.
  */
 export function AskAPerson({
   projectSlug,
   questionId,
+  question,
   defaultEmail,
   widget,
+  sent: sentBefore,
+  onSent,
   onLeave,
 }: {
   projectSlug: string;
-  questionId: string;
+  questionId: string | null;
+  question: string;
   defaultEmail: string;
   widget: boolean;
+  /** Passed to the team already (the assistant keeps that with the turn): it says so, and doesn't offer it again. */
+  sent?: boolean;
+  onSent?: () => void;
   /** Closes the assistant around it when "Open Messages" leaves for the Messages tab. */
   onLeave?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sentHere, setSent] = useState(false);
+  const sent = sentHere || !!sentBefore;
   /** The email as the visitor typed it; null until they type. */
   const [typed, setTyped] = useState<string | null>(null);
   const [error, setError] = useState<string>();
@@ -260,15 +271,20 @@ export function AskAPerson({
     const email = String(form.get("email") ?? "");
     startTransition(async () => {
       const who = { token: signedIn?.token ?? null, visitor: signedIn ? null : (visitor?.token ?? null) };
-      const result = await escalateDocs(projectSlug, questionId, email, String(form.get("note") ?? ""), widget ? "widget" : "portal", who);
-      if (result.error) {
+      const note = String(form.get("note") ?? "");
+      const result = questionId
+        ? await escalateDocs(projectSlug, questionId, email, note, widget ? "widget" : "portal", who)
+        : await widgetStartConversation(projectSlug, who, [question, note.trim()].filter(Boolean).join("\n\n"), signedIn ? undefined : email);
+      if ("error" in result && result.error) {
         setError(result.error);
         return;
       }
-      if (result.visitor) {
-        visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
+      const visitorToken = "visitor" in result ? result.visitor : undefined;
+      if (visitorToken) {
+        visitorStore.write(projectSlug, { token: visitorToken, email: email.trim() });
       }
       setSent(true);
+      onSent?.();
     });
   };
 
@@ -300,7 +316,8 @@ export function AskAPerson({
   return (
     <form aria-label="Ask a person" onSubmit={send} className="flex w-full flex-col gap-3 rounded-lg border p-3 text-foreground">
       <p className="text-sm text-muted-foreground">
-        We&apos;ll pass your question and the AI&apos;s answer to the team. They&apos;ll reply in Messages.
+        {/* Without a recorded question (asking failed), there's no answer of the AI's to pass on. */}
+        {questionId ? "We'll pass your question and the AI's answer to the team." : "We'll pass your question to the team."} They&apos;ll reply in Messages.
       </p>
       <Field>
         <FieldLabel htmlFor={`${id}-email`}>Your email</FieldLabel>
@@ -312,7 +329,8 @@ export function AskAPerson({
           maxLength={320}
           autoComplete="email"
           // Someone signed in (by the page, else on the portal) gets their own conversation, so their address is shown, not asked for.
-          value={signedInEmail || (typed ?? "")}
+          // Else the one they gave in Messages before, if any.
+          value={signedInEmail || (typed ?? visitor?.email ?? "")}
           readOnly={!!signedInEmail}
           onChange={(event) => setTyped(event.target.value)}
         />

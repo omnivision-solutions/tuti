@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { portalAddress } from "@/server/custom-domains";
 import type { Reader } from "@/lib/read-access";
+import { MAX_QUESTION } from "@/lib/widget-docs";
 
 import { readableArticle } from "../docs-queries";
 import { type AnswerSection, answerSections } from "../docs-search";
@@ -41,7 +42,7 @@ const EARLIER_ANSWER_LENGTH = 1500;
 export const answersEnabled = () => aiEnabled() && embeddingsEnabled();
 
 export const askFields = z.object({
-  q: z.string().trim().min(1, "Type a question").max(300, "Up to 300 characters"),
+  q: z.string().trim().min(1, "Type a question").max(MAX_QUESTION, `Up to ${MAX_QUESTION} characters`),
   /** The question this follows up on (its `id`), asked by the same asker: the conversation so far is its context. */
   followUpTo: z.string().trim().min(1).max(100).optional(),
 });

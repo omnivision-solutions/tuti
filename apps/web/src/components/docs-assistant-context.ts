@@ -6,8 +6,8 @@ import type { DocsAnswer } from "@/server/operations/docs-ask";
 
 /** The portal's docs assistant (components/docs-assistant.tsx), where AI answers become a conversation. */
 export type DocsAssistant = {
-  /** Opens the assistant and asks `question`, following up on the conversation in it. */
-  ask: (question: string) => void;
+  /** Opens the assistant and asks `question`, following up on the conversation in it (`fresh`: a question of its own, as a new message in Messages is). */
+  ask: (question: string, options?: { fresh?: boolean }) => void;
   /** Opens it as it was. */
   open: () => void;
   /** Opens it with a question already answered elsewhere (/docs?q=), to follow up on. */
