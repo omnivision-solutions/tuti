@@ -152,6 +152,14 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
         // As a board made in the app: taking a slug that redirected to another board ends that redirect.
         await tx.boardRedirect.deleteMany({ where: { projectId: job.projectId, slug } });
         if (spare) {
+          // As the app's rename: links to its old address keep working.
+          if (spare.slug !== slug) {
+            await tx.boardRedirect.upsert({
+              where: { projectId_slug: { projectId: job.projectId, slug: spare.slug } },
+              create: { projectId: job.projectId, boardId: spare.id, slug: spare.slug },
+              update: { boardId: spare.id },
+            });
+          }
           await tx.board.update({ where: { id: spare.id }, data: { name, slug, ...words } });
           Object.assign(spare, { name, slug });
           id = spare.id;

@@ -328,6 +328,8 @@ test("a new project's untouched board becomes the first of Featurebase's, costin
     { id: expect.any(String), name: "Bugs", slug: "bugs", postButton: null },
   ]);
   expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Dark mode" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Ideas" } });
+  // Its old address leads to it, as after a rename in the app.
+  expect(await prisma.boardRedirect.findMany({ where: { projectId: project.id }, select: { slug: true, boardId: true } })).toEqual([{ slug: "feature-requests", boardId: project.boards[0]!.id }]);
 });
 
 test("an embedding provider failing leaves the posts unembedded; the import still ends done, everything brought", async () => {
