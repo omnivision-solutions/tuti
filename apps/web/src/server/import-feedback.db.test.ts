@@ -47,7 +47,7 @@ beforeEach(async () => {
 
 const asOwner = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 const importFeedback = async () => {
-  const started = await call(startImport, asOwner(), { source: "featurebase", key: FAKE_FEATUREBASE_KEY, parts: ["contacts", "feedback"] });
+  const started = await call(startImport, asOwner(), { source: "featurebase", key: FAKE_FEATUREBASE_KEY, parts: ["contacts", "feedback", "avatars"] });
   await importsSettled();
   return started;
 };
@@ -300,8 +300,11 @@ test("a page of Featurebase's with more posts than one of ours takes comes acros
   expect(titles.slice(-30)).toEqual(Array.from({ length: 30 }, (_, n) => `Idea ${n + 1}`));
 });
 
+/** Another picture the fake serves, as Featurebase's storage would. */
+const picture = async (name: string) => fake.file(name, "image/png", Buffer.from(await (await fetch(`${fake.url}/files/mira.png`)).arrayBuffer()));
+
 test("past a page's time, what's left of it goes to the next page; one post's images past its hard limit are left out", async () => {
-  fake.fixtures.contacts[3]!.profilePicture = fake.fixtures.contacts[0]!.profilePicture;
+  fake.fixtures.contacts[3]!.profilePicture = await picture("juno.png");
   // The step each page ran, in order.
   const pages: string[] = [];
   const importStep = handlers.importStep;
@@ -311,7 +314,7 @@ test("past a page's time, what's left of it goes to the next page; one post's im
   };
   // A clock that moves on each look: once a page has done something, it's past its soft limit.
   let now = 0;
-  Object.assign(FEEDBACK_PAGE, { softMs: 0, now: () => ++now });
+  Object.assign(FEEDBACK_PAGE, { softMs: 0, avatarsAtOnce: 1, now: () => ++now });
   try {
     await importFeedback();
   } finally {
@@ -330,6 +333,73 @@ test("past a page's time, what's left of it goes to the next page; one post's im
   await importFeedback();
   counts = (await call(getImport, asOwner(), {})).import!.counts;
   expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 1 } } });
+});
+
+test("profile pictures are copied several at a time; past a page's time, the next page goes on from the last one copied; one picture several contacts share is copied once", async () => {
+  // Three contacts with an uploaded picture each.
+  fake.fixtures.contacts[1]!.profilePicture = await picture("tobias.png");
+  fake.fixtures.contacts[3]!.profilePicture = await picture("juno.png");
+  const pages: string[] = [];
+  const importStep = handlers.importStep;
+  handlers.importStep = async (input, log) => {
+    pages.push((await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } })).step);
+    return importStep(input, log);
+  };
+  // Past the soft limit once a page has copied any: two at once fit the first page (one at a time, one would), the third the next.
+  let now = 0;
+  Object.assign(FEEDBACK_PAGE, { softMs: 0, avatarsAtOnce: 2, now: () => ++now });
+  try {
+    await importFeedback();
+  } finally {
+    handlers.importStep = importStep;
+  }
+  expect(pages.filter((step) => step === "avatars")).toHaveLength(2);
+  expect((await call(getImport, asOwner(), {})).import!.counts.avatars).toEqual({ imported: 3, leftOut: {} });
+  const pictured = { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } };
+  expect(await prisma.user.count({ where: pictured })).toBe(3);
+
+  // The three with one picture, in another project: copied once, all at once.
+  for (const n of [1, 3]) {
+    fake.fixtures.contacts[n]!.profilePicture = fake.fixtures.contacts[0]!.profilePicture;
+  }
+  project = await createProject(owner);
+  Object.assign(FEEDBACK_PAGE, { softMs: 0, avatarsAtOnce: 3 });
+  await importFeedback();
+  const shared = await prisma.user.findMany({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } }, select: { imageId: true } });
+  expect(shared).toHaveLength(3);
+  expect(new Set(shared.map((user) => user.imageId)).size).toBe(1);
+});
+
+test("profile pictures come last, after the duplicate check; an import from before they were a part, at them, goes on with the rest and copies them last", async () => {
+  // The step each page ran, in order.
+  const pages: string[] = [];
+  const importStep = handlers.importStep;
+  handlers.importStep = async (input, log) => {
+    pages.push((await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } })).step);
+    return importStep(input, log);
+  };
+  try {
+    const started = await importFeedback();
+    expect([...new Set(pages)]).toEqual(["contacts", "posts", "votes", "comments", "embeddings", "avatars"]);
+
+    // One from before: at Feedback's avatars (they came before its duplicate check), its parts without them.
+    const pictured = { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } };
+    const ids = (await prisma.user.findMany({ where: pictured, select: { id: true } })).map((user) => user.id);
+    expect(ids).toHaveLength(1);
+    await prisma.user.updateMany({ where: { id: { in: ids } }, data: { imageId: null, image: `${fake.url}/files/mira.png` } });
+    await prisma.dataImport.update({
+      where: { id: started.id },
+      data: { state: "RUNNING", apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["contacts", "feedback"], step: "avatars", cursor: ids[0], counts: {}, finishedAt: null },
+    });
+    pages.length = 0;
+    await handlers.importStep({ importId: started.id }, log);
+    await importsSettled();
+    expect(pages).toEqual(["avatars", "embeddings", "avatars"]);
+    expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: started.id } })).toMatchObject({ state: "DONE", parts: ["contacts", "feedback", "avatars"], counts: { avatars: { imported: 1 } } });
+    expect(await prisma.user.count({ where: pictured })).toBe(1);
+  } finally {
+    handlers.importStep = importStep;
+  }
 });
 
 test("a new project's untouched board becomes the first of Featurebase's, costing the plan no slot", async () => {

@@ -76,6 +76,16 @@ test("each part's place: done before the step under way, the next one after it, 
   expect(states(run("failed", "posts"))).toEqual(["team done", "contacts done", "feedback stopped", "docs waiting", "inbox waiting"]);
   expect(importAt(run("failed", "posts"))).toBeNull();
   expect(states(run("done", null))).toEqual(["team done", "contacts done", "feedback done", "docs done", "inbox done"]);
+  // Profile pictures last, after the inbox; one from before they were a part counted them in feedback.
+  const pictures = { ...(run("running", "avatars") as object), parts: ["contacts", "feedback", "inbox", "avatars"], counts: { avatars: { imported: 800, leftOut: {} } } } as never;
+  expect(states(pictures)).toEqual(["contacts done", "feedback done", "inbox done", "avatars now"]);
+  expect(importProgress(pictures)[3]).toMatchObject({ brought: "800 profile pictures" });
+  const before = { state: "done", step: null, parts: ["contacts", "feedback"], counts: { avatars: { imported: 2, leftOut: {} } } } as never;
+  expect(importProgress(before)[1]).toMatchObject({ part: "feedback", brought: "2 profile pictures" });
+  // One that stopped at Feedback's avatars then: where it stopped is still Feedback.
+  const stopped = { state: "failed", step: "avatars", parts: ["contacts", "feedback"], counts: { contacts: { imported: 3, leftOut: {} } } } as never;
+  expect(importProgress(stopped).map(({ part, state }) => `${part} ${state}`)).toEqual(["contacts done", "feedback stopped"]);
+  expect(importProgress(stopped)[0]).toMatchObject({ brought: "3 contacts" });
 });
 
 test("an import in a line, as Home's card says it", () => {

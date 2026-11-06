@@ -15,20 +15,20 @@ import { syncUsersIn } from "./project-users";
 /**
  * Feedback from Featurebase (docs/plan.md, Switching from Featurebase, I3): boards, posts, votes and comments, written
  * straight to the database as sample content is (server/sample-content.ts), so nothing is emailed, queued or sent to
- * webhooks, with their original dates. What only some people see in Featurebase stays out, counted. Then contacts'
- * avatars are copied, and the posts embedded for duplicates.
+ * webhooks, with their original dates. What only some people see in Featurebase stays out, counted. Then the posts are
+ * embedded for duplicates. Contacts' avatars are their own part, last (avatarsPage).
  */
 
 type Tx = Prisma.TransactionClient;
 const NOTHING: StepPage["save"] = async () => {};
 /**
  * A page's limits, well within import-step's 5 minutes (Featurebase's reads have 3 of them: imports.ts PAGE_READ_MS):
- * at most `posts` posts and `avatars` avatars; past `softMs` from its start no more of them are begun (what's begun but
+ * at most `posts` posts and `avatars` avatars (`avatarsAtOnce` copied at a time); past `softMs` from its start no more of them are begun (what's begun but
  * not done is left for the next page); past `hardMs` the first one's remaining images are left out, as ones that
  * couldn't be fetched (each fetch takes 30 seconds at most), so one post with many slow images can't hold the import
  * up for good. `now` is the page's clock. Tests shorten them, and drive the clock.
  */
-export const FEEDBACK_PAGE = { posts: 25, avatars: 20, softMs: 120_000, hardMs: 210_000, now: () => Date.now() };
+export const FEEDBACK_PAGE = { posts: 25, avatars: 100, avatarsAtOnce: 10, softMs: 120_000, hardMs: 210_000, now: () => Date.now() };
 
 /** Media begun past the page's soft limit: left, with what it's in, to the next page. */
 class Later extends Error {}
@@ -526,9 +526,10 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
  * Contacts' uploaded avatars (those whose user still has the link the import gave them) copied into media storage and
  * pointed at, as Account's photo is (a lasting link to its smallest size); Featurebase's generated ones never came
  * across (contactDetails). One that can't be copied is left out, counted, and their initials show. Without media
- * storage, the links stay as they are.
+ * storage, the links stay as they are. The `avatars` part, last of all: the least of what an import brings, and the
+ * slowest (a fetch each), so nothing waits for it; several are copied at a time.
  */
-async function avatarsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
+export async function avatarsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = FEEDBACK_PAGE.now();
   const copies: { user: { id: string; image: string }; copy: Awaited<ReturnType<MediaImporter>> }[] = [];
   const media = timedImporter(job, begun, () => copies.length === 0);
@@ -540,14 +541,21 @@ async function avatarsPage(job: ImportJob, cursor: string | null): Promise<StepP
     WHERE r."projectId" = ${job.projectId} AND r.source = ${job.source}::"ImportSource" AND r.kind = 'contact'
       AND u."imageId" IS NULL AND u.image ~ '^https?://' AND u.id > ${cursor ?? ""}
     ORDER BY u.id LIMIT ${FEEDBACK_PAGE.avatars}`;
-  for (const user of users) {
-    try {
-      copies.push({ user, copy: await media({ kind: "image", url: user.image, key: user.image }) });
-    } catch (error) {
-      if (error instanceof Later) {
-        break;
+  // One copy for contacts with the same picture, begun together or not (the importer's cache has only finished ones).
+  const copying = new Map<string, ReturnType<MediaImporter>>();
+  const copyOf = (url: string) => copying.get(url) ?? copying.set(url, media({ kind: "image", url, key: url })).get(url)!;
+  copying: for (let i = 0; i < users.length; i += FEEDBACK_PAGE.avatarsAtOnce) {
+    const batch = users.slice(i, i + FEEDBACK_PAGE.avatarsAtOnce);
+    const results = await Promise.allSettled(batch.map((user) => copyOf(user.image)));
+    // In order, up to the first one begun past the soft limit: the cursor is the last one kept.
+    for (const [j, result] of results.entries()) {
+      if (result.status === "fulfilled") {
+        copies.push({ user: batch[j]!, copy: result.value });
+      } else if (result.reason instanceof Later) {
+        break copying;
+      } else {
+        throw result.reason;
       }
-      throw error;
     }
   }
   return {
@@ -595,6 +603,5 @@ export const feedbackSteps = [
   { name: "posts", page: postsPage },
   { name: "votes", page: votesPage },
   { name: "comments", page: commentsPage },
-  { name: "avatars", page: avatarsPage },
   { name: "embeddings", page: embeddingsPage },
 ];
