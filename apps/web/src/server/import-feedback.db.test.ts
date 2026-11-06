@@ -354,6 +354,29 @@ test("past a page's time, what's left of it goes to the next page; one post's im
   expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 2 } } });
 });
 
+test("a page of comments cut short goes on after the last one done, even when one before it is gone from Featurebase meanwhile", async () => {
+  const importStep = handlers.importStep;
+  let cut = false;
+  handlers.importStep = async (input, log) => {
+    const step = (await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } })).step;
+    const result = await importStep(input, log);
+    // After the first comments page: the first comment deleted in Featurebase, so the list shifts up by one.
+    if (step === "comments" && !cut) {
+      cut = true;
+      fake.fixtures.comments.shift();
+    }
+    return result;
+  };
+  let now = 0;
+  Object.assign(FEEDBACK_PAGE, { softMs: 0, now: () => ++now });
+  try {
+    await importFeedback();
+  } finally {
+    handlers.importStep = importStep;
+  }
+  expect((await call(getImport, asOwner(), {})).import!.counts).toMatchObject({ comments: { imported: 3 }, notes: { imported: 1 } });
+});
+
 test("profile pictures are copied several at a time; past a page's time, the next page goes on from the last one copied; one picture several contacts share is copied once", async () => {
   // Three contacts with an uploaded picture each.
   fake.fixtures.contacts[1]!.profilePicture = await picture("tobias.png");

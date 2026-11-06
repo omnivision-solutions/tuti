@@ -467,8 +467,8 @@ function commentLeftOut(comment: FeaturebaseComment, posts: Map<string, string>)
   return comment.isPrivate && !(comment.author?.type === "admin" && comment.author.id) ? "private but not by the team" : null;
 }
 
-/** Where the comments step got to: Featurebase's page (its cursor) and how many of its comments are done. */
-type CommentsAt = { page: string | null; done: number };
+/** Where the comments step got to: Featurebase's page (its cursor) and the last of its comments done (null: none yet). */
+type CommentsAt = { page: string | null; after: { id: string; createdAt: string } | null };
 
 /**
  * Comments in date order (a changelog's left alone), joined to their posts by the record map: public ones as comments
@@ -479,11 +479,15 @@ type CommentsAt = { page: string | null; done: number };
 async function commentsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = FEEDBACK_PAGE.now();
   // A Featurebase cursor alone: an import from before comments' pages were split.
-  const at: CommentsAt = cursor?.startsWith("{") ? JSON.parse(cursor) : { page: cursor, done: 0 };
+  const at: CommentsAt = cursor?.startsWith("{") ? JSON.parse(cursor) : { page: cursor, after: null };
   let done = 0;
   const media = timedImporter(job, begun, () => done === 0);
   const page = await job.featurebase.page<FeaturebaseComment>("/comments", at.page, { privacy: "all", sortBy: "old" });
-  const rest = page.items.filter((comment) => comment.postId).slice(at.done);
+  const listed = page.items.filter((comment) => comment.postId);
+  // After the last one done; one gone since (deleted, its post merged), after where it was by date.
+  const index = at.after ? listed.findIndex((comment) => comment.id === at.after!.id) : -1;
+  const later = at.after ? listed.findIndex((comment) => comment.createdAt > at.after!.createdAt) : 0;
+  const rest = listed.slice(index >= 0 ? index + 1 : later >= 0 ? later : listed.length);
   const posts = await recorded(prisma, job, "post", rest.map((comment) => comment.postId!));
   const known = await recorded(prisma, job, "comment", rest.map((comment) => comment.id));
   const fresh = new Set(rest.filter((comment) => !known.has(comment.id) && !commentLeftOut(comment, posts)));
@@ -508,7 +512,7 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
   }
   const items = rest.slice(0, done);
   return {
-    next: done < rest.length ? JSON.stringify({ page: at.page, done: at.done + done }) : page.next,
+    next: done < rest.length ? JSON.stringify({ page: at.page, after: { id: items.at(-1)!.id, createdAt: items.at(-1)!.createdAt } }) : page.next,
     save: async (tx) => {
       const users = await contacts.save(tx);
       const saved = await recorded(tx, job, "comment", items.map((comment) => comment.id));
