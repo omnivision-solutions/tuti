@@ -112,20 +112,25 @@ export async function previewTokenFor(slug: string, token: string): Promise<bool
 export const WIDGET_READER_COOKIE = "tuti_widget_reader";
 
 /**
- * Who's reading on this request: the portal's signed-in user, the person signed in to the widget, or
- * the team member previewing the portal in Customize. A portal session that may not read the portal (a team member's
- * on their own private portal is a reader's, see onTeam) gives way to the other two: the preview's frame carries the
- * portal's cookies too. `session` null: the widget's or the preview's person, read with no portal session (onTeam).
+ * Who's reading on this request: the team member previewing the portal in Customize (its cookie is only ever in
+ * Customize's frame, which carries the portal's cookies too, so it comes first: a portal session there is a reader's,
+ * see onTeam), the portal's signed-in user, or the person signed in to the widget. A portal session that may not read
+ * the portal (a team member's on their own private portal) gives way to the widget's. `session` null: the widget's or
+ * the preview's person, read with no portal session (onTeam).
  */
 const reader = cache(async (projectId: string): Promise<{ userId: string | null; session?: null }> => {
+  const jar = await cookies();
+  const previewing = await previewReader(projectId, jar.get(PREVIEW_READER_COOKIE)?.value);
+  if (previewing) {
+    return { userId: previewing, session: null };
+  }
   const session = await sessionIn(projectId);
   if (session && (await canReadPortal({ id: projectId }, session.user.id))) {
     return { userId: session.user.id };
   }
-  const jar = await cookies();
   const token = jar.get(WIDGET_READER_COOKIE)?.value;
-  const other = (token ? widgetUser(projectId, token) : null) ?? (await previewReader(projectId, jar.get(PREVIEW_READER_COOKIE)?.value));
-  return other ? { userId: other, session: null } : { userId: session?.user.id ?? null };
+  const widget = token ? widgetUser(projectId, token) : null;
+  return widget ? { userId: widget, session: null } : { userId: session?.user.id ?? null };
 });
 
 /** Whether whoever's asking may read the project's portal. */

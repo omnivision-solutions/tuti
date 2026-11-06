@@ -325,6 +325,12 @@ test("Customize's preview of a private portal works for a team member who's also
   // A preview token alone lets nobody else in on that session.
   request.cookie = `${owner.cookie}; ${PREVIEW_READER_COOKIE}=${previewToken(project.id, visitors["signed up"]!.id)}`;
   expect(await mayRead(project.id)).toBe(false);
+  // On a public portal, which that session may read, the preview is still the team's view.
+  await setAccess(project.id, "PUBLIC");
+  request.cookie = owner.cookie;
+  expect(await currentPostViewer(project.id)).toEqual(expect.objectContaining({ team: false }));
+  request.cookie = `${owner.cookie}; ${PREVIEW_READER_COOKIE}=${previewToken(project.id, owner.id)}`;
+  expect((await currentPostViewer(project.id)).team).toBe(true);
 });
 
 test("sign-up is off on a private portal, and an account made by a sign-in link can't read it", async () => {
