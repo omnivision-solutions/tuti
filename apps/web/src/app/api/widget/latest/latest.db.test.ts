@@ -122,6 +122,19 @@ test("a portal under a path of the team's site: the site still counts (the widge
   expect(await seen()).not.toBeNull();
 });
 
+test("the portal's own tag (from=portal) never counts, even under a path of the team's site", async () => {
+  vi.stubEnv("PLANS", "on");
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  await prisma.siteMount.create({ data: { projectId: project.id, origin: "https://www.acme.example", path: "/portal", verificationToken: "t", verifiedAt: new Date() } });
+  const seen = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetSeenAt: true } })).widgetSeenAt;
+  const res = await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}&from=portal`, { headers: { origin: "https://www.acme.example" } }));
+  expect(res.status).toBe(200);
+  expect(await seen()).toBeNull();
+});
+
 test("an opaque origin (a browser extension's) is no site: the settings still come back, and nothing is counted", async () => {
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   const owner = await signUp("Olive Owner");

@@ -227,6 +227,8 @@ model Project {
   widgetTitle           String       @default("")
   widgetGreeting        String       @default("")
   widgetHidden          String[]     @default([])
+  /// The launcher on the project's own portal too, for its Messages, Feedback and What's new.
+  widgetOnPortal        Boolean      @default(true)
   /// Branding for the portal and its docs (see the branding.* operations): a logo,
   /// one for dark mode and a favicon (uploads, attached while they're used), the accent
   /// colour (`#rrggbb`; null is the brand green), up to 5 links each in the header and the

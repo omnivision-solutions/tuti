@@ -20,7 +20,7 @@ const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projec
 const update = (input: z.input<typeof updateWidgetSettings.input>) =>
   call(updateWidgetSettings, team(), input);
 
-const DEFAULTS = { label: "Feedback", color: null, position: "bottom-right", links: [], icon: "chat", iconImage: null, title: "", greeting: "", hidden: [] };
+const DEFAULTS = { label: "Feedback", color: null, position: "bottom-right", links: [], icon: "chat", iconImage: null, title: "", greeting: "", hidden: [], onPortal: true };
 
 test("the launcher starts as the green chat bubble named Feedback, bottom right, without links; Home shows every part, in its own words", async () => {
   expect(await call(getWidgetSettings, team(), {})).toEqual(DEFAULTS);
@@ -44,6 +44,7 @@ test("the team sets the label, colour, corner and up to 5 https links; each chan
     title: "",
     greeting: "",
     hidden: [],
+    onPortal: true,
   });
   expect(await update({ label: "Ideas" })).toMatchObject({ label: "Ideas", color: "#5b21b6", position: "bottom-left", links: [{ label: "Status" }, { label: "Docs" }] });
   // Picking the brand green (or null) is the default again, with its dark-mode shade.
@@ -99,6 +100,8 @@ test("the app's form saves the settings, skipping empty link rows and refusing h
     title: "",
     greeting: "",
     hidden: [],
+    // The form's switch for the portal, left off.
+    onPortal: false,
   });
   // With Home's fields, its heading, greeting and the parts switched on; the rest are turned off.
   const withHome = form([]);
@@ -158,4 +161,18 @@ test("Home's heading and greeting (empty for the defaults) and the parts turned 
   await expect(update({ title: "a".repeat(61) })).rejects.toMatchObject({ status: 400, message: "Keep the heading under 60 characters" });
   await expect(update({ greeting: "a".repeat(61) })).rejects.toMatchObject({ status: 400, message: "Keep the greeting under 60 characters" });
   await expect(update({ hidden: ["roadmap" as never] })).rejects.toMatchObject({ status: 400 });
+});
+
+test("the launcher shows on the project's own portal unless the team turns it off; the form's switch sets it", async () => {
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ onPortal: true });
+  expect(await update({ onPortal: false })).toMatchObject({ onPortal: false, label: "Feedback" });
+  expect(await update({ label: "Help" })).toMatchObject({ onPortal: false });
+  actAs(owner);
+  const data = new FormData();
+  data.set("label", "Help");
+  data.set("color", "#5b21b6");
+  data.set("position", "bottom-right");
+  data.set("onPortal", "on");
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ onPortal: true });
 });

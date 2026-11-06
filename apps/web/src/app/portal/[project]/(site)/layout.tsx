@@ -7,6 +7,7 @@ import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
+import { PortalWidget } from "@/components/portal-widget";
 import { PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLookProvider } from "@/components/portal-look";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -65,7 +66,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const [project, brand] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
-      select: { id: true, name: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
+      select: { id: true, name: true, widgetOnPortal: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
     }),
     portalBranding(slug),
   ]);
@@ -97,6 +98,10 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       : target.kind === "portal" && target.customDomain
         ? `${new URL(portalUrl(slug)).protocol}//${requestHeaders.get("host")}`
         : null;
+  // The project's own widget (Customize → Widget). Not where the team's Custom code adds it its own way, from the address
+  // Customize hands out (it runs only on their own address, later, and the first copy wins); other tools' widget.js don't
+  // count. ponytail: not under a path of the team's site until /widget keeps the base in its links.
+  const widgetHere = project.widgetOnPortal && !base && !(ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`));
   // The docs' assistant (AI answers as a conversation), for readers, when the server has AI answers.
   const assistant = canRead && answersEnabled();
   const firstBoard = project.boards[0];
@@ -154,6 +159,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         </noscript>
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
+        {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new. */}
+        {/* The project's own widget, for readers who may read the portal; a full load once that or who's reading changes. */}
+        {widgetHere && <PortalWidget src={`${appUrl().origin}/widget.js`} slug={slug} shown={canRead} viewer={session?.user.id ?? null} />}
         </PortalMenuProvider>
         </WithAssistant>
       </PortalLookProvider>

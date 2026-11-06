@@ -9,7 +9,9 @@ import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { WidgetPreview } from "@/components/widget-preview";
 import { WidgetSettings } from "@/components/widget-settings";
+import { appPortalMount } from "@/lib/app-portal";
 import { appUrl, portalUrl } from "@/lib/hosts";
+import { siteMount } from "@/server/custom-domains";
 import { getAdminProject } from "@/server/membership";
 import { DEFAULT_WIDGET_COLOR, servedIcon, widgetSettings } from "@/server/operations/widget";
 
@@ -20,9 +22,10 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
   if (!project) {
     notFound();
   }
-  const [settings, { plan, supportInbox }] = await Promise.all([
+  const [settings, { plan, supportInbox }, mount] = await Promise.all([
     widgetSettings({ id: project.id }),
     prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, supportInbox: true } }),
+    siteMount(slug),
   ]);
   const widget = settings!;
   const color = widget.color ?? DEFAULT_WIDGET_COLOR;
@@ -65,6 +68,9 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
         title={widget.title}
         greeting={widget.greeting}
         hidden={widget.hidden}
+        onPortal={widget.onPortal}
+        // Under a path of the team's site, or Tuti's own portal under the app's.
+        underSitePath={!!mount || appPortalMount()?.slug === slug}
       />
     </CustomizeShell>
   );

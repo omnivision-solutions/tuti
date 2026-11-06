@@ -7,8 +7,9 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, png, postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, png, postFeedback, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
+import { latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
 
@@ -632,6 +633,104 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await checkpoint(laptop, "widget-seen-on-another-device");
   await phone.context().close();
   await laptop.context().close();
+});
+
+test("the portal shows the project's own widget, until the team turns it off in Customize → Widget", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  // On by default: the launcher on the portal's pages opens the panel. Its script tag is in the page as sent.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/");
+  const script = visitor.locator('script[src$="/widget.js"][data-project]');
+  await expect(script).toHaveCount(1);
+  const launcher = visitor.getByRole("button", { name: "Feedback" });
+  await launcher.click();
+  await expect(visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" })).toBeVisible();
+  await checkpoint(visitor, "portal-widget-open");
+  // The portal's own sheets go over an open panel: the docs' assistant, opened beside it, takes clicks where the panel is.
+  const api = await apiFor(owner, slug);
+  const article = await api("/articles", { title: "Getting started", body: "Install the app." });
+  await api(`/articles/${article.slug}/publish`, {});
+  await visitor.goto(`/docs/${article.slug}`);
+  await launcher.click();
+  await expect(visitor.locator("#tuti-widget")).toBeVisible();
+  await visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+  await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
+  await visitor.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" }).click();
+  await expect(visitor.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" })).toBeFocused();
+  await visitor.getByRole("button", { name: "Close the assistant" }).click();
+  // On phones the page ends clear of the launcher (5.5rem); wider, it doesn't need to.
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "88px");
+  // There, an open panel is the whole screen, over the launcher: its tabs at the bottom right take taps.
+  await visitor.reload();
+  await launcher.click();
+  const phonePanel = visitor.frameLocator('iframe[title="Feedback"]');
+  await phonePanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(phonePanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
+  await visitor.reload();
+  await visitor.setViewportSize({ width: 1280, height: 720 });
+  await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
+
+  // Turned off, the portal has no launcher.
+  await owner.goto(`/app/${slug}/customize/widget`);
+  const onPortal = owner.getByRole("switch", { name: "Show on your portal" });
+  await expect(onPortal).toBeChecked();
+  await expect(owner.getByText("The launcher on every page of your portal too, opening the same panel as on your site.")).toBeVisible();
+  await onPortal.scrollIntoViewIfNeeded();
+  await checkpoint(owner, "customize-widget-on-portal", { fullPage: false });
+  await onPortal.click();
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await visitor.reload();
+  await expect(visitor.getByRole("banner")).toBeVisible();
+  await expect(script).toHaveCount(0);
+  await expect(launcher).toHaveCount(0);
+
+  // Back on. Signing out on the portal (a client navigation) loads the page afresh: the launcher and panel the loader added
+  // for the signed-in reader don't stay for whoever's next.
+  await api("/widget", { onPortal: true }, "PATCH");
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto("/");
+  await ada.getByRole("button", { name: "Feedback" }).click();
+  await expect(ada.locator("#tuti-widget")).toBeVisible();
+  await ada.evaluate(() => Object.assign(window, { beforeSignOut: true }));
+  await ada.getByRole("button", { name: "Account" }).click();
+  await ada.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(ada.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect.poll(() => ada.evaluate(() => "beforeSignOut" in window)).toBe(false);
+  await expect(ada.locator("#tuti-widget")).toBeHidden();
+
+  // On a private portal: its sign-in page shows nothing of it to someone who may not read it, the widget included.
+  await owner.goto(`/app/${slug}/settings/access`);
+  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("option", { name: "Private" }).click();
+  await expect(owner.getByText("Portal is now private")).toBeVisible();
+  const outsider = await newPerson(browser, portalUrl(slug));
+  await outsider.goto("/sign-in");
+  await expect(outsider.getByRole("banner")).toBeVisible();
+  await expect(outsider.locator("script[data-on-portal]")).toHaveCount(0);
+  // A reader signed in there gets it; signing out lands on that sign-in page without it.
+  const email = `e2e-${randomUUID()}@example.com`;
+  await api("/portal/readers", { emails: [email], notify: false });
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.goto("/sign-in");
+  await reader.getByLabel("Email").fill(email);
+  await reader.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(reader.getByText("Check your email")).toBeVisible();
+  await reader.goto(linkIn(await latestEmailTo(email), `${portalUrl(slug)}/sign-in/link?`));
+  await reader.getByRole("main").getByRole("button", { name: "Sign in" }).click();
+  await expect(reader.getByRole("button", { name: "Account" })).toBeVisible();
+  const readerLauncher = reader.locator('body > button[aria-controls="tuti-widget"]');
+  await expect(readerLauncher).toBeVisible();
+  await reader.getByRole("button", { name: "Account" }).click();
+  await reader.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(reader.getByText("Acme is private. Sign in to see it.")).toBeVisible();
+  await expect(reader.locator("script[data-on-portal]")).toHaveCount(0);
+  await expect(readerLauncher).toHaveCount(0);
 });
 
 test("someone signed in on the portal opens What's new in its widget: what's new to them stays marked while their visit is recorded", async ({ browser }, testInfo) => {
