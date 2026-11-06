@@ -83,6 +83,8 @@ export async function homeOverview(projectId: string, slug: string) {
         supportInbox: true,
         uses: true,
         githubInstallation: { select: { projectId: true } },
+        // Whether any email has come in: one is enough.
+        inboundEmails: { take: 1, select: { id: true } },
         _count: {
           select: {
             team: true,
@@ -90,7 +92,6 @@ export async function homeOverview(projectId: string, slug: string) {
             invitations: { where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) }, sentAt: { not: null } } },
             articles: { where: { publishedAt: { not: null }, deletedAt: null, sample: false } },
             changelogEntries: { where: { publishedAt: { not: null }, sample: false } },
-            inboundEmails: true,
           },
         },
       },
@@ -186,7 +187,7 @@ export async function homeOverview(projectId: string, slug: string) {
   // Each with what it's for, in a line under its title: what the step gets a team using every part of Tuti, the same
   // whatever the server or the project has turned on (a product choice: most teams will use it all).
   // Support is set up once its first email is in (the address forwarded), or once the inbox is on where the server takes no email.
-  const supportSet = setup.supportInbox && (setup._count.inboundEmails > 0 || supportDomain() === null);
+  const supportSet = setup.supportInbox && (setup.inboundEmails.length > 0 || supportDomain() === null);
   const steps = [
     { key: "widget", title: "Add the widget to your site", description: `Users give feedback, get help and see what's new right inside ${setup.name}.`, action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
     // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.
