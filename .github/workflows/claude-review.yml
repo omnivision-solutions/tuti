@@ -112,17 +112,14 @@ jobs:
           } > "$RUNNER_TEMP/pull-request.md"
       # The Claude hub pools our Claude subscriptions on a private network. The runner joins it
       # as a short-lived node that may reach only the hub, with a join key traded for GitHub's
-      # token for this workflow: no network secret is stored here. Without the hub, the
-      # review falls back to CLAUDE_CODE_OAUTH_TOKEN's single account.
+      # token for this workflow: no network secret is stored here. When the hub doesn't answer,
+      # or the review fails through it, the review uses CLAUDE_CODE_OAUTH_TOKEN's single account.
       - name: Hide the Claude hub's address
         env:
           CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
         run: |
           # GitHub masks the whole URL in logs; mask its host and network names too, before connecting.
-          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
-          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
-          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac # the network's name, from a dotted name only
-          for value in "$host" "$domain"; do [ -z "$value" ] || echo "::add-mask::$value"; done
+          .github/scripts/claude-hub.sh names | sed 's/^/::add-mask::/'
       - name: Connect to the Claude hub
         id: tailnet
         continue-on-error: true
@@ -160,32 +157,29 @@ jobs:
                 "path": {"type": "string"}, "line": {"type": "integer"}, "body": {"type": "string"}}}}}}
         run: |
           set -euo pipefail
-          if [ "$USE_HUB" = true ]; then
-            export ANTHROPIC_BASE_URL="$CLIPROXY_URL" ANTHROPIC_AUTH_TOKEN="$CLIPROXY_API_KEY"
-            unset CLAUDE_CODE_OAUTH_TOKEN
+          unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN # only the hub run below sets them
+          # Credentials go through the environment, never on a command line Claude's user could read.
+          review() {
+            sudo -n -H -u claude-reviewer --preserve-env=CLAUDE_CODE_OAUTH_TOKEN,ANTHROPIC_BASE_URL,ANTHROPIC_AUTH_TOKEN \
+              env -C /home/claude-reviewer/tuti PATH="$PATH" \
+              claude -p --model claude-opus-5-5 --no-session-persistence --output-format json \
+              --setting-sources user \
+              --json-schema "$SCHEMA" \
+              < <(cat .github/prompts/claude-review.md "$RUNNER_TEMP/pull-request.md") > "$RUNNER_TEMP/result.json"
+          }
+          # The hub can answer and still fail the review (every account at its limit): then the single account.
+          if [ "$USE_HUB" != true ] || ! (unset CLAUDE_CODE_OAUTH_TOKEN
+            export ANTHROPIC_BASE_URL="$CLIPROXY_URL" ANTHROPIC_AUTH_TOKEN="$CLIPROXY_API_KEY"; review); then
+            [ "$USE_HUB" != true ] || { tail -c 1000 "$RUNNER_TEMP/result.json"; echo
+              echo "::warning::The review failed through the Claude hub; trying the single account."; }
+            review || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
           fi
-          sudo -n -H -u claude-reviewer --preserve-env=CLAUDE_CODE_OAUTH_TOKEN,ANTHROPIC_BASE_URL,ANTHROPIC_AUTH_TOKEN \
-            env -C /home/claude-reviewer/tuti PATH="$PATH" \
-            claude -p --model claude-opus-5-5 --no-session-persistence --output-format json \
-            --setting-sources user \
-            --json-schema "$SCHEMA" \
-            < <(cat .github/prompts/claude-review.md "$RUNNER_TEMP/pull-request.md") > "$RUNNER_TEMP/result.json" \
-            || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
           jq -e '.structured_output.findings' "$RUNNER_TEMP/result.json" > "$RUNNER_TEMP/findings.json" \
             || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
           # Findings are public: never post a credential or the hub's address, whatever
           # the prompt talked Claude into.
-          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
-          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
-          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac
-          never=$(mktemp)
-          printf '%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "$domain" | awk NF > "$never"
-          status=0; grep -qiFf "$never" "$RUNNER_TEMP/findings.json" || status=$?
-          if [ -s "$never" ] && [ "$status" -ne 1 ]; then # a match, or grep failing
-            echo "A finding contains a Claude credential or the hub's address; not posting." >&2
-            exit 1
-          fi
-          rm "$never"
+          .github/scripts/claude-hub.sh check "$RUNNER_TEMP/findings.json" \
+            || { echo "A finding contains a Claude credential or the hub's address; not posting." >&2; exit 1; }
       - name: Post the findings
         env:
           GH_TOKEN: ${{ github.token }}

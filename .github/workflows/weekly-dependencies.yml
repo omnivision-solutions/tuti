@@ -64,18 +64,16 @@ jobs:
           install -d -m 700 "$RUNNER_TEMP/dependency-update"
       # The Claude hub pools our Claude subscriptions on a private network. The runner joins it
       # as a short-lived node that may reach only the hub, with a join key traded for GitHub's
-      # token for this workflow on main: no network secret is stored here. Without the hub,
-      # the update falls back to CLAUDE_CODE_OAUTH_TOKEN's single account.
+      # token for this workflow on main: no network secret is stored here. When the hub doesn't
+      # answer, the update uses CLAUDE_CODE_OAUTH_TOKEN's single account. A run that fails through
+      # the hub isn't retried (the agent has already changed the checkout): run the workflow again.
       - name: Hide the Claude hub's address
         if: steps.prepare.outcome == 'success'
         env:
           CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
         run: |
           # GitHub masks the whole URL in logs; mask its host and network names too, before connecting.
-          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
-          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
-          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac # the network's name, from a dotted name only
-          for value in "$host" "$domain"; do [ -z "$value" ] || echo "::add-mask::$value"; done
+          .github/scripts/claude-hub.sh names | sed 's/^/::add-mask::/'
       - name: Connect to the Claude hub
         id: tailnet
         if: steps.prepare.outcome == 'success'
@@ -112,6 +110,7 @@ jobs:
           USE_HUB: ${{ steps.hub.outputs.use }}
         run: |
           set -euo pipefail
+          unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN
           if [ "$USE_HUB" = true ]; then
             export ANTHROPIC_BASE_URL="$CLIPROXY_URL" ANTHROPIC_AUTH_TOKEN="$CLIPROXY_API_KEY"
             unset CLAUDE_CODE_OAUTH_TOKEN
@@ -147,22 +146,8 @@ jobs:
             > "$RUNNER_TEMP/dependency-update/update.patch"
           # The description and the patch go public: never a credential or the hub's address,
           # whatever a package talked Claude into. Checked on the files that get published.
-          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
-          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
-          case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac
-          never=$(mktemp)
-          printf '%s\n' "$CLAUDE_CODE_OAUTH_TOKEN" "$CLIPROXY_API_KEY" "$host" "$domain" | awk NF > "$never"
-          status=1
-          if [ -s "$never" ]; then
-            status=0
-            grep -qiFf "$never" "$RUNNER_TEMP/dependency-update/pr.md" "$RUNNER_TEMP/dependency-update/update.patch" \
-              || status=$?
-          fi
-          rm "$never"
-          if [ "$status" -ne 1 ]; then # a match, or grep failing
-            echo "The update contains a Claude credential or the hub's address; not publishing." >&2
-            exit 1
-          fi
+          .github/scripts/claude-hub.sh check "$RUNNER_TEMP/dependency-update/pr.md" "$RUNNER_TEMP/dependency-update/update.patch" \
+            || { echo "The update contains a Claude credential or the hub's address; not publishing." >&2; exit 1; }
           # grep can't read inside binary hunks, and a dependency update needs none.
           if grep -q '^GIT binary patch' "$RUNNER_TEMP/dependency-update/update.patch"; then
             echo "The update contains a binary file; not publishing." >&2
