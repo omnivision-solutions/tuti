@@ -172,8 +172,32 @@ describe("deleting boards", () => {
   test("deleting the last two boards at once keeps one", async () => {
     await createBoard(project.slug, {}, board({ slug: "bugs" }));
     const bugs = await prisma.board.findFirstOrThrow({ where: { projectId: project.id, slug: "bugs" }, select: { id: true } });
-    const results = await Promise.all([deleteBoard(project.slug, boardId), deleteBoard(project.slug, bugs.id)]);
-    expect(results.filter((result) => result.error)).toEqual([{ error: "A project needs at least one board" }]);
+    // Another delete, holding the project's lock as deleteBoard does, not yet committed, while this one runs.
+    let commit = () => {};
+    let held = () => {};
+    const isHeld = new Promise<void>((resolve) => (held = resolve));
+    const other = prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${project.id} FOR NO KEY UPDATE`;
+        await tx.board.delete({ where: { id: bugs.id } });
+        held();
+        await new Promise<void>((resolve) => (commit = resolve));
+      },
+      { timeout: 20_000 },
+    );
+    await isHeld;
+    const deleting = deleteBoard(project.slug, boardId);
+    await vi.waitFor(
+      async () => {
+        const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+        expect(waiting).toBeGreaterThan(0);
+      },
+      { timeout: 10_000, interval: 25 },
+    );
+    commit();
+    await other;
+    expect(await deleting).toEqual({ error: "A project needs at least one board" });
     expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(1);
   });
 
