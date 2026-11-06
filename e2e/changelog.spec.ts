@@ -1063,7 +1063,7 @@ test("readers get the changelog by email: confirmed first, each entry published 
   expect(entry.text).toContain(`${portalUrl(slug)}/changelog/1`);
   await team.reload();
   await expect(announced).toContainText("Emailed to 1 subscriber.");
-  await expect(announced).toContainText("Told 1 person who asked.");
+  await expect(announced).toContainText("Told 1 subscriber.");
   await checkpoint(team, "team-changelog-announced");
 
   // Unsubscribe: the email's link, signed out, one button.
