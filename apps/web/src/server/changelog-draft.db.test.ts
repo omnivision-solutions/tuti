@@ -271,3 +271,9 @@ test("the model gets only the entry's public posts: a Team only post's title and
   // A link to it the model writes anyway isn't kept.
   expect(JSON.stringify(entry.content)).not.toContain(secretUrl);
 });
+
+test("an entry with nothing but posts that aren't public has nothing to draft from: the model isn't asked", async () => {
+  const secret = await call(createPost, team(), { board: "feature-requests", title: "Tokens logged in plain text", visibility: "team" });
+  const entry = await call(createChangelogEntry, team(), { title: "Security fix", posts: [secret.number] });
+  await expect(draft(entry.number)).rejects.toMatchObject({ status: 400, code: "nothing_to_draft", message: "Pick the public posts it completes or write a few notes first" });
+});
