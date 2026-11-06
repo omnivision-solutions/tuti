@@ -541,9 +541,12 @@ export async function avatarsPage(job: ImportJob, cursor: string | null): Promis
     WHERE r."projectId" = ${job.projectId} AND r.source = ${job.source}::"ImportSource" AND r.kind = 'contact'
       AND u."imageId" IS NULL AND u.image ~ '^https?://' AND u.id > ${cursor ?? ""}
     ORDER BY u.id LIMIT ${FEEDBACK_PAGE.avatars}`;
+  // One copy for contacts with the same picture, begun together or not (the importer's cache has only finished ones).
+  const copying = new Map<string, ReturnType<MediaImporter>>();
+  const copyOf = (url: string) => copying.get(url) ?? copying.set(url, media({ kind: "image", url, key: url })).get(url)!;
   copying: for (let i = 0; i < users.length; i += FEEDBACK_PAGE.avatarsAtOnce) {
     const batch = users.slice(i, i + FEEDBACK_PAGE.avatarsAtOnce);
-    const results = await Promise.allSettled(batch.map((user) => media({ kind: "image", url: user.image, key: user.image })));
+    const results = await Promise.allSettled(batch.map((user) => copyOf(user.image)));
     // In order, up to the first one begun past the soft limit: the cursor is the last one kept.
     for (const [j, result] of results.entries()) {
       if (result.status === "fulfilled") {

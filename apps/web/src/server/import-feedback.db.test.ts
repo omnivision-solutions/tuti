@@ -300,8 +300,11 @@ test("a page of Featurebase's with more posts than one of ours takes comes acros
   expect(titles.slice(-30)).toEqual(Array.from({ length: 30 }, (_, n) => `Idea ${n + 1}`));
 });
 
+/** Another picture the fake serves, as Featurebase's storage would. */
+const picture = async (name: string) => fake.file(name, "image/png", Buffer.from(await (await fetch(`${fake.url}/files/mira.png`)).arrayBuffer()));
+
 test("past a page's time, what's left of it goes to the next page; one post's images past its hard limit are left out", async () => {
-  fake.fixtures.contacts[3]!.profilePicture = fake.fixtures.contacts[0]!.profilePicture;
+  fake.fixtures.contacts[3]!.profilePicture = await picture("juno.png");
   // The step each page ran, in order.
   const pages: string[] = [];
   const importStep = handlers.importStep;
@@ -332,11 +335,10 @@ test("past a page's time, what's left of it goes to the next page; one post's im
   expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 1 } } });
 });
 
-test("profile pictures are copied several at a time; past a page's time, the next page goes on from the last one copied", async () => {
-  // Three contacts with an uploaded picture.
-  for (const n of [1, 3]) {
-    fake.fixtures.contacts[n]!.profilePicture = fake.fixtures.contacts[0]!.profilePicture;
-  }
+test("profile pictures are copied several at a time; past a page's time, the next page goes on from the last one copied; one picture several contacts share is copied once", async () => {
+  // Three contacts with an uploaded picture each.
+  fake.fixtures.contacts[1]!.profilePicture = await picture("tobias.png");
+  fake.fixtures.contacts[3]!.profilePicture = await picture("juno.png");
   const pages: string[] = [];
   const importStep = handlers.importStep;
   handlers.importStep = async (input, log) => {
@@ -353,7 +355,19 @@ test("profile pictures are copied several at a time; past a page's time, the nex
   }
   expect(pages.filter((step) => step === "avatars")).toHaveLength(2);
   expect((await call(getImport, asOwner(), {})).import!.counts.avatars).toEqual({ imported: 3, leftOut: {} });
-  expect(await prisma.user.count({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } } })).toBe(3);
+  const pictured = { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } };
+  expect(await prisma.user.count({ where: pictured })).toBe(3);
+
+  // The three with one picture, in another project: copied once, all at once.
+  for (const n of [1, 3]) {
+    fake.fixtures.contacts[n]!.profilePicture = fake.fixtures.contacts[0]!.profilePicture;
+  }
+  project = await createProject(owner);
+  Object.assign(FEEDBACK_PAGE, { softMs: 0, avatarsAtOnce: 3 });
+  await importFeedback();
+  const shared = await prisma.user.findMany({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } }, select: { imageId: true } });
+  expect(shared).toHaveLength(3);
+  expect(new Set(shared.map((user) => user.imageId)).size).toBe(1);
 });
 
 test("profile pictures come last, after the duplicate check; an import from before they were a part, at them, goes on with the rest and copies them last", async () => {
