@@ -15,6 +15,20 @@ import type { ImportView } from "@/server/operations/imports";
 /** Where Featurebase's API keys are made (its dashboard's Settings → API, after signing in). */
 const KEYS_URL = "https://auth.featurebase.app/login?redirect=/settings/api";
 
+/** The invitations an import made that wait to be sent, and where to send them (nothing when there are none). */
+export function InvitationsToSend({ projectSlug, count }: { projectSlug: string; count: number }) {
+  return (
+    count > 0 && (
+      <p className="mt-1 text-sm">
+        {count === 1 ? "1 invitation" : `${count} invitations`} ready to send.{" "}
+        <Link href={`/app/${projectSlug}/settings/team`} className="underline underline-offset-4">
+          Send them in Team & roles
+        </Link>
+      </p>
+    )
+  );
+}
+
 /** Reads the page again every few seconds while `on`: an import's progress. */
 export function RefreshWhile({ on }: { on: boolean }) {
   const router = useRouter();
@@ -51,7 +65,7 @@ export function SetupImport({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [from, setFrom] = useState<"fresh" | "featurebase">(latest ? "featurebase" : "fresh");
-  const [picked, setPicked] = useState<ImportPart[]>(["contacts"]);
+  const [picked, setPicked] = useState<ImportPart[]>(["team", "contacts"]);
   const [error, setError] = useState<string | null>(null);
   const parts = Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][];
   const running = latest?.state === "running";
@@ -95,7 +109,7 @@ export function SetupImport({
         {(
           [
             ["fresh", "Starting fresh", "Set Tuti up from scratch."],
-            ["featurebase", "Featurebase", "Bring your users, feedback, help center and inbox across with an API key."],
+            ["featurebase", "Featurebase", "Bring your team, users, feedback, help center and inbox across with an API key."],
           ] as const
         ).map(([value, label, description]) => (
           <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
@@ -117,6 +131,7 @@ export function SetupImport({
           <div className="rounded-xl border p-4">
             <p className="text-sm font-medium">{importTitle(latest)}</p>
             <p className="text-sm text-muted-foreground">{importSummary(latest)}</p>
+            <InvitationsToSend projectSlug={projectSlug} count={latest.invitationsToSend} />
             {running && <p className="mt-1 text-sm text-muted-foreground">It goes on while you finish setting up; Home shows how it&apos;s going.</p>}
           </div>
         )}
@@ -153,7 +168,7 @@ export function SetupImport({
                 </label>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground">Contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.</p>
+            <p className="text-sm text-muted-foreground">Your team, contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.</p>
             {boardsNote && picked.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
           </div>

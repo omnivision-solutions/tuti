@@ -16,6 +16,7 @@ import { defineOperation, OperationError } from "./define";
 
 const importSelect = {
   id: true,
+  projectId: true,
   source: true,
   parts: true,
   state: true,
@@ -31,7 +32,7 @@ const importSelect = {
 type ImportRow = Prisma.DataImportGetPayload<{ select: typeof importSelect }>;
 
 /** An import as the API and the app show it (never its key). */
-function importView(row: ImportRow) {
+async function importView(row: ImportRow) {
   return {
     id: row.id,
     source: row.source.toLowerCase() as "featurebase",
@@ -46,10 +47,12 @@ function importView(row: ImportRow) {
     startedBy: row.startedBy?.name ?? null,
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
+    /** The invitations an import (this one or an earlier one) left waiting to be sent, as Team & roles lists them. */
+    invitationsToSend: await prisma.invitation.count({ where: { projectId: row.projectId, sentAt: null, acceptedAt: null, revokedAt: null } }),
   };
 }
 
-export type ImportView = ReturnType<typeof importView>;
+export type ImportView = Awaited<ReturnType<typeof importView>>;
 
 /** Inline (JOBS_DRIVER=inline), the import's pages go on without the request that started or looked at it waiting for them. */
 const inBackground = () => ({ wait: process.env.JOBS_DRIVER !== "inline" });
@@ -61,7 +64,7 @@ const inBackground = () => ({ wait: process.env.JOBS_DRIVER !== "inline" });
 export async function latestImport(projectId: string): Promise<ImportView | null> {
   const latest = await prisma.dataImport.findFirst({ where: { projectId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: importSelect });
   if (!latest || !importStuck(latest)) {
-    return latest && importView(latest);
+    return latest && (await importView(latest));
   }
   if (importStale(latest)) {
     await failStaleImports();

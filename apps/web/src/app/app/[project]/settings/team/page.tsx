@@ -1,9 +1,10 @@
 import { type TeamRole, prisma } from "@tuti/db";
+import { pendingInvitation } from "@tuti/jobs";
 import { teamLimit } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { InviteForm, RevokeInvitationButton } from "@/components/invitations";
+import { InviteForm, RevokeInvitationButton, UnsentInvitations } from "@/components/invitations";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { LeaveProjectButton, MemberActions } from "@/components/team-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -34,11 +35,14 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
   const isOnlyOwner = myRole === "OWNER" && members.filter((m) => m.role === "OWNER").length === 1;
   const invitations = isAdmin
     ? await prisma.invitation.findMany({
-        where: { projectId: project.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        where: { projectId: project.id, ...pendingInvitation() },
         orderBy: { createdAt: "desc" },
-        select: { id: true, email: true, role: true, expiresAt: true, createdBy: { select: { name: true } } },
+        select: { id: true, email: true, role: true, expiresAt: true, sentAt: true, createdAt: true, createdBy: { select: { name: true } } },
       })
     : [];
+  // An import's invitations (docs/plan.md, Switching from Featurebase) wait apart until someone sends them.
+  const sent = invitations.filter((invitation) => invitation.sentAt);
+  const unsent = invitations.filter((invitation) => !invitation.sentAt && invitation.email);
   const assignable = ROLES.filter((r) => canAssignRole(myRole, r));
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } });
   const limit = teamLimit(plan);
@@ -123,24 +127,41 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <InviteForm projectSlug={project.slug} roles={assignable} />
-            {invitations.length > 0 && (
-              <ItemList className="border-t pt-2.5">
-                {invitations.map((invitation) => (
-                  <ItemRow
-                    key={invitation.id}
-                    title={`${invitation.email ?? "Invite link"} · ${ROLE_LABELS[invitation.role]}`}
-                    meta={`Created by ${invitation.createdBy.name} · expires ${invitation.expiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
-                    actions={
-                      canAssignRole(myRole, invitation.role) && (
-                        <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
-                      )
-                    }
-                  />
-                ))}
-              </ItemList>
+            {sent.length > 0 && (
+              // Where focus goes once the last invite from Featurebase is sent (UnsentInvitations).
+              <div id="pending-invites" tabIndex={-1} className="outline-none">
+                <ItemList className="border-t pt-2.5" aria-label="Pending invites">
+                  {sent.map((invitation) => (
+                    <ItemRow
+                      key={invitation.id}
+                      title={`${invitation.email ?? "Invite link"} · ${ROLE_LABELS[invitation.role]}`}
+                      meta={`Created by ${invitation.createdBy.name} · expires ${invitation.expiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                      actions={
+                        canAssignRole(myRole, invitation.role) && (
+                          <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
+                        )
+                      }
+                    />
+                  ))}
+                </ItemList>
+              </div>
             )}
           </CardContent>
         </Card>
+      )}
+
+      {isAdmin && (
+        <UnsentInvitations
+          projectSlug={project.slug}
+          note={`Your team in Featurebase, invited as members. Nothing has been emailed: send the ones you want here.${limit !== null ? " Until you remove them, they count toward your plan's team members." : ""}`}
+          invitations={unsent.map((invitation) => ({
+            id: invitation.id,
+            email: invitation.email!,
+            title: `${invitation.email} · ${ROLE_LABELS[invitation.role]}`,
+            meta: `Imported ${invitation.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} by ${invitation.createdBy.name}`,
+            manageable: canAssignRole(myRole, invitation.role),
+          }))}
+        />
       )}
     </>
   );

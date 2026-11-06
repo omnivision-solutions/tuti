@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { IMPORT_PARTS, importSee, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
+import { homeInvitationsToSend, IMPORT_PARTS, importSee, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -53,5 +53,22 @@ test("Home shows an import while it runs and for three days after it ended", () 
 test("an ended import's link on Home is to what it brought: the first picked part's page, none for a part this release lacks", () => {
   const run = (parts: string[]) => ({ parts }) as unknown as Parameters<typeof importSee>[0];
   expect(importSee(run(["contacts"]))).toEqual({ label: "See users", page: "users" });
+  // The team's invitations have a link of their own: the other part's page, unless it's the team alone.
+  expect(importSee(run(["team", "contacts"]))).toEqual({ label: "See users", page: "users" });
+  expect(importSee(run(["team"]))).toEqual({ label: "See team", page: "settings/team" });
   expect(importSee(run(["a-part-from-the-future"]))).toBeNull();
+});
+
+test("the team needs nothing, and nothing needs it: unticking Contacts leaves it ticked; its invitations are counted in words", () => {
+  expect(IMPORT_PARTS.team.needs).toEqual([]);
+  expect(pickPart(["team", "contacts", "feedback"], "contacts", false, IMPORT_PARTS)).toEqual(["team"]);
+  expect(pickPart(["contacts"], "team", true, IMPORT_PARTS)).toEqual(["team", "contacts"]);
+  expect(kindCount("invitations", 2)).toBe("2 invitations");
+});
+
+test("Home says how many invitations wait to be sent only to owners and admins (who can send them), once the import ended", () => {
+  const run = (state: string) => ({ state, invitationsToSend: 2 }) as unknown as Parameters<typeof homeInvitationsToSend>[0];
+  expect(homeInvitationsToSend(run("done"), true)).toBe(2);
+  expect(homeInvitationsToSend(run("done"), false)).toBe(0);
+  expect(homeInvitationsToSend(run("running"), true)).toBe(0);
 });

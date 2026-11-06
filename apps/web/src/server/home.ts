@@ -84,7 +84,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
         _count: {
           select: {
             team: true,
-            invitations: { where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) } } },
+            // Sent ones: an import's invitations waiting to be sent aren't the team invited yet.
+            invitations: { where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) }, sentAt: { not: null } } },
             articles: { where: { publishedAt: { not: null }, deletedAt: null, sample: false } },
             changelogEntries: { where: { publishedAt: { not: null }, sample: false } },
           },

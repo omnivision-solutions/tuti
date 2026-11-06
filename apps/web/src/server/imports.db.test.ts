@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { auth } from "@/lib/auth";
 import { IMPORT_PARTS } from "@/lib/import-parts";
-import { generateInvitationToken, hashInvitationToken } from "@/lib/invitations";
+import { generateInvitationToken, hashInvitationToken } from "@tuti/jobs";
 import { updateConversation } from "@/server/operations/conversations";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";

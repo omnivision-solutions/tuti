@@ -12,7 +12,7 @@ import { getSession } from "@/server/session";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-import { hashInvitationToken } from "./invitations";
+import { hashInvitationToken } from "@tuti/jobs";
 import { generateSsoSecret } from "./sso";
 
 let slug: string;

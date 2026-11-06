@@ -9,14 +9,14 @@ import { GoesOut } from "@/components/goes-out";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
-import { RefreshWhile } from "@/components/setup-import";
+import { InvitationsToSend, RefreshWhile } from "@/components/setup-import";
 import { AddSampleContent, RemoveSampleContent } from "@/components/sample-content";
 import { StatTile } from "@/components/stat-tile";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
-import { importSee, importSummary, importTitle, onHome } from "@/lib/import-parts";
+import { homeInvitationsToSend, importSee, importSummary, importTitle, onHome } from "@/lib/import-parts";
 import { homeOverview } from "@/server/home";
 import { hasSampleContent } from "@/server/sample-content";
 import { getMembership, isAdminRole } from "@/server/membership";
@@ -107,6 +107,11 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               </CardAction>
             ) : null}
           </CardHeader>
+          {homeInvitationsToSend(imported, admin) > 0 && (
+            <CardContent>
+              <InvitationsToSend projectSlug={slug} count={homeInvitationsToSend(imported, admin)} />
+            </CardContent>
+          )}
         </Card>
       )}
       {overview.setup && admin && (

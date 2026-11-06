@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { DAILY_INVITE_LIMIT, hashInvitationToken } from "@/lib/invitations";
+import { DAILY_INVITE_LIMIT, hashInvitationToken } from "@tuti/jobs";
 import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
@@ -200,6 +200,14 @@ describe("on the free plan (where plans are sold)", () => {
     // On Pro, no limit.
     await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+  });
+
+  test("an invite link with no address takes a place too", async () => {
+    await addMember(project.id, "MEMBER");
+    await prisma.invitation.create({
+      data: { projectId: project.id, tokenHash: hashInvitationToken(crypto.randomUUID()), createdById: owner.id, expiresAt: new Date(Date.now() + 60_000) },
+    });
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({ error: FULL });
   });
 
   test("two invites at once for the last place: only one is sent", async () => {

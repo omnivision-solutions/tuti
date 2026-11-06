@@ -25,7 +25,7 @@ import {
 import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { hashInvitationToken } from "@/lib/invitations";
+import { hashInvitationToken } from "@tuti/jobs";
 import { generateSsoSecret } from "@/lib/sso";
 import { widgetToken } from "@/lib/widget-session";
 import { upsertProjectUser } from "@/server/project-users";
@@ -408,6 +408,20 @@ const matrix: Matrix = {
       allowed: "ADMIN",
       takesIds: true,
       call: (slug, f) => invitations.revokeInvitation(slug, f.invitationId),
+    },
+    // An invite an import made, not sent yet.
+    sendInvitation: {
+      allowed: "ADMIN",
+      takesIds: true,
+      call: (slug, f) => invitations.sendInvitation(slug, f.unsentInvitationId),
+    },
+    sendAllInvitations: {
+      allowed: "ADMIN",
+      call: async (slug) => {
+        const result = await invitations.sendAllInvitations(slug);
+        // Sending none would pass for refused as much as for allowed.
+        return result.sent === 1 ? result : { error: `sent ${result.sent}` };
+      },
     },
     // The token is the permission: anyone signed in who has it may join.
     acceptInvitation: {
@@ -839,6 +853,16 @@ async function createFixture(own: "domain" | "site" = "domain") {
       expiresAt: new Date(Date.now() + 60_000),
     },
   });
+  const unsentInvitation = await prisma.invitation.create({
+    data: {
+      projectId,
+      email: `e2e-${crypto.randomUUID()}@example.com`,
+      tokenHash: hashInvitationToken(crypto.randomUUID()),
+      createdById: users.OWNER.id,
+      expiresAt: new Date(Date.now() + 60_000),
+      sentAt: null,
+    },
+  });
   // An upload by the account that's allowed to act as "signed in", waiting to be finished. Made two
   // hours ago, so one per case doesn't use up that account's hourly upload limit.
   const upload = await prisma.media.create({
@@ -970,6 +994,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     suggestionId: suggestion.id,
     invitationId: invitation.id,
     invitationToken,
+    unsentInvitationId: unsentInvitation.id,
     targetMemberId: targetMember.id,
     questionId: question.id,
     escalatableId: escalatable.id,

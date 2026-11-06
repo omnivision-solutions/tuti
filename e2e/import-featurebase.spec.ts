@@ -7,7 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl } from "./env";
 import { createProject, newPerson, signUp } from "./helpers";
 
-test("in the first run the team comes from Featurebase: a bad key is refused, a good one brings its contacts across as Users while setup goes on", async ({ browser }, testInfo) => {
+test("in the first run the team comes from Featurebase: a bad key is refused, a good one brings its contacts across as Users while setup goes on, and its team as invitations to send", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
 
@@ -22,8 +22,11 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(owner.getByText("Step 1 of 4")).toBeVisible();
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
   await expect(owner.getByRole("link", { name: "Settings → API" })).toHaveAttribute("href", "https://auth.featurebase.app/login?redirect=/settings/api");
+  // Their team, as invitations to review and send, and Contacts, ticked to begin with.
+  await expect(owner.getByRole("checkbox", { name: /^Team/ })).toBeChecked();
+  await expect(owner.getByText("Your Featurebase team, as invitations you review and send. They join as members; owners can change roles in Team & roles.")).toBeVisible();
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
-  await expect(owner.getByText("Contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.")).toBeVisible();
+  await expect(owner.getByText("Your team, contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase");
 
   // A key Featurebase refuses: said under the field, nothing started.
@@ -47,8 +50,10 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(key).toHaveCount(0);
   // Featurebase answers now; done, Continue still has focus (one Continue, kept as the import ends), and the summary is said.
   await fetch(`${process.env.E2E_FEATUREBASE_URL}/_fake/release`, { method: "POST" });
-  await expect(status).toHaveText("Imported from Featurebase. 3 contacts brought across.", { timeout: 15_000 });
+  await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.", { timeout: 15_000 });
   await expect(continueLink).toBeFocused();
+  // Nothing was emailed: the invitations wait for the team to send them.
+  await expect(owner.getByText("2 invitations ready to send.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase-imported");
 
   // Setup goes on.
@@ -60,10 +65,52 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Home says what came across, and the contacts are the project's users, with their company.
   await owner.waitForURL(`**/app/${slug}`);
   await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
-  await expect(owner.getByText("3 contacts brought across.", { exact: true })).toBeVisible();
+  await expect(owner.getByText("2 invitations, 3 contacts brought across.", { exact: true })).toBeVisible();
   // Screen readers hear it in one status: the title and, once it's over, the summary.
-  await expect(owner.getByRole("status").filter({ hasText: "Featurebase" })).toHaveText("Imported from Featurebase. 3 contacts brought across.");
+  await expect(owner.getByRole("status").filter({ hasText: "Featurebase" })).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.");
   await checkpoint(owner, "home-imported");
+
+  // The team's invitations, not sent yet, in Team & roles: one is sent, and waits there as any invite does.
+  await owner.getByRole("link", { name: "Send them in Team & roles" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/team`);
+  const unsent = owner.getByRole("list", { name: "Invitations not sent yet" });
+  await expect(unsent.getByRole("listitem")).toHaveCount(2);
+  await expect(unsent.getByText("e2e-featurebase-former@example.com · Member")).toBeVisible();
+  await checkpoint(owner, "team-invitations-not-sent");
+  // By keyboard: from Send all, Tab reaches the first row's Send (named for its address); Enter sends it, and focus goes on
+  // to the next row's Send.
+  const sends = unsent.getByRole("button", { name: /^Send the invite to / });
+  const [first, next] = await Promise.all([sends.nth(0).getAttribute("aria-label"), sends.nth(1).getAttribute("aria-label")]);
+  const sentTo = first!.replace("Send the invite to ", "");
+  await owner.getByRole("button", { name: "Send all 2" }).focus();
+  await owner.keyboard.press("Tab");
+  await expect(owner.getByRole("button", { name: first! })).toBeFocused();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByText("Invite sent")).toBeVisible();
+  await expect(unsent.getByRole("listitem")).toHaveCount(1);
+  await expect(owner.getByRole("button", { name: next! })).toBeFocused();
+  await expect(unsent.getByRole("button", { name: `Remove the invite to ${next!.replace("Send the invite to ", "")}` })).toBeVisible();
+  const pending = owner.getByRole("list", { name: "Pending invites" }).getByRole("listitem").filter({ hasText: `${sentTo} · Member` });
+  await expect(pending).toContainText("Created by Olive Owner");
+  await expect(pending.getByRole("button", { name: "Revoke" })).toBeVisible();
+  await checkpoint(owner, "team-invitation-sent");
+
+  // Remove asks first, naming the address; the last row gone (and the card with it), focus goes to the pending invites.
+  const left = next!.replace("Send the invite to ", "");
+  await unsent.getByRole("button", { name: `Remove the invite to ${left}` }).focus();
+  await owner.keyboard.press("Enter");
+  const dialog = owner.getByRole("alertdialog");
+  await expect(dialog.getByRole("heading")).toHaveText(`Remove the invite for ${left}?`);
+  await checkpoint(owner, "team-invitation-remove");
+  await dialog.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(owner.getByText("Invite removed")).toBeVisible();
+  await expect(unsent).toHaveCount(0);
+  await expect(owner.locator("#pending-invites")).toBeFocused();
+
+  // None wait now: Home says nothing of them.
+  await owner.goto(`/app/${slug}`);
+  await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
+  await expect(owner.getByText(/ready to send/)).toHaveCount(0);
   await owner.getByRole("link", { name: "See users" }).click();
   await owner.waitForURL(`**/app/${slug}/users`);
   const rows = owner.getByRole("main").getByRole("table").locator("tbody").getByRole("row");

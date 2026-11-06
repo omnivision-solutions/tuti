@@ -3,10 +3,17 @@ import type { ImportView } from "@/server/operations/imports";
 /**
  * What an import can bring from another tool (docs/plan.md, Switching from Featurebase), as the setup step offers it:
  * only parts that are built. `needs`: parts it can't come without (Feedback and Inbox need Contacts, so the right people
- * wrote each post and message). `media`: it brings images or files, which need media storage. Feedback, the help center
- * and the inbox add theirs (I3–I5), in the order the import runs them (@tuti/jobs IMPORT_PARTS).
+ * wrote each post and message). `media`: it brings images or files, which need media storage. In the order the import
+ * runs them (@tuti/jobs IMPORT_PARTS).
  */
 export const IMPORT_PARTS = {
+  team: {
+    label: "Team",
+    description: "Your Featurebase team, as invitations you review and send. They join as members; owners can change roles in Team & roles.",
+    needs: [],
+    media: false,
+    see: { label: "See team", page: "settings/team" },
+  },
   contacts: { label: "Contacts", description: "Your users, with their custom fields and company, as Users.", needs: [], media: false, see: { label: "See users", page: "users" } },
   feedback: {
     label: "Feedback",
@@ -60,6 +67,7 @@ export function missingNeed<P extends string>(picked: readonly P[], parts: Recor
 
 /** What each kind an import counts is called, one and many (imports' counts: contacts, …). */
 const KINDS: Record<string, [string, string]> = {
+  invitations: ["invitation", "invitations"],
   contacts: ["contact", "contacts"],
   boards: ["board", "boards"],
   posts: ["post", "posts"],
@@ -106,5 +114,14 @@ const SHOWN_MS = 3 * 24 * 60 * 60_000;
 /** Whether Home shows an import: while it runs, and for a few days after it ended. */
 export const onHome = (run: ImportView, now = Date.now()) => run.state === "running" || now - new Date(run.finishedAt!).getTime() < SHOWN_MS;
 
-/** Where an ended import's link on Home goes: the first part it brought, in the order the import runs them. */
-export const importSee = (run: ImportView) => (Object.entries(IMPORT_PARTS) as [ImportPart, ImportPartInfo][]).find(([part]) => run.parts.includes(part))?.[1].see ?? null;
+/**
+ * Where an ended import's link on Home goes: the first part it brought, in the order the import runs them, but the team
+ * when there's another (its invitations to send have a link of their own).
+ */
+export const importSee = (run: ImportView) => {
+  const picked = (Object.entries(IMPORT_PARTS) as [ImportPart, ImportPartInfo][]).filter(([part]) => run.parts.includes(part));
+  return (picked.find(([part]) => part !== "team") ?? picked[0])?.[1].see ?? null;
+};
+
+/** How many invitations Home says wait to be sent, once an import ended: only to owners and admins, who can send them. */
+export const homeInvitationsToSend = (run: ImportView, admin: boolean) => (admin && run.state !== "running" ? run.invitationsToSend : 0);
