@@ -102,7 +102,8 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
   const here = await broughtBefore(prisma, job, [...known.keys()]);
   const changed = (c: FeaturebaseConversation) => {
     const before = here.get(c.id);
-    return before !== undefined && (before.seen === null || lastActive(c) > before.seen);
+    // Brought before Tuti kept when it last saw it: by its newest message brought.
+    return before !== undefined && lastActive(c) > (before.seen ?? before.since);
   };
   const read: Read[] = [];
   for (const listed of kept.filter((c) => !known.has(c.id) || changed(c))) {

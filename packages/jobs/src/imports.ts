@@ -339,9 +339,12 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
       emails.length === 0
         ? []
         : (
+            // Never one an import made of a lead (remembered as `lead`): their address is as unproven.
             await tx.$queryRaw<{ email: string; userId: string }[]>`
-              SELECT DISTINCT ON (email) email, "userId" FROM sso_identity
-              WHERE "projectId" = ${job.projectId} AND email = ANY(${emails}::text[]) ORDER BY email, "createdAt" ASC`
+              SELECT DISTINCT ON (email) email, "userId" FROM sso_identity s
+              WHERE "projectId" = ${job.projectId} AND email = ANY(${emails}::text[])
+                AND NOT EXISTS (SELECT 1 FROM imported_record r WHERE r."projectId" = s."projectId" AND r.kind = 'lead' AND r."localId" = s."userId")
+              ORDER BY email, "createdAt" ASC`
           ).map((row) => [row.email, row.userId]),
     );
     const details = new Map<string, UserDetails>();
@@ -370,7 +373,14 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
       const to = linked.get(contact.id)!;
       return { externalId: contact.id, localId: "userId" in to ? to.userId : userIds.get(to.externalId)! };
     });
-    await tx.importedRecord.createMany({ data: records.map((record) => ({ projectId: job.projectId, source: job.source, kind: "contact", ...record })), skipDuplicates: true });
+    const leads = new Set(fresh.filter((contact) => contact.type === "lead").map((contact) => contact.id));
+    await tx.importedRecord.createMany({
+      data: records.flatMap((record) => [
+        { projectId: job.projectId, source: job.source, kind: "contact", ...record },
+        ...(leads.has(record.externalId) ? [{ projectId: job.projectId, source: job.source, kind: "lead", ...record }] : []),
+      ]),
+      skipDuplicates: true,
+    });
     records.forEach((record) => known.set(record.externalId, record.localId));
   }
   tally(job.counts, "contacts", null, fresh.length);

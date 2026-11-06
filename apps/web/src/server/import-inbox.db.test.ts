@@ -220,7 +220,9 @@ test("imported again, a conversation that changed in Featurebase gets its new me
   });
   expect(mailbox.emails.length).toBe(emailed);
 
-  // And again, with nothing new: nothing read, nothing added.
+  // And again, with nothing new: nothing read, nothing added; also for one brought before Tuti kept when it last saw
+  // it, which goes by its newest message brought.
+  await prisma.importedRecord.updateMany({ where: { projectId: project.id, kind: "conversation", externalId: "1003" }, data: { sourceUpdatedAt: null } });
   fake.requests.length = 0;
   await importInbox();
   expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r))).toEqual([]);

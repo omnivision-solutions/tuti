@@ -123,7 +123,8 @@ test("Contacts come across as the project's users, page after page: their app's 
   const again = await start();
   await importsSettled();
   expect(await usersOf()).toHaveLength(3);
-  expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(3);
+  // Its three contacts, Juno remembered as a lead too.
+  expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(4);
   expect((await call(getImport, asOwner(), {})).import).toMatchObject({ id: again.id, state: "done", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
 });
 
@@ -157,7 +158,8 @@ test("a page run twice, at once or again later, brings nothing twice", async () 
   await prisma.dataImport.update({ where: { id: row.id }, data: { state: "RUNNING", apiKey: sealedKey(), step: "contacts", cursor: null, counts: {} } });
   await handlers.importStep({ importId: row.id }, log);
   expect(await usersOf()).toHaveLength(3);
-  expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(3);
+  // Its three contacts, Juno remembered as a lead too.
+  expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(4);
 });
 
 test("a page's save that loses a race to someone's first sign-in is tried again, its contacts counted once", async () => {
@@ -303,6 +305,14 @@ test("one person per address in a project: a customer without an id in the app w
     "signed-in-tobias",
   ]);
   expect((await call(getImport, asOwner(), {})).import).toMatchObject({ counts: { contacts: { imported: 7 } } });
+
+  // A later customer with the address of a lead brought earlier is never that lead: theirs was unproven.
+  contacts.push({ object: "contact", id: "65f000000000000000000008", type: "customer", name: "A customer", email: "e2e-not-tobias@example.com", profilePicture: null, customFields: {}, companies: [] });
+  await prisma.ssoIdentity.updateMany({ where: { projectId: project.id, externalId: "featurebase:65f000000000000000000005" }, data: { email: "e2e-not-tobias@example.com" } });
+  await start();
+  await importsSettled();
+  const later = await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "contact", externalId: "65f000000000000000000008" } });
+  expect(later.localId).not.toBe(records.get("5"));
 });
 
 test("a contact the contacts step didn't bring is brought when a page needs them; one Featurebase doesn't have is missing", async () => {
