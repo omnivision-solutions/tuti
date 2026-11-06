@@ -485,14 +485,13 @@ async function writeProposals(pr: PullRequestRead, summary: string, proposals: P
   // everyone sees, and the changelog line, which is published) never has their words in front of it, nor does what's
   // written for another (a comment its own author reads).
   const isPublic = ({ post }: (typeof keyed)[number]) => !post.visibility || post.visibility === "PUBLIC";
-  const open = await writeFor(pr, summary, keyed.filter(isPublic), use);
-  const hidden = [];
-  for (const k of keyed.filter((k) => !isPublic(k))) {
-    hidden.push(await writeFor(pr, summary, [k], use));
-  }
+  const [open, ...hidden] = await Promise.all([
+    writeFor(pr, summary, keyed.filter(isPublic), use),
+    ...keyed.filter((k) => !isPublic(k)).map((k) => writeFor(pr, summary, [k], use)),
+  ]);
   return {
-    why: [open.why, ...hidden.map((written) => written.why)].filter(Boolean).join(" ").trim().slice(0, 1_000),
-    line: open.changelog.replace(/\s+/g, " ").trim().slice(0, 300),
+    why: [open!.why, ...hidden.map((written) => written.why)].filter(Boolean).join(" ").trim().slice(0, 1_000),
+    line: open!.changelog.replace(/\s+/g, " ").trim().slice(0, 300),
   };
 }
 
