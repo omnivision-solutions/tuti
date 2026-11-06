@@ -276,6 +276,10 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     if (fake.forbidden.has(path)) {
       return send(403, { error: { type: "authorization_error", message: "Your API key can't read this", status: 403 } });
     }
+    // A post's voters, for a post it doesn't have (deleted, merged): 404, as Featurebase answers.
+    if (voters && !fake.fixtures.posts.some((post) => post.id === decodeURIComponent(voters[1]!))) {
+      return send(404, { error: { type: "invalid_request_error", code: "resource_not_found", message: "Post not found", status: 404 } });
+    }
     if (list) {
       const { rows } = list;
       if (!list.paged) {

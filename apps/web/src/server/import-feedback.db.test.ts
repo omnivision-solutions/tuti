@@ -211,6 +211,19 @@ test("a page run twice, at once or again later, and a second import, bring nothi
   });
 });
 
+test("a repeat import after a post was deleted in Featurebase goes on: the post and its votes here stay, and the rest come across", async () => {
+  await importFeedback();
+  const gone = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Sync with calendars" }, select: { id: true, voteCount: true } });
+  // Gone from Featurebase since (its voters answer 404), and a new vote on another post meanwhile.
+  fake.fixtures.posts = fake.fixtures.posts.filter((post) => post.title !== "Sync with calendars");
+  fake.fixtures.voters["65f0000000000000000000p2"]!.push({ object: "contact", ...fake.fixtures.contacts[1]!, type: "customer", createdAt: "2024-03-01T00:00:00.000Z" });
+  await importFeedback();
+  const { import: again } = await call(getImport, asOwner(), {});
+  expect(again).toMatchObject({ state: "done", error: null, counts: { votes: { imported: 1 } } });
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: gone.id }, select: { voteCount: true } })).toEqual({ voteCount: gone.voteCount });
+  expect(await prisma.vote.count({ where: { post: { projectId: project.id, title: "Export fails on Safari" } } })).toBe(3);
+});
+
 test("past the plan's board limit, a board's posts go into the last board imported; without media storage images are left out, counted, and avatars stay links", async () => {
   vi.stubEnv("PLANS", "on");
   for (const name of Object.keys(s3.env)) {

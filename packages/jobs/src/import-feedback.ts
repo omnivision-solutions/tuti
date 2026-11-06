@@ -6,7 +6,7 @@ import { titleSlug } from "@tuti/shared/post-urls";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { embedPosts } from "./duplicates";
-import type { FeaturebaseAuthor, FeaturebaseBoard, FeaturebaseComment, FeaturebaseLocalized, FeaturebasePost, FeaturebaseVoter } from "./featurebase";
+import { type FeaturebaseAuthor, type FeaturebaseBoard, type FeaturebaseComment, FeaturebaseError, type FeaturebaseLocalized, type FeaturebasePost, type FeaturebaseVoter } from "./featurebase";
 import { mediaImporter } from "./import-media";
 import { adminMember, ALREADY_HERE, contactUsers, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
 import { lastingMediaUrl } from "./lasting-media";
@@ -392,10 +392,18 @@ async function votesPage(job: ImportJob, cursor: string | null): Promise<StepPag
       break;
     }
     do {
-      const page = await job.featurebase.page<FeaturebaseVoter>(`/posts/${encodeURIComponent(post.externalId)}/voters`, voters);
+      const page = await job.featurebase.page<FeaturebaseVoter>(`/posts/${encodeURIComponent(post.externalId)}/voters`, voters).catch((error: unknown) => {
+        // A post an earlier import brought that Featurebase no longer has (deleted, merged): its votes here stay as they are.
+        if (error instanceof FeaturebaseError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      });
       requests++;
-      read.push({ postId: post.localId, voters: page.items });
-      voters = page.next;
+      if (page) {
+        read.push({ postId: post.localId, voters: page.items });
+      }
+      voters = page?.next ?? null;
     } while (voters && requests < VOTE_REQUESTS);
     if (voters) {
       next = { post: post.externalId, voters };
