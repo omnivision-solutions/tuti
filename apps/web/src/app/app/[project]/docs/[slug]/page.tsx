@@ -2,7 +2,7 @@
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { editsInChanges } from "@tuti/jobs";
-import { aiProvider, articleVersionsNote } from "@tuti/shared";
+import { aiProvider, articleVersionsNote, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -19,7 +19,7 @@ import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { displayDoc } from "@/server/content";
-import { describeAccess, fromNoAccess, fromReadAccess, publishReaders } from "@/lib/read-access";
+import { fromNoAccess, fromReadAccess, publishReaders } from "@/lib/read-access";
 import { claimsOf, levelSelect } from "@/lib/reader-groups";
 import { accessChoices, collectionOptions, namedLevel } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
@@ -85,11 +85,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
   // Who reads it once published: everything above it, and its own "Who can read".
   const readers = publishReaders(
-    describeAccess([
-      ...(access.levels[parent?.slug ?? ""] ?? access.levels[""]!),
-      namedLevel(article, new Map(access.groups.map((g) => [g.key, g.name]))),
-    ]),
-    { privatePortal: portalAccess === "PRIVATE", indexed: listing === "everywhere" && !article.noindex },
+    [...(access.levels[parent?.slug ?? ""] ?? access.levels[""]!), namedLevel(article, new Map(access.groups.map((g) => [g.key, g.name])))],
+    { privatePortal: portalAccess === "PRIVATE", groupsOn: planIncludes(plan, "privatePortal"), listing, noindex: article.noindex },
   );
 
   return (

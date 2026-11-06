@@ -1,7 +1,8 @@
 import type { NoAccess, ReadAccess } from "@tuti/db";
 import { describe, expect, test } from "vitest";
 
-import { accessBadge, allows, ANYONE, describeAccess, type Level, locks, publishReaders, readable, type Reader, restricted, SIGNED_OUT } from "./read-access";
+import type { Listing } from "./article-listing";
+import { accessBadge, allows, describeAccess, type Level, locks, publishReaders, readable, type Reader, restricted, SIGNED_OUT } from "./read-access";
 
 const level = (access: ReadAccess, ...groups: string[]): Level => ({ access, groups: groups.map((key) => ({ group: { key } })) });
 const inherit = level("INHERIT");
@@ -111,15 +112,26 @@ describe("locks: what people without access see, from the nearest level that say
 });
 
 describe("publishReaders: Publish's sentence on who reads it", () => {
-  const publicPortal = { privatePortal: false, indexed: true };
+  const anyone = [{ access: "INHERIT" as const, groups: [] }];
+  const signedInOnly = [...anyone, { access: "SIGNED_IN" as const, groups: [] }];
+  const enterpriseOnly = [{ access: "GROUPS" as const, groups: ["Enterprise", "Pro"] }, ...anyone];
+  const teamOnly = [{ access: "GROUPS" as const, groups: [] }];
+  const portal: Parameters<typeof publishReaders>[1] = { privatePortal: false, groupsOn: true, listing: "everywhere", noindex: false };
+  const listed = (listing: Listing) => ({ ...portal, listing });
   test.each([
-    ["anyone, on a public portal", ANYONE, publicPortal, "Anyone can read it in your portal's docs, and search engines can find it."],
-    ["anyone, kept from search engines", ANYONE, { privatePortal: false, indexed: false }, "Anyone can read it in your portal's docs."],
-    ["anyone, on a private portal", ANYONE, { privatePortal: true, indexed: true }, "Anyone who can open your private portal can read it in its docs."],
-    ["signed-in readers", "Signed-in readers", publicPortal, "Signed-in readers can read it in your portal's docs."],
-    ["groups", "Readers in Enterprise or Pro", publicPortal, "Readers in Enterprise or Pro can read it in your portal's docs."],
-    ["the team only", "Only your team", { privatePortal: true, indexed: true }, "Only your team can read it in your portal's docs."],
-  ])("%s", (_, who, portal, expected) => {
-    expect(publishReaders(who, portal)).toBe(expected);
+    ["anyone, on a public portal", anyone, portal, "Anyone can read it in your portal's docs, and search engines can find it."],
+    ["anyone, kept from search engines", anyone, { ...portal, noindex: true }, "Anyone can read it in your portal's docs."],
+    ["anyone, unlisted", anyone, listed("unlisted"), "Anyone can read it at its link."],
+    ["anyone, on a private portal", anyone, { ...portal, privatePortal: true }, "Anyone who can open your private portal can read it in your portal's docs."],
+    ["a private portal, on a plan without it", anyone, { ...portal, privatePortal: true, groupsOn: false }, "Only your team can read it in your portal's docs."],
+    ["signed-in readers", signedInOnly, portal, "Signed-in readers can read it in your portal's docs."],
+    ["signed-in readers, unlisted", signedInOnly, listed("unlisted"), "Signed-in readers can read it at its link."],
+    ["groups", enterpriseOnly, portal, "Readers in Enterprise or Pro can read it in your portal's docs."],
+    ["groups, on a plan without them", enterpriseOnly, { ...portal, groupsOn: false }, "Only your team can read it in your portal's docs."],
+    ["the team only", teamOnly, portal, "Only your team can read it in your portal's docs."],
+    ["hidden", anyone, listed("hidden"), "It isn't shown anywhere in your portal, not even at its link."],
+    ["AI only", signedInOnly, listed("ai_only"), "AI answers use it, but it has no page in your portal's docs."],
+  ])("%s", (_, levels, options, expected) => {
+    expect(publishReaders(levels, options)).toBe(expected);
   });
 });
