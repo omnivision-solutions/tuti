@@ -9,9 +9,10 @@ export function titleSlug(title: string, fallback = "post"): string {
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    // Runs are one dash by now: trimming one at each end is enough (and stays linear on any input).
+    .replace(/^-|-$/g, "")
     .slice(0, 60)
-    .replace(/-+$/, "");
+    .replace(/-$/, "");
   return slug || fallback;
 }
 

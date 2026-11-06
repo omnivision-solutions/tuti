@@ -13,7 +13,21 @@ export const FAKE_FEATUREBASE_SLOW_KEY = "sk_fake_featurebase_slow";
 type Row = Record<string, unknown>;
 
 /** What the fake serves, made up. Imports of more parts add theirs (boards, posts, articles, conversations, …). */
-export type FeaturebaseFixtures = { contacts: (Row | null)[]; admins: Row[]; boards: Row[]; posts: Row[]; comments: Row[]; voters: Record<string, Row[]>; conversations: Row[] };
+export type FeaturebaseFixtures = {
+  contacts: (Row | null)[];
+  admins: Row[];
+  boards: Row[];
+  posts: Row[];
+  comments: Row[];
+  voters: Record<string, Row[]>;
+  helpCenters: Row[];
+  collections: Row[];
+  /** Live versions (or a draft's only one), as GET /v2/help_center/articles?state=all lists them. */
+  articles: Row[];
+  /** Articles' drafts with changes not published (GET /v2/help_center/articles/{id}?state=draft), by id. */
+  articleDrafts: Row[];
+  conversations: Row[];
+};
 
 /**
  * Where the fixtures' images are: the fake serves its files (`file`, and FAKE_FEATUREBASE_FILES' own) at this address,
@@ -147,7 +161,25 @@ const conversationFixtures = (): Row[] => {
   ];
 };
 
-/** Made-up contacts: one with everything (properties of each kind, two companies, an uploaded avatar), one with Featurebase's placeholder avatar, a lead with no email or id of their own, and an empty row (Featurebase sends some). */
+const article = (row: Row): Row => ({
+  object: "article",
+  helpCenterId: "hc0000000000fake",
+  state: "live",
+  isPublished: true,
+  isDraftDiffersFromLive: false,
+  visibleBy: ["everyone"],
+  locale: "en",
+  availableLocales: ["en"],
+  icon: null,
+  createdAt: "2024-03-01T09:00:00.000Z",
+  updatedAt: "2024-03-02T09:00:00.000Z",
+  ...row,
+});
+
+/**
+ * Made-up data. Contacts: one with everything (properties of each kind, two companies, an uploaded avatar), one with Featurebase's placeholder avatar, a lead with no email or id of their own, and an empty row (Featurebase sends some).
+ * Admins; a help center, its articles' images and files at FAKE_FEATUREBASE_FILES; and conversations (conversationFixtures).
+ */
 export const featurebaseFixtures = (): FeaturebaseFixtures => ({
   contacts: [
     {
@@ -181,6 +213,76 @@ export const featurebaseFixtures = (): FeaturebaseFixtures => ({
     { object: "admin", id: "65f0000000000000000000a2", name: "Fern Former", email: "e2e-featurebase-former@example.com", profilePicture: null, roleId: "admin" },
   ],
   ...feedbackFixtures(),
+  // A help center: two collections at the top (one with one inside it), and articles: one with formatting, an image,
+  // a document and a link to another later in the order; that one, published with a draft that differs; a draft; and
+  // one only some people could see.
+  helpCenters: [{ object: "help_center", id: "hc0000000000fake", defaultLocale: "en", locale: "en", availableLocales: ["en"], isPublic: true, title: "Acme Help" }],
+  collections: [
+    { object: "collection", id: "0100003", parentId: "0100002", name: "Invoices", description: "Finding and paying them.", slug: "0100003-invoices", order: 0, icon: null },
+    { object: "collection", id: "0100001", parentId: null, name: "Getting started", description: "Your first steps.", slug: "0100001-getting-started", order: 0, icon: { type: "predefined", value: "LightBulbIcon" } },
+    { object: "collection", id: "0100002", parentId: null, name: "Billing", description: "Plans and payments.", slug: "0100002-billing", order: 1, icon: { type: "predefined", value: "MenuAlt2Icon" } },
+  ].map((row) => ({ helpCenterId: "hc0000000000fake", createdAt: "2024-02-01T09:00:00.000Z", ...row })),
+  articles: [
+    article({
+      id: "0200001",
+      parentId: "0100001",
+      order: 0,
+      title: "Welcome to Acme",
+      description: "What Acme does, in a minute.",
+      slug: "0200001-welcome-to-acme",
+      author: { authorId: "65f0000000000000000000a1", name: "Olive Owner" },
+      body: [
+        '<h1 id="x" data-toc-id="x">Start here</h1>',
+        '<p class="copied">Acme keeps <strong>every invoice</strong> in one place.</p>',
+        "<ul><li><p>Add your team</p></li><li><p>Connect your bank</p></li></ul>",
+        `<img src="${FAKE_FEATUREBASE_FILES}welcome.png?X-Amz-Expires=3600&X-Amz-Signature=abc" alt="The dashboard" data-width="100%" data-align="left">`,
+        `<p>Then read <a class="link" href="https://help.acme.example/en/articles/0200002-paying-by-card">Paying by card</a>, or browse <a href="/en/collections/0100002-billing">Billing</a>.</p>`,
+        `<file-preview-component src="${FAKE_FEATUREBASE_FILES}setup-guide.pdf" data-featurebase-content-filename="setup-guide.pdf"></file-preview-component>`,
+      ].join(""),
+    }),
+    article({
+      id: "0200002",
+      parentId: "0100003",
+      order: 0,
+      title: "Paying by card",
+      description: "",
+      slug: "0200002-paying-by-card",
+      isDraftDiffersFromLive: true,
+      author: { authorId: "65f0000000000000000000a2", name: "Fern Former" },
+      body: '<p>Cards are charged on the 1st. See <a href="https://help.acme.example/en/articles/0200001-welcome-to-acme">Welcome to Acme</a>.</p>',
+    }),
+    article({
+      id: "0200003",
+      parentId: "0100001",
+      order: 1,
+      title: "Roadmap notes",
+      slug: "0200003-roadmap-notes",
+      state: "draft",
+      isPublished: false,
+      isDraftDiffersFromLive: true,
+      author: { authorId: "65f0000000000000000000a1", name: "Olive Owner" },
+      body: "<p>Not ready yet.</p>",
+    }),
+    article({
+      id: "0200004",
+      parentId: null,
+      order: 0,
+      title: "Single sign-on for Enterprise",
+      slug: "0200004-single-sign-on-for-enterprise",
+      visibleBy: ["65f00000000000000000ee01"],
+      author: null,
+      body: "<p>Only for Enterprise customers.</p>",
+    }),
+  ],
+  articleDrafts: [
+    article({
+      id: "0200002",
+      state: "draft",
+      isPublished: true,
+      title: "Paying by card",
+      body: "<p>Cards are charged on the 1st. Amex is coming soon.</p>",
+    }),
+  ],
   conversations: conversationFixtures(),
 });
 
@@ -310,6 +412,9 @@ const LISTS: Record<string, { fixtures: Exclude<keyof FeaturebaseFixtures, "vote
   "/v2/boards": { fixtures: "boards", paged: false, bare: true },
   "/v2/posts": { fixtures: "posts", paged: true },
   "/v2/comments": { fixtures: "comments", paged: true },
+  "/v2/help_center/help_centers": { fixtures: "helpCenters", paged: true },
+  "/v2/help_center/collections": { fixtures: "collections", paged: true },
+  "/v2/help_center/articles": { fixtures: "articles", paged: true },
   "/v2/conversations": { fixtures: "conversations", paged: true, detail: ["conversationParts"] },
 };
 const VOTERS = /^\/v2\/posts\/([^/]+)\/voters$/;
@@ -321,15 +426,18 @@ export type FeaturebaseFake = {
   fixtures: FeaturebaseFixtures;
   /** A page holds at most this many (Featurebase: 100), so a few fixtures make several pages. */
   pageSize: number;
+  /** Called as a file is asked for, before it's answered (an import copying media has started). */
+  onFile?: (name: string) => void;
   /** Requests made, as `GET /v2/contacts?limit=100&…`. */
   requests: string[];
   /** Lists answered 403 with their items (e.g. "/v2/contacts"; posts' voters as "/v2/posts/voters"), as for a key that can't read them. */
   forbidden: Set<string>;
   /**
    * The next `times` API requests answer `status` (e.g. 429, 500), with these response headers (Retry-After,
-   * X-RateLimit-Reset) and `body` as it is (default an error's JSON): a 200 with a cut-off body, an empty page.
+   * X-RateLimit-Reset) and `body` as it is (default an error's JSON): a 200 with a cut-off body, an empty page. With
+   * `path`, only requests to a path it matches fail (the others answer as usual).
    */
-  failNext(status: number, times?: number, headers?: Record<string, string>, body?: string): void;
+  failNext(status: number, times?: number, headers?: Record<string, string>, body?: string, path?: RegExp): void;
   /** Runs between a failing answer's headers and its body (sent a moment later): time passing as the body is read. */
   beforeBody?: () => void;
   /** Lets the slow key's held pages answer (FAKE_FEATUREBASE_SLOW_KEY), and those that come later too. */
@@ -345,8 +453,10 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     ["whiteboard.png", { type: "image/png", body: PNG }],
     ["mira.png", { type: "image/png", body: PNG }],
     ["shot.png", { type: "image/png", body: PNG }],
+    ["welcome.png", { type: "image/png", body: PNG }],
+    ["setup-guide.pdf", { type: "application/pdf", body: Buffer.from("%PDF-1.4\n%invented test file\n") }],
   ]);
-  let failing: { status: number; times: number; headers: Record<string, string>; body?: string } | undefined;
+  let failing: { status: number; times: number; headers: Record<string, string>; body?: string; path?: RegExp } | undefined;
   /** The slow key's held pages, each with its fallback timer. */
   const held = new Map<() => void, NodeJS.Timeout>();
   /** Once released, the slow key's pages answer at once: one that arrives after the release isn't held. */
@@ -358,6 +468,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     const url = new URL(req.url ?? "/", "http://fake");
     if (req.method === "GET" && url.pathname.startsWith("/files/")) {
       const file = files.get(decodeURIComponent(url.pathname.slice("/files/".length)));
+      fake.onFile?.(decodeURIComponent(url.pathname.slice("/files/".length)));
       return file ? res.writeHead(200, { "Content-Type": file.type }).end(file.body) : send(404, { message: "no such file" });
     }
     if (req.method === "POST" && url.pathname === "/_fake/release") {
@@ -377,7 +488,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
       held.set(go, timer);
       return;
     }
-    if (failing) {
+    if (failing && (!failing.path || failing.path.test(url.pathname))) {
       const { status, headers, body } = failing;
       failing = --failing.times > 0 ? failing : undefined;
       const text = body ?? JSON.stringify({ error: { type: "api_error", message: "fake failure", status } });
@@ -407,9 +518,13 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     if (voters && !fake.fixtures.posts.some((post) => post.id === decodeURIComponent(voters[1]!))) {
       return send(404, { error: { type: "invalid_request_error", code: "resource_not_found", message: "Post not found", status: 404 } });
     }
+    // Articles: the live ones unless `state` says otherwise (all, or draft), as Featurebase lists them.
+    const state = url.searchParams.get("state") ?? "live";
     if (list) {
       const detail = "detail" in list ? list.detail : undefined;
-      const rows = (list.rows as (Row | null)[]).map((row) => (row && detail ? Object.fromEntries(Object.entries(row).filter(([key]) => !detail.includes(key))) : row));
+      const rows = (list.rows as (Row | null)[])
+        .filter((row) => list.rows !== fake.fixtures.articles || state === "all" || row?.state === state)
+        .map((row) => (row && detail ? Object.fromEntries(Object.entries(row).filter(([key]) => !detail.includes(key))) : row));
       if (!list.paged) {
         return send(200, "bare" in list ? rows : { object: "list", data: rows, nextCursor: null });
       }
@@ -423,7 +538,14 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     const items = LISTS[parent];
     if (items) {
       const id = decodeURIComponent(url.pathname.slice(parent.length + 1));
-      const row = (fake.fixtures[items.fixtures] as (Row | null)[]).find((item) => item?.id === id);
+      // One article takes state=live (the default) or draft, as Featurebase does: never all.
+      if (items.fixtures === "articles" && state === "all") {
+        return send(400, { error: { type: "invalid_request_error", code: "invalid_parameter", message: "Invalid state", status: 400 } });
+      }
+      const draft = items.fixtures === "articles" && state === "draft" ? fake.fixtures.articleDrafts.find((item) => item.id === id) : undefined;
+      const found = draft ?? (fake.fixtures[items.fixtures] as (Row | null)[]).find((item) => item?.id === id);
+      // Read live (the default), a never-published article isn't found.
+      const row = items.fixtures === "articles" && state === "live" && found?.state === "draft" ? undefined : found;
       return row ? send(200, row) : send(404, { error: { type: "invalid_request_error", code: "resource_not_found", message: "Not found", status: 404 } });
     }
     return send(404, { message: `the fake doesn't serve ${req.method} ${url.pathname}` });
@@ -438,7 +560,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     pageSize: 100,
     requests: [],
     forbidden: new Set(),
-    failNext: (status, times = 1, headers = {}, body) => void (failing = { status, times, headers, body }),
+    failNext: (status, times = 1, headers = {}, body, path) => void (failing = { status, times, headers, body, path }),
     release: () => {
       released = true;
       for (const [go, timer] of held) {

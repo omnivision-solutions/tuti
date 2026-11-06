@@ -17,12 +17,17 @@ import {
   sameDoc,
   type TaggedEdit,
   withSectionsOf,
-  pruneRevisions,
+  claimDocsSlug,
+  docsSlugsTaken,
+  freeDocsSlug,
+  RESERVED_ARTICLE_SLUGS,
+  recordRevision,
+  versions,
   revisionsPast,
   settleWaitingEdits,
   editName,
 } from "@tuti/jobs";
-import { articleVersionsKept, collectionName, log } from "@tuti/shared";
+import { articleVersionsKept, collectionName, log, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
 import { inArticleOrder } from "@/lib/article-order";
@@ -30,7 +35,6 @@ import { type Listing, LISTINGS } from "@/lib/article-listing";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { lucideIcon } from "@/lib/lucide-icons";
 import { portalAddress } from "@/server/custom-domains";
-import { titleSlug } from "@/lib/post-urls";
 import { type Access, ACCESSES, fromNoAccess, fromReadAccess, type Level, NO_ACCESSES, toNoAccess, toReadAccess, type WithoutAccess } from "@/lib/read-access";
 import { claimsOf, levelSelect, MAX_READER_GROUPS, readerGroup } from "@/lib/reader-groups";
 
@@ -46,12 +50,12 @@ import { projectSlug } from "./read";
 
 /** The docs (Phase 10): articles the team writes, grouped in collections, published on the portal's /docs. */
 
-export const MAX_ARTICLE_LENGTH = 50_000;
+export { MAX_ARTICLE_LENGTH };
 /**
  * Revisions kept per article; older ones go as new ones come. Every save is a deliberate click
  * (the editor doesn't autosave), so each is kept rather than merged with the last.
  */
-export { ARTICLE_REVISIONS_KEPT };
+export { ARTICLE_REVISIONS_KEPT, freeDocsSlug, recordRevision };
 
 export const MAX_ARTICLE_TITLE = 120;
 export const MAX_ARTICLE_DESCRIPTION = 300;
@@ -300,59 +304,6 @@ function placed(siblings: { id: string }[], id: string, position: number | undef
 }
 
 /**
- * A slug from `text` for a tab, collection or article (`page`, when it has one) that no other tab,
- * collection or live article in the project has, so /docs/<slug> is one page: "getting-started",
- * then "getting-started-2", … Call it with the project locked (lockProject), so two saves can't pick
- * the same one, in the transaction that gives the page the slug. Deleted articles don't hold on to
- * their slugs (a restored one takes the next free one if its own is gone).
- *
- * Redirects (docs_redirect) follow: a slug only a redirect has is free, and taking it drops the
- * redirect; when `page` gets a new slug, its old one (`page.slug`, read under the lock) redirects
- * to it.
- */
-export async function freeDocsSlug(
-  tx: Prisma.TransactionClient,
-  projectId: string,
-  text: string,
-  kind: "tab" | "collection" | "article",
-  page?: { id: string; slug: string },
-  // Sample content (server/sample-content.ts) takes no redirect's slug: the redirect would be gone once it's removed.
-  { keepRedirects = false } = {},
-) {
-  const base = titleSlug(text, kind);
-  const taken = await docsSlugsTaken(tx, projectId, { startsWith: base }, page);
-  const redirects = keepRedirects ? await tx.docsRedirect.findMany({ where: { projectId, slug: { startsWith: base } }, select: { slug: true } }) : [];
-  const used = new Set([...(kind === "article" ? RESERVED_ARTICLE_SLUGS : []), ...taken.map((row) => row.slug), ...redirects.map((row) => row.slug)]);
-  let candidate = base;
-  for (let n = 2; used.has(candidate); n++) {
-    candidate = `${base}-${n}`;
-  }
-  return keepRedirects ? candidate : claimDocsSlug(tx, projectId, candidate, kind, page);
-}
-
-/**
- * "new", "insights", "tabs" and "collections" are the team's pages under /app/<project>/docs (a tab's
- * and a collection's are under the last two), and /docs/api is the API reference (Tuti's own on the
- * app's domain, and later each portal's from an OpenAPI file), so no article can have them.
- */
-const RESERVED_ARTICLE_SLUGS = ["new", "insights", "api", "tabs", "collections"];
-
-/** The tabs, collections and live articles in the project (but `page`) whose slug matches `slug`, with their names. */
-async function docsSlugsTaken(tx: Prisma.TransactionClient, projectId: string, slug: Prisma.StringFilter | string, page?: { id: string }) {
-  // Ids are unique across the three tables (cuids), so `page` needs no kind.
-  const where = { projectId, slug, ...(page && { id: { not: page.id } }) };
-  return [
-    ...(await tx.docsTab.findMany({ where, select: { slug: true, name: true } })).map((tab) => ({ ...tab, kind: "the tab" })),
-    ...(await tx.collection.findMany({ where, select: { slug: true, name: true } })).map((c) => ({ ...c, kind: "the collection" })),
-    ...(await tx.article.findMany({ where: { ...where, deletedAt: null }, select: { slug: true, title: true } })).map((a) => ({
-      slug: a.slug,
-      name: a.title,
-      kind: "the article",
-    })),
-  ];
-}
-
-/**
  * `slug`, as the team picked it for an article (`page`, when it has one): unlike freeDocsSlug, never
  * another one. Refused when it's reserved or a tab, collection or other live article has it. Like
  * freeDocsSlug, call it with the project locked; redirects follow the same way.
@@ -366,30 +317,6 @@ async function customDocsSlug(tx: Prisma.TransactionClient, projectId: string, s
     throw new OperationError(409, "conflict", `That address is taken by ${taken.kind} “${taken.name}”`);
   }
   return claimDocsSlug(tx, projectId, slug, "article", page);
-}
-
-/** Gives a page `candidate` (free, under the lock): a redirect with it goes, and `page`'s old slug redirects to it. */
-async function claimDocsSlug(
-  tx: Prisma.TransactionClient,
-  projectId: string,
-  candidate: string,
-  kind: "tab" | "collection" | "article",
-  page?: { id: string; slug: string },
-) {
-  await tx.docsRedirect.deleteMany({ where: { projectId, slug: candidate } });
-  if (page && page.slug !== candidate) {
-    const to = {
-      tabId: kind === "tab" ? page.id : null,
-      collectionId: kind === "collection" ? page.id : null,
-      articleId: kind === "article" ? page.id : null,
-    };
-    await tx.docsRedirect.upsert({
-      where: { projectId_slug: { projectId, slug: page.slug } },
-      create: { projectId, slug: page.slug, ...to },
-      update: to,
-    });
-  }
-  return candidate;
 }
 
 /** Embeds a published article's sections for search, in the background. Never fails the save: search still matches its words. */
@@ -420,35 +347,7 @@ export const restorableSince = () => new Date(Date.now() - DELETED_ARTICLE_DAYS 
 const versionSelect = { title: true, body: true, content: true, collectionId: true } as const;
 type Version = Prisma.ArticleRevisionGetPayload<{ select: typeof versionSelect }>;
 
-/** The article's published (or draft) version, and the one last saved: its unpublished changes if it has some. */
-async function versions(tx: Prisma.TransactionClient, articleId: string): Promise<{ live: Version; saved: Version }> {
-  const { changes, ...live } = await tx.article.findUniqueOrThrow({
-    where: { id: articleId },
-    select: { ...versionSelect, changes: { select: versionSelect } },
-  });
-  return { live, saved: changes ?? live };
-}
-
 const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
-
-/**
- * Records the article's version as last saved (its unpublished changes, if it has some) as a
- * revision, unless it's the same as the newest one (a save that changed nothing), and lets the
- * oldest go past the number stored for any plan (not those Autopilot's edits still need: pruneRevisions).
- * Call it in the transaction that saved the article, with the project locked, so saves can't interleave.
- */
-export async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null, sent?: Doc) {
-  const article = (await versions(tx, articleId)).saved;
-  const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: versionSelect });
-  if (newest && isDeepStrictEqual(article, newest)) {
-    return;
-  }
-  // Timed here, after the lock, so revisions are in the order their saves were.
-  await tx.articleRevision.create({
-    data: { articleId, ...article, content: article.content ?? Prisma.DbNull, authorId, createdAt: new Date(), ...(sent && { sentContent: sent }) },
-  });
-  await pruneRevisions(tx, articleId);
-}
 
 /** A live (not deleted) article, read again under the project's lock: it may have been retitled, published or deleted since. */
 async function lockedArticle(tx: Prisma.TransactionClient, article: { id: string; slug: string }) {

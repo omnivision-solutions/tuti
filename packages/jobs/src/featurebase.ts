@@ -195,6 +195,43 @@ export type FeaturebaseComment = {
   isDeleted: boolean;
 };
 
+/** A help center's collection (GET /v2/help_center/collections), in its default locale. `parentId` null: at the top. */
+export type FeaturebaseCollection = {
+  id: string;
+  parentId?: string | null;
+  name?: string | null;
+  description?: string | null;
+  /** `<id>-<name>`. */
+  slug?: string | null;
+  order?: number | null;
+  /** An emoji, one of Featurebase's predefined icons (Heroicons' names: "CreditCardIcon"), or an image's address. */
+  icon?: { type: string; value: string } | null;
+  createdAt?: string | null;
+};
+
+/** A help center's article (GET /v2/help_center/articles?state=all), in its default locale: its live version, if it has one. */
+export type FeaturebaseArticle = {
+  id: string;
+  /** Its collection; null: at the help center's top. */
+  parentId?: string | null;
+  title?: string | null;
+  description?: string | null;
+  /** HTML. */
+  body?: string | null;
+  /** `<id>-<title>`. */
+  slug?: string | null;
+  order?: number | null;
+  state?: "live" | "draft";
+  isPublished?: boolean;
+  /** Its draft (GET /v2/help_center/articles/{id}?state=draft) has changes not published yet. Featurebase says so of many that have none. */
+  isDraftDiffersFromLive?: boolean;
+  /** Who may read it: ["everyone"], or only some people. */
+  visibleBy?: string[] | null;
+  author?: { authorId?: string | null; name?: string | null } | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
 /** Who wrote a conversation part: a contact (`customer`, `lead`: a contact id), an admin (an admin id), or someone else. */
 export type FeaturebasePartAuthor = { id?: string | null; type?: string | null; name?: string | null; email?: string | null };
 

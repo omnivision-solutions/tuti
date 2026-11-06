@@ -95,7 +95,7 @@ export function SetupImport({
         {(
           [
             ["fresh", "Starting fresh", "Set Tuti up from scratch."],
-            ["featurebase", "Featurebase", "Bring your users and feedback across with an API key."],
+            ["featurebase", "Featurebase", "Bring your users, feedback, help center and inbox across with an API key."],
           ] as const
         ).map(([value, label, description]) => (
           <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
@@ -153,7 +153,7 @@ export function SetupImport({
                 </label>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground">Contacts, feedback and the inbox come across for now: the help center follows in a later version, and the changelog after it.</p>
+            <p className="text-sm text-muted-foreground">Contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.</p>
             {boardsNote && picked.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
           </div>

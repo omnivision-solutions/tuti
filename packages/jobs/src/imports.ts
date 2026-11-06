@@ -6,6 +6,7 @@ import { openValue } from "@tuti/shared/signed";
 import { type PropertyChanges, propertyChanges } from "@tuti/shared/user-properties";
 
 import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseContact, FeaturebaseError } from "./featurebase";
+import { checkDocs, DOCS_STEPS } from "./import-docs";
 import { feedbackSteps } from "./import-feedback";
 import { conversationsPage } from "./import-inbox";
 import { enqueue, type JobLogger, type JobResult } from "./index";
@@ -52,7 +53,12 @@ export function tally(counts: ImportCounts, kind: string, reason: string | null,
  * next page starts (null: the step is done) and how to save this one, in the page's transaction under the project's lock
  * (short writes only: never the network there).
  */
-export type StepPage = { next: string | null; save: (tx: Tx) => Promise<void> };
+export type StepPage = {
+  next: string | null;
+  save: (tx: Tx) => Promise<void>;
+  /** Once its save is in (not for a duplicate run, which saves nothing): what follows from it, such as articles indexed for search. */
+  after?: () => Promise<void>;
+};
 type Step = { name: string; page: (job: ImportJob, cursor: string | null) => Promise<StepPage> };
 
 /**
@@ -62,6 +68,7 @@ type Step = { name: string; page: (job: ImportJob, cursor: string | null) => Pro
 export const IMPORT_PARTS: Record<string, { check: (api: Featurebase) => Promise<unknown>; steps: Step[] }> = {
   contacts: { check: (api) => api.get("/contacts", { limit: 1, contactType: "all" }), steps: [{ name: "contacts", page: contactsPage }] },
   feedback: { check: (api) => Promise.all([api.get("/boards"), api.get("/posts", { limit: 1 })]), steps: feedbackSteps },
+  docs: { check: checkDocs, steps: DOCS_STEPS },
   inbox: { check: (api) => api.get("/conversations", { limit: 1 }), steps: [{ name: "conversations", page: conversationsPage }] },
 };
 
@@ -207,12 +214,14 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
   }
   let next: string | null = null;
   let saved: boolean;
+  let after: StepPage["after"];
   try {
     const step = STEPS.find((s) => s.name === row.step);
     if (!step) {
       throw new Error(`no step “${row.step}”`);
     }
     const page = await step.page(job, row.cursor);
+    after = page.after;
     next = page.next ? step.name : nextStep(row.parts, step.name);
     const counted = structuredClone(job.counts);
     saved = await locked(row.projectId, async (tx) => {
@@ -236,6 +245,9 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
     log.warn(`Import ${importId}: ${row.step} failed (${String(error)})`);
     await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: failure(error), finishedAt: new Date() } });
     return { failed: true };
+  }
+  if (saved) {
+    await after?.();
   }
   if (saved && next) {
     await continueImport(importId, log);
