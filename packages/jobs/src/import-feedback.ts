@@ -33,7 +33,9 @@ const remember = (tx: Tx, job: ImportJob, kind: string, externalId: string, loca
 
 /** Images, files and videos the content left out, and what it copied, counted (`profile`'s rules say why). */
 function countMedia(job: ImportJob, content: HtmlContent, profile: "post" | "comment") {
-  tally(job.counts, "images", null, content.mediaIds.length);
+  if (content.mediaIds.length > 0) {
+    tally(job.counts, "images", null, content.mediaIds.length);
+  }
   content.leftOut.forEach((item: LeftOut) => tally(job.counts, `${item.kind}s`, mediaReason(item.reason, profile)));
 }
 
@@ -50,8 +52,8 @@ const importer = (job: ImportJob): MediaImporter | undefined => (job.startedById
 
 // Boards
 
-/** Seen by only some people in Featurebase (admins, some roles, a segment): left out, with their posts. */
-const restricted = (board: FeaturebaseBoard) => Boolean(board.access?.adminOnly || board.access?.allowedRoles?.length || board.access?.segments?.length);
+/** Seen by only some people in Featurebase (admins, some roles, all but some roles, a segment): left out, with their posts. */
+const restricted = ({ access }: FeaturebaseBoard) => Boolean(access?.adminOnly || access?.allowedRoles?.length || access?.deniedRoles?.length || access?.segments?.length);
 
 /** As apps/web lib/board-texts.ts BOARD_TEXT_LIMITS, and the board form's description. */
 const LIMITS = { description: 280, postButton: 30, detailsPlaceholder: 120 };
@@ -86,6 +88,8 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
   let last: string | undefined;
   for (const board of visible) {
     let id = known.get(board.id);
+    // Its posts went into another board for want of room (now, or by an earlier page or import while the plan was full).
+    let folded = id !== undefined && limit !== null && used.has(id);
     // One deleted since is made again.
     if (!id || !existing.some((b) => b.id === id)) {
       await tx.importedRecord.deleteMany({ where: { projectId: job.projectId, source: job.source, kind: "board", externalId: board.id } });
@@ -109,17 +113,18 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
         id = created.id;
       } else {
         id = last ?? existing.at(-1)!.id;
+        folded = true;
       }
       await remember(tx, job, "board", board.id, id);
     }
     known.set(board.id, id);
     if (count) {
-      tally(job.counts, "boards", used.has(id) ? "past the plan's board limit, their posts in the last board" : null);
+      tally(job.counts, "boards", folded ? "past the plan's board limit, their posts in the last board" : null);
     }
     used.add(id);
     last = id;
   }
-  if (count) {
+  if (count && boards.length > visible.length) {
     tally(job.counts, "boards", "only some people see", boards.length - visible.length);
   }
   return known;
@@ -165,9 +170,10 @@ async function people(job: ImportJob, authors: (FeaturebaseAuthor | FeaturebaseV
 /**
  * Who wrote something here: an admin the team member with their address, else their placeholder (adminMember); a
  * contact their user; anyone else (a guest, a bot, a contact Featurebase no longer has) a user of the project's
- * under their name, as a lead without an id of their own is (`featurebase:<id>`).
+ * under their name, as a lead without an id of their own is (`featurebase:<id>`); one without an id is someone of
+ * their own, by what they wrote (`of`: the post's or comment's id), so two anonymous guests aren't one person.
  */
-async function authorOf(tx: Tx, job: ImportJob, author: FeaturebaseAuthor, contacts: Map<string, string>): Promise<string> {
+async function authorOf(tx: Tx, job: ImportJob, author: FeaturebaseAuthor, contacts: Map<string, string>, of: string): Promise<string> {
   if (author?.id && author.type === "admin") {
     return (await adminMember(tx, job, author.id, author)).userId;
   }
@@ -175,7 +181,12 @@ async function authorOf(tx: Tx, job: ImportJob, author: FeaturebaseAuthor, conta
   if (contact) {
     return contact;
   }
-  const externalId = `featurebase:${author?.id ?? "anonymous"}`;
+  const externalId = author?.id ? `featurebase:${author.id}` : `featurebase:guest:${of}`;
+  // Made once: their name isn't changed by what a later post says.
+  const [known] = await tx.$queryRaw<{ userId: string }[]>`SELECT "userId" FROM sso_identity WHERE "projectId" = ${job.projectId} AND "externalId" = ${externalId}`;
+  if (known) {
+    return known.userId;
+  }
   const { userIds } = await syncUsersIn(tx, job.projectId, [{ externalId, name: author?.name?.trim() || "Anonymous" }]);
   return userIds.get(externalId)!;
 }
@@ -215,7 +226,7 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
           tally(job.counts, "posts", null);
           continue;
         }
-        const authorId = await authorOf(tx, job, post.author, users);
+        const authorId = await authorOf(tx, job, post.author, users, post.id);
         const { postCount: number } = await tx.project.update({ where: { id: job.projectId }, data: { postCount: { increment: 1 } }, select: { postCount: true } });
         const createdAt = dateOf(post.createdAt, new Date());
         const updatedAt = dateOf(post.updatedAt, createdAt);
@@ -375,7 +386,7 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
           continue;
         }
         const createdAt = dateOf(comment.createdAt, new Date());
-        const authorId = comment.isPrivate ? (await adminMember(tx, job, comment.author!.id!, comment.author!)).userId : await authorOf(tx, job, comment.author, users);
+        const authorId = comment.isPrivate ? (await adminMember(tx, job, comment.author!.id!, comment.author!)).userId : await authorOf(tx, job, comment.author, users, comment.id);
         const row = { postId: postId!, authorId, body: content.text, content: content.doc, createdAt };
         const created = comment.isPrivate
           ? await tx.postNote.create({ data: row, select: { id: true } })

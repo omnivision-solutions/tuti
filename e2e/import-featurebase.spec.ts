@@ -4,8 +4,8 @@ import { expect, test } from "@playwright/test";
 import { FAKE_FEATUREBASE_SLOW_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL, portalUrl } from "./env";
-import { signUp } from "./helpers";
+import { APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl } from "./env";
+import { createProject, signUp } from "./helpers";
 
 test("in the first run the team comes from Featurebase: a bad key is refused, a good one brings its contacts across as Users while setup goes on", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -101,10 +101,10 @@ test("Feedback comes across with Contacts: the posts with their dates, votes and
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await expect(status).toContainText("Imported from Featurebase", { timeout: 30_000 });
-  for (const count of ["3 contacts", "2 boards", "4 posts", "6 votes", "3 comments", "1 note", "1 avatar"]) {
+  for (const count of ["3 contacts", "2 boards", "5 posts", "6 votes", "3 comments", "1 note", "1 avatar"]) {
     await expect(status).toContainText(count);
   }
-  await expect(status).toContainText("2 boards only some people see");
+  await expect(status).toContainText("3 boards only some people see");
   await expect(status).toContainText("1 post hidden from the portal");
   await checkpoint(owner, "setup-featurebase-feedback-imported");
 
@@ -138,4 +138,23 @@ test("Feedback comes across with Contacts: the posts with their dates, votes and
   await expect(owner.getByRole("heading", { name: "Export fails on Safari" })).toBeVisible();
   await expect(owner.getByText("Fern Former").first()).toBeVisible();
   await checkpoint(owner, "app-post-imported-admin");
+});
+
+test("on a plan with a board limit, the setup step says before starting what happens to Featurebase's boards past it, and which plan has room", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  await owner.goto(`/app/${slug}/setup`);
+  await owner.getByRole("radio", { name: /^Featurebase/ }).check();
+  const note = owner.getByText(
+    "Projects on the free plan have up to 2 feedback boards: posts on Featurebase's boards past that go into the last one brought across. Pro has up to 5, and Business any number.",
+  );
+  // Only while Feedback is picked.
+  await expect(note).toHaveCount(0);
+  await owner.getByRole("checkbox", { name: /^Feedback/ }).check();
+  await expect(note).toBeVisible();
+  await checkpoint(owner, "setup-featurebase-board-limit");
+  await owner.getByRole("checkbox", { name: /^Feedback/ }).uncheck();
+  await expect(note).toHaveCount(0);
 });

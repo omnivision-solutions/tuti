@@ -10,7 +10,7 @@ export const IMPORT_PARTS = {
   contacts: { label: "Contacts", description: "Your users, with their custom fields and company, as Users.", needs: [], media: false, see: { label: "See users", page: "users" } },
   feedback: {
     label: "Feedback",
-    description: "Boards, posts, votes and comments, with their dates; private comments as notes.",
+    description: "Boards, posts, votes and comments, with their dates; the team's private comments as notes.",
     needs: ["contacts"],
     media: true,
     see: { label: "See feedback", page: "feedback" },

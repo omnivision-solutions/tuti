@@ -85,8 +85,8 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   expect(done).toMatchObject({ state: "done", error: null });
   expect(done!.counts).toEqual({
     contacts: { imported: 3, leftOut: {} },
-    boards: { imported: 2, leftOut: { "only some people see": 2 } },
-    posts: { imported: 4, leftOut: { "only some people see": 3, "hidden from the portal": 1, "waiting for moderation": 1 } },
+    boards: { imported: 2, leftOut: { "only some people see": 3 } },
+    posts: { imported: 5, leftOut: { "only some people see": 3, "hidden from the portal": 1, "waiting for moderation": 1 } },
     images: { imported: 1, leftOut: { "in comments, which have none in Tuti": 1 } },
     votes: { imported: 6, leftOut: { "by guests": 1 } },
     comments: { imported: 3, leftOut: { "private but not by the team": 1, "deleted or spam": 2, "waiting for moderation": 1, "on posts left out": 1 } },
@@ -120,10 +120,11 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
     },
     expect.objectContaining({ number: 2, title: "Export fails on Safari", status: "IN_PROGRESS", board: { name: "Bugs" }, author: { name: "Fern Former" }, voteCount: 2, commentCount: 0 }),
     expect.objectContaining({ number: 3, title: "Sync with calendars", status: "CLOSED", author: { name: "Juno Park" }, voteCount: 1, commentCount: 1 }),
-    // A guest's, under their name; "In Review" isn't one of Tuti's names, so by its type.
+    // Guests', each under their own name; "In Review" isn't one of Tuti's names, so by its type.
     expect.objectContaining({ number: 4, title: "Keyboard shortcuts", status: "UNDER_REVIEW", author: { name: "Visitor" }, voteCount: 1, commentCount: 0, events: [expect.objectContaining({ to: "UNDER_REVIEW" })] }),
+    expect.objectContaining({ number: 5, title: "Export to PDF", author: { name: "Another visitor" } }),
   ]);
-  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).postCount).toBe(4);
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).postCount).toBe(5);
 
   // The post's image is a copy in media storage, with its size; its heading a bold line (posts have none).
   const dark = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: 1 }, select: { id: true, content: true } });
@@ -168,7 +169,7 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   expect(await prisma.media.findUniqueOrThrow({ where: { id: mira.user.imageId! } })).toMatchObject({ attachedAt: expect.any(Date) });
 
   // Embedded for duplicates, as the post-created job would.
-  expect(await prisma.postEmbedding.count({ where: { projectId: project.id } })).toBe(4);
+  expect(await prisma.postEmbedding.count({ where: { projectId: project.id } })).toBe(5);
   // Quietly: nothing emailed, no webhook.
   expect(mailbox.emails.length).toBe(emailed);
   expect(await prisma.webhookDelivery.count({ where: { webhook: { projectId: project.id } } })).toBe(0);
@@ -177,7 +178,7 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
 test("a page run twice, at once or again later, and a second import, bring nothing twice", async () => {
   const started = await importFeedback();
   const before = await made();
-  expect(before).toMatchObject({ boards: 2, posts: 4, votes: 7, comments: 3, notes: 1, events: 4 });
+  expect(before).toMatchObject({ boards: 2, posts: 5, votes: 8, comments: 3, notes: 1, events: 5 });
 
   // Each of feedback's steps again from its first page, twice at once: one of them saves.
   for (const step of ["posts", "votes", "comments", "avatars", "embeddings"]) {
@@ -189,7 +190,7 @@ test("a page run twice, at once or again later, and a second import, bring nothi
   }
   await importFeedback();
   expect(await made()).toEqual(before);
-  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).postCount).toBe(4);
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).postCount).toBe(5);
 });
 
 test("past the plan's board limit, a board's posts go into the last board imported; without media storage images are left out, counted, and avatars stay links", async () => {
@@ -206,8 +207,8 @@ test("past the plan's board limit, a board's posts go into the last board import
 
   const { import: done } = await call(getImport, asOwner(), {});
   expect(done!.counts).toMatchObject({
-    boards: { imported: 2, leftOut: { "only some people see": 2, "past the plan's board limit, their posts in the last board": 1 } },
-    posts: { imported: 5 },
+    boards: { imported: 2, leftOut: { "only some people see": 3, "past the plan's board limit, their posts in the last board": 1 } },
+    posts: { imported: 6 },
     images: { imported: 0, leftOut: { "with no media storage on this server": 2, "in comments, which have none in Tuti": 1 } },
   });
   expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
@@ -215,6 +216,19 @@ test("past the plan's board limit, a board's posts go into the last board import
   expect(await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "app-user-1" }, select: { user: { select: { image: true, imageId: true } } } })).toEqual({
     user: { image: `${fake.url}/files/mira.png`, imageId: null },
   });
+});
+
+test("what didn't happen isn't counted: no boards left out, no images, and two boards of one name are one board, not past a limit", async () => {
+  fake.fixtures.boards = fake.fixtures.boards.slice(0, 2);
+  fake.fixtures.boards.push({ ...structuredClone(fake.fixtures.boards[1]!), id: "65f0000000000000000000b7", name: "bugs" });
+  for (const row of [...fake.fixtures.posts, ...fake.fixtures.comments]) {
+    row.content = String(row.content).replace(/<img[^>]*>/g, "");
+  }
+  await importFeedback();
+  const { import: done } = await call(getImport, asOwner(), {});
+  expect(done!.counts.boards).toEqual({ imported: 3, leftOut: {} });
+  expect(done!.counts).not.toHaveProperty("images");
+  expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
 });
 
 test("a key that can't read the boards or the posts isn't accepted for Feedback", async () => {

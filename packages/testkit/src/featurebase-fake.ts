@@ -115,8 +115,8 @@ const comment = (id: string, postId: string | null, author: Row, content: string
 const voter = (person: Row, createdAt: string) => ({ object: "contact", ...person, createdAt });
 
 /**
- * Made-up feedback: four boards (one with the new project's board's name and its own words, one only admins see, one
- * for a segment); posts in date order with statuses by name and by type, an ETA, an image, an admin's and a guest's,
+ * Made-up feedback: five boards (one with the new project's board's name and its own words, one only admins see, one
+ * for a segment, one some roles can't see); posts in date order with statuses by name and by type, an ETA, an image, an admin's and a guest's,
  * and four left out (on a hidden board, waiting for moderation, hidden from the portal, for one person); their voters
  * (the author among them, as Featurebase counts them; a voter made after the post; an admin; a guest); and comments:
  * a public one with an image, a reply, the team's private one, a user's private one, and ones left out (spam,
@@ -129,6 +129,7 @@ function feedbackFixtures(): Pick<FeaturebaseFixtures, "boards" | "posts" | "com
       board("65f0000000000000000000b2", "Bugs"),
       board("65f0000000000000000000b3", "Internal", { adminOnly: true }),
       board("65f0000000000000000000b4", "Beta testers", { segments: ["65f0000000000000000000s1"] }),
+      board("65f0000000000000000000b6", "Paid plans", { deniedRoles: ["65f0000000000000000000r1"] }),
     ],
     posts: [
       post("65f0000000000000000000p1", "65f0000000000000000000b1", "Dark mode", MIRA, "2024-01-10T08:00:00.000Z", {
@@ -146,6 +147,7 @@ function feedbackFixtures(): Pick<FeaturebaseFixtures, "boards" | "posts" | "com
       post("65f0000000000000000000p7", "65f0000000000000000000b4", "Beta feature", JUNO, "2024-02-06T10:00:00.000Z"),
       post("65f0000000000000000000p8", "65f0000000000000000000b2", "Sync with calendars", JUNO, "2024-03-01T10:00:00.000Z", { status: status("Rejected", "canceled") }),
       post("65f0000000000000000000p9", "65f0000000000000000000b1", "Keyboard shortcuts", { id: null, name: "Visitor", email: null, profilePicture: null, type: "guest" }, "2024-03-05T10:00:00.000Z"),
+      post("65f0000000000000000000pb", "65f0000000000000000000b1", "Export to PDF", { id: null, name: "Another visitor", email: null, profilePicture: null, type: "guest" }, "2024-03-06T10:00:00.000Z"),
     ],
     voters: {
       "65f0000000000000000000p1": [

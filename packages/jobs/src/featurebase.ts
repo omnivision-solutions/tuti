@@ -139,7 +139,7 @@ export type FeaturebaseLocalized = Record<string, string> | null;
 export type FeaturebaseBoard = {
   id: string;
   name: string;
-  access?: { adminOnly?: boolean; allowedRoles?: string[]; segments?: string[] } | null;
+  access?: { adminOnly?: boolean; allowedRoles?: string[]; deniedRoles?: string[]; segments?: string[] } | null;
   localization?: { name?: FeaturebaseLocalized; description?: FeaturebaseLocalized; formPlaceholder?: FeaturebaseLocalized; submitButtonText?: FeaturebaseLocalized } | null;
 };
 
