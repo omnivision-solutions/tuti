@@ -17,6 +17,41 @@ const rowNumbers = (list: HTMLElement | null) => rowLinks(list).map((link) => Nu
 /** Whether the list opened the conversation (a click or a key): its row has focus again once it's there. */
 let opening = false;
 
+/** How many times a list has rendered (opening, or refreshed), and its conversations' numbers as it last did. */
+let renders = 0;
+let rows: number[] = [];
+/** The open conversation acted on, and the list as it was as the action started: its refresh, still to come, checks. */
+let acted: { number: number; from: number[] } | null = null;
+/** The list on the page's: opens the next one once the open one (`number`) has left it (see actOn). */
+let moveOn: ((number: number, from: number[]) => void) | null = null;
+
+/**
+ * Called as the team member's own action on the open conversation (`number`) starts (Close, Assign, a reply, …); the
+ * function it returns, once it's done. Moved out of the view by it, the next one down from where it stood in the list
+ * as it was opens (the first, with none below it), or none with none left. Not for a change someone else made, which
+ * the live refresh shows: jumping away while they read or type would be wrong.
+ *
+ * Next resolves an action before it applies the refreshed page its response carries, and React commits that page
+ * with the action's transition, so the list's next render after the action is its refresh: it's checked then, and
+ * only then (`acted` doesn't wait any longer, so a teammate's later change can't move it on). Already rendered while
+ * the action ran (a live refresh got there first), it's checked right away.
+ */
+export function actOn(number: number) {
+  const at = renders;
+  const from = rows;
+  return () => {
+    // Not in the list as the action started (opened from who they are): it hasn't left it.
+    if (!from.includes(number)) {
+      return;
+    }
+    if (renders === at) {
+      acted = { number, from };
+    } else {
+      moveOn?.(number, from);
+    }
+  };
+}
+
 /**
  * The Inbox's list, beside the conversation (`open`, the one open): `j` and `k` open the next and the previous
  * conversation in its rows (`data-row-link`, each its number), `j` the first with none open; from where the open one
@@ -28,12 +63,15 @@ let opening = false;
 export function ListKeys({
   place,
   open,
+  none,
   className,
   children,
   "aria-label": label,
 }: {
   place: string;
   open: number | null;
+  /** The view's address with none open: where its numbers show. */
+  none: string;
   className?: string;
   children: ReactNode;
   "aria-label": string;
@@ -80,6 +118,36 @@ export function ListKeys({
   useEffect(() => {
     known = { place, order: rowNumbers(ref.current) };
   }, [place, open]);
+
+  useEffect(() => {
+    const go = (number: number, from: number[]) => {
+      const now = rowNumbers(ref.current);
+      if (number !== open || now.includes(number)) {
+        return;
+      }
+      const to = feedbackStep(now, from, number, 1) ?? now[0];
+      const link = rowLinks(ref.current).find((link) => Number(link.dataset.rowLink) === to);
+      opening = link !== undefined;
+      router.replace(link?.href ?? none, { scroll: false });
+    };
+    moveOn = go;
+    return () => {
+      if (moveOn === go) {
+        moveOn = null;
+      }
+    };
+  }, [router, open, none]);
+
+  // Each render (each refresh of the list): the open one acted on, gone from it, moves on (see actOn).
+  useEffect(() => {
+    renders++;
+    rows = rowNumbers(ref.current);
+    if (acted) {
+      const { number, from } = acted;
+      acted = null;
+      moveOn?.(number, from);
+    }
+  });
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
