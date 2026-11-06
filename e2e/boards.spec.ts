@@ -108,6 +108,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await api("/posts/4/merge", { into: 1 });
   await owner.reload();
   await expect(row("Bug reports")).toContainText("/feedback/bugs · 0 posts");
+  await expect(row("Bug reports").getByRole("button", { name: "Delete" })).toBeVisible();
+  await checkpoint(owner, "team-boards-merged-only");
   // Delete the empty board: gone from the team's list and from the portal.
   await row("Bug reports").getByRole("button", { name: "Delete" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
