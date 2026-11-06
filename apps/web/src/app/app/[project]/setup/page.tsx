@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { boardLimit } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,6 +18,16 @@ import { latestImport } from "@/server/operations/imports";
 import { hasSampleContent } from "@/server/sample-content";
 
 const STEPS = ["from", "use", "widget", "team"] as const;
+
+/** What a Featurebase import does past the plan's board limit, and the plan that has room (null: no limit). */
+function boardsNote(plan: "FREE" | "PRO" | "BUSINESS"): string | null {
+  const limit = boardLimit(plan);
+  if (limit === null) {
+    return null;
+  }
+  const more = plan === "FREE" ? `Pro has up to ${boardLimit("PRO")}, and Business any number.` : "Business has any number.";
+  return `Projects on the ${plan === "FREE" ? "free" : "Pro"} plan have up to ${limit} feedback boards: posts on Featurebase's boards past that go into the last one brought across. ${more}`;
+}
 
 /**
  * The first run, right after "Create project" (docs/plan.md, the redesign's step 6): where the team is coming from (an
@@ -57,7 +68,14 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
               <CardTitle>Where are you coming from?</CardTitle>
               <CardDescription>Bring what you have in another tool across, or start fresh.</CardDescription>
             </CardHeader>
-            <SetupImport projectSlug={slug} latest={await latestImport(membership.project.id)} mediaStorage={mediaStorage() !== null} next={next("use")} skip={skip(next("use"))} />
+            <SetupImport
+              projectSlug={slug}
+              latest={await latestImport(membership.project.id)}
+              mediaStorage={mediaStorage() !== null}
+              boardsNote={boardsNote(membership.project.plan)}
+              next={next("use")}
+              skip={skip(next("use"))}
+            />
           </>
         )}
         {step === "use" && (

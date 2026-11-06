@@ -6,6 +6,7 @@ import { openValue } from "@tuti/shared/signed";
 import { type PropertyChanges, propertyChanges } from "@tuti/shared/user-properties";
 
 import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseContact, FeaturebaseError } from "./featurebase";
+import { feedbackSteps } from "./import-feedback";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lockConflict } from "./lock-retries";
 import { isUniqueViolation, placeholderEmail, syncUsersIn, type UserDetails } from "./project-users";
@@ -59,6 +60,7 @@ type Step = { name: string; page: (job: ImportJob, cursor: string | null) => Pro
  */
 export const IMPORT_PARTS: Record<string, { check: (api: Featurebase) => Promise<unknown>; steps: Step[] }> = {
   contacts: { check: (api) => api.get("/contacts", { limit: 1, contactType: "all" }), steps: [{ name: "contacts", page: contactsPage }] },
+  feedback: { check: (api) => Promise.all([api.get("/boards"), api.get("/posts", { limit: 1 })]), steps: feedbackSteps },
 };
 
 const STEPS = Object.entries(IMPORT_PARTS).flatMap(([part, { steps }]) => steps.map((step) => ({ ...step, part })));
@@ -80,7 +82,7 @@ const STALE_MS = 24 * 60 * 60_000;
 const PAGE_READ_MS = 3 * 60_000;
 const AGAIN = "Start it again to go on: what came across already is skipped.";
 /** Why records an earlier import (or an earlier try of this one) brought aren't brought again, as the summary says it. */
-const ALREADY_HERE = "already brought across earlier";
+export const ALREADY_HERE = "already brought across earlier";
 
 /** Imports' next pages not waited for (continueImport's `wait: false`), till each chain ends. */
 const inBackground = new Set<Promise<void>>();

@@ -32,7 +32,22 @@ export function RefreshWhile({ on }: { on: boolean }) {
  * The first run's "Where are you coming from?": starting fresh, or Featurebase, with an API key and the parts to bring
  * (imports.start). Started, it shows the import's progress while it runs, and Continue goes on with setup meanwhile.
  */
-export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: { projectSlug: string; latest: ImportView | null; mediaStorage: boolean; next: string; skip: ReactNode }) {
+export function SetupImport({
+  projectSlug,
+  latest,
+  mediaStorage,
+  boardsNote,
+  next,
+  skip,
+}: {
+  projectSlug: string;
+  latest: ImportView | null;
+  mediaStorage: boolean;
+  /** The plan's board limit, said while Feedback is picked (null: no limit). */
+  boardsNote: string | null;
+  next: string;
+  skip: ReactNode;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [from, setFrom] = useState<"fresh" | "featurebase">(latest ? "featurebase" : "fresh");
@@ -80,7 +95,7 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
         {(
           [
             ["fresh", "Starting fresh", "Set Tuti up from scratch."],
-            ["featurebase", "Featurebase", "Bring your users across with an API key."],
+            ["featurebase", "Featurebase", "Bring your users and feedback across with an API key."],
           ] as const
         ).map(([value, label, description]) => (
           <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
@@ -138,7 +153,8 @@ export function SetupImport({ projectSlug, latest, mediaStorage, next, skip }: {
                 </label>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground">Only contacts come across for now: feedback, the help center and the inbox follow in a later version, and the changelog after them.</p>
+            <p className="text-sm text-muted-foreground">Contacts and feedback come across for now: the help center and the inbox follow in a later version, and the changelog after them.</p>
+            {boardsNote && picked.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
           </div>
         </CardContent>

@@ -335,6 +335,9 @@ importers:
       aws4fetch:
         specifier: ^1.0.20
         version: 1.0.20
+      happy-dom:
+        specifier: ^20.14.6
+        version: 20.14.6
       mailauth:
         specifier: ^8.0.4
         version: 8.0.4
