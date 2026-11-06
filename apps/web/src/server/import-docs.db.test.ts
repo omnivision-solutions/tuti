@@ -1,12 +1,12 @@
 import { Prisma, prisma } from "@tuti/db";
-import { contentBudget, featurebase, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
+import { contentBudget, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { importSummary } from "@/lib/import-parts";
-import { publishArticle, updateArticle } from "@/server/operations/docs";
+import { deleteArticle, publishArticle, restoreArticle, updateArticle } from "@/server/operations/docs";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -34,7 +34,7 @@ beforeEach(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
   vi.stubEnv("OPENAI_BASE_URL", openai.url);
-  Object.assign(fake, { fixtures: featurebaseFixtures(fake.url), pageSize: 100, requests: [], fileDelay: 0 });
+  Object.assign(fake, { fixtures: featurebaseFixtures(fake.url), pageSize: 100, requests: [], onFile: undefined });
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -204,22 +204,42 @@ test("a page of content out of time saves the articles it converted and reads th
   expect((await articles()).filter((a) => a.publishedAt)).toHaveLength(2);
 });
 
-test("an article's draft is read before its media is copied, so a slow copy can't put that read past the page's time with Featurebase", { timeout: 30_000 }, async () => {
+test("an article's draft is read before its media is copied, so a slow copy can't put that read past the page's time with Featurebase", async () => {
   await structureOnly();
-  // First on the page: an article with a draft that differs and an image on a host that takes 4 seconds.
+  // First on the page: an article with a draft that differs, and an image.
   const image = `<img src="${fake.url}/files/welcome.png?X-Amz-Signature=x" alt="Card form">`;
   const [, paying] = fake.fixtures.articles;
   paying!.body = `${image}${paying!.body}`;
   fake.fixtures.articleDrafts[0]!.body = `${image}${fake.fixtures.articleDrafts[0]!.body}`;
   fake.fixtures.articles = [paying!];
-  fake.fileDelay = 4_000;
 
   const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["docs"], step: "docs-content" } });
-  // Its reads from Featurebase have 2 seconds (a page's read deadline, near its end).
-  const job = { ...importJob(row)!, featurebase: featurebase(FAKE_FEATUREBASE_KEY, { deadline: Date.now() + 2_000 }) };
-  const page = await STEPS.docs!.steps[2]!.page(job, null);
+  const job = importJob(row)!;
+  // The copy is as slow as can be: once the image is asked for, the clock is an hour on, past the page's read deadline.
+  const now = Date.now.bind(Date);
+  let copying = false;
+  fake.onFile = () => void (copying = true);
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => now() + (copying ? 60 * 60_000 : 0));
+  const page = await STEPS.docs!.steps[2]!.page(job, null).finally(() => clock.mockRestore());
+  expect(copying).toBe(true);
   await prisma.$transaction((tx) => page.save(tx));
   expect(await article("Paying by card")).toMatchObject({ publishedAt: expect.any(Date), changes: { body: expect.stringContaining("Amex is coming soon.") } });
+});
+
+test("an article deleted here before its content came stays deleted; restored, the next import fills it in", async () => {
+  await structureOnly();
+  const roadmap = await article("Roadmap notes");
+  await call(deleteArticle, asOwner(), { slug: roadmap.slug });
+
+  const done = await importDocs();
+  expect(done.counts.articles).toMatchObject({ leftOut: { "deleted here since": 1 } });
+  expect(await prisma.article.findUniqueOrThrow({ where: { id: roadmap.id }, select: { deletedAt: true, content: true } })).toEqual({ deletedAt: expect.any(Date), content: null });
+  expect(await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "article", localId: roadmap.id }, select: { contentLanded: true } })).toEqual({ contentLanded: false });
+
+  await call(restoreArticle, asOwner(), { slug: roadmap.slug });
+  const again = await importDocs();
+  expect(again.counts.articles).toEqual({ imported: 1, leftOut: { "already brought across earlier": 3 } });
+  expect(await article("Roadmap notes")).toMatchObject({ body: "Not ready yet.", publishedAt: null });
 });
 
 test("an article whose content didn't land is filled in by the next import; the others stay as they are", async () => {

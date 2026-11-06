@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 
 import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason } from "@tuti/content/html";
-import { type Prisma, prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { articleLimit, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 
 import { recordRevision } from "./article-layers";
@@ -125,13 +125,19 @@ async function recorded(db: Tx, job: ImportJob, kind: "collection" | "article", 
   const rows = new Map<string, { id: string; slug: string; deleted: boolean; createdById: string | null; saved?: boolean }>(
     kind === "collection"
       ? (await db.collection.findMany({ where, select: { id: true, slug: true } })).map((row) => [row.id, { ...row, deleted: false, createdById: null }] as const)
-      : (await db.article.findMany({ where, select: { id: true, slug: true, deletedAt: true, createdById: true, _count: { select: { revisions: true } } } })).map(({ deletedAt, _count, ...row }) => [
-          row.id,
-          // Saved since it was made empty (every save is a revision): the team's now, never written over.
-          { ...row, deleted: deletedAt !== null, saved: _count.revisions > 0 },
-        ]),
+      : await articleRows(db, records.map((record) => record.localId)),
   );
   return new Map(records.filter((record) => rows.has(record.localId)).map((record) => [record.externalId, { record: record.id, landed: record.contentLanded, ...rows.get(record.localId)! }]));
+}
+
+/**
+ * Imported articles' rows, with whether the team has saved one since it was made empty (`saved`: it has text, or
+ * unpublished changes; restoring an empty one from the trash isn't a save of anything): the team's now, never written over.
+ */
+async function articleRows(db: Tx, ids: string[]) {
+  const rows = await db.article.findMany({ where: { id: { in: ids } }, select: { id: true, slug: true, deletedAt: true, createdById: true } });
+  const saved = await db.article.findMany({ where: { id: { in: ids }, OR: [{ content: { not: Prisma.DbNull } }, { changes: { isNot: null } }] }, select: { id: true } });
+  return rows.map(({ deletedAt, ...row }) => [row.id, { ...row, deleted: deletedAt !== null, saved: saved.some((s) => s.id === row.id) }] as const);
 }
 
 /** Saves what `kind` records became here; one whose row was deleted since is replaced. */
@@ -371,8 +377,15 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         if (!text && todo.includes(article)) {
           continue;
         }
-        // Landed before (or by a run of this page that got in first), deleted here since, or saved by the team since it
-        // was made empty (an import that stopped between its passes, started again): as it is.
+        // Deleted here before its content landed: left deleted and not landed, so if it's restored, a later import fills it in.
+        if (local?.deleted && !local.landed) {
+          if (!again) {
+            tally(job.counts, "articles", "deleted here since");
+          }
+          continue;
+        }
+        // Landed before (or by a run of this page that got in first), deleted here since it landed, or saved by the team
+        // since it was made empty (an import that stopped between its passes, started again): as it is.
         if (!local || local.landed || local.deleted || local.saved || !text) {
           if (local && !local.landed) {
             await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
