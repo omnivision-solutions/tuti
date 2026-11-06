@@ -180,12 +180,21 @@ export function DocsAssistantProvider({
   // A question and answer from elsewhere (a search's "Ask a follow-up") come first, to follow up on.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      const data = event.data as { type?: unknown; ask?: unknown; turn?: { question?: unknown; answer?: { id?: unknown } } | null } | null;
+      const data = event.data as { type?: unknown; ask?: unknown; turn?: unknown } | null;
       if (event.source !== window.parent || data?.type !== WIDGET_ASK_MESSAGE || typeof data.ask !== "string") {
         return;
       }
-      const turn = data.turn;
-      if (turn && typeof turn.question === "string" && typeof turn.answer?.id === "string") {
+      // Only a turn shaped as an answer is (the page's, so nothing it couldn't show itself), or the conversation would break.
+      const turn = data.turn as { question?: unknown; answer?: Partial<Record<keyof DocsAnswer, unknown>> } | null | undefined;
+      const answered = turn?.answer;
+      if (
+        typeof turn?.question === "string" &&
+        answered &&
+        typeof answered.id === "string" &&
+        typeof answered.status === "string" &&
+        Array.isArray(answered.sources) &&
+        (typeof answered.answer === "string" || answered.answer === null || answered.answer === undefined)
+      ) {
         const { question, answer } = turn as { question: string; answer: DocsAnswer };
         setTurns((all) => (all.some((each) => each.answer?.id === answer.id) ? all : [...all, { key: crypto.randomUUID(), question, answer }]));
       }

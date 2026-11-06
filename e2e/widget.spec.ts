@@ -684,6 +684,21 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await visitor.reload();
   await launcher.click();
   await askAI(launcher);
+  // A turn from the page that isn't shaped as an answer is left out, and the assistant still opens.
+  await launcher.click();
+  await visitor.evaluate(() =>
+    (document.querySelector("#tuti-widget iframe") as HTMLIFrameElement).contentWindow!.postMessage(
+      { type: "tuti:ask", ask: "", turn: { question: "Not an answer", answer: { id: "x" } } },
+      "*",
+    ),
+  );
+  const injected = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+  await expect(injected.getByRole("textbox", { name: "Ask a question" })).toBeVisible();
+  await expect(injected.getByRole("log", { name: "Conversation" })).not.toContainText("Not an answer");
+  await expect(injected).not.toHaveAttribute("data-starting-style");
+  await injected.getByRole("button", { name: "Close the assistant" }).click();
+  await visitor.keyboard.press("Escape");
+  await expect(visitor.locator("#tuti-widget")).toBeHidden();
   // On phones the page ends clear of the launcher (5.5rem); wider, it doesn't need to.
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "88px");
