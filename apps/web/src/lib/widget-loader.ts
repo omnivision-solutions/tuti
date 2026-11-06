@@ -58,7 +58,7 @@ import {
  * for one, and the token is sent only to the portal's origin.
  *
  * `Tuti.open()` opens the panel, `Tuti.open({ tab })` at a tab,
- * `Tuti.open({ ask: "<question>" })` with the AI assistant answering it (at Messages the first time; `ask: true`:
+ * `Tuti.open({ ask: "<question>" })` with the AI assistant answering it (over Home the first time; `ask: true`:
  * the assistant as it was; the portal's Ask AI), and `Tuti.open({ article: "<slug>" })` at a docs article, as does clicking any
  * element with `data-tuti-article="<slug>"` (contextual help buttons; one listener
  * on the document, so elements added later work too). `Tuti.close()` closes it.
@@ -640,13 +640,13 @@ export function widgetLoader(portalTemplate: string): string {
   var returnFocus;
 
   // Opens the panel, at a tab or a docs article if asked (otherwise where it was), or with its assistant asking
-  // \`ask\` (true: just open; at Messages, the first time), after \`turn\` (a question and answer to follow up on);
+  // \`ask\` (true: just open; over Home, the first time), after \`turn\` (a question and answer to follow up on);
   // closing it gives focus back to \`from\`.
   function open(options, from) {
     var article = options && typeof options.article === "string" ? options.article : "";
     var ask = options && (typeof options.ask === "string" || options.ask === true) ? (options.ask === true ? "" : options.ask.slice(0, ${MAX_QUESTION})) : null;
     var query =
-      ask !== null ? (frame ? null : TABS.messages)
+      ask !== null ? (frame ? null : TABS.home)
       : article ? "?tab=docs&article=" + encodeURIComponent(article)
       : tabQuery(options && options.tab);
     // Asked by message, never by reloading (nothing in the panel is lost, an answer still coming), once it's listening:
@@ -660,6 +660,7 @@ export function widgetLoader(portalTemplate: string): string {
     if (!frame) {
       closable = false;
       frame = newFrame(src);
+      loading = src;
       // Named before it's in the page, so its first page has the name too.
       frame.name = ${JSON.stringify(WIDGET_PANEL_NAME)} + themed;
       panel.appendChild(frame);
@@ -669,8 +670,9 @@ export function widgetLoader(portalTemplate: string): string {
       });
     } else if (query !== null) {
       closable = false;
-      // Another page: an ask waits for that one to listen, not the one on its way out.
+      // Another page: an ask waits for that one to listen, not the one on its way out (which may still say it is).
       listening = false;
+      loading = src;
       frame.src = src;
     }
     showStandIn();
@@ -692,6 +694,8 @@ export function widgetLoader(portalTemplate: string): string {
   // The ask waiting for the floating panel's assistant, sent once it's listening.
   var listening = false;
   var pendingAsk = null;
+  // The page the floating panel was last given: only it may say it's listening.
+  var loading = null;
   function sendAsk() {
     if (!pendingAsk || !frame || !frame.contentWindow) return;
     frame.contentWindow.postMessage(pendingAsk, origin);
@@ -874,7 +878,7 @@ export function widgetLoader(portalTemplate: string): string {
       }
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_ASK_READY_MESSAGE)}) {
-      if (from === frame) {
+      if (from === frame && event.data.href === loading) {
         listening = true;
         sendAsk();
       }

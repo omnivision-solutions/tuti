@@ -789,6 +789,15 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
   await visitor.setViewportSize({ width: 1280, height: 720 });
+  // Contacting the team ("Still stuck?" → Contact us, once the project answers messages) opens its Messages too.
+  await api("/support", { inbox: true }, "PATCH");
+  await visitor.reload();
+  await visitor.getByRole("region", { name: "Still stuck?" }).getByRole("link", { name: "Contact us" }).click();
+  await expect(
+    visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }),
+  ).toHaveAttribute("aria-current", "page");
+  await api("/support", { inbox: false }, "PATCH");
+  await visitor.reload();
 
   // Back on. Signing out on the portal (a client navigation) loads the page afresh: the launcher and panel the loader added
   // for the signed-in reader don't stay for whoever's next.

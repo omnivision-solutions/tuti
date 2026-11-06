@@ -283,7 +283,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   it opens the search dialog (`DocsSearchBox`), where "Ask AI" hands the
   question to the assistant, and before anything's typed "Open the assistant"
   goes back to the conversation as it was. The assistant is the widget's, the one
-  conversation with AI answers: the portal opens its own widget at Messages with it
+  conversation with AI answers: the portal opens its own widget with it
   (`Tuti.open({ ask })`), and has no panel of its own. Its results page says what it's
   for ("Results for “invoice”"), the first tab marked, as the tree beside it is
   that tab's. Popular articles on a tab's overview are that tab's, and only

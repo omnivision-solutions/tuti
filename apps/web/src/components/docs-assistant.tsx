@@ -197,7 +197,8 @@ export function DocsAssistantProvider({
     };
     window.addEventListener("message", onMessage);
     if (window.parent !== window) {
-      window.parent.postMessage({ type: WIDGET_ASK_READY_MESSAGE }, "*");
+      // Saying which page, so the loader doesn't take it from one it has replaced.
+      window.parent.postMessage({ type: WIDGET_ASK_READY_MESSAGE, href: window.location.href }, "*");
     }
     return () => window.removeEventListener("message", onMessage);
   }, [assistant]);

@@ -1532,14 +1532,14 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   const assistant = panel.getByRole("dialog", { name: "Assistant" });
   const conversation = assistant.getByRole("log", { name: "Conversation" });
   await expect(conversation).toContainText(question);
-  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${portalUrl(slug)}/widget?tab=messages`);
+  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${portalUrl(slug)}/widget`);
   await expect(conversation.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
   await expect(conversation.getByRole("listitem").filter({ hasText: "Each invite is good for 7 days" })).toBeVisible();
   const source = conversation.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
   await expect(source).toHaveAttribute("href", "/widget?tab=docs&article=inviting-your-team");
   // The question went by message, never in the panel's address: going back or reloading it doesn't ask again.
   const panelUrl = async () => (await (await visitor.locator('iframe[title="Feedback"]').elementHandle())!.contentFrame())!.url();
-  await expect.poll(panelUrl).toBe(`${portalUrl(slug)}/widget?tab=messages`);
+  await expect.poll(panelUrl).toBe(`${portalUrl(slug)}/widget`);
   await checkpoint(visitor, "portal-docs-assistant-answer", { fullPage: false });
   const asked = (await modelRequests()).filter((request) => request.user.includes(question));
   expect(asked).toHaveLength(1);
@@ -1584,7 +1584,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
   await expect(conversation.getByText("Yes, after 7 days.")).toBeVisible();
   await expect(conversation.getByText("Only owners and admins can send invites.")).toBeVisible();
-  expect(await panelUrl()).toBe(`${portalUrl(slug)}/widget?tab=messages`);
+  expect(await panelUrl()).toBe(`${portalUrl(slug)}/widget`);
 
   // A source opens the article in the panel; the header's box opens the assistant again, as it was.
   await source.first().click();

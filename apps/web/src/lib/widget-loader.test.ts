@@ -404,38 +404,40 @@ test("the portal's own tag under a path of the team's site: the panel is under t
   }
 });
 
-test("Tuti.open({ ask }) opens Messages, and asks once the panel's assistant says it's listening: the latest ask, with its turn", () => {
+test("Tuti.open({ ask }) opens the panel, and asks once its assistant says it's listening: the latest ask, with its turn", () => {
   const page = loadWidget({});
   const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
   const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
   page.Tuti.open({ ask: "How do I invite people?" });
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages");
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
   // Not listening yet (loaded, maybe, but not hydrated): it waits, the latest only.
   loaded(page);
   page.Tuti.open({ ask: "x".repeat(400) });
   page.Tuti.open({ ask: "Can I invite a guest?", turn: { question: "Pricing?", answer: { id: "a1" } } });
   expect(asked()).toEqual([]);
-  page.message(frameWindow(), { type: "tuti:ask-ready" });
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget" });
   expect(asked()).toEqual([[{ type: "tuti:ask", ask: "Can I invite a guest?", turn: { question: "Pricing?", answer: { id: "a1" } } }, "https://acme.tuti.example"]]);
   // Listening: at once, where the panel is (no reload); true just opens the assistant; at most 300 characters.
   page.Tuti.open({ ask: true });
   page.Tuti.open({ ask: "y".repeat(400) });
   expect(asked().slice(1).map(([data]) => (data as { ask: string }).ask)).toEqual(["", "y".repeat(300)]);
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages");
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
 });
 
-test("an ask while the panel loads another page waits for that page to listen, not the one on its way out", () => {
+test("an ask while the panel loads another page waits for that page to listen, not the one on its way out, even if it says so", () => {
   const page = loadWidget({});
   const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
   const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
   page.Tuti.open({ article: "billing" });
   loaded(page);
-  page.message(frameWindow(), { type: "tuti:ask-ready" });
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=docs&article=billing" });
   page.Tuti.open({ article: "refunds" });
   page.Tuti.open({ ask: "How do refunds work?" });
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs&article=refunds");
+  // The page on its way out, still saying it's listening.
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=docs&article=billing" });
   expect(asked()).toEqual([]);
-  page.message(frameWindow(), { type: "tuti:ask-ready" });
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=docs&article=refunds" });
   expect(asked().map(([data]) => (data as { ask: string }).ask)).toEqual(["How do refunds work?"]);
 });
 
