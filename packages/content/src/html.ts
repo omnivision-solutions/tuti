@@ -310,7 +310,8 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
  * time it's read; any other URL as it is. Only from the URL, never from attributes the HTML's writer chose, so nobody
  * can pass their file off as another's.
  */
-function sameFile(url: string): string {
+/** A file's address without a presigned link's signature, so two links to one file (signed apart) are one key. */
+export function sameFile(url: string): string {
   try {
     const parsed = new URL(url);
     return parsed.searchParams.has("X-Amz-Signature") ? `${parsed.origin}${parsed.pathname}` : url;

@@ -82,6 +82,8 @@ type Entry = {
   subscribersLeft: number;
   /** How many it was emailed to (sent). */
   subscribersSent: number;
+  /** Emailed from the tool it was imported from (Featurebase), not by Tuti: who it went to isn't known here. */
+  emailedFrom?: string | null;
   /** Sample content (server/sample-content.ts): it completes sample posts only. */
   sample?: boolean;
   /** The project's email is paused (its bounces or complaints): nobody's emailed, and the resume doesn't send it later. */
@@ -418,7 +420,9 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
           <p>
             {!entry.emailedSubscribers
               ? "Not emailed to subscribers."
-              : entry.subscribersLeft > 0
+              : entry.emailedFrom
+                ? `Emailed to your subscribers from ${entry.emailedFrom}.`
+                : entry.subscribersLeft > 0
                 ? `Being emailed to subscribers: ${entry.subscribersLeft} still to go.`
                 : `Emailed to ${subscriberCountText(entry.subscribersSent)}.`}
           </p>
@@ -433,7 +437,9 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
         <>
           {entry.emailedSubscribers ? (
             <p>
-              {entry.subscribersLeft > 0
+              {entry.emailedFrom
+                ? `Emailed to your subscribers from ${entry.emailedFrom}: it isn't sent again.`
+                : entry.subscribersLeft > 0
                 ? `Emailed to ${subscriberCountText(entry.subscribersSent)} when it was first published, not to all of them yet. Publishing sends it to ${stillToEmail(entry.subscribersLeft)}.`
                 : subscribers === null
                   ? `Emailed to ${subscriberCountText(entry.subscribersSent)} when it was first published. Your portal is private now: it isn't emailed to anyone else.`

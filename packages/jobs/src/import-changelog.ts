@@ -1,4 +1,4 @@
-import { htmlToContent, type HtmlContent } from "@tuti/content/html";
+import { htmlToContent, type HtmlContent, sameFile } from "@tuti/content/html";
 import { type ChangelogTag, type Prisma, prisma } from "@tuti/db";
 import { MAX_ENTRY_LENGTH } from "@tuti/shared";
 
@@ -17,10 +17,14 @@ import { ALREADY_HERE, type ImportJob, type StepPage, tally } from "./imports";
 
 /**
  * A page's limits, well within import-step's 5 minutes: `entries` at most (each may have several images to copy, each
- * fetch taking 30 seconds at most); past `hardMs` from its start, its remaining images are left out, as ones that
- * couldn't be fetched. Tests shorten them.
+ * fetch taking 30 seconds at most); past `softMs` from its start no more entries are begun (the rest are the next
+ * page's, reading the same list page again); past `hardMs` the entry under way's remaining images are left out, as ones
+ * that couldn't be fetched. `now` is the page's clock. Tests shorten them, and drive the clock.
  */
-export const CHANGELOG_PAGE = { entries: 10, hardMs: 210_000 };
+export const CHANGELOG_PAGE = { entries: 10, softMs: 120_000, hardMs: 210_000, now: () => Date.now() };
+
+/** Where the step got to: Featurebase's list page (its cursor) and how many of its entries are done. */
+type ChangelogAt = { page: string | null; done: number };
 
 /** The changelog's images, files and videos, counted apart from feedback's and the help center's, so each part says its own. */
 const CHANGELOG_MEDIA = { image: "changelogImages", file: "changelogFiles", video: "changelogVideos" } as const;
@@ -40,29 +44,39 @@ const restricted = (entry: FeaturebaseChangelog) => Boolean(entry.allowedSegment
 const dateOf = (value: string | null | undefined) => (value && !Number.isNaN(Date.parse(value)) ? new Date(value) : null);
 
 export async function changelogPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
-  const begun = Date.now();
-  const { items, next } = await job.featurebase.page<FeaturebaseChangelog>("/changelogs", cursor, { state: "all", sortBy: "date", sortOrder: "asc", limit: CHANGELOG_PAGE.entries });
+  const begun = CHANGELOG_PAGE.now();
+  const at: ChangelogAt = cursor ? JSON.parse(cursor) : { page: null, done: 0 };
+  const listed = await job.featurebase.page<FeaturebaseChangelog>("/changelogs", at.page, { state: "all", sortBy: "date", sortOrder: "asc", limit: CHANGELOG_PAGE.entries });
+  const rest = listed.items.slice(at.done);
   // Read again in the page's transaction, under its lock: what the check before copying saw may have changed.
   const recorded = async (db: Prisma.TransactionClient) =>
     new Set(
-      (await db.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: { in: items.map((entry) => entry.id) } }, select: { externalId: true } })).map(
+      (await db.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: { in: rest.map((entry) => entry.id) } }, select: { externalId: true } })).map(
         (record) => record.externalId,
       ),
     );
   const known = await recorded(prisma);
   const copy = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById }) : undefined;
-  const media: typeof copy = copy && (async (source) => (Date.now() - begun > CHANGELOG_PAGE.hardMs ? { leftOut: "unreachable" } : copy(source)));
-  // Images copied first, outside the page's transaction and lock.
+  const media: typeof copy = copy && (async (source) => (CHANGELOG_PAGE.now() - begun > CHANGELOG_PAGE.hardMs ? { leftOut: "unreachable" } : copy(source)));
+  // Images copied first, outside the page's transaction and lock; past the soft limit, the rest are left to the next page.
   const copied = new Map<string, { content: HtmlContent | { error: string }; cover: Awaited<ReturnType<NonNullable<typeof media>>> | null }>();
-  for (const entry of items) {
+  let done = 0;
+  for (const entry of rest) {
+    if (done > 0 && CHANGELOG_PAGE.now() - begun > CHANGELOG_PAGE.softMs) {
+      break;
+    }
     if (!known.has(entry.id) && !restricted(entry)) {
       const content = await htmlToContent("changelog", entry.content ?? "", { media });
-      const cover = entry.featuredImage ? await (media?.({ kind: "image", url: entry.featuredImage, key: entry.featuredImage }) ?? { leftOut: "unsupported" as const }) : null;
+      // Keyed as the text's images are (signatures aside), so a cover that's also in the text is one copy.
+      const url = entry.featuredImage;
+      const cover = url ? await (media?.({ kind: "image", url, key: sameFile(url) }) ?? { leftOut: "unsupported" as const }) : null;
       copied.set(entry.id, { content, cover });
     }
+    done++;
   }
+  const items = rest.slice(0, done);
   return {
-    next,
+    next: done < rest.length ? JSON.stringify({ page: at.page, done: at.done + done }) : listed.next && JSON.stringify({ page: listed.next, done: 0 }),
     save: async (tx) => {
       const saved = await recorded(tx);
       for (const entry of items) {

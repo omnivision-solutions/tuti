@@ -11,7 +11,7 @@ const { HowAnnounced, publishSummary } = await import("./changelog");
 
 /** "How it's announced" in an entry's sidebar, as text. */
 const sidebar = (
-  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; told?: { asked: number; subscribers: number } | null; emailPaused?: boolean },
+  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; emailedFrom?: string | null; told?: { asked: number; subscribers: number } | null; emailPaused?: boolean },
   subscribers: number | null = 3,
 ) =>
   renderToStaticMarkup(
@@ -116,4 +116,11 @@ test("while the project's email is paused, a draft says subscribers aren't email
   expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0, emailPaused: true }, 0)).toContain(
     "Your project's email is paused, so subscribers aren't emailed.",
   );
+});
+
+test("an entry emailed from the tool it was imported from says so, not that it went to 0 subscribers", () => {
+  const imported = { emailedSubscribers: true, subscribersLeft: 0, subscribersSent: 0, emailedFrom: "Featurebase" };
+  expect(sidebar({ ...imported, published: true })).toContain("Emailed to your subscribers from Featurebase.");
+  expect(sidebar({ ...imported, published: false })).toContain("Emailed to your subscribers from Featurebase: it isn't sent again.");
+  expect(sidebar({ ...imported, published: true })).not.toContain("0 subscribers");
 });

@@ -104,6 +104,24 @@ test("a page's images begun past its time limit are left out, counted; the entri
   expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(0);
 });
 
+test("past a page's soft limit the rest of its entries are the next page's, every one arriving with its images", async () => {
+  // A clock that moves on each look: once a page has done an entry, it's past its soft limit.
+  let now = 0;
+  Object.assign(CHANGELOG_PAGE, { softMs: 0, now: () => ++now });
+  const done = await importChangelog();
+  expect(done.counts.changelogEntries).toEqual({ imported: 3, leftOut: { "only some people see": 2, "longer than 20,000 characters, Tuti's most": 1 } });
+  expect(done.counts.changelogImages).toEqual({ imported: 2, leftOut: {} });
+  expect((await entries()).map((entry) => entry.title)).toEqual(["Dark mode is here", "Faster exports", "Single sign-on"]);
+});
+
+test("a cover that's also in the entry's text, signed apart, is copied once", async () => {
+  const dark = fake.fixtures.changelogs.find((entry) => entry.title === "Dark mode is here")!;
+  Object.assign(dark, { featuredImage: `${fake.url}/files/shot.png?X-Amz-Signature=a`, content: `<p><img src="${fake.url}/files/shot.png?X-Amz-Signature=b" alt="Dark mode"></p>` });
+  const done = await importChangelog();
+  expect(done.counts.changelogImages).toEqual({ imported: 1, leftOut: {} });
+  expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(1);
+});
+
 test("a key that can't read the changelog isn't accepted for it", async () => {
   fake.forbidden.add("/v2/changelogs");
   await expect(call(startImport, asOwner(), { source: "featurebase", key: FAKE_FEATUREBASE_KEY, parts: ["changelog"] })).rejects.toMatchObject({
