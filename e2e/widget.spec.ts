@@ -671,6 +671,8 @@ test("the portal shows the project's own widget, until the team turns it off in 
     await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
     const assistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
     await expect(assistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
+    // Once it has finished opening (a close mid-animation can be lost).
+    await expect(assistant).not.toHaveAttribute("data-starting-style");
     await assistant.getByRole("button", { name: "Close the assistant" }).click();
     await expect(assistant).toBeHidden();
     // Closed, the panel gives focus back (from the search dialog, gone by then, to the header's search).
