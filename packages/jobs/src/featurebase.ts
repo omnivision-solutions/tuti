@@ -131,3 +131,53 @@ export type FeaturebaseContact = {
 
 /** A Featurebase admin (GET /v2/admins): a member of their team there. */
 export type FeaturebaseAdmin = { id: string; name?: string | null; email?: string | null; profilePicture?: string | null };
+
+/** Words Featurebase keeps per locale ({ en: "…" }). */
+export type FeaturebaseLocalized = Record<string, string> | null;
+
+/** A Featurebase feedback board (GET /v2/boards: a bare array). */
+export type FeaturebaseBoard = {
+  id: string;
+  name: string;
+  access?: { adminOnly?: boolean; allowedRoles?: string[]; segments?: string[] } | null;
+  localization?: { name?: FeaturebaseLocalized; description?: FeaturebaseLocalized; formPlaceholder?: FeaturebaseLocalized; submitButtonText?: FeaturebaseLocalized } | null;
+};
+
+/** Who wrote a post or comment: admins by their admin id, customers and leads by their contact id. */
+export type FeaturebaseAuthor = { id: string | null; name?: string | null; email?: string | null; type: "admin" | "customer" | "lead" | "guest" | "integration" | "bot" } | null;
+
+/** A Featurebase post (GET /v2/posts). */
+export type FeaturebasePost = {
+  id: string;
+  title: string;
+  /** HTML. */
+  content: string;
+  boardId: string;
+  status: { name: string; type: "reviewing" | "unstarted" | "active" | "completed" | "canceled" };
+  author: FeaturebaseAuthor;
+  createdAt: string;
+  updatedAt: string;
+  eta: string | null;
+  inReview: boolean;
+  portalHidden: boolean;
+  /** Non-empty: only these people (and admins) see it. */
+  access?: { userIds?: string[]; companyExternalIds?: string[] } | null;
+};
+
+/** A post's voter (GET /v2/posts/{id}/voters): a contact (or admin), with when they were made, not when they voted. */
+export type FeaturebaseVoter = FeaturebaseContact & { type: NonNullable<FeaturebaseAuthor>["type"]; createdAt?: string | null };
+
+/** A Featurebase comment (GET /v2/comments): flat, replies naming their parent. */
+export type FeaturebaseComment = {
+  id: string;
+  /** HTML. */
+  content: string;
+  /** Null for a changelog's comments. */
+  postId: string | null;
+  author: FeaturebaseAuthor;
+  createdAt: string;
+  isPrivate: boolean;
+  inReview: boolean;
+  isSpam: boolean;
+  isDeleted: boolean;
+};

@@ -21,6 +21,7 @@
     "@tuti/jobs": "workspace:*",
     "@tuti/shared": "workspace:*",
     "aws4fetch": "^1.0.20",
+    "happy-dom": "^20.14.6",
     "mailauth": "^8.0.4",
     "nodemailer": "^10.1.2",
     "pg": "8.23.0",

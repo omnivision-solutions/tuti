@@ -8,6 +8,13 @@ import type { ImportView } from "@/server/operations/imports";
  */
 export const IMPORT_PARTS = {
   contacts: { label: "Contacts", description: "Your users, with their custom fields and company, as Users.", needs: [], media: false, see: { label: "See users", page: "users" } },
+  feedback: {
+    label: "Feedback",
+    description: "Boards, posts, votes and comments, with their dates; private comments as notes.",
+    needs: ["contacts"],
+    media: true,
+    see: { label: "See feedback", page: "feedback" },
+  },
 } as const satisfies Record<string, ImportPartInfo>;
 
 /** `see`: where what it brought is in the app (Home's link once an import ends: the first picked part's). */
@@ -50,7 +57,18 @@ export function missingNeed<P extends string>(picked: readonly P[], parts: Recor
 }
 
 /** What each kind an import counts is called, one and many (imports' counts: contacts, …). */
-const KINDS: Record<string, [string, string]> = { contacts: ["contact", "contacts"] };
+const KINDS: Record<string, [string, string]> = {
+  contacts: ["contact", "contacts"],
+  boards: ["board", "boards"],
+  posts: ["post", "posts"],
+  votes: ["vote", "votes"],
+  comments: ["comment", "comments"],
+  notes: ["note", "notes"],
+  images: ["image", "images"],
+  files: ["file", "files"],
+  videos: ["video", "videos"],
+  avatars: ["avatar", "avatars"],
+};
 
 /** An import's count of a kind, in words ("12 contacts"). */
 export const kindCount = (kind: string, n: number) => {

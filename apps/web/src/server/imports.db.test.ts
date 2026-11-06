@@ -64,7 +64,8 @@ test("a start is refused, nothing made, for an API key, a key Featurebase refuse
   const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
   expect(await refusal(call(startImport, key, { source: "featurebase", key: FAKE_FEATUREBASE_KEY, parts: ["contacts"] }))).toMatchObject({ status: 403, code: "people_only" });
   expect(await refusal(start({ key: "sk_wrong" }))).toEqual({ status: 400, code: "bad_key", message: "Featurebase didn't accept this API key. Check you copied all of it, or make a new one." });
-  expect(await refusal(start({ parts: ["feedback"] }))).toMatchObject({ status: 400, code: "invalid_input" });
+  expect(await refusal(start({ parts: ["changelog"] }))).toMatchObject({ status: 400, code: "invalid_input" });
+  expect(await refusal(start({ parts: ["feedback"] }))).toEqual({ status: 400, code: "needs_part", message: "Feedback needs Contacts: pick it too." });
   expect(await refusal(start({ parts: [] }))).toEqual({ status: 400, code: "invalid_input", message: "Pick what to bring" });
   fake.forbidden.add("/v2/contacts");
   expect(await refusal(start())).toEqual({ status: 400, code: "cant_read", message: "This key can't read Contacts in Featurebase. Use a key that can, or leave Contacts out." });
@@ -109,7 +110,7 @@ test("Contacts come across as the project's users, page after page: their app's 
       email: "e2e-mira@example.com",
       // What Tuti's properties don't take (a nested object, text past 200 characters) is left out; the first company is `company`.
       properties: { company: "Fenwick Labs", plan: "pro", seats: 12, beta: true, features: ["sso", "audit"] },
-      user: { name: "Mira Fenwick", image: "https://images.example.com/mira.png" },
+      user: { name: "Mira Fenwick", image: `${fake.url}/files/mira.png` },
     },
     // Featurebase's placeholder avatar is left out: Tuti draws its own.
     { externalId: "app-user-2", email: "e2e-tobias@example.com", properties: { plan: "free", company: "Globex" }, user: { name: "Tobias Quill", image: null } },

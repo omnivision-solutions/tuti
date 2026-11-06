@@ -6,6 +6,7 @@ import { openValue } from "@tuti/shared/signed";
 import { type PropertyChanges, propertyChanges } from "@tuti/shared/user-properties";
 
 import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseContact, FeaturebaseError } from "./featurebase";
+import { feedbackSteps } from "./import-feedback";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lockConflict } from "./lock-retries";
 import { isUniqueViolation, placeholderEmail, syncUsersIn, type UserDetails } from "./project-users";
@@ -59,6 +60,7 @@ type Step = { name: string; page: (job: ImportJob, cursor: string | null) => Pro
  */
 export const IMPORT_PARTS: Record<string, { check: (api: Featurebase) => Promise<unknown>; steps: Step[] }> = {
   contacts: { check: (api) => api.get("/contacts", { limit: 1, contactType: "all" }), steps: [{ name: "contacts", page: contactsPage }] },
+  feedback: { check: (api) => Promise.all([api.get("/boards"), api.get("/posts", { limit: 1 })]), steps: feedbackSteps },
 };
 
 const STEPS = Object.entries(IMPORT_PARTS).flatMap(([part, { steps }]) => steps.map((step) => ({ ...step, part })));
