@@ -38,7 +38,7 @@ export function confidence(kind: ProposedKind, probability: number): "likely" | 
 export function pullRequestState(pr: PullRequestRead, diffChars = Infinity) {
   const diff = diffUpTo(pr.diff, diffChars);
   // A file the cut left out says so, as one past the reading's own cap does.
-  const cut = (path: string) => diff.length < pr.diff.length && !`\n${diff}`.includes(`\n--- ${path} (`);
+  const cut = (path: string) => diff !== pr.diff && !`\n${diff}`.includes(`\n--- ${path} (`);
   return {
     title: pr.title,
     labels: pr.labels,
