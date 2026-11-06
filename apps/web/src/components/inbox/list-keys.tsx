@@ -19,47 +19,39 @@ let opening = false;
 
 /** The list's conversations' numbers as it last rendered (opening, or refreshed). */
 let rows: number[] = [];
-/** The open conversation acted on, the list as it was as the action started, and till when its refresh may move on. */
-let acted: { number: number; from: number[]; until: number } | null = null;
+/** Navigations the team member started (a link, J or K, Back): one after an action started is theirs, not its move. */
+let picks = 0;
+/** The open conversation acted on, the list as it was as the action started, and `picks` then: the next render checks. */
+let acted: { number: number; from: number[]; picks: number } | null = null;
 /** The list on the page's: opens the next one once the open one (`number`) has left it (see actOn). */
 let moveOn: ((number: number, from: number[]) => void) | null = null;
-/** How long after an action its refresh may still move on: the action's own refresh lands well inside it. */
-const SETTLES_MS = 10_000;
 
 /**
  * Called as the team member's own action on the open conversation (`number`) starts (Close, Assign, a reply, …); the
  * function it returns, once it's done. Moved out of the view by it, the next one down from where it stood in the list
- * as it was opens (the first, with none below it), or none with none left. Not for a change someone else made later,
- * which the live refresh shows: jumping away while they read or type would be wrong.
+ * as it was opens (the first, with none below it), or none with none left. Not for a change someone else made, which
+ * the live refresh shows: jumping away while they read or type would be wrong. Nor once they've gone somewhere
+ * themselves while it saved (another row, a tab, J or K): that's where they go.
  *
- * The list may render before the action's refresh does (a live refresh, read before the action was saved, still with
- * it), or after it (one that got there first, without it): so from when the action is done, the first render without
- * it moves on, now or in the next few seconds (SETTLES_MS); still there by then, it stayed in the view, and a
- * teammate's later change doesn't move them on.
+ * Next resolves an action before it applies the refreshed page its response carries, so the list's next render after
+ * the action is its refresh: it's checked then, and only then. Already gone from the list as last rendered (a live
+ * refresh, read after the action was saved, got there first), it moves on right away; still in it then (one read
+ * before), the next render decides.
  */
 export function actOn(number: number) {
   const from = rows;
+  const at = picks;
   return () => {
     // Not in the list as the action started (opened from who they are): it hasn't left it.
-    if (from.includes(number)) {
-      acted = { number, from, until: Date.now() + SETTLES_MS };
-      settle();
+    if (!from.includes(number) || picks !== at) {
+      return;
+    }
+    if (rows.includes(number)) {
+      acted = { number, from, picks: at };
+    } else {
+      moveOn?.(number, from);
     }
   };
-}
-
-/** The open one acted on: gone from the list as last rendered, the next one opens; past its few seconds, forgotten. */
-function settle() {
-  if (!acted) {
-    return;
-  }
-  if (Date.now() > acted.until) {
-    acted = null;
-  } else if (!rows.includes(acted.number)) {
-    const { number, from } = acted;
-    acted = null;
-    moveOn?.(number, from);
-  }
 }
 
 /**
@@ -134,6 +126,21 @@ export function ListKeys({
     };
   }, [place]);
 
+  // Somewhere they go themselves (any link, Back or Forward): an action still saving doesn't move them on after it.
+  useEffect(() => {
+    const picked = (event: Event) => {
+      if (event.type === "popstate" || (event.target as Element).closest?.("a[href]")) {
+        picks++;
+      }
+    };
+    document.addEventListener("click", picked, true);
+    window.addEventListener("popstate", picked);
+    return () => {
+      document.removeEventListener("click", picked, true);
+      window.removeEventListener("popstate", picked);
+    };
+  }, []);
+
   // The list as it was when this one opened: answered (moved up, or out of the view), J and K go on from where it stood.
   useEffect(() => {
     known = { place, order: rowNumbers(ref.current) };
@@ -164,7 +171,11 @@ export function ListKeys({
   // Each render (each refresh of the list): the open one acted on, gone from it, moves on (see actOn).
   useEffect(() => {
     rows = rowNumbers(ref.current);
-    settle();
+    const checking = acted;
+    acted = null;
+    if (checking && checking.picks === picks && !rows.includes(checking.number)) {
+      moveOn?.(checking.number, checking.from);
+    }
   });
 
   useEffect(() => {
@@ -187,6 +198,7 @@ export function ListKeys({
       );
       const link = rowLinks(ref.current).find((link) => Number(link.dataset.rowLink) === to);
       if (link) {
+        picks++;
         opening = true;
         router.replace(link.href, { scroll: false });
       }

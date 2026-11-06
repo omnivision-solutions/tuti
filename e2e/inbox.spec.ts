@@ -668,6 +668,7 @@ test("the views, the list and the open conversation side by side, each scrolling
 });
 
 test("the team member's own action taking the open conversation out of its view opens the next one there, or the view's numbers after the last; one keeping it there stays", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
@@ -739,17 +740,51 @@ test("the team member's own action taking the open conversation out of its view 
   await owner.unroute("**/*");
   await owner.goBack();
   await expect(meta(owner)).toContainText("Closed · #1");
-  // Long enough for a move to the next one to have started.
-  await owner.waitForTimeout(1_000);
+  // A later change shows in the list: a move to the next one, had it started on the way back, would have landed first.
+  await api("/conversations", { email: "e2e-later@example.com", body: "A later question" });
+  await expect(row(4)).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
 
   // On a phone, where the list is hidden beside the conversation, focus goes to the title of the one that opens.
-  await api("/conversations", { email: "e2e-fourth@example.com", body: "A fourth question" });
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/inbox/2`);
   await owner.getByRole("button", { name: "Close", exact: true }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
-  await expect(owner.getByRole("heading", { level: 1, name: "A fourth question" })).toBeFocused();
+  await expect(owner.getByRole("heading", { level: 1, name: "A later question" })).toBeFocused();
+
+  // Another one picked while their action saves (its answer held here): that's where they stay, not the next one down.
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await api("/conversations", { email: "e2e-fifth@example.com", body: "A fifth question" });
+  await api("/conversations", { email: "e2e-sixth@example.com", body: "A sixth question" });
+  await owner.goto(`/app/${slug}/inbox/4`);
+  let answer!: () => void;
+  const saved = new Promise<void>((resolve) => (answer = resolve));
+  await owner.route("**/*", async (route) => {
+    if (!route.request().headers()["next-action"]) {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await saved;
+    await route.fulfill({ response });
+  });
+  await owner.getByRole("button", { name: "Close", exact: true }).click();
+  await row(6).click();
+  answer();
+  await expect(row(4)).toHaveCount(0);
+  await owner.unroute("**/*");
+  await api("/conversations", { email: "e2e-seventh@example.com", body: "A seventh question" });
+  await expect(row(7)).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/6$`));
+
+  // Kept in the view by their own action (assigned, it still waits for a reply), then closed by a teammate: it stays open.
+  await owner.getByRole("button", { name: "Assign", exact: true }).click();
+  await owner.getByRole("menuitem", { name: "Assign to me" }).click();
+  await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
+  await api("/conversations/6", { status: "closed" }, "PATCH");
+  await expect(row(6)).toHaveCount(0);
+  await api("/conversations", { email: "e2e-eighth@example.com", body: "An eighth question" });
+  await expect(row(8)).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/6$`));
 });
 
 test("the Inbox's views are one row of tabs above the list, where they stay as a conversation opens: too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
