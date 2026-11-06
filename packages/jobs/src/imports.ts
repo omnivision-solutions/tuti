@@ -69,9 +69,16 @@ export function nextStep(parts: string[], after: string | null): string | null {
 
 /** An import that hasn't moved this long is stuck (its job went away): looking at it resumes it. Longer than a page may take (import-step's time limit). */
 export const IMPORT_STUCK_MS = 6 * 60_000;
-/** One that hasn't moved for a day is failed by the daily fail-stale-imports, its key cleared. */
+/** One that hasn't moved for a day is failed by the daily fail-stale-imports (or, inline, when it's looked at), its key cleared. */
 const STALE_MS = 24 * 60 * 60_000;
+/**
+ * How long a page may spend reading Featurebase, retries and their waits included: import-step's time limit is 5
+ * minutes (apps/worker tasks.ts), so a page has time left to save, and IMPORT_STUCK_MS is longer than both.
+ */
+const PAGE_READ_MS = 3 * 60_000;
 const AGAIN = "Start it again to go on: what came across already is skipped.";
+/** Why records an earlier import (or an earlier try of this one) brought aren't brought again, as the summary says it. */
+const ALREADY_HERE = "already brought across earlier";
 
 /** Imports' next pages not waited for (continueImport's `wait: false`), till each chain ends. */
 const inBackground = new Set<Promise<void>>();
@@ -102,6 +109,9 @@ export async function importsSettled(): Promise<void> {
 /** Whether a running import has stopped moving (see IMPORT_STUCK_MS). */
 export const importStuck = (row: Pick<DataImport, "state" | "updatedAt">) => row.state === "RUNNING" && Date.now() - row.updatedAt.getTime() > IMPORT_STUCK_MS;
 
+/** Whether a running import hasn't moved for a day: fail-stale-imports fails it. */
+export const importStale = (row: Pick<DataImport, "state" | "updatedAt">) => row.state === "RUNNING" && Date.now() - row.updatedAt.getTime() > STALE_MS;
+
 /** Resumes a stuck import, once however many look at once (each claims it by moving it). */
 export async function resumeImport(importId: string, log: JobLogger, options: { wait?: boolean } = {}): Promise<void> {
   const { count } = await prisma.dataImport.updateMany({
@@ -119,7 +129,7 @@ export function importJob(row: DataImport): ImportJob | null {
     return null;
   }
   const counts = structuredClone(row.counts ?? {}) as ImportCounts;
-  return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, featurebase: featurebase(row.apiKey), counts };
+  return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, featurebase: featurebase(row.apiKey, { deadline: Date.now() + PAGE_READ_MS }), counts };
 }
 
 /** Why a page failed, in words, for the team. */
@@ -130,7 +140,7 @@ function failure(error: unknown): string {
   if (error.status === 401 || error.status === 403) {
     return `Featurebase stopped accepting the API key (${error.message}). ${AGAIN}`;
   }
-  return error.status === 0 ? `Featurebase couldn't be reached. ${AGAIN}` : `Featurebase answered ${error.status} (${error.message}). ${AGAIN}`;
+  return error.status === 0 ? `${error.message} ${AGAIN}` : `Featurebase answered ${error.status} (${error.message}). ${AGAIN}`;
 }
 
 /** Runs a page's transaction under the project's lock; one that lost a race to someone's first sight (a sign-in) runs again. */
@@ -177,7 +187,13 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
     saved = await locked(row.projectId, async (tx) => {
       // Counted afresh on each try: a retried save mustn't count its page twice.
       job.counts = structuredClone(counted);
-      if ((await tx.dataImport.count({ where: claim })) === 0) {
+      // The import's row, held till this commits: the same page failing in another run (its updateMany on the claim)
+      // waits for this save, then finds the claim moved on, so it can't fail an import this page saved, or the reverse.
+      const [held] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM data_import
+        WHERE id = ${row.id} AND state = 'RUNNING' AND step = ${row.step} AND cursor IS NOT DISTINCT FROM ${row.cursor}::text
+        FOR UPDATE`;
+      if (!held) {
         return false;
       }
       await page.save(tx);
@@ -238,7 +254,8 @@ export function contactDetails(contact: FeaturebaseContact): UserDetails {
   const fields = Object.entries(contact.customFields ?? {}).filter(([name, value]) => value !== null && !(company && name.trim() === "company"));
   const properties = Object.entries(propertyChanges(Object.fromEntries(company ? [["company", company], ...fields] : fields)));
   return {
-    externalId: contact.userId?.trim() || `featurebase:${contact.id}`,
+    // As the app's SSO sends it (`sub` isn't trimmed), so the two find the same user.
+    externalId: contact.userId?.trim() ? contact.userId : `featurebase:${contact.id}`,
     name: contact.name?.trim() || undefined,
     email: contact.email?.trim() || undefined,
     image: avatar(contact.profilePicture),
@@ -246,7 +263,7 @@ export function contactDetails(contact: FeaturebaseContact): UserDetails {
   };
 }
 
-/** Brings contacts across as users (those imported before skipped) and counts them; returns each one's user. */
+/** Brings contacts across as users and counts them (those imported before skipped, and counted so); returns each one's user. */
 async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseContact[]): Promise<Map<string, string>> {
   const known = await recordedUsers(tx, job, "contact", contacts.map((contact) => contact.id));
   const fresh = contacts.filter((contact) => !known.has(contact.id));
@@ -258,7 +275,10 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
     await tx.importedRecord.createMany({ data: records.map((record) => ({ projectId: job.projectId, source: job.source, kind: "contact", ...record })), skipDuplicates: true });
     records.forEach((record) => known.set(record.externalId, record.localId));
   }
-  tally(job.counts, "contacts", null, contacts.length);
+  tally(job.counts, "contacts", null, fresh.length);
+  if (fresh.length < contacts.length) {
+    tally(job.counts, "contacts", ALREADY_HERE, contacts.length - fresh.length);
+  }
   return known;
 }
 

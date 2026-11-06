@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tuti/db";
-import { continueImport, featurebase, FeaturebaseError, type ImportCounts, IMPORT_PARTS as STEPS, importStuck, lockProject, nextStep, resumeImport } from "@tuti/jobs";
+import { continueImport, failStaleImports, featurebase, FeaturebaseError, type ImportCounts, IMPORT_PARTS as STEPS, importStale, importStuck, lockProject, nextStep, resumeImport } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -53,13 +53,20 @@ export type ImportView = ReturnType<typeof importView>;
 /** Inline (JOBS_DRIVER=inline), the import's pages go on without the request that started or looked at it waiting for them. */
 const inBackground = () => ({ wait: process.env.JOBS_DRIVER !== "inline" });
 
-/** The project's latest import (null: none yet); a stuck one (its job went away) goes on here. */
+/**
+ * The project's latest import (null: none yet); a stuck one (its job went away) goes on here, and one that hasn't moved
+ * for a day is failed, its key cleared, as the daily fail-stale-imports would (inline installs run no scheduled jobs).
+ */
 export async function latestImport(projectId: string): Promise<ImportView | null> {
   const latest = await prisma.dataImport.findFirst({ where: { projectId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: importSelect });
   if (!latest || !importStuck(latest)) {
     return latest && importView(latest);
   }
-  await resumeImport(latest.id, log, inBackground());
+  if (importStale(latest)) {
+    await failStaleImports();
+  } else {
+    await resumeImport(latest.id, log, inBackground());
+  }
   return importView(await prisma.dataImport.findUniqueOrThrow({ where: { id: latest.id }, select: importSelect }));
 }
 
@@ -71,7 +78,7 @@ function refusal(error: unknown, cant: { code: string; message: string }): never
     throw new OperationError(400, cant.code, cant.message);
   }
   if (error instanceof FeaturebaseError) {
-    throw new OperationError(502, "unavailable", error.status === 0 ? "Featurebase couldn't be reached. Try again in a moment." : `Featurebase answered ${error.status} (${error.message}). Try again in a moment.`);
+    throw new OperationError(502, "unavailable", error.status === 0 ? `${error.message} Try again in a moment.` : `Featurebase answered ${error.status} (${error.message}). Try again in a moment.`);
   }
   throw error;
 }

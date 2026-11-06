@@ -92,11 +92,12 @@ test("Contacts come across as the project's users, page after page: their app's 
   ]);
   expect(await prisma.importedRecord.count({ where: { projectId: project.id, kind: "contact" } })).toBe(3);
 
-  // Imported again: nothing twice.
-  await start();
+  // Imported again: nothing twice, and its summary says they were here already.
+  const again = await start();
   await importsSettled();
   expect(await usersOf()).toHaveLength(3);
   expect(await prisma.importedRecord.count({ where: { projectId: project.id } })).toBe(3);
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ id: again.id, state: "done", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
 });
 
 test("one import runs per project at a time: starting again returns it, and its view never has the key", async () => {
@@ -157,6 +158,51 @@ test("a stuck import goes on when it's looked at; one that hasn't moved for a da
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stale.id } })).toMatchObject({ state: "FAILED", apiKey: null, error: "It stopped moving for a day. Start it again to go on: what came across already is skipped." });
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: recent.id } })).toMatchObject({ state: "RUNNING", apiKey: FAKE_FEATUREBASE_KEY });
 });
+
+test("one that hasn't moved for a day is failed when it's looked at, not resumed: inline installs run no daily job", async () => {
+  const stale = await running({ updatedAt: new Date(Date.now() - 25 * 60 * 60_000) });
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ id: stale.id, state: "failed", error: "It stopped moving for a day. Start it again to go on: what came across already is skipped." });
+  await importsSettled();
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: stale.id } })).toMatchObject({ state: "FAILED", apiKey: null });
+  expect(await usersOf()).toEqual([]);
+});
+
+test("the same page failing in another run while this one saves it waits for the save, then fails nothing", async () => {
+  const row = await running();
+  const claim = { id: row.id, state: "RUNNING" as const, step: "contacts", cursor: null };
+  const transaction = prisma.$transaction.bind(prisma) as (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) => Promise<unknown>;
+  let other: Promise<unknown> | undefined;
+  // As the page's save writes its records (its claim checked), another run of the same page fails it, as its
+  // importStep's catch does, and gets as far as it can (done, or waiting on the import's row) before the save goes on.
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) =>
+    transaction(async (tx) => {
+      const records = tx.importedRecord;
+      const watched = new Proxy(tx, {
+        get: (target, key) =>
+          key === "importedRecord"
+            ? {
+                ...records,
+                createMany: async (args: Parameters<typeof records.createMany>[0]) => {
+                  other ??= prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: "Featurebase couldn't be reached.", finishedAt: new Date() } });
+                  await Promise.race([other, waitingOnLock()]);
+                  return records.createMany(args);
+                },
+              }
+            : (Reflect.get(target, key) as unknown),
+      });
+      return fn(watched);
+    }, options)) as never);
+  await handlers.importStep({ importId: row.id }, log);
+  await other;
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", error: "", counts: { contacts: { imported: 3, leftOut: {} } } });
+});
+
+/** Resolves once a query in this database waits on a lock (10 seconds at most). */
+async function waitingOnLock() {
+  await expect
+    .poll(async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n, { timeout: 10_000 })
+    .toBeGreaterThan(0);
+}
 
 /** A page's work, for the helpers later parts use. */
 const pageJob = async () => {

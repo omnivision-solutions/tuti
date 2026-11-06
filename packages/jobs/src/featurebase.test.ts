@@ -72,6 +72,48 @@ test("a wait Featurebase asks for is honoured, up to a minute: Retry-After in se
   }
 });
 
+test("an answer cut off or not JSON is tried again; one that never reads fails as Featurebase's, not the client's", async () => {
+  fake.failNext(200, 1, {}, '{"object":"list","da');
+  expect((await client().get<{ data: unknown[] }>("/admins")).data).toHaveLength(2);
+  expect(waits).toEqual([500]);
+
+  waits.length = 0;
+  fake.failNext(200, 5, {}, "<html>");
+  await expect(client().get("/admins")).rejects.toEqual(new FeaturebaseError(0, "Featurebase's answer couldn't be read."));
+  expect(waits).toEqual([500, 1000, 2000, 4000]);
+});
+
+test("with a deadline, nothing waits or starts past it: the last answer's error comes back instead", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(Date.parse("2026-11-05T12:00:00Z"));
+    // Waiting moves the clock on, as the real wait would.
+    const api = featurebase(FAKE_FEATUREBASE_KEY, {
+      deadline: Date.now() + 100_000,
+      wait: async (ms) => {
+        waits.push(ms);
+        vi.setSystemTime(Date.now() + ms);
+      },
+    });
+    fake.failNext(429, 5, { "retry-after": "30" });
+    await expect(api.get("/admins")).rejects.toMatchObject({ status: 429 });
+    // A fourth wait would end past the deadline.
+    expect(waits).toEqual([30_000, 30_000, 30_000]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a list goes on until Featurebase's cursor is null, through an empty page; a cursor that doesn't move ends it", async () => {
+  const first = Buffer.from("0").toString("base64url");
+  fake.failNext(200, 1, {}, JSON.stringify({ object: "list", data: [], nextCursor: first }));
+  const api = client();
+  expect(await api.page("/contacts", null)).toEqual({ items: [], next: first });
+  expect((await api.page<{ id: string }>("/contacts", first)).items).toHaveLength(3);
+  fake.failNext(200, 1, {}, JSON.stringify({ object: "list", data: [], nextCursor: first }));
+  expect(await api.page("/contacts", first)).toEqual({ items: [], next: null });
+});
+
 test("a key Featurebase refuses fails at once, with Featurebase's words; so does a part it can't read", async () => {
   await expect(client("sk_wrong").get("/admins")).rejects.toMatchObject({ status: 401, message: "Invalid API key" });
   fake.forbidden.add("/v2/contacts");
@@ -98,6 +140,9 @@ test("a contact becomes a user: their app's id (else Featurebase's), details the
     image: "https://images.example.com/mira.png",
     properties: { company: "Fenwick Labs", plan: "pro", seats: 12, beta: true, features: ["sso"] },
   });
+  // Their app's id as the app's SSO sends it, spaces and all; only a blank one isn't one.
+  expect(contactDetails({ id: "c3", userId: " app-3 " }).externalId).toBe(" app-3 ");
+  expect(contactDetails({ id: "c4", userId: "  " }).externalId).toBe("featurebase:c4");
   // Nothing of their own: Featurebase's id, and only what they have (Featurebase's placeholder avatar isn't theirs).
   expect(contactDetails({ id: "c2", userId: null, name: "", email: null, profilePicture: "https://global.featurebase-attachments.com/a/shapes/3_200_200.png", companies: [] })).toEqual({
     externalId: "featurebase:c2",

@@ -61,8 +61,11 @@ export type FeaturebaseFake = {
   requests: string[];
   /** Lists answered 403 with their items (e.g. "/v2/contacts"), as for a key that can't read them. */
   forbidden: Set<string>;
-  /** The next `times` API requests fail with `status` (e.g. 429, 500), with these response headers (Retry-After, X-RateLimit-Reset). */
-  failNext(status: number, times?: number, headers?: Record<string, string>): void;
+  /**
+   * The next `times` API requests answer `status` (e.g. 429, 500), with these response headers (Retry-After,
+   * X-RateLimit-Reset) and `body` as it is (default an error's JSON): a 200 with a cut-off body, an empty page.
+   */
+  failNext(status: number, times?: number, headers?: Record<string, string>, body?: string): void;
   /** Serves a file at `<url>/files/<name>` (no key, like Featurebase's attachments' links); returns its address. */
   file(name: string, type: string, body: Buffer): string;
   close(): Promise<void>;
@@ -71,7 +74,7 @@ export type FeaturebaseFake = {
 /** A local stand-in for Featurebase's API (v2): it checks the key and serves fixtures, paged with opaque cursors. */
 export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
   const files = new Map<string, { type: string; body: Buffer }>();
-  let failing: { status: number; times: number; headers: Record<string, string> } | undefined;
+  let failing: { status: number; times: number; headers: Record<string, string>; body?: string } | undefined;
 
   const server = createServer((req, res) => {
     const send = (status: number, body: unknown) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
@@ -85,9 +88,9 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
       return send(401, { success: false, message: "Invalid API key" });
     }
     if (failing) {
-      const { status, headers } = failing;
+      const { status, headers, body } = failing;
       failing = --failing.times > 0 ? failing : undefined;
-      return res.writeHead(status, { "Content-Type": "application/json", ...headers }).end(JSON.stringify({ error: { type: "api_error", message: "fake failure", status } }));
+      return res.writeHead(status, { "Content-Type": "application/json", ...headers }).end(body ?? JSON.stringify({ error: { type: "api_error", message: "fake failure", status } }));
     }
     if (req.method !== "GET") {
       return send(405, { message: "the fake is read-only" });
@@ -128,7 +131,7 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     pageSize: 100,
     requests: [],
     forbidden: new Set(),
-    failNext: (status, times = 1, headers = {}) => void (failing = { status, times, headers }),
+    failNext: (status, times = 1, headers = {}, body) => void (failing = { status, times, headers, body }),
     file: (name, type, body) => {
       files.set(name, { type, body });
       return `${url}/files/${encodeURIComponent(name)}`;

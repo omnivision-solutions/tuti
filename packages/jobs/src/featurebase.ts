@@ -6,7 +6,7 @@
 export const FEATUREBASE_VERSION = "2026-08-19.orbit";
 const FEATUREBASE_URL = "https://do.featurebase.app";
 
-/** Featurebase answered with an error (`status`), or couldn't be reached (0). */
+/** Featurebase answered with an error (`status`), or couldn't be reached or read (0). */
 export class FeaturebaseError extends Error {
   constructor(
     readonly status: number,
@@ -46,8 +46,14 @@ async function messageOf(response: Response): Promise<string> {
   return typeof message === "string" ? message : `Featurebase answered ${response.status}`;
 }
 
-/** A client for one API key. `wait` is how it sleeps between tries (tests skip it). */
-export function featurebase(key: string, { wait = pause }: { wait?: (ms: number) => Promise<unknown> } = {}) {
+const UNREACHABLE = "Featurebase couldn't be reached.";
+const UNREADABLE = "Featurebase's answer couldn't be read.";
+
+/**
+ * A client for one API key. `wait` is how it sleeps between tries (tests skip it). `deadline` (epoch ms): no request
+ * starts, nor waits to be tried again, past it, so an import's page fits its job's time limit with time left to save.
+ */
+export function featurebase(key: string, { wait = pause, deadline = Infinity }: { wait?: (ms: number) => Promise<unknown>; deadline?: number } = {}) {
   const base = (process.env.FEATUREBASE_API_URL || FEATUREBASE_URL).replace(/\/$/, "");
 
   async function get<T>(path: string, query: Record<string, string | number | null | undefined> = {}): Promise<T> {
@@ -59,32 +65,43 @@ export function featurebase(key: string, { wait = pause }: { wait?: (ms: number)
     }
     for (let attempt = 0; ; attempt++) {
       let response: Response | null = null;
+      // An answer that was cut off or isn't JSON is tried again like no answer.
+      let failure = new FeaturebaseError(0, UNREACHABLE);
       try {
         response = await fetch(url, {
           headers: { Authorization: `Bearer ${key}`, "Featurebase-Version": FEATUREBASE_VERSION, Accept: "application/json" },
-          signal: AbortSignal.timeout(TIMEOUT_MS),
+          signal: AbortSignal.timeout(Math.max(0, Math.min(TIMEOUT_MS, deadline - Date.now()))),
         });
+        if (response.ok) {
+          return (await response.json()) as T;
+        }
       } catch {
-        // No answer: tried again like a 5xx.
-      }
-      if (response?.ok) {
-        return (await response.json()) as T;
+        if (response?.ok) {
+          failure = new FeaturebaseError(0, UNREADABLE);
+          response = null;
+        }
       }
       if ((!response || response.status === 429 || response.status >= 500) && attempt < RETRIES) {
-        await response?.body?.cancel();
-        await wait(waitFor(response, attempt));
-        continue;
+        const ms = waitFor(response, attempt);
+        if (Date.now() + ms < deadline) {
+          await response?.body?.cancel();
+          await wait(ms);
+          continue;
+        }
       }
-      throw response ? new FeaturebaseError(response.status, await messageOf(response)) : new FeaturebaseError(0, "Featurebase couldn't be reached.");
+      throw response ? new FeaturebaseError(response.status, await messageOf(response)) : failure;
     }
   }
 
-  /** One page of a list (`cursor` null: the first), 100 at most; empty items (Featurebase sends null for some) left out. */
+  /**
+   * One page of a list (`cursor` null: the first), 100 at most; empty items (Featurebase sends null for some) left out.
+   * The list goes on until Featurebase's cursor is null, as it documents, through empty pages too; a cursor that doesn't
+   * move ends it, so a list can't loop.
+   */
   async function page<T>(path: string, cursor: string | null, query: Record<string, string | number> = {}): Promise<Page<T>> {
     const body = await get<{ data: (T | null)[]; nextCursor?: string | null }>(path, { ...query, limit: 100, cursor });
     const items = body.data.filter((item): item is T => item !== null);
-    // An empty page ends it too, whatever its cursor says.
-    return { items, next: body.data.length > 0 && body.nextCursor ? body.nextCursor : null };
+    return { items, next: body.nextCursor && body.nextCursor !== cursor ? body.nextCursor : null };
   }
 
   return { get, page };
