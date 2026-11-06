@@ -82,8 +82,10 @@ export const importTitle = (run: ImportView) =>
 
 /** What an import brought so far, and what it left out and why, in a sentence or two. */
 export function importSummary(run: ImportView) {
-  const kinds = Object.entries(run.counts);
-  const brought = kinds.map(([kind, count]) => kindCount(kind, count.imported)).join(", ");
+  // In the order the import brings them (the database keeps them in its own); a kind only left out isn't "brought".
+  const rank = (kind: string) => (kind in KINDS ? Object.keys(KINDS).indexOf(kind) : Infinity);
+  const kinds = Object.entries(run.counts).sort(([a], [b]) => rank(a) - rank(b));
+  const brought = kinds.flatMap(([kind, count]) => (count.imported > 0 ? [kindCount(kind, count.imported)] : [])).join(", ");
   const leftOut = kinds.flatMap(([kind, count]) => Object.entries(count.leftOut).map(([reason, n]) => `${kindCount(kind, n)} ${reason}`));
   const done = run.state === "running" ? (brought ? `${brought} so far.` : "Starting…") : `${brought || "Nothing"} brought across.`;
   return [done, leftOut.length > 0 && `Left out: ${leftOut.join("; ")}.`, run.error].filter(Boolean).join(" ");
