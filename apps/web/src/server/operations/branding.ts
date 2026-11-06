@@ -25,7 +25,7 @@ import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, type WidgetLink } from "./wi
 /**
  * The portal's and its docs' look (Phase 10, Customize): logos, favicon, accent colour, header and
  * footer links, "Powered by", what readers can do with an article, the docs' home, the default colour
- * scheme, the logo's text and link, links above the docs' tree, a "Contact us" button, and the
+ * scheme, the logo's text and link, links above the docs' tree, and the
  * portal's search listing (SEO).
  */
 
@@ -59,7 +59,6 @@ export type Branding = {
   logoLink: string | null;
   /** Above the docs' tree. */
   sidebarLinks: WidgetLink[];
-  /** The header's "Contact us" button, or null for none. */
   /** How the portal shows in search results and where it's shared: its title (empty: the project's name) and description. */
   seo: { title: string; description: string };
   /** The image a link to the portal shows (Open Graph); null for none. */
