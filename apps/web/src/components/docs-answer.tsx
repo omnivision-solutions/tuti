@@ -13,6 +13,7 @@ import { useWidgetSignIn } from "@/components/widget-feedback";
 import { useVisitor, visitorStore } from "@/components/widget-messages";
 import { answerBlocks } from "@/lib/answer-text";
 import { askDocs, escalateDocs, rateDocsAnswer } from "@/server/docs-readers";
+import { widgetStartConversation } from "@/server/widget-inbox";
 import type { DocsAnswer as Answer } from "@/server/operations/docs-ask";
 import { useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref } from "@/components/portal-base";
@@ -64,7 +65,7 @@ export function DocsAnswer({
     });
 
   const person = askAPerson && answer && (
-    <AskAPerson projectSlug={projectSlug} questionId={answer.id} defaultEmail={askAPerson.email} widget={widget} />
+    <AskAPerson projectSlug={projectSlug} questionId={answer.id} question={question} defaultEmail={askAPerson.email} widget={widget} />
   );
 
   // On the portal, the conversation can go on in the assistant (the widget has none).
@@ -223,16 +224,20 @@ export function AnswerSources({
  * "Ask a person": the visitor's email (prefilled when we know it: their account, or in the widget
  * the email the customer's page signs them in with) and an optional note, then the question starts a
  * conversation in the team's inbox (docs.escalate), whose reply shows in Messages. Opens in place, taking the row's width.
+ * Without `questionId` (in the widget, when asking the AI failed: nothing was recorded), the question and their note start
+ * the conversation as a message of theirs, as Messages would.
  */
 export function AskAPerson({
   projectSlug,
   questionId,
+  question,
   defaultEmail,
   widget,
   onLeave,
 }: {
   projectSlug: string;
-  questionId: string;
+  questionId: string | null;
+  question: string;
   defaultEmail: string;
   widget: boolean;
   /** Closes the assistant around it when "Open Messages" leaves for the Messages tab. */
@@ -260,13 +265,17 @@ export function AskAPerson({
     const email = String(form.get("email") ?? "");
     startTransition(async () => {
       const who = { token: signedIn?.token ?? null, visitor: signedIn ? null : (visitor?.token ?? null) };
-      const result = await escalateDocs(projectSlug, questionId, email, String(form.get("note") ?? ""), widget ? "widget" : "portal", who);
-      if (result.error) {
+      const note = String(form.get("note") ?? "");
+      const result = questionId
+        ? await escalateDocs(projectSlug, questionId, email, note, widget ? "widget" : "portal", who)
+        : await widgetStartConversation(projectSlug, who, [question, note.trim()].filter(Boolean).join("\n\n"), signedIn ? undefined : email);
+      if ("error" in result && result.error) {
         setError(result.error);
         return;
       }
-      if (result.visitor) {
-        visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
+      const visitorToken = "visitor" in result ? result.visitor : undefined;
+      if (visitorToken) {
+        visitorStore.write(projectSlug, { token: visitorToken, email: email.trim() });
       }
       setSent(true);
     });

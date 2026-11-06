@@ -18,6 +18,7 @@ import { useWidgetSignIn } from "@/components/widget-feedback";
 import { replyTime, subjectFrom, timeAgo } from "@/lib/format";
 import { keepFocus } from "@/lib/keep-focus";
 import { askedBy, loadOrder } from "@/lib/load-order";
+import { MAX_QUESTION } from "@/lib/widget-docs";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
   widgetConversation,
@@ -598,10 +599,12 @@ function Composer({
   email,
   send,
   upload,
+  maxLength,
 }: {
   placeholder: string;
   label: string;
   email?: string;
+  maxLength?: number;
   send: (text: string, email: string, attachments: string[]) => Promise<{ error?: string }>;
   /** Where files they attach upload (with "Attach files"); without it, there's no attaching. */
   upload?: StartUpload;
@@ -647,6 +650,7 @@ function Composer({
         aria-label={label}
         placeholder={placeholder}
         value={text}
+        maxLength={maxLength}
         rows={3}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
@@ -688,8 +692,9 @@ const AiFirstContext = createContext(false);
 const AiFirst = ({ value, children }: { value: boolean; children: ReactNode }) => <AiFirstContext value={value}>{children}</AiFirstContext>;
 
 /**
- * With AI first: a new message without files is a question for the docs' assistant, which takes the panel with its answer
- * and "Ask a person" (which starts the conversation, with the question and the answer). Null otherwise: it goes to the team.
+ * With AI first: a new message without files, short enough to be a question (MAX_QUESTION), is one for the docs'
+ * assistant, which takes the panel with its answer and "Ask a person" (which starts the conversation, with the question and
+ * the answer). Null otherwise, and false for a message it doesn't take: it goes to the team.
  */
 function useAskFirst() {
   const assistant = useDocsAssistant();
@@ -697,7 +702,7 @@ function useAskFirst() {
     return null;
   }
   return (text: string, attachments: string[]) => {
-    if (attachments.length > 0) {
+    if (attachments.length > 0 || text.trim().length > MAX_QUESTION) {
       return false;
     }
     assistant.ask(text);
@@ -731,8 +736,9 @@ function FirstMessage({
       <Composer
         label="Message"
         placeholder="How can we help?"
-        // Asked first, the email comes with "Ask a person".
+        // Asked first, the email comes with "Ask a person"; it's a question, so no longer than one.
         email={askFirst ? undefined : ""}
+        maxLength={askFirst ? MAX_QUESTION : undefined}
         send={async (text, email) => {
           if (askFirst?.(text, [])) {
             return {};
@@ -779,7 +785,9 @@ function NewConversation({
         email={visitorEmail ?? undefined}
         upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
         send={async (text, email, attachments) => {
+          // Asked first: behind the assistant, their list, where a conversation it starts shows.
           if (askFirst?.(text, attachments)) {
+            onBack();
             return {};
           }
           const result = await widgetStartConversation(projectSlug, auth, text, visitorEmail === null ? undefined : email, attachments);

@@ -164,7 +164,8 @@ export async function saveWidgetSettings(projectSlug: string, _state: FormState,
     position: text(formData.get("position")) as "bottom-right" | "bottom-left",
     links: linksFrom(formData, "link"),
     onPortal: formData.get("onPortal") === "on",
-    aiFirst: formData.get("aiFirst") === "on",
+    // Only with its switch on the form (it isn't where the server has no AI answers).
+    ...(formData.has("aiFirstShown") && { aiFirst: formData.get("aiFirst") === "on" }),
     ...(formData.has("icon") && { icon: text(formData.get("icon")) as WidgetIcon, iconImage: text(formData.get("iconImage")) || null }),
     // With Home's fields: its heading and greeting, and the parts switched on (`show-<part>`), the rest turned off.
     ...(formData.has("greeting") && {

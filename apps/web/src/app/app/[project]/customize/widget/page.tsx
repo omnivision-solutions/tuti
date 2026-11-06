@@ -13,6 +13,7 @@ import { appPortalMount } from "@/lib/app-portal";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { siteMount } from "@/server/custom-domains";
 import { getAdminProject } from "@/server/membership";
+import { answersEnabled } from "@/server/operations/docs-ask";
 import { DEFAULT_WIDGET_COLOR, servedIcon, widgetSettings } from "@/server/operations/widget";
 
 /** Customize → Widget: the launcher on the team's site and the panel's Home, beside the widget open on a stand-in for it. */
@@ -71,7 +72,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
         onPortal={widget.onPortal}
         // Under a path of the team's site, or Tuti's own portal under the app's.
         underSitePath={!!mount || appPortalMount()?.slug === slug}
-        aiFirst={widget.aiFirst}
+        aiFirst={answersEnabled() ? widget.aiFirst : null}
       />
     </CustomizeShell>
   );

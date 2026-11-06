@@ -321,6 +321,10 @@ function AssistantReply({
         <Button variant="outline" size="sm" onClick={onRetry}>
           Try again
         </Button>
+        {/* In the widget, where Messages asks the AI first, the team is still a way through: the question as it was, unanswered. */}
+        {widget && askAPerson && (
+          <AskAPerson projectSlug={slug} questionId={null} question={turn.question} defaultEmail={askAPerson.email} widget onLeave={onLeave} />
+        )}
       </div>
     );
   }
@@ -333,7 +337,7 @@ function AssistantReply({
     );
   }
   const person = askAPerson && (
-    <AskAPerson projectSlug={slug} questionId={answer.id} defaultEmail={askAPerson.email} widget={widget} onLeave={onLeave} />
+    <AskAPerson projectSlug={slug} questionId={answer.id} question={turn.question} defaultEmail={askAPerson.email} widget={widget} onLeave={onLeave} />
   );
   // In the widget, an article opens in the panel's Docs tab (the portal's page is a link away from there).
   const sourceHref = widget ? (article: string) => `/widget?${new URLSearchParams({ tab: "docs", article })}` : undefined;
@@ -344,6 +348,7 @@ function AssistantReply({
         <Button variant="outline" size="sm" onClick={onRetry}>
           Try again
         </Button>
+        {person}
         {answer.sources.length > 0 && <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />}
       </div>
     );

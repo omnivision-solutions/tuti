@@ -101,9 +101,9 @@ test("the app's form saves the settings, skipping empty link rows and refusing h
     title: "",
     greeting: "",
     hidden: [],
-    // The form's switches for the portal and AI first, left off.
+    // The form's switch for the portal, left off; AI first's isn't on this form (no aiFirstShown), so it stays.
     onPortal: false,
-    aiFirst: false,
+    aiFirst: true,
   });
   // With Home's fields, its heading, greeting and the parts switched on; the rest are turned off.
   const withHome = form([]);
@@ -188,7 +188,16 @@ test("a new message in Messages goes to the AI first unless the team turns it of
   data.set("label", "Help");
   data.set("color", "#5b21b6");
   data.set("position", "bottom-right");
+  data.set("aiFirstShown", "1");
   data.set("aiFirst", "on");
   expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
   expect(await call(getWidgetSettings, team(), {})).toMatchObject({ aiFirst: true, onPortal: false });
+  // Shown and switched off, it's off; a form without it (a server without AI answers) leaves it as it is.
+  data.delete("aiFirst");
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ aiFirst: false });
+  data.delete("aiFirstShown");
+  await update({ aiFirst: true });
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ aiFirst: true });
 });
