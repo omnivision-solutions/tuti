@@ -75,7 +75,11 @@ export function DocsAssistantProvider({
   // back to the list), and the page's mark (data-assistant-return, its New message) takes it instead.
   const opener = useRef<HTMLElement | null>(null);
   const show = useCallback(() => {
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focused = document.activeElement;
+    // Asked from its own box (a follow-up), it's open already: what opened it stays the opener.
+    if (!(focused instanceof HTMLElement && focused.closest('[data-slot="sheet-content"]'))) {
+      opener.current = focused instanceof HTMLElement ? focused : null;
+    }
     setOpen(true);
   }, []);
   // In the widget, without the portal's sign-in: whoever the customer's site signs in (Tuti.identify),
@@ -390,7 +394,8 @@ function AssistantReply({
             Try again
           </Button>
         )}
-        {person}
+        {/* In the widget, where Messages asks the AI first; the portal's assistant is as it was. */}
+        {widget && person}
         {answer.sources.length > 0 && <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />}
       </div>
     );

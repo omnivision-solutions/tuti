@@ -10,7 +10,7 @@ import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, newPerson, png, postFeedback, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { latestEmailTo, linkIn } from "./mail";
-import { modelRequests, nextModelReply } from "./model";
+import { heldModelReply, modelRequests, nextModelReply, releaseModelReply } from "./model";
 import { similar } from "./openai";
 
 /** An HS256 SSO token, as a customer's app signs it (see docs/sso.md). */
@@ -734,7 +734,8 @@ test("the portal shows the project's own widget, until the team turns it off in 
 });
 
 test("a new message in the widget's Messages gets the AI's answer first, with Ask a person; turned off, it goes to the team", async ({ browser }, testInfo) => {
-  test.setTimeout(90_000);
+  // The AI's 20-second timeout is waited out once.
+  test.setTimeout(150_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -743,6 +744,8 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   const question = `How do I add a colleague to Acme ${slug}?`;
   const body = "Owners and admins send invites from the Team page.";
   await similar(question, `Inviting your team\n\n${body}`, 0.8);
+  const fourth = `How do I remove a colleague from Acme ${slug}?`;
+  await similar(fourth, `Inviting your team\n\n${body}`, 0.8);
   await api("/support", { inbox: true }, "PATCH");
 
   // Nothing yet for the AI to answer from (sample articles are never embedded; a hidden one isn't read): a message goes
@@ -802,15 +805,22 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   // (Nothing in the docs is close to it: "I don't know", with Ask a person too.)
   const second = `Can I invite people in bulk to Acme ${slug}?`;
   await widget.getByRole("button", { name: "New message" }).click();
+  // They correct their address in the box: Ask a person starts with that one.
+  const corrected = `e2e-corrected-${slug}@example.com`;
+  await widget.getByRole("textbox", { name: "Your email" }).fill(corrected);
   await widget.getByRole("textbox", { name: "Message" }).fill(second);
   await send.click();
   await expect(ai.getByText(second)).toBeVisible();
   await expect(ai.getByText("I don't know")).toBeVisible();
   await ai.getByRole("button", { name: "Ask a person" }).last().click();
-  await expect(ai.getByRole("form", { name: "Ask a person" }).getByRole("textbox", { name: "Your email" })).toHaveValue(`e2e-asker-${slug}@example.com`);
+  await expect(ai.getByRole("form", { name: "Ask a person" }).getByRole("textbox", { name: "Your email" })).toHaveValue(corrected);
   await nextModelReply("They want to invite people in bulk.", second);
   await ai.getByRole("form", { name: "Ask a person" }).getByRole("button", { name: "Send to the team" }).click();
   await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.").last()).toBeVisible();
+  // A follow-up asked in the assistant's own box doesn't change what focus goes back to.
+  await widget.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a follow-up" }).fill("And on mobile?");
+  await widget.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a follow-up" }).press("Enter");
+  await expect(ai.getByText("I don't know")).toHaveCount(2);
   await close.click();
   // Its Send went with the form (sending went back to the list): focus goes to New message there.
   await expect(widget.getByRole("button", { name: "New message" })).toBeFocused();
@@ -835,7 +845,9 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await expect(ai.getByRole("button", { name: "Try again" })).toBeVisible();
   await ai.getByRole("button", { name: "Ask a person" }).last().click();
   const direct = ai.getByRole("form", { name: "Ask a person" });
-  await expect(direct.getByRole("textbox", { name: "Your email" })).toHaveValue(`e2e-asker-${slug}@example.com`);
+  // No answer of the AI's to pass on: the form says only the question goes.
+  await expect(direct).toContainText("We'll pass your question to the team. They'll reply in Messages.");
+  await expect(direct.getByRole("textbox", { name: "Your email" })).toHaveValue(corrected);
   await direct.getByRole("button", { name: "Send to the team" }).click();
   await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toHaveCount(3);
   // Passed to the team, it isn't asked again (that would be a second way to the team for it).
@@ -844,6 +856,22 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   // (The first question, passed to the team before, still says so: the latest.)
   await ai.getByRole("link", { name: "Open Messages" }).last().click();
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(third);
+
+  // The AI couldn't answer in time (its reply held past the timeout): Ask a person passes it on, and Try again goes.
+  const late = `late-${slug}`;
+  await heldModelReply(JSON.stringify({ answer: "Too late.", sources: ["s1"] }), fourth, late);
+  await widget.getByRole("button", { name: "New message" }).click();
+  await widget.getByRole("textbox", { name: "Message" }).fill(fourth);
+  await send.click();
+  await expect(ai.getByText("The AI couldn't answer just now.")).toBeVisible({ timeout: 40_000 });
+  await releaseModelReply(late);
+  await ai.getByRole("button", { name: "Ask a person" }).last().click();
+  await nextModelReply("They want to remove a colleague.", fourth);
+  await ai.getByRole("form", { name: "Ask a person" }).getByRole("button", { name: "Send to the team" }).click();
+  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toHaveCount(4);
+  await expect(ai.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  await close.click();
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(fourth);
 
   // Longer than a question, a message goes straight to the team.
   const long = `Here is everything about our setup. ${"We run Acme across three offices with shared calendars. ".repeat(6)}`;
