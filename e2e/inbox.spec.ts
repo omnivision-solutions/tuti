@@ -691,6 +691,9 @@ test("the details beside a conversation hide for every conversation, after a rel
   await owner.reload();
   await expect(show).toBeVisible();
   await expect(posts).toBeHidden();
+  // Hidden as the server sends it, before any script runs: no flash of the column on load.
+  const html = await (await owner.request.get(`/app/${slug}/inbox/2`)).text();
+  expect(html).toContain('data-details="hidden"');
   await expect(about).toBeHidden();
 
   // Shown again, as it was.
