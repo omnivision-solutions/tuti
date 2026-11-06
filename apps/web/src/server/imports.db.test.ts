@@ -82,8 +82,8 @@ test("an import with a part this worker doesn't have (a newer web started it mid
 });
 
 test("a Featurebase that's slow or rate limited is said at once on starting, not waited out", async () => {
-  // Each answer asks for a minute's wait: the start doesn't wait, it says try again.
-  fake.failNext(429, 5, { "retry-after": "60" });
+  // The answer asks for a minute's wait: the start doesn't wait it out, it says try again at once.
+  fake.failNext(429, 1, { "retry-after": "60" });
   const began = Date.now();
   expect(await refusal(start())).toMatchObject({ status: 502, code: "unavailable" });
   expect(Date.now() - began).toBeLessThan(5_000);
