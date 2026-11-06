@@ -171,11 +171,13 @@ export function SetupImport({
   const [started, setStarted] = useState<string | null>(null);
   const focused = useRef<string | null>(null);
   const continueRef = useRef<HTMLAnchorElement>(null);
+  // In Settings there's no Continue: focus goes to the import's progress, as the form it was in goes.
+  const progressRef = useRef<HTMLDivElement>(null);
   const shownId = latest?.id;
   useEffect(() => {
     if (started && shownId === started && focused.current !== started) {
       focused.current = started;
-      continueRef.current?.focus();
+      (continueRef.current ?? progressRef.current)?.focus();
     }
   }, [started, shownId]);
   // Images and files need media storage: said before starting, while a part that has them is offered.
@@ -226,7 +228,7 @@ export function SetupImport({
       </p>
       <CardContent className={from === "featurebase" && latest ? undefined : "sr-only"}>
         {from === "featurebase" && latest && (
-          <div className="rounded-xl border p-4">
+          <div ref={progressRef} tabIndex={-1} className="rounded-xl border p-4 outline-none">
             <p className="mb-3 text-sm font-medium">
               {importTitle(latest)}
               <span className="block font-normal text-muted-foreground">

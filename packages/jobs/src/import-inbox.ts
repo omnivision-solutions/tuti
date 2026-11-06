@@ -394,7 +394,7 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
 /**
  * A conversation an import brought before, read again as it changed in Featurebase: its messages after the newest one
  * brought (`since`, read under the lock) are added, nothing emailed, and it stands as they leave it (a person's new
- * message waits for a reply); what the team did here meanwhile stays.
+ * message waits for a reply) unless something was said here since, which has the latest word.
  */
 async function addMessages(tx: Tx, job: ImportJob, read: Read, users: Map<string, string>, brought: { id: string; since: Date }) {
   const messages = read.messages.filter((m) => m.createdAt > brought.since);
@@ -405,7 +405,9 @@ async function addMessages(tx: Tx, job: ImportJob, read: Read, users: Map<string
     await tx.conversation.update({
       where: { id: brought.id },
       data: {
-        ...(spoken.length > 0 && { ...standing(read, spoken, here.status === "OPEN" ? here.waitingSince : null), lastMessageAt: latest(here.lastMessageAt, spoken.at(-1)!.createdAt) }),
+        // Where it stands moves on only when Featurebase has the latest word: a message here since is newer news.
+        ...(spoken.length > 0 &&
+          spoken.at(-1)!.createdAt > here.lastMessageAt && { ...standing(read, spoken, here.status === "OPEN" ? here.waitingSince : null), lastMessageAt: spoken.at(-1)!.createdAt }),
         activeAt: latest(here.activeAt, lastActive(read.conversation)),
         // Told of in Featurebase, as the rest of its history.
         notifiedAt: latest(here.notifiedAt, messages.at(-1)!.createdAt),

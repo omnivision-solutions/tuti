@@ -328,36 +328,40 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
   const fresh = contacts.filter((contact) => !known.has(contact.id));
   if (fresh.length > 0) {
     // One per id in their app: two Featurebase contacts with the same one are one user. And one per address in a
-    // project: a contact new by its id whose address a user here has (signed in, or brought by any import) is that
-    // user, and two new ones with one address are one.
+    // project: a customer without an id in their app whose address a user here has (signed in, or brought by any
+    // import) is that user, and one whose address another customer on the page has is theirs. Never by a lead's: anyone
+    // can type any address as a lead, and would see that person's conversations. Someone with an id in their app keeps
+    // it, so the app's SSO finds them.
     const all = fresh.map((contact) => contactDetails(contact));
-    const existing = new Set(
-      (await tx.ssoIdentity.findMany({ where: { projectId: job.projectId, externalId: { in: all.map((d) => d.externalId) } }, select: { externalId: true } })).map((row) => row.externalId),
-    );
-    const emails = [...new Set(all.flatMap((d) => (d.email ? [d.email.toLowerCase()] : [])))];
+    const byAddress = (contact: FeaturebaseContact) => (contact.type !== "lead" && !contact.userId?.trim() && contact.email?.trim().toLowerCase()) || null;
+    const emails = fresh.flatMap((contact) => byAddress(contact) ?? []);
     const byEmail = new Map(
-      (
-        await tx.$queryRaw<{ email: string; userId: string }[]>`
-          SELECT DISTINCT ON (email) email, "userId" FROM sso_identity
-          WHERE "projectId" = ${job.projectId} AND email = ANY(${emails}::text[]) ORDER BY email, "createdAt" ASC`
-      ).map((row) => [row.email, row.userId]),
+      emails.length === 0
+        ? []
+        : (
+            await tx.$queryRaw<{ email: string; userId: string }[]>`
+              SELECT DISTINCT ON (email) email, "userId" FROM sso_identity
+              WHERE "projectId" = ${job.projectId} AND email = ANY(${emails}::text[]) ORDER BY email, "createdAt" ASC`
+          ).map((row) => [row.email, row.userId]),
     );
     const details = new Map<string, UserDetails>();
     const firstWith = new Map<string, string>();
     const linked = new Map<string, { userId: string } | { externalId: string }>();
     fresh.forEach((contact, i) => {
       const d = all[i]!;
-      const email = d.email?.toLowerCase();
+      const email = byAddress(contact);
+      const user = email && byEmail.get(email);
       const first = email && firstWith.get(email);
-      if (email && !existing.has(d.externalId) && byEmail.has(email)) {
-        linked.set(contact.id, { userId: byEmail.get(email)! });
-      } else if (first && first !== d.externalId && !existing.has(d.externalId)) {
+      if (user) {
+        linked.set(contact.id, { userId: user });
+      } else if (first) {
         linked.set(contact.id, { externalId: first });
       } else {
         details.set(d.externalId, d);
         linked.set(contact.id, { externalId: d.externalId });
-        if (email && !firstWith.has(email)) {
-          firstWith.set(email, d.externalId);
+        const own = contact.type !== "lead" && d.email?.toLowerCase();
+        if (own && !firstWith.has(own)) {
+          firstWith.set(own, d.externalId);
         }
       }
     });

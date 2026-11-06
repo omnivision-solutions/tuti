@@ -170,7 +170,7 @@ test("a page run again, or another import, brings nothing twice; a number once g
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(1);
 });
 
-test("imported again, a conversation that changed in Featurebase gets its new messages, waiting for a reply again; one that didn't isn't read again", async () => {
+test("imported again, a conversation that changed in Featurebase gets its new messages, waiting for a reply again unless something was said here since; one that didn't change isn't read again", async () => {
   await importInbox();
   const before = await conversations();
   const emailed = mailbox.emails.length;
@@ -188,13 +188,29 @@ test("imported again, a conversation that changed in Featurebase gets its new me
     channel: "email",
     author: { id: "65f000000000000000000002", type: "customer", name: "Tobias Quill", email: "e2e-tobias@example.com", profilePicture: null },
   });
+  // Mira writes again in Featurebase too, but here the team has answered her since: that's the latest word.
+  const csv = fake.fixtures.conversations.find((c) => c.id === "1004")!;
+  const miraWrote = new Date(Date.now() - 43_200_000).toISOString();
+  Object.assign(csv, { lastActivityAt: miraWrote, updatedAt: miraWrote });
+  (csv.conversationParts as object[]).push({ object: "conversation_part", id: "p1006", partType: "user_msg", createdAt: miraWrote, updatedAt: miraWrote, bodyHtml: "<p>Thanks!</p>", channel: "desktop", author: { id: "65f000000000000000000001", type: "customer" } });
+  const answered = before.find((c) => c.subject === "Exporting to CSV")!;
+  const now = new Date();
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: answered.id, author: "TEAM", authorId: owner.id, channel: "WIDGET", body: "Glad it helped.", createdAt: now } });
+  await prisma.conversation.update({ where: { id: answered.id }, data: { status: "WAITING", waitingSince: null, lastMessageAt: now } });
   fake.requests.length = 0;
   const again = await importInbox();
 
-  expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r))).toEqual(["GET /v2/conversations/1003"]);
-  expect(again.counts).toMatchObject({ messages: { imported: 1 }, conversations: { imported: 0, leftOut: { "already brought across earlier": 3 } } });
+  expect(fake.requests.filter((r) => /\/conversations\/\w+/.test(r)).sort()).toEqual(["GET /v2/conversations/1003", "GET /v2/conversations/1004"]);
+  expect((await conversations()).find((c) => c.id === answered.id)).toMatchObject({
+    status: "WAITING",
+    waitingSince: null,
+    lastMessageAt: now,
+    messages: expect.arrayContaining([expect.objectContaining({ body: "Thanks!", author: "USER" })]),
+  });
+  expect(again.counts).toMatchObject({ messages: { imported: 2 }, conversations: { imported: 0, leftOut: { "already brought across earlier": 3 } } });
   const after = await conversations();
-  expect(after.map((c) => [c.number, c.subject, c.messages.length])).toEqual(before.map((c) => [c.number, c.subject, c.messages.length + (c.subject === "Invoice for October" ? 1 : 0)]));
+  // The team's reply here, and Mira's and Tobias's new messages.
+  expect(after.map((c) => [c.number, c.subject, c.messages.length])).toEqual(before.map((c) => [c.number, c.subject, c.messages.length + ({ "Exporting to CSV": 2, "Invoice for October": 1 }[c.subject] ?? 0)]));
   expect(after.find((c) => c.subject === "Invoice for October")).toMatchObject({
     status: "OPEN",
     waitingSince: new Date(wrote),
