@@ -86,16 +86,20 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await visitor.goto("/portal/docs");
   await expect(visitor.locator("#team-html")).toHaveText("From the team");
   await expect(visitor.locator("body")).toHaveAttribute("data-team-script", "ran");
-  // Not the project's own widget (Customize → Widget) yet: its panel's links don't keep the path. The tag is in the page as sent.
-  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(0);
+  // The project's own widget (Customize → Widget): its panel is under the path too, through the site, and so are its links.
+  await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("data-on-portal", "/portal");
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", new RegExp(`^${siteUrl().replace(/[.:]/g, "\\$&")}/portal/widget`));
+  const panel = visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" });
+  await expect(panel.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/portal/widget");
+  await panel.getByRole("link", { name: "Feedback" }).click();
+  await expect(panel.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(visitor, "portal-on-site-widget");
   const direct = await newPerson(browser, portalUrl(slug));
   await direct.goto("/portal/docs");
   await expect(direct.getByRole("heading", { name: "Docs" }).first()).toBeVisible();
   await expect(direct.locator("#team-html")).toHaveCount(0);
   await expect(direct.locator("body")).not.toHaveAttribute("data-team-script", "ran");
-  // Customize → Widget says so beside its switch.
-  await owner.goto(`/app/${slug}/customize/widget`);
-  await expect(owner.getByText("The launcher on every page of your portal too. Not yet while your portal is under a path of your site.")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/domain`);
 
   // Signing up, posting and signing out there, all under the path.

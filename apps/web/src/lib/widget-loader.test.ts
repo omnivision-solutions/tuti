@@ -389,6 +389,19 @@ test("the portal's own tag (data-on-portal): the panel is the page's own address
   expect((site.window.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url))).toContain("https://app.tuti.example/api/widget/latest?project=acme");
 });
 
+test("the portal's own tag under a path of the team's site: the panel is under that path; anything but a path is ignored", async () => {
+  const at = (value: string) => {
+    const page = loadWidget({ attributes: { "data-on-portal": value }, before: (page) => Object.assign(page.window, { location: { origin: "https://acme.example" } }) });
+    page.Tuti.open({ tab: "docs" });
+    return page.frame!.src;
+  };
+  expect(at("/help")).toBe("https://acme.example/help/widget?tab=docs");
+  expect(at("/help/center")).toBe("https://acme.example/help/center/widget?tab=docs");
+  for (const value of ["help", "//evil.example", "/help/", "/Help", "/help?x=1"]) {
+    expect(at(value)).toBe("https://acme.example/widget?tab=docs");
+  }
+});
+
 test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; unknown tabs are reported", async () => {
   const page = loadWidget({});
   page.Tuti.open({ tab: "whats-new" });

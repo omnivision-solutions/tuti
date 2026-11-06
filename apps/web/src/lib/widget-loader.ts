@@ -1,3 +1,4 @@
+import { BASE_PATTERN } from "./portal-base";
 import { SLUG_PATTERN } from "./project-slugs";
 import { WIDGET_ICONS } from "./widget-icons";
 import {
@@ -32,7 +33,8 @@ import {
  * their own button.
  *
  * `data-on-portal` is the portal's own tag (Customize → Widget): the panel is the page's own
- * origin's `/widget` (a custom domain's too, where the reader's session is), and the page
+ * origin's `/widget` (a custom domain's too, where the reader's session is), under the path its value
+ * names for a portal under a path of the team's site (`data-on-portal="/help"`: /help/widget), and the page
  * isn't one of the team's sites for Home's "Get set up".
  *
  * `data-theme` (or `TutiSettings.theme`) picks light or dark for every panel and the button, unless it has the team's own colour ("auto", the default,
@@ -87,7 +89,10 @@ export function widgetLoader(portalTemplate: string): string {
   var sidebar = display === "sidebar";
   var hideLauncher = display === "inline" || script.hasAttribute("data-hide-launcher") || settings.hideLauncher === true;
   var onPortal = script.hasAttribute("data-on-portal");
-  var portal = onPortal ? window.location.origin : ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
+  // On the portal, its value is the path the portal is under on the team's site (empty at its own address).
+  var portalPath = onPortal ? script.getAttribute("data-on-portal") : "";
+  if (!${BASE_PATTERN}.test(portalPath)) portalPath = "";
+  var portal = onPortal ? window.location.origin + portalPath : ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
   var origin = new URL(portal).origin;
   var api = new URL(script.src).origin;
   var seenKey = "tuti:seen:" + slug;
