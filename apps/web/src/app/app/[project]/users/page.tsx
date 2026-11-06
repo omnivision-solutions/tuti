@@ -91,10 +91,10 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
     return params.size > 0 ? `?${params}` : `/app/${slug}/users`;
   };
   const count = (n: number) => n.toLocaleString("en-GB");
-  /** Previous, which of them these are ("51–100 of 1,250"), and Next; above the table and below it. */
-  const pages = (label: string) =>
+  /** Previous, which of them these are ("51–100 of 1,250"), and Next; below the table only. */
+  const pages =
     (page > 1 || nextCursor) && (
-      <PageNav label={label} back={page > 1 ? { href: href({ to: page - 1 }), label: "Previous" } : null} on={nextCursor ? { href: href({ to: page + 1 }), label: "Next" } : null}>
+      <PageNav back={page > 1 ? { href: href({ to: page - 1 }), label: "Previous" } : null} on={nextCursor ? { href: href({ to: page + 1 }), label: "Next" } : null}>
         {users.length > 0 && `${count((page - 1) * PER_PAGE + 1)}–${count((page - 1) * PER_PAGE + users.length)} of ${count(total)}`}
       </PageNav>
     );
@@ -163,7 +163,6 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
         )
       ) : (
         <>
-          {pages("Pages")}
           {/* The whole width (data-wide), for the team's columns. */}
           <Card size="sm" data-wide>
             <CardContent className="overflow-x-auto">
@@ -239,7 +238,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
         </>
       )}
 
-      {pages("More pages")}
+      {pages}
     </>
   );
 }
