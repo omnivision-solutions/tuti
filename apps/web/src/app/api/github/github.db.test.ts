@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { type Prisma, prisma } from "@tuti/db";
 import { listedRepositories, syncRepositories } from "@tuti/jobs";
 import { type GithubFake, startGithubFake } from "@tuti/testkit";
@@ -240,6 +242,16 @@ describe("repositories", () => {
     expect.soft(listedRepositories((await connected(theirs.id))!.repositories).map((repo) => repo.fullName)).not.toContain("acme/billing");
     expect(await add(theirs.slug, billing)).toEqual({ error: NOT_LISTED });
     expect(await included(theirs.id)).toEqual([]);
+  });
+
+  test("a list saved before it was the connecting person's keeps only the project's own repositories", async () => {
+    github.user("code-r18", [{ id: 791, account: "acme", repositories: [web, mobile] }]);
+    await connect(project.slug, 791, "code-r18");
+    await add(project.slug, web);
+    const migration = readFileSync(new URL("../../../../../../packages/db/prisma/migrations/20261106180000_github_lists_narrowed/migration.sql", import.meta.url), "utf8");
+    await prisma.$executeRawUnsafe(migration);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web] });
+    expect(await add(project.slug, mobile)).toEqual({ error: NOT_LISTED });
   });
 
   test("an account with thousands of repositories lists them all", async () => {
