@@ -32,23 +32,23 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
     const open = (ask: string | true) => {
       const focused = document.activeElement;
       const returnFocus = focused instanceof HTMLElement && !focused.closest('[role="dialog"], #tuti-widget') ? focused : outsideDialogs.current;
-      const now = () => {
+      const since = Date.now();
+      const attempt = () => {
         const tuti = (window as { Tuti?: Tuti }).Tuti;
         if (tuti) {
           tuti.open({ ask, returnFocus });
-        } else {
-          // No widget after all (its script failed, or an older copy took the page): the docs' search, with its AI answer.
-          window.location.assign(at(ask === true ? "/docs" : `/docs?${new URLSearchParams({ q: ask })}`));
+          return;
         }
+        // Its script maybe still loading (the page's load waits for it), or done already (loaded or failed, its events
+        // gone by): looked for again until it's there, the page has loaded, or 5 seconds have passed.
+        if (document.querySelector("script[data-on-portal]") && document.readyState !== "complete" && Date.now() - since < 5_000) {
+          setTimeout(attempt, 100);
+          return;
+        }
+        // No widget after all (its script failed, or an older copy took the page): the docs' search, with its AI answer.
+        window.location.assign(at(ask === true ? "/docs" : `/docs?${new URLSearchParams({ q: ask })}`));
       };
-      const script = document.querySelector("script[data-on-portal]");
-      // Its script still loading (the page's load waits for it): as soon as it's there.
-      if (!(window as { Tuti?: Tuti }).Tuti && script && document.readyState !== "complete") {
-        script.addEventListener("load", now, { once: true });
-        script.addEventListener("error", now, { once: true });
-        return;
-      }
-      now();
+      attempt();
     };
     return {
       ask: (question) => open(question.trim() || true),

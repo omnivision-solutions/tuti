@@ -720,6 +720,15 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await unloaded.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
   await unloaded.waitForURL(`${portalUrl(slug)}/docs?q=How+do+I+install+it%3F`);
   await unloaded.context().close();
+  // So too when it failed while the page was still loading (its events gone by before anyone asked).
+  const stillLoading = await newPerson(browser, portalUrl(slug));
+  await stillLoading.route("**/widget.js*", (route) => route.abort());
+  await stillLoading.addInitScript(() => Object.defineProperty(document, "readyState", { get: () => "interactive" }));
+  await stillLoading.goto(`/docs/${article.slug}`);
+  await expect(stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" })).toBeVisible();
+  await stillLoading.getByRole("region", { name: "Still stuck?" }).getByRole("button", { name: "Ask AI" }).click();
+  await stillLoading.waitForURL(`${portalUrl(slug)}/docs`, { timeout: 10_000 });
+  await stillLoading.context().close();
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
   await visitor.setViewportSize({ width: 1280, height: 720 });
