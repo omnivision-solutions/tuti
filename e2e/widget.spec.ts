@@ -665,22 +665,23 @@ test("the portal shows the project's own widget, until the team turns it off in 
   const article = await api("/articles", { title: "Getting started", body: "Install the app." });
   await api(`/articles/${article.slug}/publish`, {});
   await visitor.goto(`/docs/${article.slug}`);
-  const askAI = async () => {
+  // `back`: where closing the panel gives focus (what opened it: the header's search, or the launcher when it was open already).
+  const askAI = async (back = visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ })) => {
     await visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
     await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
     const assistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
     await expect(assistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
     await assistant.getByRole("button", { name: "Close the assistant" }).click();
     await expect(assistant).toBeHidden();
-    // Closed, the panel gives focus back to the header's search (the dialog it was asked from is gone).
+    // Closed, the panel gives focus back (from the search dialog, gone by then, to the header's search).
     await visitor.keyboard.press("Escape");
     await expect(visitor.locator("#tuti-widget")).toBeHidden();
-    await expect(visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ })).toBeFocused();
+    await expect(back).toBeFocused();
   };
   await askAI();
   await visitor.reload();
   await launcher.click();
-  await askAI();
+  await askAI(launcher);
   // On phones the page ends clear of the launcher (5.5rem); wider, it doesn't need to.
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "88px");

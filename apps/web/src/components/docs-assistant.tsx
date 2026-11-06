@@ -204,11 +204,12 @@ export function DocsAssistantProvider({
     if (opening !== undefined && !openedToAsk.current) {
       openedToAsk.current = true;
       askOrOpen(opening);
-      // After the router's own first entry for the page, which would put it back.
+      // After the router's own first entry for the page; without state of the router's, so the router takes the address up
+      // (with it, the router keeps the one it had and puts it back on its next change).
       setTimeout(() => {
         const url = new URL(window.location.href);
         url.searchParams.delete("ask");
-        window.history.replaceState(window.history.state, "", url);
+        window.history.replaceState(null, "", url);
       });
     }
     const onMessage = (event: MessageEvent) => {
