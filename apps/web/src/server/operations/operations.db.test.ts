@@ -157,6 +157,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // Like usage.get: admins only in the app (Settings → AI models).
   "aiModels.get": () => ({}),
   "aiModels.update": () => ({ answers: "acme/tiny", changelog: "" }),
+  // Owners only in the app; a key works while whoever created it owns the project (see code-changes-tuning.db.test.ts).
+  "codeChangesTuning.get": () => ({}),
+  "codeChangesTuning.update": () => ({ "decide.rounds": 6 }),
   // Like usage.get: admins only in the app (Settings → Billing).
   "credits.get": () => ({}),
   // Like credits.get: admins only in the app (Buy credits); a Stripe Checkout page from the local fake.

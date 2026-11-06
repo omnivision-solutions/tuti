@@ -42,6 +42,7 @@ import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
 import * as changelogSubscribe from "./changelog-subscribe";
 import * as codeChanges from "./code-changes";
+import * as codeChangesTuning from "./code-changes-tuning";
 import * as credits from "./credits";
 import * as github from "./github";
 import * as docs from "./docs";
@@ -82,6 +83,7 @@ const modules = {
   "changelog-seen": changelogSeen,
   "changelog-subscribe": changelogSubscribe,
   "code-changes": codeChanges,
+  "code-changes-tuning": codeChangesTuning,
   credits,
   "ai-models": aiModels,
   "api-keys": apiKeys,
@@ -185,6 +187,10 @@ const matrix: Matrix = {
   },
   "ai-models": {
     saveAiModels: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModels(slug, {}, form({ answers: "", changelog: "" })) },
+  },
+  // Owners only, like Autopilot's other settings (plans are off here, so every project has it).
+  "code-changes-tuning": {
+    saveCodeChangesTuning: { allowed: "OWNER", call: (slug) => codeChangesTuning.saveCodeChangesTuning(slug, {}, form({ "decide.rounds": "6" })) },
   },
   assistant: {
     saveAssistantSettings: {

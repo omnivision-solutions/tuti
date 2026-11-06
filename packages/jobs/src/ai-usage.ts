@@ -1,10 +1,10 @@
 import { Prisma, prisma } from "@tuti/db";
-import { type Ai, type AiFeature, type AiUsage, creditsEnabled, creditsPerUsageDollar, defaultModel, log, type Meter } from "@tuti/shared";
+import { type Ai, type AiFeature, type AiUsage, type AutopilotStep, creditsEnabled, creditsPerUsageDollar, defaultModel, log, type Meter } from "@tuti/shared";
 
 import { aiPaused, chargeCredits, emailIfCreditsLow, OutOfCredits, toCredits } from "./credits";
 
-/** A project's own model for each feature it picked one for (Settings → AI models); the others use the default. */
-export function projectModels(value: unknown): Partial<Record<AiFeature, string>> {
+/** A project's own model for each feature (and Autopilot step) it picked one for (Settings → AI models); the others use the default. */
+export function projectModels(value: unknown): Partial<Record<AiFeature | AutopilotStep, string>> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? Object.fromEntries(Object.entries(value).filter((entry): entry is [AiFeature, string] => typeof entry[1] === "string" && entry[1] !== ""))
     : {};

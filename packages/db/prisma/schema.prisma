@@ -50,6 +50,7 @@ model User {
   invitationsCreated    Invitation[]          @relation("InvitationCreatedBy")
   portalReadersAdded    PortalReader[]        @relation("PortalReaderAddedBy")
   customDomainsAdded    CustomDomain[]        @relation("CustomDomainAddedBy")
+  projectsTuned         Project[]             @relation("TuningEditor")
   invitationsAccepted   Invitation[]          @relation("InvitationAcceptedBy")
   portalHandoffs        PortalHandoff[]
   apiKeysCreated        ApiKey[]
@@ -137,15 +138,15 @@ enum TeamRole {
 /// This installation of Tuti, one row (made by its migration): the random id licence keys are signed for.
 model Installation {
   /// Always 1, so there's only ever one row.
-  singleton    Int       @id @default(1)
-  id           String    @unique
+  singleton      Int       @id @default(1)
+  id             String    @unique
   /// The latest time tuti.so has said it is: keys expire by it too, so setting the clock back
   /// doesn't bring an expired one back.
-  latestSeenAt DateTime?
-  createdAt    DateTime  @default(now())
+  latestSeenAt   DateTime?
+  createdAt      DateTime  @default(now())
   /// When this server started keeping docs searches a year (they were kept 30 days before; the update's migration sets it): so
   /// searches are counted from 29 days before it, and Reporting says so for a range starting earlier.
-  searchesKeptAt DateTime @default(now())
+  searchesKeptAt DateTime  @default(now())
 
   @@map("installation")
 }
@@ -319,6 +320,13 @@ model Project {
   /// The model the project picked for an AI feature, by feature (answers, escalations, changelog,
   /// code_changes): a model id; a feature that isn't here uses the server's default for it.
   aiModels              Json         @default("{}")
+  /// Autopilot's Advanced tuning (Settings → AI models, owners, Business): the project's own values for a few of
+  /// Autopilot's settings, by path ("decide.rounds": 6); a value that isn't here is the server's. Kept after a
+  /// downgrade, used only on a plan with it. Who changed them last, and when.
+  codeChangesTuning     Json         @default("{}")
+  tuningUpdatedAt       DateTime?
+  tuningUpdatedBy       String?
+  tuningEditor          User?        @relation("TuningEditor", fields: [tuningUpdatedBy], references: [id], onDelete: SetNull)
   /// AI credits charged beyond what the project's grants had left (a request already running when they ran
   /// out): taken from the next grant first. Only with AI credits on (see AiCreditGrant).
   aiCreditDebt          Decimal      @default(0) @db.Decimal(20, 6)
@@ -2276,6 +2284,8 @@ model CodeChange {
   /// The writing model and the decision model that analysed it, so a new one re-analyses only on request.
   model     String?
   decider   String?
+  /// The Advanced tuning values the analysis ran with ({ values: by path, tuned: the paths the project changed }); null before them.
+  settings  Json?
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 

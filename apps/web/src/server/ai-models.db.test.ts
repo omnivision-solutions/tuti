@@ -79,9 +79,11 @@ test("only a model the endpoint lists can be picked; nothing is saved otherwise"
   // The endpoint's list can't be read: refused, rather than saving an id nobody checked.
   vi.stubEnv("OPENAI_BASE_URL", "http://127.0.0.1:1");
   await expect(call(updateAiModels, as(), { answers: "acme/tiny" })).rejects.toMatchObject({ status: 502, code: "models_unavailable" });
-  // Going back to the default needs no list.
+  // Going back to the default needs no list, nor does turning the double-check off.
   await call(updateAiModels, as(), { changelog: "" });
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiModels: true } })).toEqual({ aiModels: {} });
+  await call(updateAiModels, as(), { code_changes_redecide: "off" });
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiModels: true } })).toEqual({ aiModels: { code_changes_redecide: "off" } });
 });
 
 test("under the server's cap only models priced at or under it can be picked; the default needs no check", async () => {
@@ -119,4 +121,31 @@ test("the settings form saves only what it sends: a feature it leaves out keeps 
   expect(await saveAiModels(project.slug, {}, form)).toEqual({});
   const models = await call(getAiModels, as(), {});
   expect([models.answers.model, models.changelog.model]).toEqual(["acme/tiny", "anthropic/claude-sonnet-5.5"]);
+});
+
+test("Autopilot's steps: Decides and Double-checks have their own picks (Off only for the double-check); each step takes only models with tool calls", async () => {
+  expect(await call(getAiModels, as(), {})).toMatchObject({
+    code_changes_decide: { model: null, default: "anthropic/claude-haiku-5.5" },
+    code_changes_redecide: { model: null, default: "anthropic/claude-sonnet-5.5" },
+  });
+  expect(await call(updateAiModels, as(), { code_changes_decide: "acme/tiny", code_changes_redecide: "off" })).toMatchObject({
+    code_changes_decide: { model: "acme/tiny" },
+    code_changes_redecide: { model: "off" },
+  });
+  await expect(call(updateAiModels, as(), { code_changes_decide: "off" })).rejects.toMatchObject({ status: 400, message: "Only Autopilot's double-check can be off" });
+  for (const pick of ["code_changes_decide", "code_changes_redecide", "code_changes"]) {
+    await expect(call(updateAiModels, as(), { [pick]: "acme/no-tools" })).rejects.toMatchObject({
+      status: 400,
+      code: "model_without_tools",
+      message: "“acme/no-tools” can't call tools, which Autopilot's docs agent needs",
+    });
+  }
+  // Other features take it.
+  expect((await call(updateAiModels, as(), { answers: "acme/no-tools" })).answers.model).toBe("acme/no-tools");
+  // The form sends the steps too.
+  actAs(owner);
+  const form = new FormData();
+  form.set("code_changes_redecide", "");
+  expect(await saveAiModels(project.slug, {}, form)).toEqual({});
+  expect((await call(getAiModels, as(), {})).code_changes_redecide.model).toBeNull();
 });

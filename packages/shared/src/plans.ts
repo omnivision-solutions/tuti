@@ -69,14 +69,15 @@ export function planCredits(plan: PaidPlan): number {
 /**
  * What a plan may include: a custom domain, the portal under a path of the team's site, a private portal (with reader
  * groups and readers by email), code changes from GitHub (Autopilot: every plan), support email from the team's own
- * domain, the widget launcher's icon (one of its others, or an image), Reporting (its ranges: reportingDays).
+ * domain, the widget launcher's icon (one of its others, or an image), Reporting (its ranges: reportingDays), Autopilot's
+ * Advanced tuning (its thresholds, lookups and thinking per project: code-changes-tuning.ts).
  */
-export type PlanFeature = "customDomain" | "sitePath" | "privatePortal" | "codeChanges" | "emailDomain" | "launcherIcon" | "reporting";
+export type PlanFeature = "customDomain" | "sitePath" | "privatePortal" | "codeChanges" | "emailDomain" | "launcherIcon" | "reporting" | "aiTuning";
 
 const INCLUDES: Record<"FREE" | PaidPlan, readonly PlanFeature[]> = {
   FREE: ["codeChanges"],
   PRO: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting"],
-  BUSINESS: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "privatePortal", "sitePath"],
+  BUSINESS: ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "privatePortal", "sitePath", "aiTuning"],
 };
 
 /** The plans that include `feature`, for filtering projects by it; null without plans (every project has it). */
@@ -104,6 +105,7 @@ const NEEDS: Record<PlanFeature, string> = {
   emailDomain: "Emailing from your own domain needs",
   launcherIcon: "Choosing the launcher's icon needs",
   reporting: "Reporting needs",
+  aiTuning: "Advanced tuning needs",
 };
 
 /** What a project is told when its plan doesn't include `feature`: "A custom domain needs the Pro plan." */

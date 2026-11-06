@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import type { z } from "zod";
 
 /**
@@ -25,10 +26,12 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
   scope: Scope;
   /**
    * Who may run it when signed in: the project's team, only its owners and admins (project
-   * settings, like the Settings page), or anyone who may post in the project. Keys count as
-   * the team; only owners and admins create them.
+   * settings, like the Settings page), only its owners (settings only they change, like
+   * Autopilot's: its run calls requireOwner, so a key works only while whoever created it owns
+   * the project), or anyone who may post in the project. Keys count as the team; only owners
+   * and admins create them.
    */
-  access: "team" | "admin" | "anyone";
+  access: "team" | "admin" | "owner" | "anyone";
   input: I;
   /** An example request body or query, for the docs. */
   example?: Record<string, unknown>;
@@ -48,4 +51,17 @@ export class OperationError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * For `access: "owner"` operations, at the start of their run: the caller owns the project (for a key, whoever created
+ * it still does, so an admin's key can't do what only owners do). Returns who that is, for recording who changed what.
+ */
+export async function requireOwner(actor: Actor, projectId: string): Promise<string> {
+  const userId = actor.kind === "user" ? actor.userId : actor.createdById;
+  const owner = await prisma.teamMember.findFirst({ where: { userId, projectId, role: "OWNER" }, select: { userId: true } });
+  if (!owner) {
+    throw new OperationError(403, "forbidden", "Only project owners can change this");
+  }
+  return userId;
 }

@@ -1,0 +1,46 @@
+import { aiEnabled, TUNING, TUNING_KEYS } from "@tuti/shared";
+import { ChevronLeftIcon } from "lucide-react";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+
+import { CodeChangesTuningSettings } from "@/components/code-changes-tuning";
+import { PlanNotice } from "@/components/plan-notice";
+import { timeAgo } from "@/lib/format";
+import { getMembership, isAdminRole } from "@/server/membership";
+import { codeChangesTuning } from "@/server/operations/code-changes-tuning";
+
+/**
+ * Settings → AI models → Advanced tuning: Autopilot's values for this project (owners change them, on Business; admins
+ * see them). A page of its own, so Settings → AI models and this each save one way.
+ */
+export default async function CodeChangesTuningPage(props: PageProps<"/app/[project]/settings/ai-models/tuning">) {
+  const { project: slug } = await props.params;
+  const membership = await getMembership(slug);
+  if (!membership || !isAdminRole(membership.role) || !aiEnabled()) {
+    notFound();
+  }
+  const tuning = await codeChangesTuning(membership.project.id);
+  const kept = Object.values(tuning.values).some((value) => value.saved !== null);
+  return (
+    <div className="flex flex-col gap-6">
+      <Link href={`/app/${slug}/settings/ai-models`} className="flex items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground">
+        <ChevronLeftIcon className="size-4" />
+        Back to AI models
+      </Link>
+      <CodeChangesTuningSettings
+        projectSlug={slug}
+        tuning={tuning}
+        rows={TUNING_KEYS.map((key) => ({ key, label: TUNING[key].label, tradeoff: TUNING[key].tradeoff }))}
+        owner={membership.role === "OWNER"}
+        lastChanged={tuning.updatedAt && `${tuning.updatedBy ? `by ${tuning.updatedBy} ` : ""}${timeAgo(new Date(tuning.updatedAt))}`}
+        notice={
+          !tuning.available && (
+            <PlanNotice feature="aiTuning" projectSlug={slug} admin>
+              {kept && "This project's values are kept but not used; back on Business, they're used again."}
+            </PlanNotice>
+          )
+        }
+      />
+    </div>
+  );
+}
