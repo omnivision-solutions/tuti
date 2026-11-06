@@ -206,7 +206,10 @@ test("the same page failing in another run while this one saves it waits for the
                 ...records,
                 createMany: async (args: Parameters<typeof records.createMany>[0]) => {
                   other ??= prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: "Featurebase couldn't be reached.", finishedAt: new Date() } });
-                  await Promise.race([other, waitingOnLock()]);
+                  // One poll for either outcome (the other run done, or waiting on the row), so nothing is left polling.
+                  let settled = false;
+                  void other.finally(() => (settled = true));
+                  await expect.poll(async () => settled || (await locksWaited()) > 0, { timeout: 10_000 }).toBe(true);
                   return records.createMany(args);
                 },
               }
@@ -219,12 +222,10 @@ test("the same page failing in another run while this one saves it waits for the
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", error: "", counts: { contacts: { imported: 3, leftOut: {} } } });
 });
 
-/** Resolves once a query in this database waits on a lock (10 seconds at most). */
-async function waitingOnLock() {
-  await expect
-    .poll(async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n, { timeout: 10_000 })
-    .toBeGreaterThan(0);
-}
+/** How many queries in this database are waiting on a lock now. */
+const locksWaited = async () =>
+  (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n;
+
 
 /** A page's work, for the helpers later parts use. */
 const pageJob = async () => {

@@ -7,10 +7,11 @@ import type { ImportView } from "@/server/operations/imports";
  * and the inbox add theirs (I3–I5), in the order the import runs them (@tuti/jobs IMPORT_PARTS).
  */
 export const IMPORT_PARTS = {
-  contacts: { label: "Contacts", description: "Your users, with their custom fields and company, as Users.", needs: [], media: false },
+  contacts: { label: "Contacts", description: "Your users, with their custom fields and company, as Users.", needs: [], media: false, see: { label: "See users", page: "users" } },
 } as const satisfies Record<string, ImportPartInfo>;
 
-export type ImportPartInfo = { label: string; description: string; needs: readonly string[]; media: boolean };
+/** `see`: where what it brought is in the app (Home's link once an import ends: the first picked part's). */
+export type ImportPartInfo = { label: string; description: string; needs: readonly string[]; media: boolean; see: { label: string; page: string } };
 export type ImportPart = keyof typeof IMPORT_PARTS;
 
 /**
@@ -75,3 +76,6 @@ const SHOWN_MS = 3 * 24 * 60 * 60_000;
 
 /** Whether Home shows an import: while it runs, and for a few days after it ended. */
 export const onHome = (run: ImportView, now = Date.now()) => run.state === "running" || now - new Date(run.finishedAt!).getTime() < SHOWN_MS;
+
+/** Where an ended import's link on Home goes: the first part it brought, in the order the import runs them. */
+export const importSee = (run: ImportView) => (Object.entries(IMPORT_PARTS) as [ImportPart, ImportPartInfo][]).find(([part]) => run.parts.includes(part))?.[1].see ?? null;

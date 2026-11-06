@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
-import { importSummary, importTitle, onHome } from "@/lib/import-parts";
+import { importSee, importSummary, importTitle, onHome } from "@/lib/import-parts";
 import { homeOverview } from "@/server/home";
 import { hasSampleContent } from "@/server/sample-content";
 import { getMembership, isAdminRole } from "@/server/membership";
@@ -93,13 +93,19 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             <p role="status" className="sr-only">
               {imported.state === "running" ? importTitle(imported) : `${importTitle(imported)}. ${importSummary(imported)}`}
             </p>
-            {imported.state !== "running" && (
+            {imported.state === "failed" ? (
               <CardAction>
-                <Link href={imported.state === "failed" ? `/app/${slug}/setup` : `/app/${slug}/users`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                  {imported.state === "failed" ? "Start again" : "See users"}
+                <Link href={`/app/${slug}/setup`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  Start again
                 </Link>
               </CardAction>
-            )}
+            ) : imported.state === "done" && importSee(imported) ? (
+              <CardAction>
+                <Link href={`/app/${slug}/${importSee(imported)!.page}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  {importSee(imported)!.label}
+                </Link>
+              </CardAction>
+            ) : null}
           </CardHeader>
         </Card>
       )}

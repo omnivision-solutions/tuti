@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { IMPORT_PARTS, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
+import { IMPORT_PARTS, importSee, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -38,4 +38,10 @@ test("Home shows an import while it runs and for three days after it ended", () 
   expect(onHome({ state: "running", finishedAt: null } as never, now)).toBe(true);
   expect(onHome({ state: "done", finishedAt: "2026-11-03T12:00:00Z" } as never, now)).toBe(true);
   expect(onHome({ state: "failed", finishedAt: "2026-11-02T11:00:00Z" } as never, now)).toBe(false);
+});
+
+test("an ended import's link on Home is to what it brought: the first picked part's page, none for a part this release lacks", () => {
+  const run = (parts: string[]) => ({ parts }) as unknown as Parameters<typeof importSee>[0];
+  expect(importSee(run(["contacts"]))).toEqual({ label: "See users", page: "users" });
+  expect(importSee(run(["a-part-from-the-future"]))).toBeNull();
 });
