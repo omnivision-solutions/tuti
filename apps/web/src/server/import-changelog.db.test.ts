@@ -4,6 +4,7 @@ import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
+import { updateChangelogEntry } from "@/server/operations/changelog";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -179,6 +180,15 @@ test("a cover that's also in the text and can't be copied is counted left out on
   Object.assign(dark, { featuredImage: `${fake.url}/files/gone.png?X-Amz-Signature=a`, content: `<p><img src="${fake.url}/files/gone.png?X-Amz-Signature=b" alt="Gone"></p>` });
   const done = await importChangelog();
   expect(done.counts.changelogImages).toEqual({ imported: 0, leftOut: { "that couldn't be fetched": 1 } });
+});
+
+test("a title too short for the editor to save comes across as one it can: \"v2\" is \"Update: v2\"", async () => {
+  fake.fixtures.changelogs.find((entry) => entry.title === "Faster exports")!.title = "v2";
+  await importChangelog();
+  expect((await entries()).map((entry) => entry.title)).toContain("Update: v2");
+  // The editor saves it as it is.
+  const number = (await entries()).find((entry) => entry.title === "Update: v2")!.number;
+  await expect(call(updateChangelogEntry, asOwner(), { number, title: "Update: v2" })).resolves.toMatchObject({ title: "Update: v2" });
 });
 
 test("a key that can't read the changelog isn't accepted for it", async () => {

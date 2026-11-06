@@ -41,6 +41,12 @@ const tagsOf = ({ categories }: FeaturebaseChangelog) => [...new Set((categories
 /** Seen by only some people in Featurebase (segments, or a category some roles see): left out, counted. */
 const restricted = (entry: FeaturebaseChangelog) => Boolean(entry.allowedSegmentIds?.length || entry.categories?.some((category) => category.roles?.length));
 
+/** A title the editor saves as it is (3 to 120 characters, as changelog.update takes): "v2" is "Update: v2". */
+function entryTitle(title: string | null | undefined): string {
+  const words = (title ?? "").trim().slice(0, 120);
+  return words.length >= 3 ? words : words ? `Update: ${words}` : "Untitled";
+}
+
 const dateOf = (value: string | null | undefined) => (value && !Number.isNaN(Date.parse(value)) ? new Date(value) : null);
 
 export async function changelogPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
@@ -111,7 +117,7 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
           data: {
             projectId: job.projectId,
             number,
-            title: (entry.title ?? "").trim().slice(0, 120) || "Untitled",
+            title: entryTitle(entry.title),
             body: content.text,
             content: content.doc,
             tags: tagsOf(entry),
