@@ -149,7 +149,6 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect.poll(() => answered).toBe(3);
   await expect(complete).not.toBeChecked();
   await owner.unrouteAll({ behavior: "ignoreErrors" });
-  await db.end();
   await owner.reload();
   await expect(complete).not.toBeChecked();
   // Each person picks when they hear: a daily digest, in the morning where their browser says they are.
@@ -158,6 +157,17 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   await owner.reload();
   await expect(owner.getByLabel("A daily digest")).toBeChecked();
+  // Moved since: picking the digest again saves where their browser says they are now.
+  const moved = await (
+    await browser.newContext({ baseURL: APP_URL, storageState: await owner.context().storageState(), timezoneId: "Pacific/Chatham" })
+  ).newPage();
+  await moved.goto("/app/account");
+  await moved.getByLabel("A daily digest").click();
+  await expect(moved.getByText("Saved", { exact: true })).toBeVisible();
+  const { rows: zone } = await db.query<{ autopilotTimeZone: string }>(`SELECT "autopilotTimeZone" FROM "user" WHERE email = $1`, [owner.email]);
+  expect(zone[0]!.autopilotTimeZone).toBe("Pacific/Chatham");
+  await moved.context().close();
+  await db.end();
   await owner.goto(`/app/${web}/settings/integrations/github`);
 
   // The second project picks the same account: it starts with none, and adds the iOS app.

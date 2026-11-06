@@ -1,6 +1,6 @@
 import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { emailedAbout, queueAutopilotNotices, readAutopilotButton, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
+import { queueAutopilotNotices, readAutopilotButton, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { startModelFake } from "@tuti/testkit";
 import pg from "pg";
@@ -241,7 +241,7 @@ test("an earlier change's done updates don't take the place kept for what goes o
   const [email] = to(owner);
   expect(email!.subject).toBe("4 need you, 1 goes out in 24 hours · 2 pull requests");
   expect(email!.text.match(/· goes out in 24 hours/g)).toHaveLength(1);
-  expect(email!.text).toMatch(/Stop acme\/app#\d+ http\S+\/act\?token=/);
+  expect(email!.text).toMatch(/Stop #\d+ http\S+\/act\?token=/);
   expect(email!.text).toContain("+1 more in Tuti");
 });
 
@@ -572,16 +572,6 @@ test("a new project publishes article edits and posts progress updates by itself
     autopilotArticleEdits: true,
     autopilotProgress: true,
   });
-});
-
-test("analysed again, those emailed still show as emailed on the page until the next email goes", async () => {
-  const one = await change("Add a dark theme");
-  await queueAutopilotNotices(one.id);
-  expect(await emailedAbout(one.id)).toEqual([]);
-  expect(await sendAutopilotEmails(later())).toBe(1);
-  expect(await emailedAbout(one.id)).toEqual(["Olive Owner"]);
-  await queueAutopilotNotices(one.id);
-  expect(await emailedAbout(one.id)).toEqual(["Olive Owner"]);
 });
 
 test("with the mail server not taking it (down, or 4xx: try later), an email is tried again a while after each failure for as long as that lasts, and goes once it's back", async () => {

@@ -540,16 +540,6 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
   return sent;
 }
 
-/** Who has been emailed about a change (its review page's "Emailed to"): sent, or sent before and queued again since (analysed again). */
-export async function emailedAbout(codeChangeId: string): Promise<string[]> {
-  const notices = await prisma.autopilotNotice.findMany({
-    where: { codeChangeId, OR: [{ sentAt: { not: null } }, { since: { not: null } }] },
-    orderBy: { createdAt: "asc" },
-    select: { user: { select: { name: true } } },
-  });
-  return notices.map((notice) => notice.user.name);
-}
-
 /**
  * Something customers see went out by itself (the runner applied it): the project's owners hear of it.
  * The runner may apply it as the analysis's notices are queued (no hold), before they could tell it went,

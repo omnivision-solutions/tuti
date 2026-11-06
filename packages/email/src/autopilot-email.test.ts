@@ -91,12 +91,20 @@ test("the logo comes from the app (no SVG in email), and not at all without its 
   }
 });
 
-test("several changes going out by themselves: each one's Publish now and Stop say which; the tile, when the first goes", async () => {
+test("several changes going out by themselves: each one's Publish now and Stop say which, by number (short enough not to wrap); the tile, when the first goes", async () => {
   const second = { ...props.changes[0]!, pullRequest: "acme/app#383", needsYou: [], done: [] };
   const text = await render(autopilotEmail({ ...props, changes: [props.changes[0]!, second], totals: { ...props.totals, goesOut: 2 } }).body, { plainText: true });
-  expect(text).toContain("Publish acme/app#382 now");
-  expect(text).toContain("Stop acme/app#383");
+  expect(text).toContain("Publish #382 now");
+  expect(text).toContain("Stop #383");
+  expect(text).not.toContain("Publish acme/app#382 now");
   expect(text).toContain("⏳ 2 Auto-updating, first in 24 hours");
+});
+
+test("two repositories' pull requests with one number: their buttons name the repository too", async () => {
+  const second = { ...props.changes[0]!, pullRequest: "acme/ios#382", needsYou: [], done: [] };
+  const text = await render(autopilotEmail({ ...props, changes: [props.changes[0]!, second], totals: { ...props.totals, goesOut: 2 } }).body, { plainText: true });
+  expect(text).toContain("Publish acme/app#382 now");
+  expect(text).toContain("Stop acme/ios#382");
 });
 
 test("what went out by itself shows what customers saw; what only the team sees, a line", async () => {

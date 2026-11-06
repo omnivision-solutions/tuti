@@ -191,6 +191,20 @@ export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "
     setSaved(choice);
     setPicked(choice);
   }
+  const pick = (value: typeof choice) => {
+    setPicked(value);
+    startTransition(async () => {
+      // The digest comes in the morning where they are: the time zone their browser reports.
+      const result = await setAutopilotEmails(value, Intl.DateTimeFormat().resolvedOptions().timeZone);
+      if (result.error) {
+        setPicked(saved);
+        toast.error(result.error);
+      } else {
+        setSaved(value);
+        toast.success("Saved");
+      }
+    });
+  };
   return (
     <fieldset disabled={pending} className="flex flex-col gap-2">
       <legend className="sr-only">Autopilot&apos;s email</legend>
@@ -208,20 +222,9 @@ export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "
             value={value}
             checked={picked === value}
             className="mt-0.5 size-4 accent-primary"
-            onChange={() => {
-              setPicked(value);
-              startTransition(async () => {
-                // The digest comes in the morning where they are: the time zone their browser reports.
-                const result = await setAutopilotEmails(value, Intl.DateTimeFormat().resolvedOptions().timeZone);
-                if (result.error) {
-                  setPicked(saved);
-                  toast.error(result.error);
-                } else {
-                  setSaved(value);
-                  toast.success("Saved");
-                }
-              });
-            }}
+            onChange={() => pick(value)}
+            // The digest picked again (moved since): saved again, with where their browser says they are now.
+            onClick={() => value === "DIGEST" && picked === value && pick(value)}
           />
           <span className="flex flex-col">
             <span className="font-medium">{label}</span>

@@ -111,8 +111,8 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
           <CardHeader>
             <CardTitle>Who&apos;s told</CardTitle>
             <CardDescription>
-              An email when a merged pull request has updates. Owners are always told; each person picks in their account settings when they hear
-              (owners always hear what goes out by itself).
+              An email when a merged pull request has updates, to the owners and whoever you add below. Each person picks in their account settings when
+              they get it (as it happens, a daily digest, or never); owners still get one right away when something customers see goes out by itself.
             </CardDescription>
           </CardHeader>
           <CardContent>
