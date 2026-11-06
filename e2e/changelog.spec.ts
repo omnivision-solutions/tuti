@@ -98,13 +98,6 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.waitForURL(`**/app/${slug}/changelog/1`);
   await team.reload();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here");
-  // Its heading is only for screen readers here, the title field showing the title: scrolled until that heading is
-  // under the top bar, the field still in sight below it, the bar doesn't repeat the title above the field.
-  await team.evaluate(() => window.scrollTo(0, 160));
-  await afterIntersections(team);
-  await expect(team.getByLabel("Title")).toBeInViewport();
-  await expect(team.locator('[data-slot="bar-title"]')).toHaveCount(0);
-  await team.evaluate(() => window.scrollTo(0, 0));
   await expect(team.getByRole("checkbox", { name: "New", exact: true })).toBeChecked();
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await expect(team.getByText("Draft", { exact: true })).toBeVisible();
@@ -184,6 +177,13 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(sidebar.getByRole("link", { name: "View as reader" })).toBeVisible();
   await expect(team.getByRole("heading", { level: 1, name: "Dark mode is here", exact: true })).toBeAttached();
   expect((await team.getByRole("heading", { level: 1 }).boundingBox())!.height).toBeLessThanOrEqual(1);
+  // Nor in the top bar: scrolled until that heading is under it, the field still in sight below, the bar doesn't repeat
+  // the title above the field.
+  await team.evaluate(() => window.scrollTo(0, 160));
+  await afterIntersections(team);
+  await expect(team.getByLabel("Title")).toBeInViewport();
+  await expect(team.locator('[data-slot="bar-title"]')).toHaveCount(0);
+  await team.evaluate(() => window.scrollTo(0, 0));
   for (const name of ["Save", "Unpublish"]) {
     await expect(team.getByRole("button", { name, exact: true })).toBeInViewport();
   }

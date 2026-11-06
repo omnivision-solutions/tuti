@@ -1033,7 +1033,6 @@ test("an Inbox row reads in four lines at most: who on one, cut short, and the m
   }
 });
 
-/** A project whose inbox has Sam's conversation (#1) and another (#2), its owner on it at 1440px, and its API. */
 test("on a phone, a long conversation's title shows in the top bar once it's scrolled up under it", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const { owner, api, messages } = await twoConversations(browser);
@@ -1071,6 +1070,7 @@ test("on a phone, a long conversation's title shows in the top bar once it's scr
   await expect(barTitle).toHaveCount(0);
 });
 
+/** A project whose inbox has Sam's conversation (#1) and another (#2), its owner on it at 1440px, and its API. */
 async function twoConversations(browser: Browser) {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
