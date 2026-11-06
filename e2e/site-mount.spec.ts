@@ -6,6 +6,8 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
+import { nextModelReply } from "./model";
+import { similar } from "./openai";
 import { forwardToPortal, siteUrl } from "./site";
 
 // One at a time: the site fake has one forward for /_tuti, and "Check setup" asks through it for the portal it goes to.
@@ -152,20 +154,24 @@ test("the team puts the portal under a path of its own site: its site forwards i
 });
 
 test("the widget's panel under a path of the team's site keeps the path in its tabs, searches, links and live updates", async ({ browser }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  // Articles for the Help center (one in a collection), an idea for Feedback, an update for What's new, and Messages on.
+  // Articles for the Help center (one in a collection, close to a question for the AI), ideas for Feedback, an update
+  // for What's new that completes one, and Messages on.
   const api = await apiFor(owner, slug);
   const collection = await api("/collections", { name: "Getting started" });
+  const question = `How do I add a colleague to Acme ${slug}?`;
+  await similar(question, "Inviting your team\n\nOwners send invites from the Team page.", 0.8);
   const inviting = await api("/articles", { title: "Inviting your team", body: "Owners send invites from the Team page.", collection: collection.slug });
   await api(`/articles/${inviting.slug}/publish`, {});
   const exporting = await api("/articles", { title: "Exporting your data", body: "Download a CSV of every post." });
   await api(`/articles/${exporting.slug}/publish`, {});
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
-  await api("/changelog", { title: "CSV export is here" });
+  await api("/posts", { board: "feature-requests", title: "CSV export" });
+  await api("/changelog", { title: "CSV export is here", posts: [2] });
   await api("/changelog/1/publish", {});
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
@@ -201,6 +207,7 @@ test("the widget's panel under a path of the team's site keeps the path in its t
   await expect(visitor).toHaveURL(at("?tab=whats-new"));
   await visitor.getByRole("link", { name: /^Read more/ }).click();
   await expect(visitor).toHaveURL(at("?tab=whats-new&entry=1"));
+  await expect(visitor.getByRole("link", { name: "CSV export", exact: true })).toHaveAttribute("href", "/help/feedback/feature-requests/csv-export-2");
   await visitor.getByRole("link", { name: "What's new" }).click();
   await expect(visitor).toHaveURL(at("?tab=whats-new"));
   await visitor.getByRole("link", { name: "Home" }).first().click();
@@ -243,6 +250,27 @@ test("the widget's panel under a path of the team's site keeps the path in its t
   await tabs.getByRole("link", { name: "Home" }).click();
   await expect(visitor).toHaveURL(at(""));
 
+  // The docs' AI: its sources open in the panel there, and after asking a person, so does Messages.
+  await tabs.getByRole("link", { name: "Help center" }).click();
+  await visitor.getByRole("searchbox", { name: "Search the docs" }).fill(question);
+  await visitor.getByRole("searchbox", { name: "Search the docs" }).press("Enter");
+  await nextModelReply(JSON.stringify({ answer: "Owners send invites from the Team page.", sources: ["s1"] }), question);
+  await visitor.getByRole("button", { name: `Ask AI: ${question}` }).click();
+  const ai = visitor.getByRole("dialog", { name: "Assistant" }).getByRole("log", { name: "Conversation" });
+  await expect(ai.getByText("Owners send invites from the Team page.")).toBeVisible();
+  await expect(ai.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" })).toHaveAttribute(
+    "href",
+    `/help/widget?tab=docs&article=${inviting.slug}`,
+  );
+  await ai.getByRole("button", { name: "Not helpful" }).click();
+  await ai.getByRole("button", { name: "Ask a person" }).click();
+  const askAPerson = ai.getByRole("form", { name: "Ask a person" });
+  await askAPerson.getByLabel("Your email").fill(`e2e-ask-${slug}@example.com`);
+  await nextModelReply("They want to add a colleague.", question);
+  await askAPerson.getByRole("button", { name: "Send to the team" }).click();
+  await expect(ai.getByRole("link", { name: "Open Messages" })).toHaveAttribute("href", "/help/widget?tab=messages");
+  await checkpoint(visitor, "widget-under-path-ai");
+
   // Signed in there, Messages listens for changes through the site too.
   await visitor.goto("/help/sign-up");
   await visitor.getByLabel("Name").fill("Ada");
@@ -254,4 +282,36 @@ test("the widget's panel under a path of the team's site keeps the path in its t
   await visitor.goto("/help/widget?tab=messages");
   expect(new URL((await live).url()).pathname).toBe("/help/api/widget/live");
   await checkpoint(visitor, "widget-under-path-messages");
+
+  // Their idea's news on Home opens it on the portal there. Home shows the portal's reader once the page around the
+  // panel says it signs nobody in, as the portal's own launcher does: here, a page of the site framing the panel.
+  await visitor.goto("/help/feedback/feature-requests/dark-mode-1");
+  const voted = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  await visitor.getByRole("button", { name: /^Upvote/ }).click();
+  expect((await voted).ok()).toBe(true);
+  await api("/posts/1", { status: "planned" }, "PATCH");
+  await visitor.route(`${siteUrl()}/our-app`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<iframe title="Panel" src="/help/widget" style="width:400px;height:700px"></iframe>
+        <script>addEventListener("message", (event) => event.data?.type === "tuti:ready" && event.source.postMessage({ type: "tuti:identify", token: null }, "*"));</script>`,
+    }),
+  );
+  await visitor.goto("/our-app");
+  const panel = visitor.frameLocator('iframe[title="Panel"]');
+  await expect(panel.getByText("Hi Ada")).toBeVisible();
+  await expect(panel.getByRole("region", { name: "Your ideas" }).getByRole("link", { name: /Dark mode is now Planned/ })).toHaveAttribute(
+    "href",
+    "/help/feedback/feature-requests/dark-mode-1",
+  );
+
+  // Private, the panel asks people to sign in there.
+  await owner.goto(`/app/${slug}/settings/access`);
+  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("option", { name: "Private" }).click();
+  await expect(owner.getByText("Portal is now private")).toBeVisible();
+  const stranger = await newPerson(browser, siteUrl());
+  await stranger.goto("/help/widget");
+  await expect(stranger.getByText("Sign in to see this.", { exact: false })).toBeVisible();
+  await expect(stranger.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/help/sign-in");
 });
