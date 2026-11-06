@@ -279,6 +279,10 @@ test("importing again makes a board an earlier import brought Public Private, on
   fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
   await importFeedback();
   expect((await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Bugs" }, select: { postVisibility: true } })).postVisibility).toBe("PRIVATE");
+  // Once: the team makes it Public again, and a later import leaves it so.
+  await prisma.board.updateMany({ where: { projectId: project.id, name: "Bugs" }, data: { postVisibility: "PUBLIC" } });
+  await importFeedback();
+  expect((await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Bugs" }, select: { postVisibility: true } })).postVisibility).toBe("PUBLIC");
 });
 
 test("a page run twice, at once or again later, and a second import, bring nothing twice", async () => {

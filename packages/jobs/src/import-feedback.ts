@@ -189,8 +189,9 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
       if (folded) {
         await remember(tx, job, "board-past-limit", board.id, id);
       }
-    } else if (!folded && boardVisibility(board).postVisibility) {
-      // Brought by an import from before author-only boards came Private: made so now, if it's still Public.
+    } else if (!folded && boardVisibility(board).postVisibility && !(await recorded(tx, job, "board-made-private", [board.id])).size) {
+      // Brought by an import from before author-only boards came Private: made so now, once (a board the team made Public
+      // again since stays so), if it's still Public.
       const { count: changed } = await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } });
       if (changed > 0) {
         await tx.importedRecord.createMany({ data: [{ projectId: job.projectId, source: job.source, kind: "board-made-private", externalId: board.id, localId: id }], skipDuplicates: true });
