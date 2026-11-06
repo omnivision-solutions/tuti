@@ -3,8 +3,9 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp } from "@/test/helpers";
+import { postEmail, rawEmail } from "@/test/inbound";
 
-import { mailSubdomain } from "./inbound";
+import { mailSubdomain, supportAddress } from "./inbound";
 import { replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
@@ -430,4 +431,26 @@ test("someone the page signs in hears live of changes to conversations from thei
   } finally {
     stop();
   }
+});
+
+test("a signed-out visitor who types someone else's address never reads that person's emailed reply in the widget", async () => {
+  const { project, team } = await setup();
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email");
+  vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
+  const subdomain = await mailSubdomain(project.id);
+  // The visitor gives an address that isn't theirs: never verified, and the conversation is still their token's.
+  const started = await widgetStartConversation(project.slug, {}, "Please confirm the billing email on file", "e2e-victim@example.com");
+  const visitor = { visitor: (started as { visitor: string }).visitor };
+  await call(replyToConversation, team, { number: 1, body: "Which account is it?" });
+
+  // The team's reply is emailed to that address; its owner answers it (DMARC passes: it's really from them).
+  const { replyToken } = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  const replyAddress = supportAddress(subdomain, "tuti.email", replyToken);
+  const raw = rawEmail({ from: "e2e-victim@example.com", to: replyAddress, subject: "Re: Please confirm", body: "I never asked. My account is private-details." });
+  expect(await postEmail(raw, { recipient: replyAddress })).toEqual({ status: 200, body: { outcome: "added" } });
+
+  // The visitor's token proves nothing about who owns the address: their view never shows the owner's email.
+  const opened = await widgetConversation(project.slug, visitor, 1);
+  expect(opened).toMatchObject({ messages: expect.any(Array) });
+  expect(JSON.stringify(opened)).not.toContain("private-details");
 });
