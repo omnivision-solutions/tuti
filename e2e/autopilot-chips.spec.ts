@@ -81,6 +81,7 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
       return { under: top + height / 2 < header.getBoundingClientRect().bottom, behind: stack.indexOf(header) < stack.findIndex((element) => chip.contains(element)) };
     });
   expect(underHeader).toEqual({ under: true, behind: true });
+  await owner.evaluate(() => window.scrollTo(0, 0));
   await owner.setViewportSize({ width: 1280, height: 720 });
   await checkpoint(owner, "chips-collapsed", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
