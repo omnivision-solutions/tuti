@@ -162,8 +162,12 @@ test("an admin connects two projects to one GitHub account, gives each its repos
     await browser.newContext({ baseURL: APP_URL, storageState: await owner.context().storageState(), timezoneId: "Pacific/Chatham" })
   ).newPage();
   await moved.goto("/app/account");
+  // The page says which time zone it's saved in, and that picking it again moves it.
+  await expect(moved.getByText(/Pick it again to use Pacific\/Chatham\.$/)).toBeVisible();
   await moved.getByLabel("A daily digest").click();
   await expect(moved.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(moved.getByText(/One email at 8 am \(Pacific\/Chatham\)/)).toBeVisible();
+  await expect(moved.getByText(/Pick it again/)).toHaveCount(0);
   const { rows: zone } = await db.query<{ autopilotTimeZone: string }>(`SELECT "autopilotTimeZone" FROM "user" WHERE email = $1`, [owner.email]);
   expect(zone[0]!.autopilotTimeZone).toBe("Pacific/Chatham");
   await moved.context().close();
