@@ -181,7 +181,7 @@ test("Get set up follows what the team picked after Create project; a project wi
     expect(await support()).toMatchObject({ done: false, waiting: undefined });
     await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
     expect(await support()).toMatchObject({ done: false, waiting: "Waiting for your first email" });
-    await prisma.inboundEmail.create({ data: { projectId: project.id, recipient: "support@example.com", sender: "e2e-ada@example.com", dedupeKey: "first", size: 1 } });
+    await prisma.inboundEmail.create({ data: { projectId: project.id, recipient: "e2e-support@example.com", sender: "e2e-ada@example.com", dedupeKey: "first", size: 1 } });
     expect(await support()).toMatchObject({ done: true, waiting: undefined });
     // A server that takes no email: done once the inbox is on.
     await prisma.inboundEmail.deleteMany({ where: { projectId: project.id } });
