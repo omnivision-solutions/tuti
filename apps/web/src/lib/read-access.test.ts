@@ -1,7 +1,7 @@
 import type { NoAccess, ReadAccess } from "@tuti/db";
 import { describe, expect, test } from "vitest";
 
-import { accessBadge, allows, describeAccess, type Level, locks, readable, type Reader, restricted, SIGNED_OUT } from "./read-access";
+import { accessBadge, allows, ANYONE, describeAccess, type Level, locks, publishReaders, readable, type Reader, restricted, SIGNED_OUT } from "./read-access";
 
 const level = (access: ReadAccess, ...groups: string[]): Level => ({ access, groups: groups.map((key) => ({ group: { key } })) });
 const inherit = level("INHERIT");
@@ -107,5 +107,19 @@ describe("locks: what people without access see, from the nearest level that say
     expect(locks(hide, lock, inherits)).toBe(true);
     expect(locks(lock, hide, inherits)).toBe(false);
     expect(locks(undefined, lock, inherits)).toBe(true);
+  });
+});
+
+describe("publishReaders: Publish's sentence on who reads it", () => {
+  const publicPortal = { privatePortal: false, indexed: true };
+  test.each([
+    ["anyone, on a public portal", ANYONE, publicPortal, "Anyone can read it in your portal's docs, and search engines can find it."],
+    ["anyone, kept from search engines", ANYONE, { privatePortal: false, indexed: false }, "Anyone can read it in your portal's docs."],
+    ["anyone, on a private portal", ANYONE, { privatePortal: true, indexed: true }, "Anyone who can open your private portal can read it in its docs."],
+    ["signed-in readers", "Signed-in readers", publicPortal, "Signed-in readers can read it in your portal's docs."],
+    ["groups", "Readers in Enterprise or Pro", publicPortal, "Readers in Enterprise or Pro can read it in your portal's docs."],
+    ["the team only", "Only your team", { privatePortal: true, indexed: true }, "Only your team can read it in your portal's docs."],
+  ])("%s", (_, who, portal, expected) => {
+    expect(publishReaders(who, portal)).toBe(expected);
   });
 });

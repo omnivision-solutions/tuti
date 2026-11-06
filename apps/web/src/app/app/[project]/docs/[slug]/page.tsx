@@ -19,9 +19,9 @@ import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { displayDoc } from "@/server/content";
-import { fromNoAccess, fromReadAccess } from "@/lib/read-access";
+import { describeAccess, fromNoAccess, fromReadAccess, publishReaders } from "@/lib/read-access";
 import { claimsOf, levelSelect } from "@/lib/reader-groups";
-import { accessChoices, collectionOptions } from "@/server/docs-queries";
+import { accessChoices, collectionOptions, namedLevel } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 import { verifyUnavailable } from "@/server/operations/verify";
@@ -76,13 +76,21 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const edited = article.changes ?? article;
   const url = `${await portalAddress(slug)}/docs/${article.slug}`;
   const listing = article.listing.toLowerCase() as Listing;
-  const [collections, access, { plan }] = await Promise.all([
+  const [collections, access, { plan, portalAccess }] = await Promise.all([
     collectionOptions(membership.project.id),
     accessChoices(membership.project.id),
-    prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true, portalAccess: true } }),
   ]);
   // "Who can read" inherits from its collection (the published one: readers' access follows it), or (in none) from the first tab.
   const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
+  // Who reads it once published: everything above it, and its own "Who can read".
+  const readers = publishReaders(
+    describeAccess([
+      ...(access.levels[parent?.slug ?? ""] ?? access.levels[""]!),
+      namedLevel(article, new Map(access.groups.map((g) => [g.key, g.name]))),
+    ]),
+    { privatePortal: portalAccess === "PRIVATE", indexed: listing === "everywhere" && !article.noindex },
+  );
 
   return (
     // Save in the top bar submits the form below, and says when it's saving; Settings beside it saves the rest.
@@ -147,6 +155,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
               title={article.title}
               published={article.publishedAt !== null}
               part="publish"
+              readers={readers}
               autopilotEdits={autopilotEdits}
             />
           </>

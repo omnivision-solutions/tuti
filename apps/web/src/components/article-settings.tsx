@@ -82,7 +82,7 @@ function Place({
         checked={place.showUpdatedDate}
         onChange={(showUpdatedDate) => onChange({ ...place, showUpdatedDate })}
         label="Show the updated date"
-        description="Readers see when you last changed it after it was published."
+        description="Under its title: when you last published changes to it. None shows until you do."
       />
     </FieldGroup>
   );
@@ -214,6 +214,7 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
                 label="Custom slug"
                 description="Set the end of the URL instead of using the title."
               />
+              {article.published && !customSlug && <FieldDescription>Its address stays as it is; links to it keep working.</FieldDescription>}
               {customSlug && (
                 <Input
                   name="newSlug"

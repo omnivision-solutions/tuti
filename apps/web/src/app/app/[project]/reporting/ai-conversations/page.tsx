@@ -46,7 +46,7 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
         <Stat label="Answered" value={percent(totals.answered, totals.conversations)} hint="Every question answered from the docs"
           trend={shareTrend(range, report.daily.answered, conversations, before && { part: before.answered, whole: before.conversations }, "up")}
         />
-        <Stat label="Passed to your team" value={count(totals.escalated)} hint="To your inbox or support address" href={withRange(`${base}?show=escalated`, range.key)} trend={countTrend(range, report.daily.escalated, before?.escalated ?? null, "down")} />
+        <Stat label="Passed to your team" value={count(totals.escalated)} hint="To your inbox" href={withRange(`${base}?show=escalated`, range.key)} trend={countTrend(range, report.daily.escalated, before?.escalated ?? null, "down")} />
         <Stat
           label="Rated helpful"
           value={percent(totals.helpful, totals.rated)}

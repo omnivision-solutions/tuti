@@ -1114,6 +1114,9 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await docsTabs.getByRole("link", { name: "Guides" }).click();
   await expect(visitor).toHaveURL(/\/docs\/guides$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+  // A tab has its name, without the docs home's subtitle.
+  await expect(main.getByRole("heading", { level: 1 })).toHaveText("Guides");
+  await expect(main).not.toContainText("Guides and answers to common questions.");
   await checkpoint(visitor, "portal-docs-tab");
   // A collection has a page, in its tab, marked in the tree; so does an article.
   await main.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Billing/ }).click();

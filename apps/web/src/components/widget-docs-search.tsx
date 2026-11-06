@@ -156,7 +156,7 @@ export function WidgetDocsSearch({ query, children }: { query: string; children:
               }
             }}
             maxLength={200}
-            placeholder="Search articles"
+            placeholder="Search docs"
             aria-label="Search the docs"
           />
           {/* Without the page's script, the only way to search. */}

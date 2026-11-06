@@ -101,3 +101,17 @@ export function accessBadge(level: NamedLevel): string | null {
       return level.groups.length > 0 ? level.groups.join(", ") : "Team only";
   }
 }
+
+/**
+ * Publish's sentence on who reads an article: `who` is describeAccess's words for it; on a private portal "anyone" is
+ * its readers. Search engines only for one anyone may read on a public portal that they may index (`indexed`).
+ */
+export function publishReaders(who: string, { privatePortal, indexed }: { privatePortal: boolean; indexed: boolean }): string {
+  if (who !== ANYONE) {
+    return `${who} can read it in your portal's docs.`;
+  }
+  if (privatePortal) {
+    return "Anyone who can open your private portal can read it in its docs.";
+  }
+  return indexed ? "Anyone can read it in your portal's docs, and search engines can find it." : "Anyone can read it in your portal's docs.";
+}

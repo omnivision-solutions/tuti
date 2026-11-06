@@ -318,13 +318,14 @@ function NewestVersion({ newest, merged = false }: { newest: NewestVersionData; 
   );
 }
 
-/** Publish (or take down) and delete an article; publishing and deleting ask first. */
+/** Publish, unpublish and delete an article; each asks first. */
 export function ArticleActions({
   projectSlug,
   slug,
   title,
   published,
   part,
+  readers = "",
   autopilotEdits = [],
 }: {
   projectSlug: string;
@@ -333,6 +334,8 @@ export function ArticleActions({
   published: boolean;
   /** Delete (behind the top bar's "More actions"), or Publish / Unpublish (in the bar). */
   part: "delete" | "publish";
+  /** Publish's sentence on who can read it once it's published (publishReaders). */
+  readers?: string;
   /** The ids of Autopilot's edits waiting in the draft as the page loaded: publishing it takes those live (and only those). */
   autopilotEdits?: string[];
 }) {
@@ -379,9 +382,23 @@ export function ArticleActions({
     );
   }
   return published ? (
-        <Button variant="outline" disabled={pending} onClick={() => run(unpublishArticle, "Unpublished")}>
-          Unpublish
-        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Unpublish</AlertDialogTrigger>
+          <AlertDialogContent closeDisabled={pending}>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Unpublish “{title}”?</AlertDialogTitle>
+              <AlertDialogDescription>
+                It leaves your portal&apos;s docs, and links to it stop working until you publish it again.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction disabled={pending} onClick={() => run(unpublishArticle, "Unpublished")}>
+                Unpublish
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       ) : (
         <AlertDialog>
           <AlertDialogTrigger
@@ -399,7 +416,7 @@ export function ArticleActions({
             <AlertDialogHeader>
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
-                Anyone can read it in your portal&apos;s docs, and search engines can find it.
+                {readers}
                 {shown.length > 0 &&
                   (shown.length === 1
                     ? " It includes 1 edit Autopilot suggested; it goes live too."
