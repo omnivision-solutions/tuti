@@ -63,7 +63,7 @@ const conversations = () =>
   });
 const ago = (date: Date | null) => date && Math.round((Date.now() - date.getTime()) / 86_400_000);
 
-test("conversations still going and the closed ones Tuti keeps come across, in date order, with their status, people and messages; nothing is emailed", async () => {
+test("conversations still going and the closed ones Tuti keeps come across, numbered in Featurebase's order, with their status, people and messages; nothing is emailed", async () => {
   const emailed = mailbox.emails.length;
   const done = await importInbox();
   expect(done).toMatchObject({
@@ -72,14 +72,14 @@ test("conversations still going and the closed ones Tuti keeps come across, in d
     counts: { contacts: { imported: 3 }, conversations: { imported: 3, leftOut: { "closed more than 365 days ago, past what Tuti keeps": 1 } }, attachments: { imported: 1, leftOut: {} } },
   });
 
-  const [closed, snoozed, open, ...rest] = await conversations();
+  const [open, snoozed, closed, ...rest] = await conversations();
   expect(rest).toEqual([]);
-  // Numbered in the order they started, though Featurebase lists the newest first.
-  expect([closed, snoozed, open].map((c) => [c!.number, c!.subject])).toEqual([
-    // No title or email subject: the first message's start.
-    [1, "How do I reset my password?"],
+  // Numbered as they're saved, in Featurebase's order: the newest first.
+  expect([open, snoozed, closed].map((c) => [c!.number, c!.subject])).toEqual([
+    [1, "Exporting to CSV"],
     [2, "Invoice for October"],
-    [3, "Exporting to CSV"],
+    // No title or email subject: the first message's start.
+    [3, "How do I reset my password?"],
   ]);
 
   // Closed with the bot: the person's message and the bot's answer; quick replies, ratings, workflows, attributes,
@@ -131,14 +131,14 @@ test("without plans, every closed conversation comes across: none is deleted", a
   const done = await importInbox();
   expect(done.counts).toMatchObject({ conversations: { imported: 4, leftOut: {} } });
   expect((await conversations()).map((c) => [c.number, c.subject, c.status])).toEqual([
-    [1, "Dark mode?", "CLOSED"],
-    [2, "How do I reset my password?", "CLOSED"],
-    [3, "Invoice for October", "WAITING"],
-    [4, "Exporting to CSV", "OPEN"],
+    [1, "Exporting to CSV", "OPEN"],
+    [2, "Invoice for October", "WAITING"],
+    [3, "How do I reset my password?", "CLOSED"],
+    [4, "Dark mode?", "CLOSED"],
   ]);
 });
 
-test("a page run again, or another import, brings nothing twice; an import numbers what it brought in date order, leaving every number given before", async () => {
+test("a page run again, or another import, brings nothing twice; a number once given never changes, an older one brought later getting the next", async () => {
   fake.pageSize = 2;
   const done = await importInbox();
   const before = await conversations();
@@ -153,16 +153,45 @@ test("a page run again, or another import, brings nothing twice; an import numbe
   await importInbox();
 
   const after = await conversations();
-  // The team may know the first import's by their numbers by now: they stay, and so does the one started meanwhile.
+  // The team may know them by their numbers by now (a link in an email, a note): they stay.
   expect(after.map((c) => [c.number, c.subject])).toEqual([
-    [1, "How do I reset my password?"],
+    [1, "Exporting to CSV"],
     [2, "Invoice for October"],
-    [3, "Exporting to CSV"],
+    [3, "How do I reset my password?"],
     [4, "New here"],
     [5, "Older still"],
   ]);
   expect(after.flatMap((c) => c.messages)).toHaveLength(before.flatMap((c) => c.messages).length + 2);
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("an import that fails partway and is started again goes on numbering where it stopped, each conversation once", async () => {
+  fake.pageSize = 1;
+  // Featurebase refuses the second conversation once: the import fails there, the first saved.
+  const fetch = globalThis.fetch.bind(globalThis);
+  let refused = 0;
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) =>
+    String(input).includes("/v2/conversations/1003") && refused++ === 0 ? Promise.resolve(Response.json({ message: "Not now" }, { status: 400 })) : fetch(input, init),
+  );
+  expect(await importInbox()).toMatchObject({ state: "FAILED" });
+  expect((await conversations()).map((c) => [c.number, c.subject])).toEqual([[1, "Exporting to CSV"]]);
+
+  // Started again, as the failure says: the rest come after, nothing twice, nothing renumbered.
+  expect(await importInbox()).toMatchObject({ state: "DONE" });
+  expect((await conversations()).map((c) => [c.number, c.subject, c.messages.length])).toEqual([
+    [1, "Exporting to CSV", 4],
+    [2, "Invoice for October", 2],
+    [3, "How do I reset my password?", 2],
+  ]);
+});
+
+test("a subject is never taken from an internal note: the user sees it, in the widget and their emails", async () => {
+  // The team started it with a note, then wrote to them; no title, no email subject.
+  const closed = fake.fixtures.conversations[2]!;
+  const parts = closed.conversationParts as Record<string, unknown>[];
+  parts.unshift({ ...parts[1], id: "p3000", partType: "admin_note", createdAt: new Date(Date.parse(String(parts[0]!.createdAt)) - 60_000).toISOString(), bodyHtml: "<p>Owes us three invoices</p>", author: { id: "65f0000000000000000000a1", type: "admin" } });
+  await importInbox();
+  expect((await conversations()).find((c) => c.messages.some((m) => m.note && m.body === "Owes us three invoices"))!.subject).toBe("How do I reset my password?");
 });
 
 test("imported replies are never emailed, also by a worker from before imports were marked, and make no unread dot; seen only where Featurebase says so", async () => {

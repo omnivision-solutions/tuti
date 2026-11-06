@@ -197,7 +197,7 @@ test("the inbox comes across from Featurebase: its conversations with their mess
 
   // Its messages as they were: the user's, the team's reply (seen, as Featurebase's read receipt said), a note, an image.
   await rows.first().getByRole("link").click();
-  await owner.waitForURL(`**/app/${slug}/inbox/4`);
+  await owner.waitForURL(`**/app/${slug}/inbox/1`);
   const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
   await expect(messages).toHaveCount(4);
   await expect(messages.nth(0)).toContainText("Can I export my data to CSV?");
@@ -215,7 +215,7 @@ test("the inbox comes across from Featurebase: its conversations with their mess
   await expect(rows.first()).toContainText("Invoice for October");
   await rows.first().getByRole("link").click();
   // Opened from the Snoozed view, which it keeps.
-  await owner.waitForURL(new RegExp(`/app/${slug}/inbox/3\\?view=snoozed$`));
+  await owner.waitForURL(new RegExp(`/app/${slug}/inbox/2\\?view=snoozed$`));
   await expect(messages).toHaveCount(2);
   await expect(messages.nth(1)).toContainText("Sent again: it's in your inbox.");
   await expect(messages.nth(1)).toContainText("Imported from Featurebase");

@@ -67,7 +67,11 @@ type Read = { conversation: FeaturebaseConversation; contactId: string | null; e
 /** When it was last active there: what Tuti's history goes by (activeAt). */
 const lastActive = (c: FeaturebaseConversation) => new Date(c.lastActivityAt ?? c.updatedAt ?? c.createdAt);
 
-/** Conversations, a page at a time; the last page numbers what came across in date order. */
+/**
+ * Conversations, a page at a time. Each is numbered as it's saved, in the order Featurebase lists them (the newest
+ * first), so a number never changes once given, whatever fails and is started again; an older one a later import
+ * brings gets the next number.
+ */
 export async function conversationsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const started = Date.now();
   const again = cursor?.startsWith(AGAIN) ?? false;
@@ -117,9 +121,6 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
       const old = items.length - kept.length;
       if (old > 0 && !again) {
         tally(job.counts, "conversations", `closed more than ${days} days ago, past what Tuti keeps`, old);
-      }
-      if (!next && !cut) {
-        await renumber(tx, job);
       }
     },
   };
@@ -282,7 +283,8 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
   const snoozedPart = c.conversationParts?.findLast((p) => p.partType === "status" && p.status === "snoozed");
 
   const { conversationCount: number } = await tx.project.update({ where: { id: job.projectId }, data: { conversationCount: { increment: 1 } }, select: { conversationCount: true } });
-  const subject = c.title?.trim() || c.source?.subject?.trim() || subjectFrom(messages[0]?.body ?? "") || "Conversation";
+  // From what the user can see (the subject shows in the widget and their emails): never a note.
+  const subject = c.title?.trim() || c.source?.subject?.trim() || subjectFrom(messages.find((m) => !m.note && m.body)?.body ?? "") || "Conversation";
   const { id } = await tx.conversation.create({
     data: {
       projectId: job.projectId,
@@ -336,23 +338,3 @@ const subjectFrom = (text: string) => {
   const line = text.split("\n", 1)[0]!.trim();
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 };
-
-/**
- * Numbers the conversations this import brought in the order they started (Featurebase lists the newest first): they
- * swap the numbers they hold among themselves, so nobody else's changes, nor that of one an earlier import brought (the
- * team may know it by its number by now: a link in an email, a note).
- */
-async function renumber(tx: Tx, job: ImportJob) {
-  await tx.$executeRaw`
-    WITH mine AS (
-      SELECT c.id, c.number, c."createdAt" FROM conversation c
-      JOIN imported_record r ON r."localId" = c.id AND r."projectId" = c."projectId"
-      JOIN data_import d ON d.id = ${job.id}
-      WHERE c."projectId" = ${job.projectId} AND r.source = ${job.source}::"ImportSource" AND r.kind = 'conversation' AND r."createdAt" >= d."createdAt"
-    ),
-    slots AS (SELECT number, row_number() OVER (ORDER BY number) AS i FROM mine),
-    ordered AS (SELECT id, row_number() OVER (ORDER BY "createdAt", number) AS i FROM mine)
-    UPDATE conversation c SET number = -s.number FROM ordered o JOIN slots s USING (i) WHERE c.id = o.id`;
-  // Negative first: a number is unique in its project at every row.
-  await tx.$executeRaw`UPDATE conversation SET number = -number WHERE "projectId" = ${job.projectId} AND number < 0`;
-}
