@@ -268,6 +268,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await checkpoint(owner, "team-docs-article-unpublish", { fullPage: false });
   await unpublishing.getByRole("button", { name: "Unpublish" }).click();
   await expect(owner.getByText("Unpublished", { exact: true })).toBeVisible();
+  await expect(unpublishing).toBeHidden();
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   const publishing = owner.getByRole("alertdialog", { name: "Publish “Pricing”?" });
   await expect(publishing).toContainText("Signed-in readers can read it in your portal's docs.");
@@ -275,6 +276,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await checkpoint(owner, "team-docs-article-publish-signed-in", { fullPage: false });
   await publishing.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(owner.getByText("Published", { exact: true }).first()).toBeVisible();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner.getByRole("region", { name: "Basics" }).getByRole("listitem").filter({ hasText: "Pricing" }).getByText("Signed-in", { exact: true })).toBeVisible();
 

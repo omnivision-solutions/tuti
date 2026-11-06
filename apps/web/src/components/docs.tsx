@@ -381,8 +381,9 @@ export function ArticleActions({
       </AlertDialog>
     );
   }
+  // Keyed apart: each closes as the other takes its place once it's done (an action doesn't close its dialog).
   return published ? (
-        <AlertDialog>
+        <AlertDialog key="unpublish">
           <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Unpublish</AlertDialogTrigger>
           <AlertDialogContent closeDisabled={pending}>
             <AlertDialogHeader>
@@ -400,7 +401,7 @@ export function ArticleActions({
           </AlertDialogContent>
         </AlertDialog>
       ) : (
-        <AlertDialog>
+        <AlertDialog key="publish">
           <AlertDialogTrigger
             render={<Button disabled={pending} />}
             onClick={(event) => {
