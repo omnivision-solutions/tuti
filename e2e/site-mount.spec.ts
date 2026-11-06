@@ -83,11 +83,19 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await owner.getByLabel("Custom HTML").fill('<p id="team-html">From the team</p><script>document.body.dataset.teamScript = "ran"</script>');
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Custom code saved")).toBeVisible();
+  // An article for the widget's Help center, and Messages on (straight to the team: AI first off).
+  const api = await apiFor(owner, slug);
+  const article = await api("/articles", { title: "Getting started", body: "Install the app." });
+  await api(`/articles/${article.slug}/publish`, {});
+  await api("/support", { inbox: true }, "PATCH");
+  await api("/widget", { aiFirst: false }, "PATCH");
   await visitor.goto("/portal/docs");
   await expect(visitor.locator("#team-html")).toHaveText("From the team");
   await expect(visitor.locator("body")).toHaveAttribute("data-team-script", "ran");
   // The project's own widget (Customize → Widget): its panel is under the path too, through the site, and so are its links.
   await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("data-on-portal", "/portal");
+  // At an address of its own there, so no browser's copy of an older loader (which didn't read the path) runs it.
+  await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("src", /\/widget\.js\?path$/);
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", new RegExp(`^${siteUrl().replace(/[.:]/g, "\\$&")}/portal/widget`));
   const panel = visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" });
@@ -95,6 +103,20 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await panel.getByRole("link", { name: "Feedback" }).click();
   await expect(panel.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
   await checkpoint(visitor, "portal-on-site-widget");
+  // Its Help center: the article's link, and its "Open in new tab" to the portal's page, keep the path.
+  const frame = visitor.frameLocator('iframe[title="Feedback"]');
+  await panel.getByRole("link", { name: "Help center" }).click();
+  await expect(frame.getByRole("link", { name: "Getting started" })).toHaveAttribute("href", /^\/portal\/widget\?tab=docs&/);
+  await frame.getByRole("link", { name: "Getting started" }).click();
+  await expect(frame.getByRole("heading", { name: "Getting started" })).toBeVisible();
+  await expect(frame.getByRole("link", { name: "Open in new tab" })).toHaveAttribute("href", `/portal/docs/${article.slug}`);
+  // Messages: once they've written, its live updates come through the site too.
+  await panel.getByRole("link", { name: "Messages" }).click();
+  await frame.getByRole("textbox", { name: "Your email" }).fill(`e2e-sam-${slug}@example.com`);
+  await frame.getByRole("textbox", { name: "Message" }).fill("Is there a nonprofit discount?");
+  const live = visitor.waitForResponse((response) => response.url().startsWith(`${siteUrl()}/portal/api/widget/live`));
+  await frame.getByRole("button", { name: "Send" }).click();
+  expect((await live).status()).toBe(200);
   const direct = await newPerson(browser, portalUrl(slug));
   await direct.goto("/portal/docs");
   await expect(direct.getByRole("heading", { name: "Docs" }).first()).toBeVisible();

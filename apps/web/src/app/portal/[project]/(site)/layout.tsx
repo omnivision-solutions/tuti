@@ -161,7 +161,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalFooter />
         {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new. */}
         {/* The project's own widget, for readers who may read the portal; a full load once that or who's reading changes. */}
-        {widgetHere && <PortalWidget src={`${appUrl().origin}/widget.js`} slug={slug} base={base} shown={canRead} viewer={session?.user.id ?? null} />}
+        {/* Under a path, the loader at an address of its own: a browser's copy from before it read the path (kept an hour)
+            would open the panel at the site's root, which the site doesn't forward. */}
+        {widgetHere && <PortalWidget src={`${appUrl().origin}/widget.js${base ? "?path" : ""}`} slug={slug} base={base} shown={canRead} viewer={session?.user.id ?? null} />}
         </PortalMenuProvider>
         </WithAssistant>
       </PortalLookProvider>
