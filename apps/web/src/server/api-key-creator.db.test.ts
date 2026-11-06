@@ -61,6 +61,13 @@ test("MCP follows the same rule: a demoted admin's key loses admin tools, a remo
   const tools = async () => ((await (await listTools()).json()) as { result: { tools: { name: string }[] } }).result.tools.map((t) => t.name);
 
   expect(await tools()).toContain("aiModels_get");
+  // Owners' tools are for owners' keys only.
+  expect(await tools()).not.toContain("codeChangesTuning_update");
+  const admins = key;
+  key = (await createApiKey(project.slug, "Owner's key", "WRITE")).key!;
+  expect(await tools()).toContain("codeChangesTuning_update");
+  key = admins;
+
   expect(await changeTeamRole(project.slug, admin.memberId, "MEMBER")).toEqual({});
   expect(await tools()).not.toContain("aiModels_get");
   expect(await tools()).toContain("users_list");
