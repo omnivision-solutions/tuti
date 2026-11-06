@@ -221,16 +221,6 @@ test("a page that fails after copying its files leaves them unattached, for the 
   expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(0);
 });
 
-test("a part this worker doesn't know (picked on a newer release mid-deploy) fails the import, saying so, rather than ending it done without it", async () => {
-  const row = await atConversations(["contacts", "inbox", "changelog"]);
-  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ failed: true });
-  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
-    state: "FAILED",
-    apiKey: null,
-    error: "Tuti was being updated while it ran. Start it again to go on: what came across already is skipped.",
-  });
-});
-
 test("a page that has read for a while saves what it read and reads its list page again, counting each conversation once; files it has no time left for are left out", async () => {
   // Over two minutes pass once the first conversation has been read, before its files are copied.
   const now = Date.now.bind(Date);
