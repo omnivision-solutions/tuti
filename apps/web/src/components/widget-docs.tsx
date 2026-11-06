@@ -2,6 +2,7 @@ import { RichText } from "@tuti/content/react";
 import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 
+import { articleLinks } from "@/components/article-links";
 import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
@@ -180,6 +181,7 @@ async function WidgetArticle({
   /** The collection it was opened from: the way back is named after it. */
   from?: string;
 }) {
+  const link = await portalLinks();
   // An old slug of an article that has since moved opens it where it is now.
   const moved = (await publishedArticle(projectSlug, asked)) ? null : await movedArticle(projectSlug, asked);
   const slug = moved ?? asked;
@@ -218,7 +220,14 @@ async function WidgetArticle({
         </h1>
       </div>
       {"doc" in article ? (
-        <RichText doc={article.doc} mediaUrls={await mediaUrls(article.doc)} headingIds className="rich-text break-words" />
+        <RichText
+          doc={article.doc}
+          mediaUrls={await mediaUrls(article.doc)}
+          headingIds
+          // Its links to the portal's other articles open them here in the panel; to its other docs pages, on the portal.
+          link={await articleLinks(projectSlug, article.doc, ({ slug, hash, article: isArticle }) => (isArticle ? `${link(docsHref({ article: slug }))}${hash}` : null))}
+          className="rich-text break-words"
+        />
       ) : (
         <LockedMessage projectSlug={projectSlug} signedIn={article.signedIn} />
       )}

@@ -426,6 +426,14 @@ export const lockedForReader = cache(async (projectSlug: string, slug: string) =
 
 export type LockedArticle = NonNullable<Awaited<ReturnType<typeof lockedForReader>>>;
 
+/** A project's collections with who may read them (and their tab), once per request: every article looked up shares them. */
+const collectionLevels = cache((projectId: string) =>
+  prisma.collection.findMany({
+    where: { projectId },
+    select: { id: true, parentId: true, ...levelSelect, tab: { select: { slug: true, ...levelSelect } } },
+  }),
+);
+
 /** What article `slug` is to this reader: one they may read, one locked for them, or nothing (missing, or hidden from them). */
 const articleAt = cache(async (projectSlug: string, slug: string) => {
   const article = await prisma.article.findFirst({
@@ -453,10 +461,7 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
   // Its collection and the ones it's in, up to its top-level one (which has its tab); in none, the first tab.
   const up = article.collection
     ? ancestry(
-        await prisma.collection.findMany({
-          where: { projectId: article.projectId },
-          select: { id: true, parentId: true, ...levelSelect, tab: { select: { slug: true, ...levelSelect } } },
-        }),
+        await collectionLevels(article.projectId),
         article.collection.id,
       )
     : [];

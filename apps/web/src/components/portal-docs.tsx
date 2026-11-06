@@ -7,11 +7,13 @@ import { headers } from "next/headers";
 import Link from "next/link";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
+import { articleLinks } from "@/components/article-links";
 import { StillStuck, type SupportContact } from "@/components/docs-assistant";
 import { DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { OnThisPage } from "@/components/on-this-page";
 import { DocsSidebarLinks, IfSidebarLinks, PortalFooter } from "@/components/portal-look";
 import { ArticleFeedback, ArticleViewCount } from "@/components/article-feedback";
+import { articleDescription } from "@/lib/article-links";
 import { allCollections } from "@/lib/docs-level-above";
 import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
@@ -236,9 +238,7 @@ export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "lo
     return { title: `${name} · Docs`, ...(description && { description }), ...((locked || sample) && { robots: { index: false } }) };
   }
   const { article } = page;
-  const text = article.body.replace(/\s+/g, " ").trim();
-  // The team's meta description, else the text's first lines.
-  const description = article.description || (text.length > 160 ? `${text.slice(0, 157).trimEnd()}…` : text);
+  const description = articleDescription(article);
   return {
     title: `${article.title} · ${article.project.name}`,
     description,
@@ -349,7 +349,14 @@ export async function DocsArticle({
         </div>
         {readable ? (
           <>
-            <RichText doc={readable.doc} mediaUrls={await mediaUrls(readable.doc)} headingIds className="rich-text article-text break-words" />
+            <RichText
+              doc={readable.doc}
+              mediaUrls={await mediaUrls(readable.doc)}
+              headingIds
+              // Its links to the portal's other docs pages stay here, under this address, in this tab.
+              link={await articleLinks(project, readable.doc, ({ slug, hash }) => `${at(`/docs/${slug}`)}${hash}`)}
+              className="rich-text article-text break-words"
+            />
             <ArticleViewCount projectSlug={project} slug={slug} />
             {feedback(false, outlined(headings) ? "xl:hidden" : undefined)}
             <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, readable.tab, docs)} support={await supportContact(project)} />

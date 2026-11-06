@@ -19,6 +19,7 @@ export function RichText({
   className,
   mediaUrls,
   headingIds = false,
+  link,
 }: {
   doc: JSONContent;
   className?: string;
@@ -26,15 +27,17 @@ export function RichText({
   mediaUrls?: MediaUrls | null;
   /** Articles: top-level headings get ids from their text (docHeadings), so they can be linked. */
   headingIds?: boolean;
+  /** A safe link's own rendering (an article's link to another of the portal's articles); null for the usual new-tab link. */
+  link?: LinkRenderer;
 }) {
-  const media = mediaUrls ?? undefined;
+  const options: Options = { media: mediaUrls ?? undefined, link };
   const headings = docHeadings(doc);
   let next = 0;
   const content = (doc.content ?? []).map((child, i) =>
     child.type === "tableOfContents" ? (
       <TableOfContents key={i} headings={headings} links={headingIds} />
     ) : (
-      renderNode(child, i, media, headingIds && child.type === "heading" ? headings[next++]?.id : undefined)
+      renderNode(child, i, options, headingIds && child.type === "heading" ? headings[next++]?.id : undefined)
     ),
   );
   return <div className={className}>{content}</div>;
@@ -64,15 +67,19 @@ export function TableOfContents({ headings, links = true }: { headings: Heading[
   );
 }
 
-function children(node: JSONContent, media: MediaUrls | undefined): ReactNode[] {
-  return (node.content ?? []).map((child, i) => renderNode(child, i, media));
+export type LinkRenderer = (href: string, text: ReactNode) => ReactNode | null;
+type Options = { media?: MediaUrls; link?: LinkRenderer };
+
+function children(node: JSONContent, options: Options): ReactNode[] {
+  return (node.content ?? []).map((child, i) => renderNode(child, i, options));
 }
 
-function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined, id?: string): ReactNode {
-  const inner = () => children(node, media);
+function renderNode(node: JSONContent, key: number, options: Options, id?: string): ReactNode {
+  const { media } = options;
+  const inner = () => children(node, options);
   switch (node.type) {
     case "text":
-      return renderText(node, key);
+      return renderText(node, key, options.link);
     case "paragraph":
       return <p key={key}>{inner()}</p>;
     case "hardBreak":
@@ -267,14 +274,14 @@ function CodeTabs({ tabs }: { tabs: JSONContent[] }) {
       </div>
       {tabs.map((tab, i) => (
         <pre key={i}>
-          <code>{children(tab, undefined)}</code>
+          <code>{children(tab, {})}</code>
         </pre>
       ))}
     </div>
   );
 }
 
-function renderText(node: JSONContent, key: number): ReactNode {
+function renderText(node: JSONContent, key: number, link?: LinkRenderer): ReactNode {
   let element: ReactNode = node.text ?? "";
   for (const mark of node.marks ?? []) {
     switch (mark.type) {
@@ -289,7 +296,7 @@ function renderText(node: JSONContent, key: number): ReactNode {
         break;
       case "link":
         if (isSafeLink(mark.attrs?.href)) {
-          element = (
+          element = link?.(mark.attrs.href, element) ?? (
             <a href={mark.attrs.href} rel={LINK_REL} target="_blank">
               {element}
             </a>
