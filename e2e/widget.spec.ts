@@ -711,6 +711,15 @@ test("the portal shows the project's own widget, until the team turns it off in 
   // Its script stays, without the launcher, for Ask AI; on phones the page needs no room for one.
   await expect(script).toHaveAttribute("data-hide-launcher", "");
   await askAI();
+  // Without the widget after all (its script didn't load), Ask AI is the docs' search, with its AI answer.
+  const unloaded = await newPerson(browser, portalUrl(slug));
+  await unloaded.route("**/widget.js*", (route) => route.abort());
+  await unloaded.goto(`/docs/${article.slug}`);
+  await unloaded.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+  await unloaded.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).fill("How do I install it?");
+  await unloaded.getByRole("dialog", { name: "Search or ask AI" }).getByRole("combobox", { name: "Search or ask AI" }).press("Enter");
+  await unloaded.waitForURL(`${portalUrl(slug)}/docs?q=How+do+I+install+it%3F`);
+  await unloaded.context().close();
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
   await visitor.setViewportSize({ width: 1280, height: 720 });

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { keepTurn } from "@/components/docs-assistant";
 import { type DocsAssistant, DocsAssistantContext } from "@/components/docs-assistant-context";
-import { usePortalSlug } from "@/components/portal-base";
+import { usePortalHref, usePortalSlug } from "@/components/portal-base";
 
 type Tuti = { open: (options: { ask: string | true; returnFocus?: HTMLElement | null }) => void };
 
@@ -17,6 +17,7 @@ type Tuti = { open: (options: { ask: string | true; returnFocus?: HTMLElement | 
  */
 export function PortalAssistant({ viewer, children }: { viewer: string | null; children: React.ReactNode }) {
   const slug = usePortalSlug();
+  const at = usePortalHref();
   const outsideDialogs = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const keep = (event: FocusEvent) => {
@@ -31,15 +32,23 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
     const open = (ask: string | true) => {
       const focused = document.activeElement;
       const returnFocus = focused instanceof HTMLElement && !focused.closest('[role="dialog"], #tuti-widget') ? focused : outsideDialogs.current;
-      const tuti = (window as { Tuti?: Tuti }).Tuti;
-      if (tuti) {
-        tuti.open({ ask, returnFocus });
+      const now = () => {
+        const tuti = (window as { Tuti?: Tuti }).Tuti;
+        if (tuti) {
+          tuti.open({ ask, returnFocus });
+        } else {
+          // No widget after all (its script failed, or an older copy took the page): the docs' search, with its AI answer.
+          window.location.assign(at(ask === true ? "/docs" : `/docs?${new URLSearchParams({ q: ask })}`));
+        }
+      };
+      const script = document.querySelector("script[data-on-portal]");
+      // Its script still loading (the page's load waits for it): as soon as it's there.
+      if (!(window as { Tuti?: Tuti }).Tuti && script && document.readyState !== "complete") {
+        script.addEventListener("load", now, { once: true });
+        script.addEventListener("error", now, { once: true });
         return;
       }
-      // Its script still loading: as soon as it's there.
-      document
-        .querySelector("script[data-on-portal]")
-        ?.addEventListener("load", () => (window as { Tuti?: Tuti }).Tuti?.open({ ask, returnFocus }), { once: true });
+      now();
     };
     return {
       ask: (question) => open(question.trim() || true),
@@ -49,6 +58,6 @@ export function PortalAssistant({ viewer, children }: { viewer: string | null; c
         open(true);
       },
     };
-  }, [slug, viewer]);
+  }, [slug, viewer, at]);
   return <DocsAssistantContext.Provider value={assistant}>{children}</DocsAssistantContext.Provider>;
 }
