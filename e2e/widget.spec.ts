@@ -743,10 +743,29 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   const question = `How do I add a colleague to Acme ${slug}?`;
   const body = "Owners and admins send invites from the Team page.";
   await similar(question, `Inviting your team\n\n${body}`, 0.8);
+  await api("/support", { inbox: true }, "PATCH");
+
+  // Nothing yet for the AI to answer from (sample articles are never embedded; a hidden one isn't read): a message goes
+  // straight to the team, with the email box it needs.
+  await owner.goto(`/app/${slug}`);
+  await owner.getByRole("button", { name: "Add sample content" }).click();
+  await expect(owner.getByText(/^Here to try things with, labelled Sample/)).toBeVisible();
+  const hidden = await api("/articles", { title: "Internal notes", body: "Not for readers.", listing: "hidden" });
+  await api(`/articles/${hidden.slug}/publish`, {});
+  const early = await (await browser.newContext()).newPage();
+  await early.goto(sitePage("customer.localhost", slug));
+  await early.getByRole("button", { name: "Feedback" }).click();
+  const earlyWidget = early.frameLocator('iframe[title="Feedback"]');
+  await earlyWidget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Messages" }).click();
+  await earlyWidget.getByRole("textbox", { name: "Your email" }).fill(`e2e-early-${slug}@example.com`);
+  await earlyWidget.getByRole("textbox", { name: "Message" }).fill("Is there a phone number?");
+  await earlyWidget.getByRole("button", { name: "Send" }).click();
+  await expect(earlyWidget.getByRole("list", { name: "Messages" })).toContainText("Is there a phone number?");
+  await expect(earlyWidget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
+
   // AI only (no page, in no list): still something for the AI to answer from.
   const article = await api("/articles", { title: "Inviting your team", body, listing: "ai_only" });
   await api(`/articles/${article.slug}/publish`, {});
-  await api("/support", { inbox: true }, "PATCH");
 
   // A visitor writes in Messages: the AI answers from the docs first, with Ask a person right there (no thumbs-down needed).
   const visitor = await (await browser.newContext()).newPage();
@@ -779,7 +798,7 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   // Messages' own Send (the assistant has one too).
   const send = widget.locator("form").filter({ has: widget.getByRole("textbox", { name: "Message" }) }).getByRole("button", { name: "Send" });
 
-  // Their next message: Ask a person starts with the email they gave.
+  // Their next message, a question of its own (not a follow-up to the first): Ask a person starts with the email they gave.
   // (Nothing in the docs is close to it: "I don't know", with Ask a person too.)
   const second = `Can I invite people in bulk to Acme ${slug}?`;
   await widget.getByRole("button", { name: "New message" }).click();
@@ -789,7 +808,9 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await expect(ai.getByText("I don't know")).toBeVisible();
   await ai.getByRole("button", { name: "Ask a person" }).last().click();
   await expect(ai.getByRole("form", { name: "Ask a person" }).getByRole("textbox", { name: "Your email" })).toHaveValue(`e2e-asker-${slug}@example.com`);
-  await ai.getByRole("form", { name: "Ask a person" }).getByRole("button", { name: "Cancel" }).click();
+  await nextModelReply("They want to invite people in bulk.", second);
+  await ai.getByRole("form", { name: "Ask a person" }).getByRole("button", { name: "Send to the team" }).click();
+  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.").last()).toBeVisible();
   await close.click();
   // Its Send went with the form (sending went back to the list): focus goes to New message there.
   await expect(widget.getByRole("button", { name: "New message" })).toBeFocused();
@@ -816,7 +837,7 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   const direct = ai.getByRole("form", { name: "Ask a person" });
   await expect(direct.getByRole("textbox", { name: "Your email" })).toHaveValue(`e2e-asker-${slug}@example.com`);
   await direct.getByRole("button", { name: "Send to the team" }).click();
-  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toBeVisible();
+  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toHaveCount(3);
   // Passed to the team, it isn't asked again (that would be a second way to the team for it).
   await expect(ai.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await visitor.unroute("**/widget**");
@@ -849,6 +870,25 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await send.click();
   await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Can I pay by invoice?");
   await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
+
+  // On, with Messages hidden (no Ask a person) but opened by the page's own code: a message goes to the team, not to an
+  // assistant that couldn't pass it on.
+  await api("/widget", { aiFirst: true, hidden: ["messages"] }, "PATCH");
+  await visitor.reload();
+  await visitor.evaluate(() => (window as unknown as { Tuti: { open: (options: object) => void } }).Tuti.open({ tab: "messages" }));
+  await widget.getByRole("button", { name: "New message" }).click();
+  // (Another address: this one has had the hour's emails it may get, a conversation each.)
+  await widget.getByRole("textbox", { name: "Your email" }).fill(`e2e-status-${slug}@example.com`);
+  await widget.getByRole("textbox", { name: "Message" }).fill("Do you have a status page?");
+  await send.click();
+  await expect(widget.getByRole("list", { name: "Messages" })).toContainText("Do you have a status page?");
+  await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
+
+  // The team's conversation for the second question is that question's own: the first isn't in it.
+  await owner.goto(`/app/${slug}/inbox`);
+  await owner.getByRole("main").getByRole("listitem").filter({ hasText: second }).getByRole("link").click();
+  await expect(owner.getByRole("list", { name: "Messages" })).toContainText(second);
+  await expect(owner.getByRole("list", { name: "Messages" })).not.toContainText(question);
 });
 
 test("someone signed in on the portal opens What's new in its widget: what's new to them stays marked while their visit is recorded", async ({ browser }, testInfo) => {

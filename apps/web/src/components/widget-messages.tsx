@@ -706,7 +706,8 @@ function useAskFirst() {
     if (attachments.length > 0 || text.trim().length > MAX_QUESTION) {
       return false;
     }
-    assistant.ask(text);
+    // A question of its own: a new message, not a follow-up to what the assistant answered before.
+    assistant.ask(text, { fresh: true });
     return true;
   };
 }
@@ -786,8 +787,12 @@ function NewConversation({
         email={visitorEmail ?? undefined}
         upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
         send={async (text, email, attachments) => {
-          // Asked first: behind the assistant, their list, where a conversation it starts shows.
+          // Asked first: behind the assistant, their list, where a conversation it starts shows. The email they gave
+          // (perhaps corrected) is the one Ask a person starts with.
           if (askFirst?.(text, attachments)) {
+            if (visitorEmail !== null && auth.visitor) {
+              visitorStore.write(projectSlug, { token: auth.visitor, email: email.trim() });
+            }
             onBack();
             return {};
           }

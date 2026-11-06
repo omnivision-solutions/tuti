@@ -316,7 +316,8 @@ export function AskAPerson({
   return (
     <form aria-label="Ask a person" onSubmit={send} className="flex w-full flex-col gap-3 rounded-lg border p-3 text-foreground">
       <p className="text-sm text-muted-foreground">
-        We&apos;ll pass your question and the AI&apos;s answer to the team. They&apos;ll reply in Messages.
+        {/* Without a recorded question (asking failed), there's no answer of the AI's to pass on. */}
+        {questionId ? "We'll pass your question and the AI's answer to the team." : "We'll pass your question to the team."} They&apos;ll reply in Messages.
       </p>
       <Field>
         <FieldLabel htmlFor={`${id}-email`}>Your email</FieldLabel>

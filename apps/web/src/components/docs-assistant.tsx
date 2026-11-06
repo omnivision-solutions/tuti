@@ -15,7 +15,7 @@ import { askDocs, rateDocsAnswer } from "@/server/docs-readers";
 import type { DocsAnswer } from "@/server/operations/docs-ask";
 
 /** One turn of the conversation: what they asked, and the answer once it's come (or why it didn't). */
-type Turn = { key: string; question: string; answer?: DocsAnswer; error?: string; rated?: boolean; /** Passed to the team (Ask a person): once. */ escalated?: boolean };
+type Turn = { key: string; question: string; answer?: DocsAnswer; error?: string; rated?: boolean; /** Passed to the team (Ask a person): once. */ escalated?: boolean; /** Asked on its own, following up on nothing (a new message in Messages). */ fresh?: boolean };
 
 /** The longest post title (MAX_POST_TITLE): "Post this as feedback" starts a post with the question as its title. */
 const MAX_TITLE = 120;
@@ -153,16 +153,16 @@ export function DocsAssistantProvider({
 
   const assistant = useMemo<DocsAssistant>(
     () => ({
-      ask: (question) => {
+      ask: (question, { fresh = false } = {}) => {
         const trimmed = question.trim();
         show();
         if (!trimmed) {
           return;
         }
-        const before = turnsRef.current;
+        const before = fresh ? [] : turnsRef.current;
         const turn = crypto.randomUUID();
         setAskedHere((keys) => [...keys, turn]);
-        setTurns((all) => [...all, { key: turn, question: trimmed }]);
+        setTurns((all) => [...all, { key: turn, question: trimmed, ...(fresh && { fresh }) }]);
         void run(turn, trimmed, before);
       },
       open: show,
@@ -175,7 +175,7 @@ export function DocsAssistantProvider({
   );
 
   const retry = (turn: Turn) => {
-    const before = turnsRef.current.slice(0, turnsRef.current.findIndex((each) => each.key === turn.key));
+    const before = turn.fresh ? [] : turnsRef.current.slice(0, turnsRef.current.findIndex((each) => each.key === turn.key));
     update(turn.key, { answer: undefined, error: undefined });
     void run(turn.key, turn.question, before);
   };

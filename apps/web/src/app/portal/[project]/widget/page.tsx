@@ -174,8 +174,9 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
             collection={typeof collection === "string" ? collection : undefined}
           />
         )}
-        {/* AI first (Customize → Widget) where the assistant is here and has docs to answer from. */}
-        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} aiFirst={settings.aiFirst && !!assistant && project._count.articles > 0} />}
+        {/* AI first (Customize → Widget) where the assistant is here, has docs to answer from, and can pass a question to the
+            team (Ask a person: not with Messages turned off, though the page's own code may still open it). */}
+        {tab === "messages" && <Messages projectId={project.id} projectName={project.name} slug={slug} aiFirst={settings.aiFirst && !!assistant?.askAPerson && project._count.articles > 0} />}
         {tab === "feedback" && (
           <Feedback slug={slug} projectId={project.id} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
         )}
