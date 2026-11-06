@@ -188,6 +188,9 @@ test("the team syncs its users over the API and finds them on the Users page, by
   const pages = owner.getByRole("navigation", { name: "Pages", exact: true });
   await expect(pages).toContainText("1–50 of 55");
   await expect(owner.getByRole("navigation", { name: "More pages" })).toContainText("1–50 of 55");
+  // In the middle, clear of the bottom right where Tuti's chat launcher sits (56px, 20px in).
+  const next = (await owner.getByRole("navigation", { name: "More pages" }).getByRole("link", { name: "Next" }).boundingBox())!;
+  expect(next.x + next.width).toBeLessThan(owner.viewportSize()!.width - 76);
   await pages.getByRole("link", { name: "Next" }).click();
   await expect(owner).toHaveURL(/\?page=2$/);
   // Ada, Bea, Cy, Dee, Eve and 50 Zeds: five on the second page.

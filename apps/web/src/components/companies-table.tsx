@@ -2,6 +2,7 @@ import { cn } from "cn";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
+import { PageNav } from "@/components/page-nav";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { askingTotal } from "@/lib/format";
@@ -88,20 +89,7 @@ export async function CompaniesTable({
         </CardContent>
       </Card>
       {(page > 1 || nextCursor) && (
-        <nav aria-label="Pages" className="flex justify-between gap-2">
-          {page > 1 ? (
-            <Link href={href({ to: page - 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              Previous
-            </Link>
-          ) : (
-            <span />
-          )}
-          {nextCursor && (
-            <Link href={href({ to: page + 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              Next
-            </Link>
-          )}
-        </nav>
+        <PageNav back={page > 1 ? { href: href({ to: page - 1 }), label: "Previous" } : null} on={nextCursor ? { href: href({ to: page + 1 }), label: "Next" } : null} />
       )}
     </>
   );

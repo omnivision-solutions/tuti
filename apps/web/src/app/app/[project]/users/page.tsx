@@ -6,6 +6,7 @@ import { CompaniesTable } from "@/components/companies-table";
 import { EmptyState } from "@/components/empty-state";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
+import { PageNav } from "@/components/page-nav";
 import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -93,27 +94,9 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   /** Previous, which of them these are ("51–100 of 1,250"), and Next; above the table and below it. */
   const pages = (label: string) =>
     (page > 1 || nextCursor) && (
-      <nav aria-label={label} className="flex items-center justify-between gap-2">
-        {page > 1 ? (
-          <Link href={href({ to: page - 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Previous
-          </Link>
-        ) : (
-          <span />
-        )}
-        {users.length > 0 && (
-          <span className="text-sm text-muted-foreground tabular-nums">
-            {count((page - 1) * PER_PAGE + 1)}–{count((page - 1) * PER_PAGE + users.length)} of {count(total)}
-          </span>
-        )}
-        {nextCursor ? (
-          <Link href={href({ to: page + 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Next
-          </Link>
-        ) : (
-          <span />
-        )}
-      </nav>
+      <PageNav label={label} back={page > 1 ? { href: href({ to: page - 1 }), label: "Previous" } : null} on={nextCursor ? { href: href({ to: page + 1 }), label: "Next" } : null}>
+        {users.length > 0 && `${count((page - 1) * PER_PAGE + 1)}–${count((page - 1) * PER_PAGE + users.length)} of ${count(total)}`}
+      </PageNav>
     );
   /** A column's heading: a link that sorts by it (from the first page), marked while it does. */
   const sortHeading = ({ by, label, className }: { by: Sort; label: string; className?: string }) => (
