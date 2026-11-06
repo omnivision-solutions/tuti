@@ -83,7 +83,7 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
                 )}
                 {toSendHere && toSend}
               </div>
-              {run.state === "done" ? (
+              {run.state === "done" && info.see ? (
                 <>
                   {/* Its state, heard in the row as the tag says it while it runs. */}
                   <span className="sr-only">{PART_STATE.done.tag}</span>
@@ -159,7 +159,7 @@ export function SetupImport({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [from, setFrom] = useState<"fresh" | "featurebase">(latest ? "featurebase" : "fresh");
-  const [picked, setPicked] = useState<ImportPart[]>(["team", "contacts"]);
+  const [picked, setPicked] = useState<ImportPart[]>(["team", "contacts", "avatars"]);
   const [error, setError] = useState<string | null>(null);
   const parts = Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][];
   const running = latest?.state === "running";

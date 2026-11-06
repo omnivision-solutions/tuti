@@ -29,6 +29,8 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(owner.getByRole("checkbox", { name: /^Team/ })).toBeChecked();
   await expect(owner.getByText("Your Featurebase team, as invitations you review and send. They join as members; owners can change roles in Team & roles.")).toBeVisible();
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
+  // Profile pictures too: copied last, so nothing waits for them.
+  await expect(owner.getByRole("checkbox", { name: /^Profile pictures/ })).toBeChecked();
   await expect(owner.getByText("Your team, contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase");
 
@@ -54,17 +56,19 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Each part says where it is, in the order they run: the team done, contacts under way.
   const parts = owner.getByRole("list", { name: "What's brought across" });
   const part = (name: string) => parts.getByRole("listitem").filter({ has: owner.getByText(name, { exact: true }) });
-  await expect(owner.getByText("Part 2 of 2.", { exact: false })).toBeVisible();
+  await expect(owner.getByText("Part 2 of 3.", { exact: false })).toBeVisible();
   await expect(part("Team")).toContainText("2 invitations ready to send.");
   // Said once, with their link: no count of its own besides.
   await expect(part("Team")).not.toContainText("2 invitations.");
   await expect(part("Team")).toContainText("Done");
   await expect(part("Contacts")).toContainText("Starting…");
   await expect(part("Contacts")).toContainText("In progress");
+  await expect(part("Profile pictures")).toContainText("Your users' profile pictures");
+  await expect(part("Profile pictures")).toContainText("Next");
   await checkpoint(owner, "setup-featurebase-importing");
   // Featurebase answers now; done, Continue still has focus (one Continue, kept as the import ends), and the summary is said.
   await fetch(`${process.env.E2E_FEATUREBASE_URL}/_fake/release`, { method: "POST" });
-  await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.", { timeout: 15_000 });
+  await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts, 1 profile picture brought across.", { timeout: 15_000 });
   await expect(continueLink).toBeFocused();
   // Nothing was emailed: the invitations wait for the team to send them.
   await expect(owner.getByText("2 invitations ready to send.")).toBeVisible();
@@ -79,7 +83,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Home says what came across, and the contacts are the project's users, with their company.
   await owner.waitForURL(`**/app/${slug}`);
   await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
-  await expect(owner.getByText("Team and Contacts brought across.", { exact: true })).toBeVisible();
+  await expect(owner.getByText("Team, Contacts and Profile pictures brought across.", { exact: true })).toBeVisible();
   // Its card is a line; View details opens each part's progress, as the setup step shows it.
   await owner.getByRole("button", { name: "View details" }).click();
   const details = owner.getByRole("dialog", { name: "Imported from Featurebase" });
@@ -93,7 +97,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await owner.keyboard.press("Escape");
   await expect(details).toHaveCount(0);
   // Screen readers hear it in one status: the title and, once it's over, the summary.
-  await expect(owner.getByRole("status").filter({ hasText: "Featurebase" })).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.");
+  await expect(owner.getByRole("status").filter({ hasText: "Featurebase" })).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts, 1 profile picture brought across.");
   await checkpoint(owner, "home-imported");
 
   // The team's invitations, not sent yet, in Team & roles: one is sent, and waits there as any invite does.
@@ -169,13 +173,17 @@ test("Feedback comes across with Contacts: the posts with their dates, votes and
   await expect(feedback).not.toBeChecked();
   await feedback.check();
   await expect(contacts).toBeChecked();
+  // Profile pictures went with Contacts, and don't come back with them.
+  const pictures = owner.getByRole("checkbox", { name: /^Profile pictures/ });
+  await expect(pictures).not.toBeChecked();
+  await pictures.check();
   await checkpoint(owner, "setup-featurebase-feedback");
 
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
   await expect(status).toContainText("Imported from Featurebase", { timeout: 30_000 });
-  for (const count of ["3 contacts", "2 boards", "5 posts", "8 votes", "3 comments", "1 note", "1 avatar"]) {
+  for (const count of ["3 contacts", "2 boards", "5 posts", "8 votes", "3 comments", "1 note", "1 profile picture"]) {
     await expect(status).toContainText(count);
   }
   await expect(status).toContainText("3 boards only some people see");

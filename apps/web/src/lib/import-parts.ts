@@ -34,8 +34,8 @@ export const IMPORT_PARTS = {
     needs: ["contacts"],
     media: true,
     see: { label: "See feedback", page: "feedback" },
-    steps: { posts: "Posts", votes: "Votes", comments: "Comments", avatars: "Avatars", embeddings: "Duplicate check" },
-    kinds: ["boards", "posts", "votes", "comments", "notes", "images", "files", "videos", "avatars"],
+    steps: { posts: "Posts", votes: "Votes", comments: "Comments", embeddings: "Duplicate check" },
+    kinds: ["boards", "posts", "votes", "comments", "notes", "images", "files", "videos"],
   },
   docs: {
     label: "Help center",
@@ -57,11 +57,23 @@ export const IMPORT_PARTS = {
     steps: { conversations: "Conversations" },
     kinds: ["conversations", "attachments"],
   },
+  // Last, so nothing waits for it: the least of it, and the slowest.
+  avatars: {
+    label: "Profile pictures",
+    description: "Your users' uploaded profile pictures, copied last so the rest doesn't wait for them.",
+    brings: "Your users' profile pictures",
+    needs: ["contacts"],
+    media: true,
+    // Contacts' See users is the way to them.
+    see: null,
+    steps: { avatars: "Profile pictures" },
+    kinds: ["avatars"],
+  },
 } as const satisfies Record<string, ImportPartInfo>;
 
 /**
  * `brings`: what it brings, in a few words, while it waits its turn. `see`: where what it brought is in the app, once the
- * import ends. `steps`: its steps (@tuti/jobs IMPORT_PARTS) and what each is called; `kinds`: what it counts (imports'
+ * import ends (null: another part's link goes there). `steps`: its steps (@tuti/jobs IMPORT_PARTS) and what each is called; `kinds`: what it counts (imports'
  * counts), in the order it brings them.
  */
 export type ImportPartInfo = {
@@ -70,7 +82,7 @@ export type ImportPartInfo = {
   brings: string;
   needs: readonly string[];
   media: boolean;
-  see: { label: string; page: string };
+  see: { label: string; page: string } | null;
   steps: Record<string, string>;
   kinds: readonly string[];
 };
@@ -128,7 +140,7 @@ const KINDS: Record<string, [string, string]> = {
   images: ["image", "images"],
   files: ["file", "files"],
   videos: ["video", "videos"],
-  avatars: ["avatar", "avatars"],
+  avatars: ["profile picture", "profile pictures"],
   // The help center's, counted apart from feedback's.
   articleImages: ["image in an article", "images in articles"],
   articleFiles: ["file in an article", "files in articles"],
@@ -176,8 +188,13 @@ export function importProgress(run: ImportView) {
     const state =
       run.state === "done" || i < at ? "done" : i === at ? (run.state === "running" ? "now" : "stopped") : run.state === "running" && i === at + 1 ? "next" : "waiting";
     // Imports from before the help center counted its media apart kept it as feedback's kinds: the help center's when
-    // there's no feedback.
-    const kinds = part === "docs" && !picked.includes("feedback") ? [...IMPORT_PARTS.docs.kinds, "images", "files", "videos"] : IMPORT_PARTS[part].kinds;
+    // there's no feedback. Those from before profile pictures were a part of their own counted them in feedback.
+    const kinds =
+      part === "docs" && !picked.includes("feedback")
+        ? [...IMPORT_PARTS.docs.kinds, "images", "files", "videos"]
+        : part === "feedback" && !picked.includes("avatars")
+          ? [...IMPORT_PARTS.feedback.kinds, "avatars"]
+          : IMPORT_PARTS[part].kinds;
     return { part, state, step: i === at ? run.step : null, ...described(run.counts, kinds) } as const;
   });
 }

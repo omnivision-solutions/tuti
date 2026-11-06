@@ -7,7 +7,7 @@ import { type PropertyChanges, propertyChanges } from "@tuti/shared/user-propert
 
 import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseContact, FeaturebaseError } from "./featurebase";
 import { checkDocs, DOCS_STEPS } from "./import-docs";
-import { feedbackSteps } from "./import-feedback";
+import { avatarsPage, feedbackSteps } from "./import-feedback";
 import { conversationsPage } from "./import-inbox";
 import { teamPage } from "./import-team";
 import { enqueue, type JobLogger, type JobResult } from "./index";
@@ -73,6 +73,8 @@ export const IMPORT_PARTS: Record<string, { check: (api: Featurebase) => Promise
   feedback: { check: (api) => Promise.all([api.get("/boards"), api.get("/posts", { limit: 1 })]), steps: feedbackSteps },
   docs: { check: checkDocs, steps: DOCS_STEPS },
   inbox: { check: (api) => api.get("/conversations", { limit: 1 }), steps: [{ name: "conversations", page: conversationsPage }] },
+  // Last: the least of it, and the slowest, so nothing waits for it (it reads only what's here: nothing to check).
+  avatars: { check: async () => undefined, steps: [{ name: "avatars", page: avatarsPage }] },
 };
 
 const STEPS = Object.entries(IMPORT_PARTS).flatMap(([part, { steps }]) => steps.map((step) => ({ ...step, part })));
@@ -214,6 +216,17 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
   if (unknown) {
     await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: `Tuti was updating as it started. ${AGAIN}`, finishedAt: new Date() } });
     return { failed: true };
+  }
+  // One from before avatars were a part of their own, last (Feedback's, before its duplicate check): it goes on with the
+  // rest, and copies them last.
+  if (row.step === "avatars" && !row.parts.includes("avatars")) {
+    const parts = [...row.parts, "avatars"];
+    const step = nextStep(parts, "comments")!;
+    const { count } = await prisma.dataImport.updateMany({ where: claim, data: { parts, step, cursor: null } });
+    if (count > 0) {
+      await continueImport(importId, log);
+    }
+    return count > 0 ? { step } : { skipped: true };
   }
   let next: string | null = null;
   let saved: boolean;
