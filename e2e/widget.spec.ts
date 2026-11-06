@@ -649,11 +649,29 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await launcher.click();
   await expect(visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" })).toBeVisible();
   await checkpoint(visitor, "portal-widget-open");
+  // The portal's own sheets go over an open panel: the docs' assistant, opened beside it, takes clicks where the panel is.
+  const api = await apiFor(owner, slug);
+  const article = await api("/articles", { title: "Getting started", body: "Install the app." });
+  await api(`/articles/${article.slug}/publish`, {});
+  await visitor.goto(`/docs/${article.slug}`);
+  await launcher.click();
+  await expect(visitor.locator("#tuti-widget")).toBeVisible();
+  await visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+  await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
+  await visitor.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" }).click();
+  await expect(visitor.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" })).toBeFocused();
+  await visitor.getByRole("button", { name: "Close the assistant" }).click();
+  // On phones the page ends clear of the launcher (5.5rem); wider, it doesn't need to.
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "88px");
+  await visitor.setViewportSize({ width: 1280, height: 720 });
+  await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
 
   // Turned off, the portal has no launcher.
   await owner.goto(`/app/${slug}/customize/widget`);
   const onPortal = owner.getByRole("switch", { name: "Show on your portal" });
   await expect(onPortal).toBeChecked();
+  await expect(owner.getByText("The launcher on every page of your portal too, opening the same panel as on your site.")).toBeVisible();
   await onPortal.scrollIntoViewIfNeeded();
   await checkpoint(owner, "customize-widget-on-portal", { fullPage: false });
   await onPortal.click();

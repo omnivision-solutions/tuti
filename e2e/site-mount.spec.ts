@@ -87,6 +87,9 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(direct.getByRole("heading", { name: "Docs" }).first()).toBeVisible();
   await expect(direct.locator("#team-html")).toHaveCount(0);
   await expect(direct.locator("body")).not.toHaveAttribute("data-team-script", "ran");
+  // Customize → Widget says so beside its switch.
+  await owner.goto(`/app/${slug}/customize/widget`);
+  await expect(owner.getByText("The launcher on every page of your portal too. Not yet while your portal is under a path of your site.")).toBeVisible();
   await owner.goto(`/app/${slug}/customize/address`);
 
   // Signing up, posting and signing out there, all under the path.
