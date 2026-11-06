@@ -117,7 +117,5 @@ export async function postAudience(
   return audience;
 }
 
-/** Whether a post's visibility is still what an email's audience was read with (a change since: read it again). */
-export async function sameVisibility(postId: string, visibility: PostVisibility): Promise<boolean> {
-  return (await prisma.post.findUnique({ where: { id: postId }, select: { visibility: true } }))?.visibility === visibility;
-}
+/** A post's visibility changed while it was being emailed: the run fails, and its retry reads who may see it now. */
+export const visibilityChanged = (postId: string) => new Error(`post ${postId}'s visibility changed while it was emailed; trying again with who may see it now`);

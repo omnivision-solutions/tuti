@@ -276,29 +276,45 @@ test("sample content takes its board's visibility, as any new post", async () =>
   expect(posts.every((post) => post.visibility === "TEAM")).toBe(true);
 });
 
-test("a post made private while its shipped email goes out isn't emailed to anyone who may no longer see it", async () => {
-  const { ada, bob, project, mine } = await fixture();
-  // Ada's post, public and just completed: Ada (its author) and Bob (a voter) are to be told.
-  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PUBLIC", status: "COMPLETED", shippedEmailsDueAt: new Date() } });
-  // Made private after the job read who to tell, as it checks before its first email.
-  const findUnique = prisma.post.findUnique.bind(prisma.post);
-  let looks = 0;
-  const spy = vi.spyOn(prisma.post, "findUnique").mockImplementation((async (args: Parameters<typeof findUnique>[0]) => {
-    if (++looks === 1) {
-      await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PRIVATE" } });
+/** Runs `run` with the post made `visibility` as the job claims its first email (after it read who to tell). */
+async function changedAtFirstClaim(postId: string, visibility: PostVisibility, run: () => Promise<unknown>) {
+  const transaction = prisma.$transaction.bind(prisma);
+  let claims = 0;
+  const spy = vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof transaction>) => {
+    if (++claims === 1) {
+      await prisma.post.update({ where: { id: postId }, data: { visibility } });
     }
-    return findUnique(args);
+    return transaction(...args);
   }) as never);
   try {
-    await expect(handlers.postShipped({ postId: mine.id }, { info: () => {}, warn: () => {} })).rejects.toThrow(/visibility changed/);
+    await expect(run()).rejects.toThrow(/visibility changed/);
   } finally {
     spy.mockRestore();
   }
+}
+const log = { info: () => {}, warn: () => {} };
+
+test("a post made private while its shipped email goes out isn't emailed to anyone who may no longer see it", async () => {
+  const { ada, mine } = await fixture();
+  // Ada's post, public and just completed: Ada (its author) and Bob (a voter) are to be told.
+  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PUBLIC", status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+  await changedAtFirstClaim(mine.id, "PRIVATE", () => handlers.postShipped({ postId: mine.id }, log));
   // Nobody emailed on the old audience; run again, it emails only who may see it now: Ada, not Bob.
   expect(await prisma.shippedEmail.count({ where: { postId: mine.id } })).toBe(0);
-  await handlers.postShipped({ postId: mine.id }, { info: () => {}, warn: () => {} });
+  await handlers.postShipped({ postId: mine.id }, log);
   const told = await prisma.shippedEmail.findMany({ where: { postId: mine.id, sentAt: { not: null } }, select: { userId: true } });
   expect(told.map((row) => row.userId)).toEqual([ada.id]);
+});
+
+test("a post made private while the team's reply is emailed to its voters isn't emailed to a voter who may no longer see it", async () => {
+  const { mine } = await fixture();
+  // The team's reply on Ada's post, public then: Bob (a voter) is to be emailed it.
+  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PUBLIC" } });
+  const reply = await prisma.comment.findFirstOrThrow({ where: { postId: mine.id } });
+  await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date() } });
+  await changedAtFirstClaim(mine.id, "PRIVATE", () => handlers.replyEmailed({ commentId: reply.id }, log));
+  await handlers.replyEmailed({ commentId: reply.id }, log);
+  expect(await prisma.replyEmail.count({ where: { commentId: reply.id } })).toBe(0);
 });
 
 test("a portal whose boards are all the team's opens on its changelog", async () => {

@@ -1,5 +1,5 @@
 import { type Doc, toPlainText } from "@tuti/content";
-import { prisma } from "@tuti/db";
+import { type PostVisibility, prisma } from "@tuti/db";
 import { replyEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
@@ -8,7 +8,7 @@ import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
-import { postAudience, sameVisibility } from "./post-audience";
+import { postAudience, visibilityChanged } from "./post-audience";
 import { projectEmailWaits, projectSender } from "./project-sender";
 
 /** An unsent claim (or a due reply) this old belongs to a run that died or never started. */
@@ -25,12 +25,18 @@ const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
  * run then uses to mark it sent or release it (never touching a claim another run took over); null when someone
  * else has it, it's sent, or the reply's emails aren't due any more (a resume dropped a pause's).
  */
-async function claim(commentId: string, userId: string): Promise<Date | null> {
+async function claim(commentId: string, userId: string, visibility: PostVisibility): Promise<Date | null> {
   return prisma.$transaction(async (tx) => {
-    // The reply's row locked, so a resume that drops a pause's emails waits for this claim, or this claim sees it.
-    const [comment] = await tx.$queryRaw<{ due: Date | null }[]>`SELECT "votersEmailDueAt" AS due FROM comment WHERE id = ${commentId} FOR UPDATE`;
+    // The reply's row locked, so a resume that drops a pause's emails waits for this claim, or this claim sees it; its
+    // post's too, so a visibility change since the audience was read fails the run (its retry reads who may see it now).
+    const [comment] = await tx.$queryRaw<{ due: Date | null; postId: string; visibility: PostVisibility }[]>`
+      SELECT c."votersEmailDueAt" AS due, p.id AS "postId", p.visibility FROM comment c JOIN post p ON p.id = c."postId"
+      WHERE c.id = ${commentId} FOR UPDATE OF c, p`;
     if (!comment?.due) {
       return null;
+    }
+    if (comment.visibility !== visibility) {
+      throw visibilityChanged(comment.postId);
     }
     const claimedAt = new Date();
     const { count } = await tx.replyEmail.createMany({ data: [{ commentId, userId, claimedAt }], skipDuplicates: true });
@@ -87,7 +93,6 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   const comment = await prisma.comment.findUnique({
     where: { id: commentId },
     select: {
-      postId: true,
       authorId: true,
       body: true,
       content: true,
@@ -139,12 +144,8 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   let failed = 0;
   let held = false;
   for (const { id, address, unsubscribeToken } of people) {
-    // Made private or the team's since the audience was read: the retry reads who may see it now.
-    if (!(await sameVisibility(comment.postId, post.visibility))) {
-      throw new Error(`post ${comment.postId}'s visibility changed while its reply was emailed; trying again with who may see it now`);
-    }
     // Claimed before sending, so a retry or a second run doesn't email them twice.
-    const claimedAt = await claim(commentId, id);
+    const claimedAt = await claim(commentId, id, post.visibility);
     if (!claimedAt) {
       continue;
     }
