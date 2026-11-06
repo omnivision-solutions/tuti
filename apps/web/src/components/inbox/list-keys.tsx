@@ -17,39 +17,49 @@ const rowNumbers = (list: HTMLElement | null) => rowLinks(list).map((link) => Nu
 /** Whether the list opened the conversation (a click or a key): its row has focus again once it's there. */
 let opening = false;
 
-/** How many times a list has rendered (opening, or refreshed), and its conversations' numbers as it last did. */
-let renders = 0;
+/** The list's conversations' numbers as it last rendered (opening, or refreshed). */
 let rows: number[] = [];
-/** The open conversation acted on, and the list as it was as the action started: its refresh, still to come, checks. */
-let acted: { number: number; from: number[] } | null = null;
+/** The open conversation acted on, the list as it was as the action started, and till when its refresh may move on. */
+let acted: { number: number; from: number[]; until: number } | null = null;
 /** The list on the page's: opens the next one once the open one (`number`) has left it (see actOn). */
 let moveOn: ((number: number, from: number[]) => void) | null = null;
+/** How long after an action its refresh may still move on: the action's own refresh lands well inside it. */
+const SETTLES_MS = 10_000;
 
 /**
  * Called as the team member's own action on the open conversation (`number`) starts (Close, Assign, a reply, …); the
  * function it returns, once it's done. Moved out of the view by it, the next one down from where it stood in the list
- * as it was opens (the first, with none below it), or none with none left. Not for a change someone else made, which
- * the live refresh shows: jumping away while they read or type would be wrong.
+ * as it was opens (the first, with none below it), or none with none left. Not for a change someone else made later,
+ * which the live refresh shows: jumping away while they read or type would be wrong.
  *
- * Next resolves an action before it applies the refreshed page its response carries, and React commits that page
- * with the action's transition, so the list's next render after the action is its refresh: it's checked then, and
- * only then (`acted` doesn't wait any longer, so a teammate's later change can't move it on). Already rendered while
- * the action ran (a live refresh got there first), it's checked right away.
+ * The list may render before the action's refresh does (a live refresh, read before the action was saved, still with
+ * it), or after it (one that got there first, without it): so from when the action is done, the first render without
+ * it moves on, now or in the next few seconds (SETTLES_MS); still there by then, it stayed in the view, and a
+ * teammate's later change doesn't move them on.
  */
 export function actOn(number: number) {
-  const at = renders;
   const from = rows;
   return () => {
     // Not in the list as the action started (opened from who they are): it hasn't left it.
-    if (!from.includes(number)) {
-      return;
-    }
-    if (renders === at) {
-      acted = { number, from };
-    } else {
-      moveOn?.(number, from);
+    if (from.includes(number)) {
+      acted = { number, from, until: Date.now() + SETTLES_MS };
+      settle();
     }
   };
+}
+
+/** The open one acted on: gone from the list as last rendered, the next one opens; past its few seconds, forgotten. */
+function settle() {
+  if (!acted) {
+    return;
+  }
+  if (Date.now() > acted.until) {
+    acted = null;
+  } else if (!rows.includes(acted.number)) {
+    const { number, from } = acted;
+    acted = null;
+    moveOn?.(number, from);
+  }
 }
 
 /**
@@ -89,7 +99,8 @@ export function ListKeys({
       // open), the conversation's title: the button that had focus went away with the page it was on.
       const to = current ?? document.querySelector<HTMLElement>('nav[aria-label="Views"] a[aria-current="page"]');
       const title = document.querySelector<HTMLElement>("[data-inbox-conversation] h1");
-      if (to?.checkVisibility()) {
+      // Shown (laid out at all): getClientRects, as checkVisibility isn't in Safari before 17.4.
+      if (to && to.getClientRects().length > 0) {
         to.focus({ preventScroll: true });
       } else if (title) {
         title.tabIndex = -1;
@@ -152,13 +163,8 @@ export function ListKeys({
 
   // Each render (each refresh of the list): the open one acted on, gone from it, moves on (see actOn).
   useEffect(() => {
-    renders++;
     rows = rowNumbers(ref.current);
-    if (acted) {
-      const { number, from } = acted;
-      acted = null;
-      moveOn?.(number, from);
-    }
+    settle();
   });
 
   useEffect(() => {
