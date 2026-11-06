@@ -58,7 +58,7 @@ test("Home: the numbers, what needs the team by kind (oldest first) with its act
     ],
   });
 
-  const home = await homeOverview(project.id, project.slug, { emailVerified: false });
+  const home = await homeOverview(project.id, project.slug);
   // New this week: Dark mode and Exports (not SSO, from 20 days ago).
   expect(home.numbers).toEqual({ newPosts: 2, needReply: 2, toReview: 0, searchesFailed: 3 });
   // Customers waiting first, then posts to triage, then searches; each with how many wait and the list of them all.
@@ -101,16 +101,16 @@ test("Get set up while steps are left, each as it's done; sample content offered
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   actAs(owner);
-  const home = async () => homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = async () => homeOverview(project.id, project.slug);
   // A new project: nothing waiting, nothing of its own, every step to do. No GitHub here: no step for it.
-  const fresh = await homeOverview(project.id, project.slug, { emailVerified: false });
+  const fresh = await homeOverview(project.id, project.slug);
   expect([fresh.attention, fresh.started]).toEqual([[], false]);
   expect(fresh.setup!.map((step) => step.key)).not.toContain("github");
   expect(fresh.setup!.filter((step) => step.done).map((step) => step.key)).toEqual([]);
   // Each step as it's done. A revoked invitation invites nobody.
   await prisma.invitation.create({ data: { projectId: project.id, email: "e2e-typo@example.com", tokenHash: "revoked", createdById: owner.id, expiresAt: new Date(Date.now() + DAY), revokedAt: new Date() } });
   await prisma.project.update({ where: { id: project.id }, data: { widgetSeenAt: new Date(), ssoSecret: "s3cret" } });
-  expect((await home()).setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["verify", "widget", "sso"]);
+  expect((await home()).setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["widget", "sso"]);
 
   // Sample content, a conversation marked spam, a draft article and the changelog's draft (as Autopilot
   // keeps from merged pull requests) aren't the project's own yet: still to start.
@@ -126,7 +126,7 @@ test("Get set up while steps are left, each as it's done; sample content offered
   await prisma.article.update({ where: { id: draft.id }, data: { publishedAt: new Date() } });
   const published = await home();
   expect(published.started).toBe(true);
-  expect(published.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["verify", "widget", "sso", "article"]);
+  expect(published.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["widget", "sso", "article"]);
 
   // On other new projects, the first post, or the first conversation, does the same.
   for (const add of [
@@ -134,9 +134,9 @@ test("Get set up while steps are left, each as it's done; sample content offered
     (projectId: string) => prisma.conversation.create({ data: { projectId, number: 1, subject: "Can't log in", status: "CLOSED", origin: "API", lastMessageAt: new Date() } }),
   ]) {
     const other = await createProject(owner);
-    expect((await homeOverview(other.id, other.slug, { emailVerified: true })).started).toBe(false);
+    expect((await homeOverview(other.id, other.slug)).started).toBe(false);
     await add(other.id);
-    const after = await homeOverview(other.id, other.slug, { emailVerified: true });
+    const after = await homeOverview(other.id, other.slug);
     expect(after.started).toBe(true);
     expect(after.setup).not.toBeNull();
   }
@@ -149,28 +149,28 @@ test("Get set up follows what the team picked after Create project; a project wi
   for (const name of ["GITHUB_APP_SLUG", "GITHUB_APP_CLIENT_ID", "GITHUB_APP_CLIENT_SECRET", "GITHUB_WEBHOOK_SECRET", "GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"]) {
     vi.stubEnv(name, "test");
   }
-  const steps = async () => (await homeOverview(project.id, project.slug, { emailVerified: false })).setup!.map((step) => step.key);
+  const steps = async () => (await homeOverview(project.id, project.slug)).setup!.map((step) => step.key);
   try {
     // Nothing picked (projects from before, or the step skipped): the six steps as they were.
-    expect(await steps()).toEqual(["verify", "widget", "github", "sso", "article", "team"]);
+    expect(await steps()).toEqual(["widget", "github", "sso", "article", "team"]);
 
     actAs(owner);
     expect(await setProjectUses(project.slug, ["support"])).toEqual({});
     // The API reads them back.
     expect((await call(getProject, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {})).uses).toEqual(["support"]);
     // Support only: no GitHub (Autopilot updates feedback, docs and the changelog) and no article; the support inbox instead.
-    expect(await steps()).toEqual(["verify", "widget", "sso", "support", "team"]);
+    expect(await steps()).toEqual(["widget", "sso", "support", "team"]);
 
     // Done as it's done: the inbox once it's on.
     await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
-    const inbox = await homeOverview(project.id, project.slug, { emailVerified: false });
+    const inbox = await homeOverview(project.id, project.slug);
     expect(inbox.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["support"]);
 
     expect(await setProjectUses(project.slug, ["docs", "changelog", "docs"])).toEqual({});
-    expect(await steps()).toEqual(["verify", "widget", "github", "article", "changelog", "team"]);
+    expect(await steps()).toEqual(["widget", "github", "article", "changelog", "team"]);
     // Done as it's done: a published entry.
     await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt: new Date() } });
-    const home = await homeOverview(project.id, project.slug, { emailVerified: false });
+    const home = await homeOverview(project.id, project.slug);
     expect(home.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["changelog"]);
 
     // Only what's offered is kept.
@@ -224,7 +224,7 @@ test("Home groups what needs the team, customers waiting first, five of each wit
   });
   await prisma.conversation.create({ data: { projectId: project.id, number: 21, subject: "Reopened", status: "OPEN", origin: "API", lastMessageAt: ago(7) } });
 
-  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  const home = await homeOverview(project.id, project.slug);
   // A new article's draft each (no article yet): 104 to review, as To review counts them.
   expect(home.numbers.toReview).toBe(104);
   // Conversations, then Autopilot's posts and articles to review (To review's rows), then posts to triage (no
@@ -251,13 +251,13 @@ test("searches that found nothing, the most searched first as Insights lists the
     ],
   });
   const searches = async () => {
-    const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+    const home = await homeOverview(project.id, project.slug);
     const group = home.attention.find((g) => g.key === "searches")!;
     return { titles: group.items.map((item) => item.title).slice(0, 2), total: group.total };
   };
   // Named for what it counts (distinct queries), unlike the tile above, which counts every failed search.
   expect(await searches()).toEqual({ titles: ["“refund” found nothing (3 times)", "“hellp” found nothing (2 times)"], total: 23 });
-  expect((await homeOverview(project.id, project.slug, { emailVerified: true })).attention.find((g) => g.key === "searches")!.title).toBe("Queries that found nothing");
+  expect((await homeOverview(project.id, project.slug)).attention.find((g) => g.key === "searches")!.title).toBe("Queries that found nothing");
 
   // Dismissed (as Insights' Gaps do, whatever the case and spacing).
   actAs(owner);

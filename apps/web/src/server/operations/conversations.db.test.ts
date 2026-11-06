@@ -353,7 +353,7 @@ test("a snoozed conversation isn't counted as open (the sidebar, the tab's title
   await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
   const counts = async () => [
     (await listMyProjects(owner.id)).find((p) => p.slug === project.slug)!.openConversations,
-    (await homeOverview(project.id, project.slug, { emailVerified: true })).numbers.needReply,
+    (await homeOverview(project.id, project.slug)).numbers.needReply,
   ];
   expect(await counts()).toEqual([1, 1]);
   await call(updateConversation, context, { number: 1, snoozedUntil: new Date(Date.now() + 3_600_000).toISOString() });

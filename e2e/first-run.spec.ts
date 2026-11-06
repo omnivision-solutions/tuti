@@ -88,7 +88,6 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
   await owner.waitForURL(`**/app/${slug}`);
   const setup = owner.getByRole("list", { name: "Get set up" });
   await expect(setup.getByRole("listitem")).toHaveText([
-    "Verify your email(to do)Verify",
     "Add the widget to your site(to do)Get snippet",
     "Connect GitHub(to do)Connect",
     "Set up single sign-on(to do)Set up",

@@ -29,12 +29,12 @@ export type AttentionItem = {
  * A project's Home (docs/plan.md, the redesign's step 3): four numbers that each open their list; what
  * needs the team, by kind in the order it matters (conversations needing a reply, Autopilot's posts and articles to review,
  * posts to triage, possible duplicates, docs searches that found nothing), each kind's oldest few (the
- * searches: the most searched) with their action and its list; "Get set up" while something's left (`emailVerified`: the person's
- * own), with sample content offered until the project has content of its own; and the ideas with the most
+ * searches: the most searched) with their action and its list; "Get set up" while something's left (verifying the person's own email
+ * isn't a step: the strip above every page in /app asks for it), with sample content offered until the project has content of its own; and the ideas with the most
  * votes this week.
  * Sample content (server/sample-content.ts) is left out of all of it.
  */
-export async function homeOverview(projectId: string, slug: string, { emailVerified }: { emailVerified: boolean }) {
+export async function homeOverview(projectId: string, slug: string) {
   const now = Date.now();
   const week = new Date(now - 7 * DAY);
   // Searches as Reporting → Searches counts them (the page their number opens): its days.
@@ -181,7 +181,6 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const picked = new Set(setup.uses);
   const uses = (...any: string[]) => picked.size === 0 || any.some((use) => picked.has(use));
   const steps = [
-    { key: "verify", title: "Verify your email", action: "Verify", done: emailVerified, href: "/app/account", shown: true },
     { key: "widget", title: "Add the widget to your site", action: "Get snippet", done: setup.widgetSeenAt !== null, href: `${base}/setup?step=widget`, shown: true },
     // Only where the server can connect it; Autopilot updates feedback, docs and the changelog from merges.
     { key: "github", title: "Connect GitHub", action: "Connect", done: setup.githubInstallation !== null, href: `${base}/settings/integrations`, shown: githubConfig() !== null && uses("feedback", "docs", "changelog") },

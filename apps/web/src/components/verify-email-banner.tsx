@@ -1,27 +1,20 @@
 "use client";
 
-import { MailIcon, XIcon } from "lucide-react";
+import { MailIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { usePortalAuthClient } from "@/components/portal-base";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
-import { verifyEmailDismissedCookie } from "@/lib/verify-email";
 
-/** A slim strip in /app until the signed-in account's email is verified, or it's dismissed (in this browser). */
-export function VerifyEmailBanner({ userId, email }: { userId: string; email: string }) {
-  const [dismissed, setDismissed] = useState(false);
+/** A slim strip above every page in /app until the signed-in account's email is verified; it can't be dismissed. */
+export function VerifyEmailBanner({ email }: { email: string }) {
   // Rendered by the server while unverified; the session refreshes when the tab
   // regains focus, so verifying in another tab hides it here too.
   const { data } = authClient.useSession();
-  if (data?.user.emailVerified || dismissed) {
+  if (data?.user.emailVerified) {
     return null;
-  }
-
-  function dismiss() {
-    document.cookie = `${verifyEmailDismissedCookie(userId)}=1; path=/app; max-age=31536000; samesite=lax`;
-    setDismissed(true);
   }
 
   return (
@@ -32,9 +25,6 @@ export function VerifyEmailBanner({ userId, email }: { userId: string; email: st
         <span className="text-muted-foreground">We sent a link to {email}.</span>
       </p>
       <ResendVerificationButton email={email} />
-      <Button size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={dismiss}>
-        <XIcon />
-      </Button>
     </div>
   );
 }
