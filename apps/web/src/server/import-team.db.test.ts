@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { DAILY_INVITE_LIMIT, generateInvitationToken, handlers, hashInvitationToken, IMPORT_KEY, importsSettled } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handlers, hashInvitationToken, IMPORT_KEY, importsSettled, UNSENT_EXPIRY } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -188,7 +188,8 @@ test("an invite whose email fails goes back to not sent, said so, to be sent aga
   const [invitation] = await invitationsOf();
   mailbox.refuseNext(ada, { code: 554 });
   expect(await sendInvitation(project.slug, invitation!.id)).toEqual({ error: "Couldn't email an invite: try again in a moment.", sent: 0, waiting: 1 });
-  expect(await prisma.invitation.findUniqueOrThrow({ where: { id: invitation!.id } })).toMatchObject({ sentAt: null, revokedAt: null });
+  // Unsent again, expired too: the release before (which doesn't know sentAt) can't take it as live.
+  expect(await prisma.invitation.findUniqueOrThrow({ where: { id: invitation!.id } })).toMatchObject({ sentAt: null, revokedAt: null, expiresAt: UNSENT_EXPIRY });
   expect(await sendInvitation(project.slug, invitation!.id)).toEqual({ sent: 1, waiting: 0 });
   expect(emailsTo(ada)).toHaveLength(1);
 });

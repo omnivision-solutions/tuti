@@ -122,14 +122,14 @@ export function RevokeInvitationButton({ projectSlug, invitationId, unsent }: { 
     });
   if (!unsent) {
     return (
-      <Button variant="ghost" size="sm" disabled={pending} onClick={revoke}>
+      <Button variant="ghost" size="sm" disabled={pending} focusableWhenDisabled onClick={revoke}>
         Revoke
       </Button>
     );
   }
   return (
     <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>Remove</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} focusableWhenDisabled />}>Remove</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Remove the invite for {unsent}?</AlertDialogTitle>
@@ -160,7 +160,7 @@ function sentToast(result: { error?: string; sent?: number }) {
 export function SendInvitationButton({ projectSlug, invitationId }: { projectSlug: string; invitationId: string }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button variant="outline" size="sm" disabled={pending} onClick={() => startTransition(async () => sentToast(await sendInvitation(projectSlug, invitationId)))}>
+    <Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled onClick={() => startTransition(async () => sentToast(await sendInvitation(projectSlug, invitationId)))}>
       {pending ? "Sending…" : "Send"}
     </Button>
   );
@@ -170,7 +170,7 @@ export function SendInvitationButton({ projectSlug, invitationId }: { projectSlu
 export function SendAllInvitationsButton({ projectSlug, count }: { projectSlug: string; count: number }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button size="sm" disabled={pending} onClick={() => startTransition(async () => sentToast(await sendAllInvitations(projectSlug)))}>
+    <Button size="sm" disabled={pending} focusableWhenDisabled onClick={() => startTransition(async () => sentToast(await sendAllInvitations(projectSlug)))}>
       {pending ? "Sending…" : `Send all ${count}`}
     </Button>
   );

@@ -2,7 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { inviteEmail, sendEmail } from "@tuti/email";
-import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverOnVerified, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, pendingInvitation, teamPlacesTaken } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverOnVerified, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -150,7 +150,8 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
     if (await emailInvite({ to: invitation.email, role: invitation.role, url, inviter: session.user, projectName: membership.project.name })) {
       sent++;
     } else {
-      await prisma.invitation.updateMany({ where: { id: invitation.id, acceptedAt: null }, data: { sentAt: null } });
+      // Back to unsent, its expiry too: the release before (which doesn't know sentAt) must not take it as live.
+      await prisma.invitation.updateMany({ where: { id: invitation.id, acceptedAt: null }, data: { sentAt: null, expiresAt: UNSENT_EXPIRY } });
     }
   }
   refresh();
