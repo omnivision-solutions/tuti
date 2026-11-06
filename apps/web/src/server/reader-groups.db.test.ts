@@ -17,6 +17,7 @@ import { docsContents, docsTree, everyCollection, publishedArticle } from "./doc
 import { answerSections, searchDocs } from "./docs-search";
 import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/docs";
 import { createGroup, updateGroup } from "./operations/groups";
+import { listUsers } from "./operations/users";
 import { call } from "./operations/run";
 import { readerOf } from "./portal-access";
 
@@ -262,6 +263,25 @@ test("a group's conditions changed: its collections are for whoever matches the 
   const groups = await readerOf(project.id, after.id);
   expect((await searchDocs(project.id, "widget", 10, groups)).map((r) => r.slug)).toContain("saml");
   expect((await searchDocs(project.id, "widget", 10, await readerOf(project.id, before.id))).map((r) => r.slug)).not.toContain("saml");
+});
+
+test("a group any of whose conditions match: whoever matches one reads its collections, and users.list puts them in it", async () => {
+  await docsWithGroups();
+  const before = await ssoReader(["enterprise"], "user-before");
+  const after = await ssoReader(["plan:enterprise"], "user-after");
+  const nobody = await ssoReader(["beta"], "user-nobody");
+  const reads = async (user: TestUser) => {
+    actAs(user);
+    return (await publishedArticle(project.slug, "saml")) !== null;
+  };
+  await call(updateGroup, as(), { group: "enterprise", match: "any", conditions: [...inGroupNamed("enterprise"), ...inGroupNamed("plan:enterprise")] });
+  expect([await reads(before), await reads(after), await reads(nobody)]).toEqual([true, true, false]);
+  expect((await readerOf(project.id, after.id))?.groups).toContain("enterprise");
+  const { users } = await call(listUsers, as(), { group: "enterprise" });
+  expect(users.map((user) => [user.id, user.groups]).sort()).toEqual([
+    ["user-after", ["enterprise"]],
+    ["user-before", ["enterprise"]],
+  ]);
 });
 
 test("a token's `groups` is the `groups` property: set by each token that has it, removed by an empty one", async () => {
