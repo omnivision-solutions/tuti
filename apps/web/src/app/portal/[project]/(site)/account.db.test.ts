@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 
+import { appUrl } from "@/lib/hosts";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import AccountPage from "./account/page";
@@ -92,6 +93,25 @@ test("the Account's email switches for people its emails about posts may reach; 
   const shut = await account();
   expect(shut).not.toContain(switches);
   expect(shut).toContain(`${project.name}'s portal is private, and it doesn't email this account about posts.`);
+});
+
+test("the Account shows the name, changed in the Tuti account on the app; an account the project's sign-on made has no link there", async () => {
+  const project = await createProject(await signUp("Owner"));
+  const account = async () => renderToStaticMarkup(await AccountPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  const link = `<a href="${appUrl().origin}/app/account"`;
+
+  actAs(await signUp("Ada Reader"));
+  const own = await account();
+  expect(own).toContain("Ada Reader");
+  expect(own).toContain(`${link} class="self-start text-muted-foreground underline underline-offset-4">Change your name in your Tuti account</a>`);
+  expect(own).not.toContain('id="account-name"');
+
+  const sso = await signUp("Sam From The App");
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "ext-sam", userId: sso.id } });
+  actAs(sso);
+  const theirs = await account();
+  expect(theirs).toContain("Sam From The App");
+  expect(theirs).not.toContain(link);
 });
 
 test("the Account says who's signed in (the address the project's emails go to, never an SSO placeholder) and has Sign out", async () => {

@@ -94,6 +94,19 @@ test("a portal post's history has its status changes and when, not who made them
   expect(voters.voters.map((voter) => voter.name)).toEqual(["Voter 6", "Voter 5", "Voter 4", "Voter 3", "Voter 2"]);
 });
 
+test("a team member's comment is the team's, with its badge, unless they wrote it signed in on a portal (a reader's then)", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const post = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode", body: "" } });
+  await prisma.comment.create({ data: { projectId: project.id, postId: post.id, authorId: owner.id, body: "From the app" } });
+  await prisma.comment.create({ data: { projectId: project.id, postId: post.id, authorId: owner.id, body: "From the portal", asReader: true } });
+
+  actAs(null);
+  const page = await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-1" }), searchParams: Promise.resolve({}) } as never);
+  const shown = textOf(CommentList(propsOf(page, CommentList)!));
+  expect(shown.match(/Team/g)).toHaveLength(1);
+});
+
 test("Subscribe is there while a post may still ship, signed out and for people its email reaches (who posted, voted or commented already follow); not for an unverified address, someone already told it shipped, nor on a completed or closed post", async () => {
   const owner = await signUp("Owner");
   const project = await createProject(owner);

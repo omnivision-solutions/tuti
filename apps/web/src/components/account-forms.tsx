@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { usePortalAuthClient } from "@/components/portal-base";
 import { ImageField } from "@/components/branding-settings";
 import { authClient } from "@/lib/auth-client";
 import { setAvatar } from "@/server/media";
@@ -27,11 +26,11 @@ export function AccountForms({ name, photo, noPassword }: { name: string; photo?
   );
 }
 
-/** Their photo, and the project uploads go to (the one they had open; none: it can only be removed); without it, no photo field (the portal's Account). */
+/** Their photo, and the project uploads go to (the one they had open; none: it can only be removed); without it, no photo field. */
 type Photo = { projectSlug?: string; image: string | null; imageId: string | null; uploadsOff?: string };
 
-export function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
-  const authClient = usePortalAuthClient();
+/** The app's Account only: a portal's session can't change the account (lib/auth.ts), so the portal's shows the name. */
+function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(0);

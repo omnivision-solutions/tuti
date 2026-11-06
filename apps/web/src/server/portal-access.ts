@@ -3,6 +3,7 @@ import { planIncludes, readerEntriesFor } from "@tuti/shared";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
+import type { Session } from "@/lib/auth";
 import { inGroup, storedRule } from "@/lib/group-conditions";
 import { PREVIEW } from "@/lib/portal-base";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
@@ -13,7 +14,7 @@ import type { PostViewer } from "./post-visibility";
 import { previewUser } from "@/lib/preview-session";
 import { widgetUser } from "@/lib/widget-session";
 
-import { sessionFrom, sessionIn } from "./session";
+import { onTeam, sessionFrom, sessionIn } from "./session";
 
 /**
  * Who may read a project's portal (Settings → Access). Public: anyone. Private: only
@@ -27,21 +28,24 @@ import { sessionFrom, sessionIn } from "./session";
  *
  * Not a "use server" module: its exports must never be callable from browsers.
  */
-export async function canReadPortal(where: { id: string } | { slug: string }, userId: string | null | undefined): Promise<boolean> {
+export async function canReadPortal(where: { id: string } | { slug: string }, userId: string | null | undefined, session?: Session | null): Promise<boolean> {
   const project = await prisma.project.findUnique({ where, select: { id: true, portalAccess: true, plan: true } });
   // A missing project has nothing to hide; callers answer "not found" for it.
   if (!project || project.portalAccess === "PUBLIC") {
     return true;
   }
-  return !!userId && (await isPrivateReader(project, userId));
+  return !!userId && (await isPrivateReader(project, userId, session));
 }
 
-/** On the project's team, or, on a plan with private portals, signed in by its SSO or one of its readers (with that email verified). */
-async function isPrivateReader(project: { id: string; plan: Plan }, userId: string): Promise<boolean> {
+/**
+ * On the project's team (onTeam: never with a portal's session), or, on a plan with private portals, signed in by its SSO
+ * or one of its readers (with that email verified). `session`: the request's, for proxy.ts.
+ */
+async function isPrivateReader(project: { id: string; plan: Plan }, userId: string, session?: Session | null): Promise<boolean> {
   const projectId = project.id;
   const readers = planIncludes(project.plan, "privatePortal");
   const [member, sso, reader] = await Promise.all([
-    prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
+    onTeam(projectId, userId, session),
     readers ? prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { id: true } }) : null,
     readers ? invitedReader(projectId, userId) : null,
   ]);
@@ -72,7 +76,7 @@ export async function portalVisitor(slug: string, headers: Headers, preview?: st
     return "public";
   }
   const session = await sessionFrom(headers);
-  if (session && (await isPrivateReader(project, session.user.id))) {
+  if (session && (await isPrivateReader(project, session.user.id, session))) {
     return "allowed";
   }
   return (await previewReader(project.id, preview)) ? "allowed" : "refused";
@@ -108,23 +112,31 @@ export async function previewTokenFor(slug: string, token: string): Promise<bool
 export const WIDGET_READER_COOKIE = "tuti_widget_reader";
 
 /**
- * Who's reading on this request: the portal's signed-in user, the person signed in to the widget, or
- * the team member previewing the portal in Customize.
+ * Who's reading on this request: the team member previewing the portal in Customize (its cookie is only ever in
+ * Customize's frame, which carries the portal's cookies too, so it comes first: a portal session there is a reader's,
+ * see onTeam), the portal's signed-in user, or the person signed in to the widget. A portal session that may not read
+ * the portal (a team member's on their own private portal) gives way to the widget's. `session` null: the widget's or
+ * the preview's person, read with no portal session (onTeam).
  */
-async function readerId(projectId: string): Promise<string | null> {
-  const session = await sessionIn(projectId);
-  if (session) {
-    return session.user.id;
-  }
+const reader = cache(async (projectId: string): Promise<{ userId: string | null; session?: null }> => {
   const jar = await cookies();
+  const previewing = await previewReader(projectId, jar.get(PREVIEW_READER_COOKIE)?.value);
+  if (previewing) {
+    return { userId: previewing, session: null };
+  }
+  const session = await sessionIn(projectId);
+  if (session && (await canReadPortal({ id: projectId }, session.user.id))) {
+    return { userId: session.user.id };
+  }
   const token = jar.get(WIDGET_READER_COOKIE)?.value;
   const widget = token ? widgetUser(projectId, token) : null;
-  return widget ?? previewReader(projectId, jar.get(PREVIEW_READER_COOKIE)?.value);
-}
+  return widget ? { userId: widget, session: null } : { userId: session?.user.id ?? null };
+});
 
 /** Whether whoever's asking may read the project's portal. */
 export async function mayRead(projectId: string): Promise<boolean> {
-  return canReadPortal({ id: projectId }, await readerId(projectId));
+  const { userId, session } = await reader(projectId);
+  return canReadPortal({ id: projectId }, userId, session);
 }
 
 /** The project, for readers' actions anyone may take (signed in or not): null if it's missing or they may not read it. */
@@ -135,18 +147,18 @@ export async function readableProject(slug: string): Promise<{ id: string } | nu
 
 /**
  * Who's reading, for what of the docs they may read (see lib/read-access.ts): null for the project's
- * team (everything); else whether they're signed in, and the keys of the groups they're in as the
+ * team (everything; onTeam: never with a portal's session); else whether they're signed in, and the keys of the groups they're in as the
  * project's user (by their properties, see lib/group-conditions.ts): the one
  * its SSO signed them in as, or, signed in another way, the ones with their address once it's
  * verified (any of them puts them in a group). None for everyone else, and none on a plan without
  * reader groups. Once per request: pages ask many times.
  */
-export const readerOf = cache(async (projectId: string, userId: string | null | undefined): Promise<Reader> => {
+export const readerOf = cache(async (projectId: string, userId: string | null | undefined, session?: Session | null): Promise<Reader> => {
   if (!userId) {
     return SIGNED_OUT;
   }
   const [member, account, groups, project] = await Promise.all([
-    prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
+    onTeam(projectId, userId, session),
     prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } }),
     prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true, match: true } }),
     prisma.project.findUnique({ where: { id: projectId }, select: { plan: true } }),
@@ -169,13 +181,14 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
 });
 
 /**
- * Whoever's reading on this request (the portal's user, or the widget's). The team previewing the
- * portal as a reader (PREVIEW) reads it as people signed out do; for anyone else the preview
- * changes nothing, so it never shows more than they may read.
+ * Whoever's reading on this request (the portal's user, or the widget's). Previewing the portal as a reader (PREVIEW)
+ * reads it as people signed out do, whoever's looking (a team member's portal session is a reader's too): it only ever
+ * shows less.
  */
 export async function currentReader(projectId: string): Promise<Reader> {
-  const reader = await readerOf(projectId, await readerId(projectId));
-  return reader === null && (await headers()).get(PREVIEW.header) === PREVIEW.value ? SIGNED_OUT : reader;
+  const { userId, session } = await reader(projectId);
+  const read = await readerOf(projectId, userId, session);
+  return (await headers()).get(PREVIEW.header) === PREVIEW.value ? SIGNED_OUT : read;
 }
 
 /**
@@ -183,8 +196,8 @@ export async function currentReader(projectId: string): Promise<Reader> {
  * team previewing the portal as a reader sees what people signed out do), or the portal's or widget's person.
  */
 export async function currentPostViewer(projectId: string): Promise<PostViewer> {
-  const [userId, reader] = await Promise.all([readerId(projectId), currentReader(projectId)]);
-  return reader === null ? { team: true, userId } : { team: false, userId: reader.signedIn ? userId : null };
+  const [{ userId }, read] = await Promise.all([reader(projectId), currentReader(projectId)]);
+  return read === null ? { team: true, userId } : { team: false, userId: read.signedIn ? userId : null };
 }
 
 /** An operation's caller as a reader: API keys act for the team (everything). */

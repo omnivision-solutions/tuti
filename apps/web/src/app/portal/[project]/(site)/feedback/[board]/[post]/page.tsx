@@ -59,7 +59,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       shippedEmails: { where: { userId: session?.user.id ?? "", sentAt: { not: null } }, select: { userId: true } },
       comments: {
         orderBy: { createdAt: "asc" },
-        select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
+        select: { id: true, body: true, content: true, createdAt: true, asReader: true, author: { select: { id: true, name: true, image: true } } },
       },
       // Its status history: from what to what, and when; not who changed it or how many were emailed.
       events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, createdAt: true } },

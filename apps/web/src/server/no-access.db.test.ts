@@ -419,18 +419,21 @@ describe("Preview as a reader (?preview=signed-out, passed on by proxy.ts)", () 
     expect(await docsPage(project.slug, "contact")).toBeNull();
   });
 
-  test("changes nothing for anyone else: never more than they may read", async () => {
+  test("for anyone else it's the signed-out view too: never more than they may read", async () => {
     previewing();
     expect(await listed()).toEqual(["endpoints (locked)", "getting-started"]);
     expect(await docsPage(project.slug, "contact")).toBeNull();
     for (const user of [await signUp("Stranger"), await ssoReader(["enterprise"])]) {
       actAs(user);
-      const reader = await currentReader(project.id);
+      // Whoever's looking (a team member's portal session is a reader's), the preview shows what people signed out see.
+      expect(await currentReader(project.id)).toEqual(SIGNED_OUT);
+      expect(await listed()).toEqual(["endpoints (locked)", "getting-started"]);
       request.headers = {};
-      expect(await currentReader(project.id)).toEqual(reader);
+      expect(await currentReader(project.id)).not.toEqual(SIGNED_OUT);
       previewing();
     }
-    // The enterprise reader still reads what's for them, and no more than without it.
+    // Without the preview, the enterprise reader reads what's for them.
+    request.headers = {};
     expect(await listed()).toEqual(["contact", "endpoints", "getting-started"]);
   });
 });

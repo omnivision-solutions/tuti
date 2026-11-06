@@ -3,7 +3,6 @@ import { emailConfigured } from "@tuti/email";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { ProfileForm } from "@/components/account-forms";
 import { EmailSettings } from "@/components/email-settings";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -11,8 +10,9 @@ import { PostStatusBadge } from "@/components/post-status-badge";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { SignInLink } from "@/components/sign-in-link";
 import { SignOutButton } from "@/components/user-menu";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResendVerificationButton } from "@/components/verify-email-banner";
+import { appUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
 import { accountEmails } from "@/server/operations/email-preferences";
 import { accountPosts, whyNotEmailedAboutPosts } from "@/server/post-lists";
@@ -32,13 +32,14 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
   if (!project) {
     notFound();
   }
-  const [{ preferences: saved, changelog }, { posts, votes }, whyNot] = await Promise.all([
+  const [{ preferences: saved, changelog }, { posts, votes }, whyNot, sso] = await Promise.all([
     accountEmails(project.id, session.user.id),
     // Only those they may still see (a post made private or the team's since isn't theirs to see).
     // As the page is seen: a team member previewing it signed out or as a reader sees what they would.
     currentPostViewer(project.id).then((viewer) => accountPosts(project.id, session.user.id, viewer)),
     // Switches only for people the project's emails about posts may reach (once confirmed); the rest are told why not.
     whyNotEmailedAboutPosts(project.id, session.user.id),
+    prisma.ssoIdentity.findUnique({ where: { userId: session.user.id }, select: { id: true } }),
   ]);
   const never = whyNot === "unconfirmed" ? null : whyNot;
   // Its switch wherever the changelog is emailed to their address (changelogReach): the team's too, who get it like anyone.
@@ -98,7 +99,24 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
         meta={changelog.email && <span className="break-all">Signed in as {changelog.email}</span>}
         actions={<SignOutButton />}
       />
-      <ProfileForm name={session.user.name} />
+      {/* The account's name, changed on the app: a portal's session can't change the account (lib/auth.ts). An account
+          a project's single sign-on made can't sign in there; its name comes from that sign-in. */}
+      <Card role="region" aria-labelledby="profile">
+        <CardHeader>
+          <CardTitle>
+            <h2 id="profile">Profile</h2>
+          </CardTitle>
+          <CardDescription>Shown on your posts and comments.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-1 text-sm">
+          <p className="font-medium break-words">{session.user.name}</p>
+          {!sso && (
+            <a href={`${appUrl().origin}/app/account`} className="self-start text-muted-foreground underline underline-offset-4">
+              Change your name in your Tuti account
+            </a>
+          )}
+        </CardContent>
+      </Card>
       {!never || (never === "team" && changelogShown) ? (
         <EmailSettings
           projectSlug={slug}

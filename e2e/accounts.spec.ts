@@ -257,16 +257,10 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await expect(vera.getByRole("main").getByRole("link", { name: title })).toBeVisible();
   await expect(vera.getByRole("button", { name: "Account" })).toBeVisible();
 
-  // A new account is named after the address; they can change it.
+  // A new account is named after the address (changed on the app: the portal's Account only shows it).
   await vera.getByRole("button", { name: "Account" }).click();
   await expect(vera.getByRole("menu").getByText(email.split("@")[0]!)).toBeVisible();
-  await vera.getByRole("menuitem", { name: "Account settings" }).click();
-  await vera.waitForURL("**/account");
-  await vera.getByLabel("Name").fill("Vera Visitor");
-  await vera.getByRole("button", { name: "Save" }).click();
-  await expect(vera.getByText("Profile updated")).toBeVisible();
-  await vera.getByRole("button", { name: "Account" }).click();
-  await expect(vera.getByRole("menu").getByText("Vera Visitor")).toBeVisible();
+  await vera.keyboard.press("Escape");
 
   // The link worked once.
   const someoneElse = await newPerson(browser, portalUrl(slug));

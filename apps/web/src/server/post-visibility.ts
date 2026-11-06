@@ -1,6 +1,7 @@
-import { type PostVisibility, Prisma, prisma } from "@tuti/db";
+import { type PostVisibility, Prisma } from "@tuti/db";
 
 import type { Actor } from "./operations/define";
+import { onTeam } from "./session";
 
 /**
  * Private posts (PostVisibility in the schema): who sees a post besides the team. Public: everyone who may read the
@@ -57,13 +58,12 @@ export function shownBoards(viewer: PostViewer): Prisma.BoardWhereInput {
 /** The boards the portal lists (its menus, sitemap, llms.txt, the first board, the widget's): never a Team only one. */
 export const PORTAL_BOARDS = shownBoards(SIGNED_OUT_VIEWER);
 
-/** Someone (null: signed out) as a viewer of the project's posts: the team if they're on it. */
+/** Someone (null: signed out) as a viewer of the project's posts: the team if they're on it (onTeam: never with a portal's session). */
 export async function postViewer(projectId: string, userId: string | null | undefined): Promise<PostViewer> {
   if (!userId) {
     return SIGNED_OUT_VIEWER;
   }
-  const member = await prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } });
-  return { team: !!member, userId };
+  return { team: await onTeam(projectId, userId), userId };
 }
 
 /** An operation's caller as a viewer: API keys act for the team. */
