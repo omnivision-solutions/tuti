@@ -27,11 +27,12 @@ else
 fi
 ```
 
-Then, also with Claude Code, run its security review: a second pass that looks only for exploitable vulnerabilities and drops what it can't confirm, about a minute. It compares `HEAD` with `origin/HEAD`, which a clone sets but a fetch into an older checkout may not: the first line sets it to `main` when it's missing. It reads everything above `main`, so in a stack it reviews the lower branches too. Fix what holds up before pushing, like the review's findings.
+Then, also with Claude Code, run its security review: a second pass that looks only for exploitable vulnerabilities and drops what it can't confirm, about a minute, with the same isolation as the review above. It compares `HEAD` with `origin/HEAD`, which a clone sets but a fetch into an older checkout may not: the first line sets it to `main` when it's missing. It reads everything above `main`, so in a stack it reviews the lower branches too. Fix what holds up before pushing, like the review's findings.
 
 ```sh
 git symbolic-ref -q refs/remotes/origin/HEAD > /dev/null || git remote set-head origin main
-claude -p /security-review --model claude-opus-5-5 --no-session-persistence < /dev/null
+claude -p /security-review --model claude-opus-5-5 --setting-sources "" --settings '{"autoMemoryEnabled": false}' \
+  --permission-mode default --strict-mcp-config --no-session-persistence < /dev/null
 ```
 
 ## Read the PR with the digest
