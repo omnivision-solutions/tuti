@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { signForever, signValue, verifyForever } from "./signed";
+import { openValue, sealValue, signForever, signValue, verifyForever } from "./signed";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -26,4 +26,20 @@ test("without one, they're keyed with the auth secret", () => {
 test("nothing is signed without a secret", () => {
   vi.stubEnv("BETTER_AUTH_SECRET", "");
   expect(() => signValue("test", ["a"], 60)).toThrow("BETTER_AUTH_SECRET");
+});
+
+test("a sealed value opens only with the same secret and purpose, and not once changed; it never shows the text", () => {
+  vi.stubEnv("BETTER_AUTH_SECRET", "unit-secret-at-least-32-characters-long");
+  const sealed = sealValue("import-key", "sk_live_example");
+  expect(sealed).not.toContain("sk_live_example");
+  expect(sealValue("import-key", "sk_live_example")).not.toBe(sealed);
+  expect(openValue("import-key", sealed)).toBe("sk_live_example");
+  expect(() => openValue("other", sealed)).toThrow();
+  // One character changed, a few from the end (the last may be padding bits that decode the same).
+  const at = sealed.length - 3;
+  const tampered = `${sealed.slice(0, at)}${sealed[at] === "A" ? "B" : "A"}${sealed.slice(at + 1)}`;
+  expect(tampered).not.toBe(sealed);
+  expect(() => openValue("import-key", tampered)).toThrow();
+  vi.stubEnv("BETTER_AUTH_SECRET", "another-secret-at-least-32-characters");
+  expect(() => openValue("import-key", sealed)).toThrow();
 });

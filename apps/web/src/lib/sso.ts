@@ -11,7 +11,7 @@ import { requestTarget } from "@/server/custom-domains";
 import { upsertProjectUser } from "@/server/project-users";
 import { MAX_READER_GROUPS, readerGroup } from "./reader-groups";
 import { safeRedirectPath } from "./redirects";
-import { propertyChanges } from "./user-properties";
+import { propertyChanges } from "@tuti/shared/user-properties";
 import { baseFrom, withBase } from "@/lib/portal-base";
 
 /**

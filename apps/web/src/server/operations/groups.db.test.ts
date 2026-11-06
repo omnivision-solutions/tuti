@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 import type { z } from "zod";
 
-import type { Properties } from "@/lib/user-properties";
+import type { Properties } from "@tuti/shared/user-properties";
 import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import { deleteGroup as deleteGroupAction, previewGroup, saveGroup, setPropertyFormats } from "../groups";

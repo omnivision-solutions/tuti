@@ -75,6 +75,7 @@ import { getAiModels, updateAiModels } from "./ai-models";
 import { getCodeChangesTuning, updateCodeChangesTuning } from "./code-changes-tuning";
 import { getCredits, topUpCredits } from "./credits";
 import { getPlan, managePlan, setBadgeAddOn, subscribePlan } from "./plan";
+import { getImport, startImport } from "./imports";
 import { listVerifications, verifyAll, verifyArticle } from "./verify";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 
@@ -137,6 +138,8 @@ const all = [
   verifyArticle,
   listVerifications,
   verifyAll,
+  startImport,
+  getImport,
   reorderArticle,
   listCollections,
   createCollection,

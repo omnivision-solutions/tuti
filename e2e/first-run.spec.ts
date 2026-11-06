@@ -7,7 +7,7 @@ import { APP_URL } from "./env";
 import { signUp } from "./helpers";
 import { latestEmailTo } from "./mail";
 
-test("after Create project, the team picks what it will use, gets the widget's snippet and invites a teammate; Home's Get set up follows", async ({ browser }, testInfo) => {
+test("after Create project, the team starts fresh, picks what it will use, gets the widget's snippet and invites a teammate; Home's Get set up follows", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const teammate = `e2e-${randomUUID()}@example.com`;
@@ -18,10 +18,17 @@ test("after Create project, the team picks what it will use, gets the widget's s
   await owner.getByLabel("URL").fill(slug);
   await owner.getByRole("button", { name: "Create project" }).click();
 
-  // What will you use: several at once.
+  // Where are you coming from: starting fresh (picked to begin with).
   await owner.waitForURL(`**/app/${slug}/setup`);
   await expect(owner.getByRole("heading", { name: "Set up Acme" })).toBeVisible();
-  await expect(owner.getByText("Step 1 of 3")).toBeVisible();
+  await expect(owner.getByText("Step 1 of 4")).toBeVisible();
+  await expect(owner.getByRole("radio", { name: /^Starting fresh/ })).toBeChecked();
+  await checkpoint(owner, "setup-coming-from");
+  await owner.getByRole("link", { name: "Continue" }).click();
+
+  // What will you use: several at once.
+  await owner.waitForURL(`**/app/${slug}/setup?step=use`);
+  await expect(owner.getByText("Step 2 of 4")).toBeVisible();
   for (const name of ["Feedback", "Docs", "Changelog", "Support"]) {
     await expect(owner.getByRole("checkbox", { name: new RegExp(`^${name}`) })).not.toBeChecked();
   }
@@ -48,7 +55,7 @@ test("after Create project, the team picks what it will use, gets the widget's s
   await owner.waitForURL(`**/app/${slug}/setup?step=widget`);
   // Back to the question, the picks are there as saved, and Continue keeps them.
   await owner.goBack();
-  await owner.waitForURL(`**/app/${slug}/setup`);
+  await owner.waitForURL(`**/app/${slug}/setup?step=use`);
   await expect(owner.getByRole("checkbox", { name: /^Feedback/ })).toBeChecked();
   await expect(owner.getByRole("checkbox", { name: /^Changelog/ })).toBeChecked();
   await expect(owner.getByRole("checkbox", { name: /^Docs/ })).not.toBeChecked();
@@ -56,7 +63,7 @@ test("after Create project, the team picks what it will use, gets the widget's s
 
   // The widget's script tag, to copy.
   await owner.waitForURL(`**/app/${slug}/setup?step=widget`);
-  await expect(owner.getByText("Step 2 of 3")).toBeVisible();
+  await expect(owner.getByText("Step 3 of 4")).toBeVisible();
   const snippet = `<script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`;
   await expect(owner.getByText(snippet)).toBeVisible();
   await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -69,7 +76,7 @@ test("after Create project, the team picks what it will use, gets the widget's s
 
   // Invite the team: the invitation Settings → Team sends.
   await owner.waitForURL(`**/app/${slug}/setup?step=team`);
-  await expect(owner.getByText("Step 3 of 3")).toBeVisible();
+  await expect(owner.getByText("Step 4 of 4")).toBeVisible();
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(teammate);
   await owner.getByRole("button", { name: "Send invite" }).click();
   await expect(owner.getByText(`Invite sent to ${teammate}`)).toBeVisible();
@@ -91,7 +98,7 @@ test("after Create project, the team picks what it will use, gets the widget's s
   await checkpoint(owner, "home-get-set-up");
 
   // Back in setup, the picks are kept, and unticking them all can still be saved (all of Get set up again); Skip setup goes straight to Home.
-  await owner.goto(`/app/${slug}/setup`);
+  await owner.goto(`/app/${slug}/setup?step=use`);
   await expect(owner.getByRole("checkbox", { name: /^Changelog/ })).toBeChecked();
   await expect(owner.getByRole("checkbox", { name: /^Docs/ })).not.toBeChecked();
   await owner.getByRole("checkbox", { name: /^Feedback/ }).uncheck();

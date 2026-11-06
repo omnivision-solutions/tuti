@@ -1,0 +1,195 @@
+import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, startFeaturebaseFake } from "@tuti/testkit";
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+
+import { featurebase, FeaturebaseError } from "./featurebase";
+import { contactDetails } from "./imports";
+
+let fake: FeaturebaseFake;
+const waits: number[] = [];
+const client = (key = FAKE_FEATUREBASE_KEY) => featurebase(key, { wait: async (ms) => void waits.push(ms) });
+
+beforeAll(async () => {
+  fake = await startFeaturebaseFake();
+});
+afterAll(() => fake.close());
+beforeEach(() => {
+  vi.stubEnv("FEATUREBASE_API_URL", fake.env.FEATUREBASE_API_URL);
+  fake.pageSize = 100;
+  fake.requests.length = 0;
+  waits.length = 0;
+});
+
+test("a list is read a page at a time, from cursor to cursor, its empty rows left out", async () => {
+  fake.pageSize = 2;
+  const api = client();
+  const first = await api.page<{ id: string }>("/contacts", null, { contactType: "all" });
+  expect(first.items.map((c) => c.id)).toEqual(["65f000000000000000000001", "65f000000000000000000002"]);
+  const second = await api.page<{ id: string }>("/contacts", first.next, { contactType: "all" });
+  // The page's null row is left out.
+  expect(second.items.map((c) => c.id)).toEqual(["65f000000000000000000003"]);
+  expect(second.next).toBeNull();
+  expect(fake.requests[0]).toBe("GET /v2/contacts?contactType=all&limit=100");
+  expect(fake.requests[1]).toContain("cursor=");
+});
+
+test("rate limits and server errors are tried again, waiting longer each time; then it gives up, saying so", async () => {
+  fake.failNext(429, 2);
+  expect((await client().get<{ data: unknown[] }>("/admins")).data).toHaveLength(2);
+  expect(waits).toEqual([500, 1000]);
+
+  waits.length = 0;
+  fake.failNext(500, 5);
+  const error = await client().get("/admins").catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(FeaturebaseError);
+  expect(error).toMatchObject({ status: 500, message: "fake failure" });
+  expect(waits).toEqual([500, 1000, 2000, 4000]);
+});
+
+test("a wait Featurebase asks for is honoured, up to a minute: Retry-After in seconds, or a rate limit's reset (epoch seconds) on 429", async () => {
+  // Only the clock is faked: the requests still go out.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    // As a live answer had it: x-ratelimit-limit 2000, the window resetting at 1793918026 (2026-11-05), 20 seconds on.
+    const reset = 1793918026;
+    vi.setSystemTime((reset - 20) * 1000);
+    fake.failNext(429, 1, { "retry-after": "30" });
+    await client().get("/admins");
+    fake.failNext(429, 1, { "retry-after": "120" });
+    await client().get("/admins");
+    fake.failNext(429, 1, { "x-ratelimit-limit": "2000", "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) });
+    await client().get("/admins");
+    // A reset long away waits a minute at most; one that has passed, not at all.
+    fake.failNext(429, 1, { "x-ratelimit-reset": String(reset + 3600) });
+    await client().get("/admins");
+    fake.failNext(429, 1, { "x-ratelimit-reset": String(reset - 60) });
+    await client().get("/admins");
+    // A server error's reset isn't a rate limit's: the usual backoff.
+    fake.failNext(503, 1, { "x-ratelimit-reset": String(reset) });
+    await client().get("/admins");
+    expect(waits).toEqual([30_000, 60_000, 20_000, 60_000, 0, 500]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("an answer cut off or not JSON is tried again; one that never reads fails as Featurebase's, not the client's", async () => {
+  fake.failNext(200, 1, {}, '{"object":"list","da');
+  expect((await client().get<{ data: unknown[] }>("/admins")).data).toHaveLength(2);
+  expect(waits).toEqual([500]);
+
+  waits.length = 0;
+  fake.failNext(200, 5, {}, "<html>");
+  await expect(client().get("/admins")).rejects.toEqual(new FeaturebaseError(0, "Featurebase's answer couldn't be read."));
+  expect(waits).toEqual([500, 1000, 2000, 4000]);
+});
+
+test("with a deadline, nothing waits or starts past it: the last answer's error comes back instead", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(Date.parse("2026-11-05T12:00:00Z"));
+    // Waiting moves the clock on, as the real wait would.
+    const api = featurebase(FAKE_FEATUREBASE_KEY, {
+      deadline: Date.now() + 100_000,
+      wait: async (ms) => {
+        waits.push(ms);
+        vi.setSystemTime(Date.now() + ms);
+      },
+    });
+    fake.failNext(429, 5, { "retry-after": "30" });
+    await expect(api.get("/admins")).rejects.toMatchObject({ status: 429 });
+    // A fourth wait would end past the deadline.
+    expect(waits).toEqual([30_000, 30_000, 30_000]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a wait that runs late past the deadline starts no request: the last answer's error comes back", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(Date.parse("2026-11-05T12:00:00Z"));
+    const api = featurebase(FAKE_FEATUREBASE_KEY, {
+      deadline: Date.now() + 100_000,
+      // Asked for 30 seconds, it took two minutes.
+      wait: async (ms) => {
+        waits.push(ms);
+        vi.setSystemTime(Date.now() + 120_000);
+      },
+    });
+    fake.failNext(429, 5, { "retry-after": "30" });
+    await expect(api.get("/admins")).rejects.toMatchObject({ status: 429 });
+    expect(waits).toEqual([30_000]);
+    expect(fake.requests.filter((request) => request.startsWith("GET /v2/admins"))).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a deadline already passed starts no request; an error body read up to the deadline starts no wait", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(Date.parse("2026-11-05T12:00:00Z"));
+    const passed = featurebase(FAKE_FEATUREBASE_KEY, { deadline: Date.now() - 1, wait: async (ms) => void waits.push(ms) });
+    await expect(passed.get("/admins")).rejects.toMatchObject({ status: 0 });
+    expect(fake.requests).toEqual([]);
+
+    // The 429's body arrives as the deadline passes: read first, then judged, so no wait starts.
+    const api = featurebase(FAKE_FEATUREBASE_KEY, { deadline: Date.now() + 10_000, wait: async (ms) => void waits.push(ms) });
+    fake.failNext(429, 1, { "retry-after": "1" });
+    fake.beforeBody = () => vi.setSystemTime(Date.now() + 10_000);
+    await expect(api.get("/admins")).rejects.toMatchObject({ status: 429 });
+    expect(waits).toEqual([]);
+  } finally {
+    fake.beforeBody = undefined;
+    vi.useRealTimers();
+  }
+});
+
+test("a list goes on until Featurebase's cursor is null, through an empty page; a cursor that doesn't move ends it", async () => {
+  const first = Buffer.from("0").toString("base64url");
+  fake.failNext(200, 1, {}, JSON.stringify({ object: "list", data: [], nextCursor: first }));
+  const api = client();
+  expect(await api.page("/contacts", null)).toEqual({ items: [], next: first });
+  expect((await api.page<{ id: string }>("/contacts", first)).items).toHaveLength(3);
+  fake.failNext(200, 1, {}, JSON.stringify({ object: "list", data: [], nextCursor: first }));
+  expect(await api.page("/contacts", first)).toEqual({ items: [], next: null });
+});
+
+test("a key Featurebase refuses fails at once, with Featurebase's words; so does a part it can't read", async () => {
+  await expect(client("sk_wrong").get("/admins")).rejects.toMatchObject({ status: 401, message: "Invalid API key" });
+  fake.forbidden.add("/v2/contacts");
+  await expect(client().get("/contacts", { limit: 1 })).rejects.toMatchObject({ status: 403 });
+  await expect(client().get("/contacts/65f000000000000000000001")).rejects.toMatchObject({ status: 403 });
+  expect(waits).toEqual([]);
+});
+
+test("a contact becomes a user: their app's id (else Featurebase's), details they have, properties Tuti takes, their first company", () => {
+  expect(
+    contactDetails({
+      id: "c1",
+      userId: "app-1",
+      name: " Mira ",
+      email: "e2e-mira@example.com",
+      profilePicture: "https://images.example.com/mira.png",
+      customFields: { plan: "pro", seats: 12, beta: true, features: ["sso"], nested: { no: true }, mixed: ["a", 1], long: "x".repeat(201), gone: null, company: "Theirs" },
+      companies: [{ name: "Fenwick Labs" }, { name: "Side Gig" }],
+    }),
+  ).toEqual({
+    externalId: "app-1",
+    name: "Mira",
+    email: "e2e-mira@example.com",
+    image: "https://images.example.com/mira.png",
+    properties: { company: "Fenwick Labs", plan: "pro", seats: 12, beta: true, features: ["sso"] },
+  });
+  // Their app's id as the app's SSO sends it, spaces and all; only a blank one isn't one.
+  expect(contactDetails({ id: "c3", userId: " app-3 " }).externalId).toBe(" app-3 ");
+  expect(contactDetails({ id: "c4", userId: "  " }).externalId).toBe("featurebase:c4");
+  // Nothing of their own: Featurebase's id, and only what they have (Featurebase's placeholder avatar isn't theirs).
+  expect(contactDetails({ id: "c2", userId: null, name: "", email: null, profilePicture: "https://global.featurebase-attachments.com/a/shapes/3_200_200.png", companies: [] })).toEqual({
+    externalId: "featurebase:c2",
+    name: undefined,
+    email: undefined,
+    image: undefined,
+    properties: {},
+  });
+});

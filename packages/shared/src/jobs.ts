@@ -112,6 +112,23 @@ export const jobs = {
     input: z.object({ verificationId: z.string() }),
     retries: 0,
   },
+  /**
+   * One page of an import from another tool (docs/plan.md, Switching from Featurebase), then the next. Tried once: the
+   * Featurebase client retries what fails for a while, and a page that still fails fails the import, which can be started
+   * again. One at a time per import, so a duplicate waits and then finds its page done.
+   */
+  importStep: {
+    name: "import-step",
+    input: z.object({ importId: z.string() }),
+    retries: 0,
+    concurrencyKey: "input.importId",
+  },
+  /** Fails imports that haven't moved for a day, clearing their keys. */
+  failStaleImports: {
+    name: "fail-stale-imports",
+    input: z.object({}),
+    cron: "47 3 * * *",
+  },
   /** A release was published on an included repo: it closes the changelog's running draft. */
   githubRelease: {
     name: "github-release",

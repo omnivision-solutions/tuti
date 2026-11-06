@@ -634,7 +634,8 @@ export const updateConversation = defineOperation({
           ...(waking && { status: "OPEN" as const }),
           // Closed, opened, spam or not: how old it is for a plan's history starts again (not for an assignee or a snooze).
           ...((input.status !== undefined || input.spam !== undefined || waking) && { activeAt: new Date() }),
-          ...(assigneeId !== undefined && { assigneeId }),
+          // Assigned or unassigned by the team: no longer the imported holder's to take over (handOverPlaceholders).
+          ...(assigneeId !== undefined && { assigneeId, heldById: null }),
           ...(input.spam !== undefined && { spam: input.spam }),
           ...(input.snoozedUntil !== undefined && { snoozedUntil: input.snoozedUntil, snoozedAt: input.snoozedUntil && new Date() }),
           // Closed or spam is done with: a snooze no longer brings it back.

@@ -83,6 +83,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // People only: every key is refused (below).
   "articles.verifyAll": () => ({}),
   "articles.verifications": () => ({ slug: "matrix-article" }),
+  // People only: every key is refused (below).
+  "imports.start": () => ({ source: "featurebase", key: "sk_matrix", parts: ["contacts"] }),
+  "imports.get": () => ({}),
   "collections.list": () => ({}),
   "collections.create": () => ({ name: "Billing" }),
   "articles.reorder": () => ({ slug: "matrix-draft", collection: "basics", position: 0 }),
@@ -405,7 +408,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
 }
 
 /** Operations only a person can run, in the app: API keys (and MCP, with the same keys) get 403. */
-const PEOPLE_ONLY = new Set<string>(["articles.verifyAll"]);
+const PEOPLE_ONLY = new Set<string>(["articles.verifyAll", "imports.start"]);
 
 /** Calls an operation over REST like a client would. */
 async function call(operation: Operation, input: Record<string, unknown>, key: string) {
@@ -477,6 +480,7 @@ const snapshot = () =>
     prisma.conversation.findMany({ where: { projectId: project.id }, include: { messages: { orderBy: { id: "asc" } }, posts: true }, orderBy: { number: "asc" } }),
     prisma.emailDomain.findUnique({ where: { projectId: project.id } }),
     prisma.verifyAll.findMany({ where: { projectId: project.id } }),
+    prisma.dataImport.findMany({ where: { projectId: project.id } }),
     prisma.articleVerification.findMany({ where: { projectId: project.id }, orderBy: { id: "asc" } }),
   ]);
 
@@ -517,7 +521,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
     expect(await snapshot()).toEqual(before);
   }
 
-  // People only (it costs AI for every article, so a person starts it after seeing what it costs): every key is refused.
+  // People only (Verify all costs AI for every article, so a person starts it after seeing what it costs; an import takes another tool's key, pasted in the app): every key is refused.
   if (PEOPLE_ONLY.has(operation.name)) {
     const write = await call(operation, input(), keys.write);
     expect(write.status).toBe(403);

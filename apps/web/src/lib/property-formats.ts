@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { PropertyValue } from "./user-properties";
+import type { PropertyValue } from "@tuti/shared/user-properties";
 
 /**
  * How the team shows its users' properties (project.update's `propertyFormats`): a name of its own ("MRR" for `mrr`)

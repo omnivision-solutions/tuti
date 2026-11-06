@@ -1,10 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
 
 import { type TeamRole, prisma } from "@tuti/db";
-import { resumeToken } from "@tuti/jobs";
+import { importsSettled, resumeToken } from "@tuti/jobs";
 import { SignJWT } from "jose";
 import {
   type DnsFake,
+  FAKE_FEATUREBASE_KEY,
+  type FeaturebaseFake,
+  startFeaturebaseFake,
   type GithubFake,
   startGithubFake,
   type SiteFake,
@@ -50,6 +53,7 @@ import * as docsReaders from "./docs-readers";
 import * as emailPause from "./email-pause";
 import * as emailPreferences from "./email-preferences";
 import * as groups from "./groups";
+import * as imports from "./imports";
 import * as inbox from "./inbox";
 import * as invitations from "./invitations";
 import * as licenseCheckout from "./license-checkout";
@@ -98,6 +102,7 @@ const modules = {
   "email-pause": emailPause,
   "email-preferences": emailPreferences,
   groups,
+  imports,
   inbox,
   invitations,
   "license-checkout": licenseCheckout,
@@ -315,6 +320,17 @@ const matrix: Matrix = {
         } finally {
           request.cookie = cookie;
         }
+      },
+    },
+  },
+  // Against the Featurebase fake; its pages come across in the background, waited for so the next case starts clean.
+  imports: {
+    startImport: {
+      allowed: "ADMIN",
+      call: async (slug) => {
+        const started = await imports.startImport(slug, FAKE_FEATUREBASE_KEY, ["contacts"]);
+        await importsSettled();
+        return started;
       },
     },
   },
@@ -713,6 +729,7 @@ let site: SiteFake;
 let model: ModelFake;
 let githubFake: GithubFake;
 let stripe: StripeFake;
+let featurebaseFake: FeaturebaseFake;
 let receiver: WebhookReceiver;
 let users: Record<TeamRole | "outsider" | "ssoUser", TestUser>;
 let otherProject: Awaited<ReturnType<typeof createProject>>;
@@ -728,7 +745,8 @@ beforeAll(async () => {
   githubFake = await startGithubFake();
   // Buying AI credits and plans opens the local Stripe fake's pages (with AI credits or plans on just for that call).
   stripe = await startStripeFake();
-  for (const [name, value] of Object.entries({ ...s3.env, ...model.env, ...stripe.env })) {
+  featurebaseFake = await startFeaturebaseFake();
+  for (const [name, value] of Object.entries({ ...s3.env, ...model.env, ...stripe.env, ...featurebaseFake.env })) {
     vi.stubEnv(name, value);
   }
   dns = await startDnsFake();
@@ -749,7 +767,7 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), dns.close(), site.close(), githubFake.close(), stripe.close(), ses.close()]));
+afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), dns.close(), site.close(), githubFake.close(), stripe.close(), featurebaseFake.close(), ses.close()]));
 // Refused calls never reach the model; allowed ones use the reply they scripted.
 afterEach(() => model.done());
 

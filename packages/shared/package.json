@@ -11,7 +11,8 @@
     "./webhook-url": "./src/webhook-url.ts",
     "./post-urls": "./src/post-urls.ts",
     "./inbound-signature": "./src/inbound-signature.ts",
-    "./signed": "./src/signed.ts"
+    "./signed": "./src/signed.ts",
+    "./user-properties": "./src/user-properties.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

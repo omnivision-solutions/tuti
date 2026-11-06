@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { projectSender } from "@tuti/jobs";
+import { handOverOnVerified, projectSender } from "@tuti/jobs";
 import { passwordChangedEmail, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
@@ -58,6 +58,10 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
   });
 }
 
+/** handOverOnVerified, never failing what verified the address (it's verified either way); a failure is logged. */
+const handOverPlaceholdersLogged = (userId: string) =>
+  handOverOnVerified(userId).catch((error: unknown) => log.error("Handing an import's placeholders over failed", { error, userId }));
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // One deployment serves the app host and every portal host. Each host gets its
@@ -100,6 +104,8 @@ export const auth = betterAuth({
         // Any other reset links they were sent stop working (only reset tokens store a bare user id).
         prisma.verification.deleteMany({ where: { value: user.id } }),
       ]);
+      // Verified now: an import's placeholders for this address hand over (they're on the team).
+      await handOverPlaceholdersLogged(user.id);
       try {
         await sendEmail({ to: user.email, ...passwordChangedEmail() });
       } catch (error) {
@@ -111,6 +117,9 @@ export const auth = betterAuth({
   // Continue with Google / GitHub only signs people in: their tokens are never used, and GitHub's (through tuti.so's
   // GitHub App) could read code where the App is installed. So none is kept, and none can be handed out again.
   databaseHooks: {
+    // However an address comes to be verified (its link, a sign-in link, an account from Google or GitHub), an import's
+    // placeholders for it hand over, in the projects they're on (a password reset is a direct update: it calls it too).
+    user: { update: { after: async (user) => void (user.emailVerified && (await handOverPlaceholdersLogged(user.id))) } },
     account: {
       create: { before: async (account) => ({ data: { ...account, accessToken: null, refreshToken: null, idToken: null } }) },
       update: { before: async (account) => ({ data: { ...account, accessToken: null, refreshToken: null, idToken: null } }) },

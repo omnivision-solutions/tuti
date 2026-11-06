@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { inGroup, storedConditions } from "@/lib/group-conditions";
 import { readerGroup } from "@/lib/reader-groups";
-import { MAX_PROPERTIES, type Properties, propertyChangesInput, storedProperties } from "@/lib/user-properties";
+import { MAX_PROPERTIES, type Properties, propertyChangesInput, storedProperties } from "@tuti/shared/user-properties";
 
 import { inGroupSql } from "../group-conditions-sql";
 import { syncUsers } from "../project-users";

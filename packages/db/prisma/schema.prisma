@@ -30,6 +30,12 @@ model User {
   /// One of a project's sample people (Home's "Add sample content"): removed with its sample content, or with the project.
   sampleProjectId   String?
   sampleProject     Project?        @relation("SamplePeople", fields: [sampleProjectId], references: [id], onDelete: Cascade)
+  /// A placeholder person an import made (docs/plan.md, Switching from Featurebase): a teammate in the other tool who isn't
+  /// on this project's team, under their name, with no account anyone can sign in to. Removed with the project; handed over
+  /// (what they wrote, then deleted) to whoever joins the team with `placeholderFor`, their address in the other tool.
+  placeholderProjectId String?
+  placeholderProject   Project?     @relation("Placeholders", fields: [placeholderProjectId], references: [id], onDelete: Cascade)
+  placeholderFor       String?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   sessions          Session[]
@@ -64,8 +70,10 @@ model User {
   codeChangeActions     CodeChangeAction[]
   articleVerifications  ArticleVerification[]
   verifyAlls            VerifyAll[]
+  dataImports           DataImport[]
   conversations         Conversation[]        @relation("ConversationUser")
   assignedConversations Conversation[]        @relation("ConversationAssignee")
+  heldConversations     Conversation[]        @relation("ConversationHeldBy")
   conversationMessages  ConversationMessage[]
   autopilotNotices      AutopilotNotice[]
   autopilotDigests      AutopilotDigest[]
@@ -73,6 +81,7 @@ model User {
   @@unique([email])
   /// Partial: only sample people have it.
   @@index([sampleProjectId], where: raw("\"sampleProjectId\" IS NOT NULL"))
+  @@index([placeholderProjectId], where: raw("\"placeholderProjectId\" IS NOT NULL"))
   @@index([imageId])
   @@map("user")
 }
@@ -357,6 +366,7 @@ model Project {
 
   team                    TeamMember[]
   samplePeople            User[]                   @relation("SamplePeople")
+  placeholders            User[]                   @relation("Placeholders")
   boards                  Board[]
   posts                   Post[]
   conversations           Conversation[]
@@ -411,6 +421,8 @@ model Project {
   codeChanges             CodeChange[]
   articleVerifications    ArticleVerification[]
   verifyAlls              VerifyAll[]
+  dataImports             DataImport[]
+  importedRecords         ImportedRecord[]
   aiUsage                 AiUsage[]
   aiCreditGrants          AiCreditGrant[]
 
@@ -460,7 +472,7 @@ model SsoIdentity {
   /// agree while a deploy overlaps them. Goes, with the trigger, in a later migration.
   legacyGroups String[] @default([]) @map("groups")
   /// What the project's app says about them (strings, numbers, booleans and lists of strings by name,
-  /// up to 50; lib/user-properties.ts), set by SSO sign-ins and the API; matched against groups' conditions.
+  /// up to 50; @tuti/shared/user-properties), set by SSO sign-ins and the API; matched against groups' conditions.
   /// The column keeps its old name, so app instances from before it keep working while a deploy overlaps them.
   properties   Json     @default("{}") @map("attributes")
   createdAt    DateTime @default(now())
@@ -1043,6 +1055,10 @@ model Conversation {
   status        ConversationStatus @default(OPEN)
   /// A team member, or nobody.
   assigneeId    String?
+  /// Imported (docs/plan.md, Switching from Featurebase): the placeholder person who held it in the other tool, not on the
+  /// team, so it came in unassigned; assigned to whoever they hand over to (handOverPlaceholders). Any change of its
+  /// assignee (unassigning too) clears it: the team's decision stands.
+  heldById      String?
   origin        ConversationOrigin
   /// Who's writing, when Tuti knows them (an SSO user or a portal account)…
   userId        String?
@@ -1075,6 +1091,7 @@ model Conversation {
 
   project  Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assignee User?                 @relation("ConversationAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  heldBy   User?                 @relation("ConversationHeldBy", fields: [heldById], references: [id], onDelete: SetNull)
   user     User?                 @relation("ConversationUser", fields: [userId], references: [id], onDelete: SetNull)
   messages ConversationMessage[]
   posts    ConversationPost[]
@@ -1086,6 +1103,8 @@ model Conversation {
   @@index([visitorHash])
   @@index([projectId, email])
   @@index([snoozedUntil])
+  /// The conversations a placeholder holds, for its handover.
+  @@index([heldById], where: raw("\"heldById\" IS NOT NULL"))
   @@map("conversation")
 }
 
@@ -2443,6 +2462,70 @@ model VerifyAll {
   @@index([projectId, createdAt])
   @@index([startedById])
   @@map("verify_all")
+}
+
+/// The tool an import (DataImport) brings a project's things from.
+enum ImportSource {
+  FEATUREBASE
+}
+
+enum ImportState {
+  /// Going through its steps, a page at a time.
+  RUNNING
+  /// Every picked part was brought across.
+  DONE
+  /// It stopped (`error` says why); started again, what came across already is skipped.
+  FAILED
+}
+
+/// An import from another tool (docs/plan.md, Switching from Featurebase): one run, a chain of short jobs
+/// (import-step), each doing one page of its current step and saving where it got to.
+model DataImport {
+  id          String       @id @default(cuid())
+  projectId   String
+  source      ImportSource
+  startedById String?
+  /// The source's API key, only while it runs: cleared when it ends, done or failed.
+  apiKey      String?
+  /// The parts picked (contacts; feedback, docs and inbox later).
+  parts       String[]     @default([])
+  state       ImportState  @default(RUNNING)
+  /// The step under way (packages/jobs/src/imports.ts STEPS) and where it got to in it (the source's cursor; null: its first page).
+  step        String       @default("")
+  cursor      String?
+  /// What came across, per kind: { contacts: { imported: 12, leftOut: { "<reason>": 2 } } }.
+  counts      Json         @default("{}")
+  /// Why it failed, in words.
+  error       String       @default("")
+  createdAt   DateTime     @default(now())
+  /// When it last moved: one that hasn't for a while is stuck (resumed when looked at, failed after a day).
+  updatedAt   DateTime     @default(now()) @updatedAt
+  finishedAt  DateTime?
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  startedBy User?   @relation(fields: [startedById], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([startedById])
+  @@map("data_import")
+}
+
+/// What an import brought across: the source's id of a record (a contact, a post, …) and the local record it became, so
+/// a retried page or another import skips it, and later parts find who a contact is here.
+model ImportedRecord {
+  id         String       @id @default(cuid())
+  projectId  String
+  source     ImportSource
+  /// What it is: contact, …
+  kind       String
+  externalId String
+  localId    String
+  createdAt  DateTime     @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, source, kind, externalId])
+  @@map("imported_record")
 }
 
 /// One AI request a project caused (docs/plan.md, AI usage per project): what it was for, the model,

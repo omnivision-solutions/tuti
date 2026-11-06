@@ -2,6 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { inviteEmail, sendEmail } from "@tuti/email";
+import { handOverOnVerified, handOverPlaceholders } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -223,6 +224,7 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
     select: { id: true },
   });
   if (!existing) {
+    let verified = false;
     try {
       await prisma.$transaction(async (tx) => {
         // The project's lock first, as inviting takes it before the invites, so the two can't deadlock:
@@ -244,7 +246,11 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
         if (verifyEmail) {
           await tx.user.update({ where: { id: userId }, data: { emailVerified: true } });
         }
-      });
+        // Placeholders an import made for them (a teammate in the other tool) hand over to them, if their address is verified.
+        await handOverPlaceholders(tx, invitation.projectId, userId);
+        // Waits for an import page's save (the project lock) and moves what the placeholder wrote: as long as the other handover path.
+      }, { timeout: 60_000 });
+      verified = verifyEmail;
     } catch (error) {
       if (error instanceof InvitationUnavailableError) {
         return { error: "This invite has expired, was revoked, or was already used" };
@@ -256,6 +262,11 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
       if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
         throw error;
       }
+    }
+    // Verified by this invite's email: placeholders for their address in the other projects they're on hand over too
+    // (as any other way an address gets verified). Never failing the join: a failure is logged.
+    if (verified) {
+      await handOverOnVerified(userId).catch((error: unknown) => log.error("Handing an import's placeholders over failed", { error, userId }));
     }
   }
   // The /app layout lists your projects; refresh it before navigating.

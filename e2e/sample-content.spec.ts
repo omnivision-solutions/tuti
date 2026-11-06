@@ -16,8 +16,10 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await owner.getByLabel("URL").fill(slug);
   await owner.getByRole("button", { name: "Create project" }).click();
 
-  // What will you use: all four, with sample content for them.
+  // Starting fresh; what will you use: all four, with sample content for them.
   await owner.waitForURL(`**/app/${slug}/setup`);
+  await owner.getByRole("link", { name: "Continue" }).click();
+  await owner.waitForURL(`**/app/${slug}/setup?step=use`);
   for (const name of ["Feedback", "Docs", "Changelog", "Support"]) {
     await owner.getByRole("checkbox", { name: new RegExp(`^${name}`) }).check();
   }

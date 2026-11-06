@@ -1,5 +1,5 @@
 import type { GroupCondition } from "./group-conditions";
-import type { Properties } from "./user-properties";
+import type { Properties } from "@tuti/shared/user-properties";
 
 /**
  * How conditions match, as cases: group-conditions.test.ts checks conditionsMatch with them, and

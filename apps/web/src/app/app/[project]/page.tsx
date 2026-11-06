@@ -9,17 +9,20 @@ import { GoesOut } from "@/components/goes-out";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
+import { RefreshWhile } from "@/components/setup-import";
 import { AddSampleContent, RemoveSampleContent } from "@/components/sample-content";
 import { StatTile } from "@/components/stat-tile";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
+import { importSee, importSummary, importTitle, onHome } from "@/lib/import-parts";
 import { homeOverview } from "@/server/home";
 import { hasSampleContent } from "@/server/sample-content";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { getSession } from "@/server/session";
 import { codeChangeList } from "@/server/operations/code-changes";
+import { latestImport } from "@/server/operations/imports";
 
 /** The Feedback list's filters, from when it was the project's first page: a link with them still finds it. */
 const FEEDBACK_FILTERS = ["status", "board", "sort", "show"];
@@ -47,6 +50,9 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   // On a plan without code changes, paused ones wait for the plan (codeChanges.resume refuses until then).
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
   const included = planIncludes(plan, "codeChanges");
+  // An import (owners and admins): while it runs, and its result for a few days after.
+  const imported = admin ? await latestImport(membership.project.id) : null;
+  const importShown = imported && onHome(imported);
 
   return (
     <>
@@ -74,6 +80,32 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             <CardAction>
               <RemoveSampleContent projectSlug={slug} />
             </CardAction>
+          </CardHeader>
+        </Card>
+      )}
+      {importShown && (
+        <Card>
+          <RefreshWhile on={imported.state === "running"} />
+          <CardHeader>
+            <CardTitle>{importTitle(imported)}</CardTitle>
+            <CardDescription>{importSummary(imported)}</CardDescription>
+            {/* Heard when it starts and ends, not with each page's count while it runs. */}
+            <p role="status" className="sr-only">
+              {imported.state === "running" ? importTitle(imported) : `${importTitle(imported)}. ${importSummary(imported)}`}
+            </p>
+            {imported.state === "failed" ? (
+              <CardAction>
+                <Link href={`/app/${slug}/setup`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  Start again
+                </Link>
+              </CardAction>
+            ) : imported.state === "done" && importSee(imported) ? (
+              <CardAction>
+                <Link href={`/app/${slug}/${importSee(imported)!.page}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  {importSee(imported)!.label}
+                </Link>
+              </CardAction>
+            ) : null}
           </CardHeader>
         </Card>
       )}
