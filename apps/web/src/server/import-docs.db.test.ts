@@ -1,5 +1,5 @@
 import { Prisma, prisma } from "@tuti/db";
-import { handlers, importJob, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
+import { contentBudget, handlers, importJob, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -33,7 +33,7 @@ beforeEach(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
   vi.stubEnv("OPENAI_BASE_URL", openai.url);
-  Object.assign(fake, { fixtures: featurebaseFixtures(fake.url), pageSize: 100 });
+  Object.assign(fake, { fixtures: featurebaseFixtures(fake.url), pageSize: 100, requests: [] });
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -190,6 +190,21 @@ test("a worker without a part the import picked (the release before, mid-deploy)
   expect(await handlers.importStep({ importId: row.id }, { info: () => {}, warn: () => {} })).toEqual({ failed: true });
   expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "FAILED", apiKey: null, error: "Tuti was updating as it started. Start it again to go on: what came across already is skipped." });
   expect(await collections()).toEqual([]);
+});
+
+test("a page of content out of time saves the articles it converted and reads the same page again for the rest, counting each once", async () => {
+  const budget = contentBudget.ms;
+  contentBudget.ms = -1;
+  try {
+    const done = await importDocs();
+    expect(done).toMatchObject({ state: "done", counts: { articles: { imported: 3 }, privateDrafts: { imported: 1 } } });
+  } finally {
+    contentBudget.ms = budget;
+  }
+  // One article converted a page: the list's one page of content read four times.
+  expect(fake.requests.filter((r) => r.includes("/help_center/articles?") && r.includes("limit=20"))).toHaveLength(4);
+  expect(await prisma.importedRecord.count({ where: { projectId: project.id, kind: "article", contentLanded: true } })).toBe(4);
+  expect((await articles()).filter((a) => a.publishedAt)).toHaveLength(2);
 });
 
 test("an article whose content didn't land is filled in by the next import; the others stay as they are", async () => {

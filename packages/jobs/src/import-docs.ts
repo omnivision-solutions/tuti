@@ -26,6 +26,14 @@ type Tx = Prisma.TransactionClient;
 const MAX_DEPTH = 5;
 /** Articles per page of content: each copies its images and files, so fewer than a list's 100 fit a page's time. */
 const CONTENT_PAGE = 20;
+/**
+ * How long a page of content converts articles (copying their media) before it saves those it has and reads the same
+ * page again for the rest: import-step's time limit is 5 minutes, and a page reads Featurebase for up to 3. At least
+ * one article a page, so it always gets on. Changeable for tests.
+ */
+export const contentBudget = { ms: 90_000 };
+/** A content page's cursor that reads the list's page at the cursor after it again (none: the first). */
+const AGAIN = "again:";
 
 /** The key is checked against the help center's lists before an import starts. */
 export const checkDocs = (api: Featurebase) => Promise.all([api.get("/help_center/help_centers", { limit: 1 }), api.get("/help_center/articles", { limit: 1, state: "all" })]);
@@ -296,7 +304,11 @@ type Text = { title: string; content: HtmlContent };
  * text: the newest). Published ones are indexed for search once the page is saved.
  */
 async function contentPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
-  const { items, next } = await job.featurebase.page<FeaturebaseArticle>("/help_center/articles", cursor, { state: "all", limit: CONTENT_PAGE });
+  const started = Date.now();
+  // A page read again counts only what it converts: it counted the rest the first time.
+  const again = cursor?.startsWith(AGAIN) ?? false;
+  const listCursor = again ? cursor!.slice(AGAIN.length) || null : cursor;
+  const { items, next: listNext } = await job.featurebase.page<FeaturebaseArticle>("/help_center/articles", listCursor, { state: "all", limit: CONTENT_PAGE });
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
   const todo = items.filter((article) => !known.get(article.id)?.landed && !known.get(article.id)?.deleted && !known.get(article.id)?.saved);
@@ -310,6 +322,9 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const media = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById, cache }) : undefined;
   const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null }[] = [];
   for (const article of todo) {
+    if (texts.length > 0 && Date.now() - started > contentBudget.ms) {
+      break;
+    }
     const convert = async (version: FeaturebaseArticle): Promise<Text | { error: string }> => {
       const content = await htmlToContent("article", version.body ?? "", { media, link });
       return "error" in content ? content : { title: version.title?.trim().slice(0, 120) || "Untitled", content };
@@ -320,6 +335,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
     texts.push({ article, live, draft: differs ? (draft as Text) : null });
   }
+  const next = texts.length < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
   if (!next) {
     mediaCaches.delete(job.id);
   }
@@ -337,13 +353,19 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       for (const article of items) {
         const local = locals.get(article.id);
         const text = texts.find((t) => t.article === article);
+        // Not converted for want of time: the page read again does it.
+        if (!text && todo.includes(article)) {
+          continue;
+        }
         // Landed before (or by a run of this page that got in first), deleted here since, or saved by the team since it
         // was made empty (an import that stopped between its passes, started again): as it is.
         if (!local || local.landed || local.deleted || local.saved || !text) {
           if (local && !local.landed) {
             await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
           }
-          tally(job.counts, "articles", null);
+          if (!again) {
+            tally(job.counts, "articles", null);
+          }
           continue;
         }
         await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
