@@ -181,6 +181,17 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   const darkPath = new URL(visitor.url()).pathname;
   await visitor.getByRole("link", { name: "Subscribe" }).click();
   await expect(visitor).toHaveURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === darkPath);
+  // So does the vote button, and signing in comes back to the post.
+  await visitor.goBack();
+  await visitor.getByRole("link", { name: "Sign in to vote (1 vote)" }).click();
+  await expect(visitor).toHaveURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === darkPath);
+  const main = visitor.getByRole("main");
+  await main.getByLabel("Email").fill(ada.email);
+  await main.getByRole("button", { name: "Use a password instead" }).click();
+  await main.getByLabel("Password").fill("correct horse battery staple");
+  await main.getByRole("button", { name: "Sign in" }).click();
+  await visitor.waitForURL((url) => url.pathname === darkPath);
+  await expect(visitor.getByRole("button", { name: "Remove vote (1 vote)" })).toBeVisible();
   await visitor.context().close();
 
   // Ada (email verified) posted it: she hears anyway, so she gets no button.

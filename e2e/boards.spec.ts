@@ -137,6 +137,8 @@ test("a board's own words for posting: the team sees them in a preview as they t
   for (const text of ["What should we build next?", "Request a feature", "What should it do?", "How would it help you?"]) {
     await expect(preview).toContainText(text);
   }
+  // The button is the form's own: no other one says "Submit post".
+  await expect(preview).not.toContainText("Submit post");
   await checkpoint(owner, "team-board-texts-preview", { fullPage: false });
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Board updated")).toBeVisible();

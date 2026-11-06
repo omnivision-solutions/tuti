@@ -1,9 +1,11 @@
 "use client";
 
 import { ChevronUpIcon } from "lucide-react";
+import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
+import { useSignInHref } from "@/components/sign-in-link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toggleVote } from "@/server/posts";
@@ -17,6 +19,7 @@ export function VoteButton({
   disabled,
   vote,
   signInHref,
+  signedOut,
 }: {
   postId: string;
   count: number;
@@ -26,11 +29,16 @@ export function VoteButton({
   vote?: (voted: boolean) => Promise<{ error?: string }>;
   /** Signed out, a link to sign in (in a new tab: the widget's) instead of a disabled button. */
   signInHref?: string;
+  /** On a portal, signed out: a link to its sign-in page that comes back here (signed in but unable to vote, `disabled`). */
+  signedOut?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic({ count, voted });
   const votes = `${optimistic.count} ${optimistic.count === 1 ? "vote" : "votes"}`;
 
+  if (signedOut) {
+    return <PortalSignInToVote count={optimistic.count} votes={votes} />;
+  }
   if (signInHref) {
     return (
       <a href={signInHref} target="_blank" rel="noreferrer" aria-label={`Sign in to vote (${votes})`} className={cn(buttonVariants({ variant: "outline" }), SHAPE)}>
@@ -62,6 +70,15 @@ export function VoteButton({
       <ChevronUpIcon />
       <span className="font-semibold tabular-nums">{optimistic.count}</span>
     </Button>
+  );
+}
+
+function PortalSignInToVote({ count, votes }: { count: number; votes: string }) {
+  return (
+    <Link href={useSignInHref()} aria-label={`Sign in to vote (${votes})`} className={cn(buttonVariants({ variant: "outline" }), SHAPE)}>
+      <ChevronUpIcon />
+      <span className="font-semibold tabular-nums">{count}</span>
+    </Link>
   );
 }
 

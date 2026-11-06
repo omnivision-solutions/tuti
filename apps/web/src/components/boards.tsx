@@ -197,7 +197,7 @@ export function EditBoardDialog({ projectSlug, board }: { projectSlug: string; b
                   maxLength={BOARD_TEXT_LIMITS.postButton}
                   placeholder={BOARD_TEXT_DEFAULTS.postButton}
                 />
-                <FieldDescription>Opens the form, e.g. Request a feature or Report a bug.</FieldDescription>
+                <FieldDescription>{"The form's submit button, e.g. Request a feature or Report a bug."}</FieldDescription>
               </Field>
               <Field>
                 <FieldLabel htmlFor={id("titlePlaceholder")}>Title placeholder</FieldLabel>
@@ -241,18 +241,15 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
   return (
     <section aria-label="Preview" className="flex flex-col gap-4 rounded-lg bg-muted/60 p-4">
       <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Preview</p>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="font-heading text-xl font-bold tracking-tight break-words">{draft.name || "Board name"}</p>
-          {draft.description.trim() && <p className="text-sm break-words text-muted-foreground">{draft.description}</p>}
-        </div>
-        <span className={buttonVariants({ size: "sm" })}>{texts.postButton}</span>
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="font-heading text-xl font-bold tracking-tight break-words">{draft.name || "Board name"}</p>
+        {draft.description.trim() && <p className="text-sm break-words text-muted-foreground">{draft.description}</p>}
       </div>
-      {/* The form the button opens. */}
+      {/* The board's post form, its button saying the board's words. */}
       <div className="flex flex-col gap-3 rounded-xl bg-popover p-4 text-popover-foreground shadow-sm ring-1 ring-foreground/10">
         <p className="font-heading text-lg font-bold tracking-tight break-words text-muted-foreground/60">{texts.titlePlaceholder}</p>
         <p className="min-h-12 text-sm break-words text-muted-foreground">{texts.detailsPlaceholder}</p>
-        <span className={cn(buttonVariants({ size: "sm" }), "self-end")}>Submit post</span>
+        <span className={cn(buttonVariants({ size: "sm" }), "self-end")}>{texts.postButton}</span>
       </div>
     </section>
   );

@@ -516,7 +516,7 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   const rowLayout = async () => {
     const status = (await row.getByText("Open", { exact: true }).boundingBox())!;
     const title = (await row.getByRole("link", { name: "Dark mode" }).boundingBox())!;
-    const vote = (await row.getByRole("button", { name: "Upvote" }).boundingBox())!;
+    const vote = (await row.getByRole("link", { name: /^Sign in to vote/ }).boundingBox())!;
     expect(status.y + status.height).toBeLessThanOrEqual(title.y);
     expect(vote.x).toBeGreaterThanOrEqual(title.x + title.width);
   };
@@ -615,7 +615,7 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
       await expect(page.getByRole("main").getByRole("link", { name: "Dark mode" })).toBeVisible();
       const sized = page.getByRole("main").getByRole("listitem").filter({ has: page.getByRole("link", { name: "Dark mode" }) });
       const title = (await sized.getByRole("link", { name: "Dark mode" }).boundingBox())!;
-      const vote = (await sized.getByRole("button", { name: "Upvote" }).boundingBox())!;
+      const vote = (await sized.getByRole("link", { name: /^Sign in to vote/ }).boundingBox())!;
       expect(vote.x).toBeGreaterThanOrEqual(title.x + title.width);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await checkpoint(page, `portal-board-${width === 390 ? "phone" : "desktop"}-${colorScheme}`);
@@ -732,7 +732,7 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   const shippedRow = visitor.getByRole("main").getByRole("listitem").filter({ hasText: "Sync contacts" });
   await expect(shippedRow.getByRole("button")).toHaveCount(0);
   await expect(shippedRow.getByText("vote", { exact: true })).toBeVisible();
-  await expect(visitor.getByRole("main").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("button", { name: /^Upvote/ })).toBeVisible();
+  await expect(visitor.getByRole("main").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("link", { name: /^Sign in to vote/ })).toBeVisible();
 
   // On a phone no sidebar: the boards' row is above, Recently shipped under the list, and nothing runs off the side. Light and dark.
   const signedIn = await ada.context().storageState();
@@ -1392,7 +1392,7 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Completed" }).click();
-  await team.getByRole("alertdialog").getByRole("button", { name: "Mark Completed" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" }).click();
   await expect(team.getByText("1 post: Completed")).toBeVisible();
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
   await team.getByRole("checkbox", { name: "Select Night theme" }).check();

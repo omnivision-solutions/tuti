@@ -111,7 +111,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
 
       <article className="flex items-start gap-4">
-        <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} />
+        <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <h1 className="text-2xl font-bold tracking-tight break-words">{post.title}</h1>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

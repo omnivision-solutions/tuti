@@ -271,6 +271,17 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(rows).toContainText("SSO");
   await rows.getByRole("link", { name: "SSO" }).click();
   await expect(owner.getByRole("region", { name: /^Post #/ })).toContainText("$1,500 MRR");
+  // On the post's own page at laptop width, each voter's amount in the narrow sidebar wraps between words, never mid-word ("$1,200 M" / "RR").
+  await owner.getByRole("link", { name: "Open full page" }).click();
+  // The pane shows the same voters: on the post's page now, not the pane.
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/p/\\d+$`));
+  await expect(owner.getByRole("list", { name: "Voters" })).toHaveCount(1);
+  await owner.setViewportSize({ width: 1024, height: 768 });
+  const amount = owner.getByRole("list", { name: "Voters" }).getByText("$1,200 MRR");
+  await expect(amount).toHaveCSS("word-break", "normal");
+  await expect(amount).toHaveCSS("overflow-wrap", "break-word");
+  await checkpoint(owner, "team-post-voters");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // And on the roadmap, once it's planned.
   await api("/posts/1", { status: "planned" }, "PATCH");
   await owner.goto(`/app/${slug}/feedback/roadmap`);
