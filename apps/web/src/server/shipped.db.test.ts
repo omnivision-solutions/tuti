@@ -167,7 +167,8 @@ describe("when a post ships", () => {
 
     // Hatchet's retry.
     expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 2 });
-    expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 0 });
+    // Done, so none are due: another run sends nothing.
+    expect(await handlers.postShipped({ postId }, log)).toEqual({ skipped: true });
     expect(emailsTo(author.email)).toHaveLength(1);
     expect(emailsTo(voter.email)).toHaveLength(1);
     expect(await due(postId)).toBeNull();
@@ -240,7 +241,8 @@ describe("when a post ships", () => {
       const author = await verified("Author");
       const post = await call(createPost, as(author.id), { board: "feature-requests", title: `Slow mail ${randomUUID()}` });
       const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
-      await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED" } });
+      // As completing it does: its emails are due.
+      await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date() } });
       const where = { postId_userId: { postId, userId: author.id } };
       const claim = () => prisma.shippedEmail.findUniqueOrThrow({ where, select: { claimedAt: true, sentAt: true } });
       const fake = await startSmtpFake({ onEmail: () => onEmail(claim, where) });

@@ -241,6 +241,8 @@ test("resumed, the posts' and replies' emails the pause held aren't sent: a paus
   });
   await handlers.resubmitShippedEmails({}, log);
   await handlers.resubmitReplyEmails({}, log);
+  // Nor does a run after the resume (Hatchet retrying one that failed before it).
+  await handlers.postShipped({ postId }, log);
   expect(emailsTo(voters[1]!.email).filter((email) => email.subject.endsWith("Dark mode"))).toEqual([]);
 });
 
