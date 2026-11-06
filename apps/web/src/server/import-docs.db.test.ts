@@ -297,6 +297,15 @@ test("an article longer than Tuti's 50,000 characters comes in as an empty draft
   expect(linksIn((await article("Paying by card")).content)).toEqual([{ text: "Welcome to Acme", href: `${await portalAddress(project.slug)}/docs/welcome-to-acme` }]);
 });
 
+test("unpublished changes longer than Tuti's 50,000 characters don't come, counted; the published version does", async () => {
+  fake.fixtures.articleDrafts[0]!.body = `<p>${"Long words. ".repeat(4_200)}</p>`;
+
+  const done = await importDocs();
+  expect(done.counts.unpublishedChanges).toEqual({ imported: 0, leftOut: { "longer than 50,000 characters, Tuti's most (the published version came in)": 1 } });
+  expect(importSummary(done)).toContain("1 article's unpublished changes longer than 50,000 characters, Tuti's most (the published version came in)");
+  expect(await article("Paying by card")).toMatchObject({ body: "Cards are charged on the 1st. See Welcome to Acme.", changes: null });
+});
+
 test("without media storage, images and files are left out and counted, the article still coming across", async () => {
   for (const name of Object.keys(s3.env)) {
     vi.stubEnv(name, "");

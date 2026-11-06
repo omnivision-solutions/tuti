@@ -322,7 +322,8 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   mediaCaches.set(job.id, cache);
   // Copies are the import's starter's uploads (someone who left since: none copied).
   const media = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById, cache }) : undefined;
-  const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null }[] = [];
+  // `draftLost`: why its unpublished changes didn't come (the published version did), said in the summary.
+  const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null; draftLost: string | null }[] = [];
   for (const article of todo) {
     if (texts.length > 0 && Date.now() - started > contentBudget.ms) {
       break;
@@ -335,18 +336,18 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
     const convert = async (version: FeaturebaseArticle): Promise<Text | { error: string }> => {
       const content = await htmlToContent("article", version.body ?? "", { media, link });
       if ("error" in content) {
-        return { error: "whose content couldn't be read (they're empty drafts)" };
+        return { error: "whose content couldn't be read" };
       }
       // Past what an article may have (its saves are refused): none of it, rather than part.
       if (content.text.length > MAX_ARTICLE_LENGTH) {
-        return { error: `longer than ${MAX_ARTICLE_LENGTH.toLocaleString("en")} characters, Tuti's most (they're empty drafts)` };
+        return { error: `longer than ${MAX_ARTICLE_LENGTH.toLocaleString("en")} characters, Tuti's most` };
       }
       return { title: version.title?.trim().slice(0, 120) || "Untitled", content };
     };
     const live = await convert(article);
     const draft = draftVersion && !("error" in live) ? await convert(draftVersion) : null;
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
-    texts.push({ article, live, draft: differs ? (draft as Text) : null });
+    texts.push({ article, live, draft: differs ? (draft as Text) : null, draftLost: draft && "error" in draft ? draft.error : null });
   }
   const next = texts.length < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
   if (!next) {
@@ -383,13 +384,16 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         }
         await tx.importedRecord.update({ where: { id: local.record }, data: { contentLanded: true } });
         if ("error" in text.live) {
-          tally(job.counts, "articles", text.live.error);
+          tally(job.counts, "articles", `${text.live.error} (they're empty drafts)`);
           continue;
         }
         const everyone = isDeepStrictEqual(article.visibleBy ?? ["everyone"], ["everyone"]);
         const wasPublished = article.isPublished ?? article.state === "live";
         const publish = wasPublished && everyone && room > 0;
         tally(job.counts, wasPublished && !everyone ? "privateDrafts" : wasPublished && !publish ? "limitDrafts" : "articles", null);
+        if (text.draftLost) {
+          tally(job.counts, "unpublishedChanges", `${text.draftLost} (the published version came in)`);
+        }
         if (publish) {
           room--;
           published.push(local.id);

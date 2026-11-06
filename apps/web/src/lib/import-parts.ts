@@ -70,6 +70,7 @@ const KINDS: Record<string, [string, string]> = {
   articles: ["article", "articles"],
   privateDrafts: ["article as a draft (only some people could see it)", "articles as drafts (only some people could see them)"],
   limitDrafts: ["article as a draft (past the plan's article limit)", "articles as drafts (past the plan's article limit)"],
+  unpublishedChanges: ["article's unpublished changes", "articles' unpublished changes"],
   images: ["image", "images"],
   files: ["file", "files"],
   videos: ["video", "videos"],
