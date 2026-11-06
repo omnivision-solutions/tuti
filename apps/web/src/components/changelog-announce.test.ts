@@ -11,7 +11,7 @@ const { HowAnnounced, publishSummary } = await import("./changelog");
 
 /** "How it's announced" in an entry's sidebar, as text. */
 const sidebar = (
-  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number },
+  entry: { published: boolean; emailedSubscribers: boolean; subscribersLeft: number; subscribersSent?: number; told?: { asked: number; subscribers: number } | null },
   subscribers: number | null = 3,
 ) =>
   renderToStaticMarkup(
@@ -90,4 +90,23 @@ describe("an entry emailed to some of its subscribers, not all (held, or unpubli
       "It appears on your portal's changelog, marked new in your widget.",
     );
   });
+});
+
+describe("published, who it told", () => {
+  const told = (asked: number, subscribers: number) =>
+    sidebar({ published: true, emailedSubscribers: subscribers > 0, subscribersLeft: 0, subscribersSent: subscribers, told: { asked, subscribers } });
+
+  test("the people who asked and the subscribers, each counted as what they are", () => {
+    expect(told(2, 48)).toContain("Told 2 people who asked and 48 subscribers.");
+    expect(told(1, 0)).toContain("Told 1 person who asked.");
+    expect(told(0, 1)).toContain("Told 1 subscriber.");
+    expect(told(0, 1)).not.toContain("who asked");
+    expect(told(0, 0)).toContain("Told 0 people who asked.");
+  });
+});
+
+test("a draft's Mark it new says what each place shows: the widget a dot, the portal's Changelog tab New", () => {
+  expect(sidebar({ published: false, emailedSubscribers: false, subscribersLeft: 0 })).toContain(
+    "Marked new, the widget shows a dot and your portal's Changelog tab says New to signed-in readers, until they see it.",
+  );
 });

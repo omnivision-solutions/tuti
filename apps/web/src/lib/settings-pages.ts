@@ -41,7 +41,7 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
               { title: "Writing style", href: at("writing-style") },
               // Analysing merged pull requests needs AI too (codeChangesEnabled).
               ...(codeChangesEnabled() ? [{ title: "Autopilot", href: at("autopilot") }] : []),
-              { title: "Models", href: at("ai-models") },
+              { title: "AI models", href: at("ai-models") },
             ]
           : []),
       ],

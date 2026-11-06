@@ -736,14 +736,15 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.getByRole("switch", { name: "Analyse merged pull requests" }).click();
   await expect(team.getByText("Autopilot off")).toBeVisible();
   await team.goto(`/app/${slug}/changelog`);
-  await expect(team.getByText("Next release is ready to write")).toHaveCount(0);
+  await expect(team.getByRole("status").filter({ hasText: "release notes" })).toHaveCount(0);
   await mergePullRequest(installationId, { number: 41, title: "Add a dark theme" });
   await mergePullRequest(installationId, { number: 42, title: "Remember the theme" });
 
-  // The list says the next release is ready to write, and opens it.
+  // The list says they wait for release notes (the draft is still collecting: not ready yet), and opens it.
   await team.reload();
-  const ready = team.getByRole("status").filter({ hasText: "Next release is ready to write" });
-  await expect(ready).toContainText("2 merged pull requests are in “Next release”.");
+  const ready = team.getByRole("status").filter({ hasText: /Merged pull requests are waiting for release notes|Next release is ready to write/ });
+  await expect(ready).toContainText("Merged pull requests are waiting for release notes");
+  await expect(ready).toContainText("2 merged pull requests are in “Next release”, collecting until the next release.");
   // Its row says when it was last edited and what it holds: the pull requests, no "0 posts".
   await expect(team.getByRole("listitem").filter({ hasText: "Next release" })).toContainText(/Edited (just now|\d+ minutes? ago) · 2 merged pull requests$/);
   // The running draft is marked neutral, not in a status's colour.
@@ -759,6 +760,8 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   // A release closes the draft (named after it) before anyone writes it: the notice stays, naming it.
   await publishRelease(installationId, { tag: "v1.4", name: "v1.4" });
   await team.reload();
+  // Now it's a release: ready to write.
+  await expect(ready).toContainText("Next release is ready to write");
   await expect(ready).toContainText("2 merged pull requests are in “v1.4”.");
   await ready.getByRole("link", { name: "Write it" }).click();
   await team.waitForURL(`**/app/${slug}/changelog/1`);
@@ -950,7 +953,7 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   // Published, the draft no longer collects: nothing waits to be written.
   await team.goto(`/app/${slug}/changelog`);
   await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
-  await expect(team.getByText("Next release is ready to write")).toHaveCount(0);
+  await expect(ready).toHaveCount(0);
 
   // On the portal: the cover, named for the entry, on the list and on the entry's page.
   await ada.goto("/changelog");

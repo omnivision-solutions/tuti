@@ -65,9 +65,11 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
       />
       {ready && (
         <Alert role="status">
-          <AlertTitle>Next release is ready to write</AlertTitle>
+          {/* The running draft isn't a release yet: it collects until the next one. */}
+          <AlertTitle>{ready.collecting ? "Merged pull requests are waiting for release notes" : "Next release is ready to write"}</AlertTitle>
           <AlertDescription className="break-words">
-            {ready._count.pullRequests} merged pull {ready._count.pullRequests === 1 ? "request is" : "requests are"} in “{ready.title}”.
+            {ready._count.pullRequests} merged pull {ready._count.pullRequests === 1 ? "request is" : "requests are"} in “{ready.title}”
+            {ready.collecting ? ", collecting until the next release." : "."}
           </AlertDescription>
           <AlertAction>
             <Link href={`/app/${slug}/changelog/${ready.number}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
