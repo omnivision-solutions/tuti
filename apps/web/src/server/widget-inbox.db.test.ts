@@ -453,4 +453,14 @@ test("a signed-out visitor who types someone else's address never reads that per
   const opened = await widgetConversation(project.slug, visitor, 1);
   expect(opened).toMatchObject({ messages: expect.any(Array) });
   expect(JSON.stringify(opened)).not.toContain("private-details");
+  // The team still has it: a conversation of its own with the address's owner, verified, beside the visitor's.
+  const all = await prisma.conversation.findMany({
+    where: { projectId: project.id },
+    orderBy: { number: "asc" },
+    select: { number: true, email: true, emailVerified: true, visitorHash: true, messages: { orderBy: { createdAt: "asc" }, select: { body: true } } },
+  });
+  expect(all.map(({ visitorHash, messages, ...c }) => ({ ...c, visitor: !!visitorHash, bodies: messages.map((m) => m.body) }))).toEqual([
+    { number: 1, email: "e2e-victim@example.com", emailVerified: false, visitor: true, bodies: ["Please confirm the billing email on file", "Which account is it?"] },
+    { number: 2, email: "e2e-victim@example.com", emailVerified: true, visitor: false, bodies: ["I never asked. My account is private-details."] },
+  ]);
 });

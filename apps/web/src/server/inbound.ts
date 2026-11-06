@@ -185,7 +185,11 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
 
 type Mail = Awaited<ReturnType<typeof simpleParser>>;
 
-/** Who's in a conversation by email: its person, and anyone who's written in it from another address. */
+/**
+ * Who's in a conversation by email: its person, and anyone who's written in it from another address. Not a signed-out
+ * visitor's address: they typed it, never proved it, and read the conversation in the widget by their visitor token, so
+ * mail from it (its owner answering the team's reply) starts a conversation of its own instead.
+ */
 async function conversationAddresses(conversationId: string) {
   const conversation = await prisma.conversation.findUniqueOrThrow({
     where: { id: conversationId },
@@ -193,11 +197,13 @@ async function conversationAddresses(conversationId: string) {
       email: true,
       name: true,
       emailVerified: true,
+      visitorHash: true,
       user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
       messages: { where: { fromAddress: { not: null } }, select: { fromAddress: true }, distinct: ["fromAddress"] },
     },
   });
-  const person = conversationPerson(conversation).email?.toLowerCase();
+  const unproven = !conversation.user && conversation.visitorHash && !conversation.emailVerified;
+  const person = unproven ? undefined : conversationPerson(conversation).email?.toLowerCase();
   return { person, others: conversation.messages.map((m) => m.fromAddress!.toLowerCase()) };
 }
 
