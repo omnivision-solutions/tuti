@@ -39,6 +39,8 @@ The launcher is a round button with an icon. In the Tuti app, your project's
 - **Show on your portal** (on by default): the launcher on every page of your Tuti portal too,
   opening the same panel as on your site (under your site's path too, for a portal there). Not
   where your portal's Custom code adds Tuti's `widget.js` itself (yours is the one that runs).
+  Your portal's Ask AI is the widget's assistant either way: turned off, the portal still loads
+  the widget, without its launcher, and opens it only when a reader asks the AI.
 
 And the panel's **Home**:
 
@@ -172,6 +174,7 @@ panel instead of leaving the page.
 | `Tuti.open()` | Opens the panel where it was (Home the first time). |
 | `Tuti.open({ tab })` | Opens it at a tab: `"home"`, `"messages"`, `"docs"` (Help center), `"feedback"` or `"whats-new"` (Home's What's new list). |
 | `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
+| `Tuti.open({ ask: "<question>" })` | Opens it at Messages with the AI assistant answering the question (up to 300 characters), following on from the visitor's conversation so far. `ask: true` opens the assistant as it was. Your portal's Ask AI uses this. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.setTheme(theme)` | `"light"`, `"dark"` or `"auto"` (your portal's colour scheme): every panel changes now, and the button unless it has its own colour (see [Light or dark](#light-or-dark)). |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |

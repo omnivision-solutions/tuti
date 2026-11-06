@@ -402,6 +402,16 @@ test("the portal's own tag under a path of the team's site: the panel is under t
   }
 });
 
+test("Tuti.open({ ask }) opens Messages with the assistant asking the question (true: just the assistant), at most 300 characters", () => {
+  const page = loadWidget({});
+  page.Tuti.open({ ask: "How do I invite people?" });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages&ask=How%20do%20I%20invite%20people%3F");
+  page.Tuti.open({ ask: true });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages&ask=");
+  page.Tuti.open({ ask: "x".repeat(400) });
+  expect(new URL(page.frame!.src).searchParams.get("ask")).toHaveLength(300);
+});
+
 test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; unknown tabs are reported", async () => {
   const page = loadWidget({});
   page.Tuti.open({ tab: "whats-new" });

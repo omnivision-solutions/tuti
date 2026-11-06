@@ -27,7 +27,7 @@ import { widgetHeaderStyle } from "@/lib/colors";
 import { appUrl } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
-import { docsHref } from "@/lib/widget-docs";
+import { docsHref, MAX_QUESTION } from "@/lib/widget-docs";
 import { publishedEntries } from "@/server/changelog-queries";
 import { answerableArticle, listedArticle } from "@/server/docs-queries";
 import { brandCss, branding } from "@/server/operations/branding";
@@ -70,7 +70,7 @@ const TABS = [
  * page that other sites may frame (see proxy.ts). Links that leave it open a new tab.
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
-  const [{ project: slug }, { tab: tabParam, q, article, docsTab, collection, title, display, entry }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { tab: tabParam, q, article, docsTab, collection, title, display, entry, ask }] = await Promise.all([props.params, props.searchParams]);
   const [project, settings, brand, base] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
@@ -114,7 +114,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   // What's new isn't a tab: Home opens it (so does `?tab=whats-new`, from Tuti.open and inline mounts), with Home lit in the bar.
   const whatsNew = tabParam === "whats-new";
   const tab = tabs.find(({ tab }) => tab === tabParam)?.tab ?? "home";
-  // The docs' assistant, in the panel, when the server has AI answers (asked from the Docs tab).
+  // The docs' assistant, in the panel, when the server has AI answers (asked from the Help center, Messages, and the portal's
+  // Ask AI: `ask`, a question to ask as the panel opens, empty to just open it).
   const session = answersEnabled() ? await getSession() : null;
   const assistant = answersEnabled()
     ? {
@@ -123,6 +124,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         // "Post this as feedback" opens the Feedback tab, with the question as the title (unless the team turned Feedback off).
         feedbackPath: project.boards.length > 0 && !settings.hidden.includes("feedback") ? "/widget?tab=feedback" : null,
         askAPerson: await askAPerson(slug),
+        opening: typeof ask === "string" ? ask.slice(0, MAX_QUESTION) : undefined,
       }
     : null;
   // Messages' AI first (Customize → Widget) where the assistant is here, has docs to answer from, can pass a question to the
@@ -235,15 +237,9 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   );
 }
 
-/** The panel inside the docs' assistant (widget mode), where the server has AI answers. */
-function WithAssistant({ assistant, children }: { assistant: Omit<React.ComponentProps<typeof DocsAssistantProvider>, "children" | "widget"> | null; children: React.ReactNode }) {
-  return assistant ? (
-    <DocsAssistantProvider {...assistant} widget>
-      {children}
-    </DocsAssistantProvider>
-  ) : (
-    children
-  );
+/** The panel inside the docs' assistant, where the server has AI answers. */
+function WithAssistant({ assistant, children }: { assistant: Omit<React.ComponentProps<typeof DocsAssistantProvider>, "children"> | null; children: React.ReactNode }) {
+  return assistant ? <DocsAssistantProvider {...assistant}>{children}</DocsAssistantProvider> : children;
 }
 
 /**

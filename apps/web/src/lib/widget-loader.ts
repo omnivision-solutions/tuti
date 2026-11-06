@@ -1,4 +1,5 @@
 import { BASE_PATTERN } from "./portal-base";
+import { MAX_QUESTION } from "./widget-docs";
 import { SLUG_PATTERN } from "./project-slugs";
 import { WIDGET_ICONS } from "./widget-icons";
 import {
@@ -54,8 +55,9 @@ import {
  * fresh SSO token (or a promise of one); it's called whenever the panel is ready
  * for one, and the token is sent only to the portal's origin.
  *
- * `Tuti.open()` opens the panel, `Tuti.open({ tab })` at a tab, and
- * `Tuti.open({ article: "<slug>" })` at a docs article, as does clicking any
+ * `Tuti.open()` opens the panel, `Tuti.open({ tab })` at a tab,
+ * `Tuti.open({ ask: "<question>" })` at Messages with the AI assistant answering it (`ask: true`: the
+ * assistant as it was; the portal's Ask AI), and `Tuti.open({ article: "<slug>" })` at a docs article, as does clicking any
  * element with `data-tuti-article="<slug>"` (contextual help buttons; one listener
  * on the document, so elements added later work too). `Tuti.close()` closes it.
  *
@@ -633,11 +635,15 @@ export function widgetLoader(portalTemplate: string): string {
   var frame;
   var returnFocus;
 
-  // Opens the panel, at a tab or a docs article if asked (otherwise where it was);
-  // closing it gives focus back to \`from\`.
+  // Opens the panel, at a tab or a docs article if asked (otherwise where it was), or at Messages with its
+  // assistant open, asking \`ask\` (true: just open); closing it gives focus back to \`from\`.
   function open(options, from) {
     var article = options && typeof options.article === "string" ? options.article : "";
-    var query = article ? "?tab=docs&article=" + encodeURIComponent(article) : tabQuery(options && options.tab);
+    var ask = options && (typeof options.ask === "string" || options.ask === true) ? options.ask : null;
+    var query =
+      ask !== null ? "?tab=messages&ask=" + encodeURIComponent(ask === true ? "" : ask.slice(0, ${MAX_QUESTION}))
+      : article ? "?tab=docs&article=" + encodeURIComponent(article)
+      : tabQuery(options && options.tab);
     var src = portal + "/widget" + (query || "");
     // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
     if (!frame) {

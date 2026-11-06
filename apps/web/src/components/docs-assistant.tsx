@@ -39,25 +39,41 @@ function storedTurns(slug: string, viewer: string): Turn[] {
   }
 }
 
+/**
+ * Keeps `question` and its `answer` (from /docs?q=) as the latest turn of `viewer`'s conversation in this tab (null: signed
+ * out), for the widget's assistant to show and follow up on: its panel is on the portal's own address, so it has the tab's
+ * storage too (the portal's "Ask a follow-up").
+ */
+export function keepTurn(slug: string, viewer: string | null, question: string, answer: DocsAnswer) {
+  const reader = viewer ?? "anonymous";
+  const turns = storedTurns(slug, reader);
+  if (turns.some((turn) => turn.answer?.id === answer.id)) {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(storageKey(slug, reader), JSON.stringify([...turns, { key: crypto.randomUUID(), question, answer }]));
+  } catch {
+    // Storage blocked or full: the assistant opens without it.
+  }
+}
+
 /** The answer a new question follows up on: the latest that was asked (an "I don't know" too). */
 const lastAsked = (turns: Turn[]) => turns.findLast((turn) => turn.answer)?.answer?.id;
 
 /**
- * The portal's docs assistant: AI answers as a conversation, in a panel (the whole screen on phones).
- * Asking from the search box ("Ask AI") or the header's button opens it; each question follows up on
- * the ones before (docs.ask's `followUpTo`: the server reads the earlier turns, the browser only names
- * the last). Answers come with their sources and a thumbs up or down; "I don't know" with posting it
- * as feedback (`feedbackPath`: the first board's) and, when the team takes questions by email, asking a
- * person (`askAPerson`). The trash clears the conversation; the next question starts a new one.
- * In the widget (`widget`), it takes the panel: questions count as the widget's, sources open in the
- * panel's Docs tab, and "Post this as feedback" opens its Feedback tab (`feedbackPath` "/widget?tab=feedback").
+ * The widget's docs assistant, the one place AI answers are a conversation (the portal's Ask AI opens it too: Tuti.open({ ask })).
+ * It takes the panel. Its Help center's "Ask AI", Messages' AI first, and `opening` (a question asked as the panel opens; empty:
+ * just opened) open it. Each question follows up on the ones before (docs.ask's `followUpTo`: the server reads the earlier turns,
+ * the browser only names the last). Answers come with their sources (opening in the panel's Help center) and a thumbs up or down,
+ * "I don't know" with posting it as feedback (`feedbackPath`, the Feedback tab), and each with Ask a person (`askAPerson`). The
+ * trash clears the conversation; the next question starts a new one.
  */
 export function DocsAssistantProvider({
   projectName,
   viewer,
   feedbackPath,
   askAPerson,
-  widget = false,
+  opening,
   children,
 }: {
   projectName: string;
@@ -65,11 +81,11 @@ export function DocsAssistantProvider({
   viewer: string | null;
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
-  widget?: boolean;
+  opening?: string;
   children: React.ReactNode;
 }) {
   const slug = usePortalSlug();
-  const from = widget ? "widget" : "portal";
+  const from = "widget";
   const [open, setOpen] = useState(false);
   // What had focus when it opened, for it to go back to; in the widget's Messages that may be gone by then (sending went
   // back to the list), and the page's mark (data-assistant-return, its New message) takes it instead.
@@ -88,7 +104,7 @@ export function DocsAssistantProvider({
   if (open && !opened) {
     setOpened(true);
   }
-  const { signedIn } = useWidgetSignIn(slug, widget && !viewer && opened);
+  const { signedIn } = useWidgetSignIn(slug, !viewer && opened);
   const reader = viewer ?? (signedIn ? `widget:${signedIn.id}` : "anonymous");
   const key = storageKey(slug, reader);
   const [turns, setTurns] = useState<Turn[]>(() => storedTurns(slug, reader));
@@ -178,6 +194,20 @@ export function DocsAssistantProvider({
     [run, show],
   );
 
+  // Opened to ask (the portal's Ask AI): once, as the panel opens.
+  const openedToAsk = useRef(false);
+  useEffect(() => {
+    if (opening === undefined || openedToAsk.current) {
+      return;
+    }
+    openedToAsk.current = true;
+    if (opening.trim()) {
+      assistant.ask(opening);
+    } else {
+      assistant.open();
+    }
+  }, [opening, assistant]);
+
   const retry = (turn: Turn) => {
     const before = turn.fresh ? [] : turnsRef.current.slice(0, turnsRef.current.findIndex((each) => each.key === turn.key));
     update(turn.key, { answer: undefined, error: undefined });
@@ -198,7 +228,6 @@ export function DocsAssistantProvider({
             turns={turns}
             feedbackPath={feedbackPath}
             askAPerson={askAPerson}
-            widget={widget}
             onAsk={assistant.ask}
             onRetry={retry}
             onRated={(turn, helpful) => update(turn.key, { rated: helpful })}
@@ -217,7 +246,6 @@ function AssistantPanel({
   turns,
   feedbackPath,
   askAPerson,
-  widget,
   onAsk,
   onRetry,
   onRated,
@@ -229,7 +257,6 @@ function AssistantPanel({
   turns: Turn[];
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
-  widget: boolean;
   onAsk: (question: string) => void;
   onRetry: (turn: Turn) => void;
   onRated: (turn: Turn, helpful: boolean) => void;
@@ -282,7 +309,6 @@ function AssistantPanel({
               turn={turn}
               feedbackPath={feedbackPath}
               askAPerson={askAPerson}
-              widget={widget}
               onRetry={() => onRetry(turn)}
               onRated={(helpful) => onRated(turn, helpful)}
               onEscalated={() => onEscalated(turn)}
@@ -315,7 +341,6 @@ function AssistantReply({
   turn,
   feedbackPath,
   askAPerson,
-  widget,
   onRetry,
   onRated,
   onEscalated,
@@ -324,7 +349,6 @@ function AssistantReply({
   turn: Turn;
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
-  widget: boolean;
   onRetry: () => void;
   onRated: (helpful: boolean) => void;
   onEscalated: () => void;
@@ -347,8 +371,8 @@ function AssistantReply({
             </Button>
           </>
         )}
-        {/* In the widget, where Messages asks the AI first, the team is still a way through: the question as it was, unanswered. */}
-        {widget && askAPerson && (
+        {/* Where Messages asks the AI first, the team is still a way through: the question as it was, unanswered. */}
+        {askAPerson && (
           <AskAPerson
             projectSlug={slug}
             questionId={null}
@@ -377,14 +401,14 @@ function AssistantReply({
       questionId={answer.id}
       question={turn.question}
       defaultEmail={askAPerson.email}
-      widget={widget}
+      widget
       sent={turn.escalated}
       onSent={onEscalated}
       onLeave={onLeave}
     />
   );
-  // In the widget, an article opens in the panel's Docs tab (the portal's page is a link away from there).
-  const sourceHref = widget ? (article: string) => at(`/widget?${new URLSearchParams({ tab: "docs", article })}`) : undefined;
+  // An article opens in the panel's Help center (the portal's page is a link away from there).
+  const sourceHref = (article: string) => at(`/widget?${new URLSearchParams({ tab: "docs", article })}`);
   if (answer.status === "failed") {
     return (
       <div className="flex flex-col items-start gap-2 text-sm">
@@ -394,8 +418,7 @@ function AssistantReply({
             Try again
           </Button>
         )}
-        {/* In the widget, where Messages asks the AI first; the portal's assistant is as it was. */}
-        {widget && person}
+        {person}
         {answer.sources.length > 0 && <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />}
       </div>
     );
@@ -456,8 +479,8 @@ function AssistantReply({
         ) : (
           <p>Thanks for letting us know.</p>
         )}
-        {/* In the widget it's always there (Messages asks the AI first); on the portal, once they say it didn't help. */}
-        {(turn.rated === false || widget) && person}
+        {/* Always there: Messages asks the AI first, and the team is a way through. */}
+        {person}
       </div>
       <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />
     </div>

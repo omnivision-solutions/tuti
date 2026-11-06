@@ -660,18 +660,24 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await launcher.click();
   await expect(visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" })).toBeVisible();
   await checkpoint(visitor, "portal-widget-open");
-  // The portal's own sheets go over an open panel: the docs' assistant, opened beside it, takes clicks where the panel is.
+  // The portal's Ask AI is the widget's assistant: the panel opens with it (its box ready to type in), already open or not.
   const api = await apiFor(owner, slug);
   const article = await api("/articles", { title: "Getting started", body: "Install the app." });
   await api(`/articles/${article.slug}/publish`, {});
   await visitor.goto(`/docs/${article.slug}`);
-  await launcher.click();
+  const askAI = async () => {
+    await visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+    await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
+    const assistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+    await expect(assistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
+    await assistant.getByRole("button", { name: "Close the assistant" }).click();
+    await expect(assistant).toBeHidden();
+  };
+  await askAI();
   await expect(visitor.locator("#tuti-widget")).toBeVisible();
-  await visitor.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
-  await visitor.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
-  await visitor.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" }).click();
-  await expect(visitor.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" })).toBeFocused();
-  await visitor.getByRole("button", { name: "Close the assistant" }).click();
+  await visitor.reload();
+  await launcher.click();
+  await askAI();
   // On phones the page ends clear of the launcher (5.5rem); wider, it doesn't need to.
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "88px");
@@ -697,8 +703,10 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await visitor.reload();
   await expect(visitor.getByRole("banner")).toBeVisible();
-  await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
+  // Its script stays, without the launcher, for Ask AI.
+  await expect(script).toHaveAttribute("data-hide-launcher", "");
+  await askAI();
 
   // Back on. Signing out on the portal (a client navigation) loads the page afresh: the launcher and panel the loader added
   // for the signed-in reader don't stay for whoever's next.

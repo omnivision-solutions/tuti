@@ -11,11 +11,9 @@ import { PortalWidget } from "@/components/portal-widget";
 import { PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLookProvider } from "@/components/portal-look";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
-import { askAPerson } from "@/server/operations/docs-escalate";
-import { DocsAssistantProvider } from "@/components/docs-assistant";
+import { PortalAssistant } from "@/components/portal-assistant";
 import { cn } from "@/lib/utils";
 import { PortalMenu, PortalMenuProvider } from "@/components/portal-menu";
-import { boardPath } from "@/lib/post-urls";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
@@ -98,21 +96,13 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       : target.kind === "portal" && target.customDomain
         ? `${new URL(portalUrl(slug)).protocol}//${requestHeaders.get("host")}`
         : null;
-  // The project's own widget (Customize → Widget). Not where the team's Custom code adds it its own way, from the address
-  // Customize hands out (it runs only on their own address, later, and the first copy wins); other tools' widget.js don't
-  // count.
-  const widgetHere = project.widgetOnPortal && !(ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`));
-  // The docs' assistant (AI answers as a conversation), for readers, when the server has AI answers.
+  // Ask AI (the header's search, "Still stuck?"): the widget's assistant, for readers, when the server has AI answers.
   const assistant = canRead && answersEnabled();
-  const firstBoard = project.boards[0];
-  const assistantProps = assistant
-    ? {
-        projectName: project.name,
-        viewer: session?.user.id ?? null,
-        feedbackPath: firstBoard ? boardPath(firstBoard) : null,
-        askAPerson: await askAPerson(slug),
-      }
-    : null;
+  // The project's own widget (Customize → Widget), and for Ask AI even where the team turned it off here (without its
+  // launcher). Not where the team's Custom code adds it its own way, from the address Customize hands out (it runs only on
+  // their own address, later, and the first copy wins; its Tuti.open asks the same); other tools' widget.js don't count.
+  const widgetHere =
+    (project.widgetOnPortal || assistant) && !(ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`));
 
   return (
     <PortalBaseProvider base={base} slug={slug}>
@@ -121,7 +111,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts and search get lines of their own (search on tablets too). */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
-        <WithAssistant assistant={assistantProps}>
+        <WithAssistant assistant={assistant} viewer={session?.user.id ?? null}>
         <PortalMenuProvider>
         <PortalTop>
         {/* On phones the parts' tabs sit on its bottom edge, under room for the first line. */}
@@ -159,11 +149,20 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         </noscript>
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
-        {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new. */}
-        {/* The project's own widget, for readers who may read the portal; a full load once that or who's reading changes. */}
-        {/* Under a path, the loader at an address of its own: a browser's copy from before it read the path (kept an hour)
-            would open the panel at the site's root, which the site doesn't forward. */}
-        {widgetHere && <PortalWidget src={`${appUrl().origin}/widget.js${base ? "?path" : ""}`} slug={slug} base={base} shown={canRead} viewer={session?.user.id ?? null} />}
+        {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new, and Ask
+            AI. For readers who may read the portal; a full load once that or who's reading changes. Under a path, the loader at
+            an address of its own: a browser's copy from before it read the path (kept an hour) would open the panel at the
+            site's root, which the site doesn't forward. */}
+        {widgetHere && (
+          <PortalWidget
+            src={`${appUrl().origin}/widget.js${base ? "?path" : ""}`}
+            slug={slug}
+            base={base}
+            launcher={project.widgetOnPortal}
+            shown={canRead}
+            viewer={session?.user.id ?? null}
+          />
+        )}
         </PortalMenuProvider>
         </WithAssistant>
       </PortalLookProvider>
@@ -174,7 +173,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   );
 }
 
-/** The page inside the docs' assistant, where the portal has one. */
-function WithAssistant({ assistant, children }: { assistant: Omit<React.ComponentProps<typeof DocsAssistantProvider>, "children"> | null; children: React.ReactNode }) {
-  return assistant ? <DocsAssistantProvider {...assistant}>{children}</DocsAssistantProvider> : children;
+/** The page with Ask AI (the widget's assistant), where the portal has it. */
+function WithAssistant({ assistant, viewer, children }: { assistant: boolean; viewer: string | null; children: React.ReactNode }) {
+  return assistant ? <PortalAssistant viewer={viewer}>{children}</PortalAssistant> : children;
 }

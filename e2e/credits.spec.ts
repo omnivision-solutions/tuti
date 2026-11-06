@@ -39,7 +39,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await box.fill(question);
   await expect(visitor.getByRole("dialog").getByRole("option").first()).toContainText("Ask AI:");
   await box.press("Enter");
-  const conversation = visitor.getByRole("dialog", { name: "Assistant" }).getByRole("log", { name: "Conversation" });
+  const conversation = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" }).getByRole("log", { name: "Conversation" });
   await expect(conversation.getByText("AI answers aren't available right now.")).toBeVisible();
   await expect(conversation.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(conversation.getByRole("link", { name: "Post this as feedback" })).toBeVisible();

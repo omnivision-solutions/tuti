@@ -12,7 +12,22 @@ import { useEffect, useRef } from "react";
  * assistant, the menu), which cover an open panel until they close; the panel stays a level over the launcher, as the
  * loader has them (on a phone it's the whole screen). On phones the page ends clear of the launcher.
  */
-export function PortalWidget({ src, slug, base, shown, viewer }: { src: string; slug: string; base: string; shown: boolean; viewer: string | null }) {
+export function PortalWidget({
+  src,
+  slug,
+  base,
+  launcher,
+  shown,
+  viewer,
+}: {
+  src: string;
+  slug: string;
+  base: string;
+  /** Its launcher; without it (turned off on the portal), the panel opens only for Ask AI. */
+  launcher: boolean;
+  shown: boolean;
+  viewer: string | null;
+}) {
   const last = useRef({ shown, viewer });
   useEffect(() => {
     if (shown === last.current.shown && viewer === last.current.viewer) {
@@ -29,7 +44,7 @@ export function PortalWidget({ src, slug, base, shown, viewer }: { src: string; 
   return (
     <>
       <style>{`body > button[aria-controls="tuti-widget"] { z-index: 45 !important; } #tuti-widget { z-index: 46 !important; } @media (width < 48rem) { body { padding-bottom: 5.5rem; } }`}</style>
-      <script src={src} data-project={slug} data-on-portal={base} async />
+      <script src={src} data-project={slug} data-on-portal={base} {...(!launcher && { "data-hide-launcher": "" })} async />
     </>
   );
 }
