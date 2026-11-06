@@ -9,6 +9,7 @@
     "start": "node --env-file-if-exists=.env dist/index.js",
     "typecheck": "tsc --noEmit",
     "backfill:embeddings": "tsx --env-file-if-exists=.env src/scripts/backfill-embeddings.ts",
+    "cut:imported-quotes": "tsx --env-file-if-exists=.env src/scripts/cut-imported-quotes.ts",
     "release:media": "tsx --env-file-if-exists=.env src/scripts/release-media.ts"
   },
   "dependencies": {

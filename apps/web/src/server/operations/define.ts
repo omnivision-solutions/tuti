@@ -28,8 +28,8 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
    * Who may run it when signed in: the project's team, only its owners and admins (project
    * settings, like the Settings page), only its owners (settings only they change, like
    * Autopilot's: its run calls requireOwner, so a key works only while whoever created it owns
-   * the project), or anyone who may post in the project. Keys count as the team; only owners
-   * and admins create them.
+   * the project), or anyone who may post in the project. Keys count as the team, with their
+   * creator's current role (server/api-auth.ts: refusal); only owners and admins create them.
    */
   access: "team" | "admin" | "owner" | "anyone";
   input: I;

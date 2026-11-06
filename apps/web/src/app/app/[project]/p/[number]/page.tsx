@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { mediaStorage } from "@tuti/shared/storage";
 import { historySince, visibleConversations } from "@tuti/jobs";
 import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
@@ -206,8 +207,15 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                 comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
                 teamUserIds={new Set(team.map((m) => m.userId))}
                 events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
+                mediaUrls={await mediaUrls(...post.comments.map(displayDoc), ...post.notes.map(displayDoc))}
               />
-              {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" notes voters={toEmail} />}
+              {!post.duplicateOf && <CommentForm
+                  postId={post.id}
+                  placeholder="Reply as the team…"
+                  notes
+                  voters={toEmail}
+                  uploads={mediaStorage() ? { projectSlug: slug, mediaUrls: {} } : undefined}
+                />}
             </section>
           )}
         </div>

@@ -135,6 +135,8 @@ export type FeaturebaseContact = {
   id: string;
   /** Their id in the team's own app (SSO), if it told Featurebase. */
   userId?: string | null;
+  /** customer, or lead (someone who left an address without signing in: unproven). */
+  type?: string | null;
   email?: string | null;
   name?: string | null;
   profilePicture?: string | null;
@@ -228,6 +230,25 @@ export type FeaturebaseArticle = {
   /** Who may read it: ["everyone"], or only some people. */
   visibleBy?: string[] | null;
   author?: { authorId?: string | null; name?: string | null } | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+/** A changelog entry (GET /v2/changelogs?state=all), in the default locale: its live version, if it has one. */
+export type FeaturebaseChangelog = {
+  id: string;
+  title?: string | null;
+  /** HTML. */
+  content?: string | null;
+  featuredImage?: string | null;
+  /** When it's dated (published). */
+  date?: string | null;
+  state?: "live" | "draft";
+  /** Who may see it: some segments only, when there are any; a category too, when it has roles. */
+  allowedSegmentIds?: string[] | null;
+  categories?: { id: string; name: string; roles?: string[] | null }[] | null;
+  emailSentToSubscribers?: boolean;
+  commentCount?: number;
   createdAt?: string | null;
   updatedAt?: string | null;
 };

@@ -3,14 +3,14 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { CallToolRequestSchema, type CallToolResult, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { log } from "@tuti/shared";
 
-import { authenticate } from "@/server/api-auth";
-import { type ApiKeyActor, OperationError, operations, toolName } from "@/server/operations";
+import { type ApiKey, authenticate, refusal } from "@/server/api-auth";
+import { OperationError, operations, toolName } from "@/server/operations";
 import { inputSchema } from "@/server/operations/openapi";
 
 /**
  * The MCP server (Streamable HTTP, stateless): every operation is a tool, so AI
  * assistants can search, triage and answer feedback. Authenticated like the REST
- * API, with a project API key as the bearer token; read-only keys only see read tools.
+ * API, with a project API key as the bearer token; a key only sees the tools it may run (read-only keys, read tools).
  */
 async function handle(request: Request) {
   const actor = await authenticate(request);
@@ -23,8 +23,8 @@ async function handle(request: Request) {
   return transport.handleRequest(request);
 }
 
-function mcpServer(actor: ApiKeyActor) {
-  const tools = operations.filter((operation) => operation.scope === "read" || actor.scope === "write");
+function mcpServer(actor: ApiKey) {
+  const tools = operations.filter((operation) => !refusal(actor, operation));
   const server = new Server(
     { name: "tuti", version: "1.0.0" },
     {

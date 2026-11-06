@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { EmptyState } from "@/components/empty-state";
+import { ConversationDetails } from "@/components/inbox/conversation-details";
 import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
@@ -192,6 +193,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         <ListKeys
           place={`${slug}:${view}`}
           open={open}
+          none={inboxHref(slug, view)}
           aria-label="Conversations"
           // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
           className="p-6 lg:relative lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-3"
@@ -312,8 +314,11 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   );
 }
 
-/** Where the conversation goes, beside the list: its page's, or, with none open, the Inbox's numbers. */
-export function ConversationPane({ open, children }: { open: boolean; children: ReactNode }) {
+/**
+ * Where the conversation goes, beside the list: its page's, or, with none open, the Inbox's numbers. `detailsHidden`: the
+ * column beside its messages hidden, as the page read it from this browser's cookie (ConversationDetails).
+ */
+export function ConversationPane({ open, detailsHidden = false, children }: { open: boolean; detailsHidden?: boolean; children: ReactNode }) {
   return (
     <section
       aria-label="Conversation"
@@ -323,7 +328,7 @@ export function ConversationPane({ open, children }: { open: boolean; children: 
         !open && "max-lg:hidden",
       )}
     >
-      {children}
+      <ConversationDetails hidden={detailsHidden}>{children}</ConversationDetails>
     </section>
   );
 }

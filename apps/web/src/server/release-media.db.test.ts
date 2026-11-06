@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { attachMedia } from "@/server/content";
 import { createUpload } from "@/server/media";
 import { createChangelogEntry, updateChangelogEntry } from "@/server/operations/changelog";
-import { createPost } from "@/server/operations/create";
+import { createComment, createPost } from "@/server/operations/create";
 import { createArticle, deleteArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -56,15 +56,13 @@ const post = (title: string, ...mediaIds: string[]) =>
   call(createPost, as(owner), { board: "feature-requests", title, content: doc(...mediaIds) });
 const postId = async (number: number) => (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
 
-test("an upload only a deleted post or comment used is released; one that other content uses, of any kind, is kept", async () => {
-  const [inPost, inComment, alsoInChangelog] = [await upload(), await upload(), await upload()];
+test("an upload only a deleted post, comment or internal note used is released; one that other content uses, of any kind, is kept", async () => {
+  const [inPost, inComment, inNote, alsoInChangelog] = [await upload(), await upload(), await upload(), await upload()];
   const deleted = await post("Screenshots", inPost.id, alsoInChangelog.id);
   const kept = await post("Another post");
-  // Comments can't have images yet; one with an image, as a save will store it once they can.
-  await prisma.comment.create({
-    data: { projectId: project.id, postId: await postId(kept.number), authorId: owner.id, body: "", content: doc(inComment.id) },
-  });
-  await prisma.media.update({ where: { id: inComment.id }, data: { attachedAt: new Date() } });
+  // An image alone is a comment.
+  await call(createComment, as(owner), { number: kept.number, content: { type: "doc", content: [image(inComment.id)] } });
+  await call(createComment, as(owner), { number: kept.number, content: doc(inNote.id), internal: true });
   await call(createChangelogEntry, as(owner), { title: "Screenshots", content: doc(alsoInChangelog.id) });
   await ageAttachments();
 
@@ -72,9 +70,9 @@ test("an upload only a deleted post or comment used is released; one that other 
 
   await prisma.post.delete({ where: { id: await postId(deleted.number) } });
   await prisma.comment.deleteMany({ where: { projectId: project.id } });
-  expect(await release()).toBe(2);
-  expect(await attached(inPost.id)).toEqual([false]);
-  expect(await attached(inComment.id)).toEqual([false]);
+  await prisma.postNote.deleteMany({ where: { post: { projectId: project.id } } });
+  expect(await release()).toBe(3);
+  expect(await attached(inPost.id, inComment.id, inNote.id)).toEqual([false, false, false]);
   expect(await attached(alsoInChangelog.id)).toEqual([true]);
 });
 

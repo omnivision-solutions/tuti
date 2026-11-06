@@ -101,7 +101,7 @@ export const FEATUREBASE_ICONS: Record<string, string> = {
 const DOCS_MEDIA = { image: "articleImages", file: "articleFiles", video: "articleVideos" } as const;
 
 /** Why an image, file or video was left out, as the summary says it ("3 images that couldn't be fetched"). */
-const MEDIA_LEFT_OUT: Record<LeftOutReason, string> = {
+export const MEDIA_LEFT_OUT: Record<LeftOutReason, string> = {
   unsupported: "with nowhere to keep them",
   type: "of a type Tuti doesn't take",
   size: "over the size limit",

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled } from "@tuti/jobs";
+import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled, upsertProjectUser } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -93,7 +93,8 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
     contacts: { imported: 3, leftOut: {} },
     boards: { imported: 2, leftOut: { "only some people see": 3 } },
     posts: { imported: 5, leftOut: { "only some people see": 3, "hidden from the portal": 1, "waiting for moderation": 1 } },
-    images: { imported: 1, leftOut: { "in comments, which have none in Tuti": 1 } },
+    // The post's and the comment's.
+    images: { imported: 2, leftOut: {} },
     // Each author's own (5), a guest author's among them, and the others' (3); only the guest who isn't the author left out.
     votes: { imported: 8, leftOut: { "by guests": 1 } },
     comments: { imported: 3, leftOut: { "private but not by the team": 1, "deleted or spam": 2, "waiting for moderation": 1, "on posts left out": 1 } },
@@ -156,11 +157,15 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   ]);
   expect(votes.find((vote) => vote.user.name === "Olive Owner")!.user.id).toBe(owner.id);
 
-  // Comments flat and in date order, the reply after the comment it answers; the image left out of one, its text kept.
+  // Comments flat and in date order, the reply after the comment it answers.
   expect(await prisma.comment.findMany({ where: { postId: dark.id }, orderBy: { createdAt: "asc" }, select: { body: true, createdAt: true, votersEmailDueAt: true, author: { select: { name: true } } } })).toEqual([
     { body: "Yes please!", createdAt: new Date("2024-01-11T09:00:00.000Z"), votersEmailDueAt: null, author: { name: "Tobias Quill" } },
     { body: "On our list, thanks!", createdAt: new Date("2024-01-14T09:00:00.000Z"), votersEmailDueAt: null, author: { name: "Fern Former" } },
   ]);
+  // A comment's image is copied, as a post's is.
+  const [withImage] = await prisma.comment.findMany({ where: { postId: dark.id }, orderBy: { createdAt: "asc" }, select: { content: true } });
+  const image = (withImage!.content as { content: { type: string; attrs?: { mediaId: string } }[] }).content.find((node) => node.type === "image");
+  expect(await prisma.media.findUniqueOrThrow({ where: { id: image!.attrs!.mediaId } })).toMatchObject({ projectId: project.id, status: "READY" });
   // The team's private comment is an internal note, the owner's; a user's private one stays out.
   expect(await prisma.postNote.findMany({ where: { postId: dark.id }, select: { body: true, authorId: true, createdAt: true } })).toEqual([
     { body: "Planning it for June.", authorId: owner.id, createdAt: new Date("2024-01-12T09:00:00.000Z") },
@@ -182,6 +187,17 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   // Quietly: nothing emailed, no webhook.
   expect(mailbox.emails.length).toBe(emailed);
   expect(await prisma.webhookDelivery.count({ where: { webhook: { projectId: project.id } } })).toBe(0);
+});
+
+test("a comment that's only an image comes across with it", async () => {
+  const [first] = fake.fixtures.comments;
+  fake.fixtures.comments = [{ ...structuredClone(first!), content: `<p><img src="${fake.url}/files/shot.png"></p>` }];
+  await importFeedback();
+  const { import: done } = await call(getImport, asOwner(), {});
+  expect(done!.counts).toMatchObject({ comments: { imported: 1, leftOut: {} }, images: { imported: 2 } });
+  const [only] = await prisma.comment.findMany({ where: { projectId: project.id }, select: { body: true, content: true } });
+  expect(only!.body.trim()).toBe("");
+  expect(JSON.stringify(only!.content)).toContain('"type":"image"');
 });
 
 test("a page run twice, at once or again later, and a second import, bring nothing twice", async () => {
@@ -211,15 +227,27 @@ test("a page run twice, at once or again later, and a second import, bring nothi
   });
 });
 
+test("a contact matched by address to a user the team's app signed in keeps that user's own avatar: the import doesn't copy or clear it", async () => {
+  const image = "http://127.0.0.1:9/avatars/42.png";
+  const signedIn = await upsertProjectUser(project.id, "signed-in-mira", { name: "Mira", email: "e2e-mira@example.com", image });
+  fake.fixtures.contacts[0]!.userId = null;
+  await importFeedback();
+  expect(await prisma.user.findUniqueOrThrow({ where: { id: signedIn }, select: { image: true, imageId: true } })).toEqual({ image, imageId: null });
+  const { import: done } = await call(getImport, asOwner(), {});
+  expect(done!.counts.avatars).toBeUndefined();
+});
+
 test("a repeat import after a post was deleted in Featurebase goes on: the post and its votes here stay, and the rest come across", async () => {
   await importFeedback();
   const gone = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Sync with calendars" }, select: { id: true, voteCount: true } });
-  // Gone from Featurebase since (its voters answer 404), and a new vote on another post meanwhile.
+  // Gone from Featurebase since (its voters answer 404), and a new vote and a new comment on another post meanwhile.
   fake.fixtures.posts = fake.fixtures.posts.filter((post) => post.title !== "Sync with calendars");
   fake.fixtures.voters["65f0000000000000000000p2"]!.push({ object: "contact", ...fake.fixtures.contacts[1]!, type: "customer", createdAt: "2024-03-01T00:00:00.000Z" });
+  fake.fixtures.comments.push({ ...fake.fixtures.comments[0]!, id: "65f0000000000000000000cz", postId: "65f0000000000000000000p2", content: "<p>Any news?</p>", createdAt: "2024-03-03T09:00:00.000Z" });
   await importFeedback();
   const { import: again } = await call(getImport, asOwner(), {});
-  expect(again).toMatchObject({ state: "done", error: null, counts: { votes: { imported: 1 } } });
+  expect(again).toMatchObject({ state: "done", error: null, counts: { votes: { imported: 1 }, comments: { imported: 1 } } });
+  expect(await prisma.comment.findFirst({ where: { body: "Any news?" }, select: { post: { select: { title: true, commentCount: true } } } })).toMatchObject({ post: { title: "Export fails on Safari", commentCount: 1 } });
   expect(await prisma.post.findUniqueOrThrow({ where: { id: gone.id }, select: { voteCount: true } })).toEqual({ voteCount: gone.voteCount });
   expect(await prisma.vote.count({ where: { post: { projectId: project.id, title: "Export fails on Safari" } } })).toBe(3);
 });
@@ -240,7 +268,7 @@ test("past the plan's board limit, a board's posts go into the last board import
   expect(done!.counts).toMatchObject({
     boards: { imported: 2, leftOut: { "only some people see": 3, "past the plan's board limit, their posts in the last board": 1 } },
     posts: { imported: 6 },
-    images: { imported: 0, leftOut: { "with no media storage on this server": 2, "in comments, which have none in Tuti": 1 } },
+    images: { imported: 0, leftOut: { "with no media storage on this server": 3 } },
   });
   expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
   expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Offline mode" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Bugs" } });
@@ -321,18 +349,69 @@ test("past a page's time, what's left of it goes to the next page; one post's im
     handlers.importStep = importStep;
   }
   let counts = (await call(getImport, asOwner(), {})).import!.counts;
-  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { imported: 1 }, avatars: { imported: 2 } });
+  // The post's image and the comment's.
+  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { imported: 2 }, avatars: { imported: 2 } });
   expect(await prisma.user.count({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } } })).toBe(2);
   // One post a page (Featurebase's 10, 2 to its page: 5 pages without the limit), one avatar a page (else 1).
   expect(pages.filter((step) => step === "posts")).toHaveLength(10);
   expect(pages.filter((step) => step === "avatars")).toHaveLength(2);
+  // Comments too, past the limit: one with something to copy a page (Featurebase's 10, 2 to its page: 5 without it).
+  expect(pages.filter((step) => step === "comments")).toHaveLength(9);
 
-  // A page whose first post's images begin past its hard limit leaves them out.
+  // A page whose first post's images begin past its hard limit leaves them out; a comments page's too.
   project = await createProject(owner);
   Object.assign(FEEDBACK_PAGE, { ...limits, hardMs: -1 });
   await importFeedback();
   counts = (await call(getImport, asOwner(), {})).import!.counts;
-  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 1 } } });
+  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 2 } } });
+});
+
+test("a comment whose images run past a page's time goes to the next page whole, its images with it, once", async () => {
+  // A comment with two images after the first: the page's time runs out as its first image is fetched.
+  const png = Buffer.from(await (await fetch(`${fake.url}/files/mira.png`)).arrayBuffer());
+  const [late, later] = [fake.file("late.png", "image/png", png), fake.file("later.png", "image/png", png)];
+  const [first] = fake.fixtures.comments;
+  fake.fixtures.comments.splice(1, 0, { ...structuredClone(first!), id: "65f0000000000000000000cz", createdAt: "2024-01-11T10:00:00.000Z", content: `<p>Two more:</p><img src="${late}"><img src="${later}">` });
+  let now = 0;
+  Object.assign(FEEDBACK_PAGE, { softMs: 100, now: () => now });
+  fake.onFile = (name) => {
+    if (name === "late.png") {
+      now += 1000;
+    }
+  };
+  try {
+    await importFeedback();
+  } finally {
+    fake.onFile = undefined;
+  }
+  const comment = await prisma.comment.findMany({ where: { projectId: project.id, body: { contains: "Two more:" } }, select: { content: true } });
+  expect(comment).toHaveLength(1);
+  expect(JSON.stringify(comment[0]!.content).match(/"type":"image"/g)).toHaveLength(2);
+  expect((await call(getImport, asOwner(), {})).import!.counts.comments).toMatchObject({ imported: 4 });
+});
+
+test("a page of comments cut short goes on after the last one done, even when one before it is gone from Featurebase meanwhile", async () => {
+  const importStep = handlers.importStep;
+  let cut = false;
+  handlers.importStep = async (input, log) => {
+    // Before the second comments page (pages run one inside another, inline): the last comment done is deleted in
+    // Featurebase, so the list shifts up by one.
+    const { step, cursor } = await prisma.dataImport.findUniqueOrThrow({ where: { id: input.importId } });
+    const after = step === "comments" && cursor?.startsWith("{") && (JSON.parse(cursor) as { after: { id: string } | null }).after;
+    if (after && !cut) {
+      cut = true;
+      fake.fixtures.comments = fake.fixtures.comments.filter((comment) => comment.id !== after.id);
+    }
+    return importStep(input, log);
+  };
+  let now = 0;
+  Object.assign(FEEDBACK_PAGE, { softMs: 0, now: () => ++now });
+  try {
+    await importFeedback();
+  } finally {
+    handlers.importStep = importStep;
+  }
+  expect((await call(getImport, asOwner(), {})).import!.counts).toMatchObject({ comments: { imported: 3 }, notes: { imported: 1 } });
 });
 
 test("profile pictures are copied several at a time; past a page's time, the next page goes on from the last one copied; one picture several contacts share is copied once", async () => {

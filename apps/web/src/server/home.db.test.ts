@@ -168,6 +168,12 @@ test("Get set up follows what the team picked after Create project; a project wi
     expect((await call(getProject, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {})).uses).toEqual(["support"]);
     // Support only: no GitHub (Autopilot updates feedback, docs and the changelog) and no article; the support inbox instead.
     expect(await steps()).toEqual(["widget", "sso", "support", "team"]);
+    // Its own setup: the inbox, and the support email that lands in it.
+    expect((await homeOverview(project.id, project.slug)).setup!.find((step) => step.key === "support")).toMatchObject({
+      title: "Set up your support inbox",
+      description: "Answer messages from the widget and your support email together, in one shared inbox.",
+      action: "Set up",
+    });
 
     // Done as it's done: the inbox once it's on.
     await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });

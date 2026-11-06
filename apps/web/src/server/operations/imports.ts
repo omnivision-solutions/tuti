@@ -1,6 +1,6 @@
 import { prisma, type Prisma } from "@tuti/db";
 import { continueImport, failStaleImports, featurebase, FeaturebaseError, type ImportCounts, IMPORT_KEY, IMPORT_PARTS as STEPS, importStale, importStuck, lockProject, nextStep, resumeImport } from "@tuti/jobs";
-import { log } from "@tuti/shared";
+import { boardLimit, log } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { z } from "zod";
 
@@ -74,6 +74,16 @@ export async function latestImport(projectId: string): Promise<ImportView | null
   return importView(await prisma.dataImport.findUniqueOrThrow({ where: { id: latest.id }, select: importSelect }));
 }
 
+/** What a Featurebase import does past the plan's board limit, and the plan that has room (null: no limit). */
+export function boardsNote(plan: "FREE" | "PRO" | "BUSINESS"): string | null {
+  const limit = boardLimit(plan);
+  if (limit === null) {
+    return null;
+  }
+  const more = plan === "FREE" ? `Pro has up to ${boardLimit("PRO")}, and Business any number.` : "Business has any number.";
+  return `Projects on the ${plan === "FREE" ? "free" : "Pro"} plan have up to ${limit} feedback boards: posts on Featurebase's boards past that go into the last one brought across. ${more}`;
+}
+
 const label = (part: ImportPart) => IMPORT_PARTS[part].label;
 
 /** Featurebase's answer to a check, as the form says it: `cant` is what a refusal (401, 403) means. */
@@ -93,7 +103,7 @@ function refusal(error: unknown, cant: { code: string; message: string }): never
 export const startImport = defineOperation({
   name: "imports.start",
   summary:
-    "Start an import from Featurebase with an API key of its own and the parts to bring (contacts: as the project's users, by their id in your app; feedback: boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates; docs: the help center's collections and articles, with their media and the links between them, published as they were; avatars: contacts' uploaded profile pictures, copied last). Feedback and avatars need Contacts (400 without). The key is checked, then each part's list read once: a key Featurebase refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Only people can start it, in the app's first run: API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
+    "Start an import from Featurebase with an API key of its own and the parts to bring (contacts: as the project's users, by their id in your app; feedback: boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates; docs: the help center's collections and articles, with their media and the links between them, published as they were; changelog: its entries, published at their dates or as drafts, with their images, quietly; avatars: contacts' uploaded profile pictures, copied last). Feedback and avatars need Contacts (400 without). The key is checked, then each part's list read once: a key Featurebase refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Started again later, it brings only what's new since (contacts, posts, votes, comments, changelog entries, articles, conversations and their new messages), nothing twice. Only people can start it, in the app (its first run, or Settings → Import): API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
   method: "POST",
   path: "/imports",
   scope: "write",

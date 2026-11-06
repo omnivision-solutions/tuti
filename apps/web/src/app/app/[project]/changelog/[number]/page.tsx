@@ -58,6 +58,12 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const left = await subscribersLeft(entry.id);
   // Who it actually went to: a send stopped short (its portal made private, say) says so.
   const sent = await prisma.changelogEmail.count({ where: { entryId: entry.id, sentAt: { not: null } } });
+  // Emailed before it was imported (to Featurebase's subscribers), not by Tuti: said so, not as "0 subscribers".
+  // Only when Tuti sent it to nobody; by source and kind, so the record's index finds the few there are.
+  const imported =
+    entry.subscribersEmailedAt &&
+    sent === 0 &&
+    (await prisma.importedRecord.findFirst({ where: { projectId: membership.project.id, source: "FEATUREBASE", kind: "changelog-emailed", localId: entry.id }, select: { id: true } }));
   // Counted as the email job picks them (changelogReach); null on a private portal, which emails nobody.
   const subscribers = await subscriberCount(membership.project.id);
   // A draft not written yet: Draft with AI is the editor's one AI action, in the top bar (Edit with AI has nothing to
@@ -141,6 +147,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           emailedSubscribers: entry.subscribersEmailedAt !== null,
           subscribersLeft: left,
           subscribersSent: sent,
+          // Featurebase is the only tool imports come from.
+          emailedFrom: imported ? "Featurebase" : null,
           sample: entry.sample,
           emailPaused: await projectEmailWaits(membership.project.id),
         }}

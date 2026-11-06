@@ -194,15 +194,15 @@ describe("images and files", () => {
     expect(copied.map((source) => source.key)).toEqual(["https://cdn.example.com/mine.png", "https://cdn.example.com/theirs.png?v=2"]);
   });
 
-  test("comments take no images: left out and counted, their alt text kept", async () => {
+  test("comments take images too, copied like a post's", async () => {
     const { media, copied } = fakeMedia();
-    const result = await convert("comment", '<p>Here</p><img src="https://cdn.example.com/a.png" alt="A chart"><img src="https://cdn.example.com/b.png">', { media });
-    expect(copied).toEqual([]);
-    expect(result.doc.content).toEqual([p(text("Here")), p(text("A chart"))]);
-    expect(result.leftOut).toEqual([
-      { kind: "image", url: "https://cdn.example.com/a.png", reason: "unsupported" },
-      { kind: "image", url: "https://cdn.example.com/b.png", reason: "unsupported" },
+    const result = await convert("comment", '<p>Here</p><img src="https://cdn.example.com/a.png" alt="A chart">', { media });
+    expect(copied.map((source) => source.url)).toEqual(["https://cdn.example.com/a.png"]);
+    expect(result.doc.content).toEqual([
+      p(text("Here")),
+      { type: "image", attrs: { mediaId: "media00000000000000000001", width: "100", align: "center", alt: "A chart", w: 800, h: 600 } },
     ]);
+    expect(result.leftOut).toEqual([]);
   });
 
   test("one that couldn't be copied is left out with the importer's reason", async () => {

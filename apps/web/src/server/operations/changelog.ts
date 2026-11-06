@@ -1,7 +1,7 @@
 import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type Prisma, prisma } from "@tuti/db";
 import { enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, toApiStatus } from "@tuti/jobs";
-import { aiEnabled, complete, log } from "@tuti/shared";
+import { aiEnabled, complete, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalAddress } from "@/server/custom-domains";
@@ -28,7 +28,6 @@ import { postNumber, projectPortal, projectSlug } from "./read";
 
 /** Changelog entries (Phase 8): drafts the team writes, published on the portal's /changelog. */
 
-export const MAX_ENTRY_LENGTH = 20_000;
 const TAGS = ["new", "improved", "fixed", "breaking"] as const;
 const toTag = (tag: (typeof TAGS)[number]) => tag.toUpperCase() as ChangelogTag;
 

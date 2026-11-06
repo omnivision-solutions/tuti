@@ -3,7 +3,7 @@ import { planIncludes, readerEntriesFor } from "@tuti/shared";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
-import { inGroup, storedConditions } from "@/lib/group-conditions";
+import { inGroup, storedRule } from "@/lib/group-conditions";
 import { PREVIEW } from "@/lib/portal-base";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 import { storedProperties } from "@tuti/shared/user-properties";
@@ -147,7 +147,7 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
   const [member, account, groups, project] = await Promise.all([
     prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
     prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } }),
-    prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true } }),
+    prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true, match: true } }),
     prisma.project.findUnique({ where: { id: projectId }, select: { plan: true } }),
   ]);
   if (member) {
@@ -163,7 +163,7 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
   const readers = users.map((user) => storedProperties(user.properties));
   return {
     signedIn: true,
-    groups: groups.filter((group) => readers.some((properties) => inGroup(storedConditions(group.conditions), properties))).map((group) => group.key),
+    groups: groups.filter((group) => readers.some((properties) => inGroup(storedRule(group), properties))).map((group) => group.key),
   };
 });
 

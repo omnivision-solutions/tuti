@@ -190,7 +190,7 @@ export async function homeOverview(projectId: string, slug: string) {
     // Who's posting and who's writing in, signed in from the team's own app.
     { key: "sso", title: "Set up single sign-on", description: `Users sign in with their ${setup.name} account, so every post and message says who it's from.`, action: "Set up", done: setup.ssoSecret !== null, href: `${base}/settings/sso`, shown: uses("feedback", "support") },
     // Steps of their own only once picked.
-    { key: "support", title: "Turn on the support inbox", description: "Answer your users' questions together, in one shared inbox.", action: "Turn on", done: setup.supportInbox, href: `${base}/settings/support`, shown: picked.has("support") },
+    { key: "support", title: "Set up your support inbox", description: "Answer messages from the widget and your support email together, in one shared inbox.", action: "Set up", done: setup.supportInbox, href: `${base}/settings/support`, shown: picked.has("support") },
     { key: "article", title: "Publish an article", description: "Start your help center, so people find answers before they write in.", action: "New article", done: setup._count.articles > 0, href: `${base}/docs/new`, shown: uses("docs") },
     { key: "changelog", title: "Publish an update", description: "Show users what shipped, on your portal and in the widget.", action: "New entry", done: setup._count.changelogEntries > 0, href: `${base}/changelog/new`, shown: picked.has("changelog") },
     { key: "team", title: "Invite your team", description: "Share triage and replies with your teammates.", action: "Invite", done: setup._count.team > 1 || setup._count.invitations > 0, href: `${base}/settings/team`, shown: true },

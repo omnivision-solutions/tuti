@@ -1,6 +1,6 @@
 import { log } from "@tuti/shared";
 
-import { apiError as error, authenticate } from "@/server/api-auth";
+import { apiError as error, authenticate, refusal } from "@/server/api-auth";
 import { matchOperation, OperationError } from "@/server/operations";
 
 /**
@@ -20,8 +20,9 @@ async function handle(request: Request, { params }: RouteContext<"/api/v1/[...pa
   if (actor instanceof Response) {
     return actor;
   }
-  if (operation.scope === "write" && actor.scope === "read") {
-    return error(403, "forbidden", "This key can only read. Create a read + write key to change things.");
+  const refused = refusal(actor, operation);
+  if (refused) {
+    return error(403, "forbidden", refused);
   }
 
   let body: unknown = {};

@@ -18,7 +18,7 @@ import { extensions, IMAGE_ALIGNMENTS, IMAGE_SIZES, isCodeFilename, MAX_ALT_LENG
  *   content in order; YouTube, Vimeo and Loom iframes video embeds, other iframes links
  * - images are copied with `media` and point at the copy; in articles, attached documents (Featurebase's file blocks,
  *   and links to its attachment host) become file attachments. One that can't be copied, or that the profile has no
- *   place for (images in comments, files outside articles, uploaded videos), is left out with its alt text kept, and
+ *   place for (files outside articles, uploaded videos), is left out with its alt text kept, and
  *   listed in `leftOut` with its URL (an inbox import can take those as attachments)
  * - every link goes through `link` (another page's new address, or null to keep it) and is kept only if it's safe
  * - anything else (scripts, styles, attributes, Tuti's own data attributes) is dropped, its text kept
@@ -257,7 +257,7 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
         const words = kind === "image" ? alt : (name ?? "");
         element.replaceWith(...(words ? [make("p", {}, words)] : []));
       };
-      if (kind === "image" ? profile === "comment" : !article) {
+      if (kind === "file" && !article) {
         leaveOut("unsupported");
         continue;
       }
@@ -310,7 +310,8 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
  * time it's read; any other URL as it is. Only from the URL, never from attributes the HTML's writer chose, so nobody
  * can pass their file off as another's.
  */
-function sameFile(url: string): string {
+/** A file's address without a presigned link's signature, so two links to one file (signed apart) are one key. */
+export function sameFile(url: string): string {
   try {
     const parsed = new URL(url);
     return parsed.searchParams.has("X-Amz-Signature") ? `${parsed.origin}${parsed.pathname}` : url;

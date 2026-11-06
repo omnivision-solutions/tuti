@@ -88,6 +88,13 @@ test("each part's place: done before the step under way, the next one after it, 
   expect(importProgress(stopped)[0]).toMatchObject({ brought: "3 contacts" });
 });
 
+test("the changelog runs after feedback and says its own images, apart from feedback's and the help center's", () => {
+  const counts = { images: { imported: 4, leftOut: {} }, changelogEntries: { imported: 29, leftOut: {} }, changelogImages: { imported: 6, leftOut: { "that couldn't be fetched": 1 } } };
+  const run = { state: "running", step: "changelog", parts: ["docs", "changelog", "feedback", "contacts"], counts } as never;
+  expect(importProgress(run).map(({ part, state }) => `${part} ${state}`)).toEqual(["contacts done", "feedback done", "changelog now", "docs next"]);
+  expect(importProgress(run)[2]).toMatchObject({ brought: "29 changelog entries, 6 images in the changelog", leftOut: "1 image in the changelog that couldn't be fetched" });
+});
+
 test("an import in a line, as Home's card says it", () => {
   const counts = { contacts: { imported: 1300, leftOut: {} } };
   const run = (state: string, step: string | null, error: string | null = null) => ({ state, step, error, parts: ["team", "contacts", "feedback"], counts }) as never;
@@ -101,6 +108,17 @@ test("an import in a line, as Home's card says it", () => {
     ({ state, step, error: null, parts: ["team", "contacts"], counts: { invitations: { imported: 0, leftOut: { x: 1 } }, contacts: { imported: 0, leftOut: { "already brought across earlier": 1300 } } } }) as never;
   expect(importBrief(again("running", "contacts"))).toBe("Part 2 of 2: Contacts, nothing new so far.");
   expect(importBrief(again("done", null))).toBe("Nothing new brought across.");
+  // Only new messages in conversations brought earlier: Inbox brought them.
+  const messages = {
+    state: "done",
+    step: null,
+    error: null,
+    parts: ["contacts", "inbox"],
+    counts: { messages: { imported: 2, leftOut: {} }, conversations: { imported: 0, leftOut: { "already brought across earlier": 3 } } },
+  } as never;
+  expect(importSummary(messages)).toBe("2 new messages in conversations already here brought across. Left out: 3 conversations already brought across earlier.");
+  expect(importProgress(messages)[1]).toMatchObject({ part: "inbox", brought: "2 new messages in conversations already here" });
+  expect(importBrief(messages)).toBe("Inbox brought across.");
 });
 
 test("the team needs nothing, and nothing needs it: unticking Contacts leaves it ticked; its invitations are counted in words", () => {

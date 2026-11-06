@@ -1,11 +1,11 @@
-import type { GroupCondition } from "./group-conditions";
+import type { GroupCondition, GroupRule } from "./group-conditions";
 import type { Properties } from "@tuti/shared/user-properties";
 
 /**
  * How conditions match, as cases: group-conditions.test.ts checks conditionsMatch with them, and
  * server/group-conditions-sql.db.test.ts the same in SQL, so the two can't drift apart.
  */
-export type ConditionCase = { name: string; conditions: GroupCondition[]; properties: Properties; matches: boolean };
+export type ConditionCase = { name: string; rule: GroupRule; properties: Properties; matches: boolean };
 
 const is = (property: string, value: string): GroupCondition => ({ property, op: "is", value });
 const isNot = (property: string, value: string): GroupCondition => ({ property, op: "is_not", value });
@@ -18,7 +18,7 @@ const notSet = (property: string): GroupCondition => ({ property, op: "is_not_se
 
 const one = (name: string, condition: GroupCondition, properties: Properties, matches: boolean): ConditionCase => ({
   name,
-  conditions: [condition],
+  rule: { match: "all", conditions: [condition] },
   properties,
   matches,
 });
@@ -88,8 +88,11 @@ export const CONDITION_CASES: ConditionCase[] = [
   one("names on Object.prototype are no properties", anyOf("toString", ["function toString() { [native code] }"]), {}, false),
   one("constructor isn't one either", isSet("constructor"), {}, false),
   one("unless the app says it", is("constructor", "x"), { constructor: "x" }, true),
-  // All must match, and no conditions match nobody.
-  { name: "all: both match", conditions: [is("plan", "pro"), isNot("role", "guest")], properties: { plan: "pro", role: "admin" }, matches: true },
-  { name: "all: one doesn't", conditions: [is("plan", "pro"), isNot("role", "guest")], properties: { plan: "pro", role: "guest" }, matches: false },
-  { name: "none: nobody", conditions: [], properties: { plan: "pro" }, matches: false },
+  // All must match, or any one; no conditions match nobody.
+  { name: "all: both match", rule: { match: "all", conditions: [is("plan", "pro"), isNot("role", "guest")] }, properties: { plan: "pro", role: "admin" }, matches: true },
+  { name: "all: one doesn't", rule: { match: "all", conditions: [is("plan", "pro"), isNot("role", "guest")] }, properties: { plan: "pro", role: "guest" }, matches: false },
+  { name: "any: one matches", rule: { match: "any", conditions: [is("plan", "enterprise"), is("groups", "beta")] }, properties: { plan: "free", groups: ["beta"] }, matches: true },
+  { name: "any: none does", rule: { match: "any", conditions: [is("plan", "enterprise"), is("groups", "beta")] }, properties: { plan: "free" }, matches: false },
+  { name: "none: nobody", rule: { match: "all", conditions: [] }, properties: { plan: "pro" }, matches: false },
+  { name: "none, any: nobody", rule: { match: "any", conditions: [] }, properties: { plan: "pro" }, matches: false },
 ];

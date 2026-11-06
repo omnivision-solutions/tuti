@@ -27,6 +27,8 @@ export type FeaturebaseFixtures = {
   /** Articles' drafts with changes not published (GET /v2/help_center/articles/{id}?state=draft), by id. */
   articleDrafts: Row[];
   conversations: Row[];
+  /** Changelog entries, live and drafts, as GET /v2/changelogs?state=all lists them (oldest first). */
+  changelogs: Row[];
 };
 
 /**
@@ -108,7 +110,15 @@ const conversationFixtures = (): Row[] => {
       readReceipts: [{ id: tobias.id, userType: "customer", lastReadPartId: "p2001" }],
       conversationParts: [
         part("p2001", "email_msg", ago(3, 0.02), { bodyHtml: "<p>Could you send October's invoice again?</p>", bodyMarkdown: "Could you send October's invoice again?", channel: "email", author: tobias, redacted: false }),
-        part("p2002", "admin_msg", ago(3, 30), { bodyHtml: "<p>Sent again: it's in your inbox.</p>", bodyMarkdown: "Sent again: it's in your inbox.", channel: "email", author: fern, redacted: false }),
+        // The team's reply by email, quoting theirs.
+        part("p2002", "email_msg", ago(3, 30), {
+          bodyHtml:
+            '<div dir="ltr">Sent again: it\'s in your inbox.</div><br><div class="gmail_quote"><div class="gmail_attr">On Mon, Oct 12, 2026 at 6:51 AM, Tobias Quill &lt;<a href="mailto:e2e-tobias@example.com">e2e-tobias@example.com</a>&gt; wrote:</div><blockquote class="gmail_quote"><div>Could you send October\'s invoice again?</div></blockquote></div>',
+          bodyMarkdown: "Sent again: it's in your inbox.\n\nOn Mon, Oct 12, 2026 at 6:51 AM, Tobias Quill <e2e-tobias@example.com> wrote:\n\n> Could you send October's invoice again?",
+          channel: "email",
+          author: fern,
+          redacted: false,
+        }),
         part("p2003", "status", ago(3, 31), { status: "snoozed", snoozedUntil: ago(-7) }),
       ],
     }),
@@ -284,6 +294,7 @@ export const featurebaseFixtures = (): FeaturebaseFixtures => ({
     }),
   ],
   conversations: conversationFixtures(),
+  changelogs: changelogFixtures(),
 });
 
 const MIRA = { id: "65f000000000000000000001", name: "Mira Fenwick", email: "e2e-mira@example.com", profilePicture: null, type: "customer" };
@@ -402,6 +413,51 @@ function feedbackFixtures(): Pick<FeaturebaseFixtures, "boards" | "posts" | "com
   };
 }
 
+const changelog = (row: Row): Row => ({
+  object: "changelog",
+  content: "",
+  featuredImage: null,
+  state: "live",
+  allowedSegmentIds: [],
+  categories: [],
+  emailSentToSubscribers: false,
+  commentCount: 0,
+  createdAt: row.date,
+  updatedAt: row.date,
+  ...row,
+});
+
+/**
+ * The changelog, newest first as Featurebase lists it by default: an entry with a cover, an image, a category and
+ * comments, emailed to subscribers; one improved; a draft that was emailed before it was unpublished; one only a segment
+ * sees, one in a category only some roles see; one too long for Tuti.
+ */
+function changelogFixtures(): Row[] {
+  return [
+    changelog({
+      id: "65f0000000000000000000d6",
+      title: "The long one",
+      content: `<p>${"word ".repeat(4001)}</p><p><img src="${FAKE_FEATUREBASE_FILES}whiteboard.png"></p>`,
+      featuredImage: `${FAKE_FEATUREBASE_FILES}mira.png`,
+      date: "2024-03-20T09:00:00.000Z",
+    }),
+    changelog({ id: "65f0000000000000000000d5", title: "For admins", content: "<p>Roles only.</p>", date: "2024-03-15T09:00:00.000Z", categories: [{ id: "c3", name: "New", roles: ["admin"] }] }),
+    changelog({ id: "65f0000000000000000000d4", title: "For our beta group", content: "<p>Just for you.</p>", date: "2024-03-10T09:00:00.000Z", allowedSegmentIds: ["s1"] }),
+    changelog({ id: "65f0000000000000000000d3", title: "Single sign-on", content: "<p>Coming soon.</p>", date: "2024-03-05T09:00:00.000Z", state: "draft", emailSentToSubscribers: true }),
+    changelog({ id: "65f0000000000000000000d2", title: "Faster exports", content: "<p>Exports take half the time.</p>", date: "2024-03-01T09:00:00.000Z", categories: [{ id: "c2", name: "Improvement" }] }),
+    changelog({
+      id: "65f0000000000000000000d1",
+      title: "Dark mode is here",
+      content: `<p>Easy on the eyes at night.</p><p><img src="${FAKE_FEATUREBASE_FILES}shot.png" alt="Dark mode"></p>`,
+      featuredImage: `${FAKE_FEATUREBASE_FILES}welcome.png`,
+      date: "2024-02-01T09:00:00.000Z",
+      categories: [{ id: "c1", name: "New" }],
+      emailSentToSubscribers: true,
+      commentCount: 2,
+    }),
+  ];
+}
+
 /**
  * Lists the fake serves, by path: paged ones as Featurebase pages them; unpaged ones (admins) in one; bare ones (boards)
  * as an array. `detail`: fields only one item's own GET has (a conversation's parts).
@@ -416,6 +472,7 @@ const LISTS: Record<string, { fixtures: Exclude<keyof FeaturebaseFixtures, "vote
   "/v2/help_center/collections": { fixtures: "collections", paged: true },
   "/v2/help_center/articles": { fixtures: "articles", paged: true },
   "/v2/conversations": { fixtures: "conversations", paged: true, detail: ["conversationParts"] },
+  "/v2/changelogs": { fixtures: "changelogs", paged: true },
 };
 const VOTERS = /^\/v2\/posts\/([^/]+)\/voters$/;
 
@@ -523,8 +580,13 @@ export async function startFeaturebaseFake(): Promise<FeaturebaseFake> {
     if (list) {
       const detail = "detail" in list ? list.detail : undefined;
       const rows = (list.rows as (Row | null)[])
-        .filter((row) => list.rows !== fake.fixtures.articles || state === "all" || row?.state === state)
+        .filter((row) => (list.rows !== fake.fixtures.articles && list.rows !== fake.fixtures.changelogs) || state === "all" || row?.state === state)
         .map((row) => (row && detail ? Object.fromEntries(Object.entries(row).filter(([key]) => !detail.includes(key))) : row));
+      // Changelog entries by date, newest first unless `sortOrder` says asc, as Featurebase sorts them.
+      if (list.rows === fake.fixtures.changelogs) {
+        const asc = url.searchParams.get("sortOrder") === "asc";
+        rows.sort((a, b) => (asc ? 1 : -1) * String(a?.date).localeCompare(String(b?.date)));
+      }
       if (!list.paged) {
         return send(200, "bare" in list ? rows : { object: "list", data: rows, nextCursor: null });
       }

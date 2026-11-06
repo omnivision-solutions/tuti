@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { githubConfig } from "@/lib/github";
 import { appUrl } from "@/lib/hosts";
-import { adminProject, authorizeRedirect, rememberInstall } from "@/server/github-connect";
+import { adminProject, authorizeRedirect, crossSite, rememberInstall } from "@/server/github-connect";
 
 /**
  * "Connect GitHub": first asks GitHub (its web authorization flow) which accounts the person
@@ -17,13 +17,13 @@ export async function GET(request: Request) {
     return new NextResponse(null, { status: 404 });
   }
   const params = new URL(request.url).searchParams;
-  const project = await adminProject({ slug: params.get("project") ?? "" });
+  const project = !crossSite(request) && (await adminProject({ slug: params.get("project") ?? "" }));
   if (!project) {
     return NextResponse.redirect(new URL("/app?github=expired", appUrl()));
   }
   const response =
     params.get("new") === "1"
       ? NextResponse.redirect(`${config.url}/apps/${config.appSlug}/installations/new`)
-      : authorizeRedirect(config, project.id, "", "choose");
+      : authorizeRedirect(config, project, "", "choose");
   return rememberInstall(response, project.id);
 }

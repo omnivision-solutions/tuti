@@ -679,8 +679,9 @@ model GithubInstallation {
   accountLogin   String
   /// GitHub's type for that account: "Organization" or "User" (their settings live at different addresses).
   accountType    String   @default("Organization")
-  /// The installation's repositories listed in this project's settings ([{ id, fullName }]): every
-  /// one the Tuti app can see on the account, as of the last refresh. Only these can be added.
+  /// The installation's repositories listed in this project's settings ([{ id, fullName }]): those
+  /// the person who connected can access on GitHub (and the project's own), less any the Tuti app
+  /// can't see any more. Only these can be added.
   repositories   Json     @default("[]")
   createdById    String
   createdAt      DateTime @default(now())
@@ -1237,6 +1238,8 @@ model InboundEmail {
 
   @@unique([projectId, dedupeKey])
   @@index([projectId, createdAt])
+  /// A signed-out visitor's thread: where this address's earlier proven replies went (inbound.ts).
+  @@index([projectId, sender, createdAt])
   @@map("inbound_email")
 }
 
@@ -1743,6 +1746,12 @@ model Collection {
   @@map("collection")
 }
 
+/// Whether all of a reader group's conditions must match a user, or any one of them.
+enum GroupMatch {
+  all
+  any
+}
+
 /// A group of readers (Settings → Groups): the project's users whose properties match its conditions,
 /// worked out when they read. Docs tabs, collections and articles can be for some groups only.
 model ReaderGroup {
@@ -1752,8 +1761,9 @@ model ReaderGroup {
   /// collections name it (`/groups/{key}`, `groups` on collections.*).
   key         String
   name        String
-  /// Matched against the project's users' properties, all of them (lib/group-conditions.ts GroupCondition[]).
+  /// Matched against the project's users' properties, all of them or (`match` any) one (lib/group-conditions.ts GroupCondition[]).
   conditions  Json     @default("[]")
+  match       GroupMatch @default(all)
   /// The name a token's `groups` gave it before groups came only from conditions; cleared when its
   /// conditions change, and turned into one by a trigger when an instance from before writes it,
   /// while a deploy overlaps them. Goes, with the trigger, in a later migration.
@@ -2542,6 +2552,9 @@ model ImportedRecord {
   /// The import that last counted what became of it (an article's content: brought, or why not), so each import counts
   /// it once however its pages are read, again or shifted.
   countedIn     String?
+  /// When the source last changed it, as an import last read it (a conversation's last activity): a later import reads
+  /// it again only once it changed since, for what's new in it (a conversation's new messages).
+  sourceUpdatedAt DateTime?
   createdAt     DateTime     @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

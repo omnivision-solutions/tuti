@@ -20,7 +20,7 @@ import { SampleBadge } from "@/components/sample-badge";
 import { asking } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { cn } from "@/lib/utils";
-import { storedConditions } from "@/lib/group-conditions";
+import { storedRule } from "@/lib/group-conditions";
 import { sortFilter } from "@/lib/post-filter-options";
 import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
 import { portalAddress } from "@/server/custom-domains";
@@ -54,14 +54,14 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       askingProperty: true,
       propertyFormats: true,
       boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } },
-      readerGroups: { orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true, conditions: true } },
+      readerGroups: { orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true, conditions: true, match: true } },
     },
   });
   const board = project.boards.some((b) => b.slug === filters.board) ? filters.board : undefined;
   const formats = storedPropertyFormats(project.propertyFormats);
   // Who's asking: the posts a reader group voted for.
   const group = project.readerGroups.find((g) => g.key === first(searchParams.group));
-  const scope = { board, q, group: group && storedConditions(group.conditions) };
+  const scope = { board, q, group: group && storedRule(group) };
   const [{ posts, more }, counts] = await Promise.all([teamPosts(project.id, filters, { ...scope, duplicatesOnly }), teamPostCounts(project.id, scope)]);
   // Who's asking, and how many completing each one emails (asked first, from its row or picked with others).
   const [totals, emails] = await Promise.all([

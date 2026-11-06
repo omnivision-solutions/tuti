@@ -80,12 +80,15 @@ export function GithubRepositories({
   account,
   repositories,
   manageUrl,
+  reconnectUrl,
 }: {
   projectSlug: string;
   account: string;
   repositories: GithubRepositoryRow[];
   /** The installation's settings on GitHub, where its repositories are chosen (null when the server has no GitHub App). */
   manageUrl: string | null;
+  /** GitHub's authorization again, to list the repositories the person reconnecting can access. */
+  reconnectUrl: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [included, setIncluded] = useState(() => new Set(repositories.filter((repo) => repo.included).map((repo) => repo.id)));
@@ -181,12 +184,15 @@ export function GithubRepositories({
       {manageUrl && (
         <div className="flex flex-col gap-2 border-t pt-4">
           <span className="text-muted-foreground">
-            Missing a repository? Give the Tuti app access to it on GitHub, then refresh the list here.
+            Missing a repository? Give the Tuti app access to it on GitHub, then reconnect to list the ones you have access to there.
           </span>
           <div className="flex flex-wrap gap-2">
             <a href={manageUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
               Manage access on GitHub
               <ExternalLinkIcon />
+            </a>
+            <a href={reconnectUrl} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Reconnect
             </a>
             <Button
               variant="outline"

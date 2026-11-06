@@ -122,9 +122,10 @@ email, once their address is verified.
 ## Reader groups
 
 Add your groups in **Settings → Users → Groups** (owners and admins; or `groups.create`): a name, a
-description, and who's in it: **conditions** on your users' [properties](#properties), all of which
-must match (at least one, up to 10). Each is a property, an operator and a value, e.g. `plan` is any
-of `pro, enterprise`:
+description, and who's in it: **conditions** on your users' [properties](#properties) (at least one,
+up to 10). By default all of them must match; pick **Any can match** (`match: "any"` in the API) for a
+group that needs only one. Each is a property, an operator and a value, e.g. `plan` is any of
+`pro, enterprise`:
 
 | Operator | API | Matches when the property… |
 |---|---|---|

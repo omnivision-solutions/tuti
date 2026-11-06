@@ -26,5 +26,5 @@ export async function GET(request: Request) {
   if (!Number.isSafeInteger(installationId) || installationId <= 0) {
     return NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=unconfirmed`, appUrl()));
   }
-  return authorizeRedirect(config, project.id, installationId, "install");
+  return authorizeRedirect(config, project, installationId, "install");
 }

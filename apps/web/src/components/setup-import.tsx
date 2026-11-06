@@ -139,6 +139,7 @@ export function RefreshWhile({ on }: { on: boolean }) {
 /**
  * The first run's "Where are you coming from?": starting fresh, or Featurebase, with an API key and the parts to bring
  * (imports.start). Started, it shows the import's progress while it runs, and Continue goes on with setup meanwhile.
+ * Without `next` it's Settings → Import: only the tools to import from, any time.
  */
 export function SetupImport({
   projectSlug,
@@ -153,12 +154,13 @@ export function SetupImport({
   mediaStorage: boolean;
   /** The plan's board limit, said while Feedback is picked (null: no limit). */
   boardsNote: string | null;
-  next: string;
-  skip: ReactNode;
+  /** Setup's next step and Skip (none in Settings). */
+  next?: string;
+  skip?: ReactNode;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [from, setFrom] = useState<"fresh" | "featurebase">(latest ? "featurebase" : "fresh");
+  const [from, setFrom] = useState<"fresh" | "featurebase">(latest || !next ? "featurebase" : "fresh");
   const [picked, setPicked] = useState<ImportPart[]>(["team", "contacts", "avatars"]);
   const [error, setError] = useState<string | null>(null);
   const parts = Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][];
@@ -169,11 +171,13 @@ export function SetupImport({
   const [started, setStarted] = useState<string | null>(null);
   const focused = useRef<string | null>(null);
   const continueRef = useRef<HTMLAnchorElement>(null);
+  // In Settings there's no Continue: focus goes to the import's progress, as the form it was in goes.
+  const progressRef = useRef<HTMLDivElement>(null);
   const shownId = latest?.id;
   useEffect(() => {
     if (started && shownId === started && focused.current !== started) {
       focused.current = started;
-      continueRef.current?.focus();
+      (continueRef.current ?? progressRef.current)?.focus();
     }
   }, [started, shownId]);
   // Images and files need media storage: said before starting, while a part that has them is offered.
@@ -205,7 +209,9 @@ export function SetupImport({
             ["fresh", "Starting fresh", "Set Tuti up from scratch."],
             ["featurebase", "Featurebase", "Bring your team, users, feedback, help center and inbox across with an API key."],
           ] as const
-        ).map(([value, label, description]) => (
+        )
+          .filter(([value]) => next || value !== "fresh")
+          .map(([value, label, description]) => (
           <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
             <input type="radio" name="from" value={value} checked={from === value} onChange={() => setFrom(value)} className="mt-0.5 size-4 accent-primary" />
             <span className="flex flex-col gap-0.5">
@@ -222,11 +228,11 @@ export function SetupImport({
       </p>
       <CardContent className={from === "featurebase" && latest ? undefined : "sr-only"}>
         {from === "featurebase" && latest && (
-          <div className="rounded-xl border p-4">
+          <div ref={progressRef} tabIndex={-1} className="rounded-xl border p-4 outline-none">
             <p className="mb-3 text-sm font-medium">
               {importTitle(latest)}
               <span className="block font-normal text-muted-foreground">
-                {[importNote(latest), running && "It goes on while you finish setting up; Home shows how it's going."].filter(Boolean).join(" ")}
+                {[importNote(latest), running && (next ? "It goes on while you finish setting up; Home shows how it's going." : "It goes on in the background; Home shows how it's going.")].filter(Boolean).join(" ")}
               </span>
             </p>
             <ImportProgress projectSlug={projectSlug} run={latest} invitations={latest.invitationsToSend} />
@@ -267,7 +273,7 @@ export function SetupImport({
                 </label>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground">Your team, contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.</p>
+            {latest && <p className="text-sm text-muted-foreground">Importing again brings only what&apos;s new since: nothing comes twice.</p>}
             {boardsNote && picked.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
           </div>
@@ -278,13 +284,13 @@ export function SetupImport({
           <>
             {/* Done, going on is the main action; importing again (more parts, say) the other. */}
             {latest?.state !== "done" && skip}
-            <Button type="submit" variant={latest?.state === "done" ? "outline" : "default"} disabled={pending || picked.length === 0} focusableWhenDisabled>
+            <Button type="submit" variant={latest?.state === "done" && next ? "outline" : "default"} disabled={pending || picked.length === 0} focusableWhenDisabled>
               {pending ? "Checking the key…" : latest?.state === "done" ? "Import again" : "Check the key and start"}
             </Button>
           </>
         )}
         {/* One Continue in one place, so it keeps focus as the import goes from running to done. */}
-        {(from !== "featurebase" || running || latest?.state === "done") && (
+        {next && (from !== "featurebase" || running || latest?.state === "done") && (
           <Link ref={continueRef} href={next} className={buttonVariants()}>
             Continue
           </Link>

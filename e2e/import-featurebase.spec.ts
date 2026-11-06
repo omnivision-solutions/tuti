@@ -20,6 +20,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Where are you coming from: Featurebase, with a key and what to bring.
   await owner.waitForURL(`**/app/${slug}/setup`);
   await expect(owner.getByText("Step 1 of 4")).toBeVisible();
+  await expect(owner.getByText("Bring what you have in another tool across, or start fresh. You can always import later, in Settings → Import.")).toBeVisible();
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
   // Where the key is made, beside its field, in a new tab.
   const keysLink = owner.getByRole("link", { name: /^Get your API key.*opens in a new tab/ });
@@ -31,7 +32,6 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
   // Profile pictures too: copied last, so nothing waits for them.
   await expect(owner.getByRole("checkbox", { name: /^Profile pictures/ })).toBeChecked();
-  await expect(owner.getByText("Your team, contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase");
 
   // A key Featurebase refuses: said under the field, nothing started.
@@ -150,6 +150,36 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(rows.filter({ hasText: "Tobias Quill" })).toBeVisible();
   await expect(rows.filter({ hasText: "Juno Park" })).toBeVisible();
   await checkpoint(owner, "users-imported");
+});
+
+test("after setup, Settings → Import brings what's in Featurebase across any time; importing again brings nothing twice", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  await owner.goto(`/app/${slug}/settings/general`);
+  await owner.getByRole("link", { name: "Import", exact: true }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/import`);
+  // Only the tools to import from: starting fresh is the first run's.
+  await expect(owner.getByRole("radio", { name: /^Featurebase/ })).toBeChecked();
+  await expect(owner.getByRole("radio", { name: /^Starting fresh/ })).toHaveCount(0);
+  await checkpoint(owner, "settings-import");
+
+  const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await owner.getByRole("button", { name: "Check the key and start" }).press("Enter");
+  await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts, 1 profile picture brought across.", { timeout: 15_000 });
+  // With no Continue here, focus is on the import's progress, not lost with the form.
+  await expect(owner.locator(":focus")).toContainText("Imported from Featurebase");
+  await expect(owner.getByText("Importing again brings only what's new since: nothing comes twice.")).toBeVisible();
+  await checkpoint(owner, "settings-import-done");
+
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await owner.getByRole("button", { name: "Import again" }).click();
+  await expect(status).toContainText("Nothing brought across.", { timeout: 15_000 });
+  await expect(status).toContainText("3 contacts already brought across earlier");
+  await checkpoint(owner, "settings-import-again");
 });
 
 test("Feedback comes across with Contacts: the posts with their dates, votes and comments on the portal, and the team's private comment as a note in the app", async ({ browser }, testInfo) => {
@@ -295,6 +325,53 @@ test("the help center comes across from Featurebase: the portal's docs have its 
   await checkpoint(visitor, "portal-imported-linked-article");
 });
 
+test("the changelog comes across from Featurebase: its entries on the portal at their dates, with their images; drafts and those only some people see aren't there", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.goto("/app/new");
+  await owner.getByLabel("Name").fill("Acme");
+  await owner.getByLabel("URL").fill(slug);
+  await owner.getByRole("button", { name: "Create project" }).click();
+  await owner.waitForURL(`**/app/${slug}/setup`);
+
+  // The changelog alone.
+  await owner.getByRole("radio", { name: /^Featurebase/ }).check();
+  await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
+  await expect(owner.getByText("Your updates, published at their dates (drafts stay drafts), with their images; categories like New, Improved and Fixed become tags. Nothing is emailed.")).toBeVisible();
+  await owner.getByRole("checkbox", { name: /^Team/ }).uncheck();
+  await owner.getByRole("checkbox", { name: /^Contacts/ }).uncheck();
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
+  await checkpoint(owner, "setup-featurebase-changelog");
+  await owner.getByRole("button", { name: "Check the key and start" }).click();
+  const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
+  await expect(status).toContainText("Imported from Featurebase");
+  await expect(status).toContainText("3 changelog entries, 2 images in the changelog brought across.");
+  await expect(status).toContainText("2 changelog entries only some people see");
+  await expect(owner.getByRole("link", { name: "See changelog" })).toBeVisible();
+  await checkpoint(owner, "setup-changelog-imported");
+
+  // On the portal: the published entries, the newest first, with the image; the draft and the segment's one aren't there.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/changelog");
+  await expect(visitor.getByRole("heading", { name: "Faster exports" })).toBeVisible();
+  await expect(visitor.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
+  // Its cover, and the image in it.
+  await expect(visitor.getByRole("img", { name: "Dark mode is here", exact: true })).toBeVisible();
+  await expect(visitor.getByRole("img", { name: "Dark mode", exact: true })).toBeVisible();
+  await expect(visitor.getByText("Single sign-on")).toHaveCount(0);
+  await expect(visitor.getByText("For our beta group")).toHaveCount(0);
+  await checkpoint(visitor, "portal-changelog-imported");
+
+  // In the app: the entry Featurebase emailed says so, and isn't emailed again; the one it didn't, says that.
+  await owner.goto(`/app/${slug}/changelog/1`);
+  await expect(owner.getByText("Emailed to your subscribers from Featurebase.")).toBeVisible();
+  await owner.goto(`/app/${slug}/changelog/2`);
+  await expect(owner.getByText("Not emailed to subscribers.")).toBeVisible();
+  await checkpoint(owner, "app-changelog-imported-entry");
+});
+
 test("the inbox comes across from Featurebase: its conversations with their messages, notes, images and statuses, history marked as imported", async ({ browser }, testInfo) => {
   // Setup, the import, then several Inbox pages (each with its list beside the conversation).
   test.setTimeout(60_000);
@@ -313,7 +390,6 @@ test("the inbox comes across from Featurebase: its conversations with their mess
   await owner.getByRole("checkbox", { name: /^Contacts/ }).uncheck();
   await owner.getByRole("checkbox", { name: /^Inbox/ }).check();
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
-  await expect(owner.getByText("Contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase-inbox");
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
@@ -356,7 +432,13 @@ test("the inbox comes across from Featurebase: its conversations with their mess
   await expect(messages.nth(1)).toContainText("Sent again: it's in your inbox.");
   await expect(messages.nth(1)).toContainText("Imported from Featurebase");
   await expect(messages.nth(1)).not.toContainText("Emailed");
+  // Sent by email: only its new part shows, the quote it carried behind "Show the whole email".
+  const quote = messages.nth(1).getByText(/Tobias Quill <e2e-tobias@example\.com> wrote:/);
+  await expect(quote).toBeHidden();
   await checkpoint(owner, "conversation-imported-unread");
+  await messages.nth(1).getByText("Show the whole email").click();
+  await expect(quote).toBeVisible();
+  await checkpoint(owner, "conversation-imported-whole-email");
 
   // Closed: the bot's and the one from two years ago (this server keeps every closed conversation).
   await owner.goto(`/app/${slug}/inbox`);

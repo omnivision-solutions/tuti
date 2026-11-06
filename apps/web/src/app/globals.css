@@ -11,6 +11,10 @@
     }
   }
 }
+/* Where Tuti's own chat launcher is over the window's bottom right (AppWidget, by data-app-widget): what's held at the
+   bottom of the screen leaves its corner (56px, 20px in) clear. The right-hand corner, where Tuti's help project keeps
+   it: moved to the left (Customize → Widget), this would need its side too (docs/design.md, PageActions). */
+@custom-variant launcher (:root:has([data-app-widget]) &);
 /* In the app on phones, where a page's actions are a menu from the top bar (PageActions). */
 @custom-variant phonebar {
   @media (width < 48rem) {

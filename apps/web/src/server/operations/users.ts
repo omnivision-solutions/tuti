@@ -2,7 +2,7 @@ import { Prisma, prisma } from "@tuti/db";
 import { historySince, visibleConversationsSql } from "@tuti/jobs";
 import { z } from "zod";
 
-import { inGroup, storedConditions } from "@/lib/group-conditions";
+import { inGroup, storedRule } from "@/lib/group-conditions";
 import { readerGroup } from "@/lib/reader-groups";
 import { MAX_PROPERTIES, type Properties, propertyChangesInput, storedProperties } from "@tuti/shared/user-properties";
 
@@ -100,8 +100,8 @@ const userSelect = {
 
 /** The project's users as views, with the groups each is in (also the inbox's panel beside a conversation). */
 export async function viewsOf(projectId: string, users: { externalId: string; email: string | null; properties: unknown; createdAt: Date; updatedAt: Date; user: { name: string; image: string | null } }[]) {
-  const groups = await prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true }, orderBy: { key: "asc" } });
-  const rules = groups.map((group) => ({ key: group.key, conditions: storedConditions(group.conditions) }));
+  const groups = await prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true, match: true }, orderBy: { key: "asc" } });
+  const rules = groups.map((group) => ({ key: group.key, rule: storedRule(group) }));
   return users.map((user): UserView => {
     const properties = storedProperties(user.properties);
     return {
@@ -110,7 +110,7 @@ export async function viewsOf(projectId: string, users: { externalId: string; em
       email: user.email,
       avatar: user.user.image,
       properties,
-      groups: rules.filter((rule) => inGroup(rule.conditions, properties)).map((rule) => rule.key),
+      groups: rules.filter((rule) => inGroup(rule.rule, properties)).map((rule) => rule.key),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -148,11 +148,11 @@ export const listUsers = defineOperation({
       filters.push(Prisma.sql`jsonb_typeof(s.attributes -> 'company') = 'string' AND s.attributes ->> 'company' = ${input.company}`);
     }
     if (input.group !== undefined) {
-      const group = await prisma.readerGroup.findUnique({ where: { projectId_key: { projectId, key: input.group } }, select: { conditions: true } });
+      const group = await prisma.readerGroup.findUnique({ where: { projectId_key: { projectId, key: input.group } }, select: { conditions: true, match: true } });
       if (!group) {
         throw new OperationError(404, "not_found", `There's no group “${input.group}”`);
       }
-      filters.push(inGroupSql(storedConditions(group.conditions), Prisma.sql`s`));
+      filters.push(inGroupSql(storedRule(group), Prisma.sql`s`));
     }
     // ponytail: offset cursors, like posts.list; switch to keyset pagination if projects get very large.
     // By name, the page is picked first and its activity worked out after; an activity sort needs everyone's.

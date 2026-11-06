@@ -1980,7 +1980,11 @@ test("with the support inbox on, someone the page signs in messages the team fro
   // Sam has the widget open: they're online.
   await expect(owner.getByText("Online", { exact: true })).toBeVisible();
   await owner.getByRole("textbox", { name: "Reply" }).fill("Settings → Export, then Download: https://example.com/docs/export");
+  const conversation = owner.url();
   await owner.getByRole("button", { name: "Send", exact: true }).click();
+  // Answered, it leaves Needs reply for Waiting on user, where the team stays with it.
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
+  await owner.goto(`${conversation}?view=waiting`);
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
 
   // The reply shows in the open widget as it's sent (live: well before its 10-second fallback check).
@@ -2285,7 +2289,8 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(about).toContainText("Maybe Kim Lee (not signed in), id kim-1");
   await owner.getByRole("textbox", { name: "Reply" }).fill("Yes: 50% off for registered charities.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
+  // Answered, it leaves Needs reply for Waiting on user.
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
 
   await expect(messages).toHaveCount(2, { timeout: 15_000 });
   await expect(messages.last()).toContainText("Yes: 50% off for registered charities.");
@@ -2652,6 +2657,9 @@ test("someone who emailed the team sees that conversation in the widget's Messag
   await owner.goto(`/app/${slug}/inbox/1`);
   await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing → Invoices.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
+  // Answered, it leaves Needs reply for Waiting on user, where the team stays with it.
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
+  await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
 
   // On the customer's site, which signs Sam in with that address: the emailed conversation is in Messages, unseen.

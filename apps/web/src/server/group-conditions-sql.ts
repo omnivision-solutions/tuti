@@ -1,12 +1,12 @@
 import { Prisma } from "@tuti/db";
 
-import type { GroupCondition } from "@/lib/group-conditions";
+import type { GroupRule } from "@/lib/group-conditions";
 
 /**
  * conditionsMatch in SQL, on the properties (jsonb) at `column`. Numbers compare as Postgres writes
  * them, which differs from JavaScript only for ones written with an exponent (1e21).
  */
-export function conditionsSql(conditions: GroupCondition[], column: Prisma.Sql): Prisma.Sql {
+export function conditionsSql({ match, conditions }: GroupRule, column: Prisma.Sql): Prisma.Sql {
   if (conditions.length === 0) {
     return Prisma.sql`FALSE`;
   }
@@ -35,11 +35,11 @@ export function conditionsSql(conditions: GroupCondition[], column: Prisma.Sql):
           return Prisma.sql`(cardinality(${items}) = 0)`;
       }
     }),
-    " AND ",
+    match === "any" ? " OR " : " AND ",
     "(",
     ")",
   );
 }
 
-/** inGroup in SQL, for the project's user (sso_identity) at `user`: its properties (the `attributes` column) match all the conditions. */
-export const inGroupSql = (conditions: GroupCondition[], user: Prisma.Sql): Prisma.Sql => conditionsSql(conditions, Prisma.sql`${user}.attributes`);
+/** inGroup in SQL, for the project's user (sso_identity) at `user`: its properties (the `attributes` column) match the rule. */
+export const inGroupSql = (rule: GroupRule, user: Prisma.Sql): Prisma.Sql => conditionsSql(rule, Prisma.sql`${user}.attributes`);

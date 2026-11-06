@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { actOn } from "@/components/inbox/list-keys";
 import { initial } from "@/lib/format";
 import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails, snoozeConversation, summarizeWithAi } from "@/server/inbox";
 
@@ -23,11 +24,13 @@ export function CloseButton({ projectSlug, number, closed }: Props & { closed: b
       focusableWhenDisabled
       onClick={() =>
         startTransition(async () => {
+          const moved = actOn(number);
           const result = await setConversationStatus(projectSlug, number, closed ? "open" : "closed");
           if (result.error) {
             toast.error(result.error);
           } else {
             toast.success(closed ? "Reopened" : "Closed");
+            moved();
           }
         })
       }
@@ -49,11 +52,13 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
+          const moved = actOn(number);
           const result = await setConversationStatus(projectSlug, number, status);
           if (result.error) {
             toast.error(result.error);
           } else {
             toast.success(`Marked as ${label}`);
+            moved();
           }
         })
       }
@@ -80,11 +85,13 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
   const assignee = team.find((m) => m.userId === assigneeId);
   const assign = (teammate: Teammate | null) =>
     startTransition(async () => {
+      const moved = actOn(number);
       const result = await assignConversation(projectSlug, number, teammate && teammate.userId);
       if (result.error) {
         toast.error(result.error);
       } else {
         toast.success(teammate ? `Assigned to ${teammate.name}` : "Unassigned");
+        moved();
       }
     });
   const self = team.find((m) => m.userId === me);
@@ -154,11 +161,13 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
   );
   const snooze = (until: Date | null) =>
     startTransition(async () => {
+      const moved = actOn(number);
       const result = await snoozeConversation(projectSlug, number, until && until.toISOString());
       if (result.error) {
         toast.error(result.error);
       } else {
         toast.success(until ? `Snoozed till ${snoozeTime(until)}` : "Back in the inbox");
+        moved();
       }
     });
   return (
@@ -186,11 +195,13 @@ export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolea
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
+          const moved = actOn(number);
           const result = await markConversationSpam(projectSlug, number, !spam);
           if (result.error) {
             toast.error(result.error);
           } else {
             toast.success(spam ? "Moved back to the inbox" : "Marked as spam");
+            moved();
           }
         })
       }

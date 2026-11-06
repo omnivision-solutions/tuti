@@ -6,6 +6,7 @@ import { openValue } from "@tuti/shared/signed";
 import { type PropertyChanges, propertyChanges } from "@tuti/shared/user-properties";
 
 import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseContact, FeaturebaseError } from "./featurebase";
+import { changelogPage } from "./import-changelog";
 import { checkDocs, DOCS_STEPS } from "./import-docs";
 import { avatarsPage, feedbackSteps } from "./import-feedback";
 import { conversationsPage } from "./import-inbox";
@@ -71,6 +72,7 @@ export const IMPORT_PARTS: Record<string, { check: (api: Featurebase) => Promise
   team: { check: (api) => api.get("/admins"), steps: [{ name: "team", page: teamPage }] },
   contacts: { check: (api) => api.get("/contacts", { limit: 1, contactType: "all" }), steps: [{ name: "contacts", page: contactsPage }] },
   feedback: { check: (api) => Promise.all([api.get("/boards"), api.get("/posts", { limit: 1 })]), steps: feedbackSteps },
+  changelog: { check: (api) => api.get("/changelogs", { limit: 1, state: "all" }), steps: [{ name: "changelog", page: changelogPage }] },
   docs: { check: checkDocs, steps: DOCS_STEPS },
   inbox: { check: (api) => api.get("/conversations", { limit: 1 }), steps: [{ name: "conversations", page: conversationsPage }] },
   // Last: the least of it, and the slowest, so nothing waits for it (it reads only what's here: nothing to check).
@@ -289,7 +291,10 @@ async function recordedUsers(tx: Tx, job: ImportJob, kind: string, externalIds: 
   const users = new Set((await tx.user.findMany({ where: { id: { in: rows.map((row) => row.localId) } }, select: { id: true } })).map((user) => user.id));
   const gone = rows.filter((row) => !users.has(row.localId));
   if (gone.length > 0) {
-    await tx.importedRecord.deleteMany({ where: { id: { in: gone.map((row) => row.id) } } });
+    // With what was noted of them (`lead`, `linked`), so a user made again is noted afresh.
+    await tx.importedRecord.deleteMany({
+      where: { projectId: job.projectId, source: job.source, externalId: { in: gone.map((row) => row.externalId) }, localId: { in: gone.map((row) => row.localId) } },
+    });
   }
   return new Map(rows.filter((row) => users.has(row.localId)).map((row) => [row.externalId, row.localId]));
 }
@@ -327,11 +332,65 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
   const known = await recordedUsers(tx, job, "contact", contacts.map((contact) => contact.id));
   const fresh = contacts.filter((contact) => !known.has(contact.id));
   if (fresh.length > 0) {
-    // One per id in their app: two Featurebase contacts with the same one are one user.
-    const details = new Map(fresh.map((contact) => [contactDetails(contact).externalId, contactDetails(contact)]));
+    // One per id in their app: two Featurebase contacts with the same one are one user. And one per address in a
+    // project: a customer without an id in their app whose address a user here has (signed in, or brought by any
+    // import) is that user, and one whose address another customer on the page has is theirs. Never by a lead's: anyone
+    // can type any address as a lead, and would see that person's conversations. Someone with an id in their app keeps
+    // it, so the app's SSO finds them.
+    const all = fresh.map((contact) => contactDetails(contact));
+    const byAddress = (contact: FeaturebaseContact) => (contact.type !== "lead" && !contact.userId?.trim() && contact.email?.trim().toLowerCase()) || null;
+    const emails = fresh.flatMap((contact) => byAddress(contact) ?? []);
+    const byEmail = new Map(
+      emails.length === 0
+        ? []
+        : (
+            // Never one an import made of a lead (remembered as `lead`): their address is as unproven.
+            await tx.$queryRaw<{ email: string; userId: string }[]>`
+              SELECT DISTINCT ON (email) email, "userId" FROM sso_identity s
+              WHERE "projectId" = ${job.projectId} AND email = ANY(${emails}::text[])
+                AND NOT EXISTS (SELECT 1 FROM imported_record r WHERE r."projectId" = s."projectId" AND r.kind = 'lead' AND r."localId" = s."userId")
+              ORDER BY email, "createdAt" ASC`
+          ).map((row) => [row.email, row.userId]),
+    );
+    const details = new Map<string, UserDetails>();
+    const firstWith = new Map<string, string>();
+    const linked = new Map<string, { userId: string } | { externalId: string }>();
+    fresh.forEach((contact, i) => {
+      const d = all[i]!;
+      const email = byAddress(contact);
+      const user = email && byEmail.get(email);
+      const first = email && firstWith.get(email);
+      if (user) {
+        linked.set(contact.id, { userId: user });
+      } else if (first) {
+        linked.set(contact.id, { externalId: first });
+      } else {
+        details.set(d.externalId, d);
+        linked.set(contact.id, { externalId: d.externalId });
+        const own = contact.type !== "lead" && d.email?.toLowerCase();
+        if (own && !firstWith.has(own)) {
+          firstWith.set(own, d.externalId);
+        }
+      }
+    });
     const { userIds } = await syncUsersIn(tx, job.projectId, [...details.values()]);
-    const records = fresh.map((contact) => ({ externalId: contact.id, localId: userIds.get(contactDetails(contact).externalId)! }));
-    await tx.importedRecord.createMany({ data: records.map((record) => ({ projectId: job.projectId, source: job.source, kind: "contact", ...record })), skipDuplicates: true });
+    const records = fresh.map((contact) => {
+      const to = linked.get(contact.id)!;
+      // Linked by their address to someone else's user (there before, or another contact's): not theirs to change.
+      const byLink = "userId" in to || to.externalId !== all[fresh.indexOf(contact)]!.externalId;
+      return { externalId: contact.id, localId: "userId" in to ? to.userId : userIds.get(to.externalId)!, byLink };
+    });
+    // Only those of their own: a lead with an id in the team's app is that app's user.
+    const leads = new Set(fresh.filter((contact) => contact.type === "lead" && !contact.userId?.trim()).map((contact) => contact.id));
+    await tx.importedRecord.createMany({
+      // `lead`: their address is never matched; `linked`: their user's avatar isn't the import's to copy (avatarsPage).
+      data: records.flatMap(({ byLink, ...record }) => [
+        { projectId: job.projectId, source: job.source, kind: "contact", ...record },
+        ...(leads.has(record.externalId) ? [{ projectId: job.projectId, source: job.source, kind: "lead", ...record }] : []),
+        ...(byLink ? [{ projectId: job.projectId, source: job.source, kind: "linked", ...record }] : []),
+      ]),
+      skipDuplicates: true,
+    });
     records.forEach((record) => known.set(record.externalId, record.localId));
   }
   tally(job.counts, "contacts", null, fresh.length);

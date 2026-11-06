@@ -3,8 +3,9 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp } from "@/test/helpers";
+import { postEmail, rawEmail } from "@/test/inbound";
 
-import { mailSubdomain } from "./inbound";
+import { mailSubdomain, supportAddress } from "./inbound";
 import { replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
@@ -430,4 +431,51 @@ test("someone the page signs in hears live of changes to conversations from thei
   } finally {
     stop();
   }
+});
+
+test("a signed-out visitor who types someone else's address never reads that person's emailed reply in the widget", async () => {
+  const { project, team } = await setup();
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email");
+  vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
+  const subdomain = await mailSubdomain(project.id);
+  // The visitor gives an address that isn't theirs: never verified, and the conversation is still their token's.
+  const started = await widgetStartConversation(project.slug, {}, "Please confirm the billing email on file", "e2e-victim@example.com");
+  const visitor = { visitor: (started as { visitor: string }).visitor };
+  await call(replyToConversation, team, { number: 1, body: "Which account is it?" });
+
+  // The team's reply is emailed to that address; someone forges an answer from it first (DMARC fails: to Spam).
+  const { replyToken } = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
+  const replyAddress = supportAddress(subdomain, "tuti.email", replyToken);
+  const forged = rawEmail({ from: "e2e-victim@example.com", to: replyAddress, subject: "Re: Please confirm", body: "Forged" });
+  expect(await postEmail(forged, { recipient: replyAddress, auth: "spf=fail dkim=fail dmarc=fail" })).toEqual({ status: 200, body: { outcome: "added" } });
+  // Its owner answers it (DMARC passes: it's really from them).
+  const raw = rawEmail({ from: "e2e-victim@example.com", to: replyAddress, subject: "Re: Please confirm", body: "I never asked. My account is private-details." });
+  expect(await postEmail(raw, { recipient: replyAddress })).toEqual({ status: 200, body: { outcome: "added" } });
+
+  // The visitor's token proves nothing about who owns the address: their view never shows the owner's email.
+  const opened = await widgetConversation(project.slug, visitor, 1);
+  expect(opened).toMatchObject({ messages: expect.any(Array) });
+  expect(JSON.stringify(opened)).not.toContain("private-details");
+  // The team answers in the visitor's conversation again; the owner's next email goes on in their own, not a third.
+  await call(replyToConversation, team, { number: 1, body: "Sorry, could you check?" });
+  const again = rawEmail({ from: "e2e-victim@example.com", to: replyAddress, subject: "Re: Please confirm", body: "Still private-details." });
+  expect(await postEmail(again, { recipient: replyAddress })).toEqual({ status: 200, body: { outcome: "added" } });
+  expect(JSON.stringify(await widgetConversation(project.slug, visitor, 1))).not.toContain("private-details");
+  // The team still has it: a conversation of its own with the address's owner, verified, beside the visitor's.
+  const all = await prisma.conversation.findMany({
+    where: { projectId: project.id },
+    orderBy: { number: "asc" },
+    select: { number: true, email: true, emailVerified: true, visitorHash: true, messages: { orderBy: { createdAt: "asc" }, select: { body: true } } },
+  });
+  expect(all.map(({ visitorHash, messages, ...c }) => ({ ...c, visitor: !!visitorHash, bodies: messages.map((m) => m.body) }))).toEqual([
+    {
+      number: 1,
+      email: "e2e-victim@example.com",
+      emailVerified: false,
+      visitor: true,
+      bodies: ["Please confirm the billing email on file", "Which account is it?", "Sorry, could you check?"],
+    },
+    { number: 2, email: "e2e-victim@example.com", emailVerified: false, visitor: false, bodies: ["Forged"] },
+    { number: 3, email: "e2e-victim@example.com", emailVerified: true, visitor: false, bodies: ["I never asked. My account is private-details.", "Still private-details."] },
+  ]);
 });

@@ -2,10 +2,12 @@ import { type EmailStatus, prisma } from "@tuti/db";
 import { aiPaused, cappedProjects, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ConversationPane, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
+import { DetailsToggle } from "@/components/inbox/conversation-details";
 import { ConversationPosts } from "@/components/inbox/conversation-posts";
 import { AssignMenu, CloseButton, MarkStatusButton, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
@@ -23,6 +25,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { timeAgo } from "@/lib/format";
+import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 import { isAdminRole } from "@/lib/roles";
 import { attachmentLinks } from "@/server/attachments";
 import { anyArticleToSend, readerToSend } from "@/server/docs-search";
@@ -131,6 +134,11 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const emailable = !conversation.spam && !!person.email;
   const waitsForPause = emailPaused && emailable;
   const capped = !emailPaused && emailable && (await cappedProjects()).includes(projectId);
+  const waits = waitsForPause
+    ? "Not emailed while your project's email is paused (Settings → Inbox and email)"
+    : capped
+      ? `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`
+      : undefined;
   const online =
     conversation.userId || conversation.visitorHash
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
@@ -160,9 +168,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     </>
   );
 
+  // The column beside the messages, hidden or not as this browser left it (DetailsToggle).
+  const detailsHidden = (await cookies()).get(DETAILS_HIDDEN_COOKIE)?.value === "1";
+
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number}>
-      <ConversationPane open>
+      <ConversationPane open detailsHidden={detailsHidden}>
         <PageHeader
           back={{ href: inboxHref(slug, view), label: "Inbox" }}
           title={conversation.subject}
@@ -187,7 +198,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             </>
           }
           // On phones in the top bar's menu too, for when the row under the title has scrolled away.
-          actions={actions}
+          actions={
+            <>
+              {actions}
+              <DetailsToggle hidden={detailsHidden} />
+            </>
+          }
           more={
             <>
               {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
@@ -207,11 +223,14 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             beside the messages is held to, whatever is above it; relative, so what's placed absolutely in it (a file
             input, labels for screen readers) stays in it, not past the page's end. */}
         <div id="conversation" className="@container flex flex-1 flex-col lg:relative lg:-mx-6 lg:min-h-0 lg:overflow-y-auto lg:px-6 lg:pb-6 lg:[container-type:size]">
-          <div className="flex flex-1 flex-col gap-4 @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_18rem] @3xl:gap-6">
+          <div className="flex flex-1 flex-col gap-4 @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_18rem] @3xl:gap-6 @3xl:in-data-[details=hidden]:grid-cols-1">
             {/* Beside it: the posts it's about, then the person (a sheet where the pane is narrow, the posts staying in it). Held
                 in view as the messages scroll (the page's scroll on phones, the pane's beside the list), scrolling on its own when
-                taller than the screen (so it never makes the row taller). */}
-            <div className="flex flex-col gap-4 *:shrink-0 @3xl:sticky @3xl:top-16 @3xl:col-start-2 @3xl:row-start-1 @3xl:max-h-[calc(100svh-5.5rem)] @3xl:self-start @3xl:overflow-y-auto lg:@3xl:top-0 lg:@3xl:max-h-[100cqh]">
+                taller than the screen (so it never makes the row taller). Hidden by DetailsToggle, the messages take its room. */}
+            <div
+              id="conversation-details"
+              className="flex flex-col gap-4 *:shrink-0 @3xl:sticky @3xl:top-16 @3xl:col-start-2 @3xl:row-start-1 @3xl:max-h-[calc(100svh-5.5rem)] @3xl:self-start @3xl:overflow-y-auto lg:@3xl:top-0 lg:@3xl:max-h-[100cqh] @3xl:in-data-[details=hidden]:hidden"
+            >
               <Card size="sm">
                 <CardContent>
                   <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} related={related} />
@@ -249,7 +268,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                             <MessageText text={message.body} ugc={message.author === "USER"} />
                           </p>
                           <MessageAttachments attachments={message.attachments.map((a) => links.get(a.id)!)} dropped={message.attachmentsDropped} imported={!!message.importId} />
-                          {message.author === "TEAM" && !message.note && (message.seenAt || message.importId || message.emailStatus || waitsForPause || capped) && (
+                          {message.author === "TEAM" && !message.note && (message.seenAt || message.importId || message.emailStatus || waits) && (
                             <p className="text-xs text-muted-foreground">
                               {/* Imported history was never emailed: no email status for it (docs/plan.md, Switching from Featurebase). */}
                               {message.seenAt
@@ -258,9 +277,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                                   ? "Imported from Featurebase"
                                   : message.emailStatus
                                     ? EMAIL_STATUS[message.emailStatus](message.emailError)
-                                    : waitsForPause
-                                      ? "Not emailed while your project's email is paused (Settings → Inbox and email)"
-                                      : `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`}
+                                    : waits}
                             </p>
                           )}
                           {message.original && (
@@ -280,8 +297,10 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
               {/* Opens at the newest message, and follows new ones. */}
               <ScrollToEnd count={conversation.messages.length} within="conversation" />
-              {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the pane's own padding). */}
-              <div className="sticky bottom-0 -mb-6 mt-auto bg-background pt-2 pb-6">
+              {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the pane's own padding).
+                  Under Tuti's chat launcher, where it's one column (its Send at the right edge), its buttons stay above it;
+                  on phones it takes the room the page leaves at its end for it (AppShell), so it ends where the page does. */}
+              <div className="sticky bottom-0 -mb-6 mt-auto bg-background pt-2 pb-6 launcher:@max-3xl:pb-22 phonebar:launcher:-mb-28">
                 <ReplyForm
                   projectSlug={slug}
                   number={conversation.number}
@@ -292,6 +311,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   // "Insert article": once there's an article they can be sent (what its search finds).
                   articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
                   seen={conversation.messages.at(-1)?.createdAt.toISOString()}
+                  emailWaits={waits}
                 />
               </div>
             </div>

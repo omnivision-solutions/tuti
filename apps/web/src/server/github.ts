@@ -25,8 +25,8 @@ export async function disconnectGithub(projectSlug: string): Promise<{ error?: s
 
 /**
  * Adds a repository to the project (its merged pull requests go into the project's changelog
- * draft) or removes it. Only repositories the project has seen (listed in its
- * settings) can be included, and only one project includes each.
+ * draft) or removes it. Only repositories listed in its settings (those the person who connected
+ * can access on GitHub) can be included, and only one project includes each.
  */
 export async function setGithubRepository(projectSlug: string, repoId: number, included: boolean): Promise<{ error?: string }> {
   const project = await getAdminProject(projectSlug);
@@ -50,7 +50,7 @@ export async function setGithubRepository(projectSlug: string, repoId: number, i
   }
   const repo = listedRepositories(connection.repositories).find((r) => r.id === repoId);
   if (!repo) {
-    return { error: "Refresh the list: that repository isn't one this project can include" };
+    return { error: "Reconnect to update the list: that repository isn't one this project can include" };
   }
   await prisma.githubRepository.createMany({ data: { connectionId: connection.id, repoId, fullName: repo.fullName }, skipDuplicates: true });
   const holder = await prisma.githubRepository.findUnique({
@@ -82,8 +82,9 @@ export async function setGithubRepository(projectSlug: string, repoId: number, i
 }
 
 /**
- * "Refresh list": every repository the Tuti App can see on the account, from GitHub now (with the
- * App's own access, no trip to GitHub). The project's repositories GitHub no longer has leave it.
+ * "Refresh list": the listed repositories the Tuti App can still see on the account, from GitHub now
+ * (with the App's own access, no trip to GitHub), so the list only loses repositories or renames
+ * them; "Reconnect" lists new ones. The project's repositories GitHub no longer has leave it.
  */
 export async function refreshGithubRepositories(projectSlug: string): Promise<{ error?: string; count?: number }> {
   const project = await getAdminProject(projectSlug);
