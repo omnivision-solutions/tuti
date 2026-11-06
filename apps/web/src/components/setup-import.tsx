@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -99,6 +100,22 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
       {/* From an earlier import that brought the team, when this one didn't. */}
       {!progress.some(({ part }) => part === "team") && toSend}
     </>
+  );
+}
+
+/** Home's way into an import's full progress (ImportProgress), in a dialog that follows it while it runs. */
+export function ImportDetails({ projectSlug, run, invitations }: { projectSlug: string; run: ImportView; invitations: number }) {
+  return (
+    <Dialog>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>{run.state === "running" ? "View progress" : "View details"}</DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{importTitle(run)}</DialogTitle>
+          {importNote(run) && <DialogDescription>{importNote(run)}</DialogDescription>}
+        </DialogHeader>
+        <ImportProgress projectSlug={projectSlug} run={run} invitations={invitations} />
+      </DialogContent>
+    </Dialog>
   );
 }
 

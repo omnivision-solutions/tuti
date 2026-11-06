@@ -192,6 +192,20 @@ export function importAt(run: ImportView) {
 /** What's said under an import's title: the part under way, or why it stopped. */
 export const importNote = (run: ImportView) => (run.state === "running" ? importAt(run) && `${importAt(run)}.` : run.state === "failed" ? run.error : null);
 
+/** An import in a line, as Home's card says it: the part under way, the parts it brought, or where it stopped and why. */
+export function importBrief(run: ImportView) {
+  const progress = importProgress(run);
+  const at = progress.find(({ state }) => state === "now" || state === "stopped");
+  const label = at && IMPORT_PARTS[at.part].label;
+  if (run.state === "running") {
+    return at ? `${importAt(run)}: ${label}, ${at.brought ? `${at.brought} so far` : "starting"}.` : "Starting…";
+  }
+  if (run.state === "failed") {
+    return [at && `Stopped at ${label}.`, run.error].filter(Boolean).join(" ");
+  }
+  return `${new Intl.ListFormat("en").format(progress.map(({ part }) => IMPORT_PARTS[part].label)) || "Nothing"} brought across.`;
+}
+
 /** How long Home shows an import's result once it ended. */
 const SHOWN_MS = 3 * 24 * 60 * 60_000;
 

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { homeInvitationsToSend, importAt, IMPORT_PARTS, importProgress, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
+import { homeInvitationsToSend, importAt, importBrief, IMPORT_PARTS, importProgress, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -76,6 +76,15 @@ test("each part's place: done before the step under way, the next one after it, 
   expect(states(run("failed", "posts"))).toEqual(["team done", "contacts done", "feedback stopped", "docs waiting", "inbox waiting"]);
   expect(importAt(run("failed", "posts"))).toBeNull();
   expect(states(run("done", null))).toEqual(["team done", "contacts done", "feedback done", "docs done", "inbox done"]);
+});
+
+test("an import in a line, as Home's card says it", () => {
+  const counts = { contacts: { imported: 1300, leftOut: {} } };
+  const run = (state: string, step: string | null, error: string | null = null) => ({ state, step, error, parts: ["team", "contacts", "feedback"], counts }) as never;
+  expect(importBrief(run("running", "contacts"))).toBe("Part 2 of 3: Contacts, 1,300 contacts so far.");
+  expect(importBrief(run("running", "posts"))).toBe("Part 3 of 3: Feedback, starting.");
+  expect(importBrief(run("failed", "posts", "Featurebase couldn't be reached."))).toBe("Stopped at Feedback. Featurebase couldn't be reached.");
+  expect(importBrief(run("done", null))).toBe("Team, Contacts, and Feedback brought across.");
 });
 
 test("the team needs nothing, and nothing needs it: unticking Contacts leaves it ticked; its invitations are counted in words", () => {

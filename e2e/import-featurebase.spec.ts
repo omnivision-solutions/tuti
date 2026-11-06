@@ -77,9 +77,16 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Home says what came across, and the contacts are the project's users, with their company.
   await owner.waitForURL(`**/app/${slug}`);
   await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
-  await expect(part("Team")).toContainText("2 invitations ready to send.");
-  await expect(part("Contacts")).toContainText("3 contacts.");
-  await expect(part("Contacts").getByRole("link", { name: "See users" })).toBeVisible();
+  await expect(owner.getByText("Team and Contacts brought across.", { exact: true })).toBeVisible();
+  // Its card is a line; View details opens each part's progress, as the setup step shows it.
+  await owner.getByRole("button", { name: "View details" }).click();
+  const details = owner.getByRole("dialog", { name: "Imported from Featurebase" });
+  await expect(details.getByRole("listitem").filter({ hasText: "Team" })).toContainText("2 invitations ready to send.");
+  await expect(details.getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("3 contacts.");
+  await expect(details.getByRole("link", { name: "See users" })).toBeVisible();
+  await checkpoint(owner, "home-import-details");
+  await owner.keyboard.press("Escape");
+  await expect(details).toHaveCount(0);
   // Screen readers hear it in one status: the title and, once it's over, the summary.
   await expect(owner.getByRole("status").filter({ hasText: "Featurebase" })).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts brought across.");
   await checkpoint(owner, "home-imported");
@@ -125,7 +132,8 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await owner.goto(`/app/${slug}`);
   await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
   await expect(owner.getByText(/ready to send/)).toHaveCount(0);
-  await owner.getByRole("link", { name: "See users" }).click();
+  await owner.getByRole("button", { name: "View details" }).click();
+  await owner.getByRole("dialog").getByRole("link", { name: "See users" }).click();
   await owner.waitForURL(`**/app/${slug}/users`);
   const rows = owner.getByRole("main").getByRole("table").locator("tbody").getByRole("row");
   await expect(rows).toHaveCount(3);
