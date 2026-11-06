@@ -407,10 +407,12 @@ export const draftChangelogEntry = defineOperation({
     if (entry.publishedAt) {
       throw new OperationError(409, "published", "Unpublish the entry to draft its text with AI");
     }
-    const { posts } = await entryView(entry, portal);
-    if (posts.length === 0 && entry.pullRequests.length === 0 && entry.body.trim() === "") {
+    if (entry.posts.length === 0 && entry.pullRequests.length === 0 && entry.body.trim() === "") {
       throw new OperationError(400, "nothing_to_draft", "Pick the posts it completes or write a few notes first");
     }
+    // Only its public posts: the text goes to the portal, RSS, the widget and subscribers' email, so a private or Team
+    // only post's title and link stay out of it (and a link to one the model makes up anyway is dropped below).
+    const { posts } = await entryView(asReaderSees(entry, false), portal);
     const style = await changelogStyle(projectId);
     const ai = await aiOrRefuse(projectId, "changelog");
     let reply: string;
@@ -489,7 +491,7 @@ export const rewriteChangelogEntry = defineOperation({
     }
     const ai = await aiOrRefuse(projectId, "changelog");
     await countAiEdit(projectId);
-    const { posts } = await entryView(entry, portal);
+    const { posts } = await entryView(asReaderSees(entry, false), portal);
     let reply: string;
     try {
       reply = await complete({
