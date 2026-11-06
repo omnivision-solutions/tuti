@@ -7,6 +7,7 @@ import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
+import { PortalWidget } from "@/components/portal-widget";
 import { PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLookProvider } from "@/components/portal-look";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -98,9 +99,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         ? `${new URL(portalUrl(slug)).protocol}//${requestHeaders.get("host")}`
         : null;
   // The project's own widget (Customize → Widget). Not where the team's Custom code adds it its own way, from the address
-  // Customize hands out (it runs only on their own address, later, and the first copy wins); other tools' widget.js don't count. ponytail: not under a path of the team's site until /widget keeps
-  // the base in its links.
-  const widgetHere = canRead && project.widgetOnPortal && !base && !(ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`));
+  // Customize hands out (it runs only on their own address, later, and the first copy wins); other tools' widget.js don't
+  // count. ponytail: not under a path of the team's site until /widget keeps the base in its links.
+  const widgetHere = project.widgetOnPortal && !base && !(ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`));
   // The docs' assistant (AI answers as a conversation), for readers, when the server has AI answers.
   const assistant = canRead && answersEnabled();
   const firstBoard = project.boards[0];
@@ -159,17 +160,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
         {/* The project's own widget (Customize → Widget), as any site installs it: its Messages, Feedback and What's new. */}
-        {/* Its launcher and panel over the page and its sticky header (z-40), under the portal's sheets and dialogs (z-50: the
-            assistant, the menu), which cover an open panel until they close. The panel stays a level over the launcher, as the
-            loader has them (on a phone it's the whole screen); on phones
-            the page ends clear of it. A plain script tag, in the page as sent; its panel is this address's /widget, where the
-            reader's session is. */}
-        {widgetHere && (
-          <>
-            <style>{`body > button[aria-controls="tuti-widget"] { z-index: 45 !important; } #tuti-widget { z-index: 46 !important; } @media (width < 48rem) { body { padding-bottom: 5.5rem; } }`}</style>
-            <script src={`${appUrl().origin}/widget.js`} data-project={slug} data-on-portal="" async />
-          </>
-        )}
+        {/* The project's own widget, for readers who may read the portal; a full load once that or who's reading changes. */}
+        {widgetHere && <PortalWidget src={`${appUrl().origin}/widget.js`} slug={slug} shown={canRead} viewer={session?.user.id ?? null} />}
         </PortalMenuProvider>
         </WithAssistant>
       </PortalLookProvider>

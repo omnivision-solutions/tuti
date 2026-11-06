@@ -689,8 +689,21 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
 
-  // Back on, on a private portal: its sign-in page shows nothing of it to someone who may not read it, the widget included.
+  // Back on. Signing out on the portal (a client navigation) loads the page afresh: the launcher and panel the loader added
+  // for the signed-in reader don't stay for whoever's next.
   await api("/widget", { onPortal: true }, "PATCH");
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto("/");
+  await ada.getByRole("button", { name: "Feedback" }).click();
+  await expect(ada.locator("#tuti-widget")).toBeVisible();
+  await ada.evaluate(() => Object.assign(window, { beforeSignOut: true }));
+  await ada.getByRole("button", { name: "Account" }).click();
+  await ada.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(ada.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect.poll(() => ada.evaluate(() => "beforeSignOut" in window)).toBe(false);
+  await expect(ada.locator("#tuti-widget")).toBeHidden();
+
+  // On a private portal: its sign-in page shows nothing of it to someone who may not read it, the widget included.
   await owner.goto(`/app/${slug}/settings/access`);
   await owner.getByRole("combobox", { name: "Portal access" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
