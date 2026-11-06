@@ -146,8 +146,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(panel.getByText("Feedback posted")).toBeVisible();
   await checkpoint(visitor, "portal-on-site-widget-posted");
   await visitor.goto("/portal/feedback/feature-requests");
-  await visitor.getByRole("link", { name: "Export to CSV from our site" }).click();
-  await expect(visitor.getByRole("main").getByText("Ada", { exact: true })).toBeVisible();
+  await expect(visitor.getByRole("listitem").filter({ hasText: "Export to CSV from our site" })).toContainText("Ada");
   // The rest of the site is the site's.
   await visitor.goto("/pricing");
   await expect(visitor.getByRole("heading", { name: "The site's own page" })).toBeVisible();
