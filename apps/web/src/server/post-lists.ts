@@ -263,7 +263,8 @@ export function boardPosts(
       ${mine ? Prisma.sql`AND (p."authorId" = ${userId ?? ""} OR EXISTS (SELECT 1 FROM vote v WHERE v."postId" = p.id AND v."userId" = ${userId ?? ""}))` : Prisma.empty}`;
     const ids = await pageIds(board.projectId, filters.sort, where, page);
     const posts = await prisma.post.findMany({
-      where: { id: { in: ids } },
+      // Checked again: one made private or the team's since the ids were read isn't shown.
+      where: { id: { in: ids }, ...visiblePosts(viewer) },
       select: {
         id: true,
         number: true,

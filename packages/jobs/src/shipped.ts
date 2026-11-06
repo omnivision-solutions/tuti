@@ -3,7 +3,7 @@ import { sendEmail, shippedEmail } from "@tuti/email";
 import type { JobInput } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
-import { postAudience } from "./post-audience";
+import { postAudience, sameVisibility } from "./post-audience";
 import { portalAddress } from "./portal-address";
 import { claimProjectEmail } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
@@ -176,6 +176,10 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   let failed = 0;
   let held = false;
   for (const { id, address, unsubscribeToken } of people) {
+    // Made private or the team's since the audience was read: the retry reads who may see it now.
+    if (!(await sameVisibility(postId, post.visibility))) {
+      throw new Error(`post ${postId}'s visibility changed while it was emailed; trying again with who may see it now`);
+    }
     // Claimed before sending, so a retry, a second run or the post completed again doesn't email them twice.
     const claimedAt = await claim(postId, id);
     if (!claimedAt) {

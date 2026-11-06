@@ -5,7 +5,7 @@ import { PORTAL_BOARDS } from "./post-visibility";
 
 /**
  * Where the portal's home opens (Customize → Navigation → Home page): the first board, the roadmap, the changelog
- * or the docs; null for a portal with nothing there (no project, or no board).
+ * or the docs (null: no such project).
  */
 export async function portalHomePath(slug: string): Promise<string | null> {
   const project = await prisma.project.findUnique({ where: { slug }, select: { portalHome: true } });
@@ -15,7 +15,8 @@ export async function portalHomePath(slug: string): Promise<string | null> {
   if (project.portalHome !== "FEEDBACK") {
     return `/${project.portalHome.toLowerCase()}`;
   }
-  return firstBoardPath(slug);
+  // No board on the portal (all the team's): the changelog, which every portal has.
+  return (await firstBoardPath(slug)) ?? "/changelog";
 }
 
 /** The portal's first board (/feedback opens it); a Team only board isn't on the portal. */

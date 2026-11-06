@@ -116,3 +116,8 @@ export async function postAudience(
   }
   return audience;
 }
+
+/** Whether a post's visibility is still what an email's audience was read with (a change since: read it again). */
+export async function sameVisibility(postId: string, visibility: PostVisibility): Promise<boolean> {
+  return (await prisma.post.findUnique({ where: { id: postId }, select: { visibility: true } }))?.visibility === visibility;
+}

@@ -8,7 +8,7 @@ import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
-import { postAudience } from "./post-audience";
+import { postAudience, sameVisibility } from "./post-audience";
 import { projectEmailWaits, projectSender } from "./project-sender";
 
 /** An unsent claim (or a due reply) this old belongs to a run that died or never started. */
@@ -87,6 +87,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   const comment = await prisma.comment.findUnique({
     where: { id: commentId },
     select: {
+      postId: true,
       authorId: true,
       body: true,
       content: true,
@@ -138,6 +139,10 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   let failed = 0;
   let held = false;
   for (const { id, address, unsubscribeToken } of people) {
+    // Made private or the team's since the audience was read: the retry reads who may see it now.
+    if (!(await sameVisibility(comment.postId, post.visibility))) {
+      throw new Error(`post ${comment.postId}'s visibility changed while its reply was emailed; trying again with who may see it now`);
+    }
     // Claimed before sending, so a retry or a second run doesn't email them twice.
     const claimedAt = await claim(commentId, id);
     if (!claimedAt) {

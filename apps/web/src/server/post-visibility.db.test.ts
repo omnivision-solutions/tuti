@@ -1,7 +1,7 @@
 import { type PostVisibility, prisma } from "@tuti/db";
-import { postAudience } from "@tuti/jobs";
+import { handlers, postAudience } from "@tuti/jobs";
 import { isValidElement, type ReactNode } from "react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { ListFilters } from "@/components/list-filters";
 import BoardPage from "@/app/portal/[project]/(site)/feedback/[board]/page";
@@ -21,7 +21,7 @@ import { updatePost } from "./operations/manage";
 import { setSubscription, setVote } from "./operations/more";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./operations/read";
 import { call } from "./operations/run";
-import { firstBoardPath } from "./portal-home";
+import { firstBoardPath, portalHomePath } from "./portal-home";
 import { addSampleContent } from "./sample-content";
 import { accountPosts, boardsWithCounts, postsLike, recentlyShipped, votersToEmail } from "./post-lists";
 import { postViewer, SIGNED_OUT_VIEWER } from "./post-visibility";
@@ -274,4 +274,35 @@ test("sample content takes its board's visibility, as any new post", async () =>
   const posts = await prisma.post.findMany({ where: { projectId: project.id }, select: { visibility: true } });
   expect(posts.length).toBeGreaterThan(0);
   expect(posts.every((post) => post.visibility === "TEAM")).toBe(true);
+});
+
+test("a post made private while its shipped email goes out isn't emailed to anyone who may no longer see it", async () => {
+  const { ada, bob, project, mine } = await fixture();
+  // Ada's post, public and just completed: Ada (its author) and Bob (a voter) are to be told.
+  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PUBLIC", status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+  // Made private after the job read who to tell, as it checks before its first email.
+  const findUnique = prisma.post.findUnique.bind(prisma.post);
+  let looks = 0;
+  const spy = vi.spyOn(prisma.post, "findUnique").mockImplementation((async (args: Parameters<typeof findUnique>[0]) => {
+    if (++looks === 1) {
+      await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PRIVATE" } });
+    }
+    return findUnique(args);
+  }) as never);
+  try {
+    await expect(handlers.postShipped({ postId: mine.id }, { info: () => {}, warn: () => {} })).rejects.toThrow(/visibility changed/);
+  } finally {
+    spy.mockRestore();
+  }
+  // Nobody emailed on the old audience; run again, it emails only who may see it now: Ada, not Bob.
+  expect(await prisma.shippedEmail.count({ where: { postId: mine.id } })).toBe(0);
+  await handlers.postShipped({ postId: mine.id }, { info: () => {}, warn: () => {} });
+  const told = await prisma.shippedEmail.findMany({ where: { postId: mine.id, sentAt: { not: null } }, select: { userId: true } });
+  expect(told.map((row) => row.userId)).toEqual([ada.id]);
+});
+
+test("a portal whose boards are all the team's opens on its changelog", async () => {
+  const { project } = await fixture();
+  await prisma.board.updateMany({ where: { projectId: project.id }, data: { postVisibility: "TEAM" } });
+  expect(await portalHomePath(project.slug)).toBe("/changelog");
 });
