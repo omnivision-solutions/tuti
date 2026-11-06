@@ -2206,14 +2206,38 @@ test("a link in an article to another of the portal's articles stays on the port
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
   await api("/collections", { name: "Billing" });
-  const invoices = await api("/articles", { title: "Invoices", body: "Download them from Billing.", description: "Where to find and download them.", collection: "billing" });
+  // Long enough that a panel left scrolled down would stay scrolled down in it.
+  const steps = Array.from({ length: 40 }, (_, i) => `Step ${i + 1}: download them from Billing.`).join("\n\n");
+  const invoices = await api("/articles", { title: "Invoices", body: steps, description: "Where to find and download them.", collection: "billing" });
   await api(`/articles/${invoices.slug}/publish`, {});
-  // The team links to it by its Tuti address (as they'd copy it), to one of its headings; and to another site.
+  // One for signed-in readers only (shown to others with a lock), and one whose address changed since it was linked to.
+  const pro = await api("/articles", { title: "Pro features", body: "What Pro adds.", access: "signed_in", noAccess: "lock" });
+  await api(`/articles/${pro.slug}/publish`, {});
+  const refunds = await api("/articles", { title: "Refunds", body: "How refunds work.", collection: "billing" });
+  await api(`/articles/${refunds.slug}/publish`, {});
+  await api(`/articles/${refunds.slug}`, { newSlug: "returns" }, "PATCH");
+  // The team links to them by their Tuti addresses (as they'd copy them), one to a heading; and to another site. And far
+  // down a long article, once more.
   const text = (words: string, href?: string) => ({ type: "text", text: words, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
+  const at = (page: string) => `${portalUrl(slug)}/docs/${page}`;
   const content = {
     type: "doc",
     content: [
-      { type: "paragraph", content: [text("See "), text("your invoices", `${portalUrl(slug)}/docs/${invoices.slug}#download`), text(", or "), text("our status page", "https://status.example.com")] },
+      {
+        type: "paragraph",
+        content: [
+          text("See "),
+          text("your invoices", `${at(invoices.slug)}#download`),
+          text(", "),
+          text("what Pro adds", at(pro.slug)),
+          text(", "),
+          text("refunds", at(refunds.slug)),
+          text(", or "),
+          text("our status page", "https://status.example.com"),
+        ],
+      },
+      ...Array.from({ length: 40 }, (_, i) => ({ type: "paragraph", content: [text(`Step ${i + 1} of setting up billing.`)] })),
+      { type: "paragraph", content: [text("Done? Find "), text("the invoices article", at(invoices.slug))] },
     ],
   };
   const guide = await api("/articles", { title: "Billing basics", content });
@@ -2227,6 +2251,13 @@ test("a link in an article to another of the portal's articles stays on the port
   await expect(link).toHaveAttribute("href", `/docs/${invoices.slug}#download`);
   await expect(link).not.toHaveAttribute("target", /.*/);
   await expect(body.getByRole("link", { name: "our status page" })).toHaveAttribute("target", "_blank");
+  // An address that changed: the link goes where the article is now.
+  await expect(body.getByRole("link", { name: "refunds", exact: true })).toHaveAttribute("href", "/docs/returns");
+  // One this reader may not open is a link here too, but with nothing of it shown (past the card's 600ms delay).
+  await expect(body.getByRole("link", { name: "what Pro adds" })).toHaveAttribute("href", `/docs/${pro.slug}`);
+  await body.getByRole("link", { name: "what Pro adds" }).hover();
+  await reader.waitForTimeout(1_000);
+  await expect(reader.locator('[data-slot="article-preview"]')).toHaveCount(0);
   // Pointed at, it previews the article: its collection, title and description.
   await link.hover();
   const card = reader.locator('[data-slot="article-preview"]');
@@ -2239,10 +2270,13 @@ test("a link in an article to another of the portal's articles stays on the port
   await expect(reader).toHaveURL(`${portalUrl(slug)}/docs/${invoices.slug}#download`);
   await expect(reader.getByRole("heading", { level: 1, name: "Invoices" })).toBeVisible();
 
-  // In the widget's Help center, it opens the article in the panel.
+  // In the widget's Help center, it opens the article in the panel (one this reader may not open, on the portal as before),
+  // at its top even from far down the article.
   await reader.goto(`/widget?tab=docs&article=${guide.slug}`);
-  const inPanel = reader.getByRole("article").getByRole("link", { name: "your invoices" });
-  await expect(inPanel).toHaveAttribute("href", `/widget?tab=docs&article=${invoices.slug}#download`);
-  await inPanel.click();
-  await expect(reader.getByRole("heading", { name: "Invoices" })).toBeVisible();
+  const panel = reader.getByRole("article");
+  await expect(panel.getByRole("link", { name: "your invoices" })).toHaveAttribute("href", `/widget?tab=docs&article=${invoices.slug}#download`);
+  await expect(panel.getByRole("link", { name: "what Pro adds" })).toHaveAttribute("target", "_blank");
+  await panel.getByRole("link", { name: "the invoices article" }).click();
+  await expect(reader).toHaveURL(`${portalUrl(slug)}/widget?tab=docs&article=${invoices.slug}`);
+  await expect(reader.getByRole("heading", { name: "Invoices" })).toBeInViewport();
 });
