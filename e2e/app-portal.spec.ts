@@ -29,6 +29,11 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   await owner.waitForURL(`${own}/feedback/feature-requests`);
   await owner.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" }).click();
   await owner.waitForURL(`${own}/docs`);
+  // Not the project's own widget there yet (its panel's links don't keep the path), and Customize → Widget says so.
+  await expect(owner.locator("script[data-on-portal]")).toHaveCount(0);
+  await owner.goto(`/app/${APP_PORTAL_SLUG}/customize/widget`);
+  await expect(owner.getByText("The launcher on every page of your portal too. Not yet while your portal is under a path of your site.")).toBeVisible();
+  await owner.goto(`${own}/docs`);
   // The account, with its password, is the app's.
   await owner.getByRole("button", { name: "Account" }).click();
   await owner.getByRole("menuitem", { name: "Account settings" }).click();

@@ -9,6 +9,7 @@ import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { WidgetPreview } from "@/components/widget-preview";
 import { WidgetSettings } from "@/components/widget-settings";
+import { appPortalMount } from "@/lib/app-portal";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { siteMount } from "@/server/custom-domains";
 import { getAdminProject } from "@/server/membership";
@@ -68,7 +69,8 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
         greeting={widget.greeting}
         hidden={widget.hidden}
         onPortal={widget.onPortal}
-        underSitePath={!!mount}
+        // Under a path of the team's site, or Tuti's own portal under the app's.
+        underSitePath={!!mount || appPortalMount()?.slug === slug}
       />
     </CustomizeShell>
   );

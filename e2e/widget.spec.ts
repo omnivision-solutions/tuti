@@ -688,6 +688,17 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(visitor.getByRole("banner")).toBeVisible();
   await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
+
+  // Back on, on a private portal: its sign-in page shows nothing of it to someone who may not read it, the widget included.
+  await api("/widget", { onPortal: true }, "PATCH");
+  await owner.goto(`/app/${slug}/settings/access`);
+  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("option", { name: "Private" }).click();
+  await expect(owner.getByText("Portal is now private")).toBeVisible();
+  const outsider = await newPerson(browser, portalUrl(slug));
+  await outsider.goto("/sign-in");
+  await expect(outsider.getByRole("banner")).toBeVisible();
+  await expect(outsider.locator("script[data-on-portal]")).toHaveCount(0);
 });
 
 test("someone signed in on the portal opens What's new in its widget: what's new to them stays marked while their visit is recorded", async ({ browser }, testInfo) => {
