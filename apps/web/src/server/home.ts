@@ -177,7 +177,7 @@ export async function homeOverview(projectId: string, slug: string) {
     return post ? [{ ...post, thisWeek: v._count.postId }] : [];
   });
 
-  // What the team said it will use after "Create project" picks the steps; nothing picked (projects from before, or skipped), today's six.
+  // What the team said it will use after "Create project" picks the steps; nothing picked (projects from before, or skipped), today's five.
   const picked = new Set(setup.uses);
   const uses = (...any: string[]) => picked.size === 0 || any.some((use) => picked.has(use));
   const steps = [

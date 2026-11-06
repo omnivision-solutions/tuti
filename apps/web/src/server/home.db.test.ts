@@ -151,7 +151,7 @@ test("Get set up follows what the team picked after Create project; a project wi
   }
   const steps = async () => (await homeOverview(project.id, project.slug)).setup!.map((step) => step.key);
   try {
-    // Nothing picked (projects from before, or the step skipped): the six steps as they were.
+    // Nothing picked (projects from before, or the step skipped): the five steps as they were.
     expect(await steps()).toEqual(["widget", "github", "sso", "article", "team"]);
 
     actAs(owner);
