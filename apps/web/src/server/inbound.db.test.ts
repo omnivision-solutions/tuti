@@ -330,3 +330,17 @@ test("turning Messages on gives the project its support address, so replies can 
   await call(updateSupportSettings, { ...team, projectId: other.id }, { inbox: true });
   expect(await prisma.mailSubdomain.findUnique({ where: { projectId: other.id } })).toBeNull();
 });
+
+test("if getting the address fails, Messages stays off (as the switch shows); trying again turns on both", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  const inbox = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { supportInbox: true } })).supportInbox;
+  // The address lookup fails (the database blips).
+  const failing = vi.spyOn(prisma.mailSubdomain, "findUnique").mockRejectedValueOnce(new Error("down"));
+  await expect(call(updateSupportSettings, team, { inbox: true })).rejects.toThrow();
+  expect(await inbox()).toBe(false);
+  failing.mockRestore();
+  expect((await call(updateSupportSettings, team, { inbox: true })).email?.address).toBe(supportAddress(project.slug, DOMAIN));
+  expect(await inbox()).toBe(true);
+});
