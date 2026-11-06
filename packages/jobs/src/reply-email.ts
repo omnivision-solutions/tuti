@@ -100,7 +100,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   }
   const { post } = comment;
   const { projectId, project } = post;
-  // The project's email is paused: still due, so the cron brings it back (for a day) once it's resumed.
+  // The project's email is paused: still due, till the resume lets it go (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }

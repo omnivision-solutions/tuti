@@ -65,8 +65,9 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
                 {settings.email.paused && (
                   <div className="rounded-lg border border-destructive/40 p-3">
                     <p className="text-sm">
-                      Your email to your users is paused: {settings.email.paused.reason}. Replies reach your users in the widget and
-                      are emailed once it&apos;s back on; sign-in links still go. We&apos;re looking at it.
+                      Email sending is paused because of high bounces or spam reports: {settings.email.paused.reason}. No emails
+                      go out until an admin reviews it, except sign-in links. Changelog and post emails held meanwhile won&apos;t be
+                      sent; replies still reach your users in the widget.
                     </p>
                   </div>
                 )}

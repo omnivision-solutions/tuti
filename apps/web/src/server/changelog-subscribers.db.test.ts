@@ -1021,7 +1021,7 @@ describe("the project's email limits", () => {
     expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 0, queued: 0 });
   });
 
-  test("resumed after a pause longer than a day, the entries it held are due again: the cron sends them", async () => {
+  test("resumed, the entries the pause held aren't sent: a pause holds its email for good", async () => {
     vi.stubEnv("APP_PORTAL_OWNER", "e2e-operator@example.com");
     vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
     onTestFinished(() => {
@@ -1032,12 +1032,12 @@ describe("the project's email limits", () => {
     const pausedAt = new Date();
     await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt } });
     await publishEntry("Dark mode");
-    // Two days on, the operator resumes it.
-    vi.setSystemTime(Date.now() + 2 * 24 * 60 * 60_000);
+    // An hour on, the operator resumes it.
+    vi.setSystemTime(Date.now() + 60 * 60_000);
     expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
     vi.setSystemTime(Date.now() + 15 * 60_000);
-    expect(await handlers.resubmitChangelogEmails({}, log)).toEqual({ found: 1, queued: 1 });
-    expect(entryEmailsTo(kim)).toHaveLength(1);
+    await handlers.resubmitChangelogEmails({}, log);
+    expect(entryEmailsTo(kim)).toEqual([]);
   });
 });
 

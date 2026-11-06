@@ -27,7 +27,7 @@ type Db = Pick<typeof prisma, "$queryRaw">;
  * Where a subscriber stands with the changelog: one rule, which the subscription and confirmation pages ask, and the
  * sender and the editor's counts read in SQL (audienceSql, its "gets" and "paused"), so no page promises what isn't sent.
  * - "gets": it's emailed to them.
- * - "paused": it will be, once the project's email is resumed (its bounces or complaints went over); the cron sends it then.
+ * - "paused": it will be, once the project's email is resumed (its bounces or complaints went over); the entries published meanwhile aren't.
  * - "unconfirmed": they haven't confirmed (or unsubscribed since).
  * - "private": the portal is private, which emails nobody its changelog.
  * - "opted-out": they've turned all of the project's emails off ("Unsubscribe" in a shipped email, say). That wins,
@@ -232,7 +232,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
   if (!entry?.subscribersEmailDueAt || !entry.subscribersEmailedAt || entry.sample) {
     return { skipped: true };
   }
-  // Every clear is of the due time this run read, so one set since (published again, a pause resumed) stays.
+  // Every clear is of the due time this run read, so one set since (published again) stays.
   const dueAsRead = { id: entryId, subscribersEmailDueAt: entry.subscribersEmailDueAt };
   // On a private portal (since it was published): let go, while it still is.
   if (entry.project.portalAccess === "PRIVATE") {
@@ -244,7 +244,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
     return { waiting: "the entry isn't published" };
   }
   const { projectId, project } = entry;
-  // The project's email is paused: still due, so the cron brings it back (for a day) once it's resumed.
+  // The project's email is paused: still due, till the resume lets it go (apps/web/src/server/email-pause.ts).
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
