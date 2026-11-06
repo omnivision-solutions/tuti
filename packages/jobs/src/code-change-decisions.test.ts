@@ -83,6 +83,17 @@ test("the decision model's copy of the diff: cut before the first file that does
   });
 });
 
+test("a diff read at the decision model's size or less (context.diffChars) is left as read, headers and all", () => {
+  vi.stubEnv("CODE_CHANGES_CONTEXT_DIFF_CHARS", "1000");
+  resetCodeChangesSettings();
+  // As readPullRequest leaves it at that cap: each part's text cut to fit, its header on top, so a little over 1,000.
+  const part = (name: string, size: number) => `--- src/${name}.ts (modified, +1 -0)\n+${"x".repeat(size)}`;
+  const files = ["a", "b"].map((name) => ({ path: `src/${name}.ts`, status: "modified", additions: 1, deletions: 0 }));
+  const pr = { title: "T", body: "", labels: [], author: "", mergedAt: "", mergeCommit: null, commits: [], files, diff: [part("a", 600), part("b", 380)].join("\n") };
+  expect(pr.diff.length).toBeGreaterThan(1000);
+  expect(pullRequestState(pr, 1000)).toMatchObject({ diff: pr.diff, files: ["src/a.ts (modified)", "src/b.ts (modified)"] });
+});
+
 test("each post's decision gets the decision model's copy of a big diff, never the whole of it", () => {
   const part = (name: string) => `--- src/${name}.ts (modified, +1 -0)\n+${"x".repeat(DECISION_DIFF_CHARS / 2)}`;
   const files = ["a", "b", "c"].map((name) => ({ path: `src/${name}.ts`, status: "modified", additions: 1, deletions: 0 }));
