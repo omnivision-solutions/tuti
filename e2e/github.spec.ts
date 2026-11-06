@@ -149,7 +149,6 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect.poll(() => answered).toBe(3);
   await expect(complete).not.toBeChecked();
   await owner.unrouteAll({ behavior: "ignoreErrors" });
-  await db.end();
   await owner.reload();
   await expect(complete).not.toBeChecked();
   // Each person picks when they hear: a daily digest, in the morning where their browser says they are.
@@ -158,6 +157,26 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   await owner.reload();
   await expect(owner.getByLabel("A daily digest")).toBeChecked();
+  // Moved since: picking the digest again saves where their browser says they are now.
+  const moved = await (
+    await browser.newContext({ baseURL: APP_URL, storageState: await owner.context().storageState(), timezoneId: "Pacific/Chatham" })
+  ).newPage();
+  await moved.goto("/app/account");
+  // The page says which time zone it's saved in, and that picking it again moves it.
+  await expect(moved.getByText(/Pick it again to use Pacific\/Chatham\.$/)).toBeVisible();
+  await moved.getByLabel("A daily digest").click();
+  await expect(moved.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(moved.getByText(/One email at 8 am \(Pacific\/Chatham\)/)).toBeVisible();
+  await expect(moved.getByText(/Pick it again/)).toHaveCount(0);
+  // The first tab, still open: refreshed (saving the profile), it shows the zone saved elsewhere, and offers its own.
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Profile updated")).toBeVisible();
+  await expect(owner.getByText(/One email at 8 am \(Pacific\/Chatham\)/)).toBeVisible();
+  await expect(owner.getByText(/Pick it again to use /)).toBeVisible();
+  const { rows: zone } = await db.query<{ autopilotTimeZone: string }>(`SELECT "autopilotTimeZone" FROM "user" WHERE email = $1`, [owner.email]);
+  expect(zone[0]!.autopilotTimeZone).toBe("Pacific/Chatham");
+  await moved.context().close();
+  await db.end();
   await owner.goto(`/app/${web}/settings/integrations/github`);
 
   // The second project picks the same account: it starts with none, and adds the iOS app.

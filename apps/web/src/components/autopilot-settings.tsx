@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState, useTransition } from "react";
+import { useActionState, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -179,8 +179,16 @@ export function AutopilotRecipientsForm({
 }
 
 /** Account → Autopilot's email: as each change is analysed, a daily digest, or off. Saved as it's picked. */
-export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "DIGEST" | "OFF" }) {
+/** Where the browser says they are; null on the server (it can't know). */
+const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+const noSubscribe = () => () => {};
+
+export function AutopilotEmailsChoice({ choice, timeZone }: { choice: "AS_THEY_HAPPEN" | "DIGEST" | "OFF"; timeZone: string | null }) {
   const [pending, startTransition] = useTransition();
+  const here = useSyncExternalStore(noSubscribe, browserZone, () => null);
+  // The digest's time zone as saved: shown, so someone who moved sees it's not where they are now.
+  const [zone, setZone] = useState(timeZone);
+  const [givenZone, setGivenZone] = useState(timeZone);
   // What's saved: a choice that isn't (signed out meanwhile, say) goes back to it.
   const [saved, setSaved] = useState(choice);
   const [picked, setPicked] = useState(choice);
@@ -191,13 +199,39 @@ export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "
     setSaved(choice);
     setPicked(choice);
   }
+  // Likewise its time zone, saved again elsewhere.
+  if (givenZone !== timeZone && !pending) {
+    setGivenZone(timeZone);
+    setZone(timeZone);
+  }
+  const pick = (value: typeof choice) => {
+    setPicked(value);
+    startTransition(async () => {
+      // The digest comes in the morning where they are: the time zone their browser reports.
+      const result = await setAutopilotEmails(value, browserZone());
+      if (result.error) {
+        setPicked(saved);
+        toast.error(result.error);
+      } else {
+        setSaved(value);
+        if (value === "DIGEST") {
+          setZone(browserZone());
+        }
+        toast.success("Saved");
+      }
+    });
+  };
   return (
     <fieldset disabled={pending} className="flex flex-col gap-2">
       <legend className="sr-only">Autopilot&apos;s email</legend>
       {(
         [
           ["AS_THEY_HAPPEN", "As they happen", "An email when a merged pull request has updates (several merged within ten minutes in one)."],
-          ["DIGEST", "A daily digest", "One email each morning (8 am where you are now) with everything still waiting for you; none on a day with nothing."],
+          [
+            "DIGEST",
+            "A daily digest",
+            `One email at 8 am${picked === "DIGEST" && zone ? ` (${zone})` : ""} with everything still waiting for you; none on a day with nothing.${picked === "DIGEST" && zone && here && here !== zone ? ` Pick it again to use ${here}.` : ""}`,
+          ],
           ["OFF", "Off", "None. If you own a project, you still hear what goes out by itself."],
         ] as const
       ).map(([value, label, description]) => (
@@ -208,20 +242,9 @@ export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "
             value={value}
             checked={picked === value}
             className="mt-0.5 size-4 accent-primary"
-            onChange={() => {
-              setPicked(value);
-              startTransition(async () => {
-                // The digest comes in the morning where they are: the time zone their browser reports.
-                const result = await setAutopilotEmails(value, Intl.DateTimeFormat().resolvedOptions().timeZone);
-                if (result.error) {
-                  setPicked(saved);
-                  toast.error(result.error);
-                } else {
-                  setSaved(value);
-                  toast.success("Saved");
-                }
-              });
-            }}
+            onChange={() => pick(value)}
+            // The digest picked again (moved since): saved again, with where their browser says they are now.
+            onClick={() => value === "DIGEST" && picked === value && pick(value)}
           />
           <span className="flex flex-col">
             <span className="font-medium">{label}</span>

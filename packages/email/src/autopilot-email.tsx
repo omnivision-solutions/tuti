@@ -168,6 +168,9 @@ function Group({ heading, list, changes }: { heading: string; list: List; change
       </Text>
       {changes.map((change, i) => {
         const pullRequest = changes.length > 1 ? change.pullRequest : undefined;
+        // Its buttons say which by number ("#418"), short enough not to wrap; the whole name when another repository's has that number too.
+        const number = pullRequest?.slice(pullRequest.lastIndexOf("#"));
+        const which = number && changes.some((other) => other !== change && other.pullRequest.endsWith(number)) ? pullRequest : number;
         return (
           <Fragment key={i}>
             {change[list].map((update, j) =>
@@ -181,10 +184,10 @@ function Group({ heading, list, changes }: { heading: string; list: List; change
               <Section style={{ margin: "8px 0 4px" }}>
                 {/* Several changes: which one's they are. */}
                 <Button href={change.publishUrl} style={{ ...primary, marginRight: 4 }}>
-                  {pullRequest ? `Publish ${pullRequest} now` : "Publish now"}
+                  {which ? `Publish ${which} now` : "Publish now"}
                 </Button>{" "}
                 <Button href={change.stopUrl} style={secondary}>
-                  {pullRequest ? `Stop ${pullRequest}` : "Stop"}
+                  {which ? `Stop ${which}` : "Stop"}
                 </Button>
               </Section>
             )}

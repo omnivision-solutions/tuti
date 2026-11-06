@@ -23,7 +23,7 @@ export default async function AccountPage() {
   const [user, projects, lastSlug] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: session.user.id },
-      select: { image: true, imageId: true, autopilotEmails: true, accounts: { select: { providerId: true } } },
+      select: { image: true, imageId: true, autopilotEmails: true, autopilotTimeZone: true, accounts: { select: { providerId: true } } },
     }),
     listMyProjects(session.user.id),
     (await cookies()).get(LAST_PROJECT_COOKIE)?.value,
@@ -72,7 +72,7 @@ export default async function AccountPage() {
             <CardDescription>For the projects that tell you about their merged pull requests.</CardDescription>
           </CardHeader>
           <CardContent>
-            <AutopilotEmailsChoice choice={user.autopilotEmails} />
+            <AutopilotEmailsChoice choice={user.autopilotEmails} timeZone={user.autopilotTimeZone} />
           </CardContent>
         </Card>
       )}
