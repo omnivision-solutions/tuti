@@ -80,7 +80,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
           <span />
         )}
         <div className="flex flex-wrap items-center gap-3">
-          {/* The cards' vote buttons only say so on hover. */}
+          {/* Said on the cards' vote buttons too. */}
           {!voter && (
             <p className="text-sm text-muted-foreground">
               <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to vote
@@ -137,7 +137,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                         {status === "COMPLETED" ? (
                           <VoteCount count={post.voteCount} />
                         ) : (
-                          <VoteButton postId={post.id} count={post.voteCount} voted={voted.has(post.id)} disabled={!voter} />
+                          <VoteButton postId={post.id} count={post.voteCount} voted={voted.has(post.id)} disabled={!voter} signedOut={!session} />
                         )}
                         <div className="flex min-w-0 flex-col gap-1">
                           <Link href={at(postPath(post))} className="font-medium break-words hover:underline">

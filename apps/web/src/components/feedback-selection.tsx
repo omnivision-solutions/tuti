@@ -255,7 +255,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
                   setStatus("COMPLETED");
                 }}
               >
-                Mark Completed
+                Mark completed
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

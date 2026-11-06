@@ -14,12 +14,12 @@ import RoadmapPage from "./roadmap/page";
 vi.mock("next/navigation", async (original) => ({
   ...(await original<typeof import("next/navigation")>()),
   useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/",
+  usePathname: () => "/roadmap",
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }),
 }));
 
 /** Vote buttons, as the vote itself decides: someone from another project's single sign-on can't vote here. */
-test("the roadmap's, a board's and a post's vote buttons only for those who may vote here", async () => {
+test("the roadmap's, a board's and a post's vote buttons only for those who may vote here, and signed out a link to sign in", async () => {
   const owner = await signUp("Owner");
   const project = await createProject(owner);
   const other = await createProject(owner);
@@ -33,6 +33,13 @@ test("the roadmap's, a board's and a post's vote buttons only for those who may 
     await render(PostPage, { board: "feature-requests", post: `dark-mode-${post.number}` }),
   ];
   const voteButton = (html: string) => html.match(/<button[^>]*aria-label="(Upvote|Remove vote)[^"]*"[^>]*>/)![0];
+
+  // Signed out: a link to sign in, coming back to the page.
+  actAs(null);
+  for (const html of await pages()) {
+    expect(html).toMatch(/<a aria-label="Sign in to vote \(1 vote\)"[^>]* href="\/sign-in\?next=%2Froadmap"/);
+    expect(html).not.toMatch(/<button[^>]*aria-label="Upvote/);
+  }
 
   actAs(await signUp("Ada"));
   for (const html of await pages()) {

@@ -57,8 +57,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
 
   // Votes on the cards; signed out, they ask to sign in.
   const darkMode = column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" });
-  await expect(darkMode.getByRole("button", { name: "Upvote" })).toBeDisabled();
-  await expect(darkMode.getByRole("button", { name: "Upvote" })).toHaveAttribute("title", "Sign in to vote");
+  await expect(darkMode.getByRole("link", { name: /^Sign in to vote/ })).toHaveAttribute("href", "/sign-in?next=%2Froadmap");
   await expect(visitor.getByRole("main").getByText("Sign in to vote")).toBeVisible();
 
   // A completed card links to the published entry that shipped it, not to a draft.

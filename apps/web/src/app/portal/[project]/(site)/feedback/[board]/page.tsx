@@ -188,7 +188,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                       {post.status === "COMPLETED" ? (
                         <VoteCount count={post.voteCount} />
                       ) : (
-                        <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} />
+                        <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
                       )}
                     </li>
                   ))}

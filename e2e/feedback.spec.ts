@@ -1392,7 +1392,7 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Completed" }).click();
-  await team.getByRole("alertdialog").getByRole("button", { name: "Mark Completed" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" }).click();
   await expect(team.getByText("1 post: Completed")).toBeVisible();
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
   await team.getByRole("checkbox", { name: "Select Night theme" }).check();

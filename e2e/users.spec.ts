@@ -271,6 +271,11 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(rows).toContainText("SSO");
   await rows.getByRole("link", { name: "SSO" }).click();
   await expect(owner.getByRole("region", { name: /^Post #/ })).toContainText("$1,500 MRR");
+  // Each voter's amount in the narrow sidebar wraps between words, never mid-word ("$1,200 M" / "RR").
+  const amount = owner.getByRole("list", { name: "Voters" }).getByText("$1,200 MRR");
+  await expect(amount).toHaveCSS("word-break", "normal");
+  await expect(amount).toHaveCSS("overflow-wrap", "break-word");
+  await checkpoint(owner, "team-post-voters");
   // And on the roadmap, once it's planned.
   await api("/posts/1", { status: "planned" }, "PATCH");
   await owner.goto(`/app/${slug}/feedback/roadmap`);
