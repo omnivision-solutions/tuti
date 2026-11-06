@@ -1,5 +1,6 @@
 "use client";
 
+import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
@@ -139,15 +140,17 @@ export function SetupImport({
       {from === "featurebase" && !running && (
         <CardContent className="flex flex-col gap-4">
           <Field data-invalid={error ? true : undefined}>
-            <FieldLabel htmlFor="featurebase-key">API key</FieldLabel>
-            <Input id="featurebase-key" name="key" type="password" autoComplete="off" required aria-invalid={error ? true : undefined} />
-            <FieldDescription>
-              Make one in Featurebase under{" "}
-              <a href={KEYS_URL} target="_blank" rel="noreferrer" className="underline underline-offset-4">
-                Settings → API
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <FieldLabel htmlFor="featurebase-key">API key</FieldLabel>
+              {/* Where it's made, in Featurebase, beside the field that wants it: a new tab, so the form stays as it is. */}
+              <a href={KEYS_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline">
+                Get your API key
+                <ExternalLinkIcon className="size-3.5" aria-hidden />
+                <span className="sr-only"> (Featurebase, opens in a new tab)</span>
               </a>
-              . It&apos;s kept only while the import runs.
-            </FieldDescription>
+            </div>
+            <Input id="featurebase-key" name="key" type="password" autoComplete="off" required aria-invalid={error ? true : undefined} />
+            <FieldDescription>In Featurebase, Settings → API. It&apos;s kept only while the import runs.</FieldDescription>
             {error && <FieldError>{error}</FieldError>}
           </Field>
           <div role="group" aria-label="What to bring" className="flex flex-col gap-2">
