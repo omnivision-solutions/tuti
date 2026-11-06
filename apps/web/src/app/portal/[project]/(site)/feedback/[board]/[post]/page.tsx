@@ -154,7 +154,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         <h2 className="font-medium">
           {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
         </h2>
-        <CommentList comments={post.comments} teamUserIds={teamUserIds} events={post.events} />
+        <CommentList comments={post.comments} teamUserIds={teamUserIds} events={post.events} mediaUrls={await mediaUrls(...post.comments.map(displayDoc))} />
         {/* Images only once signed in: uploads are someone's. */}
         <CommentForm postId={post.id} signedIn={!!session} uploads={session && mediaStorage() ? { projectSlug, mediaUrls: {} } : undefined} />
       </section>

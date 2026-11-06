@@ -1,5 +1,6 @@
 import { RichText } from "@tuti/content/react";
 import type { PostStatus } from "@tuti/db";
+import type { MediaUrls } from "@tuti/content/media";
 
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -7,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { displayDoc } from "@/server/content";
-import { mediaUrls } from "@/server/media-urls";
 
 export type CommentView = {
   id: string;
@@ -24,13 +24,22 @@ export type StatusChangeView = { id: string; from: PostStatus; to: PostStatus; b
 
 /**
  * A post's activity: its comments, and with `events`, its status changes between them. Comments by
- * the project's team stand out: tinted, with a "Team" badge.
+ * the project's team stand out: tinted, with a "Team" badge. `mediaUrls`: their images' links (server/media-urls.ts), read by the page.
  */
-export async function CommentList({ comments, teamUserIds, events = [] }: { comments: CommentView[]; teamUserIds: Set<string>; events?: StatusChangeView[] }) {
+export function CommentList({
+  comments,
+  teamUserIds,
+  events = [],
+  mediaUrls,
+}: {
+  comments: CommentView[];
+  teamUserIds: Set<string>;
+  events?: StatusChangeView[];
+  mediaUrls?: MediaUrls | null;
+}) {
   if (comments.length === 0 && events.length === 0) {
     return <p className="text-sm text-muted-foreground">No comments yet.</p>;
   }
-  const media = await mediaUrls(...comments.map(displayDoc));
   const items = [...comments.map((comment) => ({ at: comment.createdAt, comment })), ...events.map((event) => ({ at: event.createdAt, event }))].sort(
     (a, b) => a.at.getTime() - b.at.getTime(),
   );
@@ -72,7 +81,7 @@ export async function CommentList({ comments, teamUserIds, events = [] }: { comm
                   {timeAgo(item.comment.createdAt)}
                 </time>
               </div>
-              <RichText doc={displayDoc(item.comment)} mediaUrls={media} className="rich-text text-sm break-words" />
+              <RichText doc={displayDoc(item.comment)} mediaUrls={mediaUrls} className="rich-text text-sm break-words" />
             </div>
           </li>
         ),
