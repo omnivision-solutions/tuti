@@ -164,6 +164,7 @@ Test layers (set up in Phase 4):
 - [x] Only risky PRs wait for their review bot (`review-risk.yml`, `.github/scripts/review-risk.mjs`): CI and the review gate (`.github/`, pr-watch), the schema and migrations, and sign-in always wait; a decision model from another family than Claude's reviewer (TypeSafe's Jev) judges the rest from the diff. Low risk merges on green checks and the Claude review, and a bot's findings after the merge open an issue (`review-late.yml`). Why: on #349–#383 Claude's review found nearly every major issue, and the only majors just CodeRabbit found were on PRs Jev rates high
 - [x] Migrations keep working with the previous release, which runs beside the new schema during a deploy: the rule in AGENTS.md, checked by `packages/db/src/migrations.test.ts` (no drops, renames, retypes or new required columns without a `-- Previous release:` note) and by both review bots
 - [x] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
+- [x] Security checks on every PR: CodeQL (default setup: JS/TS and Actions), zizmor on the workflows (actions pinned by SHA, kept current by Dependabot), gitleaks on the PR's commits; agents run Claude Code's `/security-review` before opening one (pr-watch)
 - [ ] Dogfood: Tuti's own feedback portal for Tuti
 
 ## Customize: settings beside a live preview (asked 2026-10-21)

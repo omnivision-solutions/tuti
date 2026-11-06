@@ -11,7 +11,7 @@ name: CLA
 # pull request can't change how it's checked. It never checks out or runs the pull request's
 # code: it reads comments and commits' authors through the API.
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] never checks out or runs the pull request's code (above)
     # closed: a closed pull request no longer holds back one at the same commit. edited: a new
     # base changes which commits it has.
     types: [opened, reopened, synchronize, closed, edited]
