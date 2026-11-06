@@ -25,6 +25,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      id-token: write # the Claude hub's network: see "Connect to the Claude hub"
     outputs:
       changed: ${{ steps.patch.outputs.changed }}
       base: ${{ steps.base.outputs.sha }}
@@ -61,18 +62,60 @@ jobs:
           sudo cp -a "$GITHUB_WORKSPACE" /home/claude-updater/tuti
           sudo chown -R claude-updater:claude-updater /home/claude-updater/tuti
           install -d -m 700 "$RUNNER_TEMP/dependency-update"
+      # The Claude hub pools our Claude subscriptions on a private network. The runner joins it
+      # as a short-lived node that may reach only the hub, with a join key traded for GitHub's
+      # token for this workflow on main: no network secret is stored here. Without the hub,
+      # the update falls back to CLAUDE_CODE_OAUTH_TOKEN's single account.
+      - name: Connect to the Claude hub
+        id: tailnet
+        if: steps.prepare.outcome == 'success'
+        continue-on-error: true
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_WEEKLY_CLIENT_ID }}
+          audience: ${{ secrets.TS_WEEKLY_AUDIENCE }}
+          tags: tag:ci
+          args: --accept-routes=false
+          use-cache: "false"
+          log-mode: quiet
+      - name: Check the Claude hub
+        id: hub
+        if: steps.tailnet.outcome == 'success'
+        env:
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+        run: |
+          # GitHub masks the whole URL in logs; mask the hub's host and network names too.
+          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}
+          echo "::add-mask::$host"; echo "::add-mask::${host#*.}"
+          # Only root may talk to Tailscale, so Claude's user can't look around the network.
+          if sudo chmod 600 /var/run/tailscale/tailscaled.sock \
+            && curl -sf -m 20 --retry 3 --retry-all-errors -o /dev/null \
+              -H "Authorization: Bearer $CLIPROXY_API_KEY" "$CLIPROXY_URL/v1/models"; then
+            echo "use=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::The Claude hub didn't answer; updating with the single account."
+          fi
       - name: Update dependencies with Claude Code
         if: steps.prepare.outcome == 'success'
         timeout-minutes: 50
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          USE_HUB: ${{ steps.hub.outputs.use }}
         run: |
           set -euo pipefail
+          if [ "$USE_HUB" = true ]; then
+            export ANTHROPIC_BASE_URL="$CLIPROXY_URL" ANTHROPIC_AUTH_TOKEN="$CLIPROXY_API_KEY"
+            unset CLAUDE_CODE_OAUTH_TOKEN
+          fi
           # Claude and every package script it runs are another user, with only the
-          # subscription token: none of the runner's tokens or files. The final
+          # Claude credentials: none of the runner's tokens or files. The final
           # message (the PR description) is the only output kept; the session isn't saved.
           # The placeholders are the ones CI builds with.
-          sudo -n -H -u claude-updater --preserve-env=CLAUDE_CODE_OAUTH_TOKEN env -C /home/claude-updater/tuti \
+          sudo -n -H -u claude-updater --preserve-env=CLAUDE_CODE_OAUTH_TOKEN,ANTHROPIC_BASE_URL,ANTHROPIC_AUTH_TOKEN \
+            env -C /home/claude-updater/tuti \
             PATH="$PATH" \
             APP_URL=https://tuti.example \
             PORTAL_URL_TEMPLATE='https://{project}.tuti.example' \
@@ -81,6 +124,17 @@ jobs:
             < .github/prompts/weekly-dependencies.md \
             > "$RUNNER_TEMP/dependency-update/pr.md" \
             || { tail -n 50 "$RUNNER_TEMP/dependency-update/pr.md"; exit 1; } # Claude reports its errors there
+          # The description and the patch go public: never a credential or the hub's address,
+          # whatever a package talked Claude into.
+          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}
+          for value in "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "${host#*.}"; do
+            if [ -n "$value" ] && { grep -qiF "$value" "$RUNNER_TEMP/dependency-update/pr.md" \
+              || sudo -n -u claude-updater grep -rqiF --exclude-dir=node_modules --exclude-dir=.git \
+                --exclude-dir=.next --exclude-dir=.turbo "$value" /home/claude-updater/tuti; }; then
+              echo "The update contains a Claude credential or the hub's address; not publishing." >&2
+              exit 1
+            fi
+          done
       - name: Collect the patch
         id: patch
         if: success() && steps.prepare.outcome == 'success'

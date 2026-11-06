@@ -5,12 +5,11 @@ name: Claude review
 # Findings arrive as one review from github-actions[bot]: inline comments, or all
 # in the review's text when one isn't on a line of the diff.
 #
-# It needs the CLAUDE_CODE_OAUTH_TOKEN secret (.github/DEPENDENCY_UPDATES.md), so it
-# skips pull requests from forks and Dependabot, which get no secrets, and from
-# authors without write access: anyone can open a PR between two of this
-# repository's branches. Claude runs as an unprivileged user holding only that
-# token, with Claude Code's default permissions: read-only commands, only inside
-# the checkout. It loads no settings or hooks from the checkout, and only the PR
+# It needs secrets (.github/DEPENDENCY_UPDATES.md), so it skips pull requests from
+# forks and Dependabot, which get no secrets, and from authors without write
+# access: anyone can open a PR between two of this repository's branches. Claude
+# runs as an unprivileged user holding only its Claude credentials, with Claude
+# Code's default permissions: read-only commands, only inside the checkout. It loads no settings or hooks from the checkout, and only the PR
 # author's text and replies reach its prompt: anyone can comment on a public PR.
 # The GitHub token is only in the steps that read its earlier findings and post
 # new ones. Actions are pinned by SHA because this workflow holds secrets.
@@ -64,6 +63,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write # the Claude hub's network: see "Connect to the Claude hub"
     env:
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
@@ -110,16 +110,57 @@ jobs:
                 | . + {replies: [$comments[] | select((.body | contains($url)) and .user.login == $author)
                   | {author: .user.login, body}]})'
           } > "$RUNNER_TEMP/pull-request.md"
+      # The Claude hub pools our Claude subscriptions on a private network. The runner joins it
+      # as a short-lived node that may reach only the hub, with a join key traded for GitHub's
+      # token for this workflow: no network secret is stored here. Without the hub, the
+      # review falls back to CLAUDE_CODE_OAUTH_TOKEN's single account.
+      - name: Connect to the Claude hub
+        id: tailnet
+        continue-on-error: true
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_REVIEW_CLIENT_ID }}
+          audience: ${{ secrets.TS_REVIEW_AUDIENCE }}
+          tags: tag:ci
+          args: --accept-routes=false
+          use-cache: "false"
+          log-mode: quiet
+      - name: Check the Claude hub
+        id: hub
+        if: steps.tailnet.outcome == 'success'
+        env:
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+        run: |
+          # GitHub masks the whole URL in logs; mask the hub's host and network names too.
+          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}
+          echo "::add-mask::$host"; echo "::add-mask::${host#*.}"
+          # Only root may talk to Tailscale, so Claude's user can't look around the network.
+          if sudo chmod 600 /var/run/tailscale/tailscaled.sock \
+            && curl -sf -m 20 --retry 3 --retry-all-errors -o /dev/null \
+              -H "Authorization: Bearer $CLIPROXY_API_KEY" "$CLIPROXY_URL/v1/models"; then
+            echo "use=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::The Claude hub didn't answer; reviewing with the single account."
+          fi
       - name: Review with Claude Code
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          USE_HUB: ${{ steps.hub.outputs.use }}
           SCHEMA: >-
             {"type": "object", "required": ["findings"], "properties": {"findings": {"type": "array", "items": {
               "type": "object", "required": ["path", "line", "body"], "properties": {
                 "path": {"type": "string"}, "line": {"type": "integer"}, "body": {"type": "string"}}}}}}
         run: |
           set -euo pipefail
-          sudo -n -H -u claude-reviewer --preserve-env=CLAUDE_CODE_OAUTH_TOKEN env -C /home/claude-reviewer/tuti PATH="$PATH" \
+          if [ "$USE_HUB" = true ]; then
+            export ANTHROPIC_BASE_URL="$CLIPROXY_URL" ANTHROPIC_AUTH_TOKEN="$CLIPROXY_API_KEY"
+            unset CLAUDE_CODE_OAUTH_TOKEN
+          fi
+          sudo -n -H -u claude-reviewer --preserve-env=CLAUDE_CODE_OAUTH_TOKEN,ANTHROPIC_BASE_URL,ANTHROPIC_AUTH_TOKEN \
+            env -C /home/claude-reviewer/tuti PATH="$PATH" \
             claude -p --model claude-opus-5-5 --no-session-persistence --output-format json \
             --setting-sources user \
             --json-schema "$SCHEMA" \
@@ -127,11 +168,15 @@ jobs:
             || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
           jq -e '.structured_output.findings' "$RUNNER_TEMP/result.json" > "$RUNNER_TEMP/findings.json" \
             || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
-          # Findings are public: never post the token, whatever the prompt talked Claude into.
-          if grep -qF "$CLAUDE_CODE_OAUTH_TOKEN" "$RUNNER_TEMP/findings.json"; then
-            echo "A finding contains the Claude token; not posting." >&2
-            exit 1
-          fi
+          # Findings are public: never post a credential or the hub's address, whatever
+          # the prompt talked Claude into.
+          host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}
+          for value in "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "${host#*.}"; do
+            if [ -n "$value" ] && grep -qiF "$value" "$RUNNER_TEMP/findings.json"; then
+              echo "A finding contains a Claude credential or the hub's address; not posting." >&2
+              exit 1
+            fi
+          done
       - name: Post the findings
         env:
           GH_TOKEN: ${{ github.token }}
