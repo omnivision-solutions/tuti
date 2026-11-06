@@ -426,7 +426,13 @@ const changelog = (row: Row): Row => ({
  */
 function changelogFixtures(): Row[] {
   return [
-    changelog({ id: "65f0000000000000000000d6", title: "The long one", content: `<p>${"word ".repeat(4001)}</p>`, date: "2024-03-20T09:00:00.000Z" }),
+    changelog({
+      id: "65f0000000000000000000d6",
+      title: "The long one",
+      content: `<p>${"word ".repeat(4001)}</p><p><img src="${FAKE_FEATUREBASE_FILES}whiteboard.png"></p>`,
+      featuredImage: `${FAKE_FEATUREBASE_FILES}mira.png`,
+      date: "2024-03-20T09:00:00.000Z",
+    }),
     changelog({ id: "65f0000000000000000000d5", title: "For admins", content: "<p>Roles only.</p>", date: "2024-03-15T09:00:00.000Z", categories: [{ id: "c3", name: "New", roles: ["admin"] }] }),
     changelog({ id: "65f0000000000000000000d4", title: "For our beta group", content: "<p>Just for you.</p>", date: "2024-03-10T09:00:00.000Z", allowedSegmentIds: ["s1"] }),
     changelog({ id: "65f0000000000000000000d3", title: "Single sign-on", content: "<p>Coming soon.</p>", date: "2024-03-05T09:00:00.000Z", state: "draft", emailSentToSubscribers: true }),

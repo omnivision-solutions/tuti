@@ -70,9 +70,12 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
       break;
     }
     if (!known.has(entry.id) && !restricted(entry)) {
-      const content = await htmlToContent("changelog", entry.content ?? "", { media });
+      // Its length first, without copying anything: one too long to keep (left out on saving) copies nothing.
+      const words = await htmlToContent("changelog", entry.content ?? "");
+      const tooLong = !("error" in words) && words.text.length > MAX_ENTRY_LENGTH;
+      const content = tooLong ? words : await htmlToContent("changelog", entry.content ?? "", { media });
       // Keyed as the text's images are (signatures aside), so a cover that's also in the text is one copy.
-      const url = entry.featuredImage;
+      const url = !tooLong && entry.featuredImage;
       const cover = url ? await (media?.({ kind: "image", url, key: sameFile(url) }) ?? { leftOut: "unsupported" as const }) : null;
       copied.set(entry.id, { content, cover });
     }
