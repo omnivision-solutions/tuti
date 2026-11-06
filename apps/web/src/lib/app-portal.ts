@@ -18,7 +18,7 @@ export function appPortalProject(): string | null {
  */
 const APP_PATHS = new Set([
   "app", "api", "docs", "mcp", "design", "sign-in", "sign-up", "forgot-password", "reset-password", "invite",
-  "continue", "license", "terms", "privacy", "portal", "widget.js", "_tuti", "_next",
+  "continue", "license", "terms", "privacy", "portal", "widget.js", "widget-base.js", "_tuti", "_next",
 ]);
 
 /** Where Tuti's own portal is on the app's domain, as a site mount, or null. */

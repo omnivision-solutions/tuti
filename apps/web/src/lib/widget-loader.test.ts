@@ -1,7 +1,8 @@
 import { expect, test, vi } from "vitest";
 
 import { WIDGET_ICONS } from "./widget-icons";
-import { GET } from "@/app/widget.js/route";
+import { GET as widgetBaseJs } from "@/app/widget-base.js/route";
+import { GET as widgetJs } from "@/app/widget.js/route";
 
 import { portalWidgetSrc, widgetLoader } from "./widget-loader";
 
@@ -391,14 +392,16 @@ test("the portal's own tag (data-on-portal): the panel is the page's own address
   expect((site.window.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url))).toContain("https://app.tuti.example/api/widget/latest?project=acme");
 });
 
-test("the portal's own tag under a path loads widget.js from a URL no older loader was cached under, cached briefly", () => {
+test("the portal's own tag under a path loads the loader from /widget-base.js, where no older loader was ever served", async () => {
   expect(portalWidgetSrc("https://app.tuti.example", "")).toBe("https://app.tuti.example/widget.js");
-  expect(portalWidgetSrc("https://app.tuti.example", "/help")).toBe("https://app.tuti.example/widget.js?v=base");
+  expect(portalWidgetSrc("https://app.tuti.example", "/help")).toBe("https://app.tuti.example/widget-base.js");
+  // The same loader, cached the same way.
   vi.stubEnv("PORTAL_URL_TEMPLATE", "https://{project}.tuti.example");
-  const cache = (url: string) => GET(new Request(url)).headers.get("cache-control");
-  expect(cache("https://app.tuti.example/widget.js")).toBe("public, max-age=3600");
-  expect(cache("https://app.tuti.example/widget.js?v=base")).toBe("public, max-age=60");
+  const [plain, base] = [widgetJs(), widgetBaseJs()];
   vi.unstubAllEnvs();
+  expect(base.headers.get("cache-control")).toBe("public, max-age=3600");
+  expect(Object.fromEntries(base.headers)).toEqual(Object.fromEntries(plain.headers));
+  expect(await base.text()).toBe(await plain.text());
 });
 
 test("the portal under a path of the team's site (data-base): its panels are that path's /widget, tokens still go to the page's origin", async () => {
