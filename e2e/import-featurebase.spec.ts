@@ -231,7 +231,7 @@ test("the inbox comes across from Featurebase: its conversations with their mess
   await owner.getByRole("checkbox", { name: /^Contacts/ }).uncheck();
   await owner.getByRole("checkbox", { name: /^Inbox/ }).check();
   await expect(owner.getByRole("checkbox", { name: /^Contacts/ })).toBeChecked();
-  await expect(owner.getByText("Contacts, feedback and the inbox come across for now: the help center follows in a later version, and the changelog after it.")).toBeVisible();
+  await expect(owner.getByText("Contacts, feedback, the help center and the inbox come across; the changelog follows in a later version.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase-inbox");
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
