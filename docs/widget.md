@@ -38,8 +38,8 @@ The launcher is a round button with an icon. In the Tuti app, your project's
   the plan is back. Self-hosted, every project can pick one.
 - **Show on your portal** (on by default): the launcher on every page of your Tuti portal too,
   opening the same panel as on your site (under your site's path too, for a portal there). A
-  `widget.js` your portal's Custom code adds gives way to it: set the portal's widget here. Turned
-  off, a `widget.js` in Custom code is the one that runs, as you added it, and Ask AI uses it.
+  `widget.js` your portal's Custom code adds gives way to it, so set the portal's widget here; with
+  this turned off, it brings the launcher back (its other options don't apply on the portal).
   Your portal's Ask AI is the widget's assistant either way: turned off, the portal still loads
   the widget, without its launcher, and opens it only when a reader asks the AI or contacts the team
   ("Still stuck?" → Contact us opens its Messages).

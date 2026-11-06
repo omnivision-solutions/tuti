@@ -140,7 +140,8 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(1);
   await onTuti.reload();
   await expect(onTuti.locator("script[data-on-portal]")).toHaveCount(1);
-  // With the portal's own turned off, the Custom code's is the one, launcher and all; the portal adds none of its own.
+  // With the portal's own turned off, Custom code's still gives way (Ask AI and sign-in need the portal's), and brings the
+  // portal's launcher back.
   const api = await apiFor(owner, slug);
   await api("/widget", { onPortal: false }, "PATCH");
   await owner.goto(`/app/${slug}/customize/custom-code`);
@@ -148,8 +149,11 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await visitor.goto("/feedback/feature-requests");
-  await expect(visitor.locator("script[data-on-portal]")).toHaveCount(0);
+  await expect(visitor.locator("script[data-on-portal]")).not.toHaveAttribute("data-hide-launcher");
   await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(1);
+  // Its panel is the portal's, on this domain.
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${domainUrl}/widget`);
   await api("/widget", { onPortal: true }, "PATCH");
 
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();

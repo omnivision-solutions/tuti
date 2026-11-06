@@ -98,11 +98,11 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         : null;
   // Ask AI (the header's search, "Still stuck?"): the widget's assistant, for readers, when the server has AI answers.
   const assistant = canRead && answersEnabled();
-  // The project's own widget (Customize → Widget), and for Ask AI even where the team turned it off here (without its
-  // launcher). A copy the team's Custom code adds gives way to it (the loader sees this tag), except where it's off here:
-  // then theirs is the one, launcher and all (their own way of adding it), and Ask AI asks through it.
+  // The project's own widget (Customize → Widget), and for Ask AI even where the team turned it off here: on the portal's
+  // own origin, with the reader's sign-in. A copy the team's Custom code adds gives way to it (the loader sees this tag),
+  // and brings its launcher back if the setting is off (they added it to have one).
   const teamAddsWidget = !!ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`);
-  const widgetHere = project.widgetOnPortal || (assistant && !teamAddsWidget);
+  const widgetHere = project.widgetOnPortal || assistant || teamAddsWidget;
 
   return (
     <PortalBaseProvider base={base} slug={slug}>
@@ -158,7 +158,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
             src={`${appUrl().origin}/widget.js?v=${PORTAL_LOADER}`}
             slug={slug}
             base={base}
-            launcher={project.widgetOnPortal}
+            launcher={project.widgetOnPortal || teamAddsWidget}
             shown={canRead}
             viewer={session?.user.id ?? null}
           />
