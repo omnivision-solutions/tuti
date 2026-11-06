@@ -262,6 +262,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.goto(`/app/${slug}/inbox?view=mine`);
   const samRow = rows.filter({ hasText: "Can't export to CSV" });
   await expect(samRow).toContainText("Can't export to CSV · You: These are the steps.");
+  await checkpoint(owner, "inbox-row-your-reply");
   await expect(samRow).not.toContainText("Summary");
   await owner.goto(`/app/${slug}/inbox/1`);
 
@@ -1190,6 +1191,7 @@ test("with an address for the project, an email to it lands in the inbox without
   await owner.goto(`/app/${slug}/inbox`);
   const kimLink = owner.getByRole("link", { name: "Kim Lee, Hooli: Invoice missing (#1)" });
   await expect(kimLink).toHaveText("Kim Lee · Hooli");
+  await checkpoint(owner, "inbox-row-email-name");
   await kimLink.click();
   await expect(owner.getByText(/Kim Lee \(e2e-kim@example\.com\) · started from email/)).toBeVisible();
   const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
