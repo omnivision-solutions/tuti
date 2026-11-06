@@ -122,3 +122,6 @@ export const importSee = (run: ImportView) => {
   const picked = (Object.entries(IMPORT_PARTS) as [ImportPart, ImportPartInfo][]).filter(([part]) => run.parts.includes(part));
   return (picked.find(([part]) => part !== "team") ?? picked[0])?.[1].see ?? null;
 };
+
+/** How many invitations Home says wait to be sent, once an import ended: only to owners and admins, who can send them. */
+export const homeInvitationsToSend = (run: ImportView, admin: boolean) => (admin && run.state !== "running" ? run.invitationsToSend : 0);

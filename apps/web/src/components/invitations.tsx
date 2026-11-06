@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { type InviteLink, keepLinks, nextRow } from "@/lib/invite-links";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/roles";
 import { acceptInvitation, createInvitation, revokeInvitation, sendAllInvitations, sendInvitation } from "@/server/invitations";
 
@@ -55,6 +56,7 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
           name="email"
           type="email"
           required
+          id="invite-email"
           placeholder="name@example.com"
           aria-label="Email of the person to invite"
           className="w-64"
@@ -111,7 +113,7 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
  * Revoke on a pending invite; Remove on one an import made that wasn't sent (`unsent`: its address), which asks first, as
  * a later import won't bring it back.
  */
-export function RevokeInvitationButton({ projectSlug, invitationId, unsent }: { projectSlug: string; invitationId: string; unsent?: string }) {
+export function RevokeInvitationButton({ projectSlug, invitationId, unsent, onRevoked }: { projectSlug: string; invitationId: string; unsent?: string; onRevoked?: () => void }) {
   const [pending, startTransition] = useTransition();
   const revoke = () =>
     startTransition(async () => {
@@ -120,6 +122,7 @@ export function RevokeInvitationButton({ projectSlug, invitationId, unsent }: { 
         toast.error(result.error);
       } else {
         toast.success(unsent ? "Invite removed" : "Invite revoked");
+        onRevoked?.();
       }
     });
   if (!unsent) {
@@ -159,20 +162,27 @@ export type UnsentInvitation = { id: string; email: string; title: string; meta:
  */
 export function UnsentInvitations({ projectSlug, invitations, note }: { projectSlug: string; invitations: UnsentInvitation[]; note: string }) {
   const [pending, startTransition] = useTransition();
-  const [links, setLinks] = useState<{ email: string; url: string }[]>([]);
+  const [links, setLinks] = useState<InviteLink[]>([]);
   const sendButtons = useRef(new Map<string, HTMLButtonElement>());
   const heading = useRef<HTMLHeadingElement>(null);
-  // Where focus goes once the page shows the send's result: a row's id, or "" for the heading (or, gone, the pending list).
-  const focusNext = useRef<string | null>(null);
+  // Where focus goes once the page shows a Send's or Remove's result: `next`, a row's id (its Send), else the card's
+  // heading, else (the card gone) the pending invites or the invite form; only once `done`'s row has gone.
+  const focusNext = useRef<{ next: string | null; done: string | null } | null>(null);
+  // Bumped with focusNext, so the effect runs whether the page's refresh landed before or after.
+  const [moved, setMoved] = useState(0);
   useEffect(() => {
     const target = focusNext.current;
-    if (target === null) {
+    if (!target || (target.done && invitations.some((invitation) => invitation.id === target.done))) {
       return;
     }
     focusNext.current = null;
-    const fallback = heading.current ?? document.getElementById("pending-invites");
-    (sendButtons.current.get(target) ?? fallback)?.focus();
-  }, [invitations, links]);
+    const button = target.next ? sendButtons.current.get(target.next) : undefined;
+    (button ?? heading.current ?? document.getElementById("pending-invites") ?? document.getElementById("invite-email"))?.focus();
+  }, [invitations, links, moved]);
+  const moveFocus = (done: string | null) => {
+    focusNext.current = { next: nextRow(invitations.map((invitation) => invitation.id), done), done };
+    setMoved((n) => n + 1);
+  };
 
   const send = (id: string | null) =>
     startTransition(async () => {
@@ -183,10 +193,9 @@ export function UnsentInvitations({ projectSlug, invitations, note }: { projectS
       if (result.error) {
         toast.error(result.error);
       }
-      setLinks(result.links ?? []);
+      setLinks((shown) => keepLinks(shown, result.links));
       if (result.sent || result.links?.length) {
-        const at = id ? invitations.findIndex((invitation) => invitation.id === id) : -1;
-        focusNext.current = (id && invitations[at + 1]?.id) || "";
+        moveFocus(id);
       }
     });
 
@@ -249,7 +258,7 @@ export function UnsentInvitations({ projectSlug, invitations, note }: { projectS
                       >
                         Send
                       </Button>
-                      <RevokeInvitationButton projectSlug={projectSlug} invitationId={invitation.id} unsent={invitation.email} />
+                      <RevokeInvitationButton projectSlug={projectSlug} invitationId={invitation.id} unsent={invitation.email} onRevoked={() => moveFocus(invitation.id)} />
                     </>
                   )
                 }

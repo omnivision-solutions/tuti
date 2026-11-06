@@ -152,7 +152,9 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
   // inviting ("for installs without email"). Each is live now, and shown this once.
   if (!emailConfigured()) {
     refresh();
-    return { sent: 0, waiting: claimed.waiting, links: claimed.sending.map((invitation) => ({ email: invitation.email, url: `${appUrl().origin}/invite/${invitation.token}` })) };
+    const links = claimed.sending.map((invitation) => ({ email: invitation.email, url: `${appUrl().origin}/invite/${invitation.token}` }));
+    // As with email: the ones the day's cap held back are said.
+    return { ...(claimed.waiting > 0 && claimed.capped && { error: DAILY_LIMIT }), sent: 0, waiting: claimed.waiting, links };
   }
   let sent = 0;
   for (const invitation of claimed.sending) {

@@ -180,6 +180,11 @@ test("on a server without email, Send emails nothing and says so with the links 
   expect(all).toMatchObject({ sent: 0, waiting: 0 });
   expect(all.links!.map((link) => link.email).sort()).toEqual([bo, cy].sort());
   expect(emailsTo(ada, bo, cy)).toEqual([]);
+  // At the day's cap, the links it could make, and what it held back said.
+  admins(ada, bo, cy, newAddress(), newAddress());
+  await importTeam();
+  await sentEarlier(DAILY_INVITE_LIMIT - 4);
+  expect(await sendAllInvitations(project.slug)).toMatchObject({ error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`, sent: 0, waiting: 1, links: [expect.anything()] });
   vi.unstubAllEnvs();
   vi.stubEnv("FEATUREBASE_API_URL", fake.url);
 
@@ -220,7 +225,11 @@ test("inviting someone and sending an import's invites at once share the day's l
     { timeout: 20_000 },
   );
   await holding;
-  const lockWaits = () => prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`.then(([row]) => row!.n);
+  // Waits on the project's row only (lockProject's, inviting's): nothing else waiting can count.
+  const lockWaits = () =>
+    prisma.$queryRaw<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%FROM project WHERE id =%FOR UPDATE%'`.then(([row]) => row!.n);
   // Send all queues for the lock first, then the invite: Postgres hands it on in that order.
   const sending$ = sendAllInvitations(project.slug);
   await expect.poll(lockWaits, { timeout: 4_000 }).toBe(1);

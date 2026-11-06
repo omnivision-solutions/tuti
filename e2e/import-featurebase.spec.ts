@@ -95,8 +95,22 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(pending.getByRole("button", { name: "Revoke" })).toBeVisible();
   await checkpoint(owner, "team-invitation-sent");
 
+  // Remove asks first, naming the address; the last row gone (and the card with it), focus goes to the pending invites.
+  const left = next!.replace("Send the invite to ", "");
+  await unsent.getByRole("button", { name: `Remove the invite to ${left}` }).focus();
+  await owner.keyboard.press("Enter");
+  const dialog = owner.getByRole("alertdialog");
+  await expect(dialog.getByRole("heading")).toHaveText(`Remove the invite for ${left}?`);
+  await checkpoint(owner, "team-invitation-remove");
+  await dialog.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(owner.getByText("Invite removed")).toBeVisible();
+  await expect(unsent).toHaveCount(0);
+  await expect(owner.locator("#pending-invites")).toBeFocused();
+
+  // None wait now: Home says nothing of them.
   await owner.goto(`/app/${slug}`);
-  await expect(owner.getByText("1 invitation ready to send.")).toBeVisible();
+  await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
+  await expect(owner.getByText(/ready to send/)).toHaveCount(0);
   await owner.getByRole("link", { name: "See users" }).click();
   await owner.waitForURL(`**/app/${slug}/users`);
   const rows = owner.getByRole("main").getByRole("table").locator("tbody").getByRole("row");

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { IMPORT_PARTS, importSee, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
+import { homeInvitationsToSend, IMPORT_PARTS, importSee, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -64,4 +64,11 @@ test("the team needs nothing, and nothing needs it: unticking Contacts leaves it
   expect(pickPart(["team", "contacts", "feedback"], "contacts", false, IMPORT_PARTS)).toEqual(["team"]);
   expect(pickPart(["contacts"], "team", true, IMPORT_PARTS)).toEqual(["team", "contacts"]);
   expect(kindCount("invitations", 2)).toBe("2 invitations");
+});
+
+test("Home says how many invitations wait to be sent only to owners and admins (who can send them), once the import ended", () => {
+  const run = (state: string) => ({ state, invitationsToSend: 2 }) as unknown as Parameters<typeof homeInvitationsToSend>[0];
+  expect(homeInvitationsToSend(run("done"), true)).toBe(2);
+  expect(homeInvitationsToSend(run("done"), false)).toBe(0);
+  expect(homeInvitationsToSend(run("running"), true)).toBe(0);
 });
