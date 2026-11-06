@@ -518,6 +518,8 @@ const matrix: Matrix = {
     deleteGroup: { allowed: "ADMIN", call: (slug) => groups.deleteGroup(slug, "beta") },
     // Names the project's SSO users, like Settings → Groups.
     previewGroup: { allowed: "ADMIN", call: (slug) => groups.previewGroup(slug, [{ property: "plan", op: "is", value: "pro" }]) },
+    // The values the project's SSO users have, like the preview.
+    suggestValues: { allowed: "ADMIN", call: (slug) => groups.suggestValues(slug, "plan") },
     setAskingProperty: { allowed: "ADMIN", call: (slug) => groups.setAskingProperty(slug, "mrr") },
     setUserColumns: { allowed: "ADMIN", call: (slug) => groups.setUserColumns(slug, ["company", "mrr"]) },
     setPropertyFormats: { allowed: "ADMIN", call: (slug) => groups.setPropertyFormats(slug, { mrr: { label: "MRR", format: "money" } }) },

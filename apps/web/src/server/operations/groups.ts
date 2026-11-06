@@ -69,6 +69,23 @@ export async function propertyNames(projectId: string): Promise<string[]> {
   return rows.map((row) => row.name);
 }
 
+/** How many values the group dialog suggests for a property. */
+export const PROPERTY_VALUES = 50;
+
+/**
+ * The values the project's users have for property `name` (a list's items each), the most common first, as conditions
+ * compare them (text, as conditionsSql has them). One pass over the project's users: about 50ms for 100k+.
+ */
+export async function propertyValues(projectId: string, name: string): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ value: string }[]>`
+    SELECT v.value FROM sso_identity s
+    CROSS JOIN LATERAL unnest(CASE WHEN jsonb_typeof(s.attributes -> ${name}::text) = 'array'
+      THEN ARRAY(SELECT jsonb_array_elements_text(s.attributes -> ${name}::text)) ELSE ARRAY[s.attributes ->> ${name}::text] END) AS v(value)
+    WHERE s."projectId" = ${projectId} AND jsonb_exists(s.attributes, ${name}::text)
+    GROUP BY v.value ORDER BY count(*) DESC, v.value LIMIT ${PROPERTY_VALUES}`;
+  return rows.map((row) => row.value);
+}
+
 /**
  * How many number properties Who's asking offers: far past what a team picks from, while an app that
  * names one per user (`usage_<id>`) can't make the page send and draw them all. ponytail: a search box

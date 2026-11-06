@@ -27,7 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
 import { type GroupCondition, LIST_OPERATORS, type Match, MATCHES, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS } from "@/lib/group-conditions";
 import type { FormState } from "@/server/form-state";
-import { deleteGroup, type GroupPreview, previewGroup, saveGroup } from "@/server/groups";
+import { deleteGroup, type GroupPreview, previewGroup, saveGroup, suggestValues } from "@/server/groups";
 import type { GroupView } from "@/server/operations/groups";
 
 
@@ -94,6 +94,9 @@ const conditionOf = (row: Row) =>
       ? { property: row.property, op: row.op, value: row.value.split(",").map((v) => v.trim()).filter(Boolean) }
       : { property: row.property, op: row.op, value: row.value };
 
+/** Operators whose one value the dialog suggests (a list's comma-separated values it doesn't). */
+const suggestsValues = (op: Operator) => !takesNoValue(op) && !LIST_OPERATORS.includes(op);
+
 const complete = (row: Row) => row.property.trim() !== "" && (takesNoValue(row.op) || row.value.split(",").some((v) => v.trim() !== ""));
 
 const PREVIEW_DELAY_MS = 300;
@@ -107,6 +110,8 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
   const [rows, setRows] = useState<Row[]>(() => rowsOf(group));
   const [match, setMatch] = useState<Match>(group?.match ?? "all");
   const [preview, setPreview] = useState<GroupPreview | { error: string } | null>(null);
+  // Each property's values, as its users have them, once its name is typed (names fetched once each).
+  const [values, setValues] = useState<Record<string, string[]>>({});
   const latest = useRef(0);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveGroup(projectSlug, group?.key ?? null, prev, formData);
@@ -134,6 +139,18 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
     return () => clearTimeout(timer);
   }, [previewable, projectSlug, rows, match]);
 
+  const wanted = [...new Set(rows.map((row) => row.property.trim()).filter((name) => name !== "" && !Object.hasOwn(values, name)))].join("\n");
+  useEffect(() => {
+    if (!open || wanted === "") {
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const found = await Promise.all(wanted.split("\n").map(async (name) => [name, await suggestValues(projectSlug, name)] as const));
+      setValues((current) => ({ ...current, ...Object.fromEntries(found.map(([name, result]) => [name, "values" in result ? result.values : []])) }));
+    }, PREVIEW_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [open, projectSlug, wanted]);
+
   const change = (i: number, patch: Partial<Row>) => setRows((current) => current.map((row, j) => (j === i ? { ...row, ...patch } : row)));
   const shown = previewable ? preview : null;
 
@@ -146,6 +163,7 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
           setRows(rowsOf(group));
           setMatch(group?.match ?? "all");
           setPreview(null);
+          setValues({});
         }
         setOpen(next);
       }}
@@ -263,8 +281,16 @@ function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; 
                             onChange={(e) => change(i, { value: e.target.value })}
                             placeholder={LIST_OPERATORS.includes(row.op) ? "pro, enterprise" : "enterprise"}
                             autoComplete="off"
+                            list={suggestsValues(row.op) ? `group-values-${id}-${i}` : undefined}
                             className="font-mono"
                           />
+                        )}
+                        {suggestsValues(row.op) && (
+                          <datalist id={`group-values-${id}-${i}`}>
+                            {(values[row.property.trim()] ?? []).map((value) => (
+                              <option key={value} value={value} />
+                            ))}
+                          </datalist>
                         )}
                       </div>
                     </div>

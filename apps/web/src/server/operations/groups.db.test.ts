@@ -7,7 +7,7 @@ import type { z } from "zod";
 import type { Properties } from "@tuti/shared/user-properties";
 import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
-import { deleteGroup as deleteGroupAction, previewGroup, saveGroup, setPropertyFormats } from "../groups";
+import { deleteGroup as deleteGroupAction, previewGroup, saveGroup, setPropertyFormats, suggestValues } from "../groups";
 import { syncUsers } from "../project-users";
 import { createCollection, updateCollection } from "./docs";
 import { createGroup, deleteGroup, listGroups, propertiesInUse, propertyNames, updateGroup } from "./groups";
@@ -236,6 +236,35 @@ test("the dialog's preview: who a group with these conditions would have now, th
   // Each with their id in the app, email and avatar.
   expect((await previewGroup(project.slug, plan("free"))) as unknown).toEqual({ readers: 1, users: [{ id: expect.any(String), name: "Cy", email: null, avatar: null }] });
   expect(await previewGroup(project.slug, [{ property: "plan", op: "is", value: "" }])).toEqual({ error: "A condition needs a value" });
+});
+
+test("the dialog's suggested values: what the project's users have for a property, the most common first, as conditions compare them", async () => {
+  await ssoReader("Ada", { plan: "pro", seats: 12, beta: true, features: ["sso", "audit-log"] });
+  await ssoReader("Bea", { plan: "free", seats: 3, features: ["sso"] });
+  await ssoReader("Cy", { plan: "pro", beta: false, features: [] });
+  await ssoReader("Dee", { plan: "enterprise" });
+  // Another project's users have their own.
+  await ssoReader("Gus", { plan: "gold" }, (await createProject(owner)).id);
+  actAs(owner);
+  const values = async (property: string) => suggestValues(project.slug, property);
+  // The most common first, then A to Z.
+  expect(await values("plan")).toEqual({ values: ["pro", "enterprise", "free"] });
+  // Numbers and booleans as text; a list's items each.
+  expect(await values("seats")).toEqual({ values: ["12", "3"] });
+  expect(await values("beta")).toEqual({ values: ["false", "true"] });
+  expect(await values("features")).toEqual({ values: ["sso", "audit-log"] });
+  // Names compare exactly and trimmed, like conditions'; none for no name, or one nobody has.
+  expect(await values(" plan ")).toEqual({ values: ["pro", "enterprise", "free"] });
+  expect(await values("Plan")).toEqual({ values: [] });
+  expect(await values("")).toEqual({ values: [] });
+  expect(await values("toString")).toEqual({ values: [] });
+  // At most 50.
+  await syncUsers(project.id, Array.from({ length: 60 }, (_, i) => ({ externalId: `bulk-${i}`, name: `Bulk ${i}`, properties: { code: `c${i}` } })));
+  expect((await values("code")) as { values: string[] }).toMatchObject({ values: expect.arrayContaining(["c0"]) });
+  expect(((await values("code")) as { values: string[] }).values).toHaveLength(50);
+  // Only owners and admins, like the preview.
+  actAs(await addMember(project.id, "MEMBER"));
+  expect(await values("plan")).toEqual({ error: "Only project owners and admins can change the groups" });
 });
 
 /** Back to before 20261023160000_groups_from_properties: without the triggers that keep the old columns in step. */

@@ -7,7 +7,7 @@ import type { PropertyFormats } from "@/lib/property-formats";
 
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
-import { createGroup, deleteGroup as deleteGroupOperation, matchingUsers, updateGroup } from "./operations/groups";
+import { createGroup, deleteGroup as deleteGroupOperation, matchingUsers, propertyValues, updateGroup } from "./operations/groups";
 import { updateProject, updatePropertyFormats } from "./operations/more";
 import { asAdmin, call } from "./operations/run";
 import { getSession } from "./session";
@@ -58,6 +58,16 @@ export async function previewGroup(projectSlug: string, conditions: z.input<type
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
   return matchingUsers(project.id, { match: groupMatch.catch("all").parse(match), conditions: input.data }, PREVIEW_USERS);
+}
+
+/** The group dialog's suggestions for a condition's value: the values the project's users have for `property`, the most common first. */
+export async function suggestValues(projectSlug: string, property: string): Promise<{ error: string } | { values: string[] }> {
+  const [session, project] = await Promise.all([getSession(), getAdminProject(projectSlug)]);
+  if (!session || !project) {
+    return { error: DENIED };
+  }
+  const name = typeof property === "string" ? property.trim() : "";
+  return { values: name === "" || name.length > 64 ? [] : await propertyValues(project.id, name) };
 }
 
 /** Users' Columns: the properties the table shows, in order (see project.update's userColumns). */
