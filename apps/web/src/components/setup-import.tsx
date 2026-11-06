@@ -60,10 +60,12 @@ export function ImportProgress({ projectSlug, run, invitations }: { projectSlug:
               <span className="mt-0.5 shrink-0">{PART_STATE[state].icon}</span>
               <div className="min-w-0 flex-1">
                 <p className={cn("text-sm font-medium", (state === "next" || state === "waiting") && "text-muted-foreground")}>{info.label}</p>
-                <p className="text-sm text-muted-foreground">
-                  {said}
-                  {leftOut && ` Left out: ${leftOut}.`}
-                </p>
+                {/* The team's invitations waiting to be sent say it, with their link, instead. */}
+                {(part !== "team" || invitations === 0 || leftOut) && (
+                  <p className="text-sm text-muted-foreground">
+                    {[(part !== "team" || invitations === 0) && said, leftOut && `Left out: ${leftOut}.`].filter(Boolean).join(" ")}
+                  </p>
+                )}
                 {state === "now" && steps.length > 1 && (
                   <ol aria-label={`${info.label}'s steps`} className="mt-1.5 flex flex-wrap gap-1.5">
                     {steps.map(([name, label], i) => (

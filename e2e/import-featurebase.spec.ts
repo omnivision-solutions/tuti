@@ -55,7 +55,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   const parts = owner.getByRole("list", { name: "What's brought across" });
   const part = (name: string) => parts.getByRole("listitem").filter({ has: owner.getByText(name, { exact: true }) });
   await expect(owner.getByText("Part 2 of 2.", { exact: false })).toBeVisible();
-  await expect(part("Team")).toContainText("2 invitations.");
+  await expect(part("Team")).toContainText("2 invitations ready to send.");
   await expect(part("Team")).toContainText("Done");
   await expect(part("Contacts")).toContainText("Starting…");
   await expect(part("Contacts")).toContainText("In progress");
@@ -77,7 +77,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Home says what came across, and the contacts are the project's users, with their company.
   await owner.waitForURL(`**/app/${slug}`);
   await expect(owner.getByText("Imported from Featurebase", { exact: true })).toBeVisible();
-  await expect(part("Team")).toContainText("2 invitations.");
+  await expect(part("Team")).toContainText("2 invitations ready to send.");
   await expect(part("Contacts")).toContainText("3 contacts.");
   await expect(part("Contacts").getByRole("link", { name: "See users" })).toBeVisible();
   // Screen readers hear it in one status: the title and, once it's over, the summary.
