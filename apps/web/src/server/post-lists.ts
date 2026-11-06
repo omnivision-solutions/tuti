@@ -1,4 +1,4 @@
-import { type PostStatus, Prisma, prisma } from "@tuti/db";
+import { type PostStatus, type PostVisibility, Prisma, prisma } from "@tuti/db";
 import { audienceReach, postAudience, projectEmailWaits } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
@@ -307,7 +307,17 @@ export function recentlyShipped(boardId: string, viewer: PostViewer) {
     LIMIT 5`;
 }
 
-type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus; sample: boolean; boardSlug: string };
+type Like = {
+  id: string;
+  number: number;
+  title: string;
+  voteCount: number;
+  status: PostStatus;
+  sample: boolean;
+  boardSlug: string;
+  visibility: PostVisibility;
+  authorId: string;
+};
 
 /**
  * The project's posts (not merged ones, and as `where` narrows them) whose titles have the words of `title`, the likest
@@ -315,7 +325,7 @@ type Like = { id: string; number: number; title: string; voteCount: number; stat
  */
 function postsTitledLike(projectId: string, title: string, sample: boolean, where: Prisma.Sql, limit: number) {
   return prisma.$queryRaw<Like[]>`
-    SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
+    SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug", p.visibility, p."authorId"
     FROM post p
     JOIN board b ON b.id = p."boardId"
     WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL AND p.sample = ${sample} ${where}
@@ -359,7 +369,7 @@ export async function postsLike(
   const status = Prisma.sql`${open ? Prisma.sql`AND p.status NOT IN ('COMPLETED', 'CLOSED')` : Prisma.empty} AND ${visiblePostsSql(viewer)}`;
   const [byMeaning, byWords] = await Promise.all([
     prisma.$queryRaw<Like[]>`
-      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug"
+      SELECT p.id, p.number, p.title, p."voteCount", p.status, p.sample, b.slug AS "boardSlug", p.visibility, p."authorId"
       FROM post_embedding mine
       JOIN post_embedding e ON e."projectId" = mine."projectId" AND e."postId" <> mine."postId"
       JOIN post p ON p.id = e."postId"

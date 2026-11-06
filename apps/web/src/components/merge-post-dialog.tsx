@@ -27,7 +27,7 @@ export function MergePostDialog({
   candidates,
 }: {
   projectSlug: string;
-  post: { id: string; number: number; title: string; visibility?: PostVisibility };
+  post: { id: string; number: number; title: string; visibility?: PostVisibility; authorId?: string };
   candidates: PickablePost[];
 }) {
   const router = useRouter();
@@ -68,7 +68,7 @@ export function MergePostDialog({
               <DialogDescription>
                 “{post.title}” will be merged into “{target.title}”. Its votes (counted once per person) and comments
                 move over, and its link will point to #{target.number}. This can&apos;t be undone.
-                {mergeExposure(post.visibility, target.visibility, target.number) && <> {mergeExposure(post.visibility, target.visibility, target.number)}</>}
+                {mergeExposure(post, target, target.number) && <> {mergeExposure(post, target, target.number)}</>}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

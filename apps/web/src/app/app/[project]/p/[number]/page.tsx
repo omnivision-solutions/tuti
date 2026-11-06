@@ -108,7 +108,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
   ]);
   const total = totals.get(post.id);
-  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true, visibility: true } as const;
+  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true, visibility: true, authorId: true } as const;
   const [candidates, suggestions] = post.duplicateOf
     ? [[], []]
     : await Promise.all([

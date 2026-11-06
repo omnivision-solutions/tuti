@@ -14,12 +14,24 @@ export const POST_VISIBILITIES = Object.keys(VISIBILITY_LABELS) as PostVisibilit
 /** How widely each is seen: Team only, then Private (its author too), then Public. */
 const REACH: Record<PostVisibility, number> = { TEAM: 0, PRIVATE: 1, PUBLIC: 2 };
 
+/** A post as a merge's dialog weighs it: who sees it. */
+type Seen = { visibility?: PostVisibility; authorId?: string };
+
 /**
- * What a merge's dialog says when the merged post is seen by fewer people than the one it goes into (null: nothing to
- * say): its comments move over, so everyone who sees the other one sees them.
+ * What a merge's dialog says when the merged post's comments will be seen by people who couldn't see them (null:
+ * nothing to say): they move over, so whoever sees the other one sees them. Private into another author's Private post
+ * too: its author sees them.
  */
-export function mergeExposure(from: PostVisibility | undefined, into: PostVisibility | undefined, intoNumber: number): string | null {
-  return from && into && REACH[into] > REACH[from] ? `It's ${VISIBILITY_LABELS[from]}: its comments will be seen by everyone who sees #${intoNumber}.` : null;
+export function mergeExposure(from: Seen, into: Seen, intoNumber: number): string | null {
+  if (!from.visibility || !into.visibility) {
+    return null;
+  }
+  if (REACH[into.visibility] > REACH[from.visibility]) {
+    return `It's ${VISIBILITY_LABELS[from.visibility]}: its comments will be seen by everyone who sees #${intoNumber}.`;
+  }
+  return from.visibility === "PRIVATE" && into.visibility === "PRIVATE" && from.authorId && into.authorId && from.authorId !== into.authorId
+    ? `It's Private: its comments will be seen by #${intoNumber}'s author too.`
+    : null;
 }
 
 /** A board's choice for its new posts, in words. */

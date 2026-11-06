@@ -213,6 +213,8 @@ test("Similar ideas, typing suggestions, the widget's ideas and news, Account an
 
   expect(titles(await postsLike(project.id, open, bobViews, { open: true }))).toEqual([]);
   expect(titles(await postsLike(project.id, open, adaViews, { open: true }))).toEqual(["Dark mode crashes the editor"]);
+  // With who sees each, and whose it is: the team's merge dialog warns from them.
+  expect(await postsLike(project.id, open, adaViews, { open: true })).toEqual([expect.objectContaining({ visibility: "PRIVATE", authorId: ada.id })]);
 
   actAs(bob);
   expect(titles(await findSimilarPosts(project.slug, "Dark mode for the editor"))).toEqual(["Dark mode for the editor"]);

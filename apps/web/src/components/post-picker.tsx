@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { postMatches } from "@/lib/post-matches";
 
-export type PickablePost = { id: string; number: number; title: string; voteCount: number; visibility?: PostVisibility };
+export type PickablePost = { id: string; number: number; title: string; voteCount: number; visibility?: PostVisibility; authorId?: string };
 
 /**
  * A picker's search on the server (`find`, e.g. findPostsToLink) as it's typed in: `restart(true)` as the picker opens

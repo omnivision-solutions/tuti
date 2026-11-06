@@ -24,7 +24,7 @@ import { VisibilityBadge } from "@/components/visibility-badge";
 import { mergeExposure } from "@/lib/visibility-labels";
 import { dismissDuplicate, mergePost } from "@/server/manage-posts";
 
-type PostRef = { id: string; number: number; title: string; voteCount: number; visibility?: PostVisibility };
+type PostRef = { id: string; number: number; title: string; voteCount: number; visibility?: PostVisibility; authorId?: string };
 
 export type Suggestion = {
   id: string;
@@ -123,7 +123,7 @@ function SuggestionRow({ projectSlug, postId, suggestion }: { projectSlug: strin
                 <AlertDialogDescription>
                   “{duplicate.title}” will be merged into “{original.title}”. Its votes (counted once per person) and
                   comments move over, and its link will point to #{original.number}. This can&apos;t be undone.
-                  {mergeExposure(duplicate.visibility, original.visibility, original.number) && <> {mergeExposure(duplicate.visibility, original.visibility, original.number)}</>}
+                  {mergeExposure(duplicate, original, original.number) && <> {mergeExposure(duplicate, original, original.number)}</>}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
