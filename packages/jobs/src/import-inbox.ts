@@ -196,8 +196,9 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
     }
     const { body: text, urls, media, unshown } = await messageText(part);
     // An email shows its new part, as a received one does, the whole of it kept behind it (a widget message never quotes);
-    // one that starts the conversation as a forward is kept whole, by its subject.
-    const subject = messages.length === 0 ? (source?.subject ?? conversation.title ?? "") : "";
+    // one that starts the conversation (its first message that isn't a note) as a forward is kept whole, by its subject
+    // as saveConversation stores it: what cutImportedQuotes checks later too.
+    const subject = messages.every((m) => m.note) ? conversation.title?.trim() || source?.subject?.trim() || "" : "";
     const { text: body, stripped } = part.channel === "email" && !kind.note ? stripQuotes(text, subject) : { text, stripped: false };
     const files: StoredFile[] = [];
     let dropped = unshown;
@@ -404,7 +405,7 @@ const subjectFrom = (text: string) => {
 
 /**
  * Cuts the quotes from emails imported before imports cut them, the whole email kept behind each, as an import does now
- * (a conversation's first message by its subject, a forward kept whole). Run once by apps/worker's `cut:imported-quotes`,
+ * (a conversation's first message that isn't a note by its stored subject, a forward kept whole). Run once by apps/worker's `cut:imported-quotes`,
  * a page at a time; nothing is lost, so running it again changes nothing.
  */
 export async function cutImportedQuotes(): Promise<number> {
@@ -415,7 +416,7 @@ export async function cutImportedQuotes(): Promise<number> {
       where: { importId: { not: null }, channel: "EMAIL", note: false, original: null, ...(after && { id: { gt: after } }) },
       orderBy: { id: "asc" },
       take: 200,
-      select: { id: true, body: true, conversation: { select: { subject: true, messages: { orderBy: { createdAt: "asc" }, take: 1, select: { id: true } } } } },
+      select: { id: true, body: true, conversation: { select: { subject: true, messages: { where: { note: false }, orderBy: { createdAt: "asc" }, take: 1, select: { id: true } } } } },
     });
     for (const { id, body, conversation } of messages) {
       const { text, stripped } = stripQuotes(body, conversation.messages[0]?.id === id ? conversation.subject : "");
