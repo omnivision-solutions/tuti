@@ -8,7 +8,7 @@ test("an old address as pasted becomes a path, lowercase and without a trailing 
   for (const bad of ["kb/billing", "//evil.example", "/kb?x=1", "/kb#top", "/a b", "/\\[", "/\\evil.example"]) {
     expect(redirectFrom(bad)).toMatchObject({ error: expect.stringContaining("path") });
   }
-  expect(redirectFrom("/")).toMatchObject({ error: expect.stringContaining("Home page") });
+  expect(redirectFrom("/")).toMatchObject({ error: "Pick what your portal's home opens in Customize → Navigation, under Home page, instead" });
   expect(redirectFrom(`/${"a".repeat(600)}`)).toMatchObject({ error: expect.stringContaining("under 500") });
   // A long whole address is refused too, not cut short.
   expect(redirectFrom(`https://old.example.com/${"a".repeat(600)}`)).toMatchObject({ error: expect.stringContaining("under 500") });

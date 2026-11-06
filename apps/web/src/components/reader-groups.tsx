@@ -344,8 +344,8 @@ function DeleteGroupButton({ projectSlug, group }: { projectSlug: string; group:
         <AlertDialogHeader>
           <AlertDialogTitle className="break-words">Delete {group.name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            It can&apos;t be undone. A group a collection is for can&apos;t be deleted, since that would open the collection to everyone:
-            remove it there first.
+            It can&apos;t be undone. A group a tab, collection or article is for can&apos;t be deleted, since that would change who can
+            read them: remove it from them first.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

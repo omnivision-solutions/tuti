@@ -236,7 +236,7 @@ export function NavigationSettings({
 /** What hiding the badge takes where plans are sold (tuti.so): the add-on on the project's plan, bought on Billing. */
 type BadgePlan = { addOn: boolean; billingUrl: string };
 
-/** Customize → Powered by: "Powered by tuti" in the footer, which needs a licence (or on tuti.so the add-on) to hide (see branding.update). */
+/** Customize → Branding: "Powered by tuti" in the footer, which needs a licence (or on tuti.so the add-on) to hide (see branding.update). */
 export function PoweredBySettings({
   projectSlug,
   poweredBy,
@@ -504,7 +504,9 @@ function PoweredByField({
       </label>
       <FieldDescription>
         {plan?.addOn
-          ? "Hidden with the add-on on this project's plan."
+          ? shown
+            ? "The add-on is still on this project's plan: remove it in Billing."
+            : "Hidden with the add-on on this project's plan."
           : licensedUntil
             ? `Licensed until ${untilDate(licensedUntil)}.`
             : plan

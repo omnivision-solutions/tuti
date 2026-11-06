@@ -166,7 +166,7 @@ export function SsoSettings({
 const token = await new SignJWT({
   email: user.email,      // optional
   name: user.name,        // optional, shown on posts
-  avatar: user.avatarUrl, // optional, https URL
+  avatar: user.avatarUrl, // optional, http(s) URL
 })
   .setProtectedHeader({ alg: "HS256" })
   .setSubject(String(user.id)) // your user id; this is how we match users

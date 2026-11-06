@@ -11,7 +11,7 @@ const CHECKED: Record<Exclude<LicenseCheck, "licensed">, string> = {
 export const LICENSE_UNREACHABLE = CHECKED.unreachable;
 
 /**
- * What Check now in Customize → Powered by found: the badge can be hidden only when tuti.so just
+ * What Check now in Customize → Branding found: the badge can be hidden only when tuti.so just
  * said the project is licensed. A key still valid from before (tuti.so unreachable, or checked a
  * moment ago) keeps an already hidden badge hidden, but doesn't hide it from the dialog.
  */

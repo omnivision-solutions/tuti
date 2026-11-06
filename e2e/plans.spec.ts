@@ -66,6 +66,12 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await owner.goto(`/app/${slug}/customize/powered-by`);
   await expect(owner.getByText("Hidden with the add-on on this project's plan.")).toBeVisible();
   await expect(owner.getByLabel('Show "Powered by tuti" in the footer')).not.toBeChecked();
+  // Showing the badge again here leaves the add-on billing: the field says where it's removed.
+  await owner.getByLabel('Show "Powered by tuti" in the footer').click();
+  await expect(owner.getByText("The add-on is still on this project's plan: remove it in Billing.")).toBeVisible();
+  await checkpoint(owner, "customize-branding-badge-shown-with-add-on");
+  await owner.getByLabel('Show "Powered by tuti" in the footer').click();
+  await expect(owner.getByText("Hidden with the add-on on this project's plan.")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/billing`);
 
   // Cancelled in Stripe's portal, it lasts until the period it's paid for ends.

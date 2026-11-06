@@ -100,7 +100,7 @@ function SiteGuides({ path, tutiAddress }: { path: string; tutiAddress: string }
         <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
           {open && (
             <>
-              <SheetHeader>
+              <SheetHeader className="pr-12">
                 <SheetTitle>Put your portal under {path} with {open.name}</SheetTitle>
                 <SheetDescription>{open.where}</SheetDescription>
               </SheetHeader>
