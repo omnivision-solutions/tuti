@@ -7,7 +7,6 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AnswerSources, AnswerText, AskAPerson } from "@/components/docs-answer";
 import { type DocsAssistant, DocsAssistantContext, useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref, usePortalSlug } from "@/components/portal-base";
-import { usePortalLook } from "@/components/portal-look";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -450,16 +449,14 @@ export type SupportContact = { messages: boolean; email: string | null };
 
 /**
  * "Still stuck?" at the end of an article: Ask AI (where the portal has the assistant) and a way to
- * reach the team: its contact button (Customize → Navigation), else "Contact us" where the project
- * answers messages (`support`), opening the widget's Messages when the widget is on the page (the
+ * reach the team: "Contact us" where the project answers messages (`support`), opening the widget's Messages when the widget is on the page (the
  * team's own code may add it), else an email to the support address (or the widget's Messages on a
  * page of their own). Only what's set up; nothing without any of them.
  */
 export function StillStuck({ support }: { support: SupportContact | null }) {
   const assistant = useDocsAssistant();
-  const { contact } = usePortalLook();
   const at = usePortalHref();
-  if (!assistant && !contact && !support) {
+  if (!assistant && !support) {
     return null;
   }
   return (
@@ -473,12 +470,7 @@ export function StillStuck({ support }: { support: SupportContact | null }) {
           Ask AI
         </Button>
       )}
-      {contact ? (
-        <a href={contact.url} className={buttonVariants({ size: "sm" })}>
-          {contact.label || "Contact us"}
-        </a>
-      ) : (
-        support && (
+      {support && (
           <a
             href={support.email ? `mailto:${support.email}` : at("/widget?tab=messages")}
             {...(!support.email && { target: "_blank", rel: "noopener" })}
@@ -493,7 +485,6 @@ export function StillStuck({ support }: { support: SupportContact | null }) {
           >
             Contact us
           </a>
-        )
       )}
     </section>
   );

@@ -288,7 +288,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   with three or more. On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
   the current part's navigation (the docs' tree, the boards) and the team's
-  links and contact button, which the header shows only from tablet width. The header and the part's row stay at the top as
+  links, which the header shows only from tablet width. The header and the part's row stay at the top as
   the page scrolls, phones included (`PortalTop`; their height is `--portal-header-height`).
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
   (not beside a tab's overview, whose cards are its collections: there the

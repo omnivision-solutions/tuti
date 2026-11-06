@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default async function Home() {
-  // Signed in, "Start free" goes to the app rather than sign-up.
+  // Signed in, "Start free" is "Open app", to the app rather than sign-up.
   const start = (await getSession()) ? "/app" : "/sign-up";
   const docs = await docsUrl();
 

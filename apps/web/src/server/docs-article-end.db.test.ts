@@ -6,8 +6,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { StillStuck } from "@/components/docs-assistant";
 import { DocsAssistantContext } from "@/components/docs-assistant-context";
-import { LookContext } from "@/components/portal-look";
-import { DEFAULT_LOOK } from "@/lib/portal-look";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { createProject, signUp } from "@/test/helpers";
 
@@ -161,7 +159,7 @@ test("related follows an article's sections as they're embedded again, and leave
   expect((await end("sso", "one")).related).toEqual([]);
 });
 
-test("“Still stuck?” offers only what's set up: nothing without the assistant, a contact button or messages answered, Ask AI with the assistant, the contact button alone without", async () => {
+test("“Still stuck?” offers only what's set up: nothing without the assistant or messages answered, Ask AI with the assistant, Contact us where messages are answered", async () => {
   const stillStuck = (support: Parameters<typeof StillStuck>[0]["support"] = null) => createElement(StillStuck, { support });
   expect(renderToStaticMarkup(stillStuck())).toBe("");
   const assistant = { ask: () => {}, open: () => {}, continueWith: () => {} };
@@ -169,19 +167,12 @@ test("“Still stuck?” offers only what's set up: nothing without the assistan
   expect(html).toContain("Still stuck?");
   expect(html).toContain("Ask AI");
   expect(html).not.toContain("Contact us");
-  // A contact button and no assistant: the button alone.
-  const look = { ...DEFAULT_LOOK, contact: { label: "", url: "https://acme.example/contact" } };
-  const contactOnly = renderToStaticMarkup(createElement(LookContext, { value: look }, stillStuck()));
+  // Messages answered and no assistant: "Contact us" alone, an email to the address, else the widget's Messages.
+  const contactOnly = renderToStaticMarkup(stillStuck({ messages: true, email: "support@acme.example" }));
   expect(contactOnly).toContain("Still stuck?");
-  expect(contactOnly).toContain('href="https://acme.example/contact"');
-  expect(contactOnly).toContain("Contact us");
+  expect(contactOnly).toContain('href="mailto:support@acme.example"');
   expect(contactOnly).not.toContain("Ask AI");
-  // Messages answered: "Contact us", an email to the address, else the widget's Messages; the team's contact button in its place.
-  expect(renderToStaticMarkup(stillStuck({ messages: true, email: "support@acme.example" }))).toContain('href="mailto:support@acme.example"');
   expect(renderToStaticMarkup(stillStuck({ messages: true, email: null }))).toContain('href="/widget?tab=messages"');
-  const both = renderToStaticMarkup(createElement(LookContext, { value: look }, stillStuck({ messages: true, email: "support@acme.example" })));
-  expect(both).toContain('href="https://acme.example/contact"');
-  expect(both).not.toContain("mailto:");
 });
 
 test("“Contact us” is where the project answers messages: Messages in the widget, and its email address, the team's own once forwarding works", async () => {

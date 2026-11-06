@@ -34,6 +34,15 @@ export const SIGNED_WINDOW_SECONDS = 60 * 60;
 /** Only the reader's browser may keep a file, and not past a window: no shared cache serves it after its URL expires. */
 const PRIVATE_CACHE = `private, max-age=${SIGNED_WINDOW_SECONDS}`;
 
+/** Upload limits in megabytes, each overridable by its env var: per image (the team's, readers'), per file, per project. */
+const MEDIA_LIMITS_MB = { MEDIA_MAX_IMAGE_MB_TEAM: 10, MEDIA_MAX_IMAGE_MB_USER: 5, MEDIA_MAX_FILE_MB_TEAM: 25, MEDIA_PROJECT_QUOTA_MB: 1024 };
+
+/** One of the upload limits, in bytes. */
+export function mediaLimit(name: keyof typeof MEDIA_LIMITS_MB): number {
+  const value = Number(process.env[name]);
+  return (Number.isFinite(value) && value > 0 ? value : MEDIA_LIMITS_MB[name]) * 1024 * 1024;
+}
+
 /** The configured storage, or null when uploads aren't set up on this server. */
 export function mediaStorage(): MediaStorage | null {
   const env = process.env;

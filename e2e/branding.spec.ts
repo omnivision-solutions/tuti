@@ -110,10 +110,6 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await links.getByLabel("Footer link 1 label").fill("Privacy");
   await links.getByLabel("Footer link 1 URL").fill("https://example.com/privacy");
   await expect(preview.getByRole("navigation", { name: "Links" }).getByRole("link", { name: "Docs" })).toBeVisible();
-  // A "Contact us" button in the header, to an email address.
-  await links.getByLabel("Goes to").fill("mailto:help@acme.example");
-  await links.getByLabel("Label", { exact: true }).fill("Talk to us");
-  await expect(preview.getByRole("banner").getByRole("link", { name: "Talk to us" })).toHaveAttribute("href", "mailto:help@acme.example");
   // Leaving with changes not saved (for another section, say) asks first.
   await rail.getByRole("link", { name: "Branding" }).click();
   const leave = owner.getByRole("alertdialog", { name: "Leave without saving?" });
@@ -131,14 +127,14 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(leave).toBeHidden();
   // Its own section in the rail isn't leaving: nothing to ask, the changes stay.
   await rail.getByRole("link", { name: "Navigation" }).click();
-  await expect(links.getByLabel("Label", { exact: true })).toHaveValue("Talk to us");
+  await expect(links.getByLabel("Header link 1 label")).toHaveValue("Docs");
   // Nor is picking it in ⌘K.
   await owner.keyboard.press("ControlOrMeta+k");
   await search.fill("customize · navigation");
   await search.press("Enter");
   await expect(owner.getByRole("dialog", { name: "Go to or do" })).toBeHidden();
   await expect(leave).toHaveCount(0);
-  await expect(links.getByLabel("Label", { exact: true })).toHaveValue("Talk to us");
+  await expect(links.getByLabel("Header link 1 label")).toHaveValue("Docs");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Navigation saved")).toBeVisible();
   await expect(preview.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" })).toBeVisible();

@@ -43,7 +43,6 @@ export async function saveBranding(projectSlug: string, _state: FormState, formD
       headerLinks: linksFrom(formData, "headerLink"),
       footerLinks: linksFrom(formData, "footerLink"),
       sidebarLinks: linksFrom(formData, "sidebarLink"),
-      ...(formData.has("contactUrl") && { contact: text("contactUrl").trim() ? { label: text("contactLabel"), url: text("contactUrl") } : null }),
     }),
     code: () => ({ customCss: text("customCss"), customHtml: text("customHtml") }),
     seo: () => ({ seoImage: text("seoImage") || null, seo: { title: text("seoTitle"), description: text("seoDescription") } }),
