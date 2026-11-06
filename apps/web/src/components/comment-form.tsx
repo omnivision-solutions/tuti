@@ -4,6 +4,7 @@ import { type Doc, readableBy } from "@tuti/content";
 import { useRouter } from "next/navigation";
 import { useActionState, useId, useRef, useState } from "react";
 
+import { votersNote } from "@/lib/format";
 import { keepingFields } from "@/lib/forms";
 import { RichEditor } from "@/components/rich-editor";
 import { useSignInHref } from "@/components/sign-in-link";
@@ -35,7 +36,7 @@ const drafts = {
 
 /**
  * `notes`: the team's form, which can write an internal note (only the team sees it) instead, or email the
- * reply to the post's `voters` (how many it would email).
+ * reply to the post's `voters` (how many it would email; "paused" while the project's email is).
  *
  * `signedIn`: the portal's public box (the team's forms leave it out). What's written in it is kept in
  * this tab till it's sent or emptied, and is back in the box when it opens again in this tab: signed out,
@@ -51,7 +52,7 @@ export function CommentForm({
   postId: string;
   placeholder?: string;
   notes?: boolean;
-  voters?: number;
+  voters?: number | "paused";
   signedIn?: boolean;
 }) {
   const router = useRouter();
@@ -70,7 +71,7 @@ export function CommentForm({
   const errorId = useId();
   // Off once nobody's left to email (after a refresh): a disabled switch isn't sent, and a voter
   // coming back later doesn't switch it on again.
-  if (emailVoters && voters === 0) {
+  if (emailVoters && (voters === 0 || voters === "paused")) {
     setEmailVoters(false);
   }
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
@@ -151,8 +152,13 @@ export function CommentForm({
             {/* A note is never emailed. */}
             {!internal && (
               <label className="flex items-center gap-2">
-                <Switch name="emailVoters" checked={emailVoters} disabled={voters === 0} onChange={(event) => setEmailVoters(event.target.checked)} />
-                Email voters <span className="text-muted-foreground">({voters === 0 ? "nobody to email" : voters === 1 ? "1 person" : `${voters} people`})</span>
+                <Switch
+                  name="emailVoters"
+                  checked={emailVoters}
+                  disabled={voters === 0 || voters === "paused"}
+                  onChange={(event) => setEmailVoters(event.target.checked)}
+                />
+                Email voters <span className="text-muted-foreground">({votersNote(voters)})</span>
               </label>
             )}
           </div>

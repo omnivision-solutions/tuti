@@ -228,9 +228,9 @@ test("resumed, the posts' and replies' emails the pause held aren't sent: a paus
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
   await call(updatePost, team, { number: post.number, status: "completed" });
   await call(createComment, team, { number: post.number, body: "It's out.", emailVoters: true });
-  // While it's paused, nothing promises them: the post's pages count nobody to email.
+  // While it's paused, nothing promises them: the reply form says email is paused, completing counts nobody.
   const { id: postId } = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: post.number } } });
-  expect(await votersToEmail(project.id, postId)).toBe(0);
+  expect(await votersToEmail(project.id, postId)).toBe("paused");
   expect(await emailedOnCompletion(project.id, [postId])).toEqual(new Map());
 
   expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});

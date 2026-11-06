@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, etaOnPortal, etaToast, firstLine, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
+import { asking, askingTotal, etaOnPortal, etaToast, firstLine, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);
@@ -107,4 +107,11 @@ test("a post's ETA is on the portal from this month on, until it's completed or 
   expect(etaToast("2027-03", "CLOSED", now)).toBe("ETA: March 2027");
   expect(etaToast("2027-03", "COMPLETED", now)).toBe("ETA: March 2027");
   expect(etaToast("2026-10", "PLANNED", now)).toBe("ETA: October 2026");
+});
+
+test("Email voters says who it reaches, and that the project's email is paused rather than that nobody voted", () => {
+  expect(votersNote(40)).toBe("40 people");
+  expect(votersNote(1)).toBe("1 person");
+  expect(votersNote(0)).toBe("nobody to email");
+  expect(votersNote("paused")).toBe("your project's email is paused");
 });
