@@ -78,9 +78,10 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
       const { left, top, width, height } = chip.getBoundingClientRect();
       // Top to bottom, as painted.
       const stack = document.elementsFromPoint(left + width / 2, top + height / 2);
-      return { under: top + height / 2 < header.getBoundingClientRect().bottom, behind: stack.indexOf(header) < stack.findIndex((element) => chip.contains(element)) };
+      return { under: top + height / 2 < header.getBoundingClientRect().bottom, behind: stack.includes(header) && stack.indexOf(header) < stack.findIndex((element) => chip.contains(element)) };
     });
   expect(underHeader).toEqual({ under: true, behind: true });
+  await checkpoint(owner, "chips-under-header", { fullPage: false });
   await owner.evaluate(() => window.scrollTo(0, 0));
   await owner.setViewportSize({ width: 1280, height: 720 });
   await checkpoint(owner, "chips-collapsed", { fullPage: false });
