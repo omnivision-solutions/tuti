@@ -22,7 +22,7 @@ import { z } from "zod";
 
 import { canActIn } from "./membership";
 import { lastingImage } from "./media-urls";
-import { actsIn, getAccountSession, getSession } from "./session";
+import { actsIn, getAccountSession, getSession, onTeam } from "./session";
 
 /**
  * Image uploads, straight from the browser to media storage:
@@ -81,7 +81,7 @@ export async function createUpload(
   }
 
   const userId = session.user.id;
-  const isTeam = await prisma.teamMember.findFirst({ where: { projectId: project.id, userId }, select: { id: true } });
+  const isTeam = await onTeam(project.id, userId);
   // Files go into articles, which only the team writes.
   if (attachment && !isTeam) {
     return { error: "Only the team can attach files" };

@@ -6,6 +6,8 @@ import { proxy } from "./proxy";
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
 vi.mock("@/server/portal-redirects", () => ({ redirectFor: async () => null }));
 vi.mock("@/server/portal-access", () => ({ portalVisitor: async () => "public", previewTokenFor: async () => false, PREVIEW_READER_COOKIE: "tuti_preview_reader" }));
+// Nobody's signed in either (loading sessions loads the auth config, which needs a server's settings).
+vi.mock("@/server/session", () => ({}));
 // No portal is under a path of a site, or has an address of its own, here (see site-mount.db.test.ts).
 vi.mock("@/server/custom-domains", async (original) => {
   const { portalUrl } = await import("@/lib/hosts");

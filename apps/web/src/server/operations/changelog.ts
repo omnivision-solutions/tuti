@@ -25,6 +25,7 @@ import { author, authorId, saving } from "./create";
 import { aiOrRefuse } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectPortal, projectSlug } from "./read";
+import { onTeam } from "../session";
 
 /** Changelog entries (Phase 8): drafts the team writes, published on the portal's /changelog. */
 
@@ -93,12 +94,9 @@ async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entry
   };
 }
 
-/** API keys are the team's; people are when they're on the project's team. Only the team sees drafts. */
+/** API keys are the team's; people are when they're on the project's team (onTeam: never with a portal's session). Only the team sees drafts. */
 export async function isTeam(actor: Actor, projectId: string): Promise<boolean> {
-  if (actor.kind === "apiKey") {
-    return true;
-  }
-  return (await prisma.teamMember.count({ where: { projectId, userId: actor.userId } })) > 0;
+  return actor.kind === "apiKey" || onTeam(projectId, actor.userId);
 }
 
 /** An entry as someone off the team reads it: only its public posts (post-visibility.ts), as the portal lists them. */

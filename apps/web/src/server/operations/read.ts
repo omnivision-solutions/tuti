@@ -164,18 +164,19 @@ export const listComments = defineOperation({
     const ofTeam = (await actorReader(actor, projectId)) === null;
     const select = { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true } } } as const;
     const [comments, notes, team] = await Promise.all([
-      prisma.comment.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select }),
+      prisma.comment.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select: { ...select, asReader: true } }),
       ofTeam ? prisma.postNote.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select }) : [],
       prisma.teamMember.findMany({ where: { projectId }, select: { userId: true } }),
     ]);
     const teamIds = new Set(team.map((m) => m.userId));
     return {
       // The team's notes between them, in order.
-      comments: [...comments.map((c) => ({ ...c, internal: false })), ...notes.map((n) => ({ ...n, internal: true }))]
+      comments: [...comments.map((c) => ({ ...c, internal: false })), ...notes.map((n) => ({ ...n, internal: true, asReader: false }))]
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
         .map((c) => ({
           id: c.id,
-          author: { name: c.author.name, team: teamIds.has(c.author.id) },
+          // A team member's comment written with a portal's session is a reader's (signedInAsReader).
+          author: { name: c.author.name, team: teamIds.has(c.author.id) && !c.asReader },
           body: c.body,
           content: displayDoc(c),
           createdAt: c.createdAt.toISOString(),

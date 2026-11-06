@@ -63,13 +63,16 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
 const handOverPlaceholdersLogged = (userId: string) =>
   handOverOnVerified(userId).catch((error: unknown) => log.error("Handing an import's placeholders over failed", { error, userId }));
 
-/** What a portal's session may do on its portal with Better Auth's own endpoints: be read, sign out, and its account page's rename and verification email. */
-const PORTAL_SESSION_PATHS = new Set(["/get-session", "/sign-out", "/send-verification-email", "/update-user"]);
+/**
+ * What a portal's session may do on its portal with Better Auth's own endpoints: be read, sign out, and its account page's
+ * verification email. Nothing of the account: its name is changed on the app (the portal's account page links there).
+ */
+const PORTAL_SESSION_PATHS = new Set(["/get-session", "/sign-out", "/send-verification-email"]);
 
 /**
  * Every auth request, auth.api.getSession's included: a session cookie is left out, as if there were none, unless its
  * session works here (sessionWorksOn: the app's, or this portal's own) and, for a portal's, the endpoint is one it may
- * use (PORTAL_SESSION_PATHS; renaming only). Sessions from before they were bound (boundTo null) work nowhere.
+ * use (PORTAL_SESSION_PATHS). Sessions from before they were bound (boundTo null) work nowhere.
  */
 async function withoutSessionBoundElsewhere(ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0]) {
   const name = ctx.context.authCookies.sessionToken.name;
@@ -78,8 +81,7 @@ async function withoutSessionBoundElsewhere(ctx: Parameters<Parameters<typeof cr
     return;
   }
   const session = await prisma.session.findUnique({ where: { token }, select: { boundTo: true } });
-  const portalMay = PORTAL_SESSION_PATHS.has(ctx.path) && (ctx.path !== "/update-user" || Object.keys(ctx.body ?? {}).every((key) => key === "name"));
-  if (!session || ((session.boundTo === "app" || portalMay) && (await sessionWorksOn(session.boundTo, ctx.headers!.get("host"))))) {
+  if (!session || ((session.boundTo === "app" || PORTAL_SESSION_PATHS.has(ctx.path)) && (await sessionWorksOn(session.boundTo, ctx.headers!.get("host"))))) {
     return;
   }
   // Every copy, its name read as Better Auth reads it (better-call's parseCookies: trimmed, up to the first "=").

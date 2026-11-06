@@ -35,6 +35,12 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await bo.getByRole("button", { name: "Account" }).click();
   await bo.getByRole("menuitem", { name: "Account settings" }).click();
   await bo.waitForURL("**/account");
+  // His name, read only: it's his Tuti account's, changed on the app.
+  const profile = bo.getByRole("region", { name: "Profile" });
+  await expect(profile).toContainText("Bo");
+  await expect(profile.getByRole("textbox")).toHaveCount(0);
+  await expect(profile.getByRole("link", { name: "Change your name in your Tuti account" })).toHaveAttribute("href", `${APP_URL}/app/account`);
+  await checkpoint(bo, "portal-account-profile");
   await expect(bo.getByRole("region", { name: "My posts" }).getByRole("link")).toHaveText(["Export invoices"]);
   await expect(bo.getByRole("region", { name: "My votes" }).getByRole("link")).toHaveText(["Offline mode", "Dark mode"]);
   await bo.getByRole("region", { name: "My votes" }).getByRole("link", { name: "Dark mode" }).click();

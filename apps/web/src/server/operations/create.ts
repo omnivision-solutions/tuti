@@ -11,6 +11,7 @@ import { emitEvent } from "../events";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { actorPostViewer, fromApiVisibility, VISIBILITIES } from "../post-visibility";
 import { findVisiblePost, postNumber, postSummarySelect, projectPortal, summary } from "./read";
+import { onTeam, signedInAsReader } from "../session";
 
 /** Longest plain text a post or comment may have (rich content is capped by size too). */
 export const MAX_TEXT_LENGTH = 5000;
@@ -188,14 +189,14 @@ export const createComment = defineOperation({
       throw new OperationError(403, "forbidden", teamOnly);
     }
     const userId = await authorId(context, input.author);
-    if (teamOnly && context.actor.kind !== "apiKey" && !(await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } }))) {
+    if (teamOnly && context.actor.kind !== "apiKey" && !(await onTeam(projectId, userId))) {
       throw new OperationError(403, "forbidden", teamOnly);
     }
     const portal = await projectPortal(projectId);
     if (input.internal) {
       // Whether its author is on the team now, as comments.list says it (a key's creator may have left): read
       // before saving, so a failure here can't follow a saved note (a retry would save it twice).
-      const member = await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } });
+      const member = await onTeam(projectId, userId);
       // A note: its own table, so nothing that reads comments shows it; no count, no webhook.
       const note = await saving(() =>
         prisma.$transaction(async (tx) => {
@@ -207,15 +208,17 @@ export const createComment = defineOperation({
           return created;
         }),
       );
-      return { id: note.id, author: { name: note.author.name, team: !!member }, body: note.body, content: displayDoc(note), createdAt: note.createdAt.toISOString(), internal: true as const };
+      return { id: note.id, author: { name: note.author.name, team: member }, body: note.body, content: displayDoc(note), createdAt: note.createdAt.toISOString(), internal: true as const };
     }
 
+    // Written with a portal's session: a reader's, never shown as the team's, whoever wrote it.
+    const asReader = await signedInAsReader(userId);
     const comment = await saving(() =>
       prisma.$transaction(async (tx) => {
         const created = await tx.comment.create({
           // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't).
           // Not for sample content (Home's "Add sample content"): no webhook, and its voters aren't emailed.
-          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, ...(input.emailVoters && !post.sample && { votersEmailDueAt: new Date() }) },
+          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, ...(input.emailVoters && !post.sample && { votersEmailDueAt: new Date() }) },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
         });
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });
@@ -223,10 +226,10 @@ export const createComment = defineOperation({
         return created;
       }),
     );
-    const team = await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } });
+    const team = await onTeam(projectId, userId);
     const created = {
       id: comment.id,
-      author: { name: comment.author.name, team: !!team },
+      author: { name: comment.author.name, team },
       body: comment.body,
       content: displayDoc(comment),
       createdAt: comment.createdAt.toISOString(),

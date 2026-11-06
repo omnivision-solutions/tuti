@@ -17,6 +17,8 @@ export type CommentView = {
   author: { id: string; name: string; image: string | null };
   /** An internal note: only the team sees it (the team's view only ever has these). */
   internal?: boolean;
+  /** Written with a portal's session (server/session.ts, signedInAsReader): not the team's, even if its author is on it. */
+  asReader?: boolean;
 };
 
 /** A change of the post's status, in its activity; who made it and how many were emailed only in the team's view. */
@@ -37,6 +39,7 @@ export function CommentList({
   events?: StatusChangeView[];
   mediaUrls?: MediaUrls | null;
 }) {
+  const byTeam = (comment: CommentView) => teamUserIds.has(comment.author.id) && !comment.asReader;
   if (comments.length === 0 && events.length === 0) {
     return <p className="text-sm text-muted-foreground">No comments yet.</p>;
   }
@@ -65,7 +68,7 @@ export function CommentList({
             key={item.comment.id}
             className={cn(
               "flex gap-3",
-              item.comment.internal ? "-mx-2 rounded-lg bg-highlight/40 p-2" : teamUserIds.has(item.comment.author.id) && "-mx-2 rounded-lg bg-primary/8 p-2",
+              item.comment.internal ? "-mx-2 rounded-lg bg-highlight/40 p-2" : byTeam(item.comment) && "-mx-2 rounded-lg bg-primary/8 p-2",
             )}
           >
             <Avatar className="size-8">
@@ -75,7 +78,7 @@ export function CommentList({
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-medium">{item.comment.author.name}</span>
-                {teamUserIds.has(item.comment.author.id) && <Badge variant="secondary">Team</Badge>}
+                {byTeam(item.comment) && <Badge variant="secondary">Team</Badge>}
                 {item.comment.internal && <Badge variant="outline">Internal note</Badge>}
                 <time dateTime={item.comment.createdAt.toISOString()} className="text-xs text-muted-foreground">
                   {timeAgo(item.comment.createdAt)}

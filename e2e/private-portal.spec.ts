@@ -77,12 +77,12 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   expect(llms.headers()["cache-control"]).toBe("private, no-store");
   await checkpoint(sam, "portal-private-sso-user");
 
-  // So does the team, with their Tuti account.
+  // Signed in on the portal, the team reads it as anyone else would: only as one of its readers (Customize's preview
+  // shows it to them). Whoever runs a portal's site sees its sessions, so a session started there is never the team's.
   await owner.goto(`${portalUrl(slug)}/sign-in?next=%2Froadmap`);
   await owner.getByRole("link", { name: "Continue with your Tuti account" }).click();
   await owner.getByRole("button", { name: "Continue as Olive Owner" }).click();
-  await expect(owner).toHaveURL(`${portalUrl(slug)}/roadmap`);
-  await expect(owner.getByRole("heading", { name: "Roadmap" })).toBeVisible();
+  await expect(owner.getByText(`Acme is private, and ${owner.email} doesn't have access.`, { exact: false })).toBeVisible();
 });
 
 test("the team lets someone outside it read the private portal by email: they're emailed, sign in with a link and read it", async ({ browser }, testInfo) => {

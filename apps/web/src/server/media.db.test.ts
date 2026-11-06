@@ -138,6 +138,15 @@ describe("limits", () => {
     });
   });
 
+  test("on its own project's portal, a team member's session uploads as a reader's does", async () => {
+    actAs(owner);
+    await prisma.session.updateMany({ where: { userId: owner.id }, data: { boundTo: project.id } });
+    request.host = `${project.slug}.localhost:3100`;
+    expect(await createUpload(project.slug, { type: "image/png", size: 5 * MB + 1 })).toEqual({ error: "Images can be up to 5 MB" });
+    expect(await createUpload(project.slug, { type: "application/pdf", size: 1000, name: "notes.pdf" })).toEqual({ error: "Only the team can attach files" });
+    request.host = "";
+  });
+
   test("limits can be changed with env vars", async () => {
     vi.stubEnv("MEDIA_MAX_IMAGE_MB_USER", "1");
     expect(await createUpload(project.slug, { type: "image/png", size: MB + 1 })).toEqual({ error: "Images can be up to 1 MB" });

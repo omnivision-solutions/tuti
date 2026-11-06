@@ -3,6 +3,7 @@ import { planIncludes, readerEntriesFor } from "@tuti/shared";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
+import type { Session } from "@/lib/auth";
 import { inGroup, storedRule } from "@/lib/group-conditions";
 import { PREVIEW } from "@/lib/portal-base";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
@@ -13,7 +14,7 @@ import type { PostViewer } from "./post-visibility";
 import { previewUser } from "@/lib/preview-session";
 import { widgetUser } from "@/lib/widget-session";
 
-import { sessionFrom, sessionIn } from "./session";
+import { onTeam, sessionFrom, sessionIn } from "./session";
 
 /**
  * Who may read a project's portal (Settings → Access). Public: anyone. Private: only
@@ -36,12 +37,15 @@ export async function canReadPortal(where: { id: string } | { slug: string }, us
   return !!userId && (await isPrivateReader(project, userId));
 }
 
-/** On the project's team, or, on a plan with private portals, signed in by its SSO or one of its readers (with that email verified). */
-async function isPrivateReader(project: { id: string; plan: Plan }, userId: string): Promise<boolean> {
+/**
+ * On the project's team (onTeam: never with a portal's session), or, on a plan with private portals, signed in by its SSO
+ * or one of its readers (with that email verified). `session`: the request's, for proxy.ts.
+ */
+async function isPrivateReader(project: { id: string; plan: Plan }, userId: string, session?: Session | null): Promise<boolean> {
   const projectId = project.id;
   const readers = planIncludes(project.plan, "privatePortal");
   const [member, sso, reader] = await Promise.all([
-    prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
+    onTeam(projectId, userId, session),
     readers ? prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { id: true } }) : null,
     readers ? invitedReader(projectId, userId) : null,
   ]);
@@ -72,7 +76,7 @@ export async function portalVisitor(slug: string, headers: Headers, preview?: st
     return "public";
   }
   const session = await sessionFrom(headers);
-  if (session && (await isPrivateReader(project, session.user.id))) {
+  if (session && (await isPrivateReader(project, session.user.id, session))) {
     return "allowed";
   }
   return (await previewReader(project.id, preview)) ? "allowed" : "refused";
@@ -135,7 +139,7 @@ export async function readableProject(slug: string): Promise<{ id: string } | nu
 
 /**
  * Who's reading, for what of the docs they may read (see lib/read-access.ts): null for the project's
- * team (everything); else whether they're signed in, and the keys of the groups they're in as the
+ * team (everything; onTeam: never with a portal's session); else whether they're signed in, and the keys of the groups they're in as the
  * project's user (by their properties, see lib/group-conditions.ts): the one
  * its SSO signed them in as, or, signed in another way, the ones with their address once it's
  * verified (any of them puts them in a group). None for everyone else, and none on a plan without
@@ -146,7 +150,7 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
     return SIGNED_OUT;
   }
   const [member, account, groups, project] = await Promise.all([
-    prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
+    onTeam(projectId, userId),
     prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } }),
     prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true, match: true } }),
     prisma.project.findUnique({ where: { id: projectId }, select: { plan: true } }),

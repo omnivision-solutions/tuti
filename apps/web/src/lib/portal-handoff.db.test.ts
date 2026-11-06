@@ -8,8 +8,11 @@ import { portalPreview } from "@/server/customize";
 import { setAutopilotEmails } from "@/server/github";
 import { setAvatar } from "@/server/media";
 import { askAPerson } from "@/server/operations/docs-escalate";
-import { mayRead } from "@/server/portal-access";
-import { createPost } from "@/server/posts";
+import { call } from "@/server/operations/run";
+import { getChangelogEntry } from "@/server/operations/changelog";
+import { listComments } from "@/server/operations/read";
+import { currentPostViewer, mayRead, portalVisitor, readerOf } from "@/server/portal-access";
+import { addComment, createPost } from "@/server/posts";
 import { findSimilarPosts } from "@/server/similar-posts";
 import { widgetIdeas } from "@/server/widget";
 import { answerArticle } from "@/server/docs-readers";
@@ -226,7 +229,9 @@ test("a session a portal on its team's own site starts doesn't work on the app h
       }),
     );
   expect((await api("/update-user", { image: "https://tracker.example/pixel.png" })).status).toBe(401);
-  expect((await api("/update-user", { name: "Ada L." })).status).toBe(200);
+  // Nor her name, which is her account's everywhere: that's changed on the app.
+  expect((await api("/update-user", { name: "Ada L." })).status).toBe(401);
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: ada.id } })).name).toBe("Ada");
   expect((await api("/list-sessions")).status).toBe(404);
   expect((await api("/revoke-session", { token: "x" })).status).toBe(404);
   expect((await api("/revoke-sessions", {})).status).toBe(404);
@@ -268,4 +273,68 @@ test("a session from before sessions were bound works nowhere", async () => {
   expect(await getSession()).toBeNull();
   request.host = portalHost();
   expect(await getSession()).toBeNull();
+});
+
+test("on her own project's portal, a team member's session is a reader's: none of the team's powers there", async () => {
+  const own = await createProject(ada);
+  await prisma.board.create({ data: { projectId: own.id, slug: "internal", name: "Internal", postVisibility: "TEAM" } });
+  const post = await prisma.post.create({ data: { projectId: own.id, boardId: own.boards[0]!.id, authorId: ada.id, number: 1, title: "Dark mode" } });
+  await prisma.project.update({ where: { id: own.id }, data: { postCount: 1 } });
+  await prisma.changelogEntry.create({ data: { projectId: own.id, number: 1, title: "Not out yet" } });
+  const context = { actor: { kind: "user" as const, userId: ada.id }, projectId: own.id };
+  const comment = (fields: Record<string, string> = {}) => {
+    const form = new FormData();
+    form.set("postId", post.id);
+    form.set("body", "On it");
+    for (const [name, value] of Object.entries(fields)) {
+      form.set(name, value);
+    }
+    return addComment({}, form);
+  };
+  const teamBoardPost = () => {
+    const form = new FormData();
+    form.set("projectSlug", own.slug);
+    form.set("boardSlug", "internal");
+    form.set("title", "Only for us");
+    return createPost({}, form);
+  };
+  const powers = async () => ({
+    seesTeamPosts: (await currentPostViewer(own.id)).team,
+    readsEveryArticle: (await readerOf(own.id, ada.id)) === null,
+    readsDrafts: await call(getChangelogEntry, context, { number: 1 }).then(() => true, () => false),
+    note: await comment({ internal: "on" }),
+    emailsVoters: await comment({ emailVoters: "on" }),
+    postsOnTeamBoard: await teamBoardPost(),
+  });
+
+  // On the app, signed in there, she's the team.
+  request.host = APP_HOST;
+  expect(await powers()).toEqual({ seesTeamPosts: true, readsEveryArticle: true, readsDrafts: true, note: {}, emailsVoters: {}, postsOnTeamBoard: {} });
+
+  // Signed in on the portal (the same account), she's a reader there.
+  await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: own.id } });
+  request.host = portalHost(own.slug);
+  expect(await powers()).toEqual({
+    seesTeamPosts: false,
+    readsEveryArticle: false,
+    readsDrafts: false,
+    note: { error: "Only your team can write internal notes" },
+    emailsVoters: { error: "Only your team can email a post's voters" },
+    postsOnTeamBoard: { error: "Board not found" },
+  });
+  // Her comment there is a reader's: not shown as the team's, there or on the app.
+  expect(await comment()).toEqual({});
+  const shownAsTeam = async () => (await call(listComments, context, { number: 1 })).comments.map((c) => c.author.team);
+  expect(await shownAsTeam()).toEqual([true, false]);
+  request.host = APP_HOST;
+  await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: "app" } });
+  // On the app the team's note is there too: her reply, her note, then the portal's comment.
+  expect(await shownAsTeam()).toEqual([true, true, false]);
+
+  // A private portal is hers to read only as one of its readers would be.
+  await prisma.project.update({ where: { id: own.id }, data: { portalAccess: "PRIVATE" } });
+  await prisma.session.updateMany({ where: { userId: ada.id }, data: { boundTo: own.id } });
+  request.host = portalHost(own.slug);
+  expect(await mayRead(own.id)).toBe(false);
+  expect(await portalVisitor(own.slug, new Headers({ host: portalHost(own.slug), cookie: ada.cookie }))).toBe("refused");
 });
