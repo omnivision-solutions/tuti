@@ -651,10 +651,9 @@ export function widgetLoader(portalTemplate: string): string {
       : tabQuery(options && options.tab);
     // Asked by message, never by reloading (nothing in the panel is lost, an answer still coming), once it's listening:
     // the latest ask waits for that.
-    if (ask !== null) {
-      pendingAsk = { type: ${JSON.stringify(WIDGET_ASK_MESSAGE)}, ask: ask, turn: options.turn && typeof options.turn === "object" ? options.turn : null };
-      if (listening) sendAsk();
-    }
+    // Opened for something else, an ask still waiting isn't wanted any more.
+    pendingAsk = ask === null ? null : { type: ${JSON.stringify(WIDGET_ASK_MESSAGE)}, ask: ask, turn: options.turn && typeof options.turn === "object" ? options.turn : null };
+    if (pendingAsk && listening) sendAsk();
     var src = portal + "/widget" + (query || "");
     // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
     if (!frame) {
@@ -721,6 +720,8 @@ export function widgetLoader(portalTemplate: string): string {
 
   // \`leaveFocus\`: closed for a modal of the page's, where focus goes instead.
   function close(leaveFocus) {
+    // Closed, nor is an ask still waiting for the panel.
+    pendingAsk = null;
     if (!opened) return;
     opened = false;
     animate(false);

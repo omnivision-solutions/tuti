@@ -442,6 +442,19 @@ test("an ask while the panel loads another page waits for that page to listen, n
   expect(asked().map(([data]) => (data as { ask: string }).ask)).toEqual(["How do refunds work?"]);
 });
 
+test("an ask still waiting for the panel is dropped once it's closed, or opened for something else", () => {
+  const page = loadWidget({});
+  const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  const asked = () => frameWindow().postMessage.mock.calls.filter(([data]) => (data as { type?: string }).type === "tuti:ask");
+  page.Tuti.open({ ask: "How do I export?" });
+  page.Tuti.close();
+  page.Tuti.open({ ask: "And import?" });
+  page.Tuti.open({ tab: "messages" });
+  loaded(page);
+  page.message(frameWindow(), { type: "tuti:ask-ready", href: "https://acme.tuti.example/widget?tab=messages" });
+  expect(asked()).toEqual([]);
+});
+
 test("a panel that went to another page itself (before it was ready, say) still takes asks once its new page listens", () => {
   const page = loadWidget({});
   const frameWindow = () => page.frame!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
