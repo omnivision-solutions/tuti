@@ -26,27 +26,33 @@ const REPLY_DAYS = 30;
 const MIN_REPLIES = 5;
 const REPLY_CACHE_MS = 5 * 60 * 1000;
 
-// ponytail: kept in each server process's memory (one number per project); share it (a stored value a job refreshes) if the processes multiply.
-const replyCache = new Map<string, { until: number; ms: Promise<number | null> }>();
+/**
+ * `work`, kept for five minutes per project: every widget's Home and Messages ask, and the answers change slowly. The
+ * promise, so requests at the same moment share one working out; a failed one isn't kept.
+ */
+// ponytail: kept in each server process's memory (one entry per project); share it (a stored value a job refreshes) if the processes multiply.
+function perProject<T>(work: (projectId: string, now: Date) => Promise<T>) {
+  const cache = new Map<string, { until: number; value: Promise<T> }>();
+  return (projectId: string, now = new Date()): Promise<T> => {
+    const cached = cache.get(projectId);
+    if (cached && now.getTime() < cached.until) {
+      return cached.value;
+    }
+    const entry = { until: now.getTime() + REPLY_CACHE_MS, value: work(projectId, now) };
+    cache.set(projectId, entry);
+    entry.value.catch(() => cache.get(projectId) === entry && cache.delete(projectId));
+    return entry.value;
+  };
+}
 
 /**
  * How long the team usually takes to answer, in milliseconds: the median, over conversations started
  * in the last 30 days (spam and sample content left out), of the time from the user's first message to the team's first
- * reply after it (notes aren't replies; nor is the AI). Null with fewer than five answered. Every
- * widget's Home asks, and the answer changes slowly: worked out once every five minutes per project.
+ * reply after it (notes aren't replies; nor is the AI). Null with fewer than five answered. Worked out once every five
+ * minutes per project.
  */
 // ponytail: unanswered conversations don't count, so a team that leaves many unanswered looks quicker than it is; count them as open-ended if that matters.
-export async function usualReplyMs(projectId: string, now = new Date()): Promise<number | null> {
-  const cached = replyCache.get(projectId);
-  if (cached && now.getTime() < cached.until) {
-    return cached.ms;
-  }
-  // The promise, so requests at the same moment share one working out; a failed one isn't kept.
-  const entry = { until: now.getTime() + REPLY_CACHE_MS, ms: medianFirstReplyMs(projectId, now) };
-  replyCache.set(projectId, entry);
-  entry.ms.catch(() => replyCache.get(projectId) === entry && replyCache.delete(projectId));
-  return entry.ms;
-}
+export const usualReplyMs = perProject(medianFirstReplyMs);
 
 // Conversations by project_id (with spam, its index's start); each one's messages by conversation and time, its index.
 async function medianFirstReplyMs(projectId: string, now: Date): Promise<number | null> {
@@ -65,28 +71,32 @@ async function medianFirstReplyMs(projectId: string, now: Date): Promise<number 
   return row && row.median !== null && Number(row.replies) >= MIN_REPLIES ? row.median * 1000 : null;
 }
 
+/** How many replies each of the team sent in the last 30 days (not notes, nor in spam or sample conversations), by their id. */
+const repliesSent = perProject(async (projectId, now) => {
+  const replies = await prisma.conversationMessage.groupBy({
+    by: ["authorId"],
+    // Through the project's conversations: messages are indexed by conversation and time, not by project.
+    where: { conversation: { projectId, spam: false, sample: false }, author: "TEAM", note: false, createdAt: { gte: new Date(now.getTime() - REPLY_DAYS * DAY_MS) } },
+    _count: { _all: true },
+  });
+  return new Map(replies.map((row) => [row.authorId, row._count._all]));
+});
+
 /**
  * Up to three of the team, as faces for "Send us a message" and atop Messages: who answers, so whoever sent the most
  * replies in the last 30 days (not notes, sample or spam conversations), then those with a photo, the owners, and whoever
  * joined first. Shown with photos first, so an initial doesn't sit between them.
  */
 export async function teamFaces(projectId: string, now = new Date()) {
-  const since = new Date(now.getTime() - REPLY_DAYS * DAY_MS);
-  const [members, replies] = await Promise.all([
+  const [members, sent] = await Promise.all([
     // ponytail: the whole team, sorted here; a team of hundreds would want this in SQL.
     prisma.teamMember.findMany({
       where: { projectId },
       orderBy: { createdAt: "asc" },
       select: { role: true, user: { select: { id: true, name: true, image: true } } },
     }),
-    prisma.conversationMessage.groupBy({
-      by: ["authorId"],
-      // Through the project's conversations: messages are indexed by conversation and time, not by project.
-      where: { conversation: { projectId, spam: false, sample: false }, author: "TEAM", note: false, createdAt: { gte: since } },
-      _count: { _all: true },
-    }),
+    repliesSent(projectId, now),
   ]);
-  const sent = new Map(replies.map((row) => [row.authorId, row._count._all]));
   // Replies outweigh the rest (a photo and being an owner add at most 3); Array.sort is stable, so the earliest to join wins a tie.
   const score = ({ role, user }: (typeof members)[number]) => (sent.get(user.id) ?? 0) * 4 + (user.image ? 2 : 0) + (role === "OWNER" ? 1 : 0);
   const faces = members.sort((a, b) => score(b) - score(a)).slice(0, 3).map(({ user }) => user);

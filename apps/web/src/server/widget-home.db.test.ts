@@ -238,6 +238,13 @@ test("the team's faces: whoever replied most in the last 30 days first, then tho
   await conversation(31 * DAY, MINUTE, { by: first.id });
   // Picked: second (2 replies), first (1), then the one with a photo over the owner (none). Shown: the photo first.
   expect((await teamFaces(project.id, now)).map((face) => face.id)).toEqual([pictured.id, second.id, first.id]);
+  // The replies are counted once every five minutes: after that the owner's three since put them first, and the one with a
+  // photo, who never replied, makes way.
+  for (let i = 0; i < 3; i++) {
+    await conversation(DAY, MINUTE, { by: owner.id });
+  }
+  expect((await teamFaces(project.id, new Date(now.getTime() + 4 * MINUTE))).map((face) => face.id)).toEqual([pictured.id, second.id, first.id]);
+  expect((await teamFaces(project.id, new Date(now.getTime() + 5 * MINUTE))).map((face) => face.id)).toEqual([owner.id, second.id, first.id]);
 });
 
 test("what's new to someone: announcements of the last 30 days published since they last looked, until they've seen them", async () => {
