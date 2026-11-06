@@ -73,6 +73,9 @@ test("the project switcher shows the logos from Customize → Branding, or the f
 
     await brand({ brandLogoId: logo.id, brandLogoDarkId: dark.id, brandFaviconId: favicon.id });
     expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: url(logo), logoDark: url(dark) });
+    // A wide dark logo isn't shown: the light one stays in dark mode too.
+    await brand({ brandLogoDarkId: wide.id });
+    expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: url(logo), logoDark: null });
     // A wordmark three times as wide as it's tall would be a sliver in a square: the favicon instead.
     await brand({ brandLogoId: wide.id });
     expect((await listMyProjects(owner.id))[0]).toMatchObject({ logo: url(favicon), logoDark: null });
