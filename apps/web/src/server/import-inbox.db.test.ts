@@ -229,6 +229,24 @@ test("imported again, a conversation that changed in Featurebase gets its new me
   expect((await conversations()).flatMap((c) => c.messages)).toHaveLength(after.flatMap((c) => c.messages).length);
 });
 
+test("imported again, a conversation the team closed here after Featurebase's newest message stays closed, its new message added", async () => {
+  await importInbox();
+  // A teammate replies in Featurebase; later, with no reply here, the team closes it in Tuti.
+  const csv = fake.fixtures.conversations.find((c) => c.id === "1004")!;
+  const replied = new Date(Date.now() - 43_200_000).toISOString();
+  Object.assign(csv, { lastActivityAt: replied, updatedAt: replied });
+  (csv.conversationParts as object[]).push({ object: "conversation_part", id: "p1006", partType: "admin_msg", createdAt: replied, updatedAt: replied, bodyHtml: "<p>Anything else?</p>", channel: "desktop", author: { id: "65f0000000000000000000a1", type: "admin", name: "Olive Owner" } });
+  const closed = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  await prisma.conversation.update({ where: { id: closed.id }, data: { status: "CLOSED", waitingSince: null, activeAt: new Date() } });
+  await importInbox();
+
+  expect((await conversations()).find((c) => c.id === closed.id)).toMatchObject({
+    status: "CLOSED",
+    lastMessageAt: new Date(replied),
+    messages: expect.arrayContaining([expect.objectContaining({ body: "Anything else?", author: "TEAM" })]),
+  });
+});
+
 test("an import that fails partway and is started again goes on numbering where it stopped, each conversation once", async () => {
   fake.pageSize = 1;
   // Featurebase refuses the second conversation once: the import fails there, the first saved.

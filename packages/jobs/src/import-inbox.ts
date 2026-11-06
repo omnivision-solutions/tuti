@@ -395,20 +395,22 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
 /**
  * A conversation an import brought before, read again as it changed in Featurebase: its messages after the newest one
  * brought (`since`, read under the lock) are added, nothing emailed, and it stands as they leave it (a person's new
- * message waits for a reply) unless something was said here since, which has the latest word.
+ * message waits for a reply) unless something was said or done here since (a reply, a close, a snooze), which has the latest word.
  */
 async function addMessages(tx: Tx, job: ImportJob, read: Read, users: Map<string, string>, brought: { id: string; since: Date }) {
   const messages = read.messages.filter((m) => m.createdAt > brought.since);
   if (messages.length > 0) {
-    const here = await tx.conversation.findUniqueOrThrow({ where: { id: brought.id }, select: { userId: true, status: true, waitingSince: true, lastMessageAt: true, activeAt: true, notifiedAt: true } });
+    const here = await tx.conversation.findUniqueOrThrow({ where: { id: brought.id }, select: { userId: true, status: true, waitingSince: true, lastMessageAt: true, activeAt: true, snoozedAt: true, notifiedAt: true } });
     const spoken = messages.filter((m) => !m.note);
     const latest = (a: Date | null, b: Date) => (a && a > b ? a : b);
+    // The last thing done here: a message, a close, a reopen, marking spam, a snooze.
+    const doneHere = latest(here.snoozedAt, latest(here.activeAt, here.lastMessageAt));
     await tx.conversation.update({
       where: { id: brought.id },
       data: {
-        // Where it stands moves on only when Featurebase has the latest word: a message here since is newer news.
-        ...(spoken.length > 0 &&
-          spoken.at(-1)!.createdAt > here.lastMessageAt && { ...standing(read, spoken, here.status === "OPEN" ? here.waitingSince : null), lastMessageAt: spoken.at(-1)!.createdAt }),
+        ...(spoken.length > 0 && { lastMessageAt: latest(here.lastMessageAt, spoken.at(-1)!.createdAt) }),
+        // Where it stands moves on only when Featurebase has the latest word: anything done here since is newer news.
+        ...(spoken.length > 0 && spoken.at(-1)!.createdAt > doneHere && standing(read, spoken, here.status === "OPEN" ? here.waitingSince : null)),
         activeAt: latest(here.activeAt, lastActive(read.conversation)),
         // Told of in Featurebase, as the rest of its history.
         notifiedAt: latest(here.notifiedAt, messages.at(-1)!.createdAt),
