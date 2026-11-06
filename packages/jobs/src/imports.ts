@@ -373,7 +373,8 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
       const to = linked.get(contact.id)!;
       return { externalId: contact.id, localId: "userId" in to ? to.userId : userIds.get(to.externalId)! };
     });
-    const leads = new Set(fresh.filter((contact) => contact.type === "lead").map((contact) => contact.id));
+    // Only those of their own: a lead with an id in the team's app is that app's user.
+    const leads = new Set(fresh.filter((contact) => contact.type === "lead" && !contact.userId?.trim()).map((contact) => contact.id));
     await tx.importedRecord.createMany({
       data: records.flatMap((record) => [
         { projectId: job.projectId, source: job.source, kind: "contact", ...record },

@@ -283,6 +283,8 @@ test("one person per address in a project: a customer without an id in the app w
     // Another Featurebase customer with Tobias's address, and two leads with it (anyone can type an address as a lead).
     { object: "contact", id: "65f000000000000000000004", type: "customer", name: "T. Quill", email: "e2e-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
     { object: "contact", id: "65f000000000000000000005", type: "lead", name: "Not Tobias", email: "e2e-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
+    // A lead the team's app knows: its user, as any contact with an id in the app.
+    { object: "contact", id: "65f000000000000000000009", userId: "signed-in-tobias", type: "lead", name: "Tobias", email: "e2e-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
     // Two customers new here with one address: one user.
     { object: "contact", id: "65f000000000000000000006", type: "customer", name: "Ada", email: "e2e-ada@example.com", profilePicture: null, customFields: {}, companies: [] },
     { object: "contact", id: "65f000000000000000000007", type: "customer", name: "Ada L.", email: "E2E-Ada@example.com", profilePicture: null, customFields: {}, companies: [] },
@@ -304,15 +306,21 @@ test("one person per address in a project: a customer without an id in the app w
     "signed-in-mira",
     "signed-in-tobias",
   ]);
-  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ counts: { contacts: { imported: 7 } } });
+  expect(records.get("9")).toBe(tobias);
+  expect((await call(getImport, asOwner(), {})).import).toMatchObject({ counts: { contacts: { imported: 8 } } });
 
   // A later customer with the address of a lead brought earlier is never that lead: theirs was unproven.
-  contacts.push({ object: "contact", id: "65f000000000000000000008", type: "customer", name: "A customer", email: "e2e-not-tobias@example.com", profilePicture: null, customFields: {}, companies: [] });
+  // One with the address of a user the app knows is still them, even one Featurebase had as a lead.
+  contacts.push(
+    { object: "contact", id: "65f000000000000000000008", type: "customer", name: "A customer", email: "e2e-not-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
+    { object: "contact", id: "65f00000000000000000000a", type: "customer", name: "Tobias Q.", email: "e2e-tobias@example.com", profilePicture: null, customFields: {}, companies: [] },
+  );
   await prisma.ssoIdentity.updateMany({ where: { projectId: project.id, externalId: "featurebase:65f000000000000000000005" }, data: { email: "e2e-not-tobias@example.com" } });
   await start();
   await importsSettled();
   const later = await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "contact", externalId: "65f000000000000000000008" } });
   expect(later.localId).not.toBe(records.get("5"));
+  expect((await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "contact", externalId: "65f00000000000000000000a" } })).localId).toBe(tobias);
 });
 
 test("a contact the contacts step didn't bring is brought when a page needs them; one Featurebase doesn't have is missing", async () => {
