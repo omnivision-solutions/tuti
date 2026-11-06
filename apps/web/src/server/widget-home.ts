@@ -1,4 +1,5 @@
 import { Prisma, type PostStatus, prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 
 import { postPath } from "@/lib/post-urls";
 
@@ -6,6 +7,7 @@ import type { Fresh } from "@/lib/whats-new";
 
 import { changelogSeenAt, freshSince } from "./operations/changelog-seen";
 import { docsContents, popularArticles } from "./docs-queries";
+import { supportDomain } from "./inbound";
 import { canReadPortal } from "./portal-access";
 import { ROADMAP } from "./operations/read";
 import { getSession } from "./session";
@@ -46,6 +48,11 @@ export async function usualReplyMs(projectId: string, now = new Date()): Promise
   replyCache.set(projectId, entry);
   entry.ms.catch(() => replyCache.get(projectId) === entry && replyCache.delete(projectId));
   return entry.ms;
+}
+
+/** Whether the team's replies can be emailed at all (replyRecipient's rules before a conversation): the server receives and sends email, and the project has its support address. */
+export async function repliesEmailed(projectId: string): Promise<boolean> {
+  return !!supportDomain() && emailConfigured() && !!(await prisma.mailSubdomain.findUnique({ where: { projectId }, select: { subdomain: true } }));
 }
 
 // Conversations by project_id (with spam, its index's start); each one's messages by conversation and time, its index.
