@@ -324,7 +324,7 @@ export function ArticleReview({
       {view}
       {/* One bar: while any edit waits for someone, none goes out by itself (Approve takes them all). */}
       {scheduled.length > 0 && waiting.length === 0 && (
-        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between launcher:pr-24">
           <p className="text-sm font-medium">
             <GoesOut at={scheduled[0]!.dueAt!} />
             {teammateEdit && <span className="block font-normal text-muted-foreground">Includes your team&apos;s unpublished edit: it waits for you</span>}
@@ -347,7 +347,7 @@ export function ArticleReview({
       )}
       {waiting.length > 0 && (
         // Stays at the bottom of the screen while the article scrolls.
-        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end launcher:pr-24">
           {(stopped || teammateEdit) && (
             <p className="text-sm text-muted-foreground">
               {stopped && <Stopped by={stopped.waitReason!} at={stopped.wouldHaveGoneOutAt ?? null} />}
