@@ -222,6 +222,24 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual(["acme/web"]);
   });
 
+  test("someone who can access one of an account's repositories doesn't get the others it has the app on", async () => {
+    const docs = { id: 7091, fullName: "acme/docs" };
+    const billing = { id: 7092, fullName: "acme/billing" };
+    // Acme installed the app on both; Mallory, an outside collaborator on acme/docs only, sees the
+    // installation in GitHub's /user/installations because she can access one of its repositories.
+    github.user("code-acme", [{ id: 790, account: "acme", repositories: [docs, billing] }]);
+    github.user("code-mallory", [{ id: 790, account: "acme", repositories: [docs] }]);
+    const mallory = await signUp("Mallory Outsider");
+    const theirs = await createProject(mallory);
+    actAs(mallory);
+    expect(await connect(theirs.slug, 790, "code-mallory")).toMatch(/github=connected$/);
+    // Her project's list must not name acme/billing, nor may she add it (it'd feed its pull
+    // requests, code and Verify's reads of it into her project).
+    expect.soft(listedRepositories((await connected(theirs.id))!.repositories).map((repo) => repo.fullName)).not.toContain("acme/billing");
+    expect(await add(theirs.slug, billing)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
+    expect(await included(theirs.id)).toEqual([]);
+  });
+
   test("an account with thousands of repositories lists them all", async () => {
     const many = Array.from({ length: 2_050 }, (_, i) => ({ id: 900_000 + i, fullName: `acme/repo-${i}` }));
     github.user("code-r9", [{ id: 714, account: "acme", repositories: many }]);
