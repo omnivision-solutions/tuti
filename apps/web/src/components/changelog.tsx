@@ -421,7 +421,8 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
                 : `Emailed to ${subscriberCountText(entry.subscribersSent)}.`}
           </p>
           <p>{entry.announced ? "Marked new in your widget's What's new." : "In your widget's What's new, not marked new."}</p>
-          {entry.told !== null && <p className="text-muted-foreground">{toldText(entry.told)}</p>}
+          {/* Nobody told yet (still being emailed, say): the line above says so. */}
+          {entry.told !== null && entry.told.asked + entry.told.subscribers > 0 && <p className="text-muted-foreground">{toldText(entry.told)}</p>}
         </>
       ) : entry.sample ? (
         // changelog.publish: a sample entry is never announced or emailed.

@@ -101,7 +101,8 @@ describe("published, who it told", () => {
     expect(told(1, 0)).toContain("Told 1 person who asked.");
     expect(told(0, 1)).toContain("Told 1 subscriber.");
     expect(told(0, 1)).not.toContain("who asked");
-    expect(told(0, 0)).toContain("Told 0 people who asked.");
+    // Nobody told yet (being emailed, nothing sent): no "Told" line, not "Told 0 people who asked".
+    expect(told(0, 0)).not.toContain("Told");
   });
 });
 

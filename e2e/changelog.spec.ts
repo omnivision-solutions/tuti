@@ -741,6 +741,11 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await team.goto(`/app/${slug}/changelog`);
   await expect(team.getByRole("status").filter({ hasText: "release notes" })).toHaveCount(0);
   await mergePullRequest(installationId, { number: 41, title: "Add a dark theme" });
+  // One: said in the singular.
+  await team.reload();
+  const one = team.getByRole("status").filter({ hasText: "release notes" });
+  await expect(one).toContainText("A merged pull request is waiting for release notes");
+  await expect(one).toContainText("1 merged pull request is in “Next release”, collecting until the next release.");
   await mergePullRequest(installationId, { number: 42, title: "Remember the theme" });
 
   // The list says they wait for release notes (the draft is still collecting: not ready yet), and opens it.
