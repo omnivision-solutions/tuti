@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { attachmentName, type Doc, fileExtension, isSafeLink, toPlainText, UPLOAD_FILE_TYPES } from "@tuti/content";
-import { fileName, htmlToContent, type LeftOutReason } from "@tuti/content/html";
+import { fileName, htmlText, htmlToContent, type LeftOutReason } from "@tuti/content/html";
 import { type ConversationStatus, type MessageAuthor, type Prisma, prisma } from "@tuti/db";
 import { historyKeptDays } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
@@ -37,6 +37,8 @@ const DAY_MS = 86_400_000;
 const MAX_PARTS = 500;
 /** The part repeating the conversation's start comes about a second after it: one this much later isn't the start. */
 const OPENING_MS = 60_000;
+/** A message's text at most, as a received email's is cut (apps/web operations/conversations.ts MAX_MESSAGE_LENGTH). */
+const MAX_MESSAGE_LENGTH = 10_000;
 /** As the inbox's own attachments (apps/web server/attachments.ts MAX_FILE_BYTES). */
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
@@ -224,23 +226,27 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
 /**
  * A part's HTML as the inbox's plain text (links' addresses kept after their words, list items marked), and the
  * addresses of its images and files in Featurebase's storage, which come across as attachments. Other sites' images
- * and videos aren't fetched (as inbound email doesn't): their address stays in the text, as a link's does. `media`:
- * whether it had any; `unshown`: those neither copied nor shown by their address (no safe one), for the message to count.
+ * and videos aren't fetched (as inbound email doesn't); a message that is only those shows their addresses, one with
+ * words of its own only their alt text (signature logos, icons and tracking pixels would be links otherwise). `media`:
+ * whether it had any (with an address); `unshown`: those neither copied nor shown by their address, for it to count.
  */
 async function messageText(part: FeaturebasePart): Promise<{ body: string; urls: string[]; media: boolean; unshown: number }> {
   // bodyHtml: bodyMarkdown drops images' addresses.
   const content = await htmlToContent("post", part.bodyHtml ?? "");
   if ("error" in content) {
     // Too long to be content, say: its text (bodyMarkdown, or the HTML's own) and its Featurebase files all the same.
-    const urls = [...new Set([...(part.bodyHtml ?? "").matchAll(/\b(?:src|href)="([^"]+)"/g)].map(([, url]) => decodeEntities(url!)).filter(inFeaturebaseStorage))];
-    return { body: part.bodyMarkdown?.trim() || htmlText(part.bodyHtml ?? ""), urls, media: urls.length > 0, unshown: 0 };
+    const html = await htmlText(part.bodyHtml ?? "");
+    const urls = [...new Set(html.urls.filter(inFeaturebaseStorage))];
+    return { body: (part.bodyMarkdown?.trim() || html.text).slice(0, MAX_MESSAGE_LENGTH), urls, media: urls.length > 0, unshown: 0 };
   }
-  const urls = [...new Set(content.leftOut.map((item) => item.url).filter(inFeaturebaseStorage))];
-  const outside = content.leftOut.filter((item) => !inFeaturebaseStorage(item.url));
+  // A video with no source has nothing to bring or show.
+  const media = content.leftOut.filter((item) => item.url);
+  const urls = [...new Set(media.map((item) => item.url).filter(inFeaturebaseStorage))];
+  const outside = media.filter((item) => !inFeaturebaseStorage(item.url));
   const text = toPlainText(readable(content.doc));
-  const links = [...new Set(outside.map((item) => item.url).filter(isSafeLink))].filter((url) => !text.includes(url));
-  const body = [text, ...links].filter(Boolean).join("\n");
-  return { body, urls, media: content.leftOut.length > 0, unshown: outside.filter((item) => !isSafeLink(item.url)).length };
+  const links = text ? [] : [...new Set(outside.map((item) => item.url).filter(isSafeLink))];
+  const body = (text || links.join("\n")).slice(0, MAX_MESSAGE_LENGTH);
+  return { body, urls, media: media.length > 0, unshown: text ? 0 : outside.filter((item) => !isSafeLink(item.url)).length };
 }
 
 /** The doc with each link's address after its words (unless they're the address) and list items marked, for plain text. */
@@ -276,22 +282,6 @@ function withAddresses(nodes: Node[]): Node[] {
   }
   return out;
 }
-
-const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-const decodeEntities = (text: string) =>
-  text.replace(/&(#x[\da-f]+|#\d+|\w+);/gi, (entity, name: string) =>
-    name[0] === "#" ? String.fromCodePoint(Number(name[1] === "x" || name[1] === "X" ? `0${name.slice(1)}` : name.slice(1))) : (ENTITIES[name.toLowerCase()] ?? entity),
-  );
-
-/**
- * HTML's text, for what htmlToContent refuses (too long): blocks and line breaks as new lines, tags dropped.
- * ponytail: a regex strip, not a parser; only for HTML too long to be content, where the words are what matter.
- */
-const htmlText = (html: string) =>
-  decodeEntities(html.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, "").replace(/<(br|\/p|\/div|\/li|\/h\d)\b[^>]*>/gi, "\n").replace(/<[^>]*>/g, ""))
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 
 /** Copies a file into the inbox's attachment storage (as a received email's), outside any transaction; or why not. */
 async function copyAttachment(job: ImportJob, url: string): Promise<StoredFile | { leftOut: LeftOutReason }> {

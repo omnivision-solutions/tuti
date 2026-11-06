@@ -260,15 +260,17 @@ test("a link with bold words in it gets its address once, after all its words", 
   expect(open.messages[1]!.body).toBe("See the export guide (https://docs.example.com/export).");
 });
 
-test("a part too long to be content keeps its text and its Featurebase files: the user's last message, it still needs a reply", async () => {
+test("a part too long to be content keeps its text (cut as a received email's is) and its Featurebase files: the user's last message, it still needs a reply", async () => {
   const last = (fake.fixtures.conversations[0]!.conversationParts as { bodyHtml: string; bodyMarkdown?: string }[])[4]!;
-  last.bodyHtml = `<p>${"word ".repeat(50_000).trim()}</p><p><img src="${FAKE_FEATUREBASE_FILES}/shot.png?X-Amz-Expires=3600&amp;X-Amz-Signature=abc"></p>`;
+  // Junk entities too (one past Unicode's last code point), as pasted mail has.
+  last.bodyHtml = `<p>Fish &amp; chips &#99999999; &#x110000;</p><p>${"word ".repeat(50_000).trim()}</p><p><img src="${FAKE_FEATUREBASE_FILES}/shot.png?X-Amz-Expires=3600&amp;X-Amz-Signature=abc"></p>`;
   delete last.bodyMarkdown;
   await importInbox();
   const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
   expect(open.status).toBe("OPEN");
   const message = open.messages.at(-1)!;
-  expect([message.author, message.body.slice(0, 9), message.body.length, message.attachments.length]).toEqual(["USER", "word word", 249_999, 1]);
+  expect([message.author, message.body.split("\n")[1]!.slice(0, 9), message.body.length, message.attachments.length]).toEqual(["USER", "word word", 10_000, 1]);
+  expect(message.body).toMatch(/^Fish & chips /);
 });
 
 test("only files in Featurebase's storage come across: another site's image isn't fetched, as inbound email leaves remote images", async () => {
@@ -278,8 +280,9 @@ test("only files in Featurebase's storage come across: another site's image isn'
   reply.bodyHtml += `<p><img src="${outside}" alt="Their chart"></p>`;
   await importInbox();
   const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
-  // Its alt text, and its address as a link's is kept.
-  expect(open.messages[1]).toMatchObject({ body: expect.stringMatching(new RegExp(`Their chart\\n${outside}$`)), attachments: [], attachmentsDropped: 0 });
+  // The reply has words of its own: the image's alt text only, not its address (a signature's logos and pixels would be links).
+  expect(open.messages[1]).toMatchObject({ body: expect.stringContaining("Their chart"), attachments: [], attachmentsDropped: 0 });
+  expect(open.messages[1]!.body).not.toContain(outside);
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(1);
 });
 
@@ -289,6 +292,16 @@ test("a message that was only another site's image stays, its address as its tex
   const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
   expect(open.status).toBe("OPEN");
   expect(open.messages.at(-1)).toMatchObject({ author: "USER", body: "https://images.example.com/screen.png", attachments: [], attachmentsDropped: 0 });
+});
+
+test("a video with no source is nothing to bring: a message of only that is left out, not kept blank", async () => {
+  const parts = fake.fixtures.conversations[0]!.conversationParts as Record<string, unknown>[];
+  parts.push({ ...parts[4], id: "p1006", createdAt: new Date(Date.now() - 60 * 60_000).toISOString(), bodyHtml: "<video controls></video>" });
+  const done = await importInbox();
+  const open = (await conversations()).find((c) => c.subject === "Exporting to CSV")!;
+  expect(open.messages).toHaveLength(4);
+  expect(open.messages.every((m) => m.body !== "" && m.attachmentsDropped === 0)).toBe(true);
+  expect(done.counts).toMatchObject({ attachments: { imported: 1, leftOut: {} } });
 });
 
 test("imported replies are never emailed, also by a worker from before imports were marked, and make no unread dot; seen only where Featurebase says so", async () => {
