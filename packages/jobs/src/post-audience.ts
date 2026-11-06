@@ -1,4 +1,4 @@
-import { type PostVisibility, prisma } from "@tuti/db";
+import { type PostVisibility, Prisma, prisma } from "@tuti/db";
 import { planIncludes, readerEntriesFor } from "@tuti/shared";
 
 /** Someone a post's email may go to: who they are, the address it goes to, and their unsubscribe token. */
@@ -94,17 +94,24 @@ export async function audienceReach(
   return new Map(people.map((person) => [person.id, reach(person)]));
 }
 
+/** Who sees a post outside the team: its own visibility, or Team only on a board turned off (Board.off). */
+export const seenAs = (post: { visibility: PostVisibility; board: { off: boolean } }): PostVisibility => (post.board.off ? "TEAM" : post.visibility);
+
+/** seenAs in SQL, for a post's row (`post`, unaliased), as the email claims read it under their lock. */
+export const SEEN_AS_SQL = Prisma.sql`CASE WHEN EXISTS (SELECT 1 FROM board WHERE board.id = post."boardId" AND board.off) THEN 'TEAM' ELSE post.visibility::text END`;
+
 /**
  * Of `ids`, who a project's email about `post` goes to (audienceReach's rule), each address once; only people who
- * may see the post (its visibility): a private post's author, nobody about a Team only one (the team isn't emailed).
+ * may see the post (seenAs): a private post's author, nobody about a Team only one (the team isn't emailed).
  */
 export async function postAudience(
   projectId: string,
   project: Project,
-  post: { authorId: string | null; visibility: PostVisibility },
+  post: { authorId: string | null; visibility: PostVisibility; board: { off: boolean } },
   ids: string[],
 ): Promise<Recipient[]> {
-  const seeing = post.visibility === "PUBLIC" ? ids : post.visibility === "PRIVATE" ? ids.filter((id) => id === post.authorId) : [];
+  const visibility = seenAs(post);
+  const seeing = visibility === "PUBLIC" ? ids : visibility === "PRIVATE" ? ids.filter((id) => id === post.authorId) : [];
   const seen = new Set<string>();
   const audience: Recipient[] = [];
   for (const [id, reach] of await audienceReach(projectId, project, post.authorId, seeing)) {

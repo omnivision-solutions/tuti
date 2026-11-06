@@ -915,6 +915,10 @@ model Board {
   detailsPlaceholder String?
   /// Who sees a new post on it (each post keeps its own after; see PostVisibility). Team only: the board isn't on the portal, and only the team posts there.
   postVisibility     PostVisibility @default(PUBLIC)
+  /// Turned off: the team's alone, in the app. Not on the portal, and its posts are the team's only whatever their own
+  /// visibility (nobody else sees, votes on or is emailed about them) until it's turned on. Off boards don't count
+  /// against the plan's board limit: an import brings boards past it turned off, for an upgrade to turn on.
+  off                Boolean        @default(false)
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 

@@ -33,7 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { BOARD_VISIBILITY_DESCRIPTIONS, POST_VISIBILITIES, VISIBILITY_LABELS } from "@/lib/visibility-labels";
 import type { PostVisibility } from "@tuti/db";
 import { BOARD_TEXT_DEFAULTS, BOARD_TEXT_LIMITS, boardTexts } from "@/lib/board-texts";
-import { createBoard, deleteBoard, updateBoard } from "@/server/boards";
+import { createBoard, deleteBoard, setBoardOff, updateBoard } from "@/server/boards";
 import type { FormState } from "@/server/form-state";
 
 function slugify(value: string) {
@@ -284,6 +284,30 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
         <span className={cn(buttonVariants({ size: "sm" }), "self-end")}>{texts.postButton}</span>
       </div>
     </section>
+  );
+}
+
+/** Turns a board off (the team's alone, off the portal) or on again. */
+export function BoardOffButton({ projectSlug, boardId, name, off }: { projectSlug: string; boardId: string; name: string; off: boolean }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await setBoardOff(projectSlug, boardId, !off);
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            toast.success(off ? `${name} is on the portal` : `${name} is off the portal`);
+          }
+        })
+      }
+    >
+      {off ? "Turn on" : "Turn off"}
+    </Button>
   );
 }
 

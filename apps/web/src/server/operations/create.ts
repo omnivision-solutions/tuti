@@ -9,7 +9,7 @@ import { upsertProjectUser } from "@/server/project-users";
 import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
 import { emitEvent } from "../events";
 import { type Actor, defineOperation, OperationError } from "./define";
-import { actorPostViewer, fromApiVisibility, VISIBILITIES } from "../post-visibility";
+import { actorPostViewer, fromApiVisibility, seesBoard, VISIBILITIES } from "../post-visibility";
 import { findVisiblePost, postNumber, postSummarySelect, projectPortal, summary } from "./read";
 import { onTeam, signedInAsReader } from "../session";
 
@@ -88,11 +88,11 @@ export const createPost = defineOperation({
   run: async (context, input) => {
     const { projectId } = context;
     const [board, viewer] = await Promise.all([
-      prisma.board.findFirst({ where: { projectId, slug: input.board }, select: { id: true, postVisibility: true } }),
+      prisma.board.findFirst({ where: { projectId, slug: input.board }, select: { id: true, postVisibility: true, off: true } }),
       actorPostViewer(context.actor, projectId),
     ]);
-    // A Team only board is the team's: nobody else sees it or posts there (post-visibility.ts).
-    if (!board || (board.postVisibility === "TEAM" && !viewer.team)) {
+    // A Team only board, or one turned off, is the team's: nobody else sees it or posts there (post-visibility.ts).
+    if (!board || !seesBoard(viewer, board)) {
       throw new OperationError(404, "not_found", "Board not found");
     }
     if (input.visibility && !viewer.team) {

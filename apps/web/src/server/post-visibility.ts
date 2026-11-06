@@ -7,7 +7,8 @@ import { onTeam } from "./session";
  * Private posts (PostVisibility in the schema): who sees a post besides the team. Public: everyone who may read the
  * portal; Private: its author; Team only: nobody. Its comments, votes and voters go with it: whoever can't see the post
  * sees none of them, and isn't emailed about it (postAudience). Every reader of posts outside the team's app narrows
- * by these; the team (and API keys, which act for it) sees every post.
+ * by these; the team (and API keys, which act for it) sees every post. A board turned off (Board.off) makes every post
+ * on it the team's only, whatever its own visibility.
  *
  * Not a "use server" module: its exports must never be callable from browsers.
  */
@@ -32,7 +33,7 @@ export function visiblePosts(viewer: PostViewer): Prisma.PostWhereInput {
   if (viewer.team) {
     return {};
   }
-  return { OR: [{ visibility: "PUBLIC" }, ...(viewer.userId ? [{ visibility: "PRIVATE" as const, authorId: viewer.userId }] : [])] };
+  return { board: { off: false }, OR: [{ visibility: "PUBLIC" }, ...(viewer.userId ? [{ visibility: "PRIVATE" as const, authorId: viewer.userId }] : [])] };
 }
 
 /** visiblePosts in SQL, for a post aliased `p`. */
@@ -40,22 +41,28 @@ export function visiblePostsSql(viewer: PostViewer): Prisma.Sql {
   if (viewer.team) {
     return Prisma.sql`TRUE`;
   }
-  return viewer.userId
+  const seen = viewer.userId
     ? Prisma.sql`(p.visibility = 'PUBLIC' OR (p.visibility = 'PRIVATE' AND p."authorId" = ${viewer.userId}))`
     : Prisma.sql`p.visibility = 'PUBLIC'`;
+  return Prisma.sql`(${seen} AND NOT EXISTS (SELECT 1 FROM board off_board WHERE off_board.id = p."boardId" AND off_board.off))`;
 }
 
 /** Whether `viewer` may see this post (visiblePosts's rule, for one already read). */
-export function canSeePost(viewer: PostViewer, post: { visibility: PostVisibility; authorId: string }): boolean {
-  return viewer.team || post.visibility === "PUBLIC" || (post.visibility === "PRIVATE" && !!viewer.userId && post.authorId === viewer.userId);
+export function canSeePost(viewer: PostViewer, post: { visibility: PostVisibility; authorId: string; board: { off: boolean } }): boolean {
+  return viewer.team || (!post.board.off && (post.visibility === "PUBLIC" || (post.visibility === "PRIVATE" && !!viewer.userId && post.authorId === viewer.userId)));
 }
 
-/** The boards `viewer` sees on the portal: a Team only board is the team's (only the team posts there). */
+/** The boards `viewer` sees on the portal: a Team only board, or one turned off, is the team's (only the team posts there). */
 export function shownBoards(viewer: PostViewer): Prisma.BoardWhereInput {
-  return viewer.team ? {} : { postVisibility: { not: "TEAM" } };
+  return viewer.team ? {} : { postVisibility: { not: "TEAM" }, off: false };
 }
 
-/** The boards the portal lists (its menus, sitemap, llms.txt, the first board, the widget's): never a Team only one. */
+/** shownBoards's rule, for a board already read. */
+export function seesBoard(viewer: PostViewer, board: { postVisibility: PostVisibility; off: boolean }): boolean {
+  return viewer.team || (board.postVisibility !== "TEAM" && !board.off);
+}
+
+/** The boards the portal lists (its menus, sitemap, llms.txt, the first board, the widget's): never a Team only one or one turned off. */
 export const PORTAL_BOARDS = shownBoards(SIGNED_OUT_VIEWER);
 
 /** Someone (null: signed out) as a viewer of the project's posts: the team if they're on it (onTeam: never with a portal's session). */

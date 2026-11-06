@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/page";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { createBoard, deleteBoard, updateBoard } from "./boards";
+import { createBoard, deleteBoard, setBoardOff, updateBoard } from "./boards";
 
 let project: Awaited<ReturnType<typeof createProject>>;
 let boardId: string;
@@ -286,6 +286,22 @@ describe("how many boards a plan has (where plans are sold)", () => {
     expect((await createBoard(project.slug, {}, board({ slug: "more" }))).error).toMatch(/up to 2 feedback boards/);
     expect(await boards()).toBe(3);
     expect(await updateBoard(project.slug, boardId, {}, board({ name: "Renamed", slug: "feature-requests" }))).toEqual({});
+  });
+
+  test("boards turned off don't count: one turns on only while there's room, as after an upgrade", async () => {
+    const ideas = await prisma.board.create({ data: { projectId: project.id, slug: "ideas", name: "Ideas", off: true } });
+    expect(await createBoard(project.slug, {}, board({ slug: "bugs" }))).toEqual({});
+    expect(await setBoardOff(project.slug, ideas.id, false)).toEqual({
+      error: "Projects on the Free plan have up to 2 feedback boards. Upgrade to Pro in Settings → Billing to turn it on.",
+    });
+    await setPlan("PRO");
+    expect(await setBoardOff(project.slug, ideas.id, false)).toEqual({});
+    expect(await prisma.board.count({ where: { projectId: project.id, off: false } })).toBe(3);
+    // Turning one off frees its place.
+    await setPlan("FREE");
+    expect(await setBoardOff(project.slug, ideas.id, true)).toEqual({});
+    expect(await setBoardOff(project.slug, boardId, true)).toEqual({});
+    expect(await createBoard(project.slug, {}, board({ slug: "more" }))).toEqual({});
   });
 
   test("two boards at once for the last place: only one is made", async () => {

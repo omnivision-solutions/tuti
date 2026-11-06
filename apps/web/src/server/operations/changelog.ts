@@ -60,7 +60,7 @@ const entrySelect = {
   createdAt: true,
   updatedAt: true,
   sample: true,
-  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, visibility: true, board: { select: { slug: true } } } } } },
+  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, visibility: true, board: { select: { slug: true, off: true } } } } } },
   pullRequests: { orderBy: { createdAt: "asc" }, select: { repo: true, number: true, url: true, title: true } },
 } as const;
 
@@ -100,7 +100,7 @@ export async function isTeam(actor: Actor, projectId: string): Promise<boolean> 
 }
 
 /** An entry as someone off the team reads it: only its public posts (post-visibility.ts), as the portal lists them. */
-const asReaderSees = (entry: EntryRow, team: boolean): EntryRow => (team ? entry : { ...entry, posts: entry.posts.filter(({ post }) => post.visibility === "PUBLIC") });
+const asReaderSees = (entry: EntryRow, team: boolean): EntryRow => (team ? entry : { ...entry, posts: entry.posts.filter(({ post }) => post.visibility === "PUBLIC" && !post.board.off) });
 
 const findEntry = (projectId: string, number: number) =>
   prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: entrySelect });

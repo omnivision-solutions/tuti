@@ -239,11 +239,13 @@ test("Similar ideas, typing suggestions, the widget's ideas and news, Account an
 test("emails about a post reach only people who may see it: a private post's author, nobody about a Team only one", async () => {
   const { ada, bob, project, mine, plan } = await fixture();
   const settings = { portalAccess: "PUBLIC", plan: "FREE" as const };
-  const told = async (post: { authorId: string; visibility: PostVisibility }) =>
-    (await postAudience(project.id, settings, post, [ada.id, bob.id])).map((person) => person.id).sort();
+  const told = async (post: { authorId: string; visibility: PostVisibility }, off = false) =>
+    (await postAudience(project.id, settings, { ...post, board: { off } }, [ada.id, bob.id])).map((person) => person.id).sort();
   expect(await told({ ...mine, visibility: "PUBLIC" })).toEqual([ada.id, bob.id].sort());
   expect(await told(mine)).toEqual([ada.id]);
   expect(await told(plan)).toEqual([]);
+  // On a board turned off, even a public one: nobody.
+  expect(await told({ ...mine, visibility: "PUBLIC" }, true)).toEqual([]);
   // Email voters on Ada's post (Bob voted) reaches nobody; nor does completing it count Bob.
   expect(await votersToEmail(project.id, mine.id)).toBe(0);
   expect((await emailedOnCompletion(project.id, [mine.id])).get(mine.id)).toBe(1);
@@ -364,4 +366,30 @@ test("a public post on a Team only board leads readers back to the portal's feed
   expect(await backLink()).toMatch(/\/feedback$/);
   actAs(owner);
   expect(await backLink()).toMatch(/\/feedback\/feature-requests$/);
+});
+
+test("a board turned off is the team's: its posts, public ones too, are nobody else's to see, vote on, post to or be emailed about", async () => {
+  const { owner, bob, project, board, open, as, key } = await fixture();
+  await prisma.board.update({ where: { id: board.id }, data: { off: true } });
+  expect(numbers((await call(listPosts, as(bob), {})).posts)).toEqual([]);
+  expect(numbers((await call(listPosts, key, {})).posts)).toEqual([1, 2, 3]);
+  await expect(call(getPost, as(bob), { number: 1 })).rejects.toMatchObject({ status: 404 });
+  await expect(call(setVote, as(bob), { number: 1, voted: true })).rejects.toMatchObject({ status: 404 });
+  await expect(call(createPost, as(bob), { board: board.slug, title: "Export fails" })).rejects.toMatchObject({ status: 404 });
+  expect((await call(listBoards, as(bob), {})).boards).toEqual([]);
+  expect((await call(listBoards, as(owner), {})).boards).toHaveLength(1);
+  expect(numbers((await call(getRoadmap, as(bob), {})).planned)).toEqual([]);
+  expect(await votersToEmail(project.id, open.id)).toBe(0);
+  expect((await emailedOnCompletion(project.id, [open.id])).get(open.id) ?? 0).toBe(0);
+
+  actAs(bob);
+  const page = (path: Promise<unknown>) => rendered(path);
+  expect(await page(BoardPage({ params: Promise.resolve({ project: project.slug, board: board.slug }), searchParams: Promise.resolve({}) } as never))).toBe("404");
+  expect(await page(PostPage({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-for-the-editor-1" }), searchParams: Promise.resolve({}) } as never))).toBe("404");
+  actAs(owner);
+  expect(await page(PostPage({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-for-the-editor-1" }), searchParams: Promise.resolve({}) } as never))).not.toBe("404");
+
+  // Turned on again, its public post is everyone's once more.
+  await prisma.board.update({ where: { id: board.id }, data: { off: false } });
+  expect(numbers((await call(listPosts, as(bob), {})).posts)).toEqual([1]);
 });

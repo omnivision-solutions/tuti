@@ -8,7 +8,7 @@ import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrls } from "./lasting-media";
 import { portalAddress } from "./portal-address";
-import { postAudience, visibilityChanged } from "./post-audience";
+import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { projectEmailWaits, projectSender } from "./project-sender";
 
 /** An unsent claim (or a due reply) this old belongs to a run that died or never started. */
@@ -30,7 +30,7 @@ async function claim(commentId: string, userId: string, visibility: PostVisibili
     // Its post's row held first (as a merge locks posts, then their comments): a visibility change since the audience
     // was read fails the run (its retry reads who may see it now), and one made meanwhile waits for this claim.
     const [post] = await tx.$queryRaw<{ id: string; visibility: PostVisibility }[]>`
-      SELECT id, visibility FROM post WHERE id = (SELECT "postId" FROM comment WHERE id = ${commentId}) FOR SHARE`;
+      SELECT id, ${SEEN_AS_SQL} AS visibility FROM post WHERE id = (SELECT "postId" FROM comment WHERE id = ${commentId}) FOR SHARE`;
     // The reply's row locked, so a resume that drops a pause's emails waits for this claim, or this claim sees it.
     const [comment] = await tx.$queryRaw<{ due: Date | null }[]>`SELECT "votersEmailDueAt" AS due FROM comment WHERE id = ${commentId} FOR UPDATE`;
     if (!comment?.due || !post) {
@@ -103,7 +103,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
         select: {
           number: true,
           title: true,
-          board: { select: { slug: true } },
+          board: { select: { slug: true, off: true } },
           projectId: true,
           authorId: true,
           visibility: true,
@@ -146,7 +146,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
   let held = false;
   for (const { id, address, unsubscribeToken } of people) {
     // Claimed before sending, so a retry or a second run doesn't email them twice.
-    const claimedAt = await claim(commentId, id, post.visibility);
+    const claimedAt = await claim(commentId, id, seenAs(post));
     if (!claimedAt) {
       continue;
     }

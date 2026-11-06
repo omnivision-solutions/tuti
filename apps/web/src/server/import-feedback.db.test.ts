@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import { importSummary } from "@/lib/import-parts";
 import { getImport, startImport } from "@/server/operations/imports";
+import { listBoards } from "@/server/operations/read";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -232,31 +233,35 @@ test("a board matched by name whose Featurebase posts were only their author's b
   expect(requests).toEqual({ id: project.boards[0]!.id, postVisibility: "PRIVATE" });
 });
 
-test("past the plan's board limit, posts everyone saw folded into a board made Private for its author-only posts stay public", async () => {
+test("past the plan's board limit, a board comes as its own, turned off, its posts keeping who saw them in Featurebase", async () => {
   vi.stubEnv("PLANS", "on");
   fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
-  // A third board everyone sees: the free plan has room for two, so its posts go into the last one, Bugs.
+  // A third board everyone sees: the free plan has room for two, so it comes turned off.
   const ideas = structuredClone(fake.fixtures.boards.find((board) => board.name === "Bugs")!);
   Object.assign(ideas, { id: "65f0000000000000000000b5", name: "Ideas", localization: { name: { en: "Ideas" } }, postDefaults: { visibility: "public" } });
   fake.fixtures.boards.push(ideas);
   fake.fixtures.posts.push({ ...structuredClone(fake.fixtures.posts[0]!), id: "65f0000000000000000000pa", boardId: ideas.id, title: "Offline mode", createdAt: "2024-04-01T10:00:00.000Z" });
   await importFeedback();
-  const posts = await prisma.post.findMany({ where: { projectId: project.id, board: { name: "Bugs" } }, select: { title: true, visibility: true } });
-  expect(posts.find((post) => post.title === "Offline mode")).toEqual({ title: "Offline mode", visibility: "PUBLIC" });
-  expect(posts.find((post) => post.title === "Export fails on Safari")).toEqual({ title: "Export fails on Safari", visibility: "PRIVATE" });
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { name: true, off: true, postVisibility: true } })).toEqual([
+    { name: "Feature requests", off: false, postVisibility: "PUBLIC" },
+    { name: "Bugs", off: false, postVisibility: "PRIVATE" },
+    { name: "Ideas", off: true, postVisibility: "PUBLIC" },
+  ]);
+  const posts = await prisma.post.findMany({ where: { projectId: project.id }, select: { title: true, visibility: true, board: { select: { name: true } } } });
+  expect(posts.find((post) => post.title === "Offline mode")).toEqual({ title: "Offline mode", visibility: "PUBLIC", board: { name: "Ideas" } });
+  expect(posts.find((post) => post.title === "Export fails on Safari")).toEqual({ title: "Export fails on Safari", visibility: "PRIVATE", board: { name: "Bugs" } });
+  // Off, the board and its posts are the team's alone: not on the portal, not in the API for anyone else.
+  const outsider = await signUp("e2e-outsider@example.com");
+  expect((await call(listBoards, { actor: { kind: "user", userId: outsider.id }, projectId: project.id }, {})).boards.map((board) => board.name)).toEqual(["Feature requests", "Bugs"]);
+  expect((await call(listBoards, asOwner(), {})).boards.map((board) => board.name)).toEqual(["Feature requests", "Bugs", "Ideas"]);
 });
 
-test("a board the team made Private or Team only keeps its choice: posts folded into it stay Private, an author-only post on a Team only board stays the team's", async () => {
+test("a board the team made Private or Team only keeps its choice: posts on it stay Private, an author-only post on a Team only board stays the team's", async () => {
   vi.stubEnv("PLANS", "on");
-  // The team's own Bugs board, Private before the import: Featurebase's Bugs (author-only) matches it by name.
+  // The team's own Bugs board, Private before the import: Featurebase's Bugs (everyone's) matches it by name.
   await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs", postVisibility: "PRIVATE" } });
-  fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
-  const ideas = structuredClone(fake.fixtures.boards.find((board) => board.name === "Bugs")!);
-  Object.assign(ideas, { id: "65f0000000000000000000b5", name: "Ideas", localization: { name: { en: "Ideas" } }, postDefaults: { visibility: "public" } });
-  fake.fixtures.boards.push(ideas);
-  fake.fixtures.posts.push({ ...structuredClone(fake.fixtures.posts[0]!), id: "65f0000000000000000000pa", boardId: ideas.id, title: "Offline mode", createdAt: "2024-04-01T10:00:00.000Z" });
   await importFeedback();
-  expect(await prisma.post.findFirst({ where: { projectId: project.id, title: "Offline mode" }, select: { visibility: true, board: { select: { name: true } } } })).toEqual({ visibility: "PRIVATE", board: { name: "Bugs" } });
+  expect(await prisma.post.findFirst({ where: { projectId: project.id, title: "Export fails on Safari" }, select: { visibility: true, board: { select: { name: true } } } })).toEqual({ visibility: "PRIVATE", board: { name: "Bugs" } });
 
   // Team only: the author-only post on it is the team's.
   project = await createProject(owner);
@@ -337,7 +342,7 @@ test("a repeat import after a post was deleted in Featurebase goes on: the post 
   expect(await prisma.vote.count({ where: { post: { projectId: project.id, title: "Export fails on Safari" } } })).toBe(3);
 });
 
-test("past the plan's board limit, a board's posts go into the last board imported; without media storage images are left out, counted, and avatars stay links", async () => {
+test("past the plan's board limit, a board comes turned off, its posts on it; without media storage images are left out, counted, and avatars stay links", async () => {
   vi.stubEnv("PLANS", "on");
   for (const name of Object.keys(s3.env)) {
     vi.stubEnv(name, "");
@@ -351,18 +356,15 @@ test("past the plan's board limit, a board's posts go into the last board import
 
   const { import: done } = await call(getImport, asOwner(), {});
   expect(done!.counts).toMatchObject({
-    boards: { imported: 2, leftOut: { "only some people see": 3, "past the plan's board limit, their posts in the last board": 1 } },
+    boards: { imported: 3, leftOut: { "only some people see": 3 } },
     posts: { imported: 7 },
     images: { imported: 0, leftOut: { "with no media storage on this server": 3 } },
   });
-  expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
-  expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Offline mode" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Bugs" } });
-  // Imported again, the board that went into another for want of room is still said to have.
+  expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Offline mode" }, select: { board: { select: { name: true, off: true } } } })).toEqual({ board: { name: "Ideas", off: true } });
+  // Imported again, nothing new; the board stays off.
   await importFeedback();
-  expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({
-    imported: 0,
-    leftOut: { "already brought across earlier": 2, "only some people see": 3, "past the plan's board limit, their posts in the last board": 1 },
-  });
+  expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 0, leftOut: { "already brought across earlier": 3, "only some people see": 3 } });
+  expect(await prisma.board.count({ where: { projectId: project.id, off: true } })).toBe(1);
   expect(await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "app-user-1" }, select: { user: { select: { image: true, imageId: true } } } })).toEqual({
     user: { image: `${fake.url}/files/mira.png`, imageId: null },
   });
@@ -598,18 +600,19 @@ test("sample content added during setup (on the new project's board) doesn't sto
 
 test("on the free plan, a board matching the new project's by name keeps it wherever it comes; the plan's other slot goes to the first of the rest", async () => {
   vi.stubEnv("PLANS", "on");
-  // Three distinct boards for two slots: one is folded whichever order they're resolved in. The new project's board is
-  // one of the two, matched by name ("Feature requests", last here), so the first of the others comes and the second folds.
+  // Three distinct boards for two slots: one comes off whichever order they're resolved in. The new project's board is
+  // one of the two, matched by name ("Feature requests", last here), so the first of the others comes on and the second off.
   const [requests, bugs] = fake.fixtures.boards;
   const ideas = { ...structuredClone(bugs!), id: "65f0000000000000000000b8", name: "Ideas", localization: { name: { en: "Ideas" } } };
   fake.fixtures.boards = [ideas, bugs!, requests!];
   await importFeedback();
-  expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 2, leftOut: { "past the plan's board limit, their posts in the last board": 1 } });
-  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } })).toEqual([
-    { id: project.boards[0]!.id, name: "Feature requests" },
-    { id: expect.any(String), name: "Ideas" },
+  expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 3, leftOut: {} });
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, off: true } })).toEqual([
+    { id: project.boards[0]!.id, name: "Feature requests", off: false },
+    { id: expect.any(String), name: "Ideas", off: false },
+    { id: expect.any(String), name: "Bugs", off: true },
   ]);
-  expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Export fails on Safari" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Ideas" } });
+  expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Export fails on Safari" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Bugs" } });
 });
 
 test("an embedding provider failing leaves the posts unembedded; the import still ends done, everything brought", async () => {

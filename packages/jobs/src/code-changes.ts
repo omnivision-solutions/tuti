@@ -31,6 +31,7 @@ import { portalOrigin, queueDeliveries, recordEvent } from "./events";
 import { installationApi } from "./github-api";
 import { enqueue, type JobLogger, type JobResult, type JobRun } from "./index";
 import { portalAddress } from "./portal-address";
+import { seenAs } from "./post-audience";
 import { type PullRequestRead, readPullRequest } from "./pull-request";
 import { type Repository, readRepository } from "./repository";
 import { changelogLineOf, dropFailedLine, lockProject, removeFromRunningDraft, setChangelogLine } from "./running-draft";
@@ -543,9 +544,10 @@ async function postCandidates(projectId: string, vector: string, named: number[]
   const namedIds = new Set(namedRows.map((row) => row.id));
   const posts = await prisma.post.findMany({
     where: { ...open, id: { in: [...namedIds, ...nearest.map((row) => row.id)] } },
-    select: { id: true, number: true, title: true, body: true, status: true, visibility: true },
+    select: { id: true, number: true, title: true, body: true, status: true, visibility: true, board: { select: { off: true } } },
   });
-  return posts.map((post) => ({ ...post, named: namedIds.has(post.id) }));
+  // Who sees it: a post on a board turned off is the team's only (seenAs).
+  return posts.map(({ board, ...post }) => ({ ...post, visibility: seenAs({ ...post, board }), named: namedIds.has(post.id) }));
 }
 
 /**

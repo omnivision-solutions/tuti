@@ -188,7 +188,7 @@ export async function votersToEmail(projectId: string, postId: string): Promise<
   const [project, post] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } }),
     // A sample post's votes aren't loaded: it emails nobody.
-    prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, visibility: true, sample: true, votes: { where: { post: { sample: false } }, select: { userId: true } } } }),
+    prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { authorId: true, visibility: true, board: { select: { off: true } }, sample: true, votes: { where: { post: { sample: false } }, select: { userId: true } } } }),
   ]);
   if (post.sample) {
     return 0;

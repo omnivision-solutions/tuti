@@ -73,10 +73,11 @@ export async function createBoard(projectSlug: string, _prev: FormState, formDat
   try {
     const full = await prisma.$transaction(async (tx) => {
       // Room on the plan, counted under the project's lock so two boards made at once can't both take the
-      // last place. A project already past its limit (after a downgrade) keeps its boards; it can't add more.
+      // last place. A project already past its limit (after a downgrade) keeps its boards; it can't add more. Boards
+      // turned off don't count.
       const [locked] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR UPDATE`;
       const limit = locked ? boardLimit(locked.plan) : null;
-      if (locked && limit !== null && (await tx.board.count({ where: { projectId: project.id } })) >= limit) {
+      if (locked && limit !== null && (await tx.board.count({ where: { projectId: project.id, off: false } })) >= limit) {
         return boardsFull(locked.plan, limit);
       }
       // Taking a slug that used to redirect to another board ends that redirect.
@@ -135,6 +136,36 @@ export async function updateBoard(
       return DUPLICATE_SLUG;
     }
     throw error;
+  }
+  refresh();
+  return {};
+}
+
+/**
+ * Turns a board off (Board.off: the team's alone, its posts off the portal) or on again, while the plan has room: boards
+ * turned off don't count against its limit, so a project past it (an import's boards) turns them on after an upgrade.
+ */
+export async function setBoardOff(projectSlug: string, boardId: string, off: boolean): Promise<FormState> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return ADMIN_ONLY;
+  }
+  const error = await prisma.$transaction(async (tx) => {
+    // The project's row locked as deleteBoard's (createBoard's lock waits on it too), so two can't both take the last place.
+    const [locked] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR NO KEY UPDATE`;
+    const board = await tx.board.findFirst({ where: { id: boardId, projectId: project.id }, select: { off: true } });
+    if (!locked || !board) {
+      return "Board not found";
+    }
+    const limit = boardLimit(locked.plan);
+    if (board.off && !off && limit !== null && (await tx.board.count({ where: { projectId: project.id, off: false } })) >= limit) {
+      return boardsFull(locked.plan, limit).replace("to add more", "to turn it on");
+    }
+    await tx.board.update({ where: { id: boardId }, data: { off } });
+    return null;
+  });
+  if (error) {
+    return { error };
   }
   refresh();
   return {};

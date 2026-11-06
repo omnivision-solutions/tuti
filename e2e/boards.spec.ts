@@ -103,6 +103,16 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(menu).toBeHidden();
   await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
 
+  // Turned off, a board is the team's alone: Off in the list, gone from the portal; turned on, it's back.
+  await row("Bug reports").getByRole("button", { name: "Turn off" }).click();
+  await expect(owner.getByText("Bug reports is off the portal")).toBeVisible();
+  await expect(row("Bug reports")).toContainText("Off");
+  await checkpoint(owner, "team-board-off");
+  expect((await visitor.goto("/feedback/bugs"))?.status()).toBe(404);
+  await row("Bug reports").getByRole("button", { name: "Turn on" }).click();
+  await expect(owner.getByText("Bug reports is on the portal")).toBeVisible();
+  expect((await visitor.goto("/feedback/bugs"))?.status()).toBe(200);
+
   // A merged duplicate doesn't keep a board: deleting it moves the duplicate to the board of the post it was merged into.
   await api("/posts", { board: "bugs", title: "Crash on dark mode" });
   await api("/posts/4/merge", { into: 1 });

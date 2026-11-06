@@ -101,7 +101,9 @@ export async function findPost(projectId: string, number: number) {
       sample: true,
       authorId: true,
       visibility: true,
-      duplicateOf: { select: { number: true, authorId: true, visibility: true } },
+      // The summary's board, and whether it's turned off (canSeePost).
+      board: { select: { ...postSummarySelect.board.select, off: true } },
+      duplicateOf: { select: { number: true, authorId: true, visibility: true, board: { select: { off: true } } } },
     },
   });
   if (!post) {

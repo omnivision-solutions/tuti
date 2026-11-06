@@ -3,11 +3,12 @@ import { boardLimit } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { DeleteBoardButton, EditBoardDialog, NewBoardDialog } from "@/components/boards";
+import { BoardOffButton, DeleteBoardButton, EditBoardDialog, NewBoardDialog } from "@/components/boards";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ACTIVE_STATUSES } from "@/lib/post-filters";
 import { isAdminRole } from "@/lib/roles";
@@ -38,6 +39,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
       titlePlaceholder: true,
       detailsPlaceholder: true,
       postVisibility: true,
+      off: true,
     },
   });
   // Each board's posts as Feedback lists them (merged duplicates aside), and the open ones as the portal counts them.
@@ -50,9 +52,11 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
   const count = (boardId: string, statuses?: PostStatus[]) =>
     counts.filter((c) => c.boardId === boardId && (!statuses || statuses.includes(c.status))).reduce((n, c) => n + c._count, 0);
 
-  // A project past its plan's limit (after a downgrade) keeps its boards; it just can't add more.
+  // A project past its plan's limit (after a downgrade) keeps its boards; it just can't add more. Boards turned off
+  // (an import's past the limit) don't count, and turn on while there's room.
   const limit = boardLimit(plan);
-  const full = limit !== null && boards.length >= limit;
+  const full = limit !== null && boards.filter((board) => !board.off).length >= limit;
+  const someOff = boards.some((board) => board.off);
 
   return (
     <>
@@ -70,7 +74,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
               <Link href={`/app/${project.slug}/settings/billing`} className="underline underline-offset-4">
                 Upgrade to {plan === "FREE" ? "Pro" : "Business"}
               </Link>{" "}
-              to add more.
+              {someOff ? "to add more, or to turn on the boards that are off." : "to add more."}
             </p>
           </AlertDescription>
         </Alert>
@@ -87,7 +91,15 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                     {board.name}
                   </Link>
                 }
-                badges={<VisibilityBadge visibility={board.postVisibility} of="board" />}
+                badges={
+                  board.off ? (
+                    <Badge variant="outline" className="text-muted-foreground" title="Not on the portal: only the team sees it and its posts">
+                      Off<span className="sr-only">: not on the portal, only the team sees it and its posts</span>
+                    </Badge>
+                  ) : (
+                    <VisibilityBadge visibility={board.postVisibility} of="board" />
+                  )
+                }
                 meta={
                   <>
                     <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="hover:underline">
@@ -103,6 +115,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                   isAdmin && (
                     <>
                       <EditBoardDialog projectSlug={project.slug} board={board} />
+                      {(!board.off || !full) && <BoardOffButton projectSlug={project.slug} boardId={board.id} name={board.name} off={board.off} />}
                       {count(board.id) === 0 && boards.length > 1 && (
                         <DeleteBoardButton projectSlug={project.slug} boardId={board.id} name={board.name} />
                       )}
