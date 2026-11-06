@@ -68,7 +68,7 @@ export function DocsAnswer({
     <AskAPerson projectSlug={projectSlug} questionId={answer.id} question={question} defaultEmail={askAPerson.email} widget={widget} />
   );
 
-  // On the portal, the conversation can go on in the assistant (the widget has none).
+  // On the portal, the conversation can go on in the widget's assistant, from this answer (in the widget there is no such answer).
   const followUp = !widget && assistant && answer && (
     <div>
       <Button variant="outline" size="sm" onClick={() => assistant.continueWith(question, answer)}>
