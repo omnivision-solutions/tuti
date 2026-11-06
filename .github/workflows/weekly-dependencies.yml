@@ -73,6 +73,7 @@ jobs:
         run: |
           # GitHub masks the whole URL in logs; mask its host and network names too, before connecting.
           host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
+          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
           case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac # the network's name, from a dotted name only
           for value in "$host" "$domain"; do [ -z "$value" ] || echo "::add-mask::$value"; done
       - name: Connect to the Claude hub
@@ -84,7 +85,6 @@ jobs:
           oauth-client-id: ${{ secrets.TS_WEEKLY_CLIENT_ID }}
           audience: ${{ secrets.TS_WEEKLY_AUDIENCE }}
           tags: tag:ci
-          args: --accept-routes=false
           use-cache: "false"
           log-mode: quiet
       - name: Check the Claude hub
@@ -132,8 +132,11 @@ jobs:
             || { tail -n 50 "$RUNNER_TEMP/dependency-update/pr.md"; exit 1; } # Claude reports its errors there
           # The description and the patch go public: never a credential or the hub's address,
           # whatever a package talked Claude into.
+          # Nothing the agent started may change the tree after the check.
+          sudo pkill -KILL -u claude-updater || true
           # The values go to grep on stdin, never on a command line the agent's leftovers could read.
           host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
+          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
           case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac
           never=$(mktemp)
           printf '%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "$domain" | awk NF > "$never"

@@ -120,6 +120,7 @@ jobs:
         run: |
           # GitHub masks the whole URL in logs; mask its host and network names too, before connecting.
           host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
+          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
           case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac # the network's name, from a dotted name only
           for value in "$host" "$domain"; do [ -z "$value" ] || echo "::add-mask::$value"; done
       - name: Connect to the Claude hub
@@ -130,7 +131,6 @@ jobs:
           oauth-client-id: ${{ secrets.TS_REVIEW_CLIENT_ID }}
           audience: ${{ secrets.TS_REVIEW_AUDIENCE }}
           tags: tag:ci
-          args: --accept-routes=false
           use-cache: "false"
           log-mode: quiet
       - name: Check the Claude hub
@@ -176,10 +176,12 @@ jobs:
           # Findings are public: never post a credential or the hub's address, whatever
           # the prompt talked Claude into.
           host=${CLIPROXY_URL#*://}; host=${host%%[:/]*}; domain=""
+          case $host in *.*) ;; *) host="" ;; esac # a short name would match ordinary words
           case $host in *[!0-9.]*.*.*) domain=${host#*.} ;; esac
           never=$(mktemp)
           printf '%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:-}" "$CLIPROXY_API_KEY" "$host" "$domain" | awk NF > "$never"
-          if [ -s "$never" ] && grep -qiFf "$never" "$RUNNER_TEMP/findings.json"; then
+          status=0; grep -qiFf "$never" "$RUNNER_TEMP/findings.json" || status=$?
+          if [ -s "$never" ] && [ "$status" -ne 1 ]; then # a match, or grep failing
             echo "A finding contains a Claude credential or the hub's address; not posting." >&2
             exit 1
           fi
