@@ -1,6 +1,6 @@
 import { isEmptyDoc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { enqueue } from "@tuti/jobs";
+import { enqueue, seenAs } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -9,7 +9,7 @@ import { upsertProjectUser } from "@/server/project-users";
 import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
 import { emitEvent } from "../events";
 import { type Actor, defineOperation, OperationError } from "./define";
-import { actorPostViewer, fromApiVisibility, VISIBILITIES } from "../post-visibility";
+import { actorPostViewer, fromApiVisibility, seesBoard, VISIBILITIES } from "../post-visibility";
 import { findVisiblePost, postNumber, postSummarySelect, projectPortal, summary } from "./read";
 import { onTeam, signedInAsReader } from "../session";
 
@@ -88,11 +88,11 @@ export const createPost = defineOperation({
   run: async (context, input) => {
     const { projectId } = context;
     const [board, viewer] = await Promise.all([
-      prisma.board.findFirst({ where: { projectId, slug: input.board }, select: { id: true, postVisibility: true } }),
+      prisma.board.findFirst({ where: { projectId, slug: input.board }, select: { id: true, postVisibility: true, off: true } }),
       actorPostViewer(context.actor, projectId),
     ]);
-    // A Team only board is the team's: nobody else sees it or posts there (post-visibility.ts).
-    if (!board || (board.postVisibility === "TEAM" && !viewer.team)) {
+    // A Team only board, or one turned off, is the team's: nobody else sees it or posts there (post-visibility.ts).
+    if (!board || !seesBoard(viewer, board)) {
       throw new OperationError(404, "not_found", "Board not found");
     }
     if (input.visibility && !viewer.team) {
@@ -218,7 +218,7 @@ export const createComment = defineOperation({
         const created = await tx.comment.create({
           // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't).
           // Not for sample content (Home's "Add sample content"): no webhook, and its voters aren't emailed.
-          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, ...(input.emailVoters && !post.sample && { votersEmailDueAt: new Date() }) },
+          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, ...(input.emailVoters && !post.sample && seenAs(post) !== "TEAM" && { votersEmailDueAt: new Date() }) },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
         });
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });

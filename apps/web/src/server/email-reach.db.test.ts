@@ -41,7 +41,7 @@ test("a post's email reaches a confirmed or SSO address, not the team, the unsub
   const statuses = async () => {
     const settings = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { portalAccess: true, plan: true } });
     const reach = await audienceReach(project.id, settings, null, ids);
-    const audience = await postAudience(project.id, settings, { authorId: null, visibility: "PUBLIC" }, ids);
+    const audience = await postAudience(project.id, settings, { authorId: null, visibility: "PUBLIC", board: { off: false } }, ids);
     expect(audience.map((recipient) => recipient.id).sort()).toEqual(ids.filter((id) => reach.get(id)?.status === "emailed").sort());
     for (const id of ids) {
       expect(await emailReach(project.id, id)).toEqual(reach.get(id));

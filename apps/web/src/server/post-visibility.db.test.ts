@@ -1,7 +1,7 @@
 import { type PostVisibility, prisma } from "@tuti/db";
 import { handlers, postAudience } from "@tuti/jobs";
 import { isValidElement, type ReactNode } from "react";
-import { expect, test, vi } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 
 import { BackLink } from "@/components/back-link";
 import { ListFilters } from "@/components/list-filters";
@@ -14,6 +14,7 @@ import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { setBoardOff } from "./boards";
 import { publishedEntries } from "./changelog-queries";
 import { getChangelogEntry, listChangelog } from "./operations/changelog";
 import { emailedOnCompletion } from "./operations/code-changes";
@@ -21,12 +22,12 @@ import { createComment, createPost } from "./operations/create";
 import type { Actor } from "./operations/define";
 import { updatePost } from "./operations/manage";
 import { setSubscription, setVote } from "./operations/more";
-import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./operations/read";
+import { getPost, getRoadmap, listBoards, listComments, listPosts, roadmapColumns } from "./operations/read";
 import { call } from "./operations/run";
 import { firstBoardPath, portalHomePath } from "./portal-home";
 import { addSampleContent } from "./sample-content";
 import { accountPosts, boardsWithCounts, postsLike, recentlyShipped, votersToEmail } from "./post-lists";
-import { postViewer, SIGNED_OUT_VIEWER } from "./post-visibility";
+import { postViewer, SIGNED_OUT_VIEWER, TEAM_VIEWER } from "./post-visibility";
 import { findSimilarPosts } from "./similar-posts";
 import { widgetIdeas } from "./widget";
 import { ideaNews } from "./widget-home";
@@ -96,7 +97,7 @@ test("the API's posts, a post, its comments, the roadmap and the boards' counts:
 
   expect(numbers((await call(getRoadmap, as(bob), {})).planned)).toEqual([1]);
   expect(numbers((await call(getRoadmap, key, {})).planned)).toEqual([1, 2, 3]);
-  expect((await call(listBoards, as(bob), {})).boards).toEqual([{ slug: "feature-requests", name: "Feature requests", posts: 1, postVisibility: "public" }]);
+  expect((await call(listBoards, as(bob), {})).boards).toEqual([{ slug: "feature-requests", name: "Feature requests", posts: 1, postVisibility: "public", off: false }]);
   expect((await call(listBoards, as(ada), {})).boards[0]!.posts).toBe(2);
 });
 
@@ -234,16 +235,33 @@ test("Similar ideas, typing suggestions, the widget's ideas and news, Account an
 
   await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "COMPLETED" } });
   expect(titles(await recentlyShipped(open.boardId, bobViews))).toEqual(["Dark mode for the editor"]);
+
+  // Its board turned off: the public post is nobody else's either, wherever it would show.
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "PLANNED" } });
+  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PRIVATE" } });
+  expect(titles(await findSimilarPosts(project.slug, "Dark mode for the editor"))).toEqual(["Dark mode crashes the editor", "Dark mode for the editor"]);
+  await prisma.board.update({ where: { id: open.boardId }, data: { off: true } });
+  expect(titles(await findSimilarPosts(project.slug, "Dark mode for the editor"))).toEqual([]);
+  expect(titles(await postsLike(project.id, open, adaViews, { open: true }))).toEqual([]);
+  expect(titles(await ideaNews(project.id, bob.id))).toEqual([]);
+  expect(titles(await widgetIdeas(project.slug, null))).toEqual([]);
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "COMPLETED" } });
+  expect(titles(await recentlyShipped(open.boardId, bobViews))).toEqual([]);
+  // The team's merge dialog warns from who sees each: Team only, on a board that's off.
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "PLANNED" } });
+  expect(await postsLike(project.id, open, TEAM_VIEWER, { open: true })).toEqual(expect.arrayContaining([expect.objectContaining({ title: "Dark mode crashes the editor", visibility: "TEAM" })]));
 });
 
 test("emails about a post reach only people who may see it: a private post's author, nobody about a Team only one", async () => {
   const { ada, bob, project, mine, plan } = await fixture();
   const settings = { portalAccess: "PUBLIC", plan: "FREE" as const };
-  const told = async (post: { authorId: string; visibility: PostVisibility }) =>
-    (await postAudience(project.id, settings, post, [ada.id, bob.id])).map((person) => person.id).sort();
+  const told = async (post: { authorId: string; visibility: PostVisibility }, off = false) =>
+    (await postAudience(project.id, settings, { ...post, board: { off } }, [ada.id, bob.id])).map((person) => person.id).sort();
   expect(await told({ ...mine, visibility: "PUBLIC" })).toEqual([ada.id, bob.id].sort());
   expect(await told(mine)).toEqual([ada.id]);
   expect(await told(plan)).toEqual([]);
+  // On a board turned off, even a public one: nobody.
+  expect(await told({ ...mine, visibility: "PUBLIC" }, true)).toEqual([]);
   // Email voters on Ada's post (Bob voted) reaches nobody; nor does completing it count Bob.
   expect(await votersToEmail(project.id, mine.id)).toBe(0);
   expect((await emailedOnCompletion(project.id, [mine.id])).get(mine.id)).toBe(1);
@@ -259,6 +277,12 @@ test("the changelog lists only an entry's public posts to readers; boards that a
   expect((await call(getChangelogEntry, key, { number: 1 })).posts.map((post) => post.number).sort()).toEqual([1, 2]);
   expect((await call(listChangelog, as(bob), {})).entries[0]!.posts.map((post) => post.number)).toEqual([1]);
   expect((await call(listChangelog, key, {})).entries[0]!.posts.map((post) => post.number).sort()).toEqual([1, 2]);
+  // Its public post on a board turned off: gone from what readers see of the entry, there for the team.
+  await prisma.board.update({ where: { id: open.boardId }, data: { off: true } });
+  expect((await publishedEntries(project.slug, { number: entry.number }))[0]!.posts).toEqual([]);
+  expect((await call(getChangelogEntry, as(bob), { number: 1 })).posts).toEqual([]);
+  expect((await call(getChangelogEntry, key, { number: 1 })).posts.map((post) => post.number).sort()).toEqual([1, 2]);
+  await prisma.board.update({ where: { id: open.boardId }, data: { off: false } });
 
   // A Team only board, older than the rest: never the portal's first.
   await prisma.board.create({ data: { projectId: project.id, slug: "security", name: "Security", postVisibility: "TEAM", createdAt: new Date(0) } });
@@ -296,12 +320,16 @@ test("sample content takes its board's visibility, as any new post", async () =>
 });
 
 /** Runs `run` with the post made `visibility` as the job claims its first email (after it read who to tell). */
-async function changedAtFirstClaim(postId: string, visibility: PostVisibility, run: () => Promise<unknown>) {
+async function changedAtFirstClaim(postId: string, visibility: PostVisibility | "board off", run: () => Promise<unknown>) {
   const transaction = prisma.$transaction.bind(prisma);
   let claims = 0;
   const spy = vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof transaction>) => {
     if (++claims === 1) {
-      await prisma.post.update({ where: { id: postId }, data: { visibility } });
+      if (visibility === "board off") {
+        await prisma.board.updateMany({ where: { posts: { some: { id: postId } } }, data: { off: true } });
+      } else {
+        await prisma.post.update({ where: { id: postId }, data: { visibility } });
+      }
     }
     return transaction(...args);
   }) as never);
@@ -336,6 +364,79 @@ test("a post made private while the team's reply is emailed to its voters isn't 
   expect(await prisma.replyEmail.count({ where: { commentId: reply.id } })).toBe(0);
 });
 
+test("a board turned off while a post's shipped email or the team's reply goes out: nobody is emailed", async () => {
+  const { mine } = await fixture();
+  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PUBLIC", status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+  await changedAtFirstClaim(mine.id, "board off", () => handlers.postShipped({ postId: mine.id }, log));
+  await handlers.postShipped({ postId: mine.id }, log);
+  expect(await prisma.shippedEmail.count({ where: { postId: mine.id, sentAt: { not: null } } })).toBe(0);
+
+  await prisma.board.updateMany({ data: { off: false } });
+  const reply = await prisma.comment.findFirstOrThrow({ where: { postId: mine.id } });
+  await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date() } });
+  await changedAtFirstClaim(mine.id, "board off", () => handlers.replyEmailed({ commentId: reply.id }, log));
+  await handlers.replyEmailed({ commentId: reply.id }, log);
+  expect(await prisma.replyEmail.count({ where: { commentId: reply.id } })).toBe(0);
+});
+
+test("turning a board off drops emails still due about its posts; completing one there again drops an earlier completion's", async () => {
+  const { owner, open, board, project, as, key } = await fixture();
+  // Hatchet, unreachable: the emails' jobs aren't queued, and their due times wait for the resubmit cron.
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  await call(updatePost, key, { number: 1, status: "completed" });
+  const reply = await call(createComment, as(owner), { number: 1, body: "Shipped", emailVoters: true });
+  const due = async () => ({
+    shipped: (await prisma.post.findUniqueOrThrow({ where: { id: open.id }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt !== null,
+    reply: (await prisma.comment.findUniqueOrThrow({ where: { id: reply.id }, select: { votersEmailDueAt: true } })).votersEmailDueAt !== null,
+  });
+  expect(await due()).toEqual({ shipped: true, reply: true });
+  actAs(owner);
+  expect(await setBoardOff(project.slug, board.id, true)).toEqual({});
+  expect(await due()).toEqual({ shipped: false, reply: false });
+
+  // Completed while on (still due), reopened, then completed again on a board turned off: the earlier due time goes.
+  await prisma.board.update({ where: { id: board.id }, data: { off: false } });
+  await call(updatePost, key, { number: 1, status: "planned" });
+  await call(updatePost, key, { number: 1, status: "completed" });
+  expect((await due()).shipped).toBe(true);
+  await call(updatePost, key, { number: 1, status: "planned" });
+  await prisma.board.update({ where: { id: board.id }, data: { off: true } });
+  await call(updatePost, key, { number: 1, status: "completed" });
+  expect((await due()).shipped).toBe(false);
+  vi.unstubAllEnvs();
+});
+
+test("a post moved to another board while its email is claimed: the claim, holding the old board, tries again", async () => {
+  const { owner, project, open, mine } = await fixture();
+  const other = await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+  const waiting = (sql: string) => async () =>
+    (await prisma.$queryRaw<[{ n: number }]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE ${`%${sql}%`}`)[0].n > 0;
+  // The post's row held while the claim, its board locked already, waits on it; moved meanwhile, then let go.
+  const movedWhileClaiming = async (postId: string, sql: string, run: () => Promise<unknown>) => {
+    let job: Promise<unknown> | undefined;
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT 1 FROM post WHERE id = ${postId} FOR UPDATE`;
+      job = run().catch((error: Error) => error);
+      await expect.poll(waiting(sql)).toBe(true);
+      await tx.post.update({ where: { id: postId }, data: { boardId: other.id } });
+    });
+    expect(await job).toMatchObject({ message: expect.stringMatching(/visibility changed/) });
+  };
+
+  await prisma.post.update({ where: { id: open.id }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+  await movedWhileClaiming(open.id, `"shippedEmailsDueAt" AS due`, () => handlers.postShipped({ postId: open.id }, log));
+  expect(await prisma.shippedEmail.count({ where: { postId: open.id } })).toBe(0);
+
+  await prisma.post.update({ where: { id: mine.id }, data: { visibility: "PUBLIC" } });
+  const reply = await prisma.comment.create({ data: { projectId: project.id, postId: mine.id, authorId: owner.id, body: "Fixed", votersEmailDueAt: new Date() } });
+  await movedWhileClaiming(mine.id, `AS visibility, "boardId" FROM post`, () => handlers.replyEmailed({ commentId: reply.id }, log));
+  expect(await prisma.replyEmail.count({ where: { commentId: reply.id } })).toBe(0);
+});
+
 test("a portal whose boards are all the team's opens on its changelog", async () => {
   const { project } = await fixture();
   await prisma.board.updateMany({ where: { projectId: project.id }, data: { postVisibility: "TEAM" } });
@@ -364,4 +465,54 @@ test("a public post on a Team only board leads readers back to the portal's feed
   expect(await backLink()).toMatch(/\/feedback$/);
   actAs(owner);
   expect(await backLink()).toMatch(/\/feedback\/feature-requests$/);
+});
+
+test("a board turned off is the team's: its posts, public ones too, are nobody else's to see, vote on, post to or be emailed about", async () => {
+  const { owner, bob, project, board, open, as, key } = await fixture();
+  await prisma.board.update({ where: { id: board.id }, data: { off: true } });
+  expect(numbers((await call(listPosts, as(bob), {})).posts)).toEqual([]);
+  // Named, too: a board filter of the caller's own never takes the off check's place.
+  expect(numbers((await call(listPosts, as(bob), { board: board.slug })).posts)).toEqual([]);
+  expect(numbers((await call(listPosts, key, {})).posts)).toEqual([1, 2, 3]);
+  // The API and webhooks say who sees it now: the team only, though it's public on a board that's on.
+  expect(await call(getPost, key, { number: 1 })).toMatchObject({ visibility: "team" });
+  expect((await call(listBoards, key, {})).boards).toEqual([expect.objectContaining({ off: true, postVisibility: "public" })]);
+  await expect(call(getPost, as(bob), { number: 1 })).rejects.toMatchObject({ status: 404 });
+  await expect(call(setVote, as(bob), { number: 1, voted: true })).rejects.toMatchObject({ status: 404 });
+  await expect(call(createPost, as(bob), { board: board.slug, title: "Export fails" })).rejects.toMatchObject({ status: 404 });
+  expect((await call(listBoards, as(bob), {})).boards).toEqual([]);
+  expect((await call(listBoards, as(owner), {})).boards).toHaveLength(1);
+  expect(numbers((await call(getRoadmap, as(bob), {})).planned)).toEqual([]);
+  expect(await votersToEmail(project.id, open.id)).toBe(0);
+  expect((await emailedOnCompletion(project.id, [open.id])).get(open.id) ?? 0).toBe(0);
+
+  actAs(bob);
+  const page = (path: Promise<unknown>) => rendered(path);
+  expect(await page(BoardPage({ params: Promise.resolve({ project: project.slug, board: board.slug }), searchParams: Promise.resolve({}) } as never))).toBe("404");
+  expect(await page(PostPage({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-for-the-editor-1" }), searchParams: Promise.resolve({}) } as never))).toBe("404");
+  actAs(owner);
+  expect(await page(PostPage({ params: Promise.resolve({ project: project.slug, board: board.slug, post: "dark-mode-for-the-editor-1" }), searchParams: Promise.resolve({}) } as never))).not.toBe("404");
+
+  // Completed or answered while off, nothing is left due to email: turning the board on later tells nobody, even when
+  // the emails' jobs couldn't be queued (Hatchet, unreachable) and wait for the resubmit cron.
+  vi.stubEnv("JOBS_DRIVER", "hatchet");
+  vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  await call(updatePost, key, { number: 1, status: "completed" });
+  const reply = await call(createComment, as(owner), { number: 1, body: "Shipped", emailVoters: true });
+  vi.unstubAllEnvs();
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: open.id }, select: { shippedEmailsDueAt: true } })).toEqual({ shippedEmailsDueAt: null });
+  expect(await prisma.comment.findUniqueOrThrow({ where: { id: reply.id }, select: { votersEmailDueAt: true } })).toEqual({ votersEmailDueAt: null });
+  await prisma.post.update({ where: { id: open.id }, data: { status: "PLANNED" } });
+
+  // Turned on again, its public post is everyone's once more; and the roadmap's board filter still narrows to a board.
+  await prisma.board.update({ where: { id: board.id }, data: { off: false } });
+  expect(numbers((await call(listPosts, as(bob), {})).posts)).toEqual([1]);
+  const bugs = await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+  await prisma.post.create({ data: { projectId: project.id, boardId: bugs.id, authorId: owner.id, number: 4, title: "Crash on save", status: "PLANNED" } });
+  const viewer = { team: false, userId: bob.id };
+  expect(numbers((await roadmapColumns(project.id, viewer, { board: "bugs" }))[0]!)).toEqual([4]);
+  expect(numbers((await roadmapColumns(project.id, viewer, { board: board.slug }))[0]!)).toEqual([1]);
 });

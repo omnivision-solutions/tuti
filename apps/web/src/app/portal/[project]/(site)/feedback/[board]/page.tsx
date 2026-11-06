@@ -25,6 +25,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { canActIn } from "@/server/membership";
 import { getSession } from "@/server/session";
 import { currentPostViewer } from "@/server/portal-access";
+import { seesBoard } from "@/server/post-visibility";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { boardPosts, boardsWithCounts, emailReach, recentlyShipped } from "@/server/post-lists";
@@ -58,19 +59,19 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     where: { slug: boardSlug, project: { slug: projectSlug } },
     include: { project: { select: { id: true, name: true, slug: true, portalAccess: true } } },
   });
-  // A Team only board is the team's: not on the portal for anyone else (post-visibility.ts).
+  // A Team only board, or one turned off, is the team's: not on the portal for anyone else (post-visibility.ts).
   const viewer = found && (await currentPostViewer(found.projectId));
-  const board = found && viewer && (viewer.team || found.postVisibility !== "TEAM") ? found : null;
+  const board = found && viewer && seesBoard(viewer, found) ? found : null;
   if (!board || !viewer) {
     // An old URL of a board that has since moved?
     const moved =
       !found &&
       (await prisma.boardRedirect.findFirst({
         where: { slug: boardSlug, project: { slug: projectSlug } },
-        select: { board: { select: { slug: true, postVisibility: true, projectId: true } } },
+        select: { board: { select: { slug: true, postVisibility: true, off: true, projectId: true } } },
       }));
-    // Not to a Team only board, but for the team: its new address is the team's too.
-    if (moved && (moved.board.postVisibility !== "TEAM" || (await currentPostViewer(moved.board.projectId)).team)) {
+    // Not to the team's own board, but for the team: its new address is the team's too.
+    if (moved && seesBoard(await currentPostViewer(moved.board.projectId), moved.board)) {
       permanentRedirect(at(boardPath(moved.board)));
     }
     notFound();

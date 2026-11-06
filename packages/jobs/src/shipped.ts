@@ -3,7 +3,7 @@ import { sendEmail, shippedEmail } from "@tuti/email";
 import type { JobInput } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
-import { postAudience, visibilityChanged } from "./post-audience";
+import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
 import { claimProjectEmail } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
@@ -31,12 +31,15 @@ async function claim(postId: string, userId: string, visibility: PostVisibility)
     // resume that drops a pause's emails waits for this claim, or this claim sees it and emails nobody else. One claimed
     // already may still go. A visibility change since the audience was read (under the same lock) fails the run: its
     // retry reads who may see it now.
-    const [post] = await tx.$queryRaw<{ status: string; due: Date | null; visibility: PostVisibility }[]>`
-      SELECT status, "shippedEmailsDueAt" AS due, visibility FROM post WHERE id = ${postId} FOR UPDATE`;
+    // Its board's row held first (as deleting a board locks it, then its posts): turning the board off waits for this
+    // claim, or this claim sees it off. Moved to another board meanwhile, it's read again (the run's retry).
+    const [board] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM board WHERE id = (SELECT "boardId" FROM post WHERE id = ${postId}) FOR SHARE`;
+    const [post] = await tx.$queryRaw<{ status: string; due: Date | null; visibility: PostVisibility; boardId: string }[]>`
+      SELECT status, "shippedEmailsDueAt" AS due, ${SEEN_AS_SQL} AS visibility, "boardId" FROM post WHERE id = ${postId} FOR UPDATE`;
     if (post?.status !== "COMPLETED" || post.due === null) {
       return null;
     }
-    if (post.visibility !== visibility) {
+    if (post.visibility !== visibility || post.boardId !== board?.id) {
       throw visibilityChanged(postId);
     }
     // For this completion (its activity counts who it reached), read under the same lock.
@@ -118,7 +121,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     select: {
       number: true,
       title: true,
-      board: { select: { slug: true } },
+      board: { select: { slug: true, off: true } },
       projectId: true,
       authorId: true,
       visibility: true,
@@ -181,7 +184,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   let held = false;
   for (const { id, address, unsubscribeToken } of people) {
     // Claimed before sending, so a retry, a second run or the post completed again doesn't email them twice.
-    const claimedAt = await claim(postId, id, post.visibility);
+    const claimedAt = await claim(postId, id, seenAs(post));
     if (!claimedAt) {
       continue;
     }

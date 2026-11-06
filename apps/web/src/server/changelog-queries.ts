@@ -143,7 +143,7 @@ export async function publishedEntries(
       cover: { select: { id: true, status: true, width: true, height: true } },
       // Public posts only, whoever reads it (post-visibility.ts): an announcement is for everyone.
       posts: {
-        where: { post: { duplicateOfId: null, visibility: "PUBLIC" } },
+        where: { post: { duplicateOfId: null, visibility: "PUBLIC", board: { off: false } } },
         select: { post: { select: { number: true, title: true, sample: true, board: { select: { slug: true } } } } },
       },
     },

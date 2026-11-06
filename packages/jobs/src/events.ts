@@ -6,6 +6,7 @@ import { postPath } from "@tuti/shared/post-urls";
 
 import { enqueue } from "./index";
 import type { PortalAddress } from "./portal-address";
+import { seenAs } from "./post-audience";
 
 /**
  * Tells a project's webhooks that something happened: one delivery per webhook
@@ -84,7 +85,11 @@ export async function postStatusChanged(
     return;
   }
   await emitEvent(projectId, "post.status_changed", { post, previousStatus: toApiStatus(previousStatus) });
-  if (post.status === toApiStatus("COMPLETED")) {
+  // Not for a post only the team sees (Team only, or on a board turned off): nobody is to be told, and turning its board
+  // on later mustn't find its emails still due, an earlier completion's either.
+  if (post.status === toApiStatus("COMPLETED") && post.visibility === "team") {
+    await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: null } });
+  } else if (post.status === toApiStatus("COMPLETED")) {
     try {
       // Saved first: if queueing fails, the shipped-emails-resubmit cron finds it.
       await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });
@@ -104,7 +109,7 @@ export type PostRow = {
   commentCount: number;
   createdAt: Date;
   visibility: PostVisibility;
-  board: { slug: string };
+  board: { slug: string; off: boolean };
   author: { name: string };
 };
 
@@ -116,7 +121,7 @@ export const postSummarySelect = {
   commentCount: true,
   createdAt: true,
   visibility: true,
-  board: { select: { slug: true } },
+  board: { select: { slug: true, off: true } },
   author: { select: { name: true } },
 } as const;
 
@@ -146,8 +151,8 @@ export const postSummary = (post: PostRow, portal: PortalAddress) => ({
   votes: post.voteCount,
   comments: post.commentCount,
   author: { name: post.author.name },
-  /** Who sees it besides the team: everyone (public), its author (private), nobody (team). */
-  visibility: post.visibility.toLowerCase() as "public" | "private" | "team",
+  /** Who sees it besides the team: everyone (public), its author (private), nobody (team, or on a board turned off: seenAs). */
+  visibility: seenAs(post).toLowerCase() as "public" | "private" | "team",
   createdAt: post.createdAt.toISOString(),
   url: portalPostUrl(portal, post),
 });

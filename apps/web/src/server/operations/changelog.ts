@@ -1,6 +1,6 @@
 import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
-import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type Prisma, prisma } from "@tuti/db";
-import { enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, toApiStatus } from "@tuti/jobs";
+import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, type PostVisibility, type Prisma, prisma } from "@tuti/db";
+import { enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, SEEN_AS_SQL, toApiStatus } from "@tuti/jobs";
 import { aiEnabled, complete, log, MAX_ENTRY_LENGTH } from "@tuti/shared";
 import { z } from "zod";
 
@@ -60,7 +60,7 @@ const entrySelect = {
   createdAt: true,
   updatedAt: true,
   sample: true,
-  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, visibility: true, board: { select: { slug: true } } } } } },
+  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, sample: true, visibility: true, board: { select: { slug: true, off: true } } } } } },
   pullRequests: { orderBy: { createdAt: "asc" }, select: { repo: true, number: true, url: true, title: true } },
 } as const;
 
@@ -100,7 +100,7 @@ export async function isTeam(actor: Actor, projectId: string): Promise<boolean> 
 }
 
 /** An entry as someone off the team reads it: only its public posts (post-visibility.ts), as the portal lists them. */
-const asReaderSees = (entry: EntryRow, team: boolean): EntryRow => (team ? entry : { ...entry, posts: entry.posts.filter(({ post }) => post.visibility === "PUBLIC") });
+const asReaderSees = (entry: EntryRow, team: boolean): EntryRow => (team ? entry : { ...entry, posts: entry.posts.filter(({ post }) => post.visibility === "PUBLIC" && !post.board.off) });
 
 const findEntry = (projectId: string, number: number) =>
   prisma.changelogEntry.findUnique({ where: { projectId_number: { projectId, number } }, select: entrySelect });
@@ -682,12 +682,13 @@ export const publishChangelogEntry = defineOperation({
         select: { postId: true },
       });
       for (const { postId } of linked) {
-        const [current] = await tx.$queryRaw<{ status: PostStatus; sample: boolean }[]>`SELECT status, sample FROM post WHERE id = ${postId} FOR UPDATE`;
+        const [current] = await tx.$queryRaw<{ status: PostStatus; sample: boolean; seen: PostVisibility }[]>`
+          SELECT status, sample, ${SEEN_AS_SQL} AS seen FROM post WHERE id = ${postId} FOR UPDATE`;
         // A sample entry completes sample posts only, and a real one real posts only, however one got linked (changelog.update refuses them).
         if (!current || sample !== current.sample || current.status === "COMPLETED" || current.status === "CLOSED") {
           continue;
         }
-        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: new Date() }) } });
+        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", ...(!current.sample && { shippedEmailsDueAt: current.seen === "TEAM" ? null : new Date() }) } });
         // Its shipped emails are counted on this event: the entry's "told" (entryTold).
         await tx.postEvent.create({
           data: { postId, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: current.status, to: "COMPLETED", changelogEntryId: entry.id },

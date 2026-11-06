@@ -74,14 +74,14 @@ export async function latestImport(projectId: string): Promise<ImportView | null
   return importView(await prisma.dataImport.findUniqueOrThrow({ where: { id: latest.id }, select: importSelect }));
 }
 
-/** What a Featurebase import does past the plan's board limit, and the plan that has room (null: no limit). */
+/** What a Featurebase import does past the plan's board limit (its boards come turned off), and the plan that has room (null: no limit). */
 export function boardsNote(plan: "FREE" | "PRO" | "BUSINESS"): string | null {
   const limit = boardLimit(plan);
   if (limit === null) {
     return null;
   }
   const more = plan === "FREE" ? `Pro has up to ${boardLimit("PRO")}, and Business any number.` : "Business has any number.";
-  return `Projects on the ${plan === "FREE" ? "free" : "Pro"} plan have up to ${limit} feedback boards: posts on Featurebase's boards past that go into the last one brought across. ${more}`;
+  return `Projects on the ${plan === "FREE" ? "free" : "Pro"} plan have up to ${limit} feedback boards: Featurebase's boards past that come across turned off, seen only by your team in the app until an upgrade lets you turn them on. ${more}`;
 }
 
 const label = (part: ImportPart) => IMPORT_PARTS[part].label;

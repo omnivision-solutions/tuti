@@ -181,6 +181,7 @@ const matrix: Matrix = {
       call: (slug, f) => boards.updateBoard(slug, f.boardId, {}, form({ name: "Ideas", slug: "ideas" })),
     },
     deleteBoard: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.deleteBoard(slug, f.emptyBoardId) },
+    setBoardOff: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.setBoardOff(slug, f.emptyBoardId, true) },
   },
   credits: {
     buyCredits: { allowed: "ADMIN", call: (slug) => withEnv({ AI_CREDITS: "on" }, () => credits.buyCredits(slug, 10)) },

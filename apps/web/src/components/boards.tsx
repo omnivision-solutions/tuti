@@ -33,7 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { BOARD_VISIBILITY_DESCRIPTIONS, POST_VISIBILITIES, VISIBILITY_LABELS } from "@/lib/visibility-labels";
 import type { PostVisibility } from "@tuti/db";
 import { BOARD_TEXT_DEFAULTS, BOARD_TEXT_LIMITS, boardTexts } from "@/lib/board-texts";
-import { createBoard, deleteBoard, updateBoard } from "@/server/boards";
+import { createBoard, deleteBoard, setBoardOff, updateBoard } from "@/server/boards";
 import type { FormState } from "@/server/form-state";
 
 function slugify(value: string) {
@@ -284,6 +284,70 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
         <span className={cn(buttonVariants({ size: "sm" }), "self-end")}>{texts.postButton}</span>
       </div>
     </section>
+  );
+}
+
+/**
+ * Turns a board off (the team's alone, off the portal), asking first, or on again. `stuck`: the project is past its
+ * plan's board limit, so turning it on again would need an upgrade.
+ */
+export function BoardOffButton({
+  projectSlug,
+  boardId,
+  name,
+  off,
+  teamOnly,
+  stuck,
+}: {
+  projectSlug: string;
+  boardId: string;
+  name: string;
+  off: boolean;
+  /** Team only: never on the portal, on or off; off makes its posts the team's too, whatever their own visibility. */
+  teamOnly: boolean;
+  stuck: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [asking, setAsking] = useState(false);
+  const turn = () =>
+    startTransition(async () => {
+      const result = await setBoardOff(projectSlug, boardId, !off);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(teamOnly ? `${name} is turned ${off ? "on" : "off"}` : off ? `${name} is on the portal` : `${name} is off the portal`);
+      }
+    });
+  // One button either way, so focus stays on it as it turns from Turn off to Turn on and back.
+  return (
+    <>
+      {/* aria-disabled, not disabled: a disabled button drops keyboard focus while it works. */}
+      <Button variant="ghost" size="sm" aria-disabled={pending} onClick={() => !pending && (off ? turn() : setAsking(true))}>
+        {off ? "Turn on" : "Turn off"}
+      </Button>
+      <AlertDialog open={asking} onOpenChange={setAsking}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Turn off {name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {teamOnly ? "Only your team sees its posts, votes and comments, even those that are public." : "It leaves your portal, and only your team sees its posts, votes and comments."}{" "}
+              {stuck ? "Your plan is past its board limit, so turning it on again needs an upgrade." : "You can turn it on again any time."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setAsking(false);
+                turn();
+              }}
+            >
+              Turn off
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

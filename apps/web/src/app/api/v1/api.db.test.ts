@@ -128,7 +128,7 @@ describe("reading", () => {
     await prisma.post.update({ where: { id: night.id }, data: { duplicateOfId: dark.id } });
     expect(await api("/boards")).toEqual({
       status: 200,
-      body: { boards: [{ slug: "feature-requests", name: "Feature requests", posts: 1, postVisibility: "public" }] },
+      body: { boards: [{ slug: "feature-requests", name: "Feature requests", posts: 1, postVisibility: "public", off: false }] },
       headers: expect.anything(),
     });
   });

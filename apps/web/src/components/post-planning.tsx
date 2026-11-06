@@ -103,7 +103,7 @@ export function PostEtaSelect({ projectSlug, postId, eta, status }: { projectSlu
 }
 
 /** Who sees a post besides the team, saved as it's picked; its votes and comments go with it. */
-export function PostVisibilitySelect({ projectSlug, postId, visibility }: { projectSlug: string; postId: string; visibility: PostVisibility }) {
+export function PostVisibilitySelect({ projectSlug, postId, visibility, boardOff = false }: { projectSlug: string; postId: string; visibility: PostVisibility; boardOff?: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
     <div className="flex flex-col gap-1">
@@ -135,7 +135,8 @@ export function PostVisibilitySelect({ projectSlug, postId, visibility }: { proj
         </SelectContent>
       </Select>
       <p id={`visibility-${postId}`} className="text-xs text-muted-foreground">
-        {VISIBILITY_DESCRIPTIONS[visibility]}
+        {/* Its board turned off (Board.off): only the team sees it for now, whatever it's set to. */}
+        {boardOff ? "Its board is off, so only the team sees it until the board is turned on." : VISIBILITY_DESCRIPTIONS[visibility]}
       </p>
     </div>
   );

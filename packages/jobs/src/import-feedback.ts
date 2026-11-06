@@ -104,11 +104,11 @@ function boardWords(board: FeaturebaseBoard) {
 
 /**
  * The project's board for each Featurebase board everyone sees: one of the same name (a new project's Feature requests),
- * else a new one while the plan has room (boardLimit), else the last one imported, which takes its posts. A new
- * project's untouched board (its only one, without posts of its own, matched by none and no import's) becomes the first one made,
- * renamed, so it costs the plan no slot. Remembered,
- * so every page (and a later import) puts them in the same place; one that went into another board for want of room
- * is remembered so too (`board-past-limit`), not guessed from sharing a board (two of the same name do, with room).
+ * else a new one, turned off (Board.off: the team's alone until an upgrade turns it on) once the plan has no room
+ * (boardLimit counts boards that are on). A new project's untouched board (its only one, without posts of its own,
+ * matched by none and no import's) becomes the first one made, renamed, so it costs the plan no slot. Remembered,
+ * so every page (and a later import) puts them in the same place. Imports from before boards could be off put a board
+ * past the limit into the last one imported, its posts with them: remembered so (`board-past-limit`), it stays so.
  * `count`: counted (the step's first page). Under the page's project lock (imports.ts `locked`), as boards made in
  * the app take it, so the limit holds.
  */
@@ -116,7 +116,7 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
   const visible = boards.filter((board) => !restricted(board));
   const known = await recorded(tx, job, "board", visible.map((board) => board.id));
   const pastLimit = await recorded(tx, job, "board-past-limit", visible.map((board) => board.id));
-  const existing = await tx.board.findMany({ where: { projectId: job.projectId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, name: true, slug: true } });
+  const existing = await tx.board.findMany({ where: { projectId: job.projectId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, name: true, slug: true, off: true } });
   const { plan } = await tx.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { plan: true } });
   const limit = boardLimit(plan);
   const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -129,11 +129,10 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
     (await tx.importedRecord.count({ where: { projectId: job.projectId, source: job.source, kind: "board", localId: only.id } })) === 0
       ? only
       : undefined;
-  let last: string | undefined;
   for (const board of visible) {
     let id = known.get(board.id);
     let here = id !== undefined;
-    // Its posts went into another board for want of room (now, or by an earlier page or import).
+    // Its posts went into another board for want of room, by an import from before boards could be off.
     let folded = pastLimit.has(board.id);
     // One deleted since is made again.
     if (!id || !existing.some((b) => b.id === id)) {
@@ -150,7 +149,9 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
         await tx.board.update({ where: { id }, data: words });
         // Only their author's in Featurebase: Private here too, unless the team chose already (Private or Team only).
         madePrivate &&= (await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } })).count > 0;
-      } else if (spare || limit === null || existing.length < limit) {
+      } else {
+        // No room on the plan: brought turned off, for an upgrade to turn on.
+        const off = !spare && limit !== null && existing.filter((b) => !b.off).length >= limit;
         const slugged = titleSlug(name, "board").slice(0, 36).replace(/-+$/, "");
         const base = slugged.length >= 2 ? slugged : "board";
         let slug = base;
@@ -173,21 +174,17 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
           id = spare.id;
           spare = undefined;
         } else {
-          const created = await tx.board.create({ data: { projectId: job.projectId, name, slug, ...words, ...boardVisibility(board) }, select: { id: true, name: true, slug: true } });
+          const created = await tx.board.create({
+            data: { projectId: job.projectId, name, slug, off, ...words, ...boardVisibility(board) },
+            select: { id: true, name: true, slug: true, off: true },
+          });
           existing.push(created);
           id = created.id;
         }
-      } else {
-        id = last ?? existing.at(-1)!.id;
-        folded = true;
-        madePrivate = false;
       }
       await remember(tx, job, "board", board.id, id);
       if (madePrivate) {
         await remember(tx, job, "board-made-private", board.id, id);
-      }
-      if (folded) {
-        await remember(tx, job, "board-past-limit", board.id, id);
       }
     } else if (!folded && boardVisibility(board).postVisibility && !(await recorded(tx, job, "board-made-private", [board.id])).size) {
       // Brought by an import from before author-only boards came Private: made so now, once (a board the team made Public
@@ -201,7 +198,6 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
     if (count) {
       tally(job.counts, "boards", folded ? "past the plan's board limit, their posts in the last board" : here ? ALREADY_HERE : null);
     }
-    last = id;
   }
   if (count && boards.length > visible.length) {
     tally(job.counts, "boards", "only some people see", boards.length - visible.length);

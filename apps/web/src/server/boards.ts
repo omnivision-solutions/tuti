@@ -73,7 +73,8 @@ export async function createBoard(projectSlug: string, _prev: FormState, formDat
   try {
     const full = await prisma.$transaction(async (tx) => {
       // Room on the plan, counted under the project's lock so two boards made at once can't both take the
-      // last place. A project already past its limit (after a downgrade) keeps its boards; it can't add more.
+      // last place. A project already past its limit (after a downgrade, or an import's boards turned off) keeps its
+      // boards; it can't add more. Boards turned off count too, so turning one off never makes room for another.
       const [locked] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR UPDATE`;
       const limit = locked ? boardLimit(locked.plan) : null;
       if (locked && limit !== null && (await tx.board.count({ where: { projectId: project.id } })) >= limit) {
@@ -135,6 +136,41 @@ export async function updateBoard(
       return DUPLICATE_SLUG;
     }
     throw error;
+  }
+  refresh();
+  return {};
+}
+
+/**
+ * Turns a board off (Board.off: the team's alone, its posts off the portal) or on again, while the plan has room for
+ * one more that's on: a project past its limit (an import's boards, brought off) turns them on after an upgrade.
+ */
+export async function setBoardOff(projectSlug: string, boardId: string, off: boolean): Promise<FormState> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return ADMIN_ONLY;
+  }
+  const error = await prisma.$transaction(async (tx) => {
+    // The project's row locked as deleteBoard's (createBoard's lock waits on it too), so two can't both take the last place.
+    const [locked] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR NO KEY UPDATE`;
+    const board = await tx.board.findFirst({ where: { id: boardId, projectId: project.id }, select: { off: true } });
+    if (!locked || !board) {
+      return "Board not found";
+    }
+    const limit = boardLimit(locked.plan);
+    if (board.off && !off && limit !== null && (await tx.board.count({ where: { projectId: project.id, off: false } })) >= limit) {
+      return boardsFull(locked.plan, limit).replace("to add more", "to turn it on");
+    }
+    await tx.board.update({ where: { id: boardId }, data: { off } });
+    if (off) {
+      // Emails still due about its posts (a delayed job's, a retry's) go to nobody now, nor once it's turned on again.
+      await tx.post.updateMany({ where: { boardId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: null } });
+      await tx.comment.updateMany({ where: { post: { boardId }, votersEmailDueAt: { not: null } }, data: { votersEmailDueAt: null } });
+    }
+    return null;
+  });
+  if (error) {
+    return { error };
   }
   refresh();
   return {};

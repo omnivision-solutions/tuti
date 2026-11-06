@@ -48,7 +48,7 @@ test("read-only keys get the read tools; tools return the same data as the API",
   });
 
   const result = await client.callTool({ name: "boards_list", arguments: {} });
-  expect(result.structuredContent).toEqual({ boards: [{ slug: "feature-requests", name: "Feature requests", posts: 0, postVisibility: "public" }] });
+  expect(result.structuredContent).toEqual({ boards: [{ slug: "feature-requests", name: "Feature requests", posts: 0, postVisibility: "public", off: false }] });
   // Write tools aren't there for this key at all.
   expect(await client.callTool({ name: "posts_create", arguments: { board: "feature-requests", title: "Hi there" } })).toMatchObject({
     isError: true,

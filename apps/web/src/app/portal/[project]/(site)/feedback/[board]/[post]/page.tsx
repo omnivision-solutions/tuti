@@ -51,7 +51,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   const post = await prisma.post.findFirst({
     where: { number, project: { slug: projectSlug } },
     include: {
-      board: { select: { slug: true, name: true, postVisibility: true } },
+      board: { select: { slug: true, name: true, postVisibility: true, off: true } },
       author: { select: { id: true, name: true } },
       votes: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
       subscriptions: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
@@ -64,7 +64,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       // Its status history: from what to what, and when; not who changed it or how many were emailed.
       events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, createdAt: true } },
       project: { select: { portalAccess: true, plan: true, team: { select: { userId: true } } } },
-      duplicateOf: { select: { number: true, title: true, visibility: true, authorId: true, board: { select: { slug: true } } } },
+      duplicateOf: { select: { number: true, title: true, visibility: true, authorId: true, board: { select: { slug: true, off: true } } } },
       // The published changelog entry that shipped it, if any.
       changelogEntries: {
         where: { entry: { publishedAt: { not: null } } },

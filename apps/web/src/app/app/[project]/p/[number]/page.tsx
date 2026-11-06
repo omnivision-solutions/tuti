@@ -1,6 +1,6 @@
-import { prisma } from "@tuti/db";
+import { type PostVisibility, prisma } from "@tuti/db";
 import { mediaStorage } from "@tuti/shared/storage";
-import { historySince, visibleConversations } from "@tuti/jobs";
+import { historySince, seenAs, visibleConversations } from "@tuti/jobs";
 import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -51,7 +51,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     prisma.post.findUnique({
       where: { projectId_number: { projectId: project.id, number } },
       include: {
-        board: { select: { slug: true } },
+        board: { select: { slug: true, off: true } },
         author: { select: { name: true } },
         owner: { select: { id: true } },
         duplicateOf: { select: { number: true, title: true } },
@@ -108,8 +108,10 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
   ]);
   const total = totals.get(post.id);
-  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true, visibility: true, authorId: true } as const;
-  const [candidates, suggestions] = post.duplicateOf
+  const postRef = { id: true, number: true, title: true, voteCount: true, sample: true, visibility: true, authorId: true, board: { select: { off: true } } } as const;
+  // Who sees each, as merging warns of it: a post on a board turned off is the team's only (seenAs).
+  const seen = <T extends { visibility: PostVisibility; board: { off: boolean } }>(row: T) => ({ ...row, visibility: seenAs(row) });
+  const [candidateRows, suggestionRows] = post.duplicateOf
     ? [[], []]
     : await Promise.all([
         prisma.post.findMany({
@@ -132,6 +134,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           select: { id: true, similarity: true, post: { select: postRef }, original: { select: postRef } },
         }),
       ]);
+  const candidates = candidateRows.map(seen);
+  const suggestions = suggestionRows.map((s) => ({ ...s, post: seen(s.post), original: seen(s.original) }));
 
   return (
     <>
@@ -141,7 +145,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         titleOnPage
         meta={
           <>
-            {post.sample && <SampleBadge />} <VisibilityBadge visibility={post.visibility} /> #{post.number} · {post.author.name} · {timeAgo(post.createdAt)}
+            {post.sample && <SampleBadge />} <VisibilityBadge visibility={seenAs(post)} /> #{post.number} · {post.author.name} · {timeAgo(post.createdAt)}
             {/* A merged post's votes moved with it. */}
             {!post.duplicateOf && ` · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`}
             {total !== undefined && ` · ${asking(total, project.askingProperty!, formats)}`}
@@ -161,7 +165,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </a>
           </>
         }
-        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={likeFirst<PickablePost>(like, candidates)} />}
+        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={seen(post)} candidates={likeFirst<PickablePost>(like, candidates)} />}
       />
 
       {post.duplicateOf ? (
@@ -242,7 +246,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               <MovePostSelect projectSlug={slug} postId={post.id} boardSlug={post.board.slug} boards={boards} className="w-full max-w-none" />
             </Property>
             <Property label="Visibility">
-              <PostVisibilitySelect projectSlug={slug} postId={post.id} visibility={post.visibility} />
+              <PostVisibilitySelect projectSlug={slug} postId={post.id} visibility={post.visibility} boardOff={post.board.off} />
             </Property>
             <Property label="Owner">
               <PostOwnerSelect projectSlug={slug} postId={post.id} ownerId={post.owner?.id ?? null} team={team.map((m) => ({ id: m.userId, name: m.user.name }))} />
