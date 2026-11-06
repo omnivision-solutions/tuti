@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { handlers, importsSettled } from "@tuti/jobs";
+import { FEEDBACK_PAGE, handlers, importsSettled } from "@tuti/jobs";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
@@ -23,6 +23,8 @@ beforeAll(async () => {
   [fake, s3, openai] = await Promise.all([startFeaturebaseFake(), startS3Fake(), startOpenAIFake()]);
 });
 afterAll(() => Promise.all([fake.close(), s3.close(), openai.close()]));
+const limits = { ...FEEDBACK_PAGE };
+afterEach(() => void Object.assign(FEEDBACK_PAGE, limits));
 beforeEach(async () => {
   for (const [name, value] of Object.entries({ ...fake.env, ...s3.env, OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url, WEBHOOK_ALLOW_PRIVATE_URLS: "true" })) {
     vi.stubEnv(name, value);
@@ -241,18 +243,48 @@ test("what didn't happen isn't counted: no boards left out, no images, and two b
   expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
 });
 
-test("a page of Featurebase's with more posts than one of ours takes comes across in several, numbered in date order", async () => {
+test("a page of Featurebase's with more posts than one of ours takes comes across in several, numbered in date order, a post merged meanwhile skipping none", async () => {
   fake.pageSize = 100;
   const template = fake.fixtures.posts[1]!;
   for (let n = 1; n <= 30; n++) {
     fake.fixtures.posts.push({ ...structuredClone(template), id: `65f00000000000000000c${String(n).padStart(3, "0")}`, title: `Idea ${n}`, createdAt: new Date(Date.UTC(2025, 0, n)).toISOString() });
   }
+  fake.requests.length = 0;
+  // Merged in Featurebase after the first of ours brought it: the next goes on after the last it did, not from a
+  // position the merge moved (which would skip Idea 21).
+  const reads = () => fake.requests.filter((request) => request.startsWith("GET /v2/posts?") && !request.includes("limit=1&") && !request.endsWith("limit=1"));
+  const merged = fake.fixtures.posts.findIndex((post) => post.title === "Idea 3");
+  const original = fake.requests.push.bind(fake.requests);
+  fake.requests.push = (...requests: string[]) => {
+    const n = original(...requests);
+    if (reads().length === 2 && fake.fixtures.posts[merged]?.title === "Idea 3") {
+      fake.fixtures.posts.splice(merged, 1);
+    }
+    return n;
+  };
   await importFeedback();
+  // 40 posts in one of Featurebase's pages: read twice, 25 posts a time.
+  expect(reads()).toHaveLength(2);
   expect((await call(getImport, asOwner(), {})).import!.counts.posts).toMatchObject({ imported: 35 });
-  const posts = await prisma.post.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true } });
-  expect(posts.map((post) => post.title).slice(-3)).toEqual(["Idea 28", "Idea 29", "Idea 30"]);
-  // Featurebase's page read again for the rest of it.
-  expect(fake.requests.filter((request) => request.startsWith("GET /v2/posts?")).length).toBeGreaterThan(1);
+  const titles = (await prisma.post.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true } })).map((post) => post.title);
+  expect(titles.slice(-30)).toEqual(Array.from({ length: 30 }, (_, n) => `Idea ${n + 1}`));
+});
+
+test("past a page's time, what's left of it goes to the next page; one post's images past its hard limit are left out", async () => {
+  fake.fixtures.contacts[3]!.profilePicture = fake.fixtures.contacts[0]!.profilePicture;
+  // Nothing more begun once a page has done something: one post and one avatar a page.
+  FEEDBACK_PAGE.softMs = 0;
+  await importFeedback();
+  let counts = (await call(getImport, asOwner(), {})).import!.counts;
+  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { imported: 1 }, avatars: { imported: 2 } });
+  expect(await prisma.user.count({ where: { imageId: { not: null }, ssoIdentity: { is: { projectId: project.id } } } })).toBe(2);
+
+  // A page whose first post's images begin past its hard limit leaves them out.
+  project = await createProject(owner);
+  Object.assign(FEEDBACK_PAGE, { ...limits, hardMs: -1 });
+  await importFeedback();
+  counts = (await call(getImport, asOwner(), {})).import!.counts;
+  expect(counts).toMatchObject({ posts: { imported: 5 }, images: { leftOut: { "that couldn't be fetched": 1 } } });
 });
 
 test("a key that can't read the boards or the posts isn't accepted for Feedback", async () => {

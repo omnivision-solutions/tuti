@@ -22,10 +22,31 @@ import { syncUsersIn } from "./project-users";
 type Tx = Prisma.TransactionClient;
 const NOTHING: StepPage["save"] = async () => {};
 /**
- * How long a page may spend copying media before it saves what it has and leaves the rest to the next one: well within
- * import-step's time limit, with Featurebase's reads (each page has 3 minutes for them: imports.ts PAGE_READ_MS).
+ * A page's limits, well within import-step's 5 minutes (Featurebase's reads have 3 of them: imports.ts PAGE_READ_MS):
+ * at most `posts` posts and `avatars` avatars; past `softMs` from its start no more of them are begun (what's begun but
+ * not done is left for the next page); past `hardMs` the first one's remaining images are left out, as ones that
+ * couldn't be fetched (each fetch takes 30 seconds at most), so one post with many slow images can't hold the import
+ * up for good. Tests shorten them.
  */
-const MEDIA_MS = 60_000;
+export const FEEDBACK_PAGE = { posts: 25, avatars: 20, softMs: 120_000, hardMs: 210_000 };
+
+/** Media begun past the page's soft limit: left, with what it's in, to the next page. */
+class Later extends Error {}
+
+/** The page's media importer with its time limits (FEEDBACK_PAGE); `first`: whether the page has done nothing yet. */
+function timedImporter(job: ImportJob, begun: number, first: () => boolean): MediaImporter | undefined {
+  const media = importer(job);
+  return (
+    media &&
+    (async (source) => {
+      const elapsed = Date.now() - begun;
+      if (!first() && elapsed > FEEDBACK_PAGE.softMs) {
+        throw new Later();
+      }
+      return elapsed > FEEDBACK_PAGE.hardMs ? { leftOut: "unreachable" } : media(source);
+    })
+  );
+}
 
 /** What the project's imports from this source made of these Featurebase ids (`kind`: board, post, comment). */
 async function recorded(db: Tx, job: ImportJob, kind: string, externalIds: string[]): Promise<Map<string, string>> {
@@ -198,10 +219,8 @@ async function authorOf(tx: Tx, job: ImportJob, author: FeaturebaseAuthor, conta
   return userIds.get(externalId)!;
 }
 
-/** Where the posts step got to: Featurebase's page (its cursor) and the first of its posts not done yet. */
-type PostsAt = { page: string | null; from: number };
-/** A page does at most this many posts (their images copied within MEDIA_MS); the rest of Featurebase's page is next. */
-const POSTS = 25;
+/** Where the posts step got to: Featurebase's page (its cursor) and the last of its posts done (null: none yet). */
+type PostsAt = { page: string | null; after: { id: string; createdAt: string } | null };
 
 /**
  * Posts in date order (numbered so), a few at a time, with their boards: content (images copied first, outside the
@@ -210,25 +229,43 @@ const POSTS = 25;
  * votes and comments already.
  */
 async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
-  const at = cursor ? (JSON.parse(cursor) as PostsAt) : { page: null, from: 0 };
+  const begun = Date.now();
+  const at = cursor ? (JSON.parse(cursor) as PostsAt) : { page: null, after: null };
   const boards = await job.featurebase.get<FeaturebaseBoard[]>("/boards");
   const { items, next } = await job.featurebase.page<FeaturebasePost>("/posts", at.page, { sortBy: "createdAt", sortOrder: "asc" });
   const byId = new Map(boards.map((board) => [board.id, board]));
-  const known = await recorded(prisma, job, "post", items.map((post) => post.id));
-  const media = importer(job);
+  // After the last one done; one gone since (merged, deleted), after where it was by date.
+  const index = at.after ? items.findIndex((post) => post.id === at.after!.id) : -1;
+  const later = at.after ? items.findIndex((post) => post.createdAt > at.after!.createdAt) : 0;
+  const start = index >= 0 ? index + 1 : later >= 0 ? later : items.length;
+  const window = items.slice(start, start + FEEDBACK_PAGE.posts);
+  const known = await recorded(prisma, job, "post", window.map((post) => post.id));
+  const fresh = (post: FeaturebasePost) => !known.has(post.id) && !postLeftOut(post, byId);
+  // Featurebase read before copying, while the page's reads have time.
+  const contacts = await people(job, window.filter(fresh).map((post) => post.author));
   const contents = new Map<string, HtmlContent | { error: string }>();
-  const started = Date.now();
-  let end = at.from;
-  for (; end < items.length && end - at.from < POSTS && Date.now() - started < MEDIA_MS; end++) {
-    const post = items[end]!;
-    if (!known.has(post.id) && !postLeftOut(post, byId)) {
-      contents.set(post.id, await htmlToContent("post", post.content ?? "", { media }));
+  let done = 0;
+  const media = timedImporter(job, begun, () => done === 0);
+  for (const post of window) {
+    if (done > 0 && Date.now() - begun > FEEDBACK_PAGE.softMs) {
+      break;
     }
+    if (fresh(post)) {
+      try {
+        contents.set(post.id, await htmlToContent("post", post.content ?? "", { media }));
+      } catch (error) {
+        if (error instanceof Later) {
+          break;
+        }
+        throw error;
+      }
+    }
+    done++;
   }
-  const chunk = items.slice(at.from, end);
-  const contacts = await people(job, chunk.filter((post) => contents.has(post.id)).map((post) => post.author));
+  const chunk = window.slice(0, done);
+  const last = chunk.at(-1);
   return {
-    next: end < items.length ? JSON.stringify({ page: at.page, from: end }) : next && JSON.stringify({ page: next, from: 0 }),
+    next: start + done < items.length ? JSON.stringify({ page: at.page, after: { id: last!.id, createdAt: last!.createdAt } }) : next && JSON.stringify({ page: next, after: null }),
     save: async (tx) => {
       const boardIds = await importBoards(tx, job, boards, cursor === null);
       const users = await contacts.save(tx);
@@ -432,7 +469,6 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
 
 // Avatars and embeddings
 
-const AVATARS = 20;
 
 /**
  * Contacts' uploaded avatars (those whose user still has the link the import gave them) copied into media storage and
@@ -441,7 +477,9 @@ const AVATARS = 20;
  * storage, the links stay as they are.
  */
 async function avatarsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
-  const media = importer(job);
+  const begun = Date.now();
+  const copies: { user: { id: string; image: string }; copy: Awaited<ReturnType<MediaImporter>> }[] = [];
+  const media = timedImporter(job, begun, () => copies.length === 0);
   if (!media || !mediaStorage()) {
     return { next: null, save: NOTHING };
   }
@@ -449,17 +487,19 @@ async function avatarsPage(job: ImportJob, cursor: string | null): Promise<StepP
     SELECT u.id, u.image FROM imported_record r JOIN "user" u ON u.id = r."localId"
     WHERE r."projectId" = ${job.projectId} AND r.source = ${job.source}::"ImportSource" AND r.kind = 'contact'
       AND u."imageId" IS NULL AND u.image ~ '^https?://' AND u.id > ${cursor ?? ""}
-    ORDER BY u.id LIMIT ${AVATARS}`;
-  const copies: { user: (typeof users)[number]; copy: Awaited<ReturnType<MediaImporter>> }[] = [];
-  const started = Date.now();
+    ORDER BY u.id LIMIT ${FEEDBACK_PAGE.avatars}`;
   for (const user of users) {
-    if (Date.now() - started > MEDIA_MS) {
-      break;
+    try {
+      copies.push({ user, copy: await media({ kind: "image", url: user.image, key: user.image }) });
+    } catch (error) {
+      if (error instanceof Later) {
+        break;
+      }
+      throw error;
     }
-    copies.push({ user, copy: await media({ kind: "image", url: user.image, key: user.image }) });
   }
   return {
-    next: copies.length < users.length || users.length === AVATARS ? copies.at(-1)!.user.id : null,
+    next: copies.length < users.length || users.length === FEEDBACK_PAGE.avatars ? copies.at(-1)!.user.id : null,
     save: async (tx) => {
       for (const { user, copy } of copies) {
         const width = "mediaId" in copy ? copy.width : null;
