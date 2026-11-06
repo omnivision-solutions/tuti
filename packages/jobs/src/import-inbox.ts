@@ -4,6 +4,7 @@ import { attachmentName, type Doc, fileExtension, isSafeLink, toPlainText, UPLOA
 import { fileName, htmlText, htmlToContent, type LeftOutReason } from "@tuti/content/html";
 import { type ConversationStatus, type MessageAuthor, type Prisma, prisma } from "@tuti/db";
 import { historyKeptDays } from "@tuti/shared";
+import { stripQuotes } from "@tuti/shared/email-quotes";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { MAX_TRIES } from "./conversations";
@@ -39,6 +40,8 @@ const MAX_PARTS = 500;
 const OPENING_MS = 60_000;
 /** A message's text at most, as a received email's is cut (apps/web operations/conversations.ts MAX_MESSAGE_LENGTH). */
 const MAX_MESSAGE_LENGTH = 10_000;
+/** The whole email kept behind its message, at most (apps/web server/inbound.ts). */
+const MAX_ORIGINAL_LENGTH = 200_000;
 /** As the inbox's own attachments (apps/web server/attachments.ts MAX_FILE_BYTES). */
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
@@ -60,6 +63,8 @@ type Message = {
   admin: FeaturebasePartAuthor | null;
   channel: "EMAIL" | "WIDGET";
   body: string;
+  /** An email's whole text, when its quote was cut from the body (as a received email's). */
+  original: string | null;
   createdAt: Date;
   seenAt: Date | null;
   files: StoredFile[];
@@ -189,7 +194,9 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
     if (!kind) {
       continue;
     }
-    const { body, urls, media, unshown } = await messageText(part);
+    const { body: text, urls, media, unshown } = await messageText(part);
+    // An email shows its new part, as a received one does, the whole of it kept behind it (a widget message never quotes).
+    const { text: body, stripped } = part.channel === "email" && !kind.note ? stripQuotes(text) : { text, stripped: false };
     const files: StoredFile[] = [];
     let dropped = unshown;
     for (const url of urls) {
@@ -211,7 +218,8 @@ async function readConversation(job: ImportJob, conversation: FeaturebaseConvers
       contactId: kind.author === "USER" && CONTACT.has(author?.type ?? "") ? (author?.id ?? null) : null,
       admin: kind.author === "TEAM" && author?.type === "admin" && author.id ? author : null,
       channel: part.channel === "email" ? "EMAIL" : "WIDGET",
-      body,
+      body: body.slice(0, MAX_MESSAGE_LENGTH),
+      original: stripped ? text.slice(0, MAX_ORIGINAL_LENGTH) : null,
       createdAt: new Date(part.createdAt),
       seenAt: kind.author === "TEAM" && !kind.note && i <= readTo ? seenAt : null,
       files,
@@ -237,7 +245,7 @@ async function messageText(part: FeaturebasePart): Promise<{ body: string; urls:
     // Too long to be content, say: its text (bodyMarkdown, or the HTML's own) and its Featurebase files all the same.
     const html = await htmlText(part.bodyHtml ?? "");
     const urls = [...new Set(html.urls.filter(inFeaturebaseStorage))];
-    return { body: (part.bodyMarkdown?.trim() || html.text).slice(0, MAX_MESSAGE_LENGTH), urls, media: urls.length > 0, unshown: 0 };
+    return { body: part.bodyMarkdown?.trim() || html.text, urls, media: urls.length > 0, unshown: 0 };
   }
   // A video with no source has nothing to bring or show.
   const media = content.leftOut.filter((item) => item.url);
@@ -245,7 +253,7 @@ async function messageText(part: FeaturebasePart): Promise<{ body: string; urls:
   const outside = media.filter((item) => !inFeaturebaseStorage(item.url));
   const text = toPlainText(readable(content.doc));
   const links = text ? [] : [...new Set(outside.map((item) => item.url).filter(isSafeLink))];
-  const body = (text || links.join("\n")).slice(0, MAX_MESSAGE_LENGTH);
+  const body = text || links.join("\n");
   return { body, urls, media: media.length > 0, unshown: text ? 0 : outside.filter((item) => !isSafeLink(item.url)).length };
 }
 
@@ -361,6 +369,7 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
       authorId: m.author === "USER" ? (m.contactId && users.get(m.contactId)) || userId : m.admin ? admins.get(m.admin.id!)! : null,
       channel: m.channel,
       body: m.body,
+      original: m.original,
       note: m.note,
       createdAt: m.createdAt,
       seenAt: m.seenAt,
@@ -390,3 +399,23 @@ const subjectFrom = (text: string) => {
   const line = text.split("\n", 1)[0]!.trim();
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 };
+
+/**
+ * Cuts the quotes from emails imported before imports cut them, the whole email kept behind each, as an import does now.
+ * Run once by apps/worker's `cut:imported-quotes`; nothing is lost, so running it again changes nothing.
+ */
+export async function cutImportedQuotes(): Promise<number> {
+  const messages = await prisma.conversationMessage.findMany({
+    where: { importId: { not: null }, channel: "EMAIL", note: false, original: null },
+    select: { id: true, body: true },
+  });
+  let cut = 0;
+  for (const { id, body } of messages) {
+    const { text, stripped } = stripQuotes(body);
+    if (stripped) {
+      await prisma.conversationMessage.update({ where: { id }, data: { body: text, original: body } });
+      cut++;
+    }
+  }
+  return cut;
+}

@@ -28,6 +28,15 @@ test("an attribution wrapped onto two lines, Outlook's blocks, signatures and qu
   expect(stripQuotes("Done.\n\n> earlier\n>\n> more").text).toBe("Done.");
 });
 
+test("Featurebase's attribution and footer, and Yahoo's app signature, are cut", () => {
+  expect(stripQuotes("Is it fixed?\n\nAaron Example (e2e-aaron@example.com) wrote on 9/30/2026, 1:47:14 PM:\nIt crashes on export.").text).toBe("Is it fixed?");
+  expect(stripQuotes("Is it fixed?\nAaron Example (mailto:e2e-aaron@example.com) wrote on 9/30/2026, 1:47:14 PM:\nIt crashes.").text).toBe("Is it fixed?");
+  expect(stripQuotes("Thanks!\n\nPowered by (https://featurebase.app)\nearlier").text).toBe("Thanks!");
+  expect(stripQuotes("Thanks!\n\nYahoo Mail: Search, Organize, Conquer (https://mail.onelink.me/107872968?pid=nativeplacement)\n\nOn Mon, Oct 12, 2026 at 6:51 AM, Acme Support <e2e-support@example.com> wrote:").text).toBe("Thanks!");
+  // Their own words that only mention someone's address are theirs.
+  expect(stripQuotes("Ask Aaron (e2e-aaron@example.com), who wrote on Monday: it's fixed.").stripped).toBe(false);
+});
+
 test("kept whole: a forward, text with no quote, and a reply that's only a quote", () => {
   const forward = "FYI\n\nOn Mon, someone <a@example.com> wrote:\n> the bug";
   expect(stripQuotes(forward, "Fwd: the bug")).toEqual({ text: forward, stripped: false });
