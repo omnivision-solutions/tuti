@@ -2,7 +2,7 @@ import { type PostStatus, Prisma, prisma } from "@tuti/db";
 import { audienceReach, postAudience, projectEmailWaits } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
-import type { GroupCondition } from "@/lib/group-conditions";
+import type { GroupRule } from "@/lib/group-conditions";
 import { ACTIVE_STATUSES, POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
 import { inGroupSql } from "@/server/group-conditions-sql";
 import { canActIn } from "@/server/membership";
@@ -39,9 +39,9 @@ const teamPostSelect = {
 
 /**
  * What Feedback's list narrows to besides the status: a board, words in the title or description,
- * possible duplicates only, posts a reader group voted for (its conditions).
+ * possible duplicates only, posts a reader group voted for (its rule).
  */
-export type TeamPostScope = { board?: string; q?: string; duplicatesOnly?: boolean; group?: GroupCondition[] };
+export type TeamPostScope = { board?: string; q?: string; duplicatesOnly?: boolean; group?: GroupRule };
 
 /**
  * A voter (`v`, a vote; `u`, its user) as the project's users (`s`): the one its SSO signed in as, or,

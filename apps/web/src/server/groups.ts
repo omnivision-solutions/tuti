@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { groupConditions } from "@/lib/group-conditions";
+import { groupConditions, groupMatch, type Match } from "@/lib/group-conditions";
 import type { PropertyFormats } from "@/lib/property-formats";
 
 import type { FormState } from "./form-state";
@@ -31,6 +31,7 @@ export async function saveGroup(projectSlug: string, key: string | null, _state:
     name: String(formData.get("name") ?? ""),
     description: String(formData.get("description") ?? ""),
     conditions: conditionsFrom(formData) as z.input<typeof groupConditions>,
+    match: String(formData.get("match") ?? "all") as Match,
   };
   return asAdmin(projectSlug, DENIED, (context) =>
     key === null ? call(createGroup, context, input) : call(updateGroup, context, { group: String(key), ...input }),
@@ -46,8 +47,8 @@ const PREVIEW_USERS = 50;
 
 export type GroupPreview = { readers: number; users: { id: string; name: string; email: string | null; avatar: string | null }[] };
 
-/** The group dialog's preview: how many of the project's users a group with these conditions would have now, and the first 50. */
-export async function previewGroup(projectSlug: string, conditions: z.input<typeof groupConditions>): Promise<{ error: string } | GroupPreview> {
+/** The group dialog's preview: how many of the project's users a group with these conditions (all, or any, matching) would have now, and the first 50. */
+export async function previewGroup(projectSlug: string, conditions: z.input<typeof groupConditions>, match: Match = "all"): Promise<{ error: string } | GroupPreview> {
   const [session, project] = await Promise.all([getSession(), getAdminProject(projectSlug)]);
   if (!session || !project) {
     return { error: DENIED };
@@ -56,7 +57,7 @@ export async function previewGroup(projectSlug: string, conditions: z.input<type
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
-  return matchingUsers(project.id, input.data, PREVIEW_USERS);
+  return matchingUsers(project.id, { match: groupMatch.catch("all").parse(match), conditions: input.data }, PREVIEW_USERS);
 }
 
 /** Users' Columns: the properties the table shows, in order (see project.update's userColumns). */

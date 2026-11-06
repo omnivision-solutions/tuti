@@ -52,6 +52,7 @@ test("groups have a name, a key from it, conditions and a description; listed by
     name: "Enterprise customers",
     description: "On the Enterprise plan",
     conditions: plan("enterprise"),
+    match: "all",
     readers: 0,
     sample: [],
   });
@@ -127,11 +128,20 @@ test("readers counts the project's users in a group now, and names the first 3",
     ["enterprise", 2, ["Ada", "Flo"]],
     ["pro", 3, ["Ada", "Bea", "Dee"]],
   ]);
+  // Any one of its conditions, rather than all: Bea and Dee are on pro, Flo is in enterprise.
+  expect(await update({ group: "big-pro", match: "any", conditions: [{ property: "plan", op: "is", value: "pro" }, ...inGroupNamed("enterprise")] })).toMatchObject({
+    match: "any",
+    readers: 4,
+  });
+  expect((await list()).find((g) => g.key === "big-pro")!.sample).toEqual(["Ada", "Bea", "Dee"]);
+  expect(await update({ group: "big-pro", match: "all" })).toMatchObject({ match: "all", readers: 0 });
+  await expect(update({ group: "big-pro", match: "some" as never })).rejects.toMatchObject({ status: 400 });
   expect(await update({ group: "enterprise", name: "Enterprise plan", conditions: inGroupNamed("plan:enterprise"), description: "Paying" })).toEqual({
     key: "enterprise",
     name: "Enterprise plan",
     description: "Paying",
     conditions: inGroupNamed("plan:enterprise"),
+    match: "all",
     readers: 0,
     sample: [],
   });
@@ -192,7 +202,10 @@ test("in the app: owners and admins only", async () => {
   expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", conditions: "not json" }))).toMatchObject({ error: expect.any(String) });
   expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", conditions, description: "" }))).toEqual({});
   expect(await saveGroup(project.slug, "pro", {}, form({ name: "Pro plan", conditions: JSON.stringify(plan("gold")), description: "Paying" }))).toEqual({});
-  expect(await list()).toEqual([{ key: "pro", name: "Pro plan", description: "Paying", conditions: plan("gold"), readers: 0, sample: [] }]);
+  expect(await list()).toEqual([{ key: "pro", name: "Pro plan", description: "Paying", conditions: plan("gold"), match: "all", readers: 0, sample: [] }]);
+  const either = JSON.stringify([...plan("gold"), ...plan("pro")]);
+  expect(await saveGroup(project.slug, "pro", {}, form({ name: "Pro plan", conditions: either, match: "any" }))).toEqual({});
+  expect(await list()).toMatchObject([{ key: "pro", conditions: [...plan("gold"), ...plan("pro")], match: "any" }]);
   expect(await deleteGroupAction(project.slug, "pro")).toEqual({});
   expect(await list()).toEqual([]);
 });
@@ -212,6 +225,10 @@ test("the dialog's preview: who a group with these conditions would have now, th
   expect(await names([...inGroupNamed("enterprise"), { property: "plan", op: "is_set" }])).toEqual({ readers: 1, users: ["Ada"] });
   expect(await names([{ property: "seats", op: "is_not_set" }])).toEqual({ readers: 4, users: ["Ada", "Cy", "Dee", "Eve"] });
   expect(await names([])).toEqual({ readers: 0, users: [] });
+  // Any one of them, rather than all.
+  const either = [{ property: "plan", op: "is", value: "free" }, { property: "seats", op: "is_set" }] as const;
+  expect(await names([...either])).toEqual({ readers: 0, users: [] });
+  expect(await previewGroup(project.slug, [...either], "any")).toMatchObject({ readers: 2, users: [{ name: "Bea" }, { name: "Cy" }] });
   // At most 50 of them.
   await syncUsers(project.id, Array.from({ length: 51 }, (_, i) => ({ externalId: `bulk-${i}`, name: `Bulk ${i}`, properties: { plan: "bulk" } })));
   const bulk = await previewGroup(project.slug, plan("bulk"));
