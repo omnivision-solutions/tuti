@@ -52,11 +52,19 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     );
     // Renamed while it's up there (a help article's title, saved): the page's refresh changes its text in place.
     const renamed = new MutationObserver(show);
+    // Across phone width (a phone turned, a window narrowed) the heading moves without crossing the bar's edge: watched
+    // afresh, it's reported again.
+    const turned = () => {
+      observer.unobserve(heading);
+      observer.observe(heading);
+    };
     observer.observe(heading);
     renamed.observe(heading, { childList: true, characterData: true, subtree: true });
+    phone.addEventListener("change", turned);
     return () => {
       observer.disconnect();
       renamed.disconnect();
+      phone.removeEventListener("change", turned);
     };
   }, [pathname]);
 
