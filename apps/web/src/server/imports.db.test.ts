@@ -323,6 +323,17 @@ test("one person per address in a project: a customer without an id in the app w
   expect((await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "contact", externalId: "65f00000000000000000000a" } })).localId).toBe(tobias);
 });
 
+test("a lead whose user was deleted is made again on the next import, and noted as a lead again", async () => {
+  await start();
+  await importsSettled();
+  const lead = () => prisma.importedRecord.findFirst({ where: { projectId: project.id, kind: "lead", externalId: "65f000000000000000000003" } });
+  await prisma.user.delete({ where: { id: (await lead())!.localId } });
+  await start();
+  await importsSettled();
+  const contact = await prisma.importedRecord.findFirstOrThrow({ where: { projectId: project.id, kind: "contact", externalId: "65f000000000000000000003" } });
+  expect((await lead())?.localId).toBe(contact.localId);
+});
+
 test("a contact the contacts step didn't bring is brought when a page needs them; one Featurebase doesn't have is missing", async () => {
   const job = await pageJob();
   const { save } = await contactUsers(job, ["65f000000000000000000002", "65f0000000000000000000ff"]);

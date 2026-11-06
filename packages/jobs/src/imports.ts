@@ -289,7 +289,10 @@ async function recordedUsers(tx: Tx, job: ImportJob, kind: string, externalIds: 
   const users = new Set((await tx.user.findMany({ where: { id: { in: rows.map((row) => row.localId) } }, select: { id: true } })).map((user) => user.id));
   const gone = rows.filter((row) => !users.has(row.localId));
   if (gone.length > 0) {
-    await tx.importedRecord.deleteMany({ where: { id: { in: gone.map((row) => row.id) } } });
+    // With what was noted of them (`lead`, `linked`), so a user made again is noted afresh.
+    await tx.importedRecord.deleteMany({
+      where: { projectId: job.projectId, source: job.source, externalId: { in: gone.map((row) => row.externalId) }, localId: { in: gone.map((row) => row.localId) } },
+    });
   }
   return new Map(rows.filter((row) => users.has(row.localId)).map((row) => [row.externalId, row.localId]));
 }
