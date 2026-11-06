@@ -19,6 +19,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
 import { appUrl, portalUrl, resolveHost } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
+import { hidesLauncher } from "@/lib/widget-launcher";
 import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { branding } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
@@ -158,7 +159,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
             src={`${appUrl().origin}/widget.js?v=${PORTAL_LOADER}`}
             slug={slug}
             base={base}
-            launcher={project.widgetOnPortal || (teamAddsWidget && !HIDES_LAUNCHER.test(brand.customHtml))}
+            launcher={project.widgetOnPortal || (teamAddsWidget && !hidesLauncher(brand.customHtml))}
             shown={canRead}
             viewer={session?.user.id ?? null}
           />
@@ -172,9 +173,6 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
     </PortalBaseProvider>
   );
 }
-
-/** Custom code that hides its widget's launcher, every way the loader takes (only a mention, too: then none comes back). */
-const HIDES_LAUNCHER = /data-hide-launcher|hideLauncher|data-display=["']?inline|display\s*:\s*["']inline/;
 
 /**
  * The loader's version the portal needs, in its address: up it when the portal starts relying on something new in it, so
