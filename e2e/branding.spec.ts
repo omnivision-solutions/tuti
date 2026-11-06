@@ -6,9 +6,9 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
-/** A wordmark to upload, drawn in the browser: `color` text on a transparent background. */
-async function wordmark(page: Page, color: string) {
-  await page.setContent(`<b id="mark" style="display:inline-block;padding:8px;font:bold 48px sans-serif;color:${color}">ACME</b>`);
+/** A logo to upload, drawn in the browser: a `color` letter on a transparent background (square enough for the sidebar too). */
+async function drawLogo(page: Page, color: string) {
+  await page.setContent(`<b id="mark" style="display:inline-block;padding:8px;font:bold 48px sans-serif;color:${color}">A</b>`);
   return page.locator("#mark").screenshot({ omitBackground: true });
 }
 
@@ -26,7 +26,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await before.context().close();
 
   const scratch = await owner.context().newPage();
-  const [light, dark] = [await wordmark(scratch, "#1d4ed8"), await wordmark(scratch, "#bfdbfe")];
+  const [light, dark] = [await drawLogo(scratch, "#1d4ed8"), await drawLogo(scratch, "#bfdbfe")];
   await scratch.close();
 
   // Customize → Branding: the settings beside a preview of the portal (on a clock the journey can move on).
@@ -140,10 +140,20 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(preview.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" })).toBeVisible();
   await owner.reload();
   await expect(owner.getByLabel("Header link 1 URL")).toHaveValue("https://docs.example.com");
-  // The sidebar's project switcher shows the logo (or, for a wide one, the favicon) instead of the project's initial.
+  // The sidebar's project switcher shows the logo instead of the project's initial: the one for this mode, loaded.
   const switcher = owner.locator('[data-sidebar="header"]').getByRole("button", { name: /Acme/ });
-  await expect(switcher.locator("img").first()).toBeVisible();
+  const mark = switcher.locator("img:visible");
+  await expect(mark).toHaveCount(1);
+  await expect.poll(() => mark.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  const [lightMark, darkMark] = [await switcher.locator("img").nth(0).getAttribute("src"), await switcher.locator("img").nth(1).getAttribute("src")];
+  expect(lightMark).not.toBe(darkMark);
+  await expect(mark).toHaveAttribute("src", lightMark!);
   await checkpoint(owner, "sidebar-project-logo", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await expect(mark).toHaveCount(1);
+  await expect(mark).toHaveAttribute("src", darkMark!);
+  await expect.poll(() => mark.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await owner.emulateMedia({ colorScheme: "light" });
 
   // "Powered by tuti" (in Branding now; its old address lands there): hiding the badge needs a licence for the
   // project; unticking it asks about one instead.
