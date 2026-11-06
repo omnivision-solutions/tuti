@@ -4,7 +4,7 @@
 
 ## Setup
 
-Two repository secrets, set once by a maintainer.
+Repository secrets, set once by a maintainer.
 
 **`CLAUDE_CODE_OAUTH_TOKEN`**: a Claude subscription's token, so runs use the subscription and no API key. On your own machine, with Claude Code installed:
 
@@ -18,7 +18,12 @@ It signs in through the browser and prints a token valid for a year. Then:
 gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo omnivision-solutions/tuti
 ```
 
-and paste it at the prompt (it isn't echoed or saved in your shell history). The terminal wraps the long token, and copying it can add a space at the wrap; remove it, or Claude Code fails with "Not logged in". Renew it the same way before it expires; a run fails at Claude Code's step when it has. The Claude review of pull requests (`workflows/claude-review.yml`) uses the same token.
+and paste it at the prompt (it isn't echoed or saved in your shell history). The terminal wraps the long token, and copying it can add a space at the wrap; remove it, or Claude Code fails with "Not logged in". Renew it the same way before it expires; a run fails at Claude Code's step when it has. The Claude review of pull requests (`workflows/claude-review.yml`) uses the same token. Both workflows use it only when the Claude hub below doesn't answer or none of its accounts has quota (each checks with a one-token request first); the review also falls back to it when a run through the hub fails.
+
+**The Claude hub** (optional): a CLIProxyAPI server that spreads requests over several Claude subscriptions, so one account's usage limit doesn't stop the review. It sits on a private Tailscale network. Each workflow joins that network for the length of the job as an ephemeral node tagged `tag:ci`, through a Tailscale [workload identity federation](https://tailscale.com/kb/1581) trust credential: GitHub's OIDC token is traded for a join key, so no Tailscale secret is stored. In Tailscale, make one trust credential per workflow, issuer GitHub, scope `auth_keys`, tag `tag:ci`. Pin each to this repository's immutable subject (`repo:<owner>@<owner id>/tuti@<repo id>:pull_request` for the review, `…:ref:refs/heads/main` for the weekly update) and to its workflow file with a `job_workflow_ref` claim. The tailnet policy lets `tag:ci` reach only the hub's port, and nothing reaches `tag:ci`. Secrets:
+
+- `TS_REVIEW_CLIENT_ID` and `TS_REVIEW_AUDIENCE`, and `TS_WEEKLY_CLIENT_ID` and `TS_WEEKLY_AUDIENCE`: the two trust credentials' client ID and audience. These aren't sensitive, but as secrets they keep the network's details out of the public logs.
+- `CLIPROXY_URL`: the hub's address on the tailnet. `CLIPROXY_API_KEY`: an API key the hub gives CI alone, so it can be revoked without touching other clients.
 
 **`GH_DEPENDENCY_UPDATES_PAT`**: a fine-grained personal access token that opens the pull request (one opened with the workflow's own `GITHUB_TOKEN` wouldn't start CI). Create it at GitHub → Settings → Developer settings → Fine-grained tokens: resource owner the organization, only this repository, permissions **Contents: Read and write** and **Pull requests: Read and write**, and the longest expiry you're comfortable with. Then:
 
@@ -31,7 +36,8 @@ The first run can be a manual one: Actions → Weekly dependency updates → Run
 ## Security
 
 - Schedule and manual dispatch only, on `main`: no pull request's code runs in this workflow, so fork code never meets its secrets. Its actions are pinned by commit SHA.
-- Claude Code, and every install and build script it runs, is a separate unprivileged user holding only the Claude token: not the runner's tokens or files, and the GitHub write token isn't in that job at all.
+- Claude Code, and every install and build script it runs, is a separate unprivileged user holding only the Claude credentials: not the runner's tokens or files, and the GitHub write token isn't in that job at all. It can't use Tailscale's local API (root only), and the tailnet lets the runner reach only the hub's port.
+- The run fails before anything is published (`scripts/claude-hub.sh`, tested in `scripts/claude-hub.test.ts`) if the description or the patch (the files that get published) contains a Claude credential or the hub's address in plain text, or a binary file. That catches accidents, not an agent set on encoding a secret: the separate user, CI's own revocable hub key and the network policy limit what that could reach.
 - That job hands over only a patch and the description. A fresh job applies the patch with `scripts/apply-dependency-update.sh`, which rejects the whole update if it touches workflows, agent or review-bot instructions or env files: any dot file or directory (`.github/`, `.claude/`, `.env*`, `.coderabbit.yaml`, `.greptile/`, …), and AGENTS.md, CLAUDE.md, GEMINI.md, SKILL.md, `greptile.json` and `kodus-config.yml` wherever they are, and only then uses the fine-grained token to push and open the pull request. Its test is `scripts/apply-dependency-update.test.ts`, in `pnpm test`.
 - Claude's session isn't saved or uploaded, and nothing but the patch and the description is kept as an artifact (for a day).
 

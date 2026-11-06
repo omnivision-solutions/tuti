@@ -5,12 +5,11 @@ name: Claude review
 # Findings arrive as one review from github-actions[bot]: inline comments, or all
 # in the review's text when one isn't on a line of the diff.
 #
-# It needs the CLAUDE_CODE_OAUTH_TOKEN secret (.github/DEPENDENCY_UPDATES.md), so it
-# skips pull requests from forks and Dependabot, which get no secrets, and from
-# authors without write access: anyone can open a PR between two of this
-# repository's branches. Claude runs as an unprivileged user holding only that
-# token, with Claude Code's default permissions: read-only commands, only inside
-# the checkout. It loads no settings or hooks from the checkout, and only the PR
+# It needs secrets (.github/DEPENDENCY_UPDATES.md), so it skips pull requests from
+# forks and Dependabot, which get no secrets, and from authors without write
+# access: anyone can open a PR between two of this repository's branches. Claude
+# runs as an unprivileged user holding only its Claude credentials, with Claude
+# Code's default permissions: read-only commands, only inside the checkout. It loads no settings or hooks from the checkout, and only the PR
 # author's text and replies reach its prompt: anyone can comment on a public PR.
 # The GitHub token is only in the steps that read its earlier findings and post
 # new ones. Actions are pinned by SHA because this workflow holds secrets.
@@ -64,7 +63,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write # the Claude hub's network: see "Connect to the Claude hub"
     env:
+      CLAUDE_MODEL: claude-opus-5-5 # the hub check asks for it too
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
       BASE: ${{ github.event.pull_request.base.sha }}
@@ -110,28 +111,80 @@ jobs:
                 | . + {replies: [$comments[] | select((.body | contains($url)) and .user.login == $author)
                   | {author: .user.login, body}]})'
           } > "$RUNNER_TEMP/pull-request.md"
+      # The Claude hub pools our Claude subscriptions on a private network. The runner joins it
+      # as a short-lived node that may reach only the hub, with a join key traded for GitHub's
+      # token for this workflow: no network secret is stored here. When the hub doesn't answer, none
+      # of its accounts has quota, or the review fails through it, the review uses
+      # CLAUDE_CODE_OAUTH_TOKEN's single account.
+      - name: Hide the Claude hub's address
+        env:
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+        run: |
+          # GitHub masks the whole URL in logs; mask its host and network names too, before connecting.
+          bash .github/scripts/claude-hub.sh names | sed 's/^/::add-mask::/'
+      - name: Connect to the Claude hub
+        id: tailnet
+        continue-on-error: true
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_REVIEW_CLIENT_ID }}
+          audience: ${{ secrets.TS_REVIEW_AUDIENCE }}
+          tags: tag:ci
+          use-cache: "false"
+          log-mode: quiet
+      - name: Check the Claude hub
+        id: hub
+        if: steps.tailnet.outcome == 'success'
+        env:
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+        run: |
+          # Only root may talk to Tailscale, so Claude's user can't look around the network.
+          # A one-token request, not a ping: the hub answers even when every account is at its limit.
+          if sudo chmod 600 /var/run/tailscale/tailscaled.sock \
+            && curl -sf -m 60 --retry 2 --retry-all-errors -o /dev/null "$CLIPROXY_URL/v1/messages" \
+              -H "Authorization: Bearer $CLIPROXY_API_KEY" -H "anthropic-version: 2023-06-01" \
+              -H "content-type: application/json" \
+              -d "{\"model\": \"$CLAUDE_MODEL\", \"max_tokens\": 1, \"messages\": [{\"role\": \"user\", \"content\": \"ok\"}]}"; then
+            echo "use=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::The Claude hub didn't answer or has no quota; reviewing with the single account."
+          fi
       - name: Review with Claude Code
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLIPROXY_URL: ${{ secrets.CLIPROXY_URL }}
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          USE_HUB: ${{ steps.hub.outputs.use }}
           SCHEMA: >-
             {"type": "object", "required": ["findings"], "properties": {"findings": {"type": "array", "items": {
               "type": "object", "required": ["path", "line", "body"], "properties": {
                 "path": {"type": "string"}, "line": {"type": "integer"}, "body": {"type": "string"}}}}}}
         run: |
           set -euo pipefail
-          sudo -n -H -u claude-reviewer --preserve-env=CLAUDE_CODE_OAUTH_TOKEN env -C /home/claude-reviewer/tuti PATH="$PATH" \
-            claude -p --model claude-opus-5-5 --no-session-persistence --output-format json \
-            --setting-sources user \
-            --json-schema "$SCHEMA" \
-            < <(cat .github/prompts/claude-review.md "$RUNNER_TEMP/pull-request.md") > "$RUNNER_TEMP/result.json" \
-            || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
+          unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN # only the hub run below sets them
+          # Credentials go through the environment, never on a command line Claude's user could read.
+          review() {
+            sudo -n -H -u claude-reviewer --preserve-env=CLAUDE_CODE_OAUTH_TOKEN,ANTHROPIC_BASE_URL,ANTHROPIC_AUTH_TOKEN \
+              env -C /home/claude-reviewer/tuti PATH="$PATH" \
+              claude -p --model "$CLAUDE_MODEL" --no-session-persistence --output-format json \
+              --setting-sources user \
+              --json-schema "$SCHEMA" \
+              < <(cat .github/prompts/claude-review.md "$RUNNER_TEMP/pull-request.md") > "$RUNNER_TEMP/result.json"
+          }
+          # The hub can answer and still fail the review (every account at its limit): then the single account.
+          if [ "$USE_HUB" != true ] || ! (unset CLAUDE_CODE_OAUTH_TOKEN
+            export ANTHROPIC_BASE_URL="$CLIPROXY_URL" ANTHROPIC_AUTH_TOKEN="$CLIPROXY_API_KEY"; review); then
+            [ "$USE_HUB" != true ] || { tail -c 1000 "$RUNNER_TEMP/result.json"; echo
+              echo "::warning::The review failed through the Claude hub; trying the single account."; }
+            review || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
+          fi
           jq -e '.structured_output.findings' "$RUNNER_TEMP/result.json" > "$RUNNER_TEMP/findings.json" \
             || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
-          # Findings are public: never post the token, whatever the prompt talked Claude into.
-          if grep -qF "$CLAUDE_CODE_OAUTH_TOKEN" "$RUNNER_TEMP/findings.json"; then
-            echo "A finding contains the Claude token; not posting." >&2
-            exit 1
-          fi
+          # Findings are public: never post a credential or the hub's address, whatever
+          # the prompt talked Claude into.
+          bash .github/scripts/claude-hub.sh check "$RUNNER_TEMP/findings.json" \
+            || { echo "A finding contains a Claude credential or the hub's address; not posting." >&2; exit 1; }
       - name: Post the findings
         env:
           GH_TOKEN: ${{ github.token }}
