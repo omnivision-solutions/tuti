@@ -41,8 +41,8 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     const show = () => setScrolled({ pathname, title: under ? heading.textContent : null });
     const observer = new IntersectionObserver(
       ([entry]) => {
-        // Gone up under the bar, not down past the screen's bottom.
-        under = !entry.isIntersecting && entry.boundingClientRect.top < bar;
+        // Gone up under the bar, not down past the screen's bottom. Not one taken off the page (its box is empty, at 0).
+        under = heading.isConnected && !entry.isIntersecting && entry.boundingClientRect.top < bar;
         show();
       },
       { rootMargin: `-${bar}px 0px 0px 0px` },
