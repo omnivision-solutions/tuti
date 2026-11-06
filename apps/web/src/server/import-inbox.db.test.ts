@@ -31,6 +31,7 @@ beforeEach(async () => {
     vi.stubEnv(name, value);
   }
   Object.assign(fake, { fixtures: featurebaseFixtures(), pageSize: 100 });
+  fake.forbidden.clear();
   owner = await signUp("Olive Owner");
   // The fixtures' owner is this team member, by their verified address; the former admin isn't on the team.
   await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
@@ -192,4 +193,29 @@ test("without media storage, an image is left out of its message and counted", a
   const done = await importInbox();
   expect(done.counts).toMatchObject({ attachments: { imported: 0, leftOut: { "as this server has no media storage": 1 } } });
   expect(await prisma.conversationAttachment.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+/** An import's row at the conversations step, as if Contacts had been picked and skipped over. */
+const atConversations = (parts = ["contacts", "inbox"]) =>
+  prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: FAKE_FEATUREBASE_KEY, parts, step: "conversations" } });
+
+test("a page that fails after copying its files leaves them unattached, for the daily cleanup", async () => {
+  // Its contacts aren't here yet, and Featurebase refuses them once the conversations (and their files) are read.
+  fake.forbidden.add("/v2/contacts");
+  const row = await atConversations();
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ failed: true });
+  const files = await prisma.conversationAttachment.findMany({ where: { projectId: project.id } });
+  expect(files).toEqual([expect.objectContaining({ messageId: null, filename: "shot.png" })]);
+  expect(s3.objects.has(files[0]!.key)).toBe(true);
+  expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("a part this worker doesn't know (picked on a newer release mid-deploy) fails the import, saying so, rather than ending it done without it", async () => {
+  const row = await atConversations(["contacts", "inbox", "changelog"]);
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ failed: true });
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+    state: "FAILED",
+    apiKey: null,
+    error: "Tuti was being updated while it ran. Start it again to go on: what came across already is skipped.",
+  });
 });

@@ -38,7 +38,8 @@ const LEFT_OUT: Partial<Record<LeftOutReason, string>> = {
 const CONTACT = new Set(["customer", "lead"]);
 
 type Node = NonNullable<Doc["content"]>[number];
-type StoredFile = { key: string; filename: string; contentType: string; size: number };
+/** A copied file's attachment row, not on a message yet (the daily cleanup removes it if its page is never saved). */
+type StoredFile = { id: string };
 type Message = {
   author: MessageAuthor;
   note: boolean;
@@ -229,7 +230,9 @@ async function copyAttachment(job: ImportJob, url: string): Promise<StoredFile |
   const contentType = IMAGE_TYPES[extension] ?? UPLOAD_FILE_TYPES[extension] ?? "application/octet-stream";
   const key = `attachments/${job.projectId}/${randomUUID()}`;
   await storage.put(key, body, contentType);
-  return { key, filename, contentType, size: body.byteLength };
+  // Its row at once, unattached: a page that's never saved (failed, or another run's got there first) leaves nothing
+  // the daily cleanup doesn't find.
+  return prisma.conversationAttachment.create({ data: { projectId: job.projectId, key, filename, contentType, size: body.byteLength }, select: { id: true } });
 }
 
 /** Saves a conversation read before, under the project's lock: its people looked up here, nothing emailed. */
@@ -278,7 +281,7 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
     select: { id: true },
   });
   for (const m of messages) {
-    await tx.conversationMessage.create({
+    const message = await tx.conversationMessage.create({
       data: {
         projectId: job.projectId,
         conversationId: id,
@@ -292,9 +295,10 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
         importId: job.id,
         // The reply emails' tries used up: a worker from before importId skips it too, while a deploy overlaps.
         ...(m.author === "TEAM" && { emailAttempts: MAX_TRIES }),
-        attachments: { create: m.files.map((file) => ({ projectId: job.projectId, ...file, createdAt: m.createdAt })) },
       },
+      select: { id: true },
     });
+    await tx.conversationAttachment.updateMany({ where: { id: { in: m.files.map((file) => file.id) }, messageId: null }, data: { messageId: message.id } });
     if (m.files.length > 0) {
       tally(job.counts, "attachments", null, m.files.length);
     }

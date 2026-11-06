@@ -83,6 +83,8 @@ const STALE_MS = 24 * 60 * 60_000;
  */
 const PAGE_READ_MS = 3 * 60_000;
 const AGAIN = "Start it again to go on: what came across already is skipped.";
+/** A part or step this worker doesn't know: picked on a newer release while a deploy was under way. */
+const UPDATING = "Tuti was being updated while it ran.";
 /** Why records an earlier import (or an earlier try of this one) brought aren't brought again, as the summary says it. */
 export const ALREADY_HERE = "already brought across earlier";
 
@@ -143,6 +145,9 @@ export const IMPORT_KEY = "import-key";
 
 /** Why a page failed, in words, for the team. */
 function failure(error: unknown): string {
+  if (error instanceof Error && error.message === UPDATING) {
+    return `${UPDATING} ${AGAIN}`;
+  }
   if (!(error instanceof FeaturebaseError)) {
     return `Something went wrong. ${AGAIN}`;
   }
@@ -209,8 +214,9 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
   let saved: boolean;
   try {
     const step = STEPS.find((s) => s.name === row.step);
-    if (!step) {
-      throw new Error(`no step “${row.step}”`);
+    // Failed, saying so, rather than done without the part.
+    if (!step || row.parts.some((part) => !(part in IMPORT_PARTS))) {
+      throw new Error(UPDATING);
     }
     const page = await step.page(job, row.cursor);
     next = page.next ? step.name : nextStep(row.parts, step.name);
