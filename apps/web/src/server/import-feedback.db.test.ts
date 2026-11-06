@@ -225,12 +225,20 @@ test("past the plan's board limit, a board's posts go into the last board import
   });
   expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
   expect(await prisma.post.findFirstOrThrow({ where: { projectId: project.id, title: "Offline mode" }, select: { board: { select: { name: true } } } })).toEqual({ board: { name: "Bugs" } });
+  // Imported again, the board that went into another for want of room is still said to have.
+  await importFeedback();
+  expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({
+    imported: 0,
+    leftOut: { "already brought across earlier": 2, "only some people see": 3, "past the plan's board limit, their posts in the last board": 1 },
+  });
   expect(await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "app-user-1" }, select: { user: { select: { image: true, imageId: true } } } })).toEqual({
     user: { image: `${fake.url}/files/mira.png`, imageId: null },
   });
 });
 
-test("what didn't happen isn't counted: no boards left out, no images, and two boards of one name are one board, not past a limit", async () => {
+test("what didn't happen isn't counted: no boards left out, no images, and two boards of one name are one board, not past a limit, imported again too", async () => {
+  // With a limit the two fit in: the new project's board and Bugs.
+  vi.stubEnv("PLANS", "on");
   fake.fixtures.boards = fake.fixtures.boards.slice(0, 2);
   fake.fixtures.boards.push({ ...structuredClone(fake.fixtures.boards[1]!), id: "65f0000000000000000000b7", name: "bugs" });
   for (const row of [...fake.fixtures.posts, ...fake.fixtures.comments]) {
@@ -241,6 +249,9 @@ test("what didn't happen isn't counted: no boards left out, no images, and two b
   expect(done!.counts.boards).toEqual({ imported: 3, leftOut: {} });
   expect(done!.counts).not.toHaveProperty("images");
   expect(await prisma.board.count({ where: { projectId: project.id } })).toBe(2);
+  // Again: both are still in one board by their name, not for want of room.
+  await importFeedback();
+  expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 0, leftOut: { "already brought across earlier": 3 } });
 });
 
 test("a page of Featurebase's with more posts than one of ours takes comes across in several, numbered in date order, a post merged meanwhile skipping none", async () => {

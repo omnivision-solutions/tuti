@@ -102,24 +102,28 @@ function boardWords(board: FeaturebaseBoard) {
 /**
  * The project's board for each Featurebase board everyone sees: one of the same name (a new project's Feature requests),
  * else a new one while the plan has room (boardLimit), else the last one imported, which takes its posts. Remembered,
- * so every page (and a later import) puts them in the same place. `count`: counted (the step's first page).
+ * so every page (and a later import) puts them in the same place; one that went into another board for want of room
+ * is remembered so too (`board-past-limit`), not guessed from sharing a board (two of the same name do, with room).
+ * `count`: counted (the step's first page). Under the page's project lock (imports.ts `locked`), as boards made in
+ * the app take it, so the limit holds.
  */
 async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], count: boolean): Promise<Map<string, string>> {
   const visible = boards.filter((board) => !restricted(board));
   const known = await recorded(tx, job, "board", visible.map((board) => board.id));
+  const pastLimit = await recorded(tx, job, "board-past-limit", visible.map((board) => board.id));
   const existing = await tx.board.findMany({ where: { projectId: job.projectId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, name: true, slug: true } });
   const { plan } = await tx.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { plan: true } });
   const limit = boardLimit(plan);
-  const used = new Set<string>();
   let last: string | undefined;
   for (const board of visible) {
     let id = known.get(board.id);
     let here = id !== undefined;
-    // Its posts went into another board for want of room (now, or by an earlier page or import while the plan was full).
-    let folded = id !== undefined && limit !== null && used.has(id);
+    // Its posts went into another board for want of room (now, or by an earlier page or import).
+    let folded = pastLimit.has(board.id);
     // One deleted since is made again.
     if (!id || !existing.some((b) => b.id === id)) {
-      await tx.importedRecord.deleteMany({ where: { projectId: job.projectId, source: job.source, kind: "board", externalId: board.id } });
+      await tx.importedRecord.deleteMany({ where: { projectId: job.projectId, source: job.source, kind: { in: ["board", "board-past-limit"] }, externalId: board.id } });
+      folded = false;
       here = false;
       const name = board.name.trim().slice(0, 60) || "Feedback";
       const same = existing.find((b) => b.name.trim().toLowerCase() === name.toLowerCase());
@@ -144,12 +148,14 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
         folded = true;
       }
       await remember(tx, job, "board", board.id, id);
+      if (folded) {
+        await remember(tx, job, "board-past-limit", board.id, id);
+      }
     }
     known.set(board.id, id);
     if (count) {
       tally(job.counts, "boards", folded ? "past the plan's board limit, their posts in the last board" : here ? ALREADY_HERE : null);
     }
-    used.add(id);
     last = id;
   }
   if (count && boards.length > visible.length) {
