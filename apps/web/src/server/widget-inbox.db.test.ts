@@ -443,9 +443,12 @@ test("a signed-out visitor who types someone else's address never reads that per
   const visitor = { visitor: (started as { visitor: string }).visitor };
   await call(replyToConversation, team, { number: 1, body: "Which account is it?" });
 
-  // The team's reply is emailed to that address; its owner answers it (DMARC passes: it's really from them).
+  // The team's reply is emailed to that address; someone forges an answer from it first (DMARC fails: to Spam).
   const { replyToken } = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id, number: 1 } });
   const replyAddress = supportAddress(subdomain, "tuti.email", replyToken);
+  const forged = rawEmail({ from: "e2e-victim@example.com", to: replyAddress, subject: "Re: Please confirm", body: "Forged" });
+  expect(await postEmail(forged, { recipient: replyAddress, auth: "spf=fail dkim=fail dmarc=fail" })).toEqual({ status: 200, body: { outcome: "added" } });
+  // Its owner answers it (DMARC passes: it's really from them).
   const raw = rawEmail({ from: "e2e-victim@example.com", to: replyAddress, subject: "Re: Please confirm", body: "I never asked. My account is private-details." });
   expect(await postEmail(raw, { recipient: replyAddress })).toEqual({ status: 200, body: { outcome: "added" } });
 
@@ -472,6 +475,7 @@ test("a signed-out visitor who types someone else's address never reads that per
       visitor: true,
       bodies: ["Please confirm the billing email on file", "Which account is it?", "Sorry, could you check?"],
     },
-    { number: 2, email: "e2e-victim@example.com", emailVerified: true, visitor: false, bodies: ["I never asked. My account is private-details.", "Still private-details."] },
+    { number: 2, email: "e2e-victim@example.com", emailVerified: false, visitor: false, bodies: ["Forged"] },
+    { number: 3, email: "e2e-victim@example.com", emailVerified: true, visitor: false, bodies: ["I never asked. My account is private-details.", "Still private-details."] },
   ]);
 });

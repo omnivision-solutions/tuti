@@ -344,11 +344,19 @@ async function readEmail(id: string, projectId: string, token: string | null, au
       let conversation = found;
       let addresses = await conversationAddresses(found.id);
       // A signed-out visitor's conversation: mail from its address started one of its own (below), and further
-      // replies to the visitor's go on there, the latest one this address's mail to its reply address went to,
-      // which they join by that conversation's own people.
+      // replies to the visitor's go on there, the latest one this address's proven mail (DMARC passed, so never one
+      // forged into Spam) to its reply address went to, which they join by that conversation's own people. Replies
+      // that lost the reply address (only its Message-IDs) start one each.
       if (addresses.unproven) {
         const earlier = await prisma.inboundEmail.findFirst({
-          where: { projectId, sender, status: "ADDED", recipient: { startsWith: `support+${found.replyToken}@` }, conversationId: { not: found.id } },
+          where: {
+            projectId,
+            sender,
+            dmarc: "pass",
+            status: "ADDED",
+            recipient: { startsWith: `support+${found.replyToken}@` },
+            conversationId: { not: found.id },
+          },
           orderBy: { createdAt: "desc" },
           select: { conversationId: true },
         });
