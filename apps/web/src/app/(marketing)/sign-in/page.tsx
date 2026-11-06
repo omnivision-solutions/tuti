@@ -1,4 +1,5 @@
 import { emailConfigured } from "@tuti/email";
+import { plansEnabled } from "@tuti/shared";
 import { redirect } from "next/navigation";
 
 import { AuthForm } from "@/components/auth-form";
@@ -35,8 +36,8 @@ export default async function SignInPage(props: PageProps<"/sign-in">) {
           // Password resets need email that really goes out.
           forgotPassword={emailConfigured()}
         />
-        {/* Continue with Google or GitHub signs up someone new. */}
-        {social.length > 0 && <TermsAgreement by="continuing" />}
+        {/* On tuti.so, Continue with Google or GitHub signs up someone new. */}
+        {plansEnabled() && social.length > 0 && <TermsAgreement by="continuing" />}
       </div>
     </WithPitch>
   );

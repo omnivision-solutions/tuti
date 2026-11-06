@@ -9,6 +9,8 @@ import { buyLicense } from "@/server/license-checkout";
 import { LICENSE_ID, licensePrice } from "@/server/license-sales";
 import { licensePrivateKey } from "@/server/license-server";
 
+import { TermsAgreement } from "../legal";
+
 export const metadata: Metadata = { title: 'Remove "Powered by tuti"', robots: { index: false } };
 
 /** Where licences are sold without Stripe, and where a bought one is cancelled without Stripe's customer portal. */
@@ -95,6 +97,7 @@ export default async function LicensePage(props: PageProps<"/license">) {
           <input type="hidden" name="project" value={project} />
           {failed && <p className="text-sm text-destructive">Couldn&apos;t open Stripe&apos;s checkout. Try again in a moment.</p>}
           <p>Pay by card with Stripe, {billing.billed}. It renews until you cancel it.</p>
+          <TermsAgreement by="buying" />
           <div className="flex flex-wrap gap-2">
             {monthly && (
               <Button type="submit" name="interval" value="month">

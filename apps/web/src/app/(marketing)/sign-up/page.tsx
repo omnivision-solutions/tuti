@@ -1,4 +1,5 @@
 import { emailConfigured } from "@tuti/email";
+import { plansEnabled } from "@tuti/shared";
 import { redirect } from "next/navigation";
 
 import { AuthForm } from "@/components/auth-form";
@@ -22,7 +23,7 @@ export default async function SignUpPage(props: PageProps<"/sign-up">) {
     <WithPitch>
       <div className="flex flex-col gap-4">
         <AuthForm mode="sign-up" social={socialProviders()} socialError={socialSignInError(error, via, emailConfigured())} redirectTo="/app" next={nextPath || undefined} defaultEmail={defaultEmail} />
-        <TermsAgreement by="signing up" />
+        {plansEnabled() && <TermsAgreement by="signing up" />}
       </div>
     </WithPitch>
   );

@@ -2,6 +2,8 @@ import { plansEnabled } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { licensePrivateKey } from "@/server/license-server";
+
 /** The address for anything about tuti.so's terms and privacy. */
 export const CONTACT_EMAIL = "hello@tuti.so";
 
@@ -12,11 +14,11 @@ export const contact = (
 );
 
 /**
- * tuti.so's terms and privacy policy: only on Tuti's cloud (where plans are sold), since a self-hosted
- * server's operator writes their own.
+ * tuti.so's terms and privacy policy: only on Tuti's own server, where plans or licences are sold, since a
+ * self-hosted server's operator writes their own.
  */
 export function LegalPage({ title, updated, children }: { title: string; updated: string; children: React.ReactNode }) {
-  if (!plansEnabled()) {
+  if (!plansEnabled() && !licensePrivateKey()) {
     notFound();
   }
   return (
@@ -31,11 +33,10 @@ export function LegalPage({ title, updated, children }: { title: string; updated
 }
 
 /**
- * "By signing up, you agree to …" under the forms that create a tuti.so account: sign-up, and sign-in
- * when it offers Continue with Google or GitHub (which signs up someone new). Only on Tuti's cloud.
+ * "By signing up, you agree to …" where someone signs up or buys on tuti.so: sign-up, sign-in when it offers
+ * Continue with Google or GitHub (which signs up someone new), and buying a licence. Callers show it only there.
  */
 export function TermsAgreement({ by }: { by: string }) {
-  if (!plansEnabled()) return null;
   const link = "underline underline-offset-4 hover:text-foreground";
   return (
     <p className="text-center text-sm text-muted-foreground">
