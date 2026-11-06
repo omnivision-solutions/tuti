@@ -265,6 +265,22 @@ test("a board the team made Private or Team only keeps its choice: posts folded 
   expect(await prisma.post.findFirst({ where: { projectId: project.id, title: "Only for one customer" }, select: { visibility: true } })).toEqual({ visibility: "TEAM" });
 });
 
+test("a post Featurebase shows to some people, not its author among them, stays out, counted", async () => {
+  const forOthers = fake.fixtures.posts.find((post) => post.title === "Only for one customer")!;
+  forOthers.access = { userIds: ["65f00000000000000000beef"], companyExternalIds: [] };
+  await importFeedback();
+  expect((await call(getImport, asOwner(), {})).import!.counts.posts).toMatchObject({ imported: 5, leftOut: expect.objectContaining({ "only some people see": 3 }) });
+  expect(await prisma.post.count({ where: { projectId: project.id, title: "Only for one customer" } })).toBe(0);
+});
+
+test("importing again makes a board an earlier import brought Public Private, once Featurebase's posts there are their author's", async () => {
+  await importFeedback();
+  expect((await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Bugs" }, select: { postVisibility: true } })).postVisibility).toBe("PUBLIC");
+  fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
+  await importFeedback();
+  expect((await prisma.board.findFirstOrThrow({ where: { projectId: project.id, name: "Bugs" }, select: { postVisibility: true } })).postVisibility).toBe("PRIVATE");
+});
+
 test("a page run twice, at once or again later, and a second import, bring nothing twice", async () => {
   const started = await importFeedback();
   const before = await made();

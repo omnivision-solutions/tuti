@@ -189,6 +189,12 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
       if (folded) {
         await remember(tx, job, "board-past-limit", board.id, id);
       }
+    } else if (!folded && boardVisibility(board).postVisibility) {
+      // Brought by an import from before author-only boards came Private: made so now, if it's still Public.
+      const { count: changed } = await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } });
+      if (changed > 0) {
+        await tx.importedRecord.createMany({ data: [{ projectId: job.projectId, source: job.source, kind: "board-made-private", externalId: board.id, localId: id }], skipDuplicates: true });
+      }
     }
     known.set(board.id, id);
     if (count) {
@@ -222,13 +228,17 @@ function etaMonth(eta: string | null): Date | null {
   return date && !Number.isNaN(date.getTime()) ? new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)) : null;
 }
 
+/** Featurebase showed it only to some people, its author among them: it comes as Private (its author and the team). */
+const forItsAuthor = (post: FeaturebasePost) => Boolean(post.access?.userIds?.length && post.author?.id && post.access.userIds.includes(post.author.id));
+
 /**
- * Why a post stays out (null: it comes), its board's too. One only some people see comes as Private (its author and the
- * team: Featurebase's "only the author"), unless it's a company's (Tuti has no companies' posts).
+ * Why a post stays out (null: it comes), its board's too. One only some people see comes as Private when its author is
+ * among them (forItsAuthor: the others named lose sight of it, nobody gains it); one for others, or a company's (Tuti
+ * has no companies' posts), stays out.
  */
 function postLeftOut(post: FeaturebasePost, boards: Map<string, FeaturebaseBoard>): string | null {
   const board = boards.get(post.boardId);
-  if (!board || restricted(board) || post.access?.companyExternalIds?.length) {
+  if (!board || restricted(board) || post.access?.companyExternalIds?.length || (post.access?.userIds?.length && !forItsAuthor(post))) {
     return "only some people see";
   }
   return post.portalHidden ? "hidden from the portal" : post.inReview ? "waiting for moderation" : null;
@@ -335,7 +345,7 @@ async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPag
         if (visibilityOf.get(target) === "TEAM") {
           return "TEAM" as const;
         }
-        if (post.access?.userIds?.length || (source && boardVisibility(source).postVisibility)) {
+        if (forItsAuthor(post) || (source && boardVisibility(source).postVisibility)) {
           return "PRIVATE" as const;
         }
         return privateFromImport.has(target) && visibilityOf.get(target) === "PRIVATE" ? ("PUBLIC" as const) : visibilityOf.get(target);
