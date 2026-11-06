@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   }
   const installationId = Number(params.get("installation"));
   const offered = accountsFromCookie((await cookies()).get(ACCOUNTS_COOKIE)?.value ?? "", project.id);
-  const current = await prisma.githubInstallation.count({ where: { projectId: project.id, installationId } });
+  const current = Number.isSafeInteger(installationId) && (await prisma.githubInstallation.count({ where: { projectId: project.id, installationId } }));
   if (!current && !offered.some((installation) => installation.id === installationId)) {
     return NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=expired`, appUrl()));
   }

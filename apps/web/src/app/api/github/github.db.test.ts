@@ -349,7 +349,9 @@ describe("repositories", () => {
     const fromApp = { headers: { "sec-fetch-site": "same-origin" } };
     expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=703`, fromApp)))).toContain("/login/oauth/authorize");
     // Reconnecting goes only to the project's own account, or one GitHub offered them.
-    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=799`)))).toMatch(/github=expired$/);
+    for (const other of ["799", "abc"]) {
+      expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=${other}`)))).toMatch(/github=expired$/);
+    }
   });
 
   test("repositories no project has are ignored, even added on GitHub; removed ones leave their project", async () => {
