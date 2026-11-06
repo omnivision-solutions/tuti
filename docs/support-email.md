@@ -8,7 +8,8 @@ users keep writing to the address they know.
 
 ## For teams
 
-1. In Settings → Inbox and email, under Email, choose **Get a support address** and copy it.
+1. In Settings → Inbox and email, under Email, choose **Get a support address** (turning on Messages in the widget
+   gets you one too) and copy it.
 2. In your email provider, forward your support address to it, keeping the original sender. Most
    providers send a confirmation first; it lands in your Inbox in Tuti. Step by step for Google
    Workspace, Microsoft 365, Zoho Mail, Fastmail, Proton Mail and Cloudflare Email Routing are in the

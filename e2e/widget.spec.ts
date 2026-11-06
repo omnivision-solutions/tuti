@@ -1952,9 +1952,9 @@ test("with the support inbox on, someone the page signs in messages the team fro
   // Its title was made from the message (shown in full below it): two lines at most.
   const title = widget.getByRole("heading", { level: 2, name: "How do I export my data? (I tried https://example.com/help/export.)" });
   expect(await title.evaluate((h) => [getComputedStyle(h).webkitLineClamp, h.clientHeight <= parseFloat(getComputedStyle(h).lineHeight) * 2.5])).toEqual(["2", true]);
-  // Where the reply comes: here only (the project has no support address to email from). No reply time yet.
+  // Where the reply comes: here, and by email if Sam has left (turning Messages on gave the project its support address). No reply time yet.
   const replyWhere = widget.getByText(/^We'll reply here/);
-  await expect(replyWhere).toHaveText("We'll reply here.");
+  await expect(replyWhere).toHaveText(`We'll reply here. If you've left, we'll email you at ${samEmail(slug)}.`);
   // Said to screen readers as it appears: a polite live region.
   await expect(replyWhere).toHaveRole("status");
   // The reply box at the bottom of the panel, above its tabs, though there's one short message.
@@ -2245,9 +2245,9 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
-  // With a support address, the team's replies can be emailed too.
-  await owner.getByRole("button", { name: "Get a support address" }).click();
+  // Turning Messages on gave the project its support address, so the team's replies can be emailed too.
   await expect(owner.getByText(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`)).toBeVisible();
+  await checkpoint(owner, "support-settings-messages-on");
   // Someone the team's app already told Tuti about.
   const kim = `e2e-kim-${slug}@example.com`;
   const api = await apiFor(owner, slug);
@@ -2644,7 +2644,6 @@ test("someone who emailed the team sees that conversation in the widget's Messag
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
-  await owner.getByRole("button", { name: "Get a support address" }).click();
   const supportAddress = `support@${slug}.${SUPPORT_EMAIL_DOMAIN}`;
   await expect(owner.getByText(supportAddress).first()).toBeVisible();
 

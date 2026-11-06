@@ -2165,16 +2165,13 @@ test("an article ends with the previous and next in reading order, related ones,
   await visitor.getByRole("button", { name: "Close the assistant" }).click();
   await expect(visitor.getByRole("dialog", { name: "Assistant" })).toBeHidden();
 
-  // Once it answers messages (Messages in the widget), "Contact us": the widget's Messages, on a page of their own…
+  // Once it answers messages (Messages in the widget, which gives it its support address), "Contact us": an email to
+  // that address… (A server that receives no email has no address: the widget's Messages on a page of their own.)
   await api("/support", { inbox: true }, "PATCH");
   await visitor.reload();
   const contactUs = stuck.getByRole("link", { name: "Contact us" });
-  await expect(contactUs).toHaveAttribute("href", "/widget?tab=messages");
-  await checkpoint(visitor, "portal-article-end-contact-us");
-  // …or, with its support address, an email to it…
-  await api("/support", { email: true }, "PATCH");
-  await visitor.reload();
   await expect(contactUs).toHaveAttribute("href", `mailto:support@${slug}.${SUPPORT_EMAIL_DOMAIN}`);
+  await checkpoint(visitor, "portal-article-end-contact-us");
   // …and in the widget, where the team's own code puts it on the page.
   await visitor.evaluate(() => {
     (window as { Tuti?: unknown }).Tuti = { open: (options: unknown) => document.body.setAttribute("data-opened", JSON.stringify(options)) };

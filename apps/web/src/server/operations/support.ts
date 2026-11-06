@@ -161,7 +161,7 @@ export const getSupportSettings = defineOperation({
 
 export const updateSupportSettings = defineOperation({
   name: "support.update",
-  summary: "Turn the support inbox on or off (it takes “Ask a person” after an AI answer too, docs.escalate), or (`email: true`) give the project its support email address, which is its for good",
+  summary: "Turn the support inbox on or off (it takes “Ask a person” after an AI answer too, docs.escalate; turning it on gives the project its support email address where the server receives email), or (`email: true`) give the project its support email address, which is its for good",
   method: "PATCH",
   path: "/support",
   scope: "write",
@@ -175,11 +175,13 @@ export const updateSupportSettings = defineOperation({
     if (input.email && !supportDomain()) {
       throw new OperationError(409, "email_off", "This server doesn't receive email (SUPPORT_EMAIL_DOMAIN isn't set)");
     }
+    // Turning Messages on gives it the address too (where the server receives email), so replies can be emailed. The
+    // address first: if that fails, Messages stays off, as the switch shows, and trying again does both.
+    if (input.email || (input.inbox && supportDomain())) {
+      await mailSubdomain(projectId);
+    }
     if (input.inbox !== undefined) {
       await prisma.project.update({ where: { id: projectId }, data: { supportInbox: input.inbox } });
-    }
-    if (input.email) {
-      await mailSubdomain(projectId);
     }
     return supportSettings(projectId);
   },

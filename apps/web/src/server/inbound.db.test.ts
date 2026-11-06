@@ -8,6 +8,8 @@ import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
 import { conversationPerson } from "./operations/conversations";
+import { call } from "./operations/run";
+import { updateSupportSettings } from "./operations/support";
 import { upsertProjectUser } from "./project-users";
 
 /** Receiving email (server/inbound.ts, /api/inbound/email): fixture emails as the receiver posts them. */
@@ -315,4 +317,30 @@ test("an email in the Inbox stays in once, even when recording its forwarding fa
   // Delivered again: still one.
   await postEmail(raw, { recipient: address });
   expect(await conversations(project.id)).toHaveLength(1);
+});
+
+test("turning Messages on gives the project its support address, so replies can be emailed; not where the server receives no email", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  expect((await call(updateSupportSettings, team, { inbox: true })).email?.address).toBe(supportAddress(project.slug, DOMAIN));
+
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "");
+  const other = await createProject(owner);
+  await call(updateSupportSettings, { ...team, projectId: other.id }, { inbox: true });
+  expect(await prisma.mailSubdomain.findUnique({ where: { projectId: other.id } })).toBeNull();
+});
+
+test("if getting the address fails, Messages stays off (as the switch shows); trying again turns on both", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  const inbox = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { supportInbox: true } })).supportInbox;
+  // The address lookup fails (the database blips).
+  const failing = vi.spyOn(prisma.mailSubdomain, "findUnique").mockRejectedValueOnce(new Error("down"));
+  await expect(call(updateSupportSettings, team, { inbox: true })).rejects.toThrow();
+  expect(await inbox()).toBe(false);
+  failing.mockRestore();
+  expect((await call(updateSupportSettings, team, { inbox: true })).email?.address).toBe(supportAddress(project.slug, DOMAIN));
+  expect(await inbox()).toBe(true);
 });
