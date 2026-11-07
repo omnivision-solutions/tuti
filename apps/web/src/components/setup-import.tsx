@@ -299,7 +299,7 @@ export function SetupImport({
       </p>
       <CardContent className={source && shown ? undefined : "sr-only"}>
         {source && shown && (
-          <div ref={progressRef} tabIndex={-1} className="rounded-xl border p-4 outline-none">
+          <div ref={progressRef} tabIndex={-1} className="scroll-mt-14 rounded-xl border p-4 outline-none">
             <p className="mb-3 text-sm font-medium">
               {importTitle(shown)}
               <span className="block font-normal text-muted-foreground">
