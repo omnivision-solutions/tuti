@@ -106,7 +106,8 @@ function boardWords(board: FeaturebaseBoard) {
 /**
  * The project's board for each Featurebase board everyone sees: one of the same name (a new project's Feature requests),
  * else a new one, turned off (Board.off: the team's alone until an upgrade turns it on) once the plan has no room
- * (boardLimit counts boards that are on). A new project's untouched board (its only one, without posts of its own,
+ * (boardLimit counts boards that are on); one whose source can't say who sees it (`off`) comes turned off whatever the
+ * room, the board it lands in too, for the team to turn on once checked. A new project's untouched board (its only one, without posts of its own,
  * matched by none and no import's) becomes the first one made, renamed, so it costs the plan no slot. Remembered,
  * so every page (and a later import) puts them in the same place. Imports from before boards could be off put a board
  * past the limit into the last one imported, its posts with them: remembered so (`board-past-limit`), it stays so.
@@ -141,20 +142,25 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
       folded = false;
       here = false;
       const name = board.name.trim().slice(0, 60) || "Feedback";
-      const same = existing.find((b) => sameName(b.name, name));
+      let same = existing.find((b) => sameName(b.name, name));
+      // One the source can't say who sees (`off`) never lands in a board the team has on with posts of its own: that board
+      // would go dark on the portal. It's a new board, turned off, beside it.
+      if (same && board.off && !same.off && (await tx.post.count({ where: { boardId: same.id, sample: false } })) > 0) {
+        same = undefined;
+      }
       const words = boardWords(board);
       // Made Private by this import (Featurebase's posts there were their author's), not by the team: see visibilityFor.
       let madePrivate = Boolean(boardVisibility(board).postVisibility);
       if (same) {
         id = same.id;
-        await tx.board.update({ where: { id }, data: words });
+        await tx.board.update({ where: { id }, data: { ...words, ...(board.off && { off: true }) } });
         // Only their author's in Featurebase: Private here too, unless the team chose already (Private or Team only). Brought
         // Private by the team's choice (postsPage), only a board of theirs still untouched: its posts come Private anyway.
         const untouched = job.publicPosts || (await tx.post.count({ where: { boardId: id, sample: false } })) === 0;
         madePrivate &&= untouched && (await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } })).count > 0;
       } else {
         // No room on the plan: brought turned off, for an upgrade to turn on.
-        const off = !spare && limit !== null && existing.filter((b) => !b.off).length >= limit;
+        const off = Boolean(board.off) || (!spare && limit !== null && existing.filter((b) => !b.off).length >= limit);
         const slugged = titleSlug(name, "board").slice(0, 36).replace(/-+$/, "");
         const base = slugged.length >= 2 ? slugged : "board";
         let slug = base;
@@ -172,10 +178,10 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
               update: { boardId: spare.id },
             });
           }
-          await tx.board.update({ where: { id: spare.id }, data: { name, slug, ...words } });
+          await tx.board.update({ where: { id: spare.id }, data: { name, slug, ...words, ...(board.off && { off: true }) } });
           // Private only from Public, as a board of the same name: one the team keeps to itself (Team only) stays so.
           madePrivate &&= (await tx.board.updateMany({ where: { id: spare.id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } })).count > 0;
-          Object.assign(spare, { name, slug });
+          Object.assign(spare, { name, slug, ...(board.off && { off: true }) });
           id = spare.id;
           spare = undefined;
         } else {

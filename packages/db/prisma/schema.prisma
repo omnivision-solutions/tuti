@@ -2524,6 +2524,7 @@ enum ImportSource {
   /// A public help center, crawled from its address (packages/jobs import-sources/website.ts).
   WEBSITE
   FRILL
+  NOLT
 }
 
 enum ImportState {

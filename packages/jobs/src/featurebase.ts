@@ -157,6 +157,8 @@ export type FeaturebaseBoard = {
   access?: { adminOnly?: boolean; allowedRoles?: string[]; deniedRoles?: string[]; segments?: string[] } | null;
   /** Who its new posts are for: everyone, only their author (and the team), or the author's company. */
   postDefaults?: { visibility?: "public" | "authorOnly" | "companyOnly" } | null;
+  /** Another source's board whose API doesn't say who sees it (Nolt's): it comes turned off, for the team to turn on once checked. */
+  off?: boolean;
   localization?: { name?: FeaturebaseLocalized; description?: FeaturebaseLocalized; formPlaceholder?: FeaturebaseLocalized; submitButtonText?: FeaturebaseLocalized } | null;
 };
 
