@@ -100,6 +100,14 @@ describe("inviting by email", () => {
     actAs(await signUp("Ivy", email));
     expect(await redirectTarget(acceptInvitation(tokenOf(ownerInvite.url!)))).toBe(`/app/${project.slug}`);
   });
+
+  test("once an owner's owner invite has expired, admins can invite that address again", async () => {
+    const email = newEmail();
+    await createInvitation(project.slug, email, "OWNER");
+    await prisma.invitation.updateMany({ where: { projectId: project.id, email }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    actAs(await addMember(project.id, "ADMIN"));
+    expect(await createInvitation(project.slug, email, "MEMBER")).toMatchObject({ emailSent: true });
+  });
 });
 
 describe("invites someone sent go when they can't give that role any more", () => {
