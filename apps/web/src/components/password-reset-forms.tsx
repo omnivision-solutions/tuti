@@ -88,10 +88,9 @@ export function PasswordChangedAlert() {
   );
 }
 
-/** "Set a new password" on the page a reset link opens, for the account `email` (from the stored link). */
+/** "Set a new password" on the page a reset link opens (the app's), for the account `email` (from the stored link). */
 export function NewPasswordForm({ token, email }: { token: string; email: string }) {
   const router = useRouter();
-  const at = usePortalHref();
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
 
@@ -105,8 +104,8 @@ export function NewPasswordForm({ token, email }: { token: string; email: string
       if ("error" in result) {
         setError(result.error);
       } else {
-        // Sign in with the new password (or, for a dead link, ask for a new one).
-        router.push(at(result.location));
+        // Sign in with the new password, maybe on the way back to a portal (or, for a dead link, ask for a new one).
+        router.push(result.location);
       }
     });
 

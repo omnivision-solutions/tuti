@@ -9,6 +9,7 @@ import { SignJWT } from "jose";
 import { GET as authGet, POST as authRoute } from "@/app/api/auth/[...all]/route";
 import { GET as ssoRoute } from "@/app/portal/[project]/(site)/sso/route";
 import { auth } from "@/lib/auth";
+import { appUrl } from "@/lib/hosts";
 import { BASE_HEADER } from "@/lib/portal-base";
 import { generateSsoSecret } from "@/lib/sso";
 import { proxy } from "@/proxy";
@@ -117,10 +118,12 @@ test("SSO there comes back under the path, errors too", async () => {
 });
 
 test("session cookies are Tuti's own (tuti.…), beside a site's", async () => {
+  // Signing up is the app's (a password isn't typed on the site), with the same cookies.
+  const app = appUrl().host;
   const response = await authRoute(
-    new Request(`http://${host()}/api/auth/sign-up/email`, {
+    new Request(`http://${app}/api/auth/sign-up/email`, {
       method: "POST",
-      headers: { host: host(), "content-type": "application/json" },
+      headers: { host: app, "content-type": "application/json" },
       body: JSON.stringify({ email: `e2e-${crypto.randomUUID()}@example.com`, password: "correct horse battery staple", name: "Ada" }),
     }),
   );

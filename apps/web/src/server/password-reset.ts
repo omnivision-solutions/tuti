@@ -8,16 +8,16 @@ import { headers } from "next/headers";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { requestTarget } from "@/server/custom-domains";
+import { portalAddress, requestTarget } from "@/server/custom-domains";
 
 import { countEmailedLink } from "./email-link-limits";
 import { FAILED_PASSWORD_RESET_PATH, pendingPasswordReset } from "./sign-in-link-lookup";
 
 /*
- * "Forgot your password?" on the app and on portals, with Better Auth's reset flow
- * (lib/auth.ts). Each link is bound to the host it was asked on: the portal (whose
- * sign_in_link row has its project) or the app host (no project). The account is the
- * same everywhere, so a new password works on the app and on every portal.
+ * "Forgot your password?" with Better Auth's reset flow (lib/auth.ts). It can be asked on the
+ * app or on a portal (whose sign_in_link row has its project, for the email's sender and the
+ * way back), but every link opens on the app's host and the password is set there only: the
+ * account is the same everywhere, and a portal's team may run its portal's host.
  */
 
 const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")) });
@@ -68,14 +68,11 @@ export async function emailPasswordReset(form: FormData): Promise<{ error?: stri
 }
 
 /**
- * "Set new password" on the page a reset link opens (/reset-password): uses the token
- * up, signs the account out everywhere and marks its email verified (lib/auth.ts), then
- * goes to sign in with the new password. A dead link, or one from another host, goes
- * back to "Forgot your password?".
- *
- * Returns where to go rather than redirecting: Next.js renders a server action's redirect
- * by fetching the path from its own origin, past proxy.ts, so on a portal it would get
- * the app's page of the same name.
+ * "Set new password" on the page a reset link opens (the app's /reset-password): uses the
+ * token up, signs the account out everywhere and marks its email verified (lib/auth.ts),
+ * then goes to sign in with the new password, on the way back to the portal it was asked on
+ * (through its /continue). A dead link, or a request to any host but the app's, goes back
+ * to "Forgot your password?".
  */
 export async function setNewPassword(form: FormData): Promise<{ error: string } | { location: string }> {
   const token = String(form.get("token") ?? "");
@@ -83,23 +80,23 @@ export async function setNewPassword(form: FormData): Promise<{ error: string } 
   if (password !== String(form.get("confirm") ?? "")) {
     return { error: "The passwords don't match." };
   }
-  // Bound to the host this request came to, never a form field.
-  const { slug } = await thisHost();
-  let changed = false;
-  if (slug !== undefined && (await pendingPasswordReset(slug, token))) {
-    try {
-      await auth.api.resetPassword({ body: { token, newPassword: password } });
-      changed = true;
-    } catch (error) {
-      if (!(error instanceof APIError)) {
-        throw error;
-      }
-      // Too short or long: checked before the token is used, so they can try again.
-      if (error.body?.code?.startsWith("PASSWORD_TOO_")) {
-        return { error: error.message };
-      }
-      // Otherwise used up since the check: the same as any other dead link.
-    }
+  const reset = (await thisHost()).slug === null ? await pendingPasswordReset(token) : null;
+  if (!reset) {
+    return { location: FAILED_PASSWORD_RESET_PATH };
   }
-  return { location: changed ? "/sign-in?reset=done" : FAILED_PASSWORD_RESET_PATH };
+  try {
+    await auth.api.resetPassword({ body: { token, newPassword: password } });
+  } catch (error) {
+    if (!(error instanceof APIError)) {
+      throw error;
+    }
+    // Too short or long: checked before the token is used, so they can try again.
+    if (error.body?.code?.startsWith("PASSWORD_TOO_")) {
+      return { error: error.message };
+    }
+    // Otherwise used up since the check: the same as any other dead link.
+    return { location: FAILED_PASSWORD_RESET_PATH };
+  }
+  // Asked on a portal: back there, whose /continue signs them in on the app (saying it's changed) and hands over (lib/portal-handoff.ts).
+  return { location: reset.askedOn ? `${await portalAddress(reset.askedOn)}/continue?reset=done` : "/sign-in?reset=done" };
 }

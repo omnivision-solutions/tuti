@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { proxy } from "@/proxy";
+import { appUrl } from "@/lib/hosts";
 import { randomSecret } from "@/lib/portal-handoff";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -134,7 +135,7 @@ test("only an address with a path of its own, on a site of the team's own", asyn
   await prisma.siteMount.deleteMany({ where: { projectId: project.id } });
 });
 
-test("links Tuti emails, and \"Continue as\", keep the path", async () => {
+test("links Tuti emails, and \"Continue as\", keep the path; a password reset's is the app's", async () => {
   await call(setSite, as(), { url: `${site.origin}/portal` });
   await forwardCheck();
   await call(verifySite, as(), {});
@@ -142,14 +143,15 @@ test("links Tuti emails, and \"Continue as\", keep the path", async () => {
   form.set("email", owner.email);
   await emailSignInLink(project.slug, "/", form);
   expect((await mailbox.latestTo(owner.email)).text).toContain(`${site.origin}/portal/sign-in/link?token=`);
-  // A password reset asked for on the portal.
+  // A password reset asked for on the portal: set on the app, never on the site.
   request.host = tuti();
   try {
     expect(await emailPasswordReset(form)).toMatchObject({ sentTo: owner.email });
   } finally {
     request.host = "";
   }
-  expect((await mailbox.latestTo(owner.email)).text).toContain(`${site.origin}/portal/reset-password?token=`);
+  expect((await mailbox.latestTo(owner.email)).text).toContain(`${appUrl().origin}/reset-password?token=`);
+  expect((await mailbox.latestTo(owner.email)).text).not.toContain(site.origin);
   actAs(owner);
   const back = await redirectTarget(continueToPortal(project.slug, randomSecret(), "/roadmap"));
   expect(back.startsWith(`${site.origin}/portal/api/auth/continue/callback?code=`)).toBe(true);

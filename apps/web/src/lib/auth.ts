@@ -3,7 +3,7 @@ import { handOverOnVerified, projectSender } from "@tuti/jobs";
 import { passwordChangedEmail, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
@@ -37,19 +37,19 @@ async function sendSignInLink({ email, token, metadata }: { email: string; token
 }
 
 /**
- * Binds a password reset link's token to the host it was asked on and emails a link to
- * that host's /reset-password. Better Auth's request endpoint isn't served: only
- * emailPasswordReset (server/password-reset.ts) asks, passing its sign_in_link row's id
- * as `redirectTo`, which comes back here as the URL's callbackURL.
+ * Remembers a password reset link's token on the sign_in_link row of where it was asked and emails a link to the
+ * app's /reset-password, wherever that was: a portal's address can be its team's own domain or site, and the
+ * password is the account's everywhere. Better Auth's request endpoint isn't served: only emailPasswordReset
+ * (server/password-reset.ts) asks, passing its row's id as `redirectTo`, which comes back here as the URL's callbackURL.
  */
 async function sendPasswordReset({ user, url, token }: { user: { email: string }; url: string; token: string }) {
   const linkId = new URL(url).searchParams.get("callbackURL")!;
   const { project } = await prisma.signInLink.update({
     where: { id: linkId },
     data: { tokenHash: hashSecret(token) },
-    select: { project: { select: { id: true, slug: true, name: true } } },
+    select: { project: { select: { id: true, name: true } } },
   });
-  const link = new URL(`${project ? await portalAddress(project.slug) : appUrl().origin}/reset-password`);
+  const link = new URL("/reset-password", appUrl());
   link.searchParams.set("token", token);
   await sendEmail({
     to: user.email,
@@ -57,6 +57,22 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
     // A portal's reset comes from its project; the app's from Tuti.
     ...(project && (await projectSender(project.id))),
   });
+}
+
+/**
+ * A verification link is opened later, maybe much later: its way back (callbackURL) mustn't carry a "Continue as"
+ * handoff's state, used once and kept 10 minutes (lib/portal-handoff.ts). A sign-up from a portal has one (its `next` is
+ * the app's /continue); without it, /continue starts a new handoff from the portal.
+ */
+function withoutHandoffState(link: string): string {
+  const url = new URL(link);
+  const back = url.searchParams.get("callbackURL");
+  if (back?.startsWith("/continue?")) {
+    const callback = new URL(back, url);
+    callback.searchParams.delete("state");
+    url.searchParams.set("callbackURL", `${callback.pathname}${callback.search}`);
+  }
+  return url.toString();
 }
 
 /** handOverOnVerified, never failing what verified the address (it's verified either way); a failure is logged. */
@@ -68,6 +84,21 @@ const handOverPlaceholdersLogged = (userId: string) =>
  * verification email. Nothing of the account: its name is changed on the app (the portal's account page links there).
  */
 const PORTAL_SESSION_PATHS = new Set(["/get-session", "/sign-out", "/send-verification-email"]);
+
+/** Where the account's password is typed or set: the app's own host only (see passwordOnAppOnly). */
+const PASSWORD_PATHS = new Set(["/sign-in/email", "/sign-up/email", "/change-password"]);
+
+/**
+ * A request to sign in, sign up or change the password from any host but the app's is refused: a portal's team may run
+ * its host (its own domain, or its site's path) and see what's typed there. Portals send people to the app for it.
+ * Calls from the server itself (auth.api, no host) aren't requests from a browser.
+ */
+async function passwordOnAppOnly(ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0]) {
+  const host = ctx.headers?.get("host");
+  if (PASSWORD_PATHS.has(ctx.path) && host && (await requestTarget(host)).kind !== "app") {
+    throw new APIError("FORBIDDEN", { message: "Sign in with a password on Tuti itself." });
+  }
+}
 
 /**
  * Every auth request, auth.api.getSession's included: a session cookie is left out, as if there were none, unless its
@@ -146,7 +177,12 @@ export const auth = betterAuth({
   // A session is bound to where it was started: a portal's (signing in there, "Continue as", SSO) to its project, as a
   // team runs its portal's custom domain or site, so can see its cookies there. It works there only (hooks.before).
   session: { additionalFields: { boundTo: { type: "string", required: false, input: false } } },
-  hooks: { before: createAuthMiddleware(async (ctx) => withoutSessionBoundElsewhere(ctx)) },
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      await passwordOnAppOnly(ctx);
+      return withoutSessionBoundElsewhere(ctx);
+    }),
+  },
   // Continue with Google / GitHub only signs people in: their tokens are never used, and GitHub's (through tuti.so's
   // GitHub App) could read code where the App is installed. So none is kept, and none can be handed out again.
   databaseHooks: {
@@ -172,7 +208,7 @@ export const auth = betterAuth({
     expiresIn: 24 * 60 * 60,
     sendVerificationEmail: async ({ user, url }, request) => {
       try {
-        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url }) });
+        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: withoutHandoffState(url) }) });
       } catch (error) {
         log.error("Sending the verification email failed", { error });
         // A failed email mustn't fail a sign-up (it can be sent again), but asking
@@ -186,7 +222,7 @@ export const auth = betterAuth({
   // Portal sign-in links (lib/sign-in-link.ts) are only asked for through the emailSignInLink
   // action (which applies the limits) and opened at the portal's /sign-in/link (bound to that portal).
   // Password resets (server/password-reset.ts) likewise: asked for through emailPasswordReset (limits)
-  // and set through setNewPassword (bound to the host that asked).
+  // and set through setNewPassword (on the app's host only).
   // Listing and revoking sessions: unused, and they'd show a portal's session (bound there, above) the account's others.
   disabledPaths: [
     "/sign-in/magic-link",

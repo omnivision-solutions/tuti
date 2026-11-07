@@ -6,10 +6,10 @@ import { FAILED_PASSWORD_RESET_PATH, pendingPasswordReset } from "@/server/sign-
 
 export const metadata: Metadata = { robots: { index: false } };
 
-/** tuti.so/reset-password?token=… is the link in a reset email asked for on the app (server/password-reset.ts). */
+/** tuti.so/reset-password?token=… is the link in every reset email, wherever it was asked for (server/password-reset.ts). */
 export default async function ResetPasswordPage(props: PageProps<"/reset-password">) {
   const { token } = await props.searchParams;
-  const account = typeof token === "string" ? await pendingPasswordReset(null, token) : null;
+  const account = typeof token === "string" ? await pendingPasswordReset(token) : null;
   if (!account) {
     redirect(FAILED_PASSWORD_RESET_PATH);
   }

@@ -36,11 +36,11 @@ export const failedSignInLinkPath = (next: string) =>
   `/sign-in?${new URLSearchParams({ link: "failed", ...(next !== "/" && { next }) })}`;
 
 /**
- * The account a password reset link is for, if the link can still be used on this host
- * (the portal `projectSlug`, or the app host when null), or null. Reads only: the token
- * is used up when the new password is set (see server/password-reset.ts).
+ * The account a password reset link is for, if the link can still be used, and the portal it was asked on (null: the
+ * app), or null. Every link is used on the app's host. Reads only: the token is used up when the new password is set
+ * (see server/password-reset.ts).
  */
-export async function pendingPasswordReset(projectSlug: string | null, token: string) {
+export async function pendingPasswordReset(token: string) {
   if (!token || token.length > 100) {
     return null;
   }
@@ -52,10 +52,11 @@ export async function pendingPasswordReset(projectSlug: string | null, token: st
       select: { value: true },
     }),
   ]);
-  if (!link || (link.project?.slug ?? null) !== projectSlug || !verification) {
+  if (!link || !verification) {
     return null;
   }
-  return prisma.user.findUnique({ where: { id: verification.value }, select: { email: true } });
+  const user = await prisma.user.findUnique({ where: { id: verification.value }, select: { email: true } });
+  return user && { email: user.email, askedOn: link.project?.slug ?? null };
 }
 
 /** Where a reset link that didn't work sends people: "Forgot your password?", to ask for a new one. */

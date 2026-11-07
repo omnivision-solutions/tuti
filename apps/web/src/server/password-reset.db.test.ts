@@ -5,7 +5,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import ForgotPasswordPage from "@/app/(marketing)/forgot-password/page";
 import ResetPasswordPage from "@/app/(marketing)/reset-password/page";
-import PortalResetPasswordPage from "@/app/portal/[project]/(site)/reset-password/page";
+import PortalSignInPage from "@/app/portal/[project]/(site)/sign-in/page";
+import { AuthForm } from "@/components/auth-form";
 import { NewPasswordForm } from "@/components/password-reset-forms";
 import { auth } from "@/lib/auth";
 import {
@@ -18,6 +19,7 @@ import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/t
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
+import { forgetCustomDomain } from "./custom-domains";
 import { emailPasswordReset, setNewPassword } from "./password-reset";
 import { emailSignInLink } from "./sign-in-link";
 import { widgetStartConversation } from "./widget-inbox";
@@ -43,6 +45,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 const portalHost = (slug = project.slug) => `${slug}.localhost:3100`;
@@ -66,16 +69,27 @@ async function linkTo(email: string) {
   return new URL(message.text.split(/\s+/).find((word) => word.includes("/reset-password?"))!);
 }
 
-/** Opens `link` on `host` (the app's page, or a portal's): the account its form is for, or where it sent the browser instead. */
-async function view(link: URL, host = link.host) {
+/**
+ * Portals whose hosts their teams run: one on its own domain (help.….example.com, its host), one under a path of its
+ * team's site (which forwards the path to the portal's Tuti host).
+ */
+async function teamRunPortals() {
+  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  const onDomain = await createProject(await signUp("Domain owner"));
+  const domain = `help.${randomUUID().slice(0, 8)}.example.com`;
+  await prisma.customDomain.create({ data: { projectId: onDomain.id, hostname: domain, verificationToken: "t", verifiedAt: new Date() } });
+  const onSite = await createProject(await signUp("Site owner"));
+  await prisma.siteMount.create({
+    data: { projectId: onSite.id, origin: "https://site.example", path: "/help", verificationToken: "t", verifiedAt: new Date() },
+  });
+  forgetCustomDomain("");
+  return { onDomain, domainHost: `${domain}:3100`, onSite };
+}
+
+/** Opens `link` on the app's page: the account its form is for, or where it sent the browser instead. */
+async function view(link: URL) {
   const searchParams = Promise.resolve(Object.fromEntries(link.searchParams));
-  const page =
-    host === APP_HOST
-      ? ResetPasswordPage({ params: Promise.resolve({}), searchParams } as PageProps<"/reset-password">)
-      : PortalResetPasswordPage({
-          params: Promise.resolve({ project: host.split(".")[0]! }),
-          searchParams,
-        } as PageProps<"/portal/[project]/reset-password">);
+  const page = ResetPasswordPage({ params: Promise.resolve({}), searchParams } as PageProps<"/reset-password">);
   const rendered = await page.catch((error: unknown) => error);
   if ((rendered as { digest?: string }).digest?.startsWith("NEXT_REDIRECT;")) {
     return { location: await redirectTarget(Promise.reject(rendered)) };
@@ -125,36 +139,39 @@ test("an app user gets an email with a link to the app; it sets a new password o
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
 });
 
-test("a portal user's link goes to that portal, names the portal, and works there", async () => {
-  expect(await ask(user.email, portalHost())).toEqual({ sentTo: user.email });
-  expect((await mailbox.latestTo(user.email)).text).toContain(`your account on ${project.name}`);
-  const link = await linkTo(user.email);
-  expect(link.origin + link.pathname).toBe(`http://${portalHost()}/reset-password`);
-  expect(await view(link)).toEqual({ email: user.email });
-  expect(await setPassword(link)).toEqual({ location: "/sign-in?reset=done" });
-  expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
+test("asked on a portal, its own domain or its team's site: from the portal, a link to the app, then back to the portal", async () => {
+  const { onDomain, domainHost, onSite } = await teamRunPortals();
+  for (const [host, portal, back] of [
+    [portalHost(), project, `http://${portalHost()}/continue?reset=done`],
+    [domainHost, onDomain, `http://${domainHost}/continue?reset=done`],
+    // The site forwards the request to the portal's Tuti host.
+    [portalHost(onSite.slug), onSite, "https://site.example/help/continue?reset=done"],
+  ] as const) {
+    expect(await ask(user.email, host)).toEqual({ sentTo: user.email });
+    expect((await mailbox.latestTo(user.email)).text).toContain(`your account on ${portal.name}`);
+    const link = await linkTo(user.email);
+    // Never the portal's address: its team may run it, and the password is the account's everywhere.
+    expect(link.origin + link.pathname).toBe(`http://${APP_HOST}/reset-password`);
+    expect(await view(link)).toEqual({ email: user.email });
+    // Its /continue: signing in on the app, and back.
+    expect(await setPassword(link, `${NEW_PASSWORD} ${host}`)).toEqual({ location: back });
+    expect(await signsInWith(user.email, `${NEW_PASSWORD} ${host}`)).toBe(true);
+  }
 });
 
-test("a portal's link only works on that portal, and an app link only on the app", async () => {
-  const other = await createProject(await signUp("Other owner"));
+test("a link is used on the app only, wherever it was asked", async () => {
+  const { domainHost, onSite } = await teamRunPortals();
   await ask(user.email, portalHost());
   const portalLink = await linkTo(user.email);
-  for (const host of [portalHost(other.slug), APP_HOST]) {
-    expect(await view(portalLink, host)).toEqual({ location: FAILED });
-    expect(await setPassword(portalLink, NEW_PASSWORD, { host })).toEqual({ location: FAILED });
-  }
-
   await ask(user.email);
   const appLink = await linkTo(user.email);
-  for (const host of [portalHost(), portalHost(other.slug)]) {
-    expect(await view(appLink, host)).toEqual({ location: FAILED });
-    expect(await setPassword(appLink, NEW_PASSWORD, { host })).toEqual({ location: FAILED });
+  for (const host of [portalHost(), domainHost, portalHost(onSite.slug), "elsewhere.example"]) {
+    for (const link of [portalLink, appLink]) {
+      expect(await setPassword(link, NEW_PASSWORD, { host })).toEqual({ location: FAILED });
+    }
   }
-  // Nor on a host that's neither.
-  expect(await setPassword(appLink, NEW_PASSWORD, { host: "elsewhere.example" })).toEqual({ location: FAILED });
   expect(await signsInWith(user.email, OLD_PASSWORD)).toBe(true);
 
-  // Each still works where it belongs.
   expect(await view(portalLink)).toEqual({ email: user.email });
   expect(await setPassword(appLink)).toEqual({ location: "/sign-in?reset=done" });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
@@ -174,7 +191,7 @@ test("setting a new password uses up the account's other reset links too", async
   await ask(someoneElse.email);
   const theirs = await linkTo(someoneElse.email);
 
-  expect(await setPassword(second)).toEqual({ location: "/sign-in?reset=done" });
+  expect(await setPassword(second)).toEqual({ location: `http://${portalHost()}/continue?reset=done` });
   expect(await view(first)).toEqual({ location: FAILED });
   expect(await setPassword(first, "yet another password")).toEqual({ location: FAILED });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
@@ -228,7 +245,7 @@ test("an account whose password was removed (opening a sign-in link before verif
   await prisma.account.deleteMany({ where: { userId: user.id, providerId: "credential" } });
   expect(await signsInWith(user.email, OLD_PASSWORD)).toBe(false);
   await ask(user.email, portalHost());
-  expect(await setPassword(await linkTo(user.email))).toEqual({ location: "/sign-in?reset=done" });
+  expect(await setPassword(await linkTo(user.email))).toEqual({ location: `http://${portalHost()}/continue?reset=done` });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
 });
 
@@ -378,4 +395,69 @@ test("Better Auth's own reset endpoints aren't served (they'd skip the limits an
     }
   }
   expect(sentTo(user.email)).toBe(0);
+});
+
+test("signing in or up with a password is refused on every host but the app's, its own domain and its team's site included", async () => {
+  const { domainHost, onSite } = await teamRunPortals();
+  const post = (host: string, path: string, body: object, origin = `http://${host}`) =>
+    auth.handler(
+      new Request(`http://${host}/api/auth/${path}`, {
+        method: "POST",
+        headers: { host, origin, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+  const newcomer = newAddress();
+  const sessions = await prisma.session.count({ where: { userId: user.id } });
+  for (const [host, origin] of [
+    [portalHost(), undefined],
+    [domainHost, undefined],
+    // Posted from the site's page, which forwards it to the portal's Tuti host.
+    [portalHost(onSite.slug), "https://site.example"],
+  ] as const) {
+    expect((await post(host, "sign-in/email", { email: user.email, password: OLD_PASSWORD }, origin)).status).toBe(403);
+    expect((await post(host, "sign-up/email", { email: newcomer, password: OLD_PASSWORD, name: "New" }, origin)).status).toBe(403);
+  }
+  expect(await prisma.session.count({ where: { userId: user.id } })).toBe(sessions);
+  expect(await prisma.user.count({ where: { email: newcomer } })).toBe(0);
+
+  expect((await post(APP_HOST, "sign-in/email", { email: user.email, password: OLD_PASSWORD })).status).toBe(200);
+  expect((await post(APP_HOST, "sign-up/email", { email: newcomer, password: OLD_PASSWORD, name: "New" })).status).toBe(200);
+});
+
+test("a portal's sign-in page has no password form, without email set up too: its Tuti account link goes to the app", async () => {
+  /** Every element in a rendered tree (server components' output: client components aren't rendered further). */
+  const elements = (node: unknown): React.ReactElement<{ children?: unknown; href?: string }>[] => {
+    if (Array.isArray(node)) {
+      return node.flatMap(elements);
+    }
+    if (!node || typeof node !== "object" || !("props" in node)) {
+      return [];
+    }
+    const element = node as React.ReactElement<{ children?: unknown; href?: string }>;
+    return [element, ...elements(element.props.children)];
+  };
+  const render = async () =>
+    elements(
+      await PortalSignInPage({
+        params: Promise.resolve({ project: project.slug }),
+        searchParams: Promise.resolve({}),
+      } as PageProps<"/portal/[project]/sign-in">),
+    );
+
+  request.host = portalHost();
+  // With email: the emailed link's form, whose "Use a password instead" goes to the app.
+  const form = (await render()).find((element) => element.type === AuthForm);
+  expect(form?.props).toMatchObject({ mode: "sign-in", linkProject: project.slug });
+
+  const smtpHost = process.env.SMTP_HOST;
+  delete process.env.SMTP_HOST;
+  try {
+    const page = await render();
+    expect(page.filter((element) => element.type === AuthForm)).toEqual([]);
+    expect(page.filter((element) => element.type === "input")).toEqual([]);
+    expect(page.some((element) => element.props.href === "/continue")).toBe(true);
+  } finally {
+    process.env.SMTP_HOST = smtpHost;
+  }
 });

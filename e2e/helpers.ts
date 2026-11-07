@@ -18,7 +18,7 @@ export async function newPerson(browser: Browser, baseUrl: string): Promise<Page
   return Object.assign(await context.newPage(), { ip });
 }
 
-/** A new browser session that signed up at `baseUrl` (the app or a portal). */
+/** A new browser session that signed up at `baseUrl` (the app, or a portal: on the app, and back to it). */
 export async function signUp(
   browser: Browser,
   baseUrl: string,
@@ -29,7 +29,30 @@ export async function signUp(
   await page.goto("/sign-up");
   await fillSignUp(page, name, email);
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
+  if (new URL(page.url()).pathname === "/continue") {
+    await backToPortal(page);
+  }
   return Object.assign(page, { email });
+}
+
+/** On the app's "Continue to <project>" (a portal sent them to sign in there): back to the portal, signed in. */
+export async function backToPortal(page: Page) {
+  const app = new URL(page.url()).origin;
+  await page.getByRole("button", { name: /^Continue as / }).click();
+  await page.waitForURL((url) => url.origin !== app);
+}
+
+/**
+ * On a portal's sign-in page: "Use a password instead" signs in on the app (passwords are typed only there, never on a
+ * host a portal's team may run) and comes back to the portal.
+ */
+export async function signInWithPassword(page: Page, email: string, password = "correct horse battery staple") {
+  await page.getByRole("link", { name: "Use a password instead" }).click();
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForURL((url) => url.pathname === "/continue");
+  await backToPortal(page);
 }
 
 /** Fills and submits the sign-up form on the current page (the email may be prefilled). */

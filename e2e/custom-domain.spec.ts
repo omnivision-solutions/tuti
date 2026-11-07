@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { issueCertificate, publishTxt } from "./dns";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { apiFor, backToPortal, createProject, fillSignUp, newPerson, signUp } from "./helpers";
 
 test("the team puts the portal on its own domain: adds it, verifies it with a TXT record, and people sign up and post there", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -174,11 +174,13 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
 
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(visitor).toHaveURL(`${domainUrl}/sign-in?next=%2Ffeedback%2Ffeature-requests`);
+  // The account is made on the app (a password is never typed on the team's domain), and back.
   await visitor.getByRole("link", { name: "Create an account" }).click();
-  await visitor.getByLabel("Name").fill("Ada");
-  await visitor.getByLabel("Email").fill(`e2e-${randomUUID()}@example.com`);
-  await visitor.getByLabel("Password").fill("correct horse battery staple");
-  await visitor.getByRole("button", { name: "Sign up" }).click();
+  await visitor.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-up");
+  await fillSignUp(visitor, "Ada", `e2e-${randomUUID()}@example.com`);
+  await visitor.waitForURL((url) => url.pathname === "/continue");
+  await backToPortal(visitor);
+  await expect(visitor).toHaveURL(`${domainUrl}/feedback/feature-requests`);
   await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
   await visitor.goto("/feedback/feature-requests");
   await visitor.getByRole("button", { name: "Submit post" }).click();

@@ -7,16 +7,23 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { isSecret } from "@/lib/portal-handoff";
 import { safeRedirectPath } from "@/lib/redirects";
+import { portalAddress } from "@/server/custom-domains";
 import { getAccountSession } from "@/server/session";
 
 /** "Continue as <name>": a portal sent someone here to sign in with their Tuti account (see lib/portal-handoff.ts). */
 export default async function ContinuePage(props: PageProps<"/continue">) {
-  const { portal, state, redirect: redirectParam } = await props.searchParams;
+  const { portal, state, redirect: redirectParam, "sign-up": signUp, reset } = await props.searchParams;
   const project =
     typeof portal === "string"
       ? await prisma.project.findUnique({ where: { slug: portal }, select: { slug: true, name: true } })
       : null;
 
+  const redirectPath = safeRedirectPath(typeof redirectParam === "string" ? redirectParam : undefined, "/");
+  // No state: a way back opened later (a sign-up's verification email; see lib/auth.ts), whose handoff is long used up.
+  // A new one, started on that project's portal (only one that exists), which comes back here with its own state.
+  if (project && state === undefined) {
+    redirect(`${await portalAddress(project.slug)}/continue?${new URLSearchParams({ redirect: redirectPath })}`);
+  }
   if (!project || !isSecret(state)) {
     return (
       <Card className="mx-auto w-full max-w-sm">
@@ -28,11 +35,11 @@ export default async function ContinuePage(props: PageProps<"/continue">) {
     );
   }
 
-  const redirectPath = safeRedirectPath(typeof redirectParam === "string" ? redirectParam : undefined, "/");
   const here = `/continue?${new URLSearchParams({ portal: project.slug, state, redirect: redirectPath })}`;
   const session = await getAccountSession();
   if (!session) {
-    redirect(`/sign-in?${new URLSearchParams({ next: here })}`);
+    // After a reset asked on the portal, its sign-in says the password was changed.
+    redirect(`/${signUp ? "sign-up" : "sign-in"}?${new URLSearchParams({ ...(reset === "done" && !signUp && { reset: "done" }), next: here })}`);
   }
 
   return (

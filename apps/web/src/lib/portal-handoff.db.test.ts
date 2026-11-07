@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
+import ContinuePage from "@/app/(marketing)/continue/page";
 import { GET as startContinue } from "@/app/portal/[project]/(site)/continue/route";
 import { forgetCustomDomain } from "@/server/custom-domains";
 import { getOwnerProject } from "@/server/membership";
@@ -73,6 +74,36 @@ test("the portal sets a state cookie and sends the browser to the app host with 
   expect(response.headers.getSetCookie()).toEqual([
     expect.stringMatching(new RegExp(`^${HANDOFF_STATE_COOKIE}=${state}; .*HttpOnly.*SameSite=lax`, "i")),
   ]);
+});
+
+test("after a password reset asked on the portal, the app's sign-in says it was changed; nothing else is passed on", async () => {
+  const start = async (query: string) =>
+    new URL(
+      (await startContinue(new Request(`http://${portalHost()}/continue?${query}`), { params: Promise.resolve({ project: slug }) })).headers.get(
+        "location",
+      )!,
+    );
+  expect((await start("reset=done")).searchParams.get("reset")).toBe("done");
+  for (const query of ["reset=other", "reset=done%22", "next=%2Fapp", "reset", ""]) {
+    const location = await start(query);
+    expect([...location.searchParams.keys()].sort()).toEqual(["portal", "redirect", "state"]);
+  }
+
+  // Signed out on the app (the reset signed the account out everywhere): its sign-in, with the alert, then back.
+  actAs(null);
+  request.host = APP_HOST;
+  const signIn = (query: Record<string, string>) =>
+    redirectTarget(
+      ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve({ portal: slug, state: randomSecret(), redirect: "/", ...query }) } as PageProps<"/continue">),
+    );
+  const changed = new URL(await signIn({ reset: "done" }), "http://x");
+  expect(changed.pathname).toBe("/sign-in");
+  expect([...changed.searchParams.keys()]).toEqual(["reset", "next"]);
+  expect(changed.searchParams.get("reset")).toBe("done");
+  expect(changed.searchParams.get("next")).toMatch(/^\/continue\?portal=/);
+  for (const reset of ["other", undefined]) {
+    expect(new URL(await signIn(reset ? { reset } : {}), "http://x").searchParams.has("reset")).toBe(false);
+  }
 });
 
 test("confirming signs the same account into the portal, once", async () => {
@@ -245,27 +276,19 @@ test("a session a portal on its team's own site starts doesn't work on the app h
   expect(await getSession()).toBeNull();
 });
 
-test("signing in with a password on a portal starts a session for that portal only; on the app, one for the app", async () => {
-  const signIn = async (host: string) => {
-    const { headers } = await auth.api.signInEmail({
+test("signing in with a password works on the app only (a portal's team may run its host); there it starts a session for the app", async () => {
+  const signIn = (host: string) =>
+    auth.api.signInEmail({
       body: { email: ada.email, password: "correct horse battery staple" },
       headers: new Headers({ host }),
       returnHeaders: true,
     });
-    return headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
-  };
-  const sessionOn = async (cookie: string, host: string) => {
-    actAs({ ...ada, cookie });
-    request.host = host;
-    return (await getSession())?.user.id ?? null;
-  };
+  await expect(signIn(portalHost())).rejects.toMatchObject({ statusCode: 403 });
 
-  const portal = await signIn(portalHost());
-  expect(await sessionOn(portal, portalHost())).toBe(ada.id);
-  expect(await sessionOn(portal, APP_HOST)).toBeNull();
-
-  const app = await signIn(APP_HOST);
-  expect(await sessionOn(app, APP_HOST)).toBe(ada.id);
+  const { headers } = await signIn(APP_HOST);
+  actAs({ ...ada, cookie: headers.getSetCookie().map((c) => c.split(";")[0]).join("; ") });
+  request.host = APP_HOST;
+  expect((await getSession())?.user.id).toBe(ada.id);
 });
 
 test("a session from before sessions were bound works nowhere", async () => {
