@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { signUp } from "./helpers";
-import { latestEmailTo } from "./mail";
+import { latestEmailTo, verifyEmail } from "./mail";
 
 test("after Create project, the team starts fresh, picks what it will use, gets the widget's snippet and invites a teammate; Home's Get set up follows", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -13,6 +13,8 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
   const teammate = `e2e-${randomUUID()}@example.com`;
 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
+  // Verified, so the setup's invite is emailed.
+  await verifyEmail(owner);
   await owner.goto("/app/new");
   await owner.getByLabel("Name").fill("Acme");
   await owner.getByLabel("URL").fill(slug);

@@ -12,9 +12,11 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { appUrl } from "@/lib/hosts";
 import { canAssignRole } from "@/lib/roles";
+import { inviteNote } from "@/lib/verify-email";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { boardsNote, latestImport } from "@/server/operations/imports";
 import { hasSampleContent } from "@/server/sample-content";
+import { getSession } from "@/server/session";
 
 const STEPS = ["from", "use", "widget", "team"] as const;
 
@@ -26,8 +28,8 @@ const STEPS = ["from", "use", "widget", "team"] as const;
 export default async function SetupPage(props: PageProps<"/app/[project]/setup">) {
   const { project: slug } = await props.params;
   const { step: asked } = await props.searchParams;
-  const membership = await getMembership(slug);
-  if (!membership || !isAdminRole(membership.role)) {
+  const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
+  if (!membership || !session || !isAdminRole(membership.role)) {
     notFound();
   }
   const step = STEPS.find((s) => s === asked) ?? "from";
@@ -103,7 +105,7 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
           <>
             <CardHeader>
               <CardTitle>Invite your team</CardTitle>
-              <CardDescription>We&apos;ll email them an invite. Only that email address can accept it.</CardDescription>
+              <CardDescription>{inviteNote(session.user)}</CardDescription>
             </CardHeader>
             <CardContent>
               <InviteForm projectSlug={slug} roles={(["OWNER", "ADMIN", "MEMBER"] as const).filter((r) => canAssignRole(membership.role, r))} />
