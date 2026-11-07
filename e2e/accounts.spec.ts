@@ -370,6 +370,12 @@ test("a portal user who forgot their password asks on the portal, sets it on the
   await expect(ada.getByText("Sign in to continue to Acme.")).toBeVisible();
   await ada.getByRole("link", { name: "Forgot your password?" }).click();
   await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/forgot-password" && url.searchParams.get("portal") === slug);
+  // "Back to sign in" keeps the way back to Acme.
+  await ada.getByRole("link", { name: "Back to sign in" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-in");
+  await expect(ada.getByText("Sign in to continue to Acme.")).toBeVisible();
+  await ada.getByRole("link", { name: "Forgot your password?" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/forgot-password" && url.searchParams.get("portal") === slug);
   await ada.getByLabel("Email").fill(ada.email);
   await checkpoint(ada, "portal-forgot-password");
   await ada.getByRole("button", { name: "Email me a link" }).click();

@@ -34,5 +34,6 @@ export async function continuingTo(next: string): Promise<{ name: string; forgot
   const url = new URL(next || "/", "http://localhost");
   const slug = url.pathname === "/continue" ? url.searchParams.get("portal") : null;
   const project = slug ? await prisma.project.findUnique({ where: { slug }, select: { slug: true, name: true } }) : null;
-  return project && { name: project.name, forgotPassword: `/forgot-password?${new URLSearchParams({ portal: project.slug })}` };
+  // Keeping the way back (`next`), for "Back to sign in" there.
+  return project && { name: project.name, forgotPassword: `/forgot-password?${new URLSearchParams({ portal: project.slug, next })}` };
 }

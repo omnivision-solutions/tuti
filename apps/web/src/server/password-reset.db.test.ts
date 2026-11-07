@@ -9,7 +9,7 @@ import ResetPasswordPage from "@/app/(marketing)/reset-password/page";
 import SignInPage from "@/app/(marketing)/sign-in/page";
 import PortalSignInPage from "@/app/portal/[project]/(site)/sign-in/page";
 import { AuthForm } from "@/components/auth-form";
-import { NewPasswordForm } from "@/components/password-reset-forms";
+import { ForgotPasswordForm, NewPasswordForm } from "@/components/password-reset-forms";
 import { auth } from "@/lib/auth";
 import {
   PASSWORD_RESET_MINUTES,
@@ -523,8 +523,17 @@ test("the app host never sends anyone to a portal's address by itself: dead link
   request.host = APP_HOST;
   const page = await SignInPage({ params: Promise.resolve({}), searchParams: Promise.resolve({ next: `/continue?portal=${onSite.slug}` }) } as PageProps<"/sign-in">);
   const form2 = elements(page).find((element) => element.type === AuthForm) as React.ReactElement<React.ComponentProps<typeof AuthForm>>;
-  expect(form2.props.forgotPasswordHref).toBe(`/forgot-password?portal=${onSite.slug}`);
+  const crafted = `/continue?portal=${onSite.slug}`;
+  expect(form2.props.forgotPasswordHref).toBe(`/forgot-password?${new URLSearchParams({ portal: onSite.slug, next: crafted })}`);
   expect(JSON.stringify(page)).not.toContain("site.example");
+  // There, "Back to sign in" keeps that way back: only a path on the app, never another site.
+  const forgot = async (next: string) => {
+    const rendered = await ForgotPasswordPage({ params: Promise.resolve({}), searchParams: Promise.resolve({ portal: onSite.slug, next }) } as PageProps<"/forgot-password">);
+    return (rendered as React.ReactElement<React.ComponentProps<typeof ForgotPasswordForm>>).props;
+  };
+  expect(await forgot(crafted)).toMatchObject({ portal: onSite.slug, next: crafted });
+  expect((await forgot("https://site.example/help")).next).toBeUndefined();
+  expect((await forgot("//site.example/help")).next).toBeUndefined();
 
   // Its "Forgot your password?" asks on the app, for that portal: from the portal, the link the app's, and after it the
   // app's sign-in, then the card with the portal's address to click on.

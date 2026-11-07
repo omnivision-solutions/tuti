@@ -17,9 +17,9 @@ import { usePortalHref } from "@/components/portal-base";
 
 /**
  * "Forgot your password?" on the app and on portals (server/password-reset.ts). `failed`: a reset link didn't work.
- * `portal`: on the app, asked for that portal.
+ * `portal`: on the app, asked for that portal; `next`: the sign-in's way back, kept by "Back to sign in".
  */
-export function ForgotPasswordForm({ failed, portal }: { failed: boolean; portal?: string }) {
+export function ForgotPasswordForm({ failed, portal, next }: { failed: boolean; portal?: string; next?: string }) {
   const at = usePortalHref();
   const [error, setError] = useState<string>();
   const [sentTo, setSentTo] = useState<string>();
@@ -72,7 +72,7 @@ export function ForgotPasswordForm({ failed, portal }: { failed: boolean; portal
             <Button type="submit" disabled={pending} className="w-full">
               {pending ? "…" : "Email me a link"}
             </Button>
-            <Link href={at("/sign-in")} className="text-sm text-foreground underline underline-offset-4">
+            <Link href={at(next ? `/sign-in?${new URLSearchParams({ next })}` : "/sign-in")} className="text-sm text-foreground underline underline-offset-4">
               Back to sign in
             </Link>
           </CardFooter>

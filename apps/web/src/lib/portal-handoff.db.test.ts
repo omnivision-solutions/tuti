@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
+import ContinuePage from "@/app/(marketing)/continue/page";
 import { GET as startContinue } from "@/app/portal/[project]/(site)/continue/route";
 import { forgetCustomDomain } from "@/server/custom-domains";
 import { getOwnerProject } from "@/server/membership";
@@ -86,6 +87,31 @@ test("the portal's /continue passes on only the portal, the path and its state (
     expect([...(await start(query)).searchParams.keys()].sort()).toEqual(["portal", "redirect", "state"]);
   }
   expect((await start("sign-up=1")).searchParams.get("sign-up")).toBe("1");
+});
+
+test("the \"Continue to\" card shows where it goes: the portal's address, its team's own site's too", async () => {
+  /** All the text in a rendered tree, as it reads. */
+  const textOf = (node: unknown): string =>
+    typeof node === "string"
+      ? node
+      : Array.isArray(node)
+        ? node.map(textOf).join("")
+        : node && typeof node === "object" && "props" in node
+          ? textOf((node as React.ReactElement<{ children?: unknown }>).props.children)
+          : "";
+  const card = async () => {
+    actAs(ada);
+    request.host = APP_HOST;
+    return textOf(
+      await ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve({ portal: slug, state: randomSecret(), redirect: "/" }) } as PageProps<"/continue">),
+    );
+  };
+  expect(await card()).toContain(`Use your Tuti account on ${(await prisma.project.findUniqueOrThrow({ where: { slug } })).name}'s portal, at ${portalHost()}.`);
+  // Under a path of its team's site, once verified: that address, not the Tuti one.
+  const { id } = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+  await prisma.siteMount.create({ data: { projectId: id, origin: "https://site.example", path: "/help", verificationToken: "t", verifiedAt: new Date() } });
+  forgetCustomDomain("");
+  expect(await card()).toContain("'s portal, at site.example/help.");
 });
 
 test("confirming signs the same account into the portal, once", async () => {
