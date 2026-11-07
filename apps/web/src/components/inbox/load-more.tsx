@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type MouseEvent, useLayoutEffect, useRef } from "react";
+import { type MouseEvent, useEffect, useLayoutEffect, useRef } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 
@@ -49,19 +49,23 @@ export function LoadMore({ href, pages, last, more }: { href: string; pages: num
 
 /**
  * "Show earlier messages" (`href`, while there are `more`): the earlier ones come in above the message shown first
- * (`first`, its id, as `data-message`), which stays where it was on the screen. Browsers don't keep it there on their
- * own: Chrome's scroll anchoring stops at the top of what scrolls, where this is, and Safari has none. The first one it
- * loads has focus then, rather than nothing (the page) once the button's gone with the last of them; only from the
- * button: where they've gone on meanwhile (the reply box), focus stays.
+ * (`first`, its id, as `data-message`), which stays where it was on the screen as they come (scrolled meanwhile, where
+ * that left it). Browsers don't keep it there on their
+ * own: Chrome's scroll anchoring stops at the top of what scrolls, where this is, and Safari has none. The one it loads
+ * just above it has focus then (in view, where they were reading), rather than nothing (the page) once the button's gone
+ * with the last of them; only from the button: where they've gone on meanwhile (the reply box), focus stays.
  */
 export function EarlierMessages({ href, first, more }: { href: string; first: string; more: boolean }) {
   const link = useRef<HTMLAnchorElement>(null);
-  const was = useRef<{ id: string; top: number } | null>(null);
+  const was = useRef<{ message: HTMLElement; top: number; stop: () => void } | null>(null);
+  useEffect(() => () => was.current?.stop(), []);
   useLayoutEffect(() => {
     const kept = was.current;
     was.current = null;
-    const message = kept && document.querySelector<HTMLElement>(`[data-message="${CSS.escape(kept.id)}"]`);
-    if (!kept || !message) {
+    kept?.stop();
+    // The same element: React keeps each message's as the earlier ones come in above it.
+    const message = kept?.message;
+    if (!kept || !message?.isConnected) {
       return;
     }
     // The pane beside the list from laptop width up (as ScrollToEnd picks it), else the page.
@@ -70,9 +74,11 @@ export function EarlierMessages({ href, first, more }: { href: string; first: st
     scroller.scrollBy({ top: message.getBoundingClientRect().top - kept.top, behavior: "instant" });
     const focused = document.activeElement;
     if (focused === document.body || focused === link.current) {
-      const loaded = document.querySelector<HTMLElement>("[data-message]")!;
-      loaded.tabIndex = -1;
-      loaded.focus({ preventScroll: true });
+      const loaded = message.previousElementSibling as HTMLElement | null;
+      if (loaded) {
+        loaded.setAttribute("tabindex", "-1");
+        loaded.focus({ preventScroll: true });
+      }
     }
   }, [first]);
 
@@ -83,8 +89,19 @@ export function EarlierMessages({ href, first, more }: { href: string; first: st
         href={href}
         scroll={false}
         onClick={(event) => {
+          was.current?.stop();
           const message = plain(event) ? document.querySelector<HTMLElement>("[data-message]") : null;
-          was.current = message && { id: message.dataset.message!, top: message.getBoundingClientRect().top };
+          if (!message) {
+            was.current = null;
+            return;
+          }
+          // Where it is, kept as they scroll while the earlier ones load (scroll events don't bubble: caught on their way down).
+          const kept = { message, top: message.getBoundingClientRect().top, stop: () => document.removeEventListener("scroll", scrolled, true) };
+          const scrolled = () => {
+            kept.top = message.getBoundingClientRect().top;
+          };
+          document.addEventListener("scroll", scrolled, true);
+          was.current = kept;
         }}
         className={buttonVariants({ variant: "outline", size: "sm", className: "self-center" })}
       >

@@ -1239,6 +1239,8 @@ async function holdNavigations(page: Page, what: RegExp) {
 }
 
 test("a view lists a hundred conversations, and a hundred more with each Load more: they stay listed as one of them opens", async ({ browser }, testInfo) => {
+  // A hundred and two conversations made through the API first.
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -1339,8 +1341,9 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   await expect(messages.nth(5)).toContainText("Message 6");
   expect(Math.abs((await messages.nth(5).boundingBox())!.y - y)).toBeLessThanOrEqual(1);
   await expect(messages.first()).not.toBeInViewport();
-  // The first of them has focus, the button gone with the last of them.
-  await expect(messages.first()).toBeFocused();
+  // The one loaded just above it has focus (not the first, out of view), the button gone with the last of them.
+  await expect(messages.nth(4)).toContainText("Message 5");
+  await expect(messages.nth(4)).toBeFocused();
   await checkpoint(owner, "conversation-earlier-messages", { fullPage: false });
 
   // A new message still takes it to the end.
@@ -1362,17 +1365,23 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(messages.last()).toContainText("Note 50");
   await expect(messages.first()).toContainText("Note 1");
-  // Gone on to the reply box while the earlier ones load, focus stays there.
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toBeHidden();
+  // Gone on to the reply box while the earlier ones load, focus stays there; scrolled meanwhile, they stay where that left them.
   const reply = owner.getByRole("textbox", { name: "Reply" });
   const release = await holdNavigations(owner, /[?&]messages=2/);
   await earlier.click();
   await reply.focus();
+  await owner.locator("#conversation").evaluate((pane) => pane.scrollBy({ top: 150, behavior: "instant" }));
   await expect(messages).toHaveCount(50);
+  const scrolledTo = (await messages.first().boundingBox())!.y;
   await release();
   await expect(messages).toHaveCount(100);
   await expect(reply).toBeFocused();
-  await owner.getByRole("button", { name: "More actions" }).click();
-  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toBeVisible();
+  await expect(messages.nth(50)).toContainText("Note 1");
+  expect(Math.abs((await messages.nth(50).boundingBox())!.y - scrolledTo)).toBeLessThanOrEqual(1);
 });
 
 test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
