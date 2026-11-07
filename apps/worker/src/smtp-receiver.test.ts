@@ -270,41 +270,40 @@ const signed = (count: number) =>
     "",
   ].join("\r\n");
 
-test("checks whose DNS never answers give up by their deadline, and the message's place is freed", async () => {
+/** DNS whose DKIM keys are never found, each answer just inside a lookup's limit (on the fake clock); the rest as `resolver`. */
+const slowKeys = (lookups: string[]) => (name: string, type: string) => {
+  lookups.push(name);
+  return name.includes("._domainkey.")
+    ? new Promise<never>((_, reject) => setTimeout(() => reject(Object.assign(new Error("not found"), { code: "ENOTFOUND" })), LOOKUP_TIMEOUT_MS - 1_000))
+    : resolver(name, type);
+};
+
+test("checks that run past their deadline leave the message untaken, try again later (451), and its place is freed", async () => {
   const lookups: string[] = [];
-  // Silent for the first message, then answering.
-  const silent = (name: string, type: string) => {
-    lookups.push(name);
-    return posts.length === 0 ? new Promise<never>(() => {}) : resolver(name, type);
-  };
-  const { open, sendRaw, posts } = await receiver([], { maxInFlight: 1, resolver: silent });
+  const { open, sendRaw, posts } = await receiver([], { maxInFlight: 1, resolver: slowKeys(lookups) });
   const session = await open();
   await startMessage(session);
   // The checks' timers from here on are fake.
   fakeCheckTimers();
-  session.write(`${signed(1)}\r\n.`);
+  session.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
   // The deadline starts with the checks: move the clock only once they're under way.
   await vi.waitFor(() => expect(lookups).not.toEqual([]));
   await elapse(AUTH_TIMEOUT_MS + 1_000);
   vi.useRealTimers();
-  await session.reply("250");
+  await session.reply("451");
   session.end();
-  expect(lookups).toContain("s0._domainkey.signer.example");
+  expect(posts).toEqual([]);
   await sendRaw("sam@example.org", ["support@b.support.test"], signed(0));
-  expect(posts).toHaveLength(2);
+  expect(posts).toHaveLength(1);
 });
 
 const from127 = { ip: "127.0.0.1", helo: "mail.example.org", serverName: "mx.support.test" };
 
-test("checks whose DNS answers just inside each lookup's limit still end by their deadline, and can't pass DMARC", async () => {
+test("checks whose DNS answers just inside each lookup's limit still end by their deadline, unfinished", async () => {
   fakeCheckTimers();
-  const slowKeys = (name: string, type: string) =>
-    name.includes("._domainkey.")
-      ? new Promise<never>((_, reject) => setTimeout(() => reject(Object.assign(new Error("not found"), { code: "ENOTFOUND" })), LOOKUP_TIMEOUT_MS - 1_000))
-      : resolver(name, type);
-  const result = checkAuth(Buffer.from(signed(MAX_DKIM_SIGNATURES)), { ...from127, sender: "sam@example.org", resolver: slowKeys });
+  const result = checkAuth(Buffer.from(signed(MAX_DKIM_SIGNATURES)), { ...from127, sender: "sam@example.org", resolver: slowKeys([]) });
   await elapse(AUTH_TIMEOUT_MS + 1_000);
-  await expect(result).resolves.toEqual({ spf: "none", dkim: "none", dmarc: "fail" });
+  await expect(result).resolves.toBeNull();
 });
 
 test("a DKIM key lookup that never answers gives up on its own, and SPF and DMARC are still checked", async () => {

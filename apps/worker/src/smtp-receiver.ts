@@ -49,7 +49,8 @@ export const IDLE_TIMEOUT_MS = 60_000;
 export const ARRIVAL_TIMEOUT_MS = 3 * 60_000;
 /**
  * How long one DNS lookup for the checks may take (past it, that check can't tell: a temperror), and
- * all of them: a sender whose DNS takes longer than that has its mail taken as failing DMARC (spam).
+ * all of them: past it, the message isn't taken and its sender tries again later (451), whether the
+ * delay was the sender's DNS or ours.
  */
 export const LOOKUP_TIMEOUT_MS = 5_000;
 export const AUTH_TIMEOUT_MS = 30_000;
@@ -137,7 +138,7 @@ function dkimSignatures(raw: Buffer) {
 
 const UNVERIFIED = { spf: "none", dkim: "none", dmarc: "fail" };
 
-/** SPF, DKIM and DMARC as the app reads them (`spf=pass dkim=none dmarc=fail`). */
+/** SPF, DKIM and DMARC as the app reads them (`spf=pass dkim=none dmarc=fail`), or null if they didn't finish in time. */
 export async function checkAuth(
   raw: Buffer,
   {
@@ -179,8 +180,7 @@ export async function checkAuth(
     };
   } catch (error) {
     if (expired) {
-      // Its own DNS kept the checks from finishing: it can't pass for its From domain (kept as spam).
-      return UNVERIFIED;
+      return null;
     }
     // A check that couldn't run proves nothing: as if nothing was checked (nothing joins a conversation).
     log.warn("Checking a received email's SPF, DKIM and DMARC failed", { error: String(error) });
@@ -345,6 +345,11 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       serverName,
       ...(options.resolver && { resolver: options.resolver }),
     });
+    if (!results) {
+      // DNS too slow to tell, the sender's or ours: not taken, and the sender tries again later.
+      log.warn("Checking a received email's SPF, DKIM and DMARC took too long: the sender will try again later");
+      return 451;
+    }
     const auth = `spf=${results.spf} dkim=${results.dkim} dmarc=${results.dmarc}`;
     const answers: Answer[] = [];
     for (const { address } of session.envelope.rcptTo) {
