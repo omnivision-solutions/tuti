@@ -70,9 +70,10 @@ The worker can receive the mail itself: an SMTP server for the support domain's 
   sending server hears what the app answered: taken, refused (no project has the address, or the
   message is over 25 MB), or "try again later" while the app is down or set up wrong (its email off,
   or a different `INBOUND_SECRET`, which the worker logs), so the sending server retries on its own.
-- **Limits:** 100 senders connected at once, 3 from one network (an IPv4 /24 or IPv6 /64), each
-  session 10 minutes at most and closed after a minute without a message; 10 messages being received
-  or delivered at once; 20 recipients per message; SPF, DKIM and DMARC checked within 30 seconds;
+- **Limits:** 100 senders connected at once, 3 from one network (an IPv4 /24 or IPv6 /48), each
+  session 10 minutes at most, closed after a minute without a message or 3 minutes into one still
+  arriving; 10 messages being received or delivered at once, 2 from one network; 20 recipients per
+  message; SPF, DKIM and DMARC checked within 30 seconds;
   mail whose checks take longer, with more than 10 DKIM signatures, or with a header over 1 MB, is
   taken as failing DMARC (spam). Past them, senders are told to come back later or to send the rest
   separately, as SMTP expects.

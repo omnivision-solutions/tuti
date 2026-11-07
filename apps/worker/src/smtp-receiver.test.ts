@@ -6,7 +6,22 @@ import nodemailer from "nodemailer";
 import type { SMTPServer } from "smtp-server";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { MAX_CLIENTS, MAX_HEADER_BYTES, MAX_PER_SOURCE, receiverFromEnv, sourceOf, startSmtpReceiver } from "./smtp-receiver";
+import {
+  ARRIVAL_TIMEOUT_MS,
+  AUTH_TIMEOUT_MS,
+  checkAuth,
+  IDLE_TIMEOUT_MS,
+  LOOKUP_TIMEOUT_MS,
+  MAX_CLIENTS,
+  MAX_DKIM_SIGNATURES,
+  MAX_HEADER_BYTES,
+  MAX_IN_FLIGHT,
+  MAX_IN_FLIGHT_PER_SOURCE,
+  MAX_PER_SOURCE,
+  receiverFromEnv,
+  sourceOf,
+  startSmtpReceiver,
+} from "./smtp-receiver";
 
 const SECRET = "a-test-secret-of-at-least-32-characters";
 
@@ -26,7 +41,29 @@ const resolver = async (name: string, type: string) => {
 };
 
 let server: SMTPServer | undefined;
-afterEach(() => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())));
+afterEach(() => {
+  vi.useRealTimers();
+  const closing = server;
+  server = undefined;
+  return new Promise<void>((resolve) => (closing ? closing.close(() => resolve()) : resolve()));
+});
+
+/**
+ * The receiver's clock, faked: time moves only when a test moves it. Its timeouts (idle, a message's
+ * arrival, the lifetime) are a clock its reaper reads on an interval; smtp-server's own timers stay real.
+ */
+const fakeSessionClock = () => vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+
+/** The checks' timers, faked: their deadlines are timeouts. */
+const fakeCheckTimers = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+/** Moves fake time on by `ms`, a second at a time, letting the real work in between (streams, I/O) catch up: timers set during a step can fire up to a second late, so callers add a second. */
+async function elapse(ms: number) {
+  for (let passed = 0; passed < ms; passed += 1_000) {
+    await vi.advanceTimersByTimeAsync(Math.min(1_000, ms - passed));
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
 
 /** A receiver for support.test, posting to a fake app that answers `answers` in turn (then 200). */
 type Limits = {
@@ -35,9 +72,6 @@ type Limits = {
   maxPerSource?: number;
   maxInFlight?: number;
   sessionLifetimeMs?: number;
-  idleTimeoutMs?: number;
-  authTimeoutMs?: number;
-  lookupTimeoutMs?: number;
   resolver?: (name: string, type: string) => Promise<unknown>;
 };
 
@@ -66,8 +100,8 @@ async function receiver(
   const send = (from: string, to: string[], text = "Hello") => transport.sendMail({ envelope: { from, to }, from, to, subject: "Help", text });
   /** A message as it is, headers and all. */
   const sendRaw = (from: string, to: string[], raw: string) => transport.sendMail({ envelope: { from, to }, raw });
-  /** A raw connection: what the server says first, and when it hangs up. */
-  const open = () =>
+  /** A raw connection (from `localAddress`, 127.0.0.1 by default): what the server says first, and when it hangs up. */
+  const open = (localAddress?: string) =>
     new Promise<{
       greeting: string;
       closed: Promise<void>;
@@ -76,7 +110,7 @@ async function receiver(
       reply: (code: string) => Promise<void>;
       end: () => void;
     }>((resolve) => {
-      const socket = connect(port, "127.0.0.1");
+      const socket = connect({ port, host: "127.0.0.1", ...(localAddress && { localAddress }) });
       const closed = new Promise<void>((done) => socket.on("close", () => done()));
       let heard = "";
       socket.on("data", (data) => (heard += data.toString()));
@@ -91,6 +125,21 @@ async function receiver(
       );
     });
   return { posts, send, sendRaw, open };
+}
+
+type Session = Awaited<ReturnType<Awaited<ReturnType<typeof receiver>>["open"]>>;
+
+/** Starts a message on a raw session, up to DATA's go-ahead. */
+async function startMessage(session: Session, to = "support@a.support.test") {
+  for (const [line, code] of [
+    ["EHLO sender.example", "250"],
+    ["MAIL FROM:<sam@example.org>", "250"],
+    [`RCPT TO:<${to}>`, "250"],
+    ["DATA", "354"],
+  ] as const) {
+    session.write(line);
+    await session.reply(code);
+  }
 }
 
 test("mail for a project's address is posted to the app signed, with SPF and DMARC as checked here", async () => {
@@ -225,25 +274,53 @@ const signed = (count: number) =>
     "",
   ].join("\r\n");
 
-test("checks whose DNS never answers give up by their deadline: its place is freed, and it can't pass DMARC", async () => {
+test("checks whose DNS never answers give up by their deadline, and the message's place is freed", async () => {
   const lookups: string[] = [];
-  const silent = (name: string) => {
+  // Silent for the first message, then answering.
+  const silent = (name: string, type: string) => {
     lookups.push(name);
-    return new Promise<never>(() => {});
+    return posts.length === 0 ? new Promise<never>(() => {}) : resolver(name, type);
   };
-  const { sendRaw, posts } = await receiver([], { maxInFlight: 1, authTimeoutMs: 200, resolver: silent });
-  await sendRaw("sam@example.org", ["support@a.support.test"], signed(1));
+  const { open, sendRaw, posts } = await receiver([], { maxInFlight: 1, resolver: silent });
+  const session = await open();
+  await startMessage(session);
+  // The checks' timers from here on are fake.
+  fakeCheckTimers();
+  session.write(`${signed(1)}\r\n.`);
+  // The deadline starts with the checks: move the clock only once they're under way.
+  await vi.waitFor(() => expect(lookups).not.toEqual([]));
+  await elapse(AUTH_TIMEOUT_MS + 1_000);
+  vi.useRealTimers();
+  await session.reply("250");
+  session.end();
   expect(lookups).toContain("s0._domainkey.signer.example");
-  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=none dkim=none dmarc=fail");
-  await sendRaw("sam@example.org", ["support@b.support.test"], signed(1));
+  await sendRaw("sam@example.org", ["support@b.support.test"], signed(0));
   expect(posts).toHaveLength(2);
 });
 
+const from127 = { ip: "127.0.0.1", helo: "mail.example.org", serverName: "mx.support.test" };
+
+test("checks whose DNS answers just inside each lookup's limit still end by their deadline, and can't pass DMARC", async () => {
+  fakeCheckTimers();
+  const slowKeys = (name: string, type: string) =>
+    name.includes("._domainkey.")
+      ? new Promise<never>((_, reject) => setTimeout(() => reject(Object.assign(new Error("not found"), { code: "ENOTFOUND" })), LOOKUP_TIMEOUT_MS - 1_000))
+      : resolver(name, type);
+  const result = checkAuth(Buffer.from(signed(MAX_DKIM_SIGNATURES)), { ...from127, sender: "sam@example.org", resolver: slowKeys });
+  await elapse(AUTH_TIMEOUT_MS + 1_000);
+  await expect(result).resolves.toEqual({ spf: "none", dkim: "none", dmarc: "fail" });
+});
+
 test("a DKIM key lookup that never answers gives up on its own, and SPF and DMARC are still checked", async () => {
+  fakeCheckTimers();
   const silentKeys = (name: string, type: string) => (name.includes("._domainkey.") ? new Promise<never>(() => {}) : resolver(name, type));
-  const { sendRaw, posts } = await receiver([], { lookupTimeoutMs: 100, resolver: silentKeys });
-  await sendRaw("ceo@forged.example", ["support@a.support.test"], signed(1).replace("From: sam@example.org", "From: ceo@forged.example"));
-  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=fail dkim=temperror dmarc=fail");
+  const result = checkAuth(Buffer.from(signed(1).replace("From: sam@example.org", "From: ceo@forged.example")), {
+    ...from127,
+    sender: "ceo@forged.example",
+    resolver: silentKeys,
+  });
+  await elapse(LOOKUP_TIMEOUT_MS + 1_000);
+  await expect(result).resolves.toEqual({ spf: "fail", dkim: "temperror", dmarc: "fail" });
 });
 
 test("a message with more DKIM signatures than any sender adds isn't checked, and can't pass DMARC", async () => {
@@ -280,46 +357,124 @@ test("a message with no blank line is all header: checked when it's short, not w
   expect(posts[1]!.headers["tuti-auth"]).toBe("spf=none dkim=none dmarc=fail");
 });
 
-test("a session that sends no message is closed long before its lifetime, however busy it keeps itself", async () => {
-  const { open } = await receiver([], { idleTimeoutMs: 300 });
+test("a header that ends right at the limit is checked, its blank line just past it", async () => {
+  const { sendRaw, posts } = await receiver();
+  let header = "From: sam@example.org\r\nTo: support@acme.support.test\r\nSubject: Help\r\n";
+  while (MAX_HEADER_BYTES - header.length > 950) {
+    header += `X-Filler: ${"x".repeat(900)}\r\n`;
+  }
+  header += `X-Filler: ${"x".repeat(MAX_HEADER_BYTES - header.length - "X-Filler: \r\n".length)}\r\n`;
+  // Its last line ends on the limit's last byte; the blank line after it is past the limit.
+  expect(header.length).toBe(MAX_HEADER_BYTES);
+  await sendRaw("sam@example.org", ["support@a.support.test"], `${header}\r\nHello\r\n`);
+  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=pass dkim=none dmarc=pass");
+});
+
+test("a session that sends no message is closed after a minute, long before its lifetime, however busy it keeps itself", async () => {
+  fakeSessionClock();
+  const { open } = await receiver();
   const session = await open();
   session.write("EHLO idle.example");
-  const busy = setInterval(() => session.write("NOOP"), 50);
+  await session.reply("250");
+  for (const _ of [1, 2]) {
+    vi.advanceTimersByTime(IDLE_TIMEOUT_MS / 2);
+    session.write("NOOP");
+    await session.reply("250");
+  }
+  vi.advanceTimersByTime(IDLE_TIMEOUT_MS / 2);
   await session.closed;
-  clearInterval(busy);
 });
 
 test("a session isn't idle while its message is delivered, and is again once it's answered", async () => {
-  const { open, posts } = await receiver([], { idleTimeoutMs: 300 }, async () => {
-    // Longer than the idle timeout.
-    await new Promise((resolve) => setTimeout(resolve, 600));
+  fakeSessionClock();
+  let release!: () => void;
+  const { open, posts } = await receiver([], {}, async () => {
+    if (posts.length === 1) {
+      await new Promise<void>((resolve) => (release = resolve));
+    }
     return { status: 200, outcome: "conversation" };
   });
   const session = await open();
-  session.write("EHLO busy.example");
+  await startMessage(session);
+  session.write("Subject: Help\r\n\r\nHello\r\n.");
+  await vi.waitFor(() => expect(posts).toHaveLength(1));
+  // Long past every deadline while it's delivered: still open, and its answer is heard.
+  vi.advanceTimersByTime(ARRIVAL_TIMEOUT_MS + IDLE_TIMEOUT_MS);
+  release();
   await session.reply("250");
-  for (const to of ["support@a.support.test", "support@b.support.test"]) {
-    for (const [line, code] of [
-      [`MAIL FROM:<sam@example.org>`, "250"],
-      [`RCPT TO:<${to}>`, "250"],
-      ["DATA", "354"],
-      ["Subject: Help\r\n\r\nHello\r\n.", "250"],
-    ] as const) {
-      session.write(line);
-      await session.reply(code);
-    }
+  // Another message on the same session.
+  for (const [line, code] of [
+    ["MAIL FROM:<sam@example.org>", "250"],
+    ["RCPT TO:<support@b.support.test>", "250"],
+    ["DATA", "354"],
+    ["Subject: Help\r\n\r\nHello\r\n.", "250"],
+  ] as const) {
+    session.write(line);
+    await session.reply(code);
   }
   expect(posts).toHaveLength(2);
   // Quiet from then on: closed.
+  vi.advanceTimersByTime(IDLE_TIMEOUT_MS + 30_000);
   await session.closed;
 });
 
-test("connections are counted by network (IPv4 /24, IPv6 /64), and a few networks can't take them all", () => {
+test("a message that arrives too slowly is cut off, long before the session's lifetime, and its place freed", async () => {
+  fakeSessionClock();
+  const { open, send } = await receiver([], { maxInFlight: 1 });
+  const slow = await open();
+  await startMessage(slow);
+  slow.write("Subject: Slow");
+  // Past the idle timeout, but still arriving: it keeps its place.
+  vi.advanceTimersByTime(IDLE_TIMEOUT_MS + 30_000);
+  slow.write("X-More: still coming");
+  await expect(send("sam@example.org", ["support@b.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  vi.advanceTimersByTime(ARRIVAL_TIMEOUT_MS);
+  await slow.closed;
+  await send("sam@example.org", ["support@b.support.test"]);
+});
+
+test("one network can't take every message in flight: past its share, try again later (451)", async () => {
+  expect(MAX_IN_FLIGHT_PER_SOURCE).toBeLessThan(MAX_IN_FLIGHT / 3);
+  const { open, send } = await receiver();
+  const sessions = await Promise.all(Array.from({ length: MAX_IN_FLIGHT_PER_SOURCE }, () => open()));
+  for (const session of sessions) {
+    await startMessage(session);
+    session.write("Subject: Half");
+  }
+  await expect(send("sam@example.org", ["support@b.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  sessions[0]!.end();
+  await sessions[0]!.closed;
+  await vi.waitFor(() => expect(send("sam@example.org", ["support@b.support.test"])).resolves.toBeDefined());
+  sessions.forEach((session) => session.end());
+});
+
+// Linux routes all of 127.0.0.0/8 to loopback; macOS has only 127.0.0.1 (CI runs Linux).
+test.skipIf(process.platform === "darwin")("two addresses in one network share its connections, and one closing frees a place for either", async () => {
+  const { open } = await receiver([], { maxPerSource: 2 });
+  const first = await open("127.0.0.1");
+  const second = await open("127.0.0.3");
+  expect([first.greeting, second.greeting]).toEqual([expect.stringMatching(/^220 /), expect.stringMatching(/^220 /)]);
+  const third = await open("127.0.0.3");
+  expect(third.greeting).toMatch(/^421 /);
+  first.end();
+  await first.closed;
+  await vi.waitFor(async () => {
+    const next = await open("127.0.0.3");
+    next.end();
+    expect(next.greeting).toMatch(/^220 /);
+  });
+  second.end();
+  third.end();
+});
+
+test("connections are counted by network (IPv4 /24, IPv6 /48), and a few networks can't take them all", () => {
   expect(sourceOf("::ffff:198.51.100.1")).toBe(sourceOf("198.51.100.2"));
   expect(sourceOf("198.51.100.1")).not.toBe(sourceOf("198.51.101.1"));
   expect(sourceOf("2001:db8::1")).toBe(sourceOf("2001:db8:0:0:1::2"));
   expect(sourceOf("2001:DB8:0000::1")).toBe(sourceOf("2001:db8::ffff"));
-  expect(sourceOf("2001:db8:0:1::1")).not.toBe(sourceOf("2001:db8::1"));
+  // A customer's /56 or /48 is one network.
+  expect(sourceOf("2001:db8:0:ff00::1")).toBe(sourceOf("2001:db8::1"));
+  expect(sourceOf("2001:db8:1::1")).not.toBe(sourceOf("2001:db8::1"));
   expect(MAX_CLIENTS).toBeGreaterThanOrEqual(10 * MAX_PER_SOURCE);
 });
 
