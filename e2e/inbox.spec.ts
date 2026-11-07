@@ -1443,17 +1443,34 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   expect(Math.abs((await messages.nth(50).boundingBox())!.y - scrolledTo)).toBeLessThanOrEqual(1);
 });
 
-test("answered with Send, a conversation stays open though it's left Needs reply; closed then, the next one down opens", async ({ browser }) => {
+test("answered with Send, a conversation stays open though it's left Needs reply; only closing it then opens the next one down", async ({ browser }) => {
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
   const row = (number: number) => list.getByRole("link", { name: new RegExp(`\\(#${number}\\)$`) });
+  const send = async (text: string) => {
+    await reply.fill(text);
+    await owner.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(row(2)).toHaveCount(0);
+    await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  };
   // Needs reply, the latest first: #3, #2, #1.
   await owner.goto(`/app/${slug}/inbox/2`);
   await expect(row(3)).toBeVisible();
-  await reply.fill("Looking into it.");
-  await owner.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(row(2)).toHaveCount(0);
+  await send("Looking into it.");
+  // Marked as open again, it's back in the list: it stays.
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Mark as open" }).click();
+  await expect(row(2)).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  // Answered again, then taken: still being worked on, it stays.
+  await send("Found it.");
+  await owner.getByRole("button", { name: "Assign", exact: true }).click();
+  await owner.getByRole("menuitem", { name: "Assign to me" }).click();
+  await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
+  await api("/conversations", { email: "e2e-fourth@example.com", body: "A fourth question" });
+  await expect(row(4)).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  // Closed, it's done with: the next one down from where it stood opens.
   await owner.getByRole("button", { name: "Close", exact: true }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await expect(row(1)).toBeFocused();

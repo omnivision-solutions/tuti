@@ -164,7 +164,7 @@ export function ReplyForm({
       const attached = files.ids;
       // Closed with it, it's done with: out of the view, the next one opens. Only answered (waiting on them now), it stays
       // open, the reply there to read, though it's left the view (Needs reply), as Featurebase and Intercom do.
-      const moved = close && sending === "reply" ? actOn(number) : () => {};
+      const moved = close && sending === "reply" ? actOn(number, true) : () => {};
       const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen);
       setError(result.error);
       setNotice(result.notice);
