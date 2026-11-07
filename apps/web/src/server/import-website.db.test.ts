@@ -435,3 +435,25 @@ test("an article page asking (Retry-After) for longer than a step waits isn't as
   await prisma.$transaction((tx) => again.save(tx));
   expect((await articles()).find((a) => a.title === "Install Acme")?.body).toBe("Download the app, then make your first project.\nThe installer");
 });
+
+test("a gone article is decided in the run that finds it: fetched once, however often its list page is read again", async () => {
+  contentBudget.ms = 0;
+  const at = (path: string) => `${site.origin}${path}`;
+  const folder = at("/docs/getting-started");
+  const row = await runningImport(site.url, {
+    list: { pages: [{ id: at("/docs/getting-started/gone"), collection: folder }, { id: at("/docs/getting-started/install"), collection: folder }], collections: [{ id: folder, parent: null, name: "Getting started" }] },
+  });
+  for (let step = 0; step < 10 && (await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).state === "RUNNING"; step++) {
+    await importStep({ importId: row.id }, log);
+  }
+  expect((await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).state).toBe("DONE");
+  expect(site.requests.filter((path) => path === "/docs/getting-started/gone")).toHaveLength(1);
+  expect((await articles()).find((a) => a.title === "Install Acme")?.body).toBe("Download the app, then make your first project.\nThe installer");
+});
+
+test("a listed page the site refuses (a 403) is counted as gone, as the last check would say it", async () => {
+  site.failing.set("/docs/billing/refunds", 403);
+  const done = await importSite();
+  expect(done.state).toBe("done");
+  expect(importSummary(done)).toContain("Left out: 2 articles gone from your help center (left as empty drafts)");
+});

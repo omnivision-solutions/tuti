@@ -613,6 +613,21 @@ export const websiteSource: ImportSourceDefinition = {
   status: (error) => (error instanceof SiteError ? error.status : null),
   connect: (address, { deadline, state }) => {
     const reader = site(address, deadline, state);
+    /**
+     * An article's page, as both the content pass and the last check read it: refused (robots.txt, not public) or
+     * answered with a 4xx (not a 429) is none; anything else that fails (a 429, a 5xx, no answer, out of time) is for a
+     * while, and thrown.
+     */
+    const readArticle = async (id: string, collection: string | null, order: number) => {
+      try {
+        return await reader.article(id, collection, order);
+      } catch (error) {
+        if (error instanceof SiteError && (error.reason === "refused" || (!error.reason && error.status >= 400 && error.status < 500 && error.status !== 429))) {
+          return null;
+        }
+        throw error;
+      }
+    };
     return {
       // The address the team just entered: a host name that doesn't exist is a mistake in it, not something to try again
       // (or, one its start page redirects to, the site's).
@@ -652,20 +667,10 @@ export const websiteSource: ImportSourceDefinition = {
           });
           return { items, next: from + limit < pages.length ? String(from + limit) : null };
         },
-        article: async (item) => {
-          try {
-            return await reader.article(item.id, item.parentId ?? null, item.order ?? 0);
-          } catch (error) {
-            // Refused (robots.txt, not public) or answered with a 4xx: none, for the last check to say. Anything else
-            // (a 429, a 5xx, no answer, out of time) is for a while, and thrown.
-            if (error instanceof SiteError && (error.reason === "refused" || (!error.reason && error.status >= 400 && error.status < 500 && error.status !== 429))) {
-              return null;
-            }
-            throw error;
-          }
-        },
+        article: (item) => readArticle(item.id, item.parentId ?? null, item.order ?? 0),
         articleDraft: async () => null,
-        articleExists: async (id) => (await reader.article(id, null, 0)) !== null,
+        // As the content pass reads it: refused or a 4xx is gone; failing for a while throws (the last check counts it as not reached).
+        articleExists: async (id) => (await readArticle(id, null, 0)) !== null,
       },
     };
   },

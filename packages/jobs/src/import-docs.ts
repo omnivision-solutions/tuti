@@ -409,8 +409,12 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null; draftLost: string | null; drafted: boolean }[] = [];
   // How many of `todo` this run got to (one a source no longer has too): the page is read again for the rest.
   let reached = 0;
+  // Those the source no longer has (its `article` reader's null), decided in this run: counted as gone, and marked so
+  // that a page read again doesn't fetch them again.
+  const gone = new Set<FeaturebaseArticle>();
   for (const item of todo) {
-    if (reached > 0 && Date.now() - started > contentBudget.ms) {
+    // Gone ones don't count towards the time: only an article brought across lets the run stop for want of it.
+    if (texts.length > 0 && Date.now() - started > contentBudget.ms) {
       break;
     }
     // A source whose list is only addresses reads each article now, so one done before is never fetched again. One
@@ -429,6 +433,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         break;
       }
       if (!read) {
+        gone.add(item);
         reached++;
         continue;
       }
@@ -478,7 +483,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         const local = locals.get(article.id);
         const text = texts.find((t) => t.article === article);
         // Not converted for want of time: the page read again does it.
-        if (!local || (!text && todo.includes(article))) {
+        if (!local || (!text && todo.includes(article) && !gone.has(article))) {
           continue;
         }
         // What becomes of it is counted once an import, by the run that first decides it (whichever page it's on, read
@@ -492,6 +497,12 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
             landedRecords.push(local.record);
           }
         };
+        // Gone from the source (or refused) as this run read it: an empty draft, decided, never fetched again.
+        if (gone.has(article)) {
+          count("articles", `gone from ${IMPORT_SOURCES[job.source].name} (left as empty drafts)`);
+          decided({ contentLanded: true });
+          continue;
+        }
         // Deleted here before its content landed: left deleted and not landed, so if it's restored, a later import fills it in.
         if (local.deleted && !local.landed) {
           count("articles", "deleted here since");

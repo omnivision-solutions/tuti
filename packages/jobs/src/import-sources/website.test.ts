@@ -177,3 +177,19 @@ test("text whose lowercase is longer (a Turkish İ) doesn't shift where a title 
   expect(pageTitle("<head><title>İstanbul İçin Yardım</title></head>")).toBe("İstanbul İçin Yardım");
   expect(sitemapLocs("<urlset><!-- İİ --><url><image:title>İzmir</image:title><loc>https://acme.test/docs/x</loc></url></urlset>")).toEqual(["https://acme.test/docs/x"]);
 });
+
+test("the last check reads a page as the content pass does: refused or a 4xx is gone, a 5xx is for a while (thrown)", async () => {
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  crawlPace.ms = 0;
+  const site = await startHelpCenterFake();
+  try {
+    const { read } = websiteSource.connect(site.url, { deadline: Date.now() + 60_000 });
+    site.failing.set("/docs/billing/refunds", 403);
+    await expect(read.articleExists!(`${site.origin}/docs/billing/refunds`)).resolves.toBe(false);
+    site.failing.set("/docs/billing/refunds", 503);
+    await expect(read.articleExists!(`${site.origin}/docs/billing/refunds`)).rejects.toThrow("answered 503");
+    await expect(read.articleExists!(`${site.origin}/docs/billing/plans`)).resolves.toBe(true);
+  } finally {
+    await site.close();
+  }
+});
