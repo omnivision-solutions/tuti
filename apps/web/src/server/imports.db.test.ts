@@ -389,11 +389,12 @@ async function placeholderWithHistory() {
   return { placeholder, theirs: theirs!, both: both!, conversations };
 }
 
-/** The placeholder's admin, invited to the team (to their address); `accept` joins. */
+/** The placeholder's admin, with their address verified, invited to the team (to their address); `accept` joins. */
 async function invite() {
   actAs(owner);
   const { url } = await createInvitation(project.slug, formerEmail, "MEMBER");
   const joiner = await signUp("Fern Former", formerEmail);
+  await prisma.user.update({ where: { id: joiner.id }, data: { emailVerified: true } });
   return {
     joiner,
     accept: () => {
@@ -403,19 +404,19 @@ async function invite() {
   };
 }
 
-test("verifying an address by accepting an emailed invite to another project hands over the placeholders in the projects they're on", async () => {
+test("accepting an emailed invite to another project doesn't verify the address, so hands over nothing", async () => {
   const { placeholder, theirs } = await placeholderWithHistory();
   // On this project already, by a link (unverified): nothing handed over.
   const joiner = await signUp("Fern Former", formerEmail);
   await prisma.teamMember.create({ data: { projectId: project.id, userId: joiner.id, role: "MEMBER" } });
-  // An emailed invite to another project verifies the address.
+  // An emailed invite to another project: its link is shown to whoever invited them too, so it proves nothing.
   const other = await createProject(owner);
   actAs(owner);
   const { url } = await createInvitation(other.slug, formerEmail, "MEMBER");
   actAs(joiner);
   expect(await redirectTarget(acceptInvitation(url!.split("/invite/")[1]!))).toBe(`/app/${other.slug}`);
-  expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: joiner.id });
-  expect(await prisma.user.findUnique({ where: { id: placeholder } })).toBeNull();
+  expect(await prisma.post.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ authorId: placeholder });
+  expect(await prisma.user.findUnique({ where: { id: placeholder } })).not.toBeNull();
 });
 
 test("a placeholder's admin who joins the team takes over what they wrote, their votes (theirs win a clash) and the conversations they still hold; the placeholder goes", async () => {

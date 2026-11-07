@@ -89,7 +89,7 @@ describe("inviting by email", () => {
 });
 
 describe("accepting", () => {
-  test("only the invited address can accept, and accepting verifies it", async () => {
+  test("only the invited address can accept, and accepting doesn't verify it", async () => {
     const email = newEmail();
     const { url } = await createInvitation(project.slug, email, "MEMBER");
     const someoneElse = await signUp("Mallory");
@@ -104,7 +104,25 @@ describe("accepting", () => {
     actAs(invitee);
     expect(await redirectTarget(acceptInvitation(tokenOf(url!)))).toBe(`/app/${project.slug}`);
     expect(await isMember(invitee.id)).toBe(true);
-    expect((await prisma.user.findUniqueOrThrow({ where: { id: invitee.id } })).emailVerified).toBe(true);
+    // The link is shown to whoever invited them too, so having it isn't proof of the inbox.
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: invitee.id } })).emailVerified).toBe(false);
+  });
+
+  test("signing up with an address and accepting an invite to it from your own other account doesn't verify it", async () => {
+    const email = newEmail();
+    // Another project's invite to that address, waiting for whoever owns it.
+    await createInvitation(project.slug, email, "ADMIN");
+    const inviter = await signUp("Sam");
+    const theirs = await createProject(inviter);
+    actAs(inviter);
+    const { url } = await createInvitation(theirs.slug, email, "MEMBER");
+    const squatter = await signUp("Sam Again", email);
+    actAs(squatter);
+    expect(await redirectTarget(acceptInvitation(tokenOf(url!)))).toBe(`/app/${theirs.slug}`);
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: squatter.id } });
+    expect(after.emailVerified).toBe(false);
+    expect(await pendingInvitationsFor(after)).toEqual([]);
   });
 
   test("older link-only invites still work for whoever has the link", async () => {

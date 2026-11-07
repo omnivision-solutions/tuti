@@ -354,6 +354,7 @@ test("end to end: Team and Feedback imported, the admin's invitation sent and ac
   const [email] = emailsTo(fern);
   const token = /https?:\/\/\S+\/invite\/([\w-]+)/.exec(email!.text)![1]!;
   const joiner = await signUp("Fern Former", fern);
+  await prisma.user.update({ where: { id: joiner.id }, data: { emailVerified: true } }); // accepting doesn't verify it
   actAs(joiner);
   expect(await redirectTarget(acceptInvitation(token))).toBe(`/app/${project.slug}`);
   expect(await prisma.post.findMany({ where: { id: { in: theirs.map((post) => post.id) } }, select: { authorId: true } })).toEqual(theirs.map(() => ({ authorId: joiner.id })));
