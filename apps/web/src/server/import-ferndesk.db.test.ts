@@ -231,6 +231,27 @@ test("collections in no section are the default section's: one holding them besi
   ]);
 });
 
+test("a help center imported before its changelog section was left out keeps its section as the collection it made: what's new goes in there", async () => {
+  // Guides and the changelog's own section: before, two sections, so Guides came as a collection, recorded as one.
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_api");
+  fake.fixtures.articles = fake.fixtures.articles.filter((a) => a.id !== "art_keys");
+  const guides = await prisma.collection.create({ data: { projectId: project.id, name: "Guides", slug: "guides" }, select: { id: true } });
+  await prisma.importedRecord.create({ data: { projectId: project.id, source: "FERNDESK", kind: "collection", externalId: "sect_guides", localId: guides.id } });
+  await importParts(["docs"], { publishArticles: true });
+
+  // A collection added in Ferndesk since, and an import again.
+  fake.fixtures.collections.unshift({ id: "col_security", sectionId: "sect_guides", parentCollectionId: null, title: "Security", subtitle: null, shortId: "sec01", createdAt: "2024-05-01T09:00:00.000Z", updatedAt: "2024-05-01T09:00:00.000Z" });
+  const again = await importParts(["docs"], { publishArticles: true });
+  expect(again.counts).toMatchObject({ collections: { imported: 1 } });
+  expect((await collections()).map((c) => [c.name, c.parent?.name ?? null])).toEqual([
+    ["Guides", null],
+    ["Billing", "Guides"],
+    ["Getting started", "Guides"],
+    ["Security", "Guides"],
+    ["Invoices", "Billing"],
+  ]);
+});
+
 test("the changelog comes across: entries oldest first, a page at a time, published at their dates and drafts as drafts with their draft's text, tags as tags, images; nothing emailed; again, nothing twice", async () => {
   const emailed = mailbox.emails.length;
   // One to a list page and two to an import page, so both are read past their first.

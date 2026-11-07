@@ -1,3 +1,5 @@
+import { prisma } from "@tuti/db";
+
 import type { FeaturebaseArticle, FeaturebaseChangelog, FeaturebaseCollection, FeaturebaseContact, FeaturebaseConversation } from "../featurebase";
 import {
   type FerndeskArticle,
@@ -47,11 +49,12 @@ const html = (text: string) =>
 /**
  * Where an article or collection goes: its collection, else (with more than one section) its section, which comes as a
  * top-level collection; a help center of one section is its collections themselves. `sections`: the help center's,
- * without its changelogs' (helpCenter). One in no section is in the default one.
+ * without its changelogs', and whether they come as collections (`tops`, helpCenter). One in no section is in the
+ * default one.
  */
-function parentOf(item: { sectionId: string | null }, parent: string | null, sections: FerndeskSection[]) {
+function parentOf(item: { sectionId: string | null }, parent: string | null, { sections, tops }: { sections: FerndeskSection[]; tops: boolean }) {
   const section = item.sectionId ?? sections.find((s) => s.isDefault)?.id;
-  return parent ?? (sections.length > 1 && sections.some((s) => s.id === section) ? section! : null);
+  return parent ?? (tops && sections.some((s) => s.id === section) ? section! : null);
 }
 
 /** When an entry is dated: when it went live on the day it shows, else that day, else when it went live or was made. */
@@ -113,7 +116,7 @@ export const ferndeskSource: ImportSourceDefinition = {
     const ref = shortIdOf(path);
     return ref ? { ref } : null;
   },
-  connect: (key, { deadline }) => {
+  connect: (key, { deadline, projectId }) => {
     const api = ferndesk(key, { deadline });
     let sections: Promise<FerndeskSection[]> | undefined;
     const allSections = () => (sections ??= api.all<FerndeskSection>("/sections"));
@@ -125,8 +128,10 @@ export const ferndeskSource: ImportSourceDefinition = {
      * The help center without its changelogs: Ferndesk lists each changelog as a collection too, its entries as
      * articles, and the section it sits in as any (the Changelog part brings them). A section with nothing else in it,
      * no other collection and no article outside one, is a changelog's own. What's in no section is in the default one.
+     * Sections come as top-level collections with more than one, or when an earlier import made one (before changelogs
+     * were left out, a changelog's own section counted): what's new goes into the collections it made.
      */
-    let help: Promise<{ sections: FerndeskSection[]; changelogs: Set<string> }> | undefined;
+    let help: Promise<{ sections: FerndeskSection[]; tops: boolean; changelogs: Set<string> }> | undefined;
     const helpCenter = () =>
       (help ??= Promise.all([allSections(), allCollections(), allChangelogs()]).then(async ([sections, all, logs]) => {
         const ids = new Set(logs.map((log) => log.id));
@@ -136,14 +141,19 @@ export const ferndeskSource: ImportSourceDefinition = {
         // ponytail: whether one has articles outside a collection takes reading every article, once per connection, so
         // only when there's a section to drop; ask Ferndesk for a section filter if help centers grow to thousands.
         const loose = candidates.length ? new Set((await api.all<FerndeskArticle>("/articles", { status: "all" })).filter((a) => !a.collectionId).map((a) => a.sectionId ?? home)) : new Set();
-        return { sections: sections.filter((s) => shared(s) || loose.has(s.id)), changelogs: ids };
+        const kept = sections.filter((s) => shared(s) || loose.has(s.id));
+        const made =
+          kept.length === 1 && projectId
+            ? await prisma.importedRecord.count({ where: { projectId, source: "FERNDESK", kind: "collection", externalId: { in: kept.map((s) => s.id) } } })
+            : 0;
+        return { sections: kept, tops: kept.length > 1 || made > 0, changelogs: ids };
       }));
     let entries: Promise<FerndeskEntry[]> | undefined;
     let language: Promise<string> | undefined;
     const defaultLanguage = () => (language ??= api.get<{ default: string }>("/articles/languages").then((body) => body.default));
-    const articleOf = (a: FerndeskArticle, all: FerndeskSection[]): FeaturebaseArticle => ({
+    const articleOf = (a: FerndeskArticle, layout: { sections: FerndeskSection[]; tops: boolean }): FeaturebaseArticle => ({
       id: a.id,
-      parentId: parentOf(a, a.collectionId, all),
+      parentId: parentOf(a, a.collectionId, layout),
       title: a.title,
       body: a.contentHtml ?? "",
       slug: a.slug,
@@ -193,19 +203,20 @@ export const ferndeskSource: ImportSourceDefinition = {
         },
         // Sections (with more than one) as top-level collections in their order, then every collection, in one page.
         collections: async () => {
-          const [{ sections: all, changelogs: logs }, collections] = await Promise.all([helpCenter(), allCollections()]);
-          const tops: FeaturebaseCollection[] = all.length > 1 ? all.map((s) => ({ id: s.id, parentId: null, name: s.name, order: s.position, createdAt: s.createdAt })) : [];
+          const [layout, collections] = await Promise.all([helpCenter(), allCollections()]);
+          const { sections: all, changelogs: logs } = layout;
+          const tops: FeaturebaseCollection[] = layout.tops ? all.map((s) => ({ id: s.id, parentId: null, name: s.name, order: s.position, createdAt: s.createdAt })) : [];
           const rest = collections.filter((c) => !logs.has(c.id)).map(
-            (c): FeaturebaseCollection => ({ id: c.id, parentId: parentOf(c, c.parentCollectionId, all), name: c.title, description: c.subtitle, slug: null, ref: c.shortId, createdAt: c.createdAt }),
+            (c): FeaturebaseCollection => ({ id: c.id, parentId: parentOf(c, c.parentCollectionId, layout), name: c.title, description: c.subtitle, slug: null, ref: c.shortId, createdAt: c.createdAt }),
           );
           return { items: [...tops, ...rest], next: null };
         },
         articles: async (cursor, limit) => {
-          const [{ items, next }, { sections: all, changelogs: logs }] = await Promise.all([
+          const [{ items, next }, layout] = await Promise.all([
             api.page<FerndeskArticle>("/articles", cursor, { status: "all", format: "html", page_size: limit ?? 100 }),
             helpCenter(),
           ]);
-          return { items: items.filter((a) => !a.collectionId || !logs.has(a.collectionId)).map((a) => articleOf(a, all)), next };
+          return { items: items.filter((a) => !a.collectionId || !layout.changelogs.has(a.collectionId)).map((a) => articleOf(a, layout)), next };
         },
         changelog: async (cursor, limit) => {
           // ponytail: Ferndesk lists entries newest first, a changelog at a time, so each connection reads them all and

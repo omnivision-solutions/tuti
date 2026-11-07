@@ -81,8 +81,11 @@ export type ImportSourceDefinition = {
   name: string;
   /** What the team gives it: an API key, or the address of a public site. */
   credential: "key" | "url";
-  /** Reading stops past `deadline` (ms since the epoch). `state`: what its `find` kept on the import (none yet, or a check). */
-  connect: (credential: string, options: { deadline: number; state?: unknown }) => ImportConnection;
+  /**
+   * Reading stops past `deadline` (ms since the epoch). `state`: what its `find` kept on the import (none yet, or a
+   * check). `projectId`: the project it imports into (none for the start's check).
+   */
+  connect: (credential: string, options: { deadline: number; state?: unknown; projectId?: string }) => ImportConnection;
   /** A source's error's HTTP status (0: unreachable), null for any other error. */
   status: (error: unknown) => number | null;
   /**
