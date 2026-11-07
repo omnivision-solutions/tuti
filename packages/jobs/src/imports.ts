@@ -224,6 +224,16 @@ async function locked<T>(projectId: string, fn: (tx: Tx) => Promise<T>): Promise
  * page ends it, done, and a failing one fails it; either way its key is cleared.
  */
 export async function importStep({ importId }: JobInput<"importStep">, log: JobLogger): Promise<JobResult> {
+  // A source this worker doesn't have (it's the release before the web that started the import, mid-deploy): its
+  // client can't read the row (the enum value is unknown to it), so the source is read as text first, and the import
+  // failed as a part it doesn't have is, never left running with its key.
+  const [raw] = await prisma.$queryRaw<{ source: string }[]>`SELECT source::text AS source FROM data_import WHERE id = ${importId}`;
+  if (raw && !(raw.source in IMPORT_SOURCES)) {
+    await prisma.$executeRaw`
+      UPDATE data_import SET state = 'FAILED', "apiKey" = NULL, error = ${`Tuti was updating as it started. ${AGAIN}`}, "finishedAt" = now(), "updatedAt" = now()
+      WHERE id = ${importId} AND state = 'RUNNING'`;
+    return { failed: true };
+  }
   const row = await prisma.dataImport.findUnique({ where: { id: importId } });
   let job: ImportJob | null;
   try {

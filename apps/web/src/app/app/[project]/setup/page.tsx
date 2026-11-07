@@ -14,7 +14,7 @@ import { appUrl } from "@/lib/hosts";
 import { canAssignRole } from "@/lib/roles";
 import { inviteNote } from "@/lib/verify-email";
 import { getMembership, isAdminRole } from "@/server/membership";
-import { boardsNote, latestImport } from "@/server/operations/imports";
+import { boardsNotes, latestImport } from "@/server/operations/imports";
 import { hasSampleContent } from "@/server/sample-content";
 import { getSession } from "@/server/session";
 
@@ -63,7 +63,7 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
               projectSlug={slug}
               latest={await latestImport(membership.project.id)}
               mediaStorage={mediaStorage() !== null}
-              boardsNote={boardsNote(membership.project.plan)}
+              boardsNotes={boardsNotes(membership.project.plan)}
               next={next("use")}
               skip={skip(next("use"))}
             />

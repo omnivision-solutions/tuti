@@ -255,6 +255,8 @@ export type FeaturebaseChangelog = {
   categories?: { id: string; name: string; roles?: string[] | null }[] | null;
   emailSentToSubscribers?: boolean;
   commentCount?: number;
+  /** The posts it ships, by their ids in the source (Canny links them; Featurebase's list doesn't say). */
+  postIds?: string[] | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 };

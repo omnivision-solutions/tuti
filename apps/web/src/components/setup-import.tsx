@@ -167,15 +167,15 @@ export function SetupImport({
   projectSlug,
   latest,
   mediaStorage,
-  boardsNote,
+  boardsNotes,
   next,
   skip,
 }: {
   projectSlug: string;
   latest: ImportView | null;
   mediaStorage: boolean;
-  /** The plan's board limit, said while Feedback is picked (null: no limit). */
-  boardsNote: string | null;
+  /** The plan's board limit, by source, said while Feedback is picked (null: no limit). */
+  boardsNotes: Record<ImportSourceKey, string> | null;
   /** Setup's next step and Skip (none in Settings). */
   next?: string;
   skip?: ReactNode;
@@ -342,7 +342,7 @@ export function SetupImport({
               </div>
             )}
             {shown && <p className="text-sm text-muted-foreground">Importing again brings only what&apos;s new since: nothing comes twice.</p>}
-            {boardsNote && chosen.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
+            {boardsNotes && from !== "fresh" && chosen.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNotes[from]}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
           </div>
         </CardContent>

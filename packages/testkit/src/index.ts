@@ -11,3 +11,4 @@ export * from "./google-fake";
 export * from "./featurebase-fake";
 export * from "./intercom-fake";
 export * from "./ferndesk-fake";
+export * from "./canny-fake";
