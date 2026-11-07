@@ -430,12 +430,15 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       try {
         read = await job.read.article(item);
       } catch (error) {
-        // Nothing came across in this run yet, or the source asked to be left a while (`wait`): the step fails, so the
-        // import ends saying why (a re-import brings only what's new).
-        if (texts.length === 0 || (error as { reason?: unknown }).reason === "wait") {
-          throw error;
+        // A run that decided something (an article brought across, or gone) stops here and saves it, read again next
+        // (`again:`): its work is never thrown away. Out of time (`late`, a short pause that doesn't fit what's left)
+        // ends the run too, with nothing to save: the next has its own time. Otherwise, with nothing to save, the step
+        // fails: a source that keeps failing, or one asking to be left longer than a step waits (`wait`, its message
+        // saying when to start again), ends the import, and a re-import brings only what's new.
+        if (texts.length > 0 || gone.size > 0 || (error as { reason?: unknown }).reason === "late") {
+          break;
         }
-        break;
+        throw error;
       }
       if (!read) {
         gone.add(item);

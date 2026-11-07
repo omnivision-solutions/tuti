@@ -317,9 +317,9 @@ function site(start: string, deadline: number, kept: unknown) {
           throw error;
         }
         const asked = (error as { retryAfterMs?: number | null }).retryAfterMs;
-        // Asked to wait longer than a step does (over RETRY_AFTER_MAX_MS, or past its deadline): never asked again early,
-        // against what the site said. The import ends, saying when to start it again: a re-import brings only what's new.
-        if (asked != null && (asked > RETRY_AFTER_MAX_MS || Date.now() + asked >= deadline)) {
+        // Asked to wait longer than a step does (over RETRY_AFTER_MAX_MS): never asked again early, against what the site
+        // said (`wait`: the content pass ends the import, saying when to start it again, unless its run has work to save).
+        if (asked != null && asked > RETRY_AFTER_MAX_MS) {
           const minutes = Math.max(1, Math.ceil(asked / 60_000));
           throw new SiteError(
             error.status,
@@ -329,7 +329,9 @@ function site(start: string, deadline: number, kept: unknown) {
         }
         const wait = asked ?? Math.max(crawlPace.ms, delayMs) * 2 ** (attempt + 1);
         if (Date.now() + wait >= deadline) {
-          throw error;
+          // A short pause the site asked for that this step hasn't the time left to wait: out of time (`late`), so the run
+          // ends and the next, with its own time, waits it.
+          throw asked != null ? new SiteError(error.status, `${new URL(url).hostname} took too long to read.`, "late") : error;
         }
         await pause(wait);
       }

@@ -40,6 +40,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   crawlBudget.fetches = Infinity;
   contentBudget.ms = budgetMs;
+  vi.restoreAllMocks();
 });
 beforeEach(async () => {
   for (const [name, value] of Object.entries(s3.env)) {
@@ -491,4 +492,31 @@ test("an article page asking (Retry-After) to be left longer than a step waits e
   const again = await importSite();
   expect(again.state).toBe("done");
   expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme", "Plans", "Refunds", "Your first project"]);
+});
+
+test("a run that brought articles across saves them when a later one asks (Retry-After 300) to be left: the next run brings the rest", async () => {
+  // The sitemap's third page.
+  site.failing.set("/docs/getting-started/first-project", 429);
+  site.failingOnce.add("/docs/getting-started/first-project");
+  site.retryAfter = "300";
+  const done = await importSite();
+  expect(done.state).toBe("done");
+  expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme", "Plans", "Refunds", "Your first project"]);
+  // The two before it were saved by the run that stopped: never fetched again.
+  for (const path of ["/docs/getting-started", "/docs/getting-started/install"]) {
+    expect(site.requests.filter((p) => p === path), path).toHaveLength(1);
+  }
+});
+
+test("a short Retry-After the step hasn't the time left to wait ends the run, not the import: the next run waits it", async () => {
+  // Once the page is asked for, the clock is 3 minutes on: its 1s Retry-After doesn't fit before the step's deadline.
+  site.failing.set("/docs/getting-started", 429);
+  site.failingOnce.add("/docs/getting-started");
+  site.retryAfter = "1";
+  const now = Date.now.bind(Date);
+  vi.spyOn(Date, "now").mockImplementation(() => now() + (site.requests.includes("/docs/getting-started") ? 3 * 60_000 : 0));
+  const done = await importSite();
+  expect(done.state).toBe("done");
+  expect((await articles()).find((a) => a.title === "Getting started")?.body).toBe("Start here.");
+  expect(site.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(2);
 });
