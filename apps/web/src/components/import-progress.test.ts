@@ -46,6 +46,8 @@ test("a part going through what's already here says so, not that it's starting, 
   expect(rows(run("running", "contacts", counts))[0]).toBe("Contacts Nothing new so far. In progress");
   expect(html).toContain("Skipped what was already brought across earlier.");
   expect(renderToStaticMarkup(createElement(ImportProgress, { projectSlug: "acme", run: run("running", "contacts"), invitations: 0 }))).not.toContain("Skipped");
+  // Only its own: the next part, with nothing counted yet, is starting.
+  expect(rows(run("running", "posts", counts))[1]).toBe("Feedback Starting… Posts (in progress) Votes Comments Duplicate check In progress");
 });
 
 test("once done, each part shows its numbers and folds away what it left out and why; a part with no page shows no tag", () => {
