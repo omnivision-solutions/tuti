@@ -46,7 +46,8 @@ The receiver (an SMTP server, a mail provider's inbound hook, a script) posts ea
 - `Tuti-Recipient`: the envelope recipient, the project's address it came to;
 - `Tuti-Auth`: the receiver's results, as `spf=<result> dkim=<result> dmarc=<result>` (`pass`, `fail` or
   `none`); without a DMARC check of your own, send `dmarc=none`, and nothing joins an existing
-  conversation or matches a user by address;
+  conversation or matches a user by address. `dmarc=pass` must be for the domain of the From address;
+  mail with more than one From header, or more than one address in it, is taken as `dmarc=none`;
 - `Tuti-Signature`: `t=<unix seconds>,v1=<HMAC-SHA256, hex>`, keyed with `INBOUND_SECRET`, over
   `<t>.<recipient>.<auth>.<SHA-256 of the body, hex>`, within 5 minutes of the server's clock.
 

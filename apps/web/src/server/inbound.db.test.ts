@@ -297,6 +297,28 @@ test("with DMARC passed, a known user's address is theirs; otherwise the address
   expect(posing).toMatchObject({ userId: null, email: "e2e-sam@example.com", emailVerified: false, spam: false });
 });
 
+test("DMARC passed counts for who sent it only with one From holding one address: a list or a second From could be the passing domain's", async () => {
+  const { project, address, subdomain } = await setup();
+  const kim = await signUp("Kim", "e2e-kim@bank.example");
+  await prisma.user.update({ where: { id: kim.id }, data: { emailVerified: true } });
+  await postEmail(rawEmail({ from: "e2e-kim@bank.example", to: address, subject: "Mine" }), { recipient: address });
+  await postEmail(rawEmail({ from: "e2e-kim@bank.example, e2e-other@evil.example", to: address, subject: "List" }), { recipient: address });
+  await postEmail(rawEmail({ from: "e2e-kim@bank.example\r\nFrom: e2e-other@evil.example", to: address, subject: "Two" }), { recipient: address });
+  const [mine] = await conversations(project.id);
+  const replyAddress = supportAddress(subdomain, DOMAIN, mine!.replyToken!);
+  await postEmail(rawEmail({ from: "e2e-kim@bank.example, e2e-other@evil.example", to: replyAddress, subject: "Re: Mine", body: "Joined?" }), {
+    recipient: replyAddress,
+  });
+
+  const all = await conversations(project.id);
+  expect(all.map((c) => ({ userId: c.userId, email: c.email, emailVerified: c.emailVerified, bodies: c.messages.map((m) => m.body) }))).toEqual([
+    { userId: kim.id, email: null, emailVerified: false, bodies: ["Hello"] },
+    { userId: null, email: "e2e-kim@bank.example", emailVerified: false, bodies: ["Hello"] },
+    { userId: null, email: "e2e-kim@bank.example", emailVerified: false, bodies: ["Hello"] },
+    { userId: null, email: "e2e-kim@bank.example", emailVerified: false, bodies: ["Joined?"] },
+  ]);
+});
+
 test("an email's From name is who the conversation is with, trimmed and cut short; none when it's an address, its own or another", async () => {
   const { project, address } = await setup();
   const from = [

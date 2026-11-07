@@ -104,6 +104,13 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
   }
   const projectId = owner.projectId;
   const mail = await simpleParser(raw, PARSER_OPTIONS);
+  // The receiver's DMARC result names no domain, and the sender is From's first address: with a second From or more
+  // than one address in it, a pass may be for another one's domain. Then it proves nobody (kept that way, so it never
+  // counts later either); the mail still comes in.
+  const fromFields = mail.headerLines.filter(({ key }) => key.toLowerCase() === "from").length;
+  if (auth.dmarc === "pass" && (fromFields !== 1 || mail.from?.value.length !== 1 || mail.from.value[0]!.group)) {
+    auth = { ...auth, dmarc: "none" };
+  }
   const sender = mail.from?.value[0]?.address?.toLowerCase() ?? "";
   const messageId = mail.messageId ?? null;
   const dedupeKey = sha256(messageId ? `${messageId}\n${sender}` : raw);
