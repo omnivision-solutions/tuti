@@ -49,7 +49,9 @@ export async function emailPasswordReset(form: FormData): Promise<{ error?: stri
     return unavailable;
   }
 
-  const limited = await countEmailedLink(project?.id ?? null, email, requestHeaders);
+  // An address with no account gets nothing, so it's counted as sending nothing (the answer's the same).
+  const account = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  const limited = await countEmailedLink(project?.id ?? null, email, requestHeaders, account ? "address" : "nobody");
   if ("error" in limited) {
     return limited;
   }

@@ -845,6 +845,8 @@ model SignInLink {
   emailHash  String
   clientHash String?
   tokenHash  String?  @unique
+  /// Whether the request sent an email (only those count toward the site's hourly limit).
+  sent       Boolean  @default(true)
   createdAt  DateTime @default(now())
 
   project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)

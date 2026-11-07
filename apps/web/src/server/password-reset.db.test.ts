@@ -20,6 +20,7 @@ import { request } from "@/test/next-headers";
 
 import { emailPasswordReset, setNewPassword } from "./password-reset";
 import { emailSignInLink } from "./sign-in-link";
+import { widgetStartConversation } from "./widget-inbox";
 
 const OLD_PASSWORD = "correct horse battery staple"; // what signUp() sets
 const NEW_PASSWORD = "a brand new password";
@@ -288,6 +289,32 @@ test("the app host and each portal send a limited number an hour", async () => {
   });
   expect(await ask(newAddress(), portalHost())).toEqual(full);
   expect(sentTo(user.email)).toBe(1);
+});
+
+test("resets that send nothing (no account) don't use up the site's hourly limit", async () => {
+  for (let i = 0; i < SIGN_IN_LINKS_PER_PORTAL_PER_HOUR; i++) {
+    const unknown = newAddress();
+    expect(await ask(unknown)).toEqual({ sentTo: unknown });
+  }
+  expect(await ask(user.email)).toEqual({ sentTo: user.email });
+  expect(sentTo(user.email)).toBe(1);
+});
+
+test("conversations started in another project's widget don't use up an address's resets and sign-in links", async () => {
+  const other = await createProject(await signUp("Other owner"));
+  await prisma.project.update({ where: { id: other.id }, data: { supportInbox: true } });
+  for (let i = 0; i < SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR; i++) {
+    expect(await widgetStartConversation(other.slug, {}, "Hello?", user.email)).toMatchObject({ number: i + 1 });
+  }
+  // Still limited there, per address.
+  expect(await widgetStartConversation(other.slug, {}, "Hello?", user.email)).toEqual({
+    error: "We've sent a lot of emails to this address in the last hour. Try again later.",
+  });
+  expect(await ask(user.email)).toEqual({ sentTo: user.email });
+  const form = new FormData();
+  form.set("email", user.email);
+  expect(await emailSignInLink(project.slug, "/", form)).toEqual({ sentTo: user.email });
+  expect(sentTo(user.email, ["Reset your password", `Sign in to ${project.name}`])).toBe(2);
 });
 
 test("a visitor gets a limited number an hour, quietly", async () => {
