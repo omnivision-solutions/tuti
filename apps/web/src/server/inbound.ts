@@ -4,7 +4,6 @@ import { type Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { REPLY_PREFIXES, stripQuotes } from "@tuti/shared/email-quotes";
-import { convert as htmlToText } from "html-to-text";
 import { simpleParser } from "mailparser";
 
 import { noiseReason } from "@/lib/email-noise";
@@ -18,6 +17,7 @@ import {
   startConversation,
 } from "./operations/conversations";
 import { storeAttachments } from "./attachments";
+import { emailText, PARSER_OPTIONS } from "./email-text";
 
 /**
  * Receiving email in the support inbox (docs/plan.md, Support inbox, "Receiving email"): each project
@@ -56,43 +56,6 @@ function recipientOf(address: string, domain: string) {
 }
 
 export { mailSubdomain } from "@tuti/jobs";
-
-/**
- * An email's HTML as text: links kept, images left out, quotes as "> ". Only so much of it and so
- * deep (the reply is at the top), and quotes marked up to five deep, so the text grows with the
- * HTML rather than with how deep its quotes go.
- */
-function htmlAsText(html: string): string {
-  let depth = 0;
-  return htmlToText(html.slice(0, 500_000), {
-    wordwrap: false,
-    limits: { maxDepth: 200 },
-    selectors: [
-      { selector: "img", format: "skip" },
-      { selector: "blockquote", format: "quote" },
-    ],
-    formatters: {
-      quote: (elem, walk, builder) => {
-        const marked = ++depth <= 5;
-        builder.openBlock({ leadingLineBreaks: 2, reservedLineLength: marked ? 2 : 0 });
-        walk(elem.children, builder);
-        builder.closeBlock({
-          trailingLineBreaks: 2,
-          blockTransform: marked ? (text) => trimLineBreaks(text).split("\n").map((line) => `> ${line}`).join("\n") : undefined,
-        });
-        depth--;
-      },
-    },
-  });
-}
-
-function trimLineBreaks(text: string) {
-  let start = 0;
-  let end = text.length;
-  while (text[start] === "\n") start++;
-  while (end > start && text[end - 1] === "\n") end--;
-  return text.slice(start, end);
-}
 
 export type Authentication = { spf: string; dkim: string; dmarc: string };
 
@@ -140,15 +103,7 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
     return { status: 404, outcome: "no such address" };
   }
   const projectId = owner.projectId;
-  // The parser turns no HTML into text (htmlAsText does, in readEmail) but says where it would have,
-  // in textConversionError, and makes no HTML of the text or inline images.
-  let mail = await simpleParser(raw, { maxHtmlLengthToParse: 0, skipTextToHtml: true, skipImageLinks: true });
-  // An HTML part beside the text rather than instead of it: only the parser knows which part that
-  // is, so it reads the email again and turns that part into text, where that's quick (short HTML,
-  // few quotes). Past that, readEmail puts all its HTML, as text, after the text.
-  if (mail.textConversionError && mail.text?.trim() && typeof mail.html === "string" && mail.html.length <= 200_000 && (mail.html.match(/<blockquote/gi) ?? []).length <= 5) {
-    mail = await simpleParser(raw, { skipTextToHtml: true, skipImageLinks: true });
-  }
+  const mail = await simpleParser(raw, PARSER_OPTIONS);
   const sender = mail.from?.value[0]?.address?.toLowerCase() ?? "";
   const messageId = mail.messageId ?? null;
   const dedupeKey = sha256(messageId ? `${messageId}\n${sender}` : raw);
@@ -206,7 +161,7 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
   }
   let outcome: string;
   try {
-    outcome = await readEmail(row.id, projectId, to.token, auth, mail, sender);
+    outcome = await readEmail(row.id, projectId, to.token, auth, raw, mail, sender);
   } catch (error) {
     if (error instanceof AlreadyRead) {
       return { status: 200, outcome: "already read" };
@@ -305,7 +260,7 @@ function cutName(name: string) {
 class AlreadyRead extends Error {}
 
 /** Reads a stored email into the inbox; returns what happened ("added", or why it was ignored). */
-async function readEmail(id: string, projectId: string, token: string | null, auth: Authentication, mail: Mail, sender: string): Promise<string> {
+async function readEmail(id: string, projectId: string, token: string | null, auth: Authentication, raw: Buffer, mail: Mail, sender: string): Promise<string> {
   const headers = headersOf(mail.headerLines);
   // Only from received or failed, in the transaction that adds its message: a second reader at the
   // same time (two redeliveries of a failed one) finds it read, and its own message rolls back.
@@ -331,10 +286,8 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     return ignore("from_own_address");
   }
 
-  // Its plain text and, where the parser left words in HTML (all of them, or a long part beside the
-  // text), its HTML as text after it.
-  const html = (mail.textConversionError || !mail.text) && typeof mail.html === "string" ? htmlAsText(mail.html).trim() : "";
-  const plain = html ? [mail.text?.trim(), html].filter(Boolean).join("\n\n") : (mail.text ?? "");
+  // Its text, and the words of its HTML (links kept, quotes as "> ").
+  const plain = await emailText(raw, mail);
   const { text, stripped } = stripQuotes(plain, subject);
   const body = (text || "(No text)").slice(0, MAX_MESSAGE_LENGTH);
   // What came with it (not the images its HTML shows inline: logos, signatures), kept before its

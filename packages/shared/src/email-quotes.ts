@@ -36,7 +36,7 @@ export const REPLY_PREFIXES = /^\s*((re|aw|sv|antw|vs|ref|odp|fwd?|fw|tr|wg|rv|e
 const ATTRIBUTION_STARTS = ["on ", "le ", "am ", "el ", "op ", "il ", "em ", "den "];
 const MAX_LINE = 2000;
 /** How far into a message its quote is looked for: past this, it's the message's own text (cut much shorter anyway). */
-const MAX_SCAN = 200_000;
+export const MAX_SCAN = 200_000;
 
 const test = (pattern: RegExp, line: string) => line.length <= MAX_LINE && pattern.test(line);
 
@@ -47,8 +47,10 @@ export function stripQuotes(text: string, subject = ""): { text: string; strippe
     return { text: whole.trim(), stripped: false };
   }
   const lines = whole.slice(0, MAX_SCAN).split("\n");
-  // quotedFrom[i]: every line from i on is blank or quoted, worked out once from the end.
+  // quotedFrom[i]: every line from i on is blank or quoted, worked out once from the end; past a cut,
+  // what follows isn't known to be.
   const quotedFrom = Array<boolean>(lines.length + 1).fill(true);
+  quotedFrom[lines.length] = whole.length <= MAX_SCAN;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]!.trim();
     quotedFrom[i] = quotedFrom[i + 1]! && (line === "" || line.startsWith(">"));

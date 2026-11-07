@@ -110,7 +110,7 @@ test("an email with only an HTML body keeps the levels of the quotes it quotes, 
   expect(original).toContain("> > > > > Level 6");
 });
 
-test("an email whose HTML quotes very deep and long is read in a moment, its reply kept", async () => {
+test("an email whose HTML quotes very deep and long arrives with its reply (its time: email-text.live.test.ts)", async () => {
   const { project, address } = await setup();
   const quotes = `On Mon, Olive wrote:${"<blockquote>Earlier".repeat(195)}${"x<br>".repeat(100_000)}`;
   const raw = [
@@ -124,9 +124,7 @@ test("an email whose HTML quotes very deep and long is read in a moment, its rep
     `<p>The export fails.</p>${quotes}`,
     "",
   ].join("\r\n");
-  const start = performance.now();
   expect(await postEmail(raw, { recipient: address })).toEqual({ status: 200, body: { outcome: "added" } });
-  expect(performance.now() - start).toBeLessThan(2000);
   const [conversation] = await conversations(project.id);
   expect(conversation!.messages[0]!.body).toBe("The export fails.");
 });
@@ -188,6 +186,53 @@ test("an email with its text and HTML versions and an HTML part beside them arri
     "",
   ].join("\r\n");
   expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200 });
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails.\nSent via Acme");
+});
+
+/** A multipart/mixed email of these parts, each its Content-Type and body; a part of parts is a multipart/alternative. */
+function mixed(address: string, parts: ([string, string] | [string, string][])[]) {
+  const part = ([type, body]: [string, string]) => [`Content-Type: ${type}; charset=utf-8`, "", body];
+  const lines = (boundary: string, items: typeof parts): string[] =>
+    items.flatMap((item) => [
+      `--${boundary}`,
+      ...(typeof item[0] === "string" ? part(item as [string, string]) : ['Content-Type: multipart/alternative; boundary="alt"', "", ...lines("alt", item as [string, string][]), "--alt--"]),
+    ]);
+  return [
+    "From: Kim Lee <e2e-kim@example.com>",
+    `To: ${address}`,
+    "Subject: Export",
+    `Message-ID: <${crypto.randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="mixed"',
+    "",
+    ...lines("mixed", parts),
+    "--mixed--",
+    "",
+  ].join("\r\n");
+}
+
+test("an HTML part beside the text whose lists nest very deep arrives with its words, indented five levels at most", async () => {
+  const { project, address } = await setup();
+  const raw = mixed(address, [["text/plain", "The export fails."], ["text/html", "<ul><li>Item".repeat(1000)]]);
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200, body: { outcome: "added" } });
+  const [conversation] = await conversations(project.id);
+  const body = conversation!.messages[0]!.body;
+  expect(body).toMatch(/^The export fails\.\n \* Item\n/);
+  expect(Math.max(...body.split("\n").map((line) => line.length - line.trimStart().length))).toBeLessThanOrEqual(15);
+});
+
+test("an email whose long HTML version comes with an HTML part beside it arrives with its words once", async () => {
+  const { project, address } = await setup();
+  const html = `<p>The export fails.</p>${"<blockquote>Earlier</blockquote>".repeat(10)}${"<p>More of the same.</p>".repeat(10_000)}`;
+  const raw = mixed(address, [
+    [
+      ["text/plain", "The export fails."],
+      ["text/html", html],
+    ],
+    ["text/html", "<p>Sent via Acme</p>"],
+  ]);
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200, body: { outcome: "added" } });
   const [conversation] = await conversations(project.id);
   expect(conversation!.messages[0]!.body).toBe("The export fails.\nSent via Acme");
 });
