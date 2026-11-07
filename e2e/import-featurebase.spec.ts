@@ -54,8 +54,10 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   // Started, focus is on Continue, the way on; screen readers hear only that it's importing, not each page's count.
   await expect(status).toHaveText("Importing from Featurebase");
   await expect(continueLink).toBeFocused();
-  // The key isn't left in the page.
+  // The key isn't left in the page, nor the picker: only the progress shows while it runs, as one runs at a time.
   await expect(key).toHaveCount(0);
+  const picker = owner.getByRole("radiogroup", { name: "Where are you coming from?" });
+  await expect(picker).toHaveCount(0);
   // Each part says where it is, in the order they run: the team done, contacts under way.
   const parts = owner.getByRole("list", { name: "What's brought across" });
   const part = (name: string) => parts.getByRole("listitem").filter({ has: owner.getByText(name, { exact: true }) });
@@ -73,6 +75,10 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await fetch(`${process.env.E2E_FEATUREBASE_URL}/_fake/release`, { method: "POST" });
   await expect(status).toHaveText("Imported from Featurebase. 2 invitations, 3 contacts, 1 profile picture brought across.", { timeout: 15_000 });
   await expect(continueLink).toBeFocused();
+  // Over, the picker is back, the source it came from picked, to import again.
+  await expect(picker.getByRole("radio", { name: /^Featurebase/ })).toBeChecked();
+  // Above the progress, it doesn't push the way on out of view.
+  await expect(continueLink).toBeInViewport();
   // Nothing was emailed: the invitations wait for the team to send them.
   await expect(owner.getByText("2 invitations ready to send.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase-imported");
