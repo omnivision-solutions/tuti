@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { seenAs } from "@tuti/jobs";
 import { ExternalLinkIcon, LayoutListIcon, MapIcon } from "lucide-react";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { CopyButton } from "@/components/copy-button";
 import { EmptyState } from "@/components/empty-state";
@@ -25,6 +26,7 @@ import { storedRule } from "@/lib/group-conditions";
 import { sortFilter } from "@/lib/post-filter-options";
 import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
 import { portalAddress } from "@/server/custom-domains";
+import { getMembership } from "@/server/membership";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { teamPostCounts, teamPosts, voterTotals } from "@/server/post-lists";
 import { VisibilityBadge } from "@/components/visibility-badge";
@@ -42,6 +44,10 @@ const first = (value: string | string[] | undefined) => (Array.isArray(value) ? 
 
 export default async function FeedbackPage(props: PageProps<"/app/[project]/feedback">) {
   const { project: slug } = await props.params;
+  const membership = await getMembership(slug);
+  if (!membership) {
+    notFound();
+  }
   const searchParams = await props.searchParams;
   const duplicatesOnly = first(searchParams.show) === "duplicates";
   // No status: Needs triage; one without a tab (Closed, say): All. The duplicates tab: every status.
@@ -50,7 +56,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   const filters = parsePostFilters({ ...searchParams, status: duplicatesOnly ? "all" : tab }, TEAM_SORTS);
   const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
   const project = await prisma.project.findUniqueOrThrow({
-    where: { slug },
+    where: { id: membership.project.id },
     select: {
       id: true,
       askingProperty: true,

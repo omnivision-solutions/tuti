@@ -8,7 +8,7 @@ import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { autopilotRecordText } from "@/lib/autopilot-words";
-import { getMembership } from "@/server/membership";
+import { getMembership, isAdminRole } from "@/server/membership";
 import { autopilotRecord } from "@/server/operations/code-changes";
 
 /**
@@ -18,7 +18,7 @@ import { autopilotRecord } from "@/server/operations/code-changes";
 export default async function AutopilotSettingsPage(props: PageProps<"/app/[project]/settings/autopilot">) {
   const { project: slug } = await props.params;
   const membership = await getMembership(slug);
-  if (!membership || !codeChangesEnabled()) {
+  if (!membership || !isAdminRole(membership.role) || !codeChangesEnabled()) {
     notFound();
   }
   const owner = membership.role === "OWNER";

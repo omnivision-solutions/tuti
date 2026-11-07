@@ -3,6 +3,7 @@ import { emailConfigured } from "@tuti/email";
 import { codeChangesEnabled } from "@tuti/shared";
 import { mediaStorage } from "@tuti/shared/storage";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { AccountForms } from "@/components/account-forms";
 import { AutopilotEmailsChoice } from "@/components/autopilot-settings";
@@ -17,7 +18,7 @@ import { getSession } from "@/server/session";
 export default async function AccountPage() {
   const session = await getSession();
   if (!session) {
-    return null;
+    redirect("/sign-in");
   }
   // A photo is an upload, kept in the project they had open last (as the sidebar picks it); without uploads or a project, one they have can still be removed.
   const [user, projects, lastSlug] = await Promise.all([
