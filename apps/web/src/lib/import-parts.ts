@@ -57,7 +57,7 @@ export const IMPORT_PARTS = {
     media: true,
     see: { label: "See docs", page: "docs" },
     steps: { "docs-collections": "Collections", "docs-articles": "Articles", "docs-content": "Their content", "docs-unreached": "Last check" },
-    kinds: ["collections", "articles", "heldDrafts", "privateDrafts", "limitDrafts", "unpublishedChanges", "articleImages", "articleFiles", "articleVideos"],
+    kinds: ["collections", "articles", "heldDrafts", "privateDrafts", "limitDrafts", "unpublishedChanges", "articleImages", "articleFiles", "articleVideos", "oldAddresses", "notRedirected"],
   },
   inbox: {
     label: "Inbox",
@@ -160,6 +160,19 @@ export const IMPORT_SOURCES = {
       help: "In Canny, Settings → API. It's kept only while the import runs.",
     },
   },
+  website: {
+    name: "your help center",
+    description: "GitBook, Docusaurus, Intercom, Zendesk or your own: its articles come across from its address, no key needed.",
+    parts: ["docs"],
+    // Read from its pages, not an API: drafts, in collections from its folders.
+    partDescriptions: {
+      docs: "Its articles, as drafts, in collections from its folders, with their images and the links between them.",
+    },
+    credential: {
+      kind: "url",
+      help: "Your help center's home page, like https://help.example.com. Tuti reads its public pages; articles arrive as drafts for you to review and publish, and up to 200 of their old addresses redirect to them once your help center's domain is your portal's own domain (on plans that have one).",
+    },
+  },
 } as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;
 
 export type ImportSourceInfo = {
@@ -235,6 +248,9 @@ const KINDS: Record<string, [string, string]> = {
   articleImages: ["image in an article", "images in articles"],
   articleFiles: ["file in an article", "files in articles"],
   articleVideos: ["video in an article", "videos in articles"],
+  // A crawled help center's old paths, redirected to their new pages.
+  oldAddresses: ["old address redirected", "old addresses redirected"],
+  notRedirected: ["old address", "old addresses"],
   changelogEntries: ["changelog entry", "changelog entries"],
   // The changelog's, counted apart from feedback's and the help center's.
   changelogImages: ["image in the changelog", "images in the changelog"],

@@ -51,6 +51,11 @@ function isPrivate(address: string): boolean {
   return blocked.check(address, isIP(address) === 6 ? "ipv6" : "ipv4");
 }
 
+/** The `code` of checkWebhookUrl's error for a host name that doesn't exist, */
+export const HOST_NOT_FOUND = "ENOTFOUND";
+/** and for one whose lookup failed otherwise (the resolver timed out, say: it may work in a moment). */
+export const LOOKUP_FAILED = "ELOOKUP";
+
 /** Throws with a message for people if `url` can't be used as a webhook. */
 export async function checkWebhookUrl(url: string): Promise<void> {
   let parsed: URL;
@@ -73,8 +78,10 @@ export async function checkWebhookUrl(url: string): Promise<void> {
   let addresses: string[];
   try {
     addresses = isIP(host) ? [host] : (await lookup(host, { all: true, verbatim: true })).map((a) => a.address);
-  } catch {
-    throw new Error(`${host} can't be found`);
+  } catch (error) {
+    // Coded, so a caller can tell a name that doesn't exist, and a lookup that failed (a resolver's timeout, say), from a refusal.
+    const notFound = ["ENOTFOUND", "ENODATA"].includes((error as { code?: string }).code ?? "");
+    throw Object.assign(new Error(`${host} can't be found`), { code: notFound ? HOST_NOT_FOUND : LOOKUP_FAILED });
   }
   if (addresses.length === 0 || addresses.some(isPrivate)) {
     throw new Error("Webhook URLs must point to a public address");

@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason } from "@tuti/content/html";
 import { Prisma, prisma } from "@tuti/db";
 import { articleLimit, MAX_ARTICLE_LENGTH } from "@tuti/shared";
+import { destinationKey, MAX_REDIRECTS, portalPage, redirectFrom, redirectKey } from "@tuti/shared/portal-redirects";
 
 import { recordRevision } from "./article-layers";
 import { freeDocsSlug } from "./docs-slugs";
@@ -174,6 +175,12 @@ async function remember(tx: Tx, job: ImportJob, kind: RecordKind, made: { extern
  * first tab (as tabFor does), each after what's there, siblings in Featurebase's order.
  */
 async function collectionsPage(job: ImportJob): Promise<StepPage> {
+  // A source that crawls finds its pages first, a page of this step at a time, its progress kept on the import.
+  const found = job.read.find ? await job.read.find() : null;
+  const keep = (tx: Tx) => found && tx.dataImport.update({ where: { id: job.id }, data: { sourceState: found.state as Prisma.InputJsonValue } });
+  if (found && !found.done) {
+    return { next: `find:${found.progress}`, save: async (tx) => void (await keep(tx)) };
+  }
   let page = await job.read.collections!(null);
   const all = [...page.items];
   while (page.next) {
@@ -195,6 +202,7 @@ async function collectionsPage(job: ImportJob): Promise<StepPage> {
   return {
     next: null,
     save: async (tx) => {
+      await keep(tx);
       const known = await recorded(tx, job, "collection");
       const firstTab = await tx.docsTab.findFirst({ where: { projectId: job.projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { id: true } });
       const local = new Map([...known].map(([id, row]) => [id, row.id]));
@@ -265,11 +273,12 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
   for (const article of fresh) {
     const title = titleOf(article);
     const author = article.author?.authorId ? await adminMember(tx, job, article.author.authorId, { name: article.author.name }) : null;
+    const slug = await freeDocsSlug(tx, job.projectId, slugOf(article) || title, "article");
     const { id } = await tx.article.create({
       data: {
         projectId: job.projectId,
         title,
-        slug: await freeDocsSlug(tx, job.projectId, slugOf(article) || title, "article"),
+        slug,
         description: article.description?.trim().slice(0, 300) ?? "",
         collectionId: collections.get(article.parentId ?? "")?.id ?? null,
         order: orderOf(article.order),
@@ -279,9 +288,39 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
       select: { id: true },
     });
     made.push({ externalId: article.id, localId: id, madeTitle: title });
+    await keepOldAddress(tx, job, article.id, slug);
   }
   await remember(tx, job, "article", made);
   await remember(tx, job, "article-ref", refs(made, new Map(fresh.map((article) => [article.id, article]))));
+}
+
+/**
+ * A crawled help center's article's old path (a source whose ids are its pages' addresses), redirected to its new page
+ * (Settings → Domain → Redirects), so once the old domain points at the portal, links to it still land. Up to the
+ * portal's MAX_REDIRECTS; never a path that has a rule, is a rule's destination, or may be one of the portal's own pages.
+ */
+async function keepOldAddress(tx: Tx, job: ImportJob, address: string, slug: string) {
+  if (IMPORT_SOURCES[job.source].credential !== "url") {
+    return;
+  }
+  const from = redirectFrom(address);
+  const to = `/docs/${slug}`;
+  // Not a path a rule can have (the home, the portal's own), or the same address as before.
+  if ("error" in from || from.from === redirectKey(to)) {
+    return;
+  }
+  const rules = await tx.portalRedirect.findMany({ where: { projectId: job.projectId }, select: { from: true, to: true } });
+  // One of the portal's own pages (another article's or a collection's /docs/<slug>, its changelog, …): never hidden.
+  if (portalPage(from.from)) {
+    tally(job.counts, "notRedirected", "taken by the portal's own pages (not redirected)");
+  } else if (rules.some((rule) => rule.from === from.from || rule.from === redirectKey(to) || destinationKey(rule.to) === from.from)) {
+    tally(job.counts, "notRedirected", "already part of another redirect (not redirected)");
+  } else if (rules.length >= MAX_REDIRECTS) {
+    tally(job.counts, "notRedirected", `past the portal's ${MAX_REDIRECTS} redirects (not redirected)`);
+  } else {
+    await tx.portalRedirect.create({ data: { projectId: job.projectId, from: from.from, to } });
+    tally(job.counts, "oldAddresses", null);
+  }
 }
 
 /** Pass 1's articles: every one (drafts too), made empty, a page at a time. */
@@ -306,7 +345,8 @@ async function linksTo(job: ImportJob, portal: string, html: string[]): Promise<
   const parse = IMPORT_SOURCES[job.source].docsLink;
   const target = (href: string) => {
     try {
-      return parse?.(new URL(href, "https://source.invalid").pathname) ?? null;
+      const url = new URL(href, "https://source.invalid");
+      return parse?.(url.pathname, url) ?? null;
     } catch {
       return null;
     }
@@ -352,9 +392,10 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const { items, next: listNext } = await job.read.articles!(listCursor, CONTENT_PAGE);
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
+  // Not yet landed, and not decided by this import already (one gone when a run of it read it: a later import reads it again).
   const todo = items.filter((article) => {
     const local = known.get(article.id);
-    return !local || (!local.landed && !local.deleted && !teamSaved(local));
+    return !local || (!local.landed && !local.deleted && !teamSaved(local) && local.countedIn !== job.id);
   });
   const portal = todo.length > 0 ? await portalAddress((await prisma.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { slug: true } })).slug) : "";
   // Those of imports that ended without their last page (failed, or failed as stale) go.
@@ -367,10 +408,46 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   // `draftLost`: why its unpublished changes didn't come (the published version did), said in the summary.
   // `drafted`: it has a draft that differs, not converted (the team asked for drafts: only its published text is kept).
   const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null; draftLost: string | null; drafted: boolean }[] = [];
-  for (const article of todo) {
-    if (texts.length > 0 && Date.now() - started > contentBudget.ms) {
+  // How many of `todo` this run got to (one a source no longer has too): the page is read again for the rest.
+  let reached = 0;
+  // Those the source no longer has (its `article` reader's null), decided in this run: counted as gone and marked
+  // counted by this import (not landed), so a page read again doesn't fetch them again, but a later import does (a
+  // page that was refused for a while, by a firewall or a redeploy, isn't an empty draft for good).
+  const gone = new Set<FeaturebaseArticle>();
+  for (const item of todo) {
+    // Out of time once it decided something (an article brought across, or one gone: decided ones are saved, so a run of
+    // slow gone pages stops here and goes on next, rather than reaching the read deadline).
+    if ((texts.length > 0 || gone.size > 0) && Date.now() - started > contentBudget.ms) {
       break;
     }
+    // A source whose list is only addresses reads each article now, so one done before is never fetched again. One
+    // failing for a while stops the page here (read again next), once this run brought one across; with none brought
+    // (a gone one before it doesn't count: it's reached again next run) it fails the step, so a source that keeps
+    // failing fails the import, never reads the page again forever.
+    let article = item;
+    if (job.read.article) {
+      let read: FeaturebaseArticle | null;
+      try {
+        read = await job.read.article(item);
+      } catch (error) {
+        // A run that decided something (an article brought across, or gone) stops here and saves it, read again next
+        // (`again:`): its work is never thrown away. Out of time (`late`, a short pause that doesn't fit what's left)
+        // ends the run too, with nothing to save: the next has its own time. Otherwise, with nothing to save, the step
+        // fails: a source that keeps failing, or one asking to be left longer than a step waits (`wait`, its message
+        // saying when to start again), ends the import, and a re-import brings only what's new.
+        if (texts.length > 0 || gone.size > 0 || (error as { reason?: unknown }).reason === "late") {
+          break;
+        }
+        throw error;
+      }
+      if (!read) {
+        gone.add(item);
+        reached++;
+        continue;
+      }
+      article = read;
+    }
+    reached++;
     // Its draft is read first, while the page is within its time (contentBudget): converting copies media, which
     // Featurebase's read deadline (import-step's PAGE_READ_MS) doesn't wait for.
     const draftVersion = await draftOf(job, article);
@@ -391,9 +468,9 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
     // Brought as a draft of its published text, its draft isn't converted: its media would be copied for nothing, using up the quota.
     const draft = draftVersion && job.publishArticles && !("error" in live) ? await convert(draftVersion) : null;
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
-    texts.push({ article, live, draft: differs ? (draft as Text) : null, draftLost: draft && "error" in draft ? draft.error : null, drafted: Boolean(draftVersion) && !job.publishArticles && (draftVersion!.title !== article.title || draftVersion!.body !== article.body) });
+    texts.push({ article: item, live, draft: differs ? (draft as Text) : null, draftLost: draft && "error" in draft ? draft.error : null, drafted: Boolean(draftVersion) && !job.publishArticles && (draftVersion!.title !== article.title || draftVersion!.body !== article.body) });
   }
-  const next = texts.length < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
+  const next = reached < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
   if (!next) {
     mediaCaches.delete(job.id);
   }
@@ -414,7 +491,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
         const local = locals.get(article.id);
         const text = texts.find((t) => t.article === article);
         // Not converted for want of time: the page read again does it.
-        if (!local || (!text && todo.includes(article))) {
+        if (!local || (!text && todo.includes(article) && !gone.has(article))) {
           continue;
         }
         // What becomes of it is counted once an import, by the run that first decides it (whichever page it's on, read
@@ -428,6 +505,13 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
             landedRecords.push(local.record);
           }
         };
+        // Gone from the source (or refused) as this run read it: an empty draft, decided for this import (not landed:
+        // a later import reads it again).
+        if (gone.has(article)) {
+          count("articles", `gone from ${IMPORT_SOURCES[job.source].name} (left as empty drafts)`);
+          decided();
+          continue;
+        }
         // Deleted here before its content landed: left deleted and not landed, so if it's restored, a later import fills it in.
         if (local.deleted && !local.landed) {
           count("articles", "deleted here since");

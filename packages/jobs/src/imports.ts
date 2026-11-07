@@ -152,7 +152,7 @@ export function importJob(row: DataImport): ImportJob | null {
     return null;
   }
   const counts = structuredClone(row.counts ?? {}) as ImportCounts;
-  const { read } = IMPORT_SOURCES[row.source].connect(openValue(IMPORT_KEY, row.apiKey), { deadline: Date.now() + PAGE_READ_MS });
+  const { read } = IMPORT_SOURCES[row.source].connect(openValue(IMPORT_KEY, row.apiKey), { deadline: Date.now() + PAGE_READ_MS, state: row.sourceState ?? undefined });
   return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, read, counts, publishArticles: row.publishArticles };
 }
 
@@ -161,10 +161,15 @@ export const IMPORT_KEY = "import-key";
 
 /** Why a page failed, in words, for the team. */
 function failure(source: ImportSource, error: unknown): string {
-  const { name, status: statusOf } = IMPORT_SOURCES[source];
+  const { name, credential, status: statusOf } = IMPORT_SOURCES[source];
   const status = statusOf(error);
   if (status === null || !(error instanceof Error)) {
     return `Something went wrong. ${AGAIN}`;
+  }
+  // A site read by its address says what happened itself (and there's no key to stop accepting); one that asked to be
+  // left a while says when to start again itself.
+  if (credential === "url") {
+    return (error as { reason?: unknown }).reason === "wait" ? error.message : `${error.message} ${AGAIN}`;
   }
   if (status === 401 || status === 403) {
     return `${name} stopped accepting the API key (${error.message}). ${AGAIN}`;

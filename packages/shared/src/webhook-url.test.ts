@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { checkWebhookUrl, publicOnlyLookup } from "./webhook-url";
+import { checkWebhookUrl, HOST_NOT_FOUND, LOOKUP_FAILED, publicOnlyLookup } from "./webhook-url";
 
 /** Fixed DNS answers, so no test depends on the machine's resolver or the network. */
 const ANSWERS: Record<string, { address: string; family: number }[]> = {
@@ -22,6 +22,9 @@ vi.mock("node:dns", async (importOriginal) => {
 vi.mock("node:dns/promises", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:dns/promises")>()),
   lookup: async (host: string) => {
+    if (host === "flaky.test") {
+      throw Object.assign(new Error(`EAI_AGAIN ${host}`), { code: "EAI_AGAIN" });
+    }
     if (!ANSWERS[host]) {
       throw Object.assign(new Error(`ENOTFOUND ${host}`), { code: "ENOTFOUND" });
     }
@@ -76,4 +79,9 @@ test("connections look names up again and refuse private answers (DNS rebinding)
   await expect(lookup("public.test", false)).resolves.toEqual({ address: "93.184.215.14", family: 4 });
   await expect(lookup("public.test", true)).resolves.toEqual([{ address: "93.184.215.14", family: 4 }]);
   await expect(lookup("nowhere.test", false)).rejects.toThrow("ENOTFOUND");
+});
+
+test("a host name that can't be looked up is said so, coded apart from a refusal: one that doesn't exist apart from a failed lookup", async () => {
+  await expect(checkWebhookUrl("https://nowhere.test/hook")).rejects.toMatchObject({ message: "nowhere.test can't be found", code: HOST_NOT_FOUND });
+  await expect(checkWebhookUrl("https://flaky.test/hook")).rejects.toMatchObject({ message: "flaky.test can't be found", code: LOOKUP_FAILED });
 });
