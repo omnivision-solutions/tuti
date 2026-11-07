@@ -51,6 +51,9 @@ export function mediaImporter({ projectId, uploaderId, cache = new Map() }: { pr
   };
 }
 
+/** More than processing ever keeps for one image (a 2400px WebP set and the email JPEG): its quota while it's processed. */
+const PROCESSED_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
 async function copy(projectId: string, uploaderId: string, { kind, url, name }: MediaSource): Promise<Copied & { passing?: true }> {
   const storage = mediaStorage();
   if (!storage) {
@@ -69,9 +72,9 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
     return { leftOut: "type" };
   }
 
-  // An image counts until it's re-encoded at no more than the app's per-image limit: what's kept (WebP sizes, set by
-  // processing) is always well under it, so a large original doesn't use up quota it won't keep.
-  const size = kind === "image" ? Math.min(body.byteLength, mediaLimit("MEDIA_MAX_IMAGE_MB_TEAM")) : body.byteLength;
+  // An image counts at most PROCESSED_IMAGE_MAX_BYTES until it's re-encoded: what's kept (WebP sizes and the email
+  // JPEG, set by processing) is always well under it, so a large original doesn't use up quota it won't keep.
+  const size = kind === "image" ? Math.min(body.byteLength, PROCESSED_IMAGE_MAX_BYTES) : body.byteLength;
   const media = await prisma.$transaction(async (tx) => {
     // As createUpload (apps/web server/media.ts): one at a time per project, so nothing overruns the quota together.
     await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
