@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { appUrl } from "@/lib/hosts";
+import { asksToVerifyEmail } from "@/lib/verify-email";
 import { canAssignRole, isAdminRole, ROLE_LABELS } from "@/lib/roles";
 
 import { getMembership } from "./membership";
@@ -124,7 +125,7 @@ async function dayIsFull(tx: Prisma.TransactionClient, projectId: string, sender
 }
 
 /** Invites are emailed only from a verified address (on servers that send email, where it can be verified). */
-const mayNotEmail = (sender: { emailVerified: boolean }) => !sender.emailVerified && emailConfigured();
+const mayNotEmail = asksToVerifyEmail;
 
 const VERIFY_FIRST = "Verify your email to send invites: open the link we emailed you.";
 

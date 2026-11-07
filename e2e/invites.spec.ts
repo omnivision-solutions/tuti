@@ -19,8 +19,9 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await owner.getByRole("button", { name: "Create project" }).click();
   await skipSetup(owner, slug);
 
-  // Until the owner's email is verified, an invite isn't emailed: its link is there to copy.
+  // Until the owner's email is verified, an invite isn't emailed (the card says so): its link is there to copy.
   await owner.goto(`/app/${slug}/team`);
+  await expect(owner.getByText("Verify your email to email invites; until then you'll get a link to send them. Only that email address can accept it.")).toBeVisible();
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
   await owner.getByRole("button", { name: "Send invite" }).click();
   await expect(owner.getByText(`Verify your email to email invites: for now, send ${inviteeEmail} this link`)).toBeVisible();
@@ -31,6 +32,7 @@ test("an owner invites someone by email, who signs up from the email and joins",
   // Verified, the owner invites again (replacing that one); the pending invite shows who it's for.
   await verifyEmail(owner);
   await owner.goto(`/app/${slug}/team`);
+  await expect(owner.getByText("We'll email them an invite. Only that email address can accept it.")).toBeVisible();
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
   await owner.getByRole("button", { name: "Send invite" }).click();
   await expect(owner.getByText(`Invite sent to ${inviteeEmail}`)).toBeVisible();

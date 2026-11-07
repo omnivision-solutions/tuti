@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { canAssignRole, canManageTeamMember, isAdminRole, ROLE_LABELS } from "@/lib/roles";
+import { inviteNote } from "@/lib/verify-email";
 import { getMembership } from "@/server/membership";
 import { getSession } from "@/server/session";
 
@@ -112,7 +113,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
           <CardHeader>
             <CardTitle>Invite people</CardTitle>
             <CardDescription>
-              We&apos;ll email them an invite. Only that email address can accept it.
+              {inviteNote(session.user)}
               {limit !== null && (
                 <>
                   {" "}
