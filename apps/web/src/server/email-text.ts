@@ -13,12 +13,23 @@ export const PARSER_OPTIONS = { maxHtmlLengthToParse: 0, skipTextToHtml: true, s
 
 /**
  * An email's HTML as text: links kept, images left out, quotes as "> ". Only so much of it and so deep (the reply is
- * at the top). Quotes, lists, links and headings take the library's own form five levels deep, and not again below
- * that, as each level goes over all it holds once more (marks, indents, or works on each word): the text grows with
- * the HTML rather than with how deep it nests.
+ * at the top). Quotes, lists, links and headings take the library's own form five levels deep, counted together, and
+ * not again below that, as each level goes over all it holds once more (marks, indents, or works on each word): the
+ * text grows with the HTML rather than with how deep it nests.
  */
 export function htmlAsText(html: string): string {
-  const heading = nested("heading", "block");
+  let depth = 0;
+  /** The library's own formatter, `format`, within five levels; `deeper` below that. */
+  const nested =
+    (format: string, deeper: string): FormatCallback =>
+    (elem, walk, builder, options) => {
+      depth++;
+      try {
+        builder.options.formatters![depth <= MARKED_LEVELS ? format : deeper]!(elem, walk, builder, options);
+      } finally {
+        depth--;
+      }
+    };
   return htmlToText(html.slice(0, MAX_HTML), {
     wordwrap: false,
     limits: { maxDepth: MAX_DEPTH },
@@ -35,23 +46,10 @@ export function htmlAsText(html: string): string {
       unordered: nested("unorderedList", "flatList"),
       ordered: nested("orderedList", "flatList"),
       link: nested("anchor", "inline"),
-      cappedHeading: heading,
+      cappedHeading: nested("heading", "block"),
       flatList,
     },
   });
-}
-
-/** The library's own formatter, `format`, five levels deep; `deeper` below that. */
-function nested(format: string, deeper: string): FormatCallback {
-  let depth = 0;
-  return (elem, walk, builder, options) => {
-    depth++;
-    try {
-      builder.options.formatters![depth <= MARKED_LEVELS ? format : deeper]!(elem, walk, builder, options);
-    } finally {
-      depth--;
-    }
-  };
 }
 
 /** A list's items one under the other, neither marked nor indented. */

@@ -3,7 +3,15 @@ import { expect, test } from "vitest";
 import { htmlAsText, MARKED_LEVELS, MAX_DEPTH, MAX_HTML } from "./email-text";
 
 /** What nests in a way the library goes over again at each level. */
-const NESTING = ["<blockquote>Earlier", "<ul><li>Earlier", "<ol><li>Earlier", '<a href="https://acme.example/">Earlier', "<h1>Earlier"];
+const NESTING = [
+  "<blockquote>Earlier",
+  "<ul><li>Earlier",
+  "<ol><li>Earlier",
+  "<ul><li>Earlier<ol><li>Earlier",
+  '<a href="https://acme.example/">Earlier',
+  "<h1>Earlier",
+  '<blockquote><ul><li><a href="https://acme.example/"><h1>Earlier',
+];
 
 const indent = (text: string) => Math.max(...text.split("\n").map((line) => line.length - line.trimStart().length));
 
@@ -21,6 +29,10 @@ test("lists are indented as deep as they go, up to five, and not again below tha
   expect(text).toMatch(/^ \* Level 1\n +\* Level 2\n/);
   expect(text).toContain(`Level ${MARKED_LEVELS + 2}`);
   expect(indent(text)).toBeLessThanOrEqual(MARKED_LEVELS * 3);
+  // Lists of both kinds, one within the other, count as one: five levels in all.
+  const alternating = htmlAsText(`${"<ul><li>Bullet<ol><li>Number".repeat(MARKED_LEVELS)}`);
+  expect(alternating).toContain("Number");
+  expect(indent(alternating)).toBeLessThanOrEqual(MARKED_LEVELS * 3);
   // A plain list as ever.
   expect(htmlAsText("<ol><li>One</li><li>Two</li></ol>")).toBe(" 1. One\n 2. Two");
 });
