@@ -29,6 +29,11 @@ export const featurebaseSource: ImportSourceDefinition = {
   name: "Featurebase",
   credential: "key",
   status: (error) => (error instanceof FeaturebaseError ? error.status : null),
+  // /en/articles/1234567-setup (or /articles/…, /en/help/articles/…, /collections/…), on any host.
+  docsLink: (path) => {
+    const [, kind, ref] = /^\/(?:[A-Za-z-]+\/)?(?:help\/)?(articles|collections)\/(\d+)(?:-|\/|$)/.exec(path) ?? [];
+    return ref ? { kind: kind === "articles" ? "article" : "collection", ref } : null;
+  },
   connect: (key, { deadline }) => {
     const api = featurebase(key, { deadline });
     return {
