@@ -39,6 +39,10 @@ const MAX_LINE = 2000;
 export const MAX_SCAN = 200_000;
 
 const test = (pattern: RegExp, line: string) => line.length <= MAX_LINE && pattern.test(line);
+const quotedOrBlank = (line: string) => {
+  const trimmed = line.trim();
+  return trimmed === "" || trimmed.startsWith(">");
+};
 
 /** The reply without what it quotes; the whole text when cutting would leave nothing, or for a forward (`subject`). */
 export function stripQuotes(text: string, subject = ""): { text: string; stripped: boolean } {
@@ -47,13 +51,14 @@ export function stripQuotes(text: string, subject = ""): { text: string; strippe
     return { text: whole.trim(), stripped: false };
   }
   const lines = whole.slice(0, MAX_SCAN).split("\n");
-  // quotedFrom[i]: every line from i on is blank or quoted, worked out once from the end; past a cut,
-  // what follows isn't known to be.
+  // quotedFrom[i]: every line from i on is blank or quoted, worked out once from the end, starting
+  // from the lines past the cut (the last line looked at whole).
+  const rest = whole.slice(MAX_SCAN).split("\n");
+  rest[0] = lines.at(-1)! + rest[0]!;
   const quotedFrom = Array<boolean>(lines.length + 1).fill(true);
-  quotedFrom[lines.length] = whole.length <= MAX_SCAN;
+  quotedFrom[lines.length] = rest.every(quotedOrBlank);
   for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim();
-    quotedFrom[i] = quotedFrom[i + 1]! && (line === "" || line.startsWith(">"));
+    quotedFrom[i] = quotedFrom[i + 1]! && quotedOrBlank(lines[i]!);
   }
   const trimmedLine = (i: number) => (lines[i] ?? "").replace(/ /g, " ").trim();
   for (let i = 0; i < lines.length; i++) {

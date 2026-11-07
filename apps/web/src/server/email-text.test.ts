@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { htmlAsText, MARKED_LEVELS, MAX_DEPTH, MAX_HTML } from "./email-text";
 
@@ -55,4 +55,12 @@ test("links and headings within links and headings take their form five levels d
   // A plain link and heading as ever.
   expect(htmlAsText('<h2>Export</h2><p>See <a href="https://acme.example/docs">the docs</a>.</p>')).toBe("EXPORT\n\nSee the docs [https://acme.example/docs].");
   expect(htmlAsText(`${"<h1>Title ".repeat(MARKED_LEVELS + 5)}`)).toMatch(/^TITLE/);
+  // Each heading level makes each word within it upper case once more: five levels' worth at most.
+  const upperCase = vi.spyOn(String.prototype, "toUpperCase");
+  try {
+    expect(htmlAsText(`${"<h1>".repeat(MARKED_LEVELS + 15)}One two three`)).toBe("ONE TWO THREE");
+    expect(upperCase.mock.calls.length).toBeLessThanOrEqual(3 * MARKED_LEVELS);
+  } finally {
+    upperCase.mockRestore();
+  }
 });
