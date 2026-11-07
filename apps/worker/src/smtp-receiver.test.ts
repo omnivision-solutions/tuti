@@ -14,6 +14,7 @@ import {
   IDLE_TIMEOUT_MS,
   LOOKUP_TIMEOUT_MS,
   PROBE_TIMEOUT_MS,
+  MAX_CHECKING,
   MAX_CHECKING_PER_SOURCE,
   MAX_CLIENTS,
   MAX_DKIM_SIGNATURES,
@@ -649,6 +650,9 @@ test("connections are counted by network (IPv4 /24, IPv6 /48), and a few network
   expect(sourceOf("2001:db8:0:ff00::1")).toBe(sourceOf("2001:db8::1"));
   expect(sourceOf("2001:db8:1::1")).not.toBe(sourceOf("2001:db8::1"));
   expect(MAX_CLIENTS).toBeGreaterThanOrEqual(10 * MAX_PER_SOURCE);
+  // Checks fill up no sooner than connections do.
+  expect(MAX_CHECKING).toBe(MAX_CLIENTS);
+  expect(MAX_CHECKING_PER_SOURCE).toBe(MAX_PER_SOURCE);
 });
 
 test("off without INBOUND_SMTP_PORT; with it, the rest is needed", () => {

@@ -42,10 +42,11 @@ export const MAX_IN_FLIGHT = 10;
 export const MAX_IN_FLIGHT_PER_SOURCE = 2;
 /**
  * Messages being checked (SPF, DKIM, DMARC: DNS lookups, many of names the sender picks) at once, and
- * from one network, as many as it may have connections: whether their sender is still connected or
- * not, so hanging up and coming back doesn't start more (451 past them).
+ * from one network, as many as connections: whether their sender is still connected or not, so
+ * hanging up and coming back doesn't start more (451 past them). A check mostly waits on DNS, and
+ * its bytes count against the budget, so as many may run as senders may connect.
  */
-export const MAX_CHECKING = 30;
+export const MAX_CHECKING = MAX_CLIENTS;
 export const MAX_CHECKING_PER_SOURCE = MAX_PER_SOURCE;
 /**
  * Bytes of messages held at once, arriving, being checked or delivered, and from one network: a

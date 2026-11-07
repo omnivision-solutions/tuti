@@ -73,18 +73,18 @@ The worker can receive the mail itself: an SMTP server for the support domain's 
 - **Limits:** 100 senders connected at once, 3 from one network (an IPv4 /24 or IPv6 /48), each
   session 10 minutes at most, closed after a minute without a message, and cut off when the message
   it's sending arrives slower than 64 kB in 30 seconds or takes over 3 minutes; 250 MB of mail held at
-  once (50 MB from one network), arriving, being checked or being delivered; 30 messages being
+  once (50 MB from one network), arriving, being checked or being delivered; 100 messages being
   checked at once, 3 from one network, whether their senders are still connected or not; 10 messages
-  being posted to the app at once, 2 from one network; 20 recipients per message; SPF, DKIM and DMARC checked
-  within 30 seconds: mail whose checks take longer is taken as failing DMARC (spam), unless the
-  worker's own DNS isn't answering, when its sender is told to try again later; mail with more than
-  10 DKIM signatures or a header over 1 MB is taken as failing DMARC too. Past them, senders are
+  being posted to the app at once, 2 from one network; 20 recipients per message; SPF, DKIM and DMARC
+  checked within 30 seconds: mail whose checks take longer is taken as failing DMARC (spam), unless
+  the worker's own DNS isn't answering, when its sender is told to try again later; mail with more
+  than 10 DKIM signatures or a header over 1 MB is taken as failing DMARC too. Past them, senders are
   told to come back later or to send the rest separately, as SMTP expects.
-- **What the limits don't cover:** they keep a few senders from shutting out everyone else's mail,
-  not a determined sender with many networks. Senders on 5 networks each uploading about 0.3 MB/s
-  without pause can keep the 250 MB full, and senders on about 34 networks can hold every
-  connection. Meanwhile other mail is told to try again later, and its servers retry it. If that
-  matters to you, put a filtering mail server in front of the worker.
+- **What the limits don't cover:** they keep a few senders from shutting out everyone else's mail, not
+  a determined sender with many networks. Senders on 5 networks each uploading about 0.3 MB/s without
+  pause can keep the 250 MB full, and senders on about 34 networks can hold every connection, or every
+  place among the messages being checked. Meanwhile other mail is told to try again later, and its
+  servers retry it. If that matters to you, put a filtering mail server in front of the worker.
 
 ### Amazon SES (tuti.so)
 
