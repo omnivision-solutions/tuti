@@ -46,6 +46,8 @@ export const LOOKUP_TIMEOUT_MS = 5_000;
 export const AUTH_TIMEOUT_MS = 30_000;
 /** DKIM signatures checked per message (each is a DNS lookup): a message with more isn't checked, and can't pass DMARC (spam). */
 export const MAX_DKIM_SIGNATURES = 10;
+/** The largest header the checks read: a message whose header runs longer isn't checked, and can't pass DMARC (spam). */
+export const MAX_HEADER_BYTES = 1024 * 1024;
 
 /** The app's answer: its status, and for a 200 or 404 its `outcome` (`no such address` for a 404 that means it). */
 type Answer = { status: number; outcome?: string };
@@ -113,11 +115,23 @@ const timedOut = (signal: AbortSignal) =>
     }
   });
 
-/** DKIM-Signature fields in its header (lines end in CRLF or LF, as the checks read them). */
+/**
+ * DKIM-Signature fields in its header, which ends where the checks end it: at the first empty line,
+ * whatever its line endings. A header that doesn't end within MAX_HEADER_BYTES counts as too many.
+ */
 function dkimSignatures(raw: Buffer) {
-  const text = raw.toString("latin1");
-  const end = text.search(/\r?\n\r?\n/);
-  return text.slice(0, end < 0 ? text.length : end).match(/^dkim-signature[ \t]*:/gim)?.length ?? 0;
+  if (raw[0] === 0x0a || (raw[0] === 0x0d && raw[1] === 0x0a)) {
+    return 0;
+  }
+  const head = raw.subarray(0, MAX_HEADER_BYTES);
+  const ends = [head.indexOf("\n\n"), head.indexOf("\n\r\n")].filter((at) => at >= 0);
+  if (ends.length === 0 && raw.length > MAX_HEADER_BYTES) {
+    return Infinity;
+  }
+  return head
+    .subarray(0, ends.length > 0 ? Math.min(...ends) : raw.length)
+    .toString("latin1")
+    .match(/^dkim-signature[ \t]*:/gim)?.length ?? 0;
 }
 
 const UNVERIFIED = { spf: "none", dkim: "none", dmarc: "fail" };

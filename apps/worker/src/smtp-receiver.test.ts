@@ -6,7 +6,7 @@ import nodemailer from "nodemailer";
 import type { SMTPServer } from "smtp-server";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { MAX_CLIENTS, MAX_PER_SOURCE, receiverFromEnv, sourceOf, startSmtpReceiver } from "./smtp-receiver";
+import { MAX_CLIENTS, MAX_HEADER_BYTES, MAX_PER_SOURCE, receiverFromEnv, sourceOf, startSmtpReceiver } from "./smtp-receiver";
 
 const SECRET = "a-test-secret-of-at-least-32-characters";
 
@@ -261,6 +261,23 @@ test("a message with more DKIM signatures than any sender adds isn't checked, an
   // At the limit, they're checked.
   await sendRaw("sam@example.org", ["support@a.support.test"], signed(10));
   expect(lookups).toContain("s9._domainkey.signer.example");
+});
+
+test("a message with no blank line is all header: checked when it's short, not when it's longer than a header can be", async () => {
+  const lookups: string[] = [];
+  const counting = (name: string, type: string) => {
+    lookups.push(name);
+    return resolver(name, type);
+  };
+  const { sendRaw, posts } = await receiver([], { resolver: counting });
+  const headerOnly = "From: sam@example.org\r\nTo: support@acme.support.test\r\nSubject: Help\r\n";
+  await sendRaw("sam@example.org", ["support@a.support.test"], headerOnly);
+  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=pass dkim=none dmarc=pass");
+  lookups.length = 0;
+  const filler = Array.from({ length: Math.ceil(MAX_HEADER_BYTES / 900) }, () => `X-Filler: ${"x".repeat(900)}\r\n`).join("");
+  await sendRaw("sam@example.org", ["support@a.support.test"], headerOnly + filler);
+  expect(lookups).toEqual([]);
+  expect(posts[1]!.headers["tuti-auth"]).toBe("spf=none dkim=none dmarc=fail");
 });
 
 test("a session that sends no message is closed long before its lifetime, however busy it keeps itself", async () => {
