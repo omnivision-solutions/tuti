@@ -50,6 +50,7 @@ beforeEach(async () => {
   site.requests = [];
   site.failing.clear();
   site.failingOnce.clear();
+  site.retryAfter = null;
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -403,4 +404,34 @@ test("a gone article before one that keeps failing fails the import, rather than
     state: "FAILED",
     error: expect.stringMatching(/^127\.0\.0\.1 answered 503\. /),
   });
+});
+
+test("an article page asking (Retry-After) for longer than a step waits isn't asked again early: the next run reads it", async () => {
+  const at = (path: string) => `${site.origin}${path}`;
+  const folder = at("/docs/getting-started");
+  site.failing.set("/docs/getting-started/install", 429);
+  site.failingOnce.add("/docs/getting-started/install");
+  site.retryAfter = "120";
+  const row = await runningImport(site.url, {
+    list: { pages: [{ id: folder, collection: folder }, { id: at("/docs/getting-started/install"), collection: folder }], collections: [{ id: folder, parent: null, name: "Getting started" }] },
+  });
+  // The content pass's first run: the first article comes across, then the 429 ends the run at once, without waiting
+  // out (or cutting short) the two minutes it asked for.
+  let job = importJob(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } }))!;
+  for (const step of STEPS.docs.steps.slice(0, 2)) {
+    for (let cursor: string | null = null, first = true; first || cursor; first = false) {
+      const page = await step.page(job, cursor);
+      await prisma.$transaction((tx) => page.save(tx));
+      cursor = page.next;
+      job = importJob(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } }))!;
+    }
+  }
+  const content = await STEPS.docs.steps[2]!.page(job, null);
+  expect(content.next).toBe("again:");
+  expect(site.requests.filter((path) => path === "/docs/getting-started/install")).toHaveLength(1);
+  await prisma.$transaction((tx) => content.save(tx));
+  // The next run reads it.
+  const again = await STEPS.docs.steps[2]!.page(job, content.next);
+  await prisma.$transaction((tx) => again.save(tx));
+  expect((await articles()).find((a) => a.title === "Install Acme")?.body).toBe("Download the app, then make your first project.\nThe installer");
 });

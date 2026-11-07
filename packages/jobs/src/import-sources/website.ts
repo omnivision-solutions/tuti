@@ -27,6 +27,8 @@ const PAGE_TIMEOUT_MS = 15_000;
 const MAX_REDIRECTS = 3;
 /** Times an article's page that fails for a while (a 429, a 5xx, no answer) is asked for again (getRetrying). */
 const RETRIES = 2;
+/** The longest Retry-After a step waits out; one asking for more is read again by the content pass's next run. */
+const RETRY_AFTER_MAX_MS = 30_000;
 /** Between two requests to the site (a robots.txt Crawl-delay, up to 5s, if it asks for more). Changeable for tests. */
 export const crawlPace = { ms: 500 };
 /** Pages a step of the link crawl fetches at most (its time limits it too): changeable for tests, which cut it short. */
@@ -301,7 +303,7 @@ function site(start: string, deadline: number, kept: unknown) {
 
   /**
    * An article's page, as `get`, tried again for what fails for a while (a 429, a 5xx, no answer) up to RETRIES times:
-   * after what the site asks (Retry-After, up to 30s), else twice the pace each time, never past the deadline; and
+   * after what the site asks (Retry-After, up to 30s; more, not asked again here), else twice the pace each time, never past the deadline; and
    * paced as every request is. What still fails is thrown (the content pass reads it again in its next run).
    */
   async function getRetrying(url: string) {
@@ -314,7 +316,12 @@ function site(start: string, deadline: number, kept: unknown) {
           throw error;
         }
         const asked = (error as { retryAfterMs?: number | null }).retryAfterMs;
-        const wait = Math.min(asked ?? Math.max(crawlPace.ms, delayMs) * 2 ** (attempt + 1), 30_000);
+        // Asked to wait longer than a step should (Retry-After over RETRY_AFTER_MAX_MS): not asked again early, against
+        // what the site said; thrown, so the content pass stops there and its next run reads the page.
+        if (asked != null && asked > RETRY_AFTER_MAX_MS) {
+          throw error;
+        }
+        const wait = asked ?? Math.max(crawlPace.ms, delayMs) * 2 ** (attempt + 1);
         if (Date.now() + wait >= deadline) {
           throw error;
         }

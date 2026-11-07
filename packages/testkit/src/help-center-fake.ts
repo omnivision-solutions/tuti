@@ -18,6 +18,8 @@ export type HelpCenterFake = {
   failing: Map<string, number>;
   /** Paths in `failing` that fail once, then are answered as usual. */
   failingOnce: Set<string>;
+  /** Sent as Retry-After with `failing`'s answers (null: none). */
+  retryAfter: string | null;
   forbidRobots: boolean;
   /** Where the start page redirects to (none: it's served). */
   redirectStartTo: string | null;
@@ -57,7 +59,8 @@ const UNLISTED: Record<string, string> = {
 
 export async function startHelpCenterFake(): Promise<HelpCenterFake> {
   const fake = { sitemap: true, failing: new Map<string, number>(),
-    failingOnce: new Set<string>(), forbidRobots: false, redirectStartTo: null, requests: [] as string[] } as HelpCenterFake;
+    failingOnce: new Set<string>(),
+    retryAfter: null, forbidRobots: false, redirectStartTo: null, requests: [] as string[] } as HelpCenterFake;
   let held: { promise: Promise<void>; release: () => void } | null = null;
   const server = createServer(async (req, res) => {
     const path = new URL(req.url!, "http://fake").pathname;
@@ -79,7 +82,7 @@ export async function startHelpCenterFake(): Promise<HelpCenterFake> {
     if (path === "/docs" && fake.redirectStartTo) {
       res.writeHead(301, { location: fake.redirectStartTo }).end();
     } else if (fake.failing.has(path)) {
-      res.writeHead(fake.failing.get(path)!).end();
+      res.writeHead(fake.failing.get(path)!, fake.retryAfter ? { "retry-after": fake.retryAfter } : {}).end();
       if (fake.failingOnce.delete(path)) {
         fake.failing.delete(path);
       }
