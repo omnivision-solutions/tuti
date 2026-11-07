@@ -90,7 +90,10 @@ describe("a project keeps at least one owner", () => {
     const change = changeTeamRole(project.slug, second.memberId, "ADMIN");
     // It's waiting for the lock (so its transaction has begun); past its half second from now, let go.
     await vi.waitFor(async () => {
-      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted`;
+      // In this file's own database (the server is shared), on the project's row lock (lockProject's FOR UPDATE).
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+        SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FROM project WHERE id%FOR UPDATE%'`;
       expect(waiting).toBeGreaterThan(0);
     }, { timeout: 10_000, interval: 50 });
     await new Promise((done) => setTimeout(done, 600));
