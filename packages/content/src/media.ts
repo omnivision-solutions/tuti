@@ -79,6 +79,15 @@ export function videoFormat(bytes: Uint8Array): "mp4" | "mov" | "webm" | null {
   return ["moov", "mdat", "wide", "free", "skip"].includes(ascii(4, 8)) ? "mov" : null;
 }
 
+/**
+ * The type to store and serve a video as, from its content: any ISO or QuickTime file as MP4 (browsers play a .mov's
+ * H.264 as MP4; Firefox refuses `video/quicktime`), WebM as WebM. Null if it isn't a video.
+ */
+export function videoType(bytes: Uint8Array): "video/mp4" | "video/webm" | null {
+  const format = videoFormat(bytes);
+  return format === null ? null : format === "webm" ? "video/webm" : "video/mp4";
+}
+
 /** A file name's extension, lower case ("Report.PDF" → "pdf"), or "" without one. */
 export const fileExtension = (name: string) => /\.([a-z0-9]{1,8})$/i.exec(name)?.[1]?.toLowerCase() ?? "";
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ImportedMedia, LeftOutReason, MediaImporter, MediaSource } from "@tuti/content/html";
-import { attachmentName, fileExtension, fileKey, isFileContent, originalKey, UPLOAD_FILE_TYPES, UPLOAD_VIDEO_TYPES, videoFormat, videoKey } from "@tuti/content/media";
+import { attachmentName, fileExtension, fileKey, isFileContent, originalKey, UPLOAD_FILE_TYPES, UPLOAD_VIDEO_TYPES, videoFormat, videoKey, videoType } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
 import { checkWebhookUrl, publicOnlyLookup } from "@tuti/shared/webhook-url";
@@ -167,7 +167,7 @@ async function copyThrough(
         return await leaveOut("type");
       }
     } else if (path) {
-      await storage.putFile(videoKey(media.id), path, UPLOAD_VIDEO_TYPES[extension]!, late);
+      await storage.putFile(videoKey(media.id), path, videoType(body)!, late);
     } else {
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     }

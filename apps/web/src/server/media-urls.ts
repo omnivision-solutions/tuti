@@ -2,7 +2,7 @@ import type { JSONContent } from "@tiptap/core";
 import { filesIn, imageKeysIn } from "@tuti/content";
 import { imageKey, imageWidths, type MediaUrls } from "@tuti/content/media";
 import { lastingMediaUrl } from "@tuti/jobs";
-import { mediaStorage } from "@tuti/shared/storage";
+import { mediaStorage, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
 
 /**
  * Where uploaded images load from. The bucket is private, so every URL is signed:
@@ -19,9 +19,9 @@ type Docs = (JSONContent | null | undefined)[];
 
 /**
  * Signed URLs for the images and file attachments in these documents, for a reader who may see them.
- * Files are signed as downloads (saved under their name, with no type to render as). Uploaded videos get their lasting
- * link instead: a player asks for more of the video whenever it's played or sought, long after the page was rendered,
- * and each of those requests is sent on to a freshly signed URL.
+ * Files are signed as downloads (saved under their name, with no type to render as). Uploaded videos get a URL that
+ * works for a day (VIDEO_URL_SECONDS): a player asks for more of the video whenever it's played or sought, for as long
+ * as the page is open; it still expires, so losing access to the page takes effect for its videos too.
  */
 export async function mediaUrls(...docs: Docs): Promise<MediaUrls | null> {
   const storage = mediaStorage();
@@ -32,7 +32,7 @@ export async function mediaUrls(...docs: Docs): Promise<MediaUrls | null> {
   const files = new Map(docs.flatMap((doc) => (doc ? filesIn(doc) : [])).map((file) => [file.key, file.name]));
   return Object.fromEntries(
     await Promise.all([
-      ...[...keys].map(async (key) => [key, key.endsWith("/video") ? lastingMediaUrl(key) : await storage.signedUrl(key)] as const),
+      ...[...keys].map(async (key) => [key, await storage.signedUrl(key, undefined, undefined, key.endsWith("/video") ? VIDEO_URL_SECONDS : undefined)] as const),
       ...[...files].map(async ([key, name]) => [key, await storage.signedUrl(key, undefined, name)] as const),
     ]),
   );

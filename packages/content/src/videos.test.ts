@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 
 import { imageKeysIn, mediaIdsIn, parseDoc, toPlainText } from "./document";
 import { toMarkdown } from "./markdown";
-import { isFileContent, isVideoFile, mediaKeys, videoFormat, videoKey } from "./media";
+import { isFileContent, isVideoFile, mediaKeys, videoFormat, videoKey, videoType } from "./media";
 import { extensions } from "./profiles";
 import { RichText } from "./react";
 
@@ -56,6 +56,10 @@ describe("uploaded videos", () => {
     expect(videoFormat(bytes([0, 0, 0, 0x08], "moov"))).toBe("mov");
     expect(videoFormat(bytes([0x1a, 0x45, 0xdf, 0xa3]))).toBe("webm");
     expect(isFileContent("mp4", mp4)).toBe(true);
+    // Stored and served as what every browser plays: a QuickTime file as MP4.
+    expect([mp4, bytes([0, 0, 0, 0x14], "ftypqt  "), bytes([0, 0, 0, 0x08], "moov")].map(videoType)).toEqual(["video/mp4", "video/mp4", "video/mp4"]);
+    expect(videoType(bytes([0x1a, 0x45, 0xdf, 0xa3]))).toBe("video/webm");
+    expect(videoType(bytes("<svg/>"))).toBeNull();
     // A web page or SVG named as a video isn't one.
     expect(isFileContent("mp4", bytes("<!doctype html><script>alert(1)</script>"))).toBe(false);
     expect(isFileContent("webm", bytes('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBe(false);

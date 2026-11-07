@@ -16,11 +16,12 @@ import {
   UPLOAD_IMAGE_TYPES,
   UPLOAD_VIDEO_TYPES,
   videoKey,
+  videoType,
 } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
-import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
+import { mediaLimit, mediaStorage, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { canActIn } from "./membership";
@@ -134,10 +135,7 @@ export async function createUpload(
   return { mediaId: result.id, uploadUrl, contentType, ...(filename !== null && { name: filename }) };
 }
 
-/**
- * The browser finished uploading: check what arrived, then process it. A video's `src` is where the editor plays it from
- * until it's saved: signed now (its lasting link only works once content uses it); once saved, pages load the lasting link.
- */
+/** The browser finished uploading: check what arrived, then process it. A video's `src` is where the editor plays it from (for a day, VIDEO_URL_SECONDS). */
 export async function finishUpload(mediaId: string): Promise<{ error?: string; src?: string }> {
   const session = await getSession();
   const storage = mediaStorage();
@@ -168,13 +166,13 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string; s
     return { error: "The upload didn't match the file. Try again." };
   }
 
-  // A video is copied by the storage (too big to pass through here) to a key the browser can't write to, then the
-  // copy is checked: its size, and that its first bytes are a video's. Claimed first, so of two finishes at once only
-  // one copies.
+  // A video is copied by the storage (too big to pass through here) to a key the browser can't write to, as the type
+  // its first bytes say (videoType), then the copy is checked: its size, and that its first bytes are a video's of that
+  // type. Claimed first, so of two finishes at once only one copies.
   if (isVideoFile(media.filename)) {
     if ((await settle({ status: "PROCESSING" })).count === 0) {
       const now = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true } });
-      return now?.status === "READY" ? { src: await storage.signedUrl(videoKey(media.id)) } : { error: "The upload didn't match the file. Try again." };
+      return now?.status === "READY" ? { src: await storage.signedUrl(videoKey(media.id), undefined, undefined, VIDEO_URL_SECONDS) } : { error: "The upload didn't match the file. Try again." };
     }
     const fail = async (error: string) => {
       await storage.delete(videoKey(media.id)).catch(() => {});
@@ -183,12 +181,16 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string; s
       return { error };
     };
     try {
-      await storage.copy(key, videoKey(media.id), UPLOAD_VIDEO_TYPES[fileExtension(media.filename!)]!);
+      const type = videoType(await storage.get(key, 16));
+      if (!type) {
+        return await fail(`${media.filename} isn't a video`);
+      }
+      await storage.copy(key, videoKey(media.id), type);
       const copied = await storage.head(videoKey(media.id));
       if (copied?.size !== media.size) {
         return await fail("The upload didn't match the file. Try again.");
       }
-      if (!isFileContent(fileExtension(media.filename!), await storage.get(videoKey(media.id), 16))) {
+      if (videoType(await storage.get(videoKey(media.id), 16)) !== type) {
         return await fail(`${media.filename} isn't a video`);
       }
       await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "READY" } });
@@ -197,7 +199,7 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string; s
       return await fail("The video couldn't be saved. Try again.");
     }
     await storage.delete(key).catch((error: unknown) => log.error("Deleting a video's upload failed", { mediaId: media.id, error }));
-    return { src: await storage.signedUrl(videoKey(media.id)) };
+    return { src: await storage.signedUrl(videoKey(media.id), undefined, undefined, VIDEO_URL_SECONDS) };
   }
 
   // A file attachment is kept as it is, once its content is what its name says: copied to a key the browser

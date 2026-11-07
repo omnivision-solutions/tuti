@@ -1,14 +1,13 @@
 import { originalKey, videoKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { SIGNED_WINDOW_SECONDS } from "@tuti/shared/storage";
+import { SIGNED_WINDOW_SECONDS, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { articleMarkdown } from "@/server/docs-queries";
 import { createUpload, finishUpload } from "@/server/media";
-import { GET } from "@/app/media/[id]/[file]/route";
-import { lastingMediaUrl, mediaUrls } from "@/server/media-urls";
+import { mediaUrls } from "@/server/media-urls";
 import { createArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -64,6 +63,15 @@ describe("uploads", () => {
     expect(s3.objects.has(originalKey(mediaId))).toBe(false);
   });
 
+  test("a MOV is stored and served as MP4, which every browser plays (Firefox refuses video/quicktime)", async () => {
+    const mov = Buffer.concat([Buffer.from([0, 0, 0, 0x14]), Buffer.from("ftypqt  \0\0\0\0qt  "), Buffer.alloc(64, 7)]);
+    const result = await upload("Tour.mov", mov);
+    expect(result).toMatchObject({ contentType: "video/quicktime", src: expect.any(String) });
+    const { mediaId, src } = result as { mediaId: string; src: string };
+    expect(s3.objects.get(videoKey(mediaId))).toEqual({ body: mov, contentType: "video/mp4" });
+    expect((await fetch(src)).headers.get("content-type")).toBe("video/mp4");
+  });
+
   test("a web page named as a video is refused, and kept nowhere", async () => {
     const result = await upload("clip.mp4", Buffer.from("<!doctype html><script>alert(1)</script>"));
     expect(result).toMatchObject({ error: "clip.mp4 isn't a video" });
@@ -87,7 +95,7 @@ describe("uploads", () => {
 });
 
 describe("in articles", () => {
-  test("a saved video is kept by the sweep, plays from its lasting link (still, hours after the page), and Markdown links it", async () => {
+  test("a saved video is kept by the sweep, plays hours after its page was shown (for a day), and Markdown links it", async () => {
     const { mediaId } = (await upload("Tour.mp4", MP4)) as { mediaId: string };
     await call(createArticle, asOwner(), { title: "Tour", content: doc(videoNode(mediaId)) });
     const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id }, select: { content: true } });
@@ -98,29 +106,31 @@ describe("in articles", () => {
     await handlers.releaseMedia({}, { info: () => {}, warn: () => {} });
     expect((await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).attachedAt).not.toBeNull();
 
-    // The player loads its lasting link, not a URL signed for this page view: it asks for more as it's played or sought.
-    const url = (await mediaUrls(article.content as object))![videoKey(mediaId)]!;
-    expect(url).toBe(lastingMediaUrl(videoKey(mediaId)));
-    // Three hours on, past any URL signed as the page was shown, each request still goes on to one signed now, and plays
-    // in place, as its video type, not a download.
+    // The player loads a URL signed as the page is shown, which works for a day (it asks for more as it's played or
+    // sought), then stops: losing access to the page takes effect for its videos too. The clock is fixed, so the page
+    // and its Markdown are signed in one window.
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
-      vi.setSystemTime(Date.now() + 3 * 60 * 60 * 1000);
-      const link = new URL(url);
-      const redirect = await GET(new Request(link), { params: Promise.resolve({ id: mediaId, file: "video" }) });
-      expect(redirect.status).toBe(302);
-      const location = new URL(redirect.headers.get("location")!);
-      const windowStart = Date.now() - (Date.now() % (SIGNED_WINDOW_SECONDS * 1000));
-      expect(location.searchParams.get("X-Amz-Date")).toBe(new Date(windowStart).toISOString().replace(/[:-]|\.\d{3}/g, ""));
-      const response = await fetch(location);
+      const shown = Date.now();
+      const url = (await mediaUrls(article.content as object))![videoKey(mediaId)]!;
+      expect(url).toContain(`/${videoKey(mediaId)}?`);
+      expect(new URL(url).searchParams.get("X-Amz-Expires")).toBe(String(SIGNED_WINDOW_SECONDS + VIDEO_URL_SECONDS));
+      // The .md and "Copy as Markdown" link it the same way, as they do images.
+      expect(await articleMarkdown({ title: "Tour", doc: article.content as never })).toBe(`# Tour\n\nWatch:\n\n[Video](${url})\n`);
+
+      // Three hours on, the page still plays it: in place, as its video type, not a download.
+      vi.setSystemTime(shown + 3 * 60 * 60 * 1000);
+      const response = await fetch(url);
+      expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toBe("video/mp4");
       expect(response.headers.get("content-disposition")).toBeNull();
       expect(Buffer.from(await response.arrayBuffer())).toEqual(MP4);
+      // A day and a window on, it doesn't.
+      vi.setSystemTime(shown + (VIDEO_URL_SECONDS + SIGNED_WINDOW_SECONDS) * 1000 + 1000);
+      expect((await fetch(url)).status).toBe(403);
     } finally {
       vi.useRealTimers();
     }
-
-    expect(await articleMarkdown({ title: "Tour", doc: article.content as never })).toBe(`# Tour\n\nWatch:\n\n[Video](${url})\n`);
   });
 
   test("a video node plays only a video upload, and a file attachment can't hold one", async () => {

@@ -25,9 +25,10 @@ export type MediaStorage = {
   delete(key: string): Promise<void>;
   /**
    * A URL that reads the file for a while (see SIGNED_WINDOW_SECONDS). With `download`, the browser
-   * saves it under that name instead of showing it (any file someone sent: never rendered on the host).
+   * saves it under that name instead of showing it (any file someone sent: never rendered on the host). `lasts`: for at
+   * least this many seconds after it's made, not the usual window (VIDEO_URL_SECONDS).
    */
-  signedUrl(key: string, now?: number, download?: string): Promise<string>;
+  signedUrl(key: string, now?: number, download?: string, lasts?: number): Promise<string>;
 };
 
 const SETTINGS = ["MEDIA_S3_ENDPOINT", "MEDIA_S3_BUCKET", "MEDIA_S3_ACCESS_KEY_ID", "MEDIA_S3_SECRET_ACCESS_KEY"] as const;
@@ -39,6 +40,12 @@ const SETTINGS = ["MEDIA_S3_ENDPOINT", "MEDIA_S3_BUCKET", "MEDIA_S3_ACCESS_KEY_I
  * loses it (content hidden or deleted, a portal made private, a reader removed).
  */
 export const SIGNED_WINDOW_SECONDS = 60 * 60;
+/**
+ * How long a page's URL for an uploaded video works at least: a player asks for more of it whenever it's played or
+ * sought, for as long as the page is open, so a window's URL isn't enough. Losing access to the page takes effect for
+ * its videos within this and a window.
+ */
+export const VIDEO_URL_SECONDS = 24 * 60 * 60;
 /** Only the reader's browser may keep a file, and not past a window: no shared cache serves it after its URL expires. */
 const PRIVATE_CACHE = `private, max-age=${SIGNED_WINDOW_SECONDS}`;
 
@@ -153,10 +160,11 @@ export function mediaStorage(): MediaStorage | null {
     async delete(key) {
       await send(key, { method: "DELETE" }, [200, 204, 404]);
     },
-    async signedUrl(key, now = Date.now(), download) {
+    async signedUrl(key, now = Date.now(), download, lasts = SIGNED_WINDOW_SECONDS) {
       const windowStart = new Date(now - (now % (SIGNED_WINDOW_SECONDS * 1000)));
       const url = new URL(objectUrl(key));
-      url.searchParams.set("X-Amz-Expires", String(2 * SIGNED_WINDOW_SECONDS));
+      // From the window's start: at least `lasts` from now, and the same URL all window.
+      url.searchParams.set("X-Amz-Expires", String(SIGNED_WINDOW_SECONDS + lasts));
       if (download) {
         // Signed with the rest, so it can't be changed: saved, as this name, with no type to render as.
         url.searchParams.set("response-content-disposition", `attachment; filename*=UTF-8''${encodeExtValue(download)}`);

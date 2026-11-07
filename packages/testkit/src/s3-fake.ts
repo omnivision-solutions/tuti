@@ -27,8 +27,8 @@ export type S3Fake = {
  * A local stand-in for S3-compatible storage: PUT (and copies), GET, HEAD and DELETE on
  * path-style URLs (reads honouring `response-content-type` and `response-content-disposition`), with
  * CORS so browsers can upload to it. Like the real (private)
- * bucket, it refuses requests that aren't signed, presigned or with a signed header;
- * signatures themselves aren't checked.
+ * bucket, it refuses requests that aren't signed, presigned or with a signed header, and presigned ones
+ * past their expiry (by the clock as it is in tests); signatures themselves aren't checked.
  */
 export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
   const objects = new Map<string, { body: Buffer; contentType: string }>();
@@ -50,6 +50,14 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
     if (!url.searchParams.has("X-Amz-Signature") && !req.headers.authorization) {
       res.writeHead(403).end();
       return;
+    }
+    const signedAt = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(url.searchParams.get("X-Amz-Date") ?? "");
+    if (signedAt && url.searchParams.has("X-Amz-Expires")) {
+      const [, y, mo, d, h, mi, s] = signedAt.map(Number);
+      if (Date.now() > Date.UTC(y!, mo! - 1, d, h, mi, s) + Number(url.searchParams.get("X-Amz-Expires")) * 1000) {
+        res.writeHead(403).end();
+        return;
+      }
     }
     const path = decodeURIComponent(url.pathname);
     const prefix = `/${bucket}/`;
