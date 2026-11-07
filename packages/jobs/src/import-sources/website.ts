@@ -27,11 +27,8 @@ const PAGE_TIMEOUT_MS = 15_000;
 const MAX_REDIRECTS = 3;
 /** Times an article's page that fails for a while (a 429, a 5xx, no answer) is asked for again (getRetrying). */
 const RETRIES = 2;
-/**
- * The longest Retry-After a step waits out before asking again; one asking for more is waited this long, then the run
- * ends as paused and the next asks (import-docs PAUSED_RUNS in a row fail it). Changeable for tests.
- */
-export const pauseLimit = { ms: 30_000 };
+/** The longest Retry-After a step waits out before asking again; one asking for more ends the import, saying when to start it again. */
+const RETRY_AFTER_MAX_MS = 30_000;
 /** Between two requests to the site (a robots.txt Crawl-delay, up to 5s, if it asks for more). Changeable for tests. */
 export const crawlPace = { ms: 500 };
 /** Pages a step of the link crawl fetches at most (its time limits it too): changeable for tests, which cut it short. */
@@ -45,15 +42,15 @@ const publicOnly = new Agent({ connect: { lookup: publicOnlyLookup } });
 /**
  * The site answered with an error (`status`), or couldn't be reached (0). `refused`: Tuti wouldn't read it (not public,
  * robots.txt, nothing found), with a status of 422 (callers tell one by `reason`: a site can answer 422 too);
- * `late`: the time ran out before it was asked; `unknown`: its host name doesn't exist; `later`: it asked for a pause
- * (Retry-After) longer than a step waits, waited in part: the content pass reads it again in its next run.
+ * `late`: the time ran out before it was asked; `unknown`: its host name doesn't exist; `wait`: it asked for a pause
+ * (Retry-After) longer than a step waits: the import ends, saying when to start it again.
  */
 export class SiteError extends Error {
   readonly status: number;
   constructor(
     status: number,
     message: string,
-    readonly reason: "refused" | "late" | "unknown" | "later" | null = null,
+    readonly reason: "refused" | "late" | "unknown" | "wait" | null = null,
     /** The host it's about (an `unknown` one's). */
     readonly host: string | null = null,
   ) {
@@ -307,7 +304,7 @@ function site(start: string, deadline: number, kept: unknown) {
 
   /**
    * An article's page, as `get`, tried again for what fails for a while (a 429, a 5xx, no answer) up to RETRIES times:
-   * after what the site asks (Retry-After, up to pauseLimit; more: a paused run, `later`), else twice the pace each time, never past the deadline; and
+   * after what the site asks (Retry-After, up to RETRY_AFTER_MAX_MS; more ends the import, `wait`), else twice the pace each time, never past the deadline; and
    * paced as every request is. What still fails is thrown (the content pass reads it again in its next run).
    */
   async function getRetrying(url: string) {
@@ -320,12 +317,15 @@ function site(start: string, deadline: number, kept: unknown) {
           throw error;
         }
         const asked = (error as { retryAfterMs?: number | null }).retryAfterMs;
-        // Asked to wait longer than a step does (Retry-After over pauseLimit): never asked again early, against what the
-        // site said. The step waits what it may (within its deadline), then ends its run as paused (`later`): the
-        // content pass reads the page again in its next run, the pause going on there.
-        if (asked != null && asked > pauseLimit.ms) {
-          await pause(Math.max(0, Math.min(pauseLimit.ms, deadline - Date.now() - 30_000)));
-          throw new SiteError(error.status, error.message, "later");
+        // Asked to wait longer than a step does (over RETRY_AFTER_MAX_MS, or past its deadline): never asked again early,
+        // against what the site said. The import ends, saying when to start it again: a re-import brings only what's new.
+        if (asked != null && (asked > RETRY_AFTER_MAX_MS || Date.now() + asked >= deadline)) {
+          const minutes = Math.max(1, Math.ceil(asked / 60_000));
+          throw new SiteError(
+            error.status,
+            `${new URL(url).hostname} asked Tuti to wait ${minutes === 1 ? "a minute" : `${minutes} minutes`}. Start the import again after that: it goes on from where it stopped.`,
+            "wait",
+          );
         }
         const wait = asked ?? Math.max(crawlPace.ms, delayMs) * 2 ** (attempt + 1);
         if (Date.now() + wait >= deadline) {

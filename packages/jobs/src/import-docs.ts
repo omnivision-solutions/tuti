@@ -369,25 +369,6 @@ async function linksTo(job: ImportJob, portal: string, html: string[]): Promise<
   };
 }
 
-/** Content runs in a row a source can end as paused (asked to wait, Retry-After) before the import fails. */
-const PAUSED_RUNS = 5;
-
-/** How many content runs in a row ended paused (kept on the import's source state, `pausedRuns`). */
-async function pausedRuns(job: ImportJob): Promise<number> {
-  const row = await prisma.dataImport.findUnique({ where: { id: job.id }, select: { sourceState: true } });
-  return Number((row?.sourceState as { pausedRuns?: unknown } | null)?.pausedRuns ?? 0) || 0;
-}
-
-/** Counts a paused content run, or starts the count again after one that wasn't (only when there's one to clear). */
-async function countPause(tx: Tx, job: ImportJob, paused: boolean) {
-  const row = await tx.dataImport.findUnique({ where: { id: job.id }, select: { sourceState: true } });
-  const state = (row?.sourceState ?? {}) as Record<string, unknown>;
-  const runs = Number(state.pausedRuns ?? 0) || 0;
-  if (paused || runs > 0) {
-    await tx.dataImport.update({ where: { id: job.id }, data: { sourceState: { ...state, pausedRuns: paused ? runs + 1 : 0 } as Prisma.InputJsonValue } });
-  }
-}
-
 /** Its unpublished draft, for one Featurebase says has changes; null when there's none after all. */
 async function draftOf(job: ImportJob, article: FeaturebaseArticle): Promise<FeaturebaseArticle | null> {
   if (!article.isPublished || !article.isDraftDiffersFromLive) {
@@ -429,8 +410,6 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null; draftLost: string | null; drafted: boolean }[] = [];
   // How many of `todo` this run got to (one a source no longer has too): the page is read again for the rest.
   let reached = 0;
-  // The source asked for a pause (`later`): the run ends here, read again next, nothing failed.
-  let paused = false;
   // Those the source no longer has (its `article` reader's null), decided in this run: counted as gone and marked
   // counted by this import (not landed), so a page read again doesn't fetch them again, but a later import does (a
   // page that was refused for a while, by a firewall or a redeploy, isn't an empty draft for good).
@@ -451,13 +430,9 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       try {
         read = await job.read.article(item);
       } catch (error) {
-        // Asked for a pause: the run ends here and the next goes on, up to PAUSED_RUNS in a row (one that never stops
-        // asking fails the import, saying why).
-        if ((error as { reason?: unknown }).reason === "later" && (await pausedRuns(job)) < PAUSED_RUNS - 1) {
-          paused = true;
-          break;
-        }
-        if (texts.length === 0) {
+        // Nothing came across in this run yet, or the source asked to be left a while (`wait`): the step fails, so the
+        // import ends saying why (a re-import brings only what's new).
+        if (texts.length === 0 || (error as { reason?: unknown }).reason === "wait") {
           throw error;
         }
         break;
@@ -492,7 +467,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
     texts.push({ article: item, live, draft: differs ? (draft as Text) : null, draftLost: draft && "error" in draft ? draft.error : null, drafted: Boolean(draftVersion) && !job.publishArticles && (draftVersion!.title !== article.title || draftVersion!.body !== article.body) });
   }
-  const next = paused || reached < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
+  const next = reached < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
   if (!next) {
     mediaCaches.delete(job.id);
   }
@@ -502,7 +477,6 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
     next,
     save: async (tx) => {
       published = [];
-      await countPause(tx, job, paused);
       await makeArticles(tx, job, items);
       const locals = await recorded(tx, job, "article", items.map((article) => article.id));
       const { plan } = await tx.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { plan: true } });

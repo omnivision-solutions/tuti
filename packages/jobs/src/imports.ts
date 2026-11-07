@@ -166,9 +166,10 @@ function failure(source: ImportSource, error: unknown): string {
   if (status === null || !(error instanceof Error)) {
     return `Something went wrong. ${AGAIN}`;
   }
-  // A site read by its address says what happened itself (and there's no key to stop accepting).
+  // A site read by its address says what happened itself (and there's no key to stop accepting); one that asked to be
+  // left a while says when to start again itself.
   if (credential === "url") {
-    return `${error.message} ${AGAIN}`;
+    return (error as { reason?: unknown }).reason === "wait" ? error.message : `${error.message} ${AGAIN}`;
   }
   if (status === 401 || status === 403) {
     return `${name} stopped accepting the API key (${error.message}). ${AGAIN}`;

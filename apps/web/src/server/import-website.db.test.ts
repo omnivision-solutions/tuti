@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { contentBudget, crawlBudget, crawlPace, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, importStep, pauseLimit, portalAddress } from "@tuti/jobs";
+import { contentBudget, crawlBudget, crawlPace, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, importStep, portalAddress } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { type HelpCenterFake, type S3Fake, startHelpCenterFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -34,8 +34,6 @@ let project: Awaited<ReturnType<typeof createProject>>;
 beforeAll(async () => {
   [site, s3] = await Promise.all([startHelpCenterFake(), startS3Fake()]);
   crawlPace.ms = 0;
-  // A pause the site asks for isn't waited out here: the run ends as paused at once.
-  pauseLimit.ms = 0;
 });
 afterAll(() => Promise.all([site.close(), s3.close()]));
 afterEach(() => {
@@ -408,36 +406,6 @@ test("a gone article before one that keeps failing fails the import, rather than
   });
 });
 
-test("an article page asking (Retry-After) for longer than a step waits isn't asked again early: the next run reads it", async () => {
-  const at = (path: string) => `${site.origin}${path}`;
-  const folder = at("/docs/getting-started");
-  site.failing.set("/docs/getting-started/install", 429);
-  site.failingOnce.add("/docs/getting-started/install");
-  site.retryAfter = "120";
-  const row = await runningImport(site.url, {
-    list: { pages: [{ id: folder, collection: folder }, { id: at("/docs/getting-started/install"), collection: folder }], collections: [{ id: folder, parent: null, name: "Getting started" }] },
-  });
-  // The content pass's first run: the first article comes across, then the 429 ends the run at once, without waiting
-  // out (or cutting short) the two minutes it asked for.
-  let job = importJob(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } }))!;
-  for (const step of STEPS.docs.steps.slice(0, 2)) {
-    for (let cursor: string | null = null, first = true; first || cursor; first = false) {
-      const page = await step.page(job, cursor);
-      await prisma.$transaction((tx) => page.save(tx));
-      cursor = page.next;
-      job = importJob(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } }))!;
-    }
-  }
-  const content = await STEPS.docs.steps[2]!.page(job, null);
-  expect(content.next).toBe("again:");
-  expect(site.requests.filter((path) => path === "/docs/getting-started/install")).toHaveLength(1);
-  await prisma.$transaction((tx) => content.save(tx));
-  // The next run reads it.
-  const again = await STEPS.docs.steps[2]!.page(job, content.next);
-  await prisma.$transaction((tx) => again.save(tx));
-  expect((await articles()).find((a) => a.title === "Install Acme")?.body).toBe("Download the app, then make your first project.\nThe installer");
-});
-
 test("a gone article is decided in the run that finds it: fetched once, however often its list page is read again", async () => {
   contentBudget.ms = 0;
   const at = (path: string) => `${site.origin}${path}`;
@@ -458,23 +426,6 @@ test("a listed page the site refuses (a 403) is counted as gone, as the last che
   const done = await importSite();
   expect(done.state).toBe("done");
   expect(importSummary(done)).toContain("Left out: 2 articles gone from your help center (left as empty drafts)");
-});
-
-test("the run's first article asking for a pause (a 429, Retry-After 120) ends the run as paused, not the import: the next run brings it", async () => {
-  site.failing.set("/docs/getting-started", 429);
-  site.failingOnce.add("/docs/getting-started");
-  site.retryAfter = "120";
-  const done = await importSite();
-  expect(done.state).toBe("done");
-  expect((await articles()).find((a) => a.title === "Getting started")?.body).toBe("Start here.");
-});
-
-test("a site that asks for a pause run after run fails the import after five in a row, saying why", async () => {
-  site.failing.set("/docs/getting-started", 429);
-  site.retryAfter = "120";
-  const done = await importSite();
-  expect(done).toMatchObject({ state: "failed", error: expect.stringMatching(/^127\.0\.0\.1 answered 429\. /) });
-  expect(site.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(5);
 });
 
 test("a page refused for a while (a 403) in one import is read again by the next, which brings its text", async () => {
@@ -527,4 +478,17 @@ test("gone pages count towards a run's time: with none left, two gone ones befor
     expect(site.requests.filter((p) => p === path), path).toHaveLength(1);
   }
   expect((await articles()).find((a) => a.title === "Install Acme")?.body).toBe("Download the app, then make your first project.\nThe installer");
+});
+
+test("an article page asking (Retry-After) to be left longer than a step waits ends the import after one request, saying when to start again; the next import brings the rest", async () => {
+  site.failing.set("/docs/getting-started", 429);
+  site.failingOnce.add("/docs/getting-started");
+  site.retryAfter = "300";
+  const stopped = await importSite();
+  expect(stopped).toMatchObject({ state: "failed", error: "127.0.0.1 asked Tuti to wait 5 minutes. Start the import again after that: it goes on from where it stopped." });
+  expect(site.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(1);
+
+  const again = await importSite();
+  expect(again.state).toBe("done");
+  expect((await articles()).filter((a) => a.body).map((a) => a.title).sort()).toEqual(["Getting started", "Install Acme", "Plans", "Refunds", "Your first project"]);
 });
