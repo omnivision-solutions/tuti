@@ -188,7 +188,9 @@ export function SetupImport({
   const [error, setError] = useState<string | null>(null);
   // The parts the source has, and those of them picked.
   const parts = (Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][]).filter(([key]) => source?.parts.includes(key));
-  const chosen = picked.filter((part) => source?.parts.includes(part));
+  // A source with one part brings it: nothing to pick.
+  const chosen = source?.parts.length === 1 ? [...source.parts] : picked.filter((part) => source?.parts.includes(part));
+  const byAddress = source?.credential.kind === "url";
   const running = latest?.state === "running";
   // Started here, focus goes to Continue (the progress is said above it), the way on: once, when the page first shows
   // that import, not again on each refresh while it runs.
@@ -229,7 +231,7 @@ export function SetupImport({
     >
       <RefreshWhile on={running} />
       <CardContent role="radiogroup" aria-label="Where are you coming from?" className="grid gap-3 sm:grid-cols-2">
-        {[["fresh", "Starting fresh", "Set Tuti up from scratch."] as const, ...(Object.entries(IMPORT_SOURCES) as [ImportSourceKey, ImportSourceInfo][]).map(([value, { name, description }]) => [value, name, description] as const)]
+        {[["fresh", "Starting fresh", "Set Tuti up from scratch."] as const, ...(Object.entries(IMPORT_SOURCES) as [ImportSourceKey, ImportSourceInfo][]).map(([value, { name, description }]) => [value, name[0]!.toUpperCase() + name.slice(1), description] as const)]
           .filter(([value]) => next || value !== "fresh")
           .map(([value, label, description]) => (
           <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
@@ -277,6 +279,7 @@ export function SetupImport({
               id={`${from}-key`}
               name="key"
               type={source.credential.kind === "key" ? "password" : "url"}
+              placeholder={byAddress ? "https://help.example.com" : undefined}
               autoComplete="off"
               required
               aria-invalid={error ? true : undefined}
@@ -292,6 +295,7 @@ export function SetupImport({
                   <input
                     type="checkbox"
                     checked={chosen.includes(key)}
+                    disabled={parts.length === 1}
                     onChange={(event) => setPicked(pickPart(picked, key, event.target.checked, IMPORT_PARTS))}
                     className="mt-0.5 size-4 accent-primary"
                   />
@@ -314,7 +318,7 @@ export function SetupImport({
             {/* Done, going on is the main action; importing again (more parts, say) the other. */}
             {latest?.state !== "done" && skip}
             <Button type="submit" variant={latest?.state === "done" && next ? "outline" : "default"} disabled={pending || chosen.length === 0} focusableWhenDisabled>
-              {pending ? "Checking the key…" : latest?.state === "done" ? "Import again" : "Check the key and start"}
+              {pending ? (byAddress ? "Checking the address…" : "Checking the key…") : latest?.state === "done" ? "Import again" : byAddress ? "Check the address and start" : "Check the key and start"}
             </Button>
           </>
         )}

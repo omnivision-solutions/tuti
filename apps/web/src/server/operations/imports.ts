@@ -89,11 +89,17 @@ const label = (part: ImportPart) => IMPORT_PARTS[part].label;
 /** How long starting an import may spend asking the source (the key, then each part's list). */
 export const START_CHECK_MS = 20_000;
 
-/** The source's answer to a check, as the form says it: `cant` is what a refusal (401, 403) means. */
+/**
+ * The source's answer to a check, as the form says it: `cant` is what a refusal (401, 403) means. A site read by its
+ * address says why itself (400: not public, robots.txt, nothing found; 404: no page there).
+ */
 function refusal(source: ImportSourceDefinition, error: unknown, cant: { code: string; message: string }): never {
   const status = source.status(error);
+  if (source.credential === "url" && (status === 400 || status === 404) && error instanceof Error) {
+    throw new OperationError(400, "bad_address", error.message);
+  }
   if (status === 401 || status === 403) {
-    throw new OperationError(400, cant.code, cant.message);
+    throw new OperationError(400, cant.code, source.credential === "url" ? `${error instanceof Error ? error.message : ""} Tuti reads only help centers anyone can open, without signing in.`.trim() : cant.message);
   }
   if (status !== null && error instanceof Error) {
     throw new OperationError(502, "unavailable", status === 0 ? `${error.message} Try again in a moment.` : `${source.name} answered ${status} (${error.message}). Try again in a moment.`);
@@ -104,7 +110,7 @@ function refusal(source: ImportSourceDefinition, error: unknown, cant: { code: s
 export const startImport = defineOperation({
   name: "imports.start",
   summary:
-    "Start an import from Featurebase with an API key of its own and the parts to bring (contacts: as the project's users, by their id in your app; feedback: boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates; docs: the help center's collections and articles, with their media and the links between them, published as they were; changelog: its entries, published at their dates or as drafts, with their images, quietly; avatars: contacts' uploaded profile pictures, copied last). Feedback and avatars need Contacts (400 without). The key is checked, then each part's list read once: a key Featurebase refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Started again later, it brings only what's new since (contacts, posts, votes, comments, changelog entries, articles, conversations and their new messages), nothing twice. Only people can start it, in the app (its first run, or Settings → Import): API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
+    "Start an import from Featurebase with an API key of its own and the parts to bring (contacts: as the project's users, by their id in your app; feedback: boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates; docs: the help center's collections and articles, with their media and the links between them, published as they were; changelog: its entries, published at their dates or as drafts, with their images, quietly; avatars: contacts' uploaded profile pictures, copied last). Or a public help center by its address (source `website`, `key` its https address, docs only): its pages under the address (from its sitemap, else its links; robots.txt respected, public addresses only), each page's main content an article, as a draft, in collections from its folders, its images copied, and its old paths redirected to the new articles (redirects.list). Feedback and avatars need Contacts (400 without). The key is checked, then each part's list read once: a key Featurebase refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Started again later, it brings only what's new since (contacts, posts, votes, comments, changelog entries, articles, conversations and their new messages), nothing twice. Only people can start it, in the app (its first run, or Settings → Import): API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
   method: "POST",
   path: "/imports",
   scope: "write",
@@ -119,7 +125,7 @@ export const startImport = defineOperation({
     .superRefine(({ source, key, parts }, ctx) => {
       const { name, credential, parts: has } = IMPORT_SOURCES[source] as ImportSourceInfo;
       if (credential.kind === "key" ? key === "" : !z.url({ protocol: /^https?$/ }).safeParse(key).success) {
-        ctx.addIssue({ code: "custom", path: ["key"], message: credential.kind === "key" ? `Paste your ${name} API key` : `Paste your ${name} address` });
+        ctx.addIssue({ code: "custom", path: ["key"], message: credential.kind === "key" ? `Paste your ${name} API key` : `Paste ${name}'s address` });
       }
       for (const part of parts.filter((p) => !has.includes(p))) {
         ctx.addIssue({ code: "custom", path: ["parts"], message: `${name} has no ${IMPORT_PARTS[part].label} to bring` });
