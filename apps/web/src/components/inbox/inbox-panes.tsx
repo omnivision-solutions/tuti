@@ -309,6 +309,7 @@ export async function InboxPanes({
           )}
           <LoadMore
             href={inboxHref(slug, view, open, pages + 1, messages)}
+            pages={pages}
             last={conversations.at(-1)?.number ?? 0}
             more={counts[views.indexOf(view)]! > conversations.length}
           />

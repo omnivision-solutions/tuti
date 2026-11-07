@@ -1268,6 +1268,18 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
   await more.click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?page=2&messages=2$`));
   await expect(rows.last()).toHaveAttribute("aria-current", "page");
+
+  // Back to the list from a conversation, it's as long as it was.
+  await owner.locator('[data-slot="page-header"]').getByRole("link", { name: "Inbox" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?page=2$`));
+  await expect(rows).toHaveCount(102);
+
+  // The last one leaving its view opens none there, the list still as long.
+  await api("/conversations/1", { spam: true }, "PATCH");
+  await owner.goto(`/app/${slug}/inbox/1?view=spam&page=2`);
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Not spam" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=spam&page=2$`));
 });
 
 test("a long conversation opens at its latest fifty messages; Show earlier messages loads the ones before, where they were read stays in view", async ({ browser }, testInfo) => {
@@ -1310,6 +1322,23 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   await api("/conversations/1/messages", { body: "Message 56" });
   await expect(messages.last()).toContainText("Message 56");
   await expect(messages.last()).toBeInViewport();
+
+  // Notes filling the latest fifty: the team still wrote last, so it can still be marked as waiting on the user.
+  await api("/conversations/1", { status: "open" }, "PATCH");
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `INSERT INTO conversation_message (id, "projectId", "conversationId", author, channel, body, note, "createdAt")
+     SELECT gen_random_uuid()::text, c."projectId", c.id, 'TEAM', 'APP', 'Note ' || n, true, now() + n * interval '1 millisecond'
+     FROM conversation c, generate_series(1, 50) n WHERE c.number = 1 AND c."projectId" = (SELECT id FROM project WHERE slug = $1)`,
+    [slug],
+  );
+  await db.end();
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(messages.last()).toContainText("Note 50");
+  await expect(messages.first()).toContainText("Note 1");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toBeVisible();
 });
 
 test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {

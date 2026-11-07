@@ -9,30 +9,35 @@ import { buttonVariants } from "@/components/ui/button";
 const plain = (event: MouseEvent) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 
 /**
- * "Load more" under the Inbox's list (`href`, while there are `more`; `last`, the number of the last row shown): the
- * first row it loads has focus once it's there, rather than nothing (the page) once the button's gone with the last page.
+ * "Load more" under the Inbox's list (`href`, while there are `more`; the list `pages` long, `last` the number of its last
+ * row): the first row it loads has focus once it's there, rather than nothing (the page) once the button's gone with the
+ * last page. Only once the page it asked for is there (not a live refresh first), and only from the button: where they've
+ * gone on meanwhile (the reply box), focus stays.
  */
-export function LoadMore({ href, last, more }: { href: string; last: number; more: boolean }) {
-  const was = useRef<number | null>(null);
+export function LoadMore({ href, pages, last, more }: { href: string; pages: number; last: number; more: boolean }) {
+  const link = useRef<HTMLAnchorElement>(null);
+  const was = useRef<{ pages: number; last: number } | null>(null);
   useLayoutEffect(() => {
-    if (was.current === null) {
+    const kept = was.current;
+    if (!kept || pages <= kept.pages) {
       return;
     }
-    const row = document.querySelector(`section[aria-label="Conversations"] a[data-row-link="${was.current}"]`);
-    const next = row?.closest("li")?.nextElementSibling?.querySelector<HTMLElement>("a[data-row-link]");
-    // Not there yet (a live refresh got in first): the next render's.
-    if (next) {
-      was.current = null;
-      next.focus({ preventScroll: true });
+    was.current = null;
+    const focused = document.activeElement;
+    if (focused !== document.body && focused !== link.current) {
+      return;
     }
-  }, [last]);
+    const row = document.querySelector(`section[aria-label="Conversations"] a[data-row-link="${kept.last}"]`);
+    row?.closest("li")?.nextElementSibling?.querySelector<HTMLElement>("a[data-row-link]")?.focus({ preventScroll: true });
+  }, [pages]);
   return (
     more && (
       <Link
+        ref={link}
         href={href}
         scroll={false}
         onClick={(event) => {
-          was.current = plain(event) ? last : null;
+          was.current = plain(event) ? { pages, last } : null;
         }}
         className={buttonVariants({ variant: "outline", className: "mx-auto mt-3 flex w-fit" })}
       >

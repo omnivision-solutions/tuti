@@ -72,7 +72,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const emailPaused =
     plansEnabled() && !!supportDomain() && !!(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
   const history = await historySince(projectId);
-  const [conversation, team] = await Promise.all([
+  const [conversation, team, said] = await Promise.all([
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number }, AND: [visibleConversations(history)] },
       select: {
@@ -122,6 +122,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       orderBy: { createdAt: "asc" },
       select: { userId: true, user: { select: { name: true, image: true } } },
     }),
+    // Who wrote last, past the messages shown too (a run of notes can fill them).
+    prisma.conversationMessage.findFirst({
+      where: { conversation: { projectId, number }, note: false },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { author: true },
+    }),
   ]);
   if (!conversation) {
     // Closed before the plan's history starts: kept (for a while), and back with a plan that reaches it.
@@ -160,7 +166,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       : null;
   const personName = person.name ?? person.email ?? "Unknown";
   // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
-  const answered = conversation.messages.findLast((m) => !m.note)?.author === "TEAM";
+  const answered = said?.author === "TEAM";
   // What's done with every conversation: in the top bar, and on phones under the title as well as in its menu.
   const actions = (
     <>
