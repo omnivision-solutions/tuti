@@ -1345,6 +1345,13 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   await expect(messages.nth(4)).toContainText("Message 5");
   await expect(messages.nth(4)).toBeFocused();
   await checkpoint(owner, "conversation-earlier-messages", { fullPage: false });
+  // An image loading in a message above it (with no size till then) doesn't move it either: as in Safari, which keeps no
+  // place as what's above grows (Chrome's scroll anchoring does).
+  await owner.addStyleTag({ content: "* { overflow-anchor: none }" });
+  await messages.nth(2).evaluate((message, src) => message.append(Object.assign(document.createElement("img"), { src })), `data:image/png;base64,${png(100, 600).toString("base64")}`);
+  await expect(messages.nth(2).locator("img")).toHaveJSProperty("complete", true);
+  expect((await messages.nth(2).boundingBox())!.height).toBeGreaterThanOrEqual(600);
+  expect(Math.abs((await messages.nth(5).boundingBox())!.y - y)).toBeLessThanOrEqual(1);
 
   // A new message still takes it to the end.
   await api("/conversations/1/messages", { body: "Message 56" });

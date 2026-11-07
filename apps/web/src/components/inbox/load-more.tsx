@@ -50,15 +50,24 @@ export function LoadMore({ href, pages, last, more }: { href: string; pages: num
 /**
  * "Show earlier messages" (`href`, while there are `more`): the earlier ones come in above the message shown first
  * (`first`, its id, as `data-message`), which stays where it was on the screen as they come (scrolled meanwhile, where
- * that left it). Browsers don't keep it there on their
- * own: Chrome's scroll anchoring stops at the top of what scrolls, where this is, and Safari has none. The one it loads
+ * that left it), and as their images load above it, till they scroll (or tap, or press a key) themselves. Browsers don't
+ * keep it there on their own: Chrome's scroll anchoring stops at the top of what scrolls, where this is, and Safari has
+ * none. The one it loads
  * just above it has focus then (in view, where they were reading), rather than nothing (the page) once the button's gone
  * with the last of them; only from the button: where they've gone on meanwhile (the reply box), focus stays.
  */
 export function EarlierMessages({ href, first, more }: { href: string; first: string; more: boolean }) {
   const link = useRef<HTMLAnchorElement>(null);
   const was = useRef<{ message: HTMLElement; top: number; stop: () => void } | null>(null);
-  useEffect(() => () => was.current?.stop(), []);
+  /** Stops keeping the message where it was as images load (see below). */
+  const unpin = useRef(() => {});
+  useEffect(
+    () => () => {
+      was.current?.stop();
+      unpin.current();
+    },
+    [],
+  );
   useLayoutEffect(() => {
     const kept = was.current;
     was.current = null;
@@ -71,13 +80,25 @@ export function EarlierMessages({ href, first, more }: { href: string; first: st
     // The pane beside the list from laptop width up (as ScrollToEnd picks it), else the page.
     const pane = document.getElementById("conversation");
     const scroller = pane && getComputedStyle(pane).overflowY === "auto" ? pane : document.scrollingElement!;
-    scroller.scrollBy({ top: message.getBoundingClientRect().top - kept.top, behavior: "instant" });
+    const keep = () => scroller.scrollBy({ top: message.getBoundingClientRect().top - kept.top, behavior: "instant" });
+    keep();
+    // An image loading in the messages above (with no size till then) pushes it down: put back, till they move themselves.
+    // Load events don't bubble: caught on their way down.
+    const loaded = (event: Event) => event.target instanceof HTMLImageElement && keep();
+    const moved = ["wheel", "touchstart", "keydown", "pointerdown"];
+    unpin.current();
+    unpin.current = () => {
+      document.removeEventListener("load", loaded, true);
+      moved.forEach((type) => document.removeEventListener(type, unpin.current, true));
+    };
+    document.addEventListener("load", loaded, true);
+    moved.forEach((type) => document.addEventListener(type, unpin.current, true));
     const focused = document.activeElement;
     if (focused === document.body || focused === link.current) {
-      const loaded = message.previousElementSibling as HTMLElement | null;
-      if (loaded) {
-        loaded.setAttribute("tabindex", "-1");
-        loaded.focus({ preventScroll: true });
+      const above = message.previousElementSibling as HTMLElement | null;
+      if (above) {
+        above.setAttribute("tabindex", "-1");
+        above.focus({ preventScroll: true });
       }
     }
   }, [first]);
