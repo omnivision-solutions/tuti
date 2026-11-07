@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { handlers, projectUnsubscribeToken } from "@tuti/jobs";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -37,8 +37,7 @@ const emailsTo = (address: string) =>
 const setStatus = (number: number, status: "completed" | "open") => call(updatePost, as(owner.id), { number, status });
 const due = async (postId: string) =>
   (await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt;
-const tokenOf = async (userId: string) =>
-  (await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { unsubscribeToken: true } })).unsubscribeToken;
+const tokenOf = async (userId: string) => projectUnsubscribeToken(project.id, await prisma.user.findUniqueOrThrow({ where: { id: userId } }));
 
 describe("when a post ships", () => {
   test("its author, voters and commenters hear about it once, at addresses someone vouched for", async () => {
@@ -65,7 +64,7 @@ describe("when a post ships", () => {
       expect(email!.subject).toBe("Done: Dark mode");
       expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
       expect(email!.headers["list-unsubscribe"]).toMatch(
-        new RegExp(`^<http://${project.slug}\\.localhost:3100/unsubscribe/confirm\\?token=[0-9a-f-]+>$`),
+        new RegExp(`^<http://${project.slug}\\.localhost:3100/unsubscribe/confirm\\?token=[\\w-]+\\.[\\w-]+>$`),
       );
       expect(email!.headers["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
     }
@@ -376,5 +375,28 @@ describe("when a post ships", () => {
       status: "completed",
     });
     expect(emailsTo(voter.email).map((e) => e.subject)).toEqual(["Done: Elsewhere"]);
+  });
+
+  test("a project's unsubscribe link stops that project's emails only: another project's portal refuses it", async () => {
+    const voter = await verified("Voter");
+    const other = await createProject(await signUp("Other owner"));
+    const post = await call(createPost, as(voter.id), { board: "feature-requests", title: "Dark mode" });
+    await setStatus(post.number, "completed");
+    const [email] = emailsTo(voter.email);
+    const token = new URL(email!.headers["list-unsubscribe"]!.slice(1, -1)).searchParams.get("token")!;
+
+    const oneClick = (slug: string) =>
+      unsubscribe(
+        new Request(`http://${slug}.localhost:3100/portal/${slug}/unsubscribe/confirm?token=${encodeURIComponent(token)}`, {
+          method: "POST",
+          body: new URLSearchParams({ "List-Unsubscribe": "One-Click" }),
+        }),
+        { params: Promise.resolve({ project: slug }) },
+      );
+    expect((await oneClick(other.slug)).status).toBe(404);
+    expect(await prisma.emailOptOut.findMany({ where: { userId: voter.id } })).toEqual([]);
+    // The project that sent it takes it.
+    expect((await oneClick(project.slug)).status).toBe(200);
+    expect(await prisma.emailOptOut.findMany({ where: { userId: voter.id }, select: { projectId: true } })).toEqual([{ projectId: project.id }]);
   });
 });

@@ -37,7 +37,7 @@ export { signWebhook } from "./webhooks";
 export { sesTenantHeaders } from "./ses-tenant";
 export { mailSubdomain } from "./mail-subdomain";
 export { projectEmailWaits, projectSender } from "./project-sender";
-export { audienceReach, postAudience, provenAddress, type Reach, SEEN_AS_SQL, seenAs } from "./post-audience";
+export { audienceReach, postAudience, projectUnsubscribeToken, provenAddress, type Reach, SEEN_AS_SQL, seenAs } from "./post-audience";
 export { lastingMediaUrl, lastingMediaUrls } from "./lasting-media";
 export { resumePause, resumeToken, tellPaused } from "./email-pause";
 export { cappedProjects, claimProjectEmail, NEW_PROJECT_EMAILS_PER_DAY, pauseIfOverLimits, pausing } from "./email-limits";

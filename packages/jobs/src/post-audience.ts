@@ -1,7 +1,16 @@
+import { createHmac } from "node:crypto";
+
 import { type PostVisibility, Prisma, prisma } from "@tuti/db";
 import { planIncludes, readerEntriesFor } from "@tuti/shared";
 
-/** Someone a post's email may go to: who they are, the address it goes to, and their unsubscribe token. */
+/**
+ * Someone's unsubscribe token for one project's emails: their id and a MAC of the project keyed by their own secret
+ * (User.unsubscribeToken), so a link from one project's email can't turn off another project's.
+ */
+export const projectUnsubscribeToken = (projectId: string, user: { id: string; unsubscribeToken: string }) =>
+  `${user.id}.${createHmac("sha256", user.unsubscribeToken).update(projectId).digest("base64url")}`;
+
+/** Someone a post's email may go to: who they are, the address it goes to, and their unsubscribe token for the project (projectUnsubscribeToken). */
 export type Recipient = { id: string; address: string; unsubscribeToken: string };
 
 type Project = { portalAccess: string; plan: Parameters<typeof planIncludes>[0] };
@@ -89,7 +98,7 @@ export async function audienceReach(
     if (!provenAddress(person, projectId)) {
       return { status: "unconfirmed" };
     }
-    return !address || address.endsWith(".invalid") ? { status: "noAddress" } : { status: "emailed", address, unsubscribeToken: person.unsubscribeToken };
+    return !address || address.endsWith(".invalid") ? { status: "noAddress" } : { status: "emailed", address, unsubscribeToken: projectUnsubscribeToken(projectId, person) };
   };
   return new Map(people.map((person) => [person.id, reach(person)]));
 }
