@@ -5,7 +5,7 @@ import { FAKE_FERNDESK_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { newPerson, signUp } from "./helpers";
+import { moreView, newPerson, signUp } from "./helpers";
 
 test("in the first run the team comes from Ferndesk: a bad key is refused, a good one brings its help center to the portal, its users as Users and its AI conversations to the Inbox", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -72,7 +72,7 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
 
   // The AI assistant's conversations: history, closed, the user's question and the AI's answer.
   await owner.goto(`/app/${slug}/inbox`);
-  await owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Closed/ }).click();
+  await (await moreView(owner, /^Closed/)).click();
   const rows = owner.getByRole("main").getByRole("listitem");
   await expect(rows).toHaveCount(2);
   await rows.filter({ hasText: "Can I export my data to CSV?" }).getByRole("link").click();

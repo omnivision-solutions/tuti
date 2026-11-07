@@ -94,7 +94,7 @@ export function ListKeys({
     if (opening) {
       // Its row; none open (none left in the view), the view's tab. Where the list is hidden (a phone, a conversation
       // open), the conversation's title: the button that had focus went away with the page it was on.
-      const to = current ?? document.querySelector<HTMLElement>('nav[aria-label="Views"] a[aria-current="page"]');
+      const to = current ?? document.querySelector<HTMLElement>('nav[aria-label="Views"] [aria-current="page"]');
       const title = document.querySelector<HTMLElement>("[data-inbox-conversation] h1");
       // Shown (laid out at all): getClientRects, as checkVisibility isn't in Safari before 17.4.
       if (to && to.getClientRects().length > 0) {

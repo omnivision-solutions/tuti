@@ -8,7 +8,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { spendCredits } from "./credits";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
+import { apiFor, createProject, expectMoreView, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { latestEmailTo, linkIn } from "./mail";
 import { heldModelReply, modelRequests, nextModelReply, releaseModelReply } from "./model";
@@ -2097,7 +2097,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   const conversation = owner.url();
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   // Answered, it leaves Needs reply for Waiting on user, where the team stays with it.
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
+  await expectMoreView(owner, /^Waiting on user 1/);
   await owner.goto(`${conversation}?view=waiting`);
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
 
@@ -2404,7 +2404,7 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await owner.getByRole("textbox", { name: "Reply" }).fill("Yes: 50% off for registered charities.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   // Answered, it leaves Needs reply for Waiting on user.
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
+  await expectMoreView(owner, /^Waiting on user 1/);
 
   await expect(messages).toHaveCount(2, { timeout: 15_000 });
   await expect(messages.last()).toContainText("Yes: 50% off for registered charities.");
@@ -2772,7 +2772,7 @@ test("someone who emailed the team sees that conversation in the widget's Messag
   await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing → Invoices.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   // Answered, it leaves Needs reply for Waiting on user, and stays open.
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
+  await expectMoreView(owner, /^Waiting on user 1/);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);

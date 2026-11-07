@@ -133,6 +133,27 @@ export async function expectOneRowOfTabs(page: Page, tabs: Locator) {
     .toBe(true);
 }
 
+/**
+ * One of the Inbox's views under More (Waiting on user, Snoozed, Closed, Spam; `name` with its count): More opened, its
+ * item in the menu.
+ */
+export async function moreView(page: Page, name: string | RegExp) {
+  await page.getByRole("navigation", { name: "Views" }).getByRole("button").click();
+  return page.getByRole("menuitem", { name });
+}
+
+/** That one of the Inbox's views under More (`name` with its count) is there, once it is (the counts come with a refresh); More closed again. */
+export async function expectMoreView(page: Page, name: string | RegExp) {
+  await expect(async () => {
+    const item = await moreView(page, name);
+    try {
+      await expect(item).toBeVisible({ timeout: 1_000 });
+    } finally {
+      await page.keyboard.press("Escape");
+    }
+  }).toPass();
+}
+
 /** A grey PNG `width` by `height` pixels. */
 export function png(width: number, height: number): Buffer {
   const crcTable = Array.from({ length: 256 }, (_, n) => {
