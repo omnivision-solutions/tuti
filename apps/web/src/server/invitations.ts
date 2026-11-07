@@ -112,7 +112,7 @@ const DAILY_LIMIT = `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try
  * the project's, so two of their invites at once (in different projects too) can't both take the last place.
  */
 async function dayIsFull(tx: Prisma.TransactionClient, projectId: string, senderId: string) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(7, hashtext(${senderId}))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(8, hashtext(${senderId}))`;
   const sentAt = { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) };
   return (
     (await tx.invitation.count({ where: { projectId, sentAt } })) >= DAILY_INVITE_LIMIT ||

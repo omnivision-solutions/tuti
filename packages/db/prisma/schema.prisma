@@ -881,6 +881,8 @@ model Invitation {
 
   @@index([projectId])
   @@index([projectId, email])
+  /// The day's invites a sender sent, across their projects (the cap in apps/web/src/server/invitations.ts).
+  @@index([createdById, sentAt])
   @@map("invitation")
 }
 
