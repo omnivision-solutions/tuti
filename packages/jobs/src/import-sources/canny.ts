@@ -27,9 +27,10 @@ const UNREACHABLE = "Canny couldn't be reached.";
 
 /**
  * A client for one API key. What fails for a while (429, 5xx, no answer) is tried again, after Retry-After or 0.5s
- * doubling up to 8s; nothing starts, nor waits to be tried again, past `deadline` (epoch ms).
+ * doubling up to 8s; nothing starts, nor waits to be tried again, past `deadline` (epoch ms). `wait` is how it sleeps
+ * between tries (tests skip it).
  */
-function canny(key: string, deadline: number) {
+export function canny(key: string, deadline: number, wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))) {
   const base = (process.env.CANNY_API_URL || CANNY_URL).replace(/\/$/, "");
   return async function post<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
     let last: CannyError | null = null;
@@ -62,7 +63,7 @@ function canny(key: string, deadline: number) {
         const ms = after > 0 ? Math.min(after * 1000, MAX_WAIT_MS) : Math.min(500 * 2 ** attempt, 8_000);
         if (Date.now() + ms < deadline) {
           last = error;
-          await new Promise((resolve) => setTimeout(resolve, ms));
+          await wait(ms);
           continue;
         }
       }

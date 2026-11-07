@@ -114,6 +114,8 @@ export type CannyFake = {
   pageSize: number;
   /** Requests made, as `POST /v1/posts/list {"skip":0,…}` (without the key). */
   requests: string[];
+  /** The next `times` requests answer `status` (429, 500, …) with these headers (Retry-After), `{"error":"fake failure"}`. */
+  failNext(status: number, times?: number, headers?: Record<string, string>): void;
   close(): Promise<void>;
 };
 
@@ -125,6 +127,7 @@ export async function startCannyFake(): Promise<CannyFake> {
     ["whiteboard.png", PNG],
     ["welcome.png", PNG],
   ]);
+  let failing: { status: number; times: number; headers: Record<string, string> } | undefined;
   const server = createServer((req, res) => {
     const send = (status: number, body: unknown) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body).replaceAll(FILES, `${fake.url}/files/`));
     const path = new URL(req.url ?? "/", "http://fake").pathname;
@@ -137,6 +140,11 @@ export async function startCannyFake(): Promise<CannyFake> {
     req.on("end", () => {
       const { apiKey, ...body } = JSON.parse(text || "{}") as Row;
       fake.requests.push(`${req.method} ${path} ${JSON.stringify(body)}`);
+      if (failing) {
+        const { status, headers } = failing;
+        failing = --failing.times > 0 ? failing : undefined;
+        return res.writeHead(status, { "Content-Type": "application/json", ...headers }).end(JSON.stringify({ error: "fake failure" }));
+      }
       if (apiKey !== FAKE_CANNY_KEY) {
         return send(400, { error: "invalid api key" });
       }
@@ -192,6 +200,7 @@ export async function startCannyFake(): Promise<CannyFake> {
     fixtures: cannyFixtures(),
     pageSize: 100,
     requests: [],
+    failNext: (status, times = 1, headers = {}) => void (failing = { status, times, headers }),
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
   return fake;

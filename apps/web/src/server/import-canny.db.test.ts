@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
-import { importsSettled } from "@tuti/jobs";
+import { handlers, IMPORT_KEY, IMPORT_SOURCES, importsSettled } from "@tuti/jobs";
+import { sealValue } from "@tuti/shared/signed";
 import { type CannyFake, cannyFixtures, FAKE_CANNY_KEY, type S3Fake, startCannyFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -146,5 +147,30 @@ test("importing again brings nothing twice", async () => {
     contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } },
     posts: { imported: 0, leftOut: { "already brought across earlier": 4 } },
     changelogEntries: { imported: 0, leftOut: { "already brought across earlier": 3 } },
+  });
+});
+
+test("Feedback imported after the changelog links its posts to the entries that ship them", async () => {
+  await importParts(["contacts", "changelog"]);
+  expect((await entriesOf())[0]!.posts).toEqual([]);
+  await importParts(["contacts", "feedback", "changelog"]);
+  expect((await entriesOf())[0]!.posts).toEqual([{ post: { title: "Dark mode" } }]);
+});
+
+test("an import from a source this worker doesn't have (a newer web started it mid-deploy) fails, its key cleared, saying why", async () => {
+  const row = await prisma.dataImport.create({
+    data: { projectId: project.id, source: "CANNY", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_CANNY_KEY), parts: ["contacts"], step: "contacts" },
+  });
+  const canny = IMPORT_SOURCES.CANNY;
+  delete (IMPORT_SOURCES as Partial<typeof IMPORT_SOURCES>).CANNY;
+  try {
+    await handlers.importStep({ importId: row.id }, { info: () => {}, warn: () => {} });
+  } finally {
+    IMPORT_SOURCES.CANNY = canny;
+  }
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+    state: "FAILED",
+    apiKey: null,
+    error: "Tuti was updating as it started. Start it again to go on: what came across already is skipped.",
   });
 });
