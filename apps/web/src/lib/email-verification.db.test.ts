@@ -30,6 +30,25 @@ async function signUp(callbackURL?: string) {
   return email;
 }
 
+/** Every element in a rendered server component's tree (client components aren't rendered further). */
+const elements = (node: unknown): React.ReactElement<{ children?: unknown; href?: string }>[] => {
+  if (Array.isArray(node)) {
+    return node.flatMap(elements);
+  }
+  if (!node || typeof node !== "object" || !("props" in node)) {
+    return [];
+  }
+  const element = node as React.ReactElement<{ children?: unknown; href?: string }>;
+  return [element, ...elements(element.props.children)];
+};
+
+/** Where the "Continue to <project>" card's button goes, for a page that rendered one (never a redirect by itself). */
+async function continueButton(rendered: Promise<unknown>): Promise<string | undefined> {
+  const tree = await rendered;
+  expect(JSON.stringify((tree as React.ReactElement).props)).toContain("Continue to ");
+  return elements(tree).find((element) => element.type === "a")?.props.href;
+}
+
 /** The verification link from the latest email to `email`. */
 async function verificationLink(email: string) {
   const message = await mailbox.latestTo(email);
@@ -146,7 +165,10 @@ test("signed up from a portal, the verification link comes back through a new ha
   const page = (query: Record<string, string>) =>
     ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(query) } as PageProps<"/continue">);
   const signed = Object.fromEntries(back.searchParams);
-  expect(await redirectTarget(page(signed))).toBe(`http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`);
+  // Not by itself: the card names the portal and its address, and the person clicks on.
+  const rendered = await page(signed);
+  expect(JSON.stringify((rendered as React.ReactElement).props)).toContain(`at ${project.slug}.localhost:3100.`);
+  expect(await continueButton(Promise.resolve(rendered))).toBe(`http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`);
 
   // Anything else is a link that isn't valid, going nowhere (a portal's address can be its team's own domain or site):
   const notValid = async (query: Record<string, string>) => {
@@ -175,7 +197,7 @@ test("signed up from a portal, the verification link comes back through a new ha
   } finally {
     vi.useRealTimers();
   }
-  expect(await redirectTarget(page(signed))).toContain("/continue?redirect=");
+  expect(await continueButton(page(signed))).toContain("/continue?redirect=");
 
   // Opened again, signed out on the app (the address is verified, so it doesn't sign in): verified, back to the same
   // /continue, which asks to sign in first and then checks the MAC for whoever did.
@@ -187,7 +209,7 @@ test("signed up from a portal, the verification link comes back through a new ha
   expect(signIn.pathname).toBe("/sign-in");
   expect(signIn.searchParams.get("next")).toBe(`/continue?${new URLSearchParams({ portal: project.slug, redirect: signed.redirect!, issued: signed.issued!, mac: signed.mac! })}`);
   actAs(ada);
-  expect(await redirectTarget(page(Object.fromEntries(new URL(signIn.searchParams.get("next")!, APP_URL).searchParams)))).toBe(
+  expect(await continueButton(page(Object.fromEntries(new URL(signIn.searchParams.get("next")!, APP_URL).searchParams)))).toBe(
     `http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`,
   );
 });
@@ -228,4 +250,27 @@ test("asking for a verification email again never signs a way back: anyone can a
   const response = await auth.handler(new Request(link, { headers: { host: new URL(APP_URL).host } }));
   expect(response.headers.get("location")).toBe("/");
   expect(await isVerified(email)).toBe(true);
+});
+
+test("someone else's address signed up with a hand-picked callback: its own verify click shows the card, never a redirect", async () => {
+  // Whoever signs up an address chooses the way back, and the inbox's owner's click signs that account in.
+  const theirs = await createProject(await signUpUser("Owner"));
+  const email = await signUp(`/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}`);
+  const { link } = await verificationLink(email);
+  const appHost = new URL(APP_URL).host;
+  const verified = await auth.handler(new Request(link, { headers: { host: appHost } }));
+  const back = new URL(verified.headers.get("location")!, APP_URL);
+  const id = (await prisma.user.findUniqueOrThrow({ where: { email } })).id;
+  actAs({ id, email, cookie: verified.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ") });
+  request.host = appHost;
+
+  // As that account: a page saying where it goes, with a button, not a redirect.
+  const rendered = ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/continue">);
+  const outcome = await rendered.then(
+    (tree) => ({ tree }),
+    (error: { digest?: string }) => ({ redirect: error.digest }),
+  );
+  expect(outcome).not.toHaveProperty("redirect");
+  expect(JSON.stringify(((outcome as { tree: React.ReactElement }).tree).props)).toContain(`["Continue to ","${theirs.name}"]`);
+  expect(await continueButton(Promise.resolve((outcome as { tree: unknown }).tree))).toBe(`http://${theirs.slug}.localhost:3100/continue?redirect=%2F`);
 });

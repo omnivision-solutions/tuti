@@ -198,7 +198,11 @@ test("someone signs up from a portal, signs out and signs back in there; their p
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
 
   // Later, "Verify your email" from the inbox: that handoff is used up, so it comes back through a new one.
+  // It doesn't go on by itself: the page says where (the portal's address), and Ada clicks.
   await ada.goto(linkIn(await latestEmailTo(email, { subject: /verify/i }), `${APP_URL}/api/auth/verify-email`));
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue" && url.searchParams.has("mac"));
+  await expect(ada.getByText(`Use your Tuti account on Acme's portal, at ${new URL(portalUrl(slug)).host}.`)).toBeVisible();
+  await ada.getByRole("link", { name: "Continue as Ada" }).click();
   await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue" && url.searchParams.has("state"));
   await backToPortal(ada);
   await expect(ada).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);

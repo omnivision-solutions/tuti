@@ -21,56 +21,67 @@ export default async function ContinuePage(props: PageProps<"/continue">) {
 
   const redirectPath = safeRedirectPath(typeof redirectParam === "string" ? redirectParam : undefined, "/");
   const session = await getAccountSession();
+  const notValid = (
+    <Card className="mx-auto w-full max-w-sm">
+      <CardHeader>
+        <CardTitle>Link not valid</CardTitle>
+        <CardDescription>This sign-in link isn&apos;t valid. Go back to the portal and try again.</CardDescription>
+      </CardHeader>
+    </Card>
+  );
+  if (!project) {
+    return notValid;
+  }
   // No state: a way back opened later (a sign-up's verification email; see lib/auth.ts), whose handoff is long used up.
   // A new one, started on that project's portal, which comes back here with its own state; only for a way back the app
-  // made for the account signed in (its MAC), since a portal's address can be its team's own domain or site. Anything
-  // else isn't valid.
-  const wayBack = { portal: project?.slug ?? "", redirect: typeof redirectParam === "string" ? redirectParam : "", issued, mac };
-  if (project && state === undefined && (await isOwnWayBack(wayBack, session?.user.id))) {
-    redirect(`${await portalAddress(project.slug)}/continue?${new URLSearchParams({ redirect: redirectPath })}`);
-  }
+  // made for the account signed in (its MAC). Never by itself: whoever signed the address up chose the portal, and its
+  // address can be its team's own domain or site, so the page says where it goes and the person clicks.
+  const wayBack = { portal: project.slug, redirect: typeof redirectParam === "string" ? redirectParam : "", issued, mac };
+  const ownWayBack = state === undefined && (await isOwnWayBack(wayBack, session?.user.id));
   // Opened signed out (its address was verified already, so verifying didn't sign anyone in): signing in first, then here
   // again, where the MAC is checked for whoever signed in.
-  if (project && state === undefined && !session && typeof issued === "string" && typeof mac === "string") {
+  if (state === undefined && !session && typeof issued === "string" && typeof mac === "string") {
     const here = `/continue?${new URLSearchParams({ portal: project.slug, redirect: wayBack.redirect, issued, mac })}`;
     redirect(`/sign-in?${new URLSearchParams({ next: here })}`);
   }
-  if (!project || !isSecret(state)) {
-    return (
-      <Card className="mx-auto w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Link not valid</CardTitle>
-          <CardDescription>This sign-in link isn&apos;t valid. Go back to the portal and try again.</CardDescription>
-        </CardHeader>
-      </Card>
-    );
+  if (!ownWayBack && !isSecret(state)) {
+    return notValid;
   }
 
-  const here = `/continue?${new URLSearchParams({ portal: project.slug, state, redirect: redirectPath })}`;
+  const here = isSecret(state) ? `/continue?${new URLSearchParams({ portal: project.slug, state, redirect: redirectPath })}` : "";
   if (!session) {
     // After a reset asked on the portal, its sign-in says the password was changed.
     redirect(`/${signUp ? "sign-up" : "sign-in"}?${new URLSearchParams({ ...(reset === "done" && !signUp && { reset: "done" }), next: here })}`);
   }
+  const address = ownWayBack ? await portalAddress(project.slug) : null;
 
   return (
     <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
         <CardTitle>Continue to {project.name}</CardTitle>
-        <CardDescription>Use your Tuti account on {project.name}&apos;s portal.</CardDescription>
+        <CardDescription className="break-words">
+          {address
+            ? `Use your Tuti account on ${project.name}'s portal, at ${address.replace(/^https?:\/\//, "")}.`
+            : `Use your Tuti account on ${project.name}'s portal.`}
+        </CardDescription>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
         Signed in as <span className="break-all text-foreground">{session.user.email}</span>.
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
-        <ContinueToPortalButton
-          projectSlug={project.slug}
-          state={state}
-          redirectPath={redirectPath}
-          name={session.user.name}
-        />
-        <Link href={`/sign-in?${new URLSearchParams({ next: here })}`} className={buttonVariants({ variant: "ghost" })}>
-          Use another account
-        </Link>
+        {address ? (
+          // A plain link: the portal's /continue is a route that sets its state cookie and comes back here.
+          <a href={`${address}/continue?${new URLSearchParams({ redirect: redirectPath })}`} className={buttonVariants()}>
+            Continue as {session.user.name}
+          </a>
+        ) : (
+          <>
+            <ContinueToPortalButton projectSlug={project.slug} state={state as string} redirectPath={redirectPath} name={session.user.name} />
+            <Link href={`/sign-in?${new URLSearchParams({ next: here })}`} className={buttonVariants({ variant: "ghost" })}>
+              Use another account
+            </Link>
+          </>
+        )}
       </CardFooter>
     </Card>
   );
