@@ -50,6 +50,8 @@ export function intercom(token: string, { wait = pause, deadline = Infinity }: {
   const bases = process.env.INTERCOM_API_URL ? [process.env.INTERCOM_API_URL.replace(/\/$/, "")] : REGIONS;
   let region = 0;
   let found = false;
+  /** Intercom's clock at its last answer (Unix seconds, its Date header), null before one. */
+  let serverTime: number | null = null;
 
   async function request<T>(base: string, path: string, query: Record<string, string | number | null | undefined>): Promise<T> {
     const url = new URL(`${base}${path}`);
@@ -71,6 +73,8 @@ export function intercom(token: string, { wait = pause, deadline = Infinity }: {
           signal: AbortSignal.timeout(Math.max(0, Math.min(TIMEOUT_MS, deadline - Date.now()))),
         });
         if (response.ok) {
+          const date = Date.parse(response.headers.get("date") ?? "");
+          serverTime = Number.isNaN(date) ? null : Math.floor(date / 1000);
           return (await response.json()) as T;
         }
       } catch {
@@ -108,7 +112,10 @@ export function intercom(token: string, { wait = pause, deadline = Infinity }: {
     }
   }
 
-  return { get };
+  /** Intercom's clock at its last answer (Unix seconds), else this machine's. */
+  const now = () => serverTime ?? Math.floor(Date.now() / 1000);
+
+  return { get, now };
 }
 
 /** A list's pages (help center lists: numbered). */

@@ -1,8 +1,13 @@
+import { FAKE_INTERCOM_TOKEN, startIntercomFake } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { intercomSource } from "./import-sources/intercom";
 import { intercom, IntercomError } from "./intercom";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 /** fetch answering 401 everywhere but `region`'s address, recording where it was asked. */
 function regions(region: string | null) {
@@ -45,7 +50,39 @@ test("a request rate limited or failing for a while is tried again, waiting as I
   // Retry-After's two seconds, then the first backoff.
   expect(waits).toEqual([2000, 1000]);
 
-  // A wait past the deadline isn't waited: the error comes at once.
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ errors: [{ message: "Too many requests" }] }, { status: 429, headers: { "retry-after": "60" } })));
-  await expect(intercom("token", { wait: async () => undefined, deadline: Date.now() + 10_000 }).get("/admins")).rejects.toMatchObject({ status: 429, message: "Too many requests" });
+  // A wait past the deadline isn't waited, nor tried again: the error comes at once.
+  vi.useFakeTimers({ now: new Date("2026-11-07T12:00:00Z"), toFake: ["Date"] });
+  const limited = vi.fn(async () => Response.json({ errors: [{ message: "Too many requests" }] }, { status: 429, headers: { "retry-after": "60" } }));
+  vi.stubGlobal("fetch", limited);
+  waits.length = 0;
+  const deadline = Date.parse("2026-11-07T12:00:10Z");
+  await expect(intercom("token", { wait: async (ms) => void waits.push(ms), deadline }).get("/admins")).rejects.toMatchObject({ status: 429, message: "Too many requests" });
+  expect(waits).toEqual([]);
+  expect(limited).toHaveBeenCalledTimes(1);
+  vi.useRealTimers();
+});
+
+test("an article deleted while the list is read (those after it moving up a place) has the whole list read again, so none is missed", async () => {
+  const fake = await startIntercomFake();
+  try {
+    vi.stubEnv("INTERCOM_API_URL", fake.url);
+    fake.pageSize = 2;
+    const { read } = intercomSource.connect(FAKE_INTERCOM_TOKEN, { deadline: Infinity });
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page = await read.articles!(cursor, 2);
+      ids.push(...page.items.map((a) => a.id));
+      cursor = page.next;
+      // After the first page, its first article is deleted: the second page starts at the fourth.
+      if (++pages === 1) {
+        fake.fixtures.articles.shift();
+      }
+    } while (cursor && pages < 20);
+    expect(new Set(ids)).toEqual(new Set(["201", "202", "203", "204"]));
+    expect(pages).toBeLessThan(20);
+  } finally {
+    await fake.close();
+  }
 });

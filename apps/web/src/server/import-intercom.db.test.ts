@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { importsSettled, portalAddress } from "@tuti/jobs";
+import { importsSettled, portalAddress, upsertProjectUser } from "@tuti/jobs";
 import { FAKE_INTERCOM_TOKEN, FAKE_OPENAI_KEY, type IntercomFake, intercomFixtures, type OpenAIFake, type S3Fake, startIntercomFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -31,7 +31,7 @@ beforeEach(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
   vi.stubEnv("OPENAI_BASE_URL", openai.url);
-  Object.assign(fake, { fixtures: intercomFixtures(), pageSize: 150, requests: [] });
+  Object.assign(fake, { fixtures: intercomFixtures(), pageSize: 150, requests: [], onRequest: undefined });
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -60,6 +60,8 @@ test("Contacts come across as users, page after page: their app's id or intercom
   fake.pageSize = 2;
   // A company Intercom deleted since (404) is left out, never failing the page.
   fake.fixtures.contacts[2]!.companies = { data: [{ type: "company", id: "c-gone" }] };
+  // Someone here already has the lead's address: a lead's address proves nothing, so the lead isn't them.
+  const signedIn = await upsertProjectUser(project.id, "signed-in-leo", { name: "Leo", email: "e2e-leo-intercom@example.com" });
   const done = await run(["contacts"]);
   expect(done).toMatchObject({ source: "intercom", state: "done", counts: { contacts: { imported: 3, leftOut: {} } } });
   expect(importSummary(done)).toBe("3 contacts brought across.");
@@ -67,13 +69,17 @@ test("Contacts come across as users, page after page: their app's id or intercom
     { externalId: "app-user-1", email: "e2e-mira-intercom@example.com", properties: { company: "Initech", plan: "Pro", seats: 12 }, user: { name: "Mira Patel", image: `${fake.url}/files/mira.png` } },
     { externalId: "intercom:6650000000000000000000a2", email: "e2e-leo-intercom@example.com", properties: {}, user: { name: "Leo Lead", image: null } },
     { externalId: "intercom:6650000000000000000000a3", email: "e2e-tobias-intercom@example.com", properties: { team: "Design" }, user: { name: "Tobias Weber", image: null } },
+    { externalId: "signed-in-leo", email: "e2e-leo-intercom@example.com", properties: {}, user: { name: "Leo", image: null } },
   ]);
+  const lead = await prisma.importedRecord.findMany({ where: { projectId: project.id, kind: "lead" }, select: { externalId: true, localId: true } });
+  expect(lead).toEqual([{ externalId: "6650000000000000000000a2", localId: expect.any(String) }]);
+  expect(lead[0]!.localId).not.toBe(signedIn);
   // The company read once, by its id; the token at each region's address isn't tried (INTERCOM_API_URL).
   expect(fake.requests.filter((r) => r.startsWith("GET /companies/"))).toEqual(["GET /companies/c-1", "GET /companies/c-gone"]);
 
   const again = await run(["contacts"]);
   expect(again).toMatchObject({ state: "done", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
-  expect(await usersOf()).toHaveLength(3);
+  expect(await usersOf()).toHaveLength(4);
 });
 
 test("the help center comes across: collections in their tree and order, articles with content, image, links, authors and dates, published, draft or private as they were; again, nothing twice", async () => {
@@ -120,6 +126,8 @@ test("the help center comes across: collections in their tree and order, article
   expect(json).not.toContain(fake.url);
   expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(1);
   expect(article("Paying by card")).toMatchObject({ collection: { name: "Invoices" }, createdBy: { name: "Ben Builder" }, publishedAt: expect.any(Date) });
+  // Intercom's generic picture for an admin without one isn't kept: Tuti draws their initials.
+  expect(await prisma.user.findFirstOrThrow({ where: { name: "Ben Builder", placeholderProjectId: project.id }, select: { image: true } })).toEqual({ image: null });
   expect(article("Refunds (coming soon)")).toMatchObject({ slug: "refunds-coming-soon", collection: { name: "Billing" }, publishedAt: null });
   // Only users could read it in Intercom: a draft here.
   expect(article("Enterprise contracts")).toMatchObject({ publishedAt: null });
@@ -129,4 +137,22 @@ test("the help center comes across: collections in their tree and order, article
   expect(again).toMatchObject({ state: "done", counts: { collections: { imported: 0, leftOut: { "already brought across earlier": 3 } }, articles: { imported: 0, leftOut: { "already brought across earlier": 4 } } } });
   expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(4);
   expect(await prisma.collection.count({ where: { projectId: project.id } })).toBe(3);
+});
+
+test("an article edited while the import reads the list (moving to its front, onto a page already read) still comes across, once", async () => {
+  fake.pageSize = 2;
+  // Each time the list's second page is asked for, the first article on it is edited: Intercom lists it first now.
+  fake.onRequest = (url) => {
+    if (url.pathname === "/articles" && url.searchParams.get("page") === "2") {
+      const [edited] = fake.fixtures.articles.splice(2, 1);
+      fake.fixtures.articles.unshift({ ...edited, updated_at: fake.clock });
+    }
+  };
+  const done = await run(["docs"]);
+  expect(done).toMatchObject({ state: "done", counts: { articles: { imported: 3, leftOut: {} }, privateDrafts: { imported: 1, leftOut: {} } } });
+  const articles = await prisma.article.findMany({ where: { projectId: project.id }, select: { title: true, body: true } });
+  expect(articles.map((a) => a.title).sort()).toEqual(["Enterprise contracts", "Paying by card", "Refunds (coming soon)", "Welcome to Acme"]);
+  // Every one with its text: none left an empty draft for want of being read.
+  expect(articles.every((a) => a.body)).toBe(true);
+  expect(await prisma.importedRecord.count({ where: { projectId: project.id, kind: "article", contentLanded: true } })).toBe(4);
 });

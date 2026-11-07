@@ -16,7 +16,39 @@ const idOf = (id: string | number | null | undefined) => (id === null || id === 
 /** A numbered list's next page (null: it was the last). */
 const nextPage = (pages: IntercomPages | undefined, page: number) => ((pages?.total_pages ?? 0) > page ? String(page + 1) : null);
 
-const admin = (a: IntercomAdmin): FeaturebaseAdmin => ({ id: String(a.id), name: a.name, email: a.email, profilePicture: a.avatar?.image_url ?? null });
+/** Companies' names read at once, for a page of contacts. */
+const COMPANIES_AT_ONCE = 10;
+/** Whole passes over the articles at most, after the first, when articles were deleted as it read them. */
+const MAX_FULL_PASSES = 3;
+
+/**
+ * Where a read of the articles list got to (its cursor, as JSON). Intercom lists them newest updated first, by page
+ * number, so the list moves as it's read: one edited moves to the front (to a page already read, and would be missed),
+ * one deleted moves those after it up a place (the first of the next page to the page before). So once a pass ends,
+ * another reads from the front only what was updated since it began (by Intercom's clock), and again until one brings
+ * nothing; one that saw articles deleted (the count fell) reads the whole list again instead. What comes twice is
+ * skipped by the import, as a repeated page is.
+ */
+type ArticlesCursor = {
+  /** The page to read. */
+  page: number;
+  /** Only those updated since (Unix seconds); 0: the whole list. */
+  since: number;
+  /** The list's count, and Intercom's clock, as this pass read its first page. */
+  count: number;
+  began: number;
+  /** This pass read some: there may be more since. */
+  brought: boolean;
+  /** This pass saw articles deleted. */
+  shrank: boolean;
+  /** Whole passes after the first. */
+  passes: number;
+};
+
+/** Intercom's generic picture for someone without one (…/default-avatars/…): left out, so Tuti draws its own. */
+const photo = (url: string | null | undefined) => (url && !/\/default-avatars?\//.test(url) ? url : null);
+
+const admin = (a: IntercomAdmin): FeaturebaseAdmin => ({ id: String(a.id), name: a.name, email: a.email, profilePicture: photo(a.avatar?.image_url) });
 
 const collection = (c: IntercomCollection): FeaturebaseCollection => ({
   id: String(c.id),
@@ -51,36 +83,39 @@ export const intercomSource: ImportSourceDefinition = {
   status: (error) => (error instanceof IntercomError ? error.status : null),
   connect: (token, { deadline }) => {
     const api = intercom(token, { deadline });
-    /** Companies' names by id, read once each for the connection: a contact lists only its companies' ids. */
-    const companies = new Map<string, Promise<string | null>>();
-    const companyName = (id: string) => {
-      if (!companies.has(id)) {
-        companies.set(
-          id,
-          api.get<{ name?: string | null }>(`/companies/${encodeURIComponent(id)}`).then(
-            (company) => company.name ?? null,
-            (error: unknown) => {
-              // One deleted since is left out; any other failure fails the page, as a list's would.
-              if (error instanceof IntercomError && error.status === 404) {
-                return null;
-              }
-              throw error;
-            },
+    /** Companies' names by id (null: deleted since), for a page of contacts: each read once, a few at a time. */
+    const companyNames = async (ids: string[]) => {
+      const names = new Map<string, string | null>();
+      const unique = [...new Set(ids)];
+      for (let i = 0; i < unique.length; i += COMPANIES_AT_ONCE) {
+        const batch = unique.slice(i, i + COMPANIES_AT_ONCE);
+        const read = await Promise.all(
+          batch.map((id) =>
+            api.get<{ name?: string | null }>(`/companies/${encodeURIComponent(id)}`).then(
+              (company) => company.name ?? null,
+              (error: unknown) => {
+                // One deleted since is left out; any other failure fails the page, as a list's would.
+                if (error instanceof IntercomError && error.status === 404) {
+                  return null;
+                }
+                throw error;
+              },
+            ),
           ),
         );
+        batch.forEach((id, j) => names.set(id, read[j]!));
       }
-      return companies.get(id)!;
+      return names;
     };
-    const contact = async (c: IntercomContact): Promise<FeaturebaseContact> => {
-      const company = c.companies?.data?.[0]?.id;
-      const name = company ? await companyName(company) : null;
+    const contact = (c: IntercomContact, names: Map<string, string | null>): FeaturebaseContact => {
+      const name = names.get(c.companies?.data?.[0]?.id ?? "");
       return {
         id: c.id,
         userId: c.external_id,
         type: c.role === "lead" ? "lead" : "customer",
         email: c.email,
         name: c.name,
-        profilePicture: typeof c.avatar === "string" ? c.avatar : (c.avatar?.image_url ?? null),
+        profilePicture: photo(typeof c.avatar === "string" ? c.avatar : c.avatar?.image_url),
         customFields: c.custom_attributes,
         companies: name ? [{ name }] : [],
       };
@@ -105,14 +140,34 @@ export const intercomSource: ImportSourceDefinition = {
         contacts: async (cursor) => {
           const body = await api.get<{ data: IntercomContact[]; pages?: IntercomPages }>("/contacts", { per_page: 150, starting_after: cursor, escape_identity: "false" });
           const next = typeof body.pages?.next === "object" ? (body.pages.next?.starting_after ?? null) : null;
-          const items: FeaturebaseContact[] = [];
-          for (const c of body.data) {
-            items.push(await contact(c));
-          }
-          return { items, next: next && next !== cursor ? next : null };
+          // Only the first company is kept (`company`).
+          const names = await companyNames(body.data.flatMap((c) => c.companies?.data?.[0]?.id ?? []));
+          return { items: body.data.map((c) => contact(c, names)), next: next && next !== cursor ? next : null };
         },
         collections: (cursor) => numbered("/help_center/collections", cursor, 250, collection),
-        articles: (cursor, limit) => numbered("/articles", cursor, limit ?? 100, article),
+        articles: async (cursor, limit) => {
+          const at: ArticlesCursor = cursor ? (JSON.parse(cursor) as ArticlesCursor) : { page: 1, since: 0, count: 0, began: 0, brought: false, shrank: false, passes: 0 };
+          const body = await api.get<{ data: IntercomArticle[]; total_count?: number; pages?: IntercomPages }>("/articles", { page: at.page, per_page: limit ?? 100 });
+          const count = body.total_count ?? 0;
+          if (at.page === 1) {
+            Object.assign(at, { count, began: api.now(), brought: false, shrank: false });
+          }
+          at.shrank ||= count < at.count;
+          const items = at.since ? body.data.filter((a) => (a.updated_at ?? 0) >= at.since) : body.data;
+          at.brought ||= items.length > 0;
+          // A pass after the first ends at the first article older than it looks for (or the list's end).
+          if (items.length === body.data.length && nextPage(body.pages, at.page)) {
+            return { items: items.map(article), next: JSON.stringify({ ...at, page: at.page + 1 }) };
+          }
+          const next: ArticlesCursor | null =
+            at.shrank && at.passes < MAX_FULL_PASSES
+              ? { ...at, page: 1, since: 0, passes: at.passes + 1 }
+              : at.since === 0 || at.brought
+                ? // Strictly later each time, so a pass can't repeat forever within one second of Intercom's clock.
+                  { ...at, page: 1, since: Math.max(at.began, at.since + 1) }
+                : null;
+          return { items: items.map(article), next: next && JSON.stringify(next) };
+        },
         articleExists: (id) =>
           api.get(`/articles/${encodeURIComponent(id)}`).then(
             () => true,

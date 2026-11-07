@@ -233,7 +233,11 @@ export function SetupImport({
           .filter(([value]) => next || value !== "fresh")
           .map(([value, label, description]) => (
           <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
-            <input type="radio" name="from" value={value} checked={from === value} onChange={() => setFrom(value)} className="mt-0.5 size-4 accent-primary" />
+            <input type="radio" name="from" value={value} checked={from === value} onChange={() => {
+                setFrom(value);
+                // The last source's refusal isn't this one's.
+                setError(null);
+              }} className="mt-0.5 size-4 accent-primary" />
             <span className="flex flex-col gap-0.5">
               <span className="text-sm font-medium">{label}</span>
               <span className="text-sm text-muted-foreground">{description}</span>
@@ -273,7 +277,9 @@ export function SetupImport({
                 </a>
               )}
             </div>
+            {/* One field per source (`key`), so one tool's key is never sent to another after switching. */}
             <Input
+              key={from}
               id={`${from}-key`}
               name="key"
               type={source.credential.kind === "key" ? "password" : "url"}

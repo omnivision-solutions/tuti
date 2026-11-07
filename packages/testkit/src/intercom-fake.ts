@@ -20,7 +20,8 @@ const HELP = "https://intercom.help/acme/en";
 export const intercomFixtures = (): IntercomFixtures => ({
   admins: [
     { type: "admin", id: "9001", name: "Ada Admin", email: "e2e-ada-intercom@example.com" },
-    { type: "admin", id: "9002", name: "Ben Builder", email: "e2e-ben-intercom@example.com" },
+    // Without a photo of their own: Intercom's generic one.
+    { type: "admin", id: "9002", name: "Ben Builder", email: "e2e-ben-intercom@example.com", avatar: { type: "avatar", image_url: "https://static.intercomassets.com/assets/default-avatars/admins/128.png" } },
   ],
   contacts: [
     {
@@ -113,6 +114,10 @@ export type IntercomFake = {
   pageSize: number;
   /** Requests made, as `GET /contacts?per_page=150&…`. */
   requests: string[];
+  /** Its clock (Unix seconds), sent as each answer's Date: a second on for each API request, so tests can date edits. */
+  clock: number;
+  /** Called as an API request comes, before it's answered (the clock already moved on): change the fixtures between pages. */
+  onRequest?: (url: URL) => void;
   close(): Promise<void>;
 };
 
@@ -124,7 +129,7 @@ export async function startIntercomFake(): Promise<IntercomFake> {
   ]);
   const server = createServer((req, res) => {
     const send = (status: number, body: unknown) =>
-      res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body).replaceAll(FAKE_INTERCOM_FILES, `${fake.url}/files/`));
+      res.writeHead(status, { "Content-Type": "application/json", Date: new Date(fake.clock * 1000).toUTCString() }).end(JSON.stringify(body).replaceAll(FAKE_INTERCOM_FILES, `${fake.url}/files/`));
     const url = new URL(req.url ?? "/", "http://fake");
     const notFound = () => send(404, { type: "error.list", errors: [{ code: "not_found", message: "Resource Not Found" }] });
     if (url.pathname.startsWith("/files/")) {
@@ -132,6 +137,8 @@ export async function startIntercomFake(): Promise<IntercomFake> {
       return file ? res.writeHead(200, { "Content-Type": "image/png" }).end(file) : notFound();
     }
     fake.requests.push(`${req.method} ${url.pathname}${url.search}`);
+    fake.clock++;
+    fake.onRequest?.(url);
     if (req.headers.authorization !== `Bearer ${FAKE_INTERCOM_TOKEN}`) {
       return send(401, { type: "error.list", errors: [{ code: "unauthorized", message: "Access Token Invalid" }] });
     }
@@ -181,6 +188,7 @@ export async function startIntercomFake(): Promise<IntercomFake> {
     fixtures: intercomFixtures(),
     pageSize: 150,
     requests: [],
+    clock: Math.floor(Date.now() / 1000),
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
   return fake;

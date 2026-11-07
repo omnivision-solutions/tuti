@@ -18,8 +18,12 @@ test("in the first run the team comes from Intercom: a bad token is refused, a g
   await owner.getByRole("button", { name: "Create project" }).click();
   await owner.waitForURL(`**/app/${slug}/setup`);
 
+  // A key typed for one tool doesn't stay in the field on switching to another.
+  await owner.getByRole("radio", { name: /^Featurebase/ }).check();
+  await owner.getByRole("textbox", { name: "API key" }).fill("sk_a_featurebase_key");
   // Intercom: its users and help center, with an access token made in its Developer Hub.
   await owner.getByRole("radio", { name: /^Intercom/ }).check();
+  await expect(owner.getByRole("textbox", { name: "API key" })).toHaveValue("");
   await expect(owner.getByText("Bring your users and help center across with an access token.")).toBeVisible();
   const keysLink = owner.getByRole("link", { name: /^Get your API key.*opens in a new tab/ });
   await expect(keysLink).toHaveAttribute("href", "https://app.intercom.com/a/apps/_/developer-hub");
