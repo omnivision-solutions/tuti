@@ -13,8 +13,6 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
   const teammate = `e2e-${randomUUID()}@example.com`;
 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
-  // Verified, so the setup's invite is emailed.
-  await verifyEmail(owner);
   await owner.goto("/app/new");
   await owner.getByLabel("Name").fill("Acme");
   await owner.getByLabel("URL").fill(slug);
@@ -79,6 +77,11 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
   // Invite the team: the invitation Settings → Team sends.
   await owner.waitForURL(`**/app/${slug}/setup?step=team`);
   await expect(owner.getByText("Step 4 of 4")).toBeVisible();
+  // Not verified yet: invites aren't emailed, and the step says so. Verified, it says they are, and the invite is emailed.
+  await expect(owner.getByText("Verify your email to email invites; until then you'll get a link to send them. Only that email address can accept it.")).toBeVisible();
+  await verifyEmail(owner);
+  await owner.goto(`/app/${slug}/setup?step=team`);
+  await expect(owner.getByText("We'll email them an invite. Only that email address can accept it.")).toBeVisible();
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(teammate);
   await owner.getByRole("button", { name: "Send invite" }).click();
   await expect(owner.getByText(`Invite sent to ${teammate}`)).toBeVisible();
