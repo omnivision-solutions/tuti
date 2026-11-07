@@ -82,8 +82,9 @@ export default function ApiDocsPage() {
           <li>
             Posts and comments are written by the key&apos;s creator, or on behalf of someone from your app with{" "}
             <code className="font-mono">{`"author": { "id", "name", "email" }`}</code>: their id in your app,
-            the same person as with single sign-on. Their name and email are set the first time; later they change
-            only with a key whose creator is a project owner or admin, as with users.sync.
+            the same person as with single sign-on. The first call sets their name and email; later calls change them
+            only with a key whose creator is a project owner or admin, as with users.sync (a single sign-on updates them
+            too).
           </li>
         </ul>
       </section>
