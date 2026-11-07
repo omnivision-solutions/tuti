@@ -20,13 +20,18 @@ const nextPage = (pages: IntercomPages | undefined, page: number) => ((pages?.to
 const COMPANIES_AT_ONCE = 10;
 /** Whole passes over the articles at most, after the first, when articles were deleted as it read them. */
 const MAX_FULL_PASSES = 3;
+/**
+ * How far back a pass after the first looks, before the pass it follows began (seconds): Intercom stamps its answer
+ * after it read the list, and an edit can take a moment to reach the list, so one edited just before is looked at too.
+ */
+const EDIT_MARGIN = 60;
 
 /**
  * Where a read of the articles list got to (its cursor, as JSON). Intercom lists them newest updated first, by page
  * number, so the list moves as it's read: one edited moves to the front (to a page already read, and would be missed),
  * one deleted moves those after it up a place (the first of the next page to the page before). So once a pass ends,
- * another reads from the front only what was updated since it began (by Intercom's clock), and again until one brings
- * nothing; one that saw articles deleted (the count fell) reads the whole list again instead. What comes twice is
+ * another reads from the front only what was updated since it began (by Intercom's clock, with EDIT_MARGIN), and again
+ * until a pass finds nothing edited after it began itself (what it read from before then, the pass before had in view); one that saw articles deleted (the count fell) reads the whole list again instead. What comes twice is
  * skipped by the import, as a repeated page is.
  */
 type ArticlesCursor = {
@@ -34,10 +39,11 @@ type ArticlesCursor = {
   page: number;
   /** Only those updated since (Unix seconds); 0: the whole list. */
   since: number;
-  /** The list's count, and Intercom's clock, as this pass read its first page. */
+  /** The list's count as this pass read its first page, and when it began: by Intercom's clock, and the earliest of it and this machine's. */
   count: number;
   began: number;
-  /** This pass read some: there may be more since. */
+  from: number;
+  /** This pass found articles edited after it began: there may be more it didn't see. */
   brought: boolean;
   /** This pass saw articles deleted. */
   shrank: boolean;
@@ -146,15 +152,18 @@ export const intercomSource: ImportSourceDefinition = {
         },
         collections: (cursor) => numbered("/help_center/collections", cursor, 250, collection),
         articles: async (cursor, limit) => {
-          const at: ArticlesCursor = cursor ? (JSON.parse(cursor) as ArticlesCursor) : { page: 1, since: 0, count: 0, began: 0, brought: false, shrank: false, passes: 0 };
+          const at: ArticlesCursor = cursor ? (JSON.parse(cursor) as ArticlesCursor) : { page: 1, since: 0, count: 0, began: 0, from: 0, brought: false, shrank: false, passes: 0 };
+          const before = Math.floor(Date.now() / 1000);
           const body = await api.get<{ data: IntercomArticle[]; total_count?: number; pages?: IntercomPages }>("/articles", { page: at.page, per_page: limit ?? 100 });
           const count = body.total_count ?? 0;
           if (at.page === 1) {
-            Object.assign(at, { count, began: api.now(), brought: false, shrank: false });
+            // Strictly later than the pass before, so passes can't repeat within one second of Intercom's clock.
+            const began = Math.max(api.now(), at.began + 1);
+            Object.assign(at, { count, began, from: Math.min(before, began), brought: false, shrank: false });
           }
           at.shrank ||= count < at.count;
           const items = at.since ? body.data.filter((a) => (a.updated_at ?? 0) >= at.since) : body.data;
-          at.brought ||= items.length > 0;
+          at.brought ||= items.some((a) => (a.updated_at ?? 0) >= at.began);
           // A pass after the first ends at the first article older than it looks for (or the list's end).
           if (items.length === body.data.length && nextPage(body.pages, at.page)) {
             return { items: items.map(article), next: JSON.stringify({ ...at, page: at.page + 1 }) };
@@ -163,8 +172,7 @@ export const intercomSource: ImportSourceDefinition = {
             at.shrank && at.passes < MAX_FULL_PASSES
               ? { ...at, page: 1, since: 0, passes: at.passes + 1 }
               : at.since === 0 || at.brought
-                ? // Strictly later each time, so a pass can't repeat forever within one second of Intercom's clock.
-                  { ...at, page: 1, since: Math.max(at.began, at.since + 1) }
+                ? { ...at, page: 1, since: at.from - EDIT_MARGIN }
                 : null;
           return { items: items.map(article), next: next && JSON.stringify(next) };
         },

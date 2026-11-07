@@ -46,6 +46,12 @@ test("in the first run the team comes from Intercom: a bad token is refused, a g
   const status = owner.getByRole("status").filter({ hasText: "Intercom" });
   await expect(status).toHaveText("Imported from Intercom. 3 contacts, 3 collections, 3 articles, 1 article as a draft (only some people could see it), 1 profile picture brought across.", { timeout: 15_000 });
   await checkpoint(owner, "setup-intercom-imported");
+  // Another source picked: Intercom's import isn't shown as its own, and it starts afresh.
+  await owner.getByRole("radio", { name: /^Featurebase/ }).check();
+  await expect(owner.getByRole("button", { name: "Check the key and start" })).toBeVisible();
+  await expect(owner.getByText(/Imported from Intercom/)).toHaveCount(0);
+  await owner.getByRole("radio", { name: /^Intercom/ }).check();
+  await expect(owner.getByRole("button", { name: "Import again" })).toBeVisible();
 
   // Its users, by their id in the team's app or Intercom's.
   await owner.goto(`/app/${slug}/users`);

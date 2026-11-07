@@ -141,11 +141,12 @@ test("the help center comes across: collections in their tree and order, article
 
 test("an article edited while the import reads the list (moving to its front, onto a page already read) still comes across, once", async () => {
   fake.pageSize = 2;
-  // Each time the list's second page is asked for, the first article on it is edited: Intercom lists it first now.
+  // Each time the list's second page is asked for, the first article on it is edited: Intercom lists it first now,
+  // dated a moment before the first page's answer (Intercom stamps its answer after reading the list).
   fake.onRequest = (url) => {
     if (url.pathname === "/articles" && url.searchParams.get("page") === "2") {
       const [edited] = fake.fixtures.articles.splice(2, 1);
-      fake.fixtures.articles.unshift({ ...edited, updated_at: fake.clock });
+      fake.fixtures.articles.unshift({ ...edited, updated_at: fake.clock - 3 });
     }
   };
   const done = await run(["docs"]);
