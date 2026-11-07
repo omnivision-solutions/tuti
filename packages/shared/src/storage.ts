@@ -117,12 +117,25 @@ export function mediaStorage(): MediaStorage | null {
     },
     async putFile(key, path, contentType) {
       const { size } = await stat(path);
-      await send(key, {
-        method: "PUT",
-        body: Readable.toWeb(createReadStream(path)) as RequestInit["body"],
-        // A stream isn't hashed for the signature: its length is signed instead.
-        headers: { "content-type": contentType, "cache-control": PRIVATE_CACHE, "content-length": String(size), "x-amz-content-sha256": "UNSIGNED-PAYLOAD" },
-      });
+      // The client's own retries would resend a stream the first try used up: each try here signs and sends a fresh one
+      // (as many tries as the client's, on the same answers: 5xx and 429).
+      for (let attempt = 0; ; attempt++) {
+        const request = await client.sign(objectUrl(key), {
+          method: "PUT",
+          body: Readable.toWeb(createReadStream(path)) as RequestInit["body"],
+          // A stream isn't hashed for the signature: its length is signed instead.
+          headers: { "content-type": contentType, "cache-control": PRIVATE_CACHE, "content-length": String(size), "x-amz-content-sha256": "UNSIGNED-PAYLOAD" },
+        });
+        const response = await fetch(request);
+        await response.body?.cancel();
+        if (response.status === 200) {
+          return;
+        }
+        if (attempt >= client.retries || (response.status < 500 && response.status !== 429)) {
+          throw new Error(`Storage PUT ${key} failed with ${response.status}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** attempt));
+      }
     },
     async copy(from, to, contentType) {
       await send(to, {

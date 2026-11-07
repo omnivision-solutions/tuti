@@ -15,8 +15,11 @@ export type S3Fake = {
   failPuts: Set<string>;
   /** Runs before a GET is answered (and is waited for), with its Range header: to see it, or to change things between two requests (a race). */
   beforeGet?: (key: string, range: string | undefined) => void | Promise<void>;
-  /** Sees each PUT's headers as it's answered: how a file was sent (streamed with an unsigned payload, say). */
-  onPut?: (key: string, headers: Record<string, string | string[] | undefined>) => void;
+  /**
+   * Sees each PUT's headers as it's answered: how a file was sent (streamed with an unsigned payload, say). Returning a
+   * status answers the PUT with it, storing nothing (a storage hiccup).
+   */
+  onPut?: (key: string, headers: Record<string, string | string[] | undefined>) => number | void;
   close(): Promise<void>;
 };
 
@@ -65,7 +68,11 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
       const object = objects.get(key);
       switch (req.method) {
         case "PUT":
-          fake.onPut?.(key, req.headers);
+          const status = fake.onPut?.(key, req.headers);
+          if (status) {
+            res.writeHead(status).end();
+            return;
+          }
           if (failPuts.has(key)) {
             res.writeHead(500).end();
             return;

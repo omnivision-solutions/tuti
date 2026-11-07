@@ -1,7 +1,8 @@
-import { readdir } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { fileKey, imageKey, videoKey } from "@tuti/content";
 import { htmlToContent } from "@tuti/content/html";
@@ -78,6 +79,7 @@ let uploaderId: string;
 beforeEach(async () => {
   served = [];
   whileServing = undefined;
+  s3.onPut = undefined;
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
   }
@@ -149,11 +151,12 @@ test("an attached document in an article is copied as a file, checked by its con
 
 test("an uploaded video in an article is copied, checked by its content, and plays from the copy", async () => {
   vi.stubEnv("MEDIA_MAX_VIDEO_MB_TEAM", "1");
-  // Streamed from a temporary file, never whole in the worker's memory, and the file gone after.
+  // Streamed from a temporary file (in a directory of this test's own), never whole in the worker's memory, and the file
+  // gone after. The first PUT meets a storage hiccup: it's sent again, from the file.
+  const temporary = await mkdtemp(join(tmpdir(), "import-media-test-"));
+  vi.stubEnv("TMPDIR", temporary);
   const puts: Record<string, string | string[] | undefined>[] = [];
-  s3.onPut = (_key, headers) => puts.push(headers);
-  const temporary = async () => (await readdir(tmpdir())).filter((name) => name.startsWith("tuti-video-"));
-  const before = await temporary();
+  s3.onPut = (_key, headers) => (puts.push(headers) === 1 ? 503 : undefined);
   const result = await htmlToContent(
     "article",
     `<video src="${origin}/demo.mp4" controls></video><video><source src="${origin}/stream" type="video/mp4"></video>` +
@@ -179,11 +182,9 @@ test("an uploaded video in an article is copied, checked by its content, and pla
     { filename: "stream.mp4", status: "READY", size: MP4.length },
   ]);
   s3.onPut = undefined;
-  expect(puts).toEqual([
-    expect.objectContaining({ "x-amz-content-sha256": "UNSIGNED-PAYLOAD", "content-length": String(MP4.length) }),
-    expect.objectContaining({ "x-amz-content-sha256": "UNSIGNED-PAYLOAD", "content-length": String(MP4.length) }),
-  ]);
-  expect(await temporary()).toEqual(before);
+  expect(puts).toEqual(Array(3).fill(expect.objectContaining({ "x-amz-content-sha256": "UNSIGNED-PAYLOAD", "content-length": String(MP4.length) })));
+  expect(await readdir(temporary)).toEqual([]);
+  await rm(temporary, { recursive: true });
 });
 
 test("what can't be copied is left out with its reason, keeping its alt text, and nothing is kept for it", async () => {
