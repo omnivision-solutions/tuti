@@ -294,6 +294,32 @@ describe("creating", () => {
     ]);
   });
 
+  test("someone's name and email change only with a key whose creator is an owner or admin, as with users.sync", async () => {
+    await send("POST", "/posts", { board: "feature-requests", title: "Dark mode", author: { id: "user-42", name: "Sam", email: "e2e-sam@example.com" } }, writeKey);
+    const admin = await addMember(project.id, "ADMIN");
+    actAs(admin);
+    const memberKey = (await createApiKey(project.slug, "Member's", "WRITE")).key!;
+    await prisma.teamMember.update({ where: { id: admin.memberId }, data: { role: "MEMBER" } });
+
+    const other = { id: "user-42", name: "Someone else", email: "e2e-other@example.com" };
+    expect((await send("POST", "/posts", { board: "feature-requests", title: "Export", author: other }, memberKey)).status).toBe(200);
+    expect((await send("POST", "/conversations", { user: other, body: "Hello" }, memberKey)).status).toBe(200);
+    // Someone new is still created with what's given.
+    await send("POST", "/posts", { board: "feature-requests", title: "Import", author: { id: "user-7", name: "Kim" } }, memberKey);
+
+    const people = await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, include: { user: true }, orderBy: { externalId: "asc" } });
+    expect(people.map((person) => [person.externalId, person.user.name, person.email])).toEqual([
+      ["user-42", "Sam", "e2e-sam@example.com"],
+      ["user-7", "Kim", null],
+    ]);
+    // The owner's key still changes them.
+    await send("POST", "/posts", { board: "feature-requests", title: "Search", author: other }, writeKey);
+    expect(await prisma.ssoIdentity.findFirst({ where: { projectId: project.id, externalId: "user-42" }, include: { user: true } })).toMatchObject({
+      email: "e2e-other@example.com",
+      user: { name: "Someone else" },
+    });
+  });
+
   test("comments as the key's creator show as the team", async () => {
     await post("Dark mode");
     expect(await send("POST", "/posts/1/comments", { body: "On it" }, writeKey)).toMatchObject({

@@ -9,7 +9,7 @@ import { appUrl } from "@/lib/hosts";
 import { attachmentLinks, checkUploads, claimUploads } from "../attachments";
 import { emitEvent } from "../events";
 import { notifyInbox } from "../live";
-import { upsertProjectUser } from "../project-users";
+import { namedProjectUser } from "../project-users";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, projectSlug, toApiStatus as toPostStatus } from "./read";
 
@@ -283,10 +283,8 @@ export const createConversation = defineOperation({
     subject: "Can't export to CSV",
     body: "The export button does nothing on the reports page.",
   },
-  run: async ({ projectId }, input) => {
-    const userId = input.user
-      ? await upsertProjectUser(projectId, input.user.id, { name: input.user.name, email: input.user.email })
-      : null;
+  run: async ({ actor, projectId }, input) => {
+    const userId = input.user ? await namedProjectUser(actor, projectId, input.user) : null;
     const { conversation, message } = await startConversation(projectId, {
       userId,
       email: input.email ?? null,
