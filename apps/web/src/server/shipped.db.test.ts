@@ -3,9 +3,11 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@tuti/db";
 import { handlers, projectUnsubscribeToken } from "@tuti/jobs";
 import { startSmtpFake } from "@tuti/testkit/smtp";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { POST as unsubscribe } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
+import UnsubscribePage from "@/app/portal/[project]/(site)/unsubscribe/page";
 import { upsertProjectUser } from "@/server/project-users";
 import { createComment, createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
@@ -377,7 +379,7 @@ describe("when a post ships", () => {
     expect(emailsTo(voter.email).map((e) => e.subject)).toEqual(["Done: Elsewhere"]);
   });
 
-  test("a project's unsubscribe link stops that project's emails only: another project's portal refuses it", async () => {
+  test("a project's unsubscribe link stops that project's emails only: another project's portal refuses it, and nowhere takes the bare token", async () => {
     const voter = await verified("Voter");
     const otherOwner = await signUp("Other owner");
     const other = await createProject(otherOwner);
@@ -386,8 +388,8 @@ describe("when a post ships", () => {
     const [email] = emailsTo(voter.email);
     // The link carries the person's token for this project.
     expect(new URL(email!.headers["list-unsubscribe"]!.slice(1, -1)).searchParams.get("token")).toBe(await tokenOf(voter.id));
-    // Links sent before per-project tokens carry the person's one token, still read for now.
-    const legacy = (await prisma.user.findUniqueOrThrow({ where: { id: voter.id } })).unsubscribeToken;
+    // The person's one secret, which per-project tokens are made from: never a link by itself.
+    const bare = (await prisma.user.findUniqueOrThrow({ where: { id: voter.id } })).unsubscribeToken;
 
     const oneClick = (slug: string, token: string) =>
       unsubscribe(
@@ -397,29 +399,21 @@ describe("when a post ships", () => {
         }),
         { params: Promise.resolve({ project: slug }) },
       );
+    const unsubscribePage = async (slug: string, token: string) =>
+      renderToStaticMarkup(
+        await UnsubscribePage({ params: Promise.resolve({ project: slug }), searchParams: Promise.resolve({ token }) } as PageProps<"/portal/[project]/unsubscribe">),
+      ).replaceAll("&#x27;", "'");
     const optOuts = async () => (await prisma.emailOptOut.findMany({ where: { userId: voter.id }, select: { projectId: true } })).map((o) => o.projectId);
 
-    // The one token works only on a project that has emailed them; a project's own token, only on that project.
-    expect((await oneClick(other.slug, legacy)).status).toBe(404);
+    // Another project's portal refuses this project's token, and neither takes the bare one.
     expect((await oneClick(other.slug, await tokenOf(voter.id))).status).toBe(404);
+    expect((await oneClick(other.slug, bare)).status).toBe(404);
+    expect((await oneClick(project.slug, bare)).status).toBe(404);
+    expect(await unsubscribePage(project.slug, bare)).toContain("This link doesn't work");
     expect(await optOuts()).toEqual([]);
 
-    // Once the other project has emailed them (a reply), its portal takes the one token, never this project's own.
-    const elsewhere = await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: other.id }, { board: "feature-requests", title: "Elsewhere" });
-    const comment = await call(createComment, { actor: { kind: "user", userId: otherOwner.id }, projectId: other.id }, { number: elsewhere.number, body: "Thanks" });
-    const reply = { commentId: comment.id, userId: voter.id };
-    // Claimed but not sent yet: not emailed.
-    await prisma.replyEmail.upsert({ where: { commentId_userId: reply }, create: { ...reply, sentAt: null }, update: { sentAt: null } });
-    expect((await oneClick(other.slug, legacy)).status).toBe(404);
-    expect(await optOuts()).toEqual([]);
-    await prisma.replyEmail.update({ where: { commentId_userId: reply }, data: { sentAt: new Date() } });
-    expect((await oneClick(other.slug, await tokenOf(voter.id))).status).toBe(404);
-    expect(await optOuts()).toEqual([]);
-    expect((await oneClick(other.slug, legacy)).status).toBe(200);
-    expect(await optOuts()).toEqual([other.id]);
-
-    // The project that sent it takes it (a shipped email).
-    expect((await oneClick(project.slug, legacy)).status).toBe(200);
-    expect((await optOuts()).sort()).toEqual([project.id, other.id].sort());
+    // The project that sent it takes its own.
+    expect((await oneClick(project.slug, await tokenOf(voter.id))).status).toBe(200);
+    expect(await optOuts()).toEqual([project.id]);
   });
 });
