@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { REPLY_PREFIXES, stripQuotes } from "./email-quotes";
+import { MAX_SCAN, REPLY_PREFIXES, stripQuotes } from "./email-quotes";
 
 test.each([
   ["English", "Thanks, that worked!\n\nOn Mon, 27 Oct 2026 at 10:00, Acme Support <support@acme.tuti.email> wrote:\n> Try Settings → Export."],
@@ -57,4 +57,21 @@ test("kept whole: a forward, text with no quote, and a reply that's only a quote
 test("reply prefixes come off subjects", () => {
   expect("Re: AW: Fwd:  Export broken".replace(REPLY_PREFIXES, "")).toBe("Export broken");
   expect("Re[2]: Export".replace(REPLY_PREFIXES, "")).toBe("Export");
+});
+
+test("a long run of quoted lines with the sender's own words after it is kept (its time: email-quotes.live.test.ts)", () => {
+  const text = `Hello\n${">\n".repeat(40_000)}Not quoted`;
+  expect(stripQuotes(text)).toEqual({ text: text.trim(), stripped: false });
+  expect(stripQuotes(`Hello\n${">\n".repeat(40_000)}`)).toEqual({ text: "Hello", stripped: true });
+});
+
+test("only the start of a long message is looked at for its quote, and what lies past it isn't taken for quoted", () => {
+  const long = "Words.\n".repeat(MAX_SCAN / 7);
+  // A quote past the start is the message's own text.
+  expect(stripQuotes(`Hello\n${long}On Mon, Olive wrote:\n> earlier`).stripped).toBe(false);
+  // Quoted lines running past the start to the end: cut, as the trailing quote they are.
+  expect(stripQuotes(`Hello\n${"> earlier\n".repeat(MAX_SCAN / 10 + 1000)}`)).toEqual({ text: "Hello", stripped: true });
+  // Quoted lines running past the start, the sender's own words after them: kept.
+  const quoted = `Hello\n${"> earlier\n".repeat(MAX_SCAN / 10)}My own words`;
+  expect(stripQuotes(quoted)).toEqual({ text: quoted, stripped: false });
 });

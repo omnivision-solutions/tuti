@@ -88,6 +88,166 @@ test("an email with only an HTML body (an image in it, no plain-text part) arriv
   expect(conversation!.messages[0]!.original).toContain("> Can you try again?");
 });
 
+test("an email with only an HTML body keeps the levels of the quotes it quotes, five deep", async () => {
+  const { project, address } = await setup();
+  const raw = [
+    "From: Kim Lee <e2e-kim@example.com>",
+    `To: ${address}`,
+    "Subject: Export",
+    `Message-ID: <${crypto.randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    `<p>Thanks</p>On Mon, Olive wrote:${[1, 2, 3, 4, 5, 6].map((n) => `<blockquote>Level ${n}`).join("")}`,
+    "",
+  ].join("\r\n");
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200 });
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("Thanks");
+  const original = conversation!.messages[0]!.original!;
+  expect(original).toContain("> > Level 2");
+  expect(original).toContain("> > > > > Level 5");
+  expect(original).toContain("> > > > > Level 6");
+});
+
+test("an email whose HTML quotes very deep and long arrives with its reply (its time: email-text.live.test.ts)", async () => {
+  const { project, address } = await setup();
+  const quotes = `On Mon, Olive wrote:${"<blockquote>Earlier".repeat(195)}${"x<br>".repeat(100_000)}`;
+  const raw = [
+    "From: Kim Lee <e2e-kim@example.com>",
+    `To: ${address}`,
+    "Subject: Export",
+    `Message-ID: <${crypto.randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    `<p>The export fails.</p>${quotes}`,
+    "",
+  ].join("\r\n");
+  expect(await postEmail(raw, { recipient: address })).toEqual({ status: 200, body: { outcome: "added" } });
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails.");
+});
+
+test("an email whose HTML part comes beside its text part, not instead of it, arrives with both", async () => {
+  const { project, address } = await setup();
+  const raw = [
+    "From: Kim Lee <e2e-kim@example.com>",
+    `To: ${address}`,
+    "Subject: Export",
+    `Message-ID: <${crypto.randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="mixed"',
+    "",
+    "--mixed",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "The export fails:",
+    "    at run (app.js:10:5)",
+    "--mixed",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    "<p>Sent from <b>Acme</b></p>",
+    "--mixed--",
+    "",
+  ].join("\r\n");
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200 });
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails:\n    at run (app.js:10:5)\nSent from Acme");
+});
+
+test("an email with its text and HTML versions and an HTML part beside them arrives with its words once", async () => {
+  const { project, address } = await setup();
+  const raw = [
+    "From: Kim Lee <e2e-kim@example.com>",
+    `To: ${address}`,
+    "Subject: Export",
+    `Message-ID: <${crypto.randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="mixed"',
+    "",
+    "--mixed",
+    'Content-Type: multipart/alternative; boundary="alt"',
+    "",
+    "--alt",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "The export fails.",
+    "--alt",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    "<p>The export fails.</p>",
+    "--alt--",
+    "--mixed",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    "<p>Sent via Acme</p>",
+    "--mixed--",
+    "",
+  ].join("\r\n");
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200 });
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails.\nSent via Acme");
+});
+
+/** A multipart/mixed email of these parts, each its Content-Type and body; a part of parts is a multipart/alternative. */
+function mixed(address: string, parts: ([string, string] | [string, string][])[]) {
+  const part = ([type, body]: [string, string]) => [`Content-Type: ${type}; charset=utf-8`, "", body];
+  const lines = (boundary: string, items: typeof parts): string[] =>
+    items.flatMap((item) => [
+      `--${boundary}`,
+      ...(typeof item[0] === "string" ? part(item as [string, string]) : ['Content-Type: multipart/alternative; boundary="alt"', "", ...lines("alt", item as [string, string][]), "--alt--"]),
+    ]);
+  return [
+    "From: Kim Lee <e2e-kim@example.com>",
+    `To: ${address}`,
+    "Subject: Export",
+    `Message-ID: <${crypto.randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="mixed"',
+    "",
+    ...lines("mixed", parts),
+    "--mixed--",
+    "",
+  ].join("\r\n");
+}
+
+test("an HTML part beside the text whose lists nest very deep arrives with its words, indented five levels at most", async () => {
+  const { project, address } = await setup();
+  const raw = mixed(address, [["text/plain", "The export fails."], ["text/html", "<ul><li>Item".repeat(1000)]]);
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200, body: { outcome: "added" } });
+  const [conversation] = await conversations(project.id);
+  const body = conversation!.messages[0]!.body;
+  expect(body).toMatch(/^The export fails\.\n \* Item\n/);
+  expect(Math.max(...body.split("\n").map((line) => line.length - line.trimStart().length))).toBeLessThanOrEqual(15);
+});
+
+test("an email whose long HTML version comes with an HTML part beside it arrives with its words once", async () => {
+  const { project, address } = await setup();
+  const html = `<p>The export fails.</p>${"<blockquote>Earlier</blockquote>".repeat(10)}${"<p>More of the same.</p>".repeat(10_000)}`;
+  const raw = mixed(address, [
+    [
+      ["text/plain", "The export fails."],
+      ["text/html", html],
+    ],
+    ["text/html", "<p>Sent via Acme</p>"],
+  ]);
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200, body: { outcome: "added" } });
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails.\nSent via Acme");
+});
+
+test("an HTML reply that a list sends with its own text part after it arrives as the reply, in order, its quote cut", async () => {
+  const { project, address } = await setup();
+  const raw = mixed(address, [
+    ["text/html", "<p>The export fails.</p><div>On Mon, Olive wrote:<blockquote>Can you try again?</blockquote></div>"],
+    ["text/plain", "-- \nYou're on the Acme list."],
+  ]);
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200, body: { outcome: "added" } });
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails.");
+});
+
 test("the subdomain is the project's for good: taken names get a number, and a renamed project keeps its own", async () => {
   const first = await setup();
   await prisma.project.update({ where: { id: first.project.id }, data: { slug: `${first.project.slug}-renamed` } });
