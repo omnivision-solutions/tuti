@@ -177,9 +177,16 @@ class StarterGone extends Error {
   }
 }
 
-/** Stops the import (StarterGone) unless whoever started it is still an owner or admin of its project: checked as a page starts and again in its save. */
+/**
+ * Stops the import (StarterGone) unless whoever started it is still an owner or admin of its project: checked as a page
+ * starts and again in its save, where their team row is held till the save commits, so removing them or changing their
+ * role waits for the page (which they were still allowed to bring), and the next page sees it.
+ */
 async function assertStarterAdmin(db: Tx, row: Pick<DataImport, "projectId" | "startedById">): Promise<void> {
-  const admin = row.startedById && (await db.teamMember.findFirst({ where: { projectId: row.projectId, userId: row.startedById, role: { in: ["OWNER", "ADMIN"] } }, select: { id: true } }));
+  const [admin] = await db.$queryRaw<{ id: string }[]>`
+    SELECT id FROM team_member
+    WHERE "projectId" = ${row.projectId} AND "userId" = ${row.startedById} AND role IN ('OWNER', 'ADMIN')
+    FOR SHARE`;
   if (!admin) {
     throw new StarterGone();
   }

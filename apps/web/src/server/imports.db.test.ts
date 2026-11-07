@@ -218,6 +218,40 @@ test.each([
   expect(await usersOf()).toEqual([]);
 });
 
+test("removing an import's starter, or changing their role, while a page saves waits for the page, which the next page then stops on", async () => {
+  const admin = await addMember(project.id, "ADMIN");
+  const row = await running();
+  await prisma.dataImport.update({ where: { id: row.id }, data: { startedById: admin.id } });
+  const transaction = prisma.$transaction.bind(prisma) as (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) => Promise<unknown>;
+  let demoted!: Promise<unknown>;
+  // The demotion comes in, from another connection, once the page has saved and before it commits.
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) =>
+    transaction(async (tx) => {
+      const saved = await fn(tx);
+      demoted = prisma.teamMember.update({ where: { id: admin.memberId }, data: { role: "MEMBER" } }).then(() => undefined);
+      await waitingOnTeamMember();
+      return saved;
+    }, options)) as never);
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ step: "done" });
+  await demoted;
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 3, leftOut: {} } } });
+  expect(await prisma.teamMember.findUniqueOrThrow({ where: { id: admin.memberId } })).toMatchObject({ role: "MEMBER" });
+});
+
+/** Until a change to a team member's row (in another connection) waits on a lock: in this file's own database only. */
+async function waitingOnTeamMember() {
+  for (let tries = 0; tries < 100; tries++) {
+    const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid() AND query ILIKE '%UPDATE%team_member%'`;
+    if (waiting > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("No change to a team member came to wait on a lock");
+}
+
 test("a stuck import goes on when it's looked at; one that hasn't moved for a day is failed by the daily job, its key cleared", async () => {
   const stuck = await running({ updatedAt: new Date(Date.now() - 10 * 60_000) });
   expect((await call(getImport, asOwner(), {})).import).toMatchObject({ id: stuck.id, state: "running" });
