@@ -47,10 +47,12 @@ const html = (text: string) =>
 /**
  * Where an article or collection goes: its collection, else (with more than one section) its section, which comes as a
  * top-level collection; a help center of one section is its collections themselves. `sections`: the help center's,
- * without its changelogs' (helpCenter).
+ * without its changelogs' (helpCenter). One in no section is in the default one.
  */
-const parentOf = (item: { sectionId: string | null }, parent: string | null, sections: FerndeskSection[]) =>
-  parent ?? (sections.length > 1 && sections.some((s) => s.id === item.sectionId) ? item.sectionId : null);
+function parentOf(item: { sectionId: string | null }, parent: string | null, sections: FerndeskSection[]) {
+  const section = item.sectionId ?? sections.find((s) => s.isDefault)?.id;
+  return parent ?? (sections.length > 1 && sections.some((s) => s.id === section) ? section! : null);
+}
 
 /** When an entry is dated: when it went live on the day it shows, else that day, else when it went live or was made. */
 const entryDate = (e: FerndeskEntry) => (e.date && !e.publishedAt?.startsWith(e.date) ? e.date : (e.publishedAt ?? e.date ?? e.createdAt));
@@ -122,17 +124,18 @@ export const ferndeskSource: ImportSourceDefinition = {
     /**
      * The help center without its changelogs: Ferndesk lists each changelog as a collection too, its entries as
      * articles, and the section it sits in as any (the Changelog part brings them). A section with nothing else in it,
-     * no other collection and no article outside one, is a changelog's own.
+     * no other collection and no article outside one, is a changelog's own. What's in no section is in the default one.
      */
     let help: Promise<{ sections: FerndeskSection[]; changelogs: Set<string> }> | undefined;
     const helpCenter = () =>
       (help ??= Promise.all([allSections(), allCollections(), allChangelogs()]).then(async ([sections, all, logs]) => {
         const ids = new Set(logs.map((log) => log.id));
-        const shared = (s: FerndeskSection) => !logs.some((log) => log.sectionId === s.id) || all.some((c) => c.sectionId === s.id && !ids.has(c.id));
+        const home = sections.find((s) => s.isDefault)?.id ?? null;
+        const shared = (s: FerndeskSection) => !logs.some((log) => (log.sectionId ?? home) === s.id) || all.some((c) => (c.sectionId ?? home) === s.id && !ids.has(c.id));
         const candidates = sections.filter((s) => !shared(s));
         // ponytail: whether one has articles outside a collection takes reading every article, once per connection, so
         // only when there's a section to drop; ask Ferndesk for a section filter if help centers grow to thousands.
-        const loose = candidates.length ? new Set((await api.all<FerndeskArticle>("/articles", { status: "all" })).filter((a) => !a.collectionId).map((a) => a.sectionId)) : new Set();
+        const loose = candidates.length ? new Set((await api.all<FerndeskArticle>("/articles", { status: "all" })).filter((a) => !a.collectionId).map((a) => a.sectionId ?? home)) : new Set();
         return { sections: sections.filter((s) => shared(s) || loose.has(s.id)), changelogs: ids };
       }));
     let entries: Promise<FerndeskEntry[]> | undefined;

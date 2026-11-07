@@ -202,6 +202,35 @@ test("a section a changelog shares with an article in no collection stays the he
   expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(4);
 });
 
+test("a section a changelog shares with other collections stays the help center's, with them in it", async () => {
+  fake.fixtures.changelogs[0]!.sectionId = "sect_guides";
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_changelog");
+  await importParts(["docs"], { publishArticles: true });
+  expect((await collections()).map((c) => [c.name, c.parent?.name ?? null])).toEqual([
+    ["Guides", null],
+    ["API", null],
+    ["Billing", "Guides"],
+    ["Getting started", "Guides"],
+    ["Invoices", "Billing"],
+  ]);
+});
+
+test("collections in no section are the default section's: one holding them beside a changelog stays, with them in it", async () => {
+  fake.fixtures.changelogs[0]!.sectionId = "sect_guides";
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_changelog");
+  for (const collection of fake.fixtures.collections) {
+    collection.sectionId = null;
+  }
+  await importParts(["docs"], { publishArticles: true });
+  expect((await collections()).map((c) => [c.name, c.parent?.name ?? null])).toEqual([
+    ["Guides", null],
+    ["API", null],
+    ["Billing", "Guides"],
+    ["Getting started", "Guides"],
+    ["Invoices", "Billing"],
+  ]);
+});
+
 test("the changelog comes across: entries oldest first, a page at a time, published at their dates and drafts as drafts with their draft's text, tags as tags, images; nothing emailed; again, nothing twice", async () => {
   const emailed = mailbox.emails.length;
   // One to a list page and two to an import page, so both are read past their first.
