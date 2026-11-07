@@ -290,18 +290,16 @@ export async function InboxPanes({
                         }
                         actions={
                           <span className="flex items-center gap-1.5">
-                            {/* Waiting for the team, where the view doesn't already say so. */}
+                            {/* Waiting for the team, where the view doesn't already say so: the highlight colour, said on
+                                hover and to the ear. Relative, over the row's link, so the hover reaches it. */}
                             {needsReply && view !== "open" && (
-                              <span title="Needs reply" className="size-2 rounded-full bg-primary">
-                                <span className="sr-only">Needs reply</span>
-                              </span>
+                              <span role="img" aria-label="Needs reply" title="Needs reply" className="relative size-2 rounded-full bg-highlight-foreground" />
                             )}
-                            {/* Who has it, as their face (their name on hover, and to the ear). */}
+                            {/* Who has it, as their face (their name on hover, and to the ear; Avatar is relative already). */}
                             {c.assignee && (
-                              <Avatar title={`Assigned to ${c.assignee.name}`} className="size-5">
+                              <Avatar role="img" aria-label={`Assigned to ${c.assignee.name}`} title={`Assigned to ${c.assignee.name}`} className="size-5">
                                 {c.assignee.image && <AvatarImage src={c.assignee.image} alt="" />}
                                 <AvatarFallback className="text-[0.625rem]">{initial(c.assignee.name)}</AvatarFallback>
-                                <span className="sr-only">Assigned to {c.assignee.name}</span>
                               </Avatar>
                             )}
                             {/* Short to the eye, in words to the ear (and on hover: over the row's link, opening it too). */}

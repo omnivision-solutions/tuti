@@ -141,8 +141,8 @@ the list picks none to approve at once.
   of the width (22–25rem), the conversation the rest; on phones and
   tablets the list or the conversation, its Back to the list. A row reads in two
   lines, as Featurebase's: who and their company on one (cut short, in full on hover) with,
-  at the right, a dot when it needs a reply (not in the Needs reply view, where every row
-  would), the assignee's face and its age, short ("4m": how long they've waited, or since
+  at the right, a dot in the highlight colour when it needs a reply (not in the Needs reply
+  view, where every row would), the assignee's face (their name on hover) and its age, short ("4m": how long they've waited, or since
   the latest message); the subject and the latest message's first line on the other, cut
   short (in Snoozed, when it's back first). Its number is in the conversation, and read out
   with the row.

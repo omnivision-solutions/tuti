@@ -77,10 +77,17 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows.last().getByRole("link").first()).toHaveAccessibleName(/\(#1\)$/);
   // Waiting on the team says so where not all of them are (not in Needs reply, where it would be every row);
   // "Waiting on user" is the view of those the team answered.
-  await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(0);
+  await expect(rows.getByRole("img", { name: "Needs reply" })).toHaveCount(0);
   await expectMoreView(owner, "Waiting on user 0");
   await views.getByRole("link", { name: "Unassigned 2" }).click();
-  await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(2);
+  await expect(rows.getByRole("img", { name: "Needs reply" })).toHaveCount(2);
+  // A dot, said on hover too: over the row's link (which covers the row), so the pointer reaches it.
+  const dot = rows.first().getByRole("img", { name: "Needs reply" });
+  await expect(dot).toHaveAttribute("title", "Needs reply");
+  expect(await dot.evaluate((dot) => {
+    const box = dot.getBoundingClientRect();
+    return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === dot;
+  })).toBe(true);
   await checkpoint(owner, "inbox-unassigned");
   await views.getByRole("link", { name: "Needs reply 2" }).click();
   await expect(views.getByRole("link", { name: "Needs reply 2" })).toHaveAttribute("aria-current", "page");
@@ -267,6 +274,13 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me"]);
   await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
+  // Its row in the list beside it shows who has it: their face, their name on hover (over the row's link) and to the ear.
+  const assignee = list.getByRole("img", { name: "Assigned to Olive Owner" });
+  await expect(assignee).toHaveAttribute("title", "Assigned to Olive Owner");
+  expect(await assignee.evaluate((face) => {
+    const box = face.getBoundingClientRect();
+    return face.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+  })).toBe(true);
   await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeFocused();
   // Beside the messages, the linked posts aren't squeezed by who it's with under them: their button shows whole.
   await expect(owner.getByRole("region", { name: "Linked posts" }).getByRole("button", { name: "Link post…" })).toBeInViewport({ ratio: 1 });
