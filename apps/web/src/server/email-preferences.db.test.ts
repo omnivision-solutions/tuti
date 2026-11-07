@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { projectUnsubscribeToken } from "@tuti/jobs";
 import { expect, test } from "vitest";
 
 import { emailedOnCompletion } from "@/server/operations/code-changes";
@@ -77,12 +78,15 @@ test('"Posts I voted on or follow" off: voters, commenters and followers who tur
 test('"Email me nothing" is the unsubscribe link\'s opt-out, both ways, and only for that project', async () => {
   const { project, voter, ship } = await fixture();
   const other = await createProject(await signUp("Other owner"));
-  const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: voter.id }, select: { unsubscribeToken: true } });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: voter.id }, select: { unsubscribeToken: true } });
+  const unsubscribeToken = projectUnsubscribeToken(project.id, { id: voter.id, ...user });
+  const otherToken = projectUnsubscribeToken(other.id, { id: voter.id, ...user });
 
   actAs(voter);
   expect(await setEmailPreference(project.slug, "unsubscribed", true)).toEqual({ changelog: false });
   expect((await findOptOut(project.slug, unsubscribeToken))?.optedOut).toBe(true);
-  expect((await findOptOut(other.slug, unsubscribeToken))?.optedOut).toBe(false);
+  expect((await findOptOut(other.slug, otherToken))?.optedOut).toBe(false);
+  expect(await findOptOut(other.slug, unsubscribeToken)).toBeNull();
   expect(await setEmailPreference(project.slug, "unsubscribed", false)).toEqual({ changelog: false });
   expect((await findOptOut(project.slug, unsubscribeToken))?.optedOut).toBe(false);
 

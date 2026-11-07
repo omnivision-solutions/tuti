@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { handlers, projectUnsubscribeToken } from "@tuti/jobs";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -37,8 +37,7 @@ const emailsTo = (address: string) =>
 const setStatus = (number: number, status: "completed" | "open") => call(updatePost, as(owner.id), { number, status });
 const due = async (postId: string) =>
   (await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt;
-const tokenOf = async (userId: string) =>
-  (await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { unsubscribeToken: true } })).unsubscribeToken;
+const tokenOf = async (userId: string) => projectUnsubscribeToken(project.id, await prisma.user.findUniqueOrThrow({ where: { id: userId } }));
 
 describe("when a post ships", () => {
   test("its author, voters and commenters hear about it once, at addresses someone vouched for", async () => {
@@ -376,5 +375,50 @@ describe("when a post ships", () => {
       status: "completed",
     });
     expect(emailsTo(voter.email).map((e) => e.subject)).toEqual(["Done: Elsewhere"]);
+  });
+
+  test("a project's unsubscribe link stops that project's emails only: another project's portal refuses it", async () => {
+    const voter = await verified("Voter");
+    const otherOwner = await signUp("Other owner");
+    const other = await createProject(otherOwner);
+    const post = await call(createPost, as(voter.id), { board: "feature-requests", title: "Dark mode" });
+    await setStatus(post.number, "completed");
+    const [email] = emailsTo(voter.email);
+    // Still the person's one token for now (the previous release's web reads only that).
+    const legacy = new URL(email!.headers["list-unsubscribe"]!.slice(1, -1)).searchParams.get("token")!;
+    expect(legacy).toBe((await prisma.user.findUniqueOrThrow({ where: { id: voter.id } })).unsubscribeToken);
+
+    const oneClick = (slug: string, token: string) =>
+      unsubscribe(
+        new Request(`http://${slug}.localhost:3100/portal/${slug}/unsubscribe/confirm?token=${encodeURIComponent(token)}`, {
+          method: "POST",
+          body: new URLSearchParams({ "List-Unsubscribe": "One-Click" }),
+        }),
+        { params: Promise.resolve({ project: slug }) },
+      );
+    const optOuts = async () => (await prisma.emailOptOut.findMany({ where: { userId: voter.id }, select: { projectId: true } })).map((o) => o.projectId);
+
+    // The one token works only on a project that has emailed them; a project's own token, only on that project.
+    expect((await oneClick(other.slug, legacy)).status).toBe(404);
+    expect((await oneClick(other.slug, await tokenOf(voter.id))).status).toBe(404);
+    expect(await optOuts()).toEqual([]);
+
+    // Once the other project has emailed them (a reply), its portal takes the one token, never this project's own.
+    const elsewhere = await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: other.id }, { board: "feature-requests", title: "Elsewhere" });
+    const comment = await call(createComment, { actor: { kind: "user", userId: otherOwner.id }, projectId: other.id }, { number: elsewhere.number, body: "Thanks" });
+    const reply = { commentId: comment.id, userId: voter.id };
+    // Claimed but not sent yet: not emailed.
+    await prisma.replyEmail.upsert({ where: { commentId_userId: reply }, create: { ...reply, sentAt: null }, update: { sentAt: null } });
+    expect((await oneClick(other.slug, legacy)).status).toBe(404);
+    expect(await optOuts()).toEqual([]);
+    await prisma.replyEmail.update({ where: { commentId_userId: reply }, data: { sentAt: new Date() } });
+    expect((await oneClick(other.slug, await tokenOf(voter.id))).status).toBe(404);
+    expect(await optOuts()).toEqual([]);
+    expect((await oneClick(other.slug, legacy)).status).toBe(200);
+    expect(await optOuts()).toEqual([other.id]);
+
+    // The project that sent it takes it (a shipped email).
+    expect((await oneClick(project.slug, legacy)).status).toBe(200);
+    expect((await optOuts()).sort()).toEqual([project.id, other.id].sort());
   });
 });

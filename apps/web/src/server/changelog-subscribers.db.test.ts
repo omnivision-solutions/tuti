@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { changelogReach, type ChangelogReach, handlers, reached, resumeToken, subscriberCount, subscribersLeft } from "@tuti/jobs";
+import { changelogReach, type ChangelogReach, handlers, projectUnsubscribeToken, reached, resumeToken, subscriberCount, subscribersLeft } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
@@ -152,7 +152,7 @@ async function waitingOnALock() {
 
 /** `user` turns the project's emails off (the unsubscribe link in a shipped email). */
 async function optOut(userId: string) {
-  const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  const unsubscribeToken = projectUnsubscribeToken(project.id, await prisma.user.findUniqueOrThrow({ where: { id: userId } }));
   const url = `http://${project.slug}.localhost:3100/portal/${project.slug}/unsubscribe/confirm?token=${unsubscribeToken}`;
   expect((await optOutRoute(new Request(url, { method: "POST" }), { params: params() })).status).toBe(303);
 }
@@ -654,7 +654,7 @@ describe("publishing with Email subscribers", () => {
     const leeToken = await confirmed(lee);
     await confirmed(ada.email);
     // The run read all three; as Kim's email goes out, Lee unsubscribes and Ada turns the project's emails off.
-    const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: ada.id } });
+    const unsubscribeToken = projectUnsubscribeToken(project.id, await prisma.user.findUniqueOrThrow({ where: { id: ada.id } }));
     sending.hook = async (to) => {
       if (to === kim) {
         sending.hook = null;
@@ -810,7 +810,7 @@ describe("publishing with Email subscribers", () => {
     const ada = await signUp("Ada");
     await optOut(ada.id);
     const unsubscribePage = async () => {
-      const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: ada.id } });
+      const unsubscribeToken = projectUnsubscribeToken(project.id, await prisma.user.findUniqueOrThrow({ where: { id: ada.id } }));
       const rendered = await UnsubscribePage({
         params: params(),
         searchParams: Promise.resolve({ token: unsubscribeToken }),
@@ -842,7 +842,7 @@ describe("publishing with Email subscribers", () => {
   test("not to people who turned the project's emails off", async () => {
     const kim = await signUp("Kim");
     await confirmed(kim.email);
-    const { unsubscribeToken } = await prisma.user.findUniqueOrThrow({ where: { id: kim.id } });
+    const unsubscribeToken = projectUnsubscribeToken(project.id, await prisma.user.findUniqueOrThrow({ where: { id: kim.id } }));
     const url = `http://${project.slug}.localhost:3100/portal/${project.slug}/unsubscribe/confirm?token=${unsubscribeToken}`;
     await optOutRoute(new Request(url, { method: "POST" }), { params: params() });
     const lee = newAddress();
