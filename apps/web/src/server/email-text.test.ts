@@ -2,6 +2,9 @@ import { expect, test } from "vitest";
 
 import { htmlAsText, MARKED_LEVELS, MAX_DEPTH, MAX_HTML } from "./email-text";
 
+/** What nests in a way the library goes over again at each level. */
+const NESTING = ["<blockquote>Earlier", "<ul><li>Earlier", "<ol><li>Earlier", '<a href="https://acme.example/">Earlier', "<h1>Earlier"];
+
 const indent = (text: string) => Math.max(...text.split("\n").map((line) => line.length - line.trimStart().length));
 
 test("quotes are marked as deep as they go, up to five, and not again below that", () => {
@@ -26,8 +29,18 @@ test("only so much HTML is read, and only so deep (its time: email-text.live.tes
   expect(htmlAsText(`<p>Start</p>${"x".repeat(MAX_HTML)}<p>End</p>`)).not.toContain("End");
   expect(htmlAsText(`<p>Start</p>${"<div>".repeat(MAX_DEPTH + 10)}Deep`)).not.toContain("Deep");
   // Deep quotes or lists over many lines: the text grows with the HTML, not with how deep it nests.
-  for (const open of ["<blockquote>Earlier", "<ul><li>Earlier", "<ol><li>Earlier"]) {
+  for (const open of NESTING) {
     const html = `${open.repeat(195)}${"x<br>".repeat(50_000)}`;
     expect(htmlAsText(html).length, open).toBeLessThan(html.length * 4);
   }
+});
+
+test("links and headings within links and headings take their form five levels deep, and not below that", () => {
+  // A link opened inside another isn't closed by it: each gives its address after its words, five at most.
+  const links = htmlAsText(`<p>See ${'<a href="https://acme.example/docs">the docs'.repeat(MARKED_LEVELS + 5)}</p>`);
+  expect(links).toMatch(/^See the docs/);
+  expect(links.split("[https://acme.example/docs]")).toHaveLength(MARKED_LEVELS + 1);
+  // A plain link and heading as ever.
+  expect(htmlAsText('<h2>Export</h2><p>See <a href="https://acme.example/docs">the docs</a>.</p>')).toBe("EXPORT\n\nSee the docs [https://acme.example/docs].");
+  expect(htmlAsText(`${"<h1>Title ".repeat(MARKED_LEVELS + 5)}`)).toMatch(/^TITLE/);
 });

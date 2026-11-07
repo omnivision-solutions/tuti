@@ -13,10 +13,12 @@ export const PARSER_OPTIONS = { maxHtmlLengthToParse: 0, skipTextToHtml: true, s
 
 /**
  * An email's HTML as text: links kept, images left out, quotes as "> ". Only so much of it and so deep (the reply is
- * at the top). Quotes and lists are marked and indented five levels deep, and not again below that, as each level
- * goes over all it holds once more: the text grows with the HTML rather than with how deep it nests.
+ * at the top). Quotes, lists, links and headings take the library's own form five levels deep, and not again below
+ * that, as each level goes over all it holds once more (marks, indents, or works on each word): the text grows with
+ * the HTML rather than with how deep it nests.
  */
 export function htmlAsText(html: string): string {
+  const heading = nested("heading", "block");
   return htmlToText(html.slice(0, MAX_HTML), {
     wordwrap: false,
     limits: { maxDepth: MAX_DEPTH },
@@ -25,8 +27,17 @@ export function htmlAsText(html: string): string {
       { selector: "blockquote", format: "quote" },
       { selector: "ul", format: "unordered" },
       { selector: "ol", format: "ordered" },
+      { selector: "a", format: "link" },
+      ...["h1", "h2", "h3", "h4", "h5", "h6"].map((selector) => ({ selector, format: "cappedHeading" })),
     ],
-    formatters: { quote: nested("blockquote", "block"), unordered: nested("unorderedList", "flatList"), ordered: nested("orderedList", "flatList"), flatList },
+    formatters: {
+      quote: nested("blockquote", "block"),
+      unordered: nested("unorderedList", "flatList"),
+      ordered: nested("orderedList", "flatList"),
+      link: nested("anchor", "inline"),
+      cappedHeading: heading,
+      flatList,
+    },
   });
 }
 
@@ -55,28 +66,25 @@ const flatList: FormatCallback = (elem, walk, builder) => {
 };
 
 /**
- * An email's words: its text parts as written, then any HTML part that comes beside them (a list's footer, say) rather
- * than as another version of the text, as text; for an email in HTML alone, its HTML as text. `mail` is parsed with
- * PARSER_OPTIONS.
+ * An email's words: its text, or for an email in HTML alone, its HTML as text. An HTML part that comes beside the text
+ * (a list's footer, say) rather than as another version of it is read in its place among the parts, as text. `mail`
+ * is parsed with PARSER_OPTIONS.
  */
 export async function emailText(raw: Buffer, mail: ParsedMail): Promise<string> {
   if (!mail.text?.trim()) {
     return typeof mail.html === "string" ? htmlAsText(mail.html) : "";
   }
-  if (!mail.textConversionError) {
-    return mail.text;
-  }
-  const beside = trimLineBreaks(htmlAsText((await htmlBesideText(raw)).join("<br>")));
-  return beside ? `${mail.text.trim()}\n${beside}` : mail.text;
+  return mail.textConversionError ? partsText(raw) : mail.text;
 }
 
 type Part = { contentType?: string; textContent?: string; children?: Part[] };
 
 /**
- * Which HTML parts come beside the text only the parser's tree of the parts says (not part of its typed API: the
- * inbound database tests of such emails fail if a release changes it), so the email is read again for it.
+ * The email's parts in order, as the parser joins them into its text, but with the HTML beside the text as text (up to
+ * MAX_HTML of it in all). Which parts those are only the parser's tree of the parts says (not part of its typed API:
+ * the inbound database tests of such emails fail if a release changes it), so the email is read again for it.
  */
-async function htmlBesideText(raw: Buffer): Promise<string[]> {
+async function partsText(raw: Buffer): Promise<string> {
   const parser = new MailParser(PARSER_OPTIONS);
   parser.end(raw);
   for await (const data of parser) {
@@ -86,17 +94,21 @@ async function htmlBesideText(raw: Buffer): Promise<string[]> {
       data.release();
     }
   }
-  const html: string[] = [];
+  const texts: string[] = [];
+  let html = MAX_HTML;
   const walk = (part: Part, alternative: boolean) => {
-    if (part.contentType === "text/html" && !alternative && part.textContent) {
-      html.push(part.textContent);
+    if (part.textContent && (part.contentType === "text/plain" || part.contentType === "message/delivery-status")) {
+      texts.push(part.textContent);
+    } else if (part.textContent && part.contentType === "text/html" && !alternative && html > 0) {
+      texts.push(trimLineBreaks(htmlAsText(part.textContent.slice(0, html))));
+      html -= part.textContent.length;
     }
     for (const child of part.children ?? []) {
       walk(child, alternative || part.contentType === "multipart/alternative");
     }
   };
   walk((parser as unknown as { tree?: Part }).tree ?? {}, false);
-  return html;
+  return texts.join("\n");
 }
 
 function trimLineBreaks(text: string) {

@@ -237,6 +237,17 @@ test("an email whose long HTML version comes with an HTML part beside it arrives
   expect(conversation!.messages[0]!.body).toBe("The export fails.\nSent via Acme");
 });
 
+test("an HTML reply that a list sends with its own text part after it arrives as the reply, in order, its quote cut", async () => {
+  const { project, address } = await setup();
+  const raw = mixed(address, [
+    ["text/html", "<p>The export fails.</p><div>On Mon, Olive wrote:<blockquote>Can you try again?</blockquote></div>"],
+    ["text/plain", "-- \nYou're on the Acme list."],
+  ]);
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200, body: { outcome: "added" } });
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails.");
+});
+
 test("the subdomain is the project's for good: taken names get a number, and a renamed project keeps its own", async () => {
   const first = await setup();
   await prisma.project.update({ where: { id: first.project.id }, data: { slug: `${first.project.slug}-renamed` } });
