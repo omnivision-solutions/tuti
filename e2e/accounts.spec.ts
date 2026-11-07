@@ -366,8 +366,9 @@ test("a portal user who forgot their password asks on the portal, sets it on the
   await ada.getByLabel("Confirm new password").fill("a brand new passphrase");
   await checkpoint(ada, "portal-set-new-password-on-app");
   await ada.getByRole("button", { name: "Set new password" }).click();
-  // Back through the portal: signing in on the app with the new one, and on to the portal.
-  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-in");
+  // Back through the portal: signing in on the app with the new one, told it's changed, and on to the portal.
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-in" && url.searchParams.get("reset") === "done");
+  await expect(ada.getByText("Your password was changed. Sign in with the new one.")).toBeVisible();
   await ada.getByLabel("Email").fill(ada.email);
   await ada.getByLabel("Password").fill("a brand new passphrase");
   await checkpoint(ada, "portal-sign-in-after-reset");

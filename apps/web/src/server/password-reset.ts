@@ -97,6 +97,6 @@ export async function setNewPassword(form: FormData): Promise<{ error: string } 
     // Otherwise used up since the check: the same as any other dead link.
     return { location: FAILED_PASSWORD_RESET_PATH };
   }
-  // Asked on a portal: back there, whose /continue signs them in on the app and hands over (lib/portal-handoff.ts).
-  return { location: reset.askedOn ? `${await portalAddress(reset.askedOn)}/continue` : "/sign-in?reset=done" };
+  // Asked on a portal: back there, whose /continue signs them in on the app (saying it's changed) and hands over (lib/portal-handoff.ts).
+  return { location: reset.askedOn ? `${await portalAddress(reset.askedOn)}/continue?reset=done` : "/sign-in?reset=done" };
 }

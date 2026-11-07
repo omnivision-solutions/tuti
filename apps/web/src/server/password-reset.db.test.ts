@@ -142,10 +142,10 @@ test("an app user gets an email with a link to the app; it sets a new password o
 test("asked on a portal, its own domain or its team's site: from the portal, a link to the app, then back to the portal", async () => {
   const { onDomain, domainHost, onSite } = await teamRunPortals();
   for (const [host, portal, back] of [
-    [portalHost(), project, `http://${portalHost()}/continue`],
-    [domainHost, onDomain, `http://${domainHost}/continue`],
+    [portalHost(), project, `http://${portalHost()}/continue?reset=done`],
+    [domainHost, onDomain, `http://${domainHost}/continue?reset=done`],
     // The site forwards the request to the portal's Tuti host.
-    [portalHost(onSite.slug), onSite, "https://site.example/help/continue"],
+    [portalHost(onSite.slug), onSite, "https://site.example/help/continue?reset=done"],
   ] as const) {
     expect(await ask(user.email, host)).toEqual({ sentTo: user.email });
     expect((await mailbox.latestTo(user.email)).text).toContain(`your account on ${portal.name}`);
@@ -191,7 +191,7 @@ test("setting a new password uses up the account's other reset links too", async
   await ask(someoneElse.email);
   const theirs = await linkTo(someoneElse.email);
 
-  expect(await setPassword(second)).toEqual({ location: `http://${portalHost()}/continue` });
+  expect(await setPassword(second)).toEqual({ location: `http://${portalHost()}/continue?reset=done` });
   expect(await view(first)).toEqual({ location: FAILED });
   expect(await setPassword(first, "yet another password")).toEqual({ location: FAILED });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
@@ -245,7 +245,7 @@ test("an account whose password was removed (opening a sign-in link before verif
   await prisma.account.deleteMany({ where: { userId: user.id, providerId: "credential" } });
   expect(await signsInWith(user.email, OLD_PASSWORD)).toBe(false);
   await ask(user.email, portalHost());
-  expect(await setPassword(await linkTo(user.email))).toEqual({ location: `http://${portalHost()}/continue` });
+  expect(await setPassword(await linkTo(user.email))).toEqual({ location: `http://${portalHost()}/continue?reset=done` });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
 });
 
