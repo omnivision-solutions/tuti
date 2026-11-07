@@ -1316,19 +1316,37 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
   await api("/conversations", { email: "e2e-long@example.com", body: "Message 1" });
-  for (let i = 2; i <= 55; i++) {
+  await api("/conversations/1/messages", { body: "Message 2" });
+  // The third, a reply with a tall image (from a view it isn't in: sending doesn't move on from it).
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.goto(`/app/${slug}/inbox/1?view=spam`);
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
+  await owner.locator('input[type="file"]').setInputFiles({ name: "tall.png", mimeType: "image/png", buffer: png(100, 600) });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText("tall.png");
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Message 3");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(messages).toHaveCount(3);
+  for (let i = 4; i <= 55; i++) {
     await api("/conversations/1/messages", { body: `Message ${i}` });
   }
-  await owner.setViewportSize({ width: 1280, height: 720 });
   await owner.goto(`/app/${slug}/inbox/1`);
-  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
   const earlier = owner.getByRole("link", { name: "Show earlier messages" });
   await expect(messages).toHaveCount(50);
   await expect(messages.first()).toContainText("Message 6");
   await expect(messages.last()).toContainText("Message 55");
   await expect(messages.last()).toBeInViewport();
 
-  // Scrolled up to it, the first message shown where it is on the screen.
+  // Scrolled up to it, the first message shown where it is on the screen. As in Safari, which keeps no place as what's
+  // above grows (Chrome's scroll anchoring does); the earlier ones' image still loading as they come.
+  await owner.addStyleTag({ content: "* { overflow-anchor: none }" });
+  let imagesIn!: () => void;
+  const images = new Promise<void>((done) => (imagesIn = done));
+  await owner.route("**/*", async (route) => {
+    if (route.request().resourceType() === "image") {
+      await images;
+    }
+    await route.fallback();
+  });
   await earlier.scrollIntoViewIfNeeded();
   const y = (await messages.first().boundingBox())!.y;
   await checkpoint(owner, "conversation-show-earlier", { fullPage: false });
@@ -1345,13 +1363,20 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   await expect(messages.nth(4)).toContainText("Message 5");
   await expect(messages.nth(4)).toBeFocused();
   await checkpoint(owner, "conversation-earlier-messages", { fullPage: false });
-  // An image loading in a message above it (with no size till then) doesn't move it either: as in Safari, which keeps no
-  // place as what's above grows (Chrome's scroll anchoring does).
-  await owner.addStyleTag({ content: "* { overflow-anchor: none }" });
-  await messages.nth(2).evaluate((message, src) => message.append(Object.assign(document.createElement("img"), { src })), `data:image/png;base64,${png(100, 600).toString("base64")}`);
-  await expect(messages.nth(2).locator("img")).toHaveJSProperty("complete", true);
-  expect((await messages.nth(2).boundingBox())!.height).toBeGreaterThanOrEqual(600);
+  // The image loading in a message above it (with no size till then) doesn't move it either.
+  imagesIn();
+  await expect(messages.nth(2).getByRole("img", { name: "tall.png" })).toHaveJSProperty("complete", true);
+  expect((await messages.nth(2).boundingBox())!.height).toBeGreaterThanOrEqual(150);
   expect(Math.abs((await messages.nth(5).boundingBox())!.y - y)).toBeLessThanOrEqual(1);
+  await owner.unroute("**/*");
+  // Once it's in, the place isn't held any more: scrolled some other way (a screen reader's, say) and an image loading
+  // again above (as a refresh signs its link anew), nothing scrolls back.
+  const pane = owner.locator("#conversation");
+  await pane.evaluate((pane) => pane.scrollBy({ top: -100, behavior: "instant" }));
+  const scrolled = await pane.evaluate((pane) => pane.scrollTop);
+  await messages.nth(1).evaluate((message, src) => message.append(Object.assign(document.createElement("img"), { src })), `data:image/png;base64,${png(100, 600).toString("base64")}`);
+  await expect(messages.nth(1).locator("img")).toHaveJSProperty("complete", true);
+  expect(await pane.evaluate((pane) => pane.scrollTop)).toBe(scrolled);
 
   // A new message still takes it to the end.
   await api("/conversations/1/messages", { body: "Message 56" });

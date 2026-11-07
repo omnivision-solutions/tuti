@@ -50,7 +50,8 @@ export function LoadMore({ href, pages, last, more }: { href: string; pages: num
 /**
  * "Show earlier messages" (`href`, while there are `more`): the earlier ones come in above the message shown first
  * (`first`, its id, as `data-message`), which stays where it was on the screen as they come (scrolled meanwhile, where
- * that left it), and as their images load above it, till they scroll (or tap, or press a key) themselves. Browsers don't
+ * that left it), and as their images load above it (those loading as they came, till they're in), unless something
+ * else scrolls first (they do, a screen reader, a new message at the end). Browsers don't
  * keep it there on their own: Chrome's scroll anchoring stops at the top of what scrolls, where this is, and Safari has
  * none. The one it loads
  * just above it has focus then (in view, where they were reading), rather than nothing (the page) once the button's gone
@@ -80,19 +81,45 @@ export function EarlierMessages({ href, first, more }: { href: string; first: st
     // The pane beside the list from laptop width up (as ScrollToEnd picks it), else the page.
     const pane = document.getElementById("conversation");
     const scroller = pane && getComputedStyle(pane).overflowY === "auto" ? pane : document.scrollingElement!;
-    const keep = () => scroller.scrollBy({ top: message.getBoundingClientRect().top - kept.top, behavior: "instant" });
-    keep();
-    // An image loading in the messages above (with no size till then) pushes it down: put back, till they move themselves.
-    // Load events don't bubble: caught on their way down.
-    const loaded = (event: Event) => event.target instanceof HTMLImageElement && keep();
-    const moved = ["wheel", "touchstart", "keydown", "pointerdown"];
-    unpin.current();
-    unpin.current = () => {
-      document.removeEventListener("load", loaded, true);
-      moved.forEach((type) => document.removeEventListener(type, unpin.current, true));
+    // Where this put it: a scroll anywhere else is someone else's (theirs, or to a new message at the end).
+    let at = 0;
+    const keep = () => {
+      if (!message.isConnected) {
+        stop();
+        return;
+      }
+      scroller.scrollBy({ top: message.getBoundingClientRect().top - kept.top, behavior: "instant" });
+      at = scroller.scrollTop;
     };
-    document.addEventListener("load", loaded, true);
-    moved.forEach((type) => document.addEventListener(type, unpin.current, true));
+    // An image still loading in the messages above (with no size till then) pushes it down as it comes: put back, till the
+    // last of them is in (not one loaded again later, as a refresh signs its link anew), or something else scrolls.
+    // Load, error and scroll events don't bubble: caught on their way down.
+    const pending = new Set<EventTarget>();
+    for (let above = message.previousElementSibling; above; above = above.previousElementSibling) {
+      above.querySelectorAll("img").forEach((image) => !image.complete && pending.add(image));
+    }
+    const settled = (event: Event) => {
+      if (pending.delete(event.target!)) {
+        keep();
+        if (pending.size === 0) {
+          stop();
+        }
+      }
+    };
+    const scrolled = () => Math.abs(scroller.scrollTop - at) > 1 && stop();
+    const stop = () => {
+      document.removeEventListener("load", settled, true);
+      document.removeEventListener("error", settled, true);
+      document.removeEventListener("scroll", scrolled, true);
+    };
+    unpin.current();
+    unpin.current = stop;
+    keep();
+    if (pending.size > 0) {
+      document.addEventListener("load", settled, true);
+      document.addEventListener("error", settled, true);
+      document.addEventListener("scroll", scrolled, true);
+    }
     const focused = document.activeElement;
     if (focused === document.body || focused === link.current) {
       const above = message.previousElementSibling as HTMLElement | null;
