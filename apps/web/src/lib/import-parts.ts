@@ -152,7 +152,7 @@ export const IMPORT_SOURCES = {
     parts: ["contacts", "feedback", "changelog", "avatars"],
     // Its changelog has types, not categories; scheduled entries come as drafts.
     partDescriptions: {
-      changelog: "Your updates, published at their dates (drafts and scheduled ones as drafts), with their images; their types (New, Improved, Fixed) become tags, and each keeps the posts it shipped. Nothing is emailed.",
+      changelog: "Your updates, published at their dates (drafts and scheduled ones as drafts), with their images; their types (New, Improved, Fixed) become tags, and each is linked to the completed posts it shipped when Feedback comes in with it or before. Nothing is emailed.",
     },
     credential: {
       kind: "key",
