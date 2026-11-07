@@ -379,3 +379,12 @@ test("each article's page is fetched once, however often the content pass reads 
   }
   expect((await articles()).filter((a) => a.body).length).toBe(5);
 });
+
+test("the first article of a run that fails once (a 503) is asked for again at once: the import ends done, with its text", async () => {
+  // The list's first page, so the content pass's first article.
+  site.failing.set("/docs/getting-started", 503);
+  site.failingOnce.add("/docs/getting-started");
+  expect((await importSite()).state).toBe("done");
+  expect((await articles()).find((a) => a.title === "Getting started")?.body).toBe("Start here.");
+  expect(site.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(2);
+});

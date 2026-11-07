@@ -25,6 +25,8 @@ const MAX_LINK_PAGES = 100;
 const PAGE_BYTES = 2 * 1024 * 1024;
 const PAGE_TIMEOUT_MS = 15_000;
 const MAX_REDIRECTS = 3;
+/** Times an article's page that fails for a while (a 429, a 5xx, no answer) is asked for again (getRetrying). */
+const RETRIES = 2;
 /** Between two requests to the site (a robots.txt Crawl-delay, up to 5s, if it asks for more). Changeable for tests. */
 export const crawlPace = { ms: 500 };
 /** Pages a step of the link crawl fetches at most (its time limits it too): changeable for tests, which cut it short. */
@@ -273,7 +275,10 @@ function site(start: string, deadline: number, kept: unknown) {
       }
       if (response.status !== 200 || !response.body) {
         await response.body?.cancel();
-        throw new SiteError(response.status, `${parsed.hostname} answered ${response.status}.`);
+        // How long it asks to be left (Retry-After: seconds, or a date), for a fetch that tries again (getRetrying).
+        const after = response.headers.get("retry-after");
+        const afterMs = after === null ? NaN : /^\d+$/.test(after.trim()) ? Number(after) * 1000 : Date.parse(after) - Date.now();
+        throw Object.assign(new SiteError(response.status, `${parsed.hostname} answered ${response.status}.`), { retryAfterMs: Number.isFinite(afterMs) ? Math.max(afterMs, 0) : null });
       }
       if (Number(response.headers.get("content-length")) > PAGE_BYTES) {
         await response.body.cancel();
@@ -292,6 +297,30 @@ function site(start: string, deadline: number, kept: unknown) {
       return { url: at, type: response.headers.get("content-type") ?? "", text: Buffer.concat(chunks).toString("utf8") };
     }
     return null;
+  }
+
+  /**
+   * An article's page, as `get`, tried again for what fails for a while (a 429, a 5xx, no answer) up to RETRIES times:
+   * after what the site asks (Retry-After, up to 30s), else twice the pace each time, never past the deadline; and
+   * paced as every request is. What still fails is thrown (the content pass reads it again in its next run).
+   */
+  async function getRetrying(url: string) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await get(url);
+      } catch (error) {
+        const passing = error instanceof SiteError && !error.reason && (error.status === 0 || error.status === 429 || error.status >= 500);
+        if (!passing || attempt >= RETRIES) {
+          throw error;
+        }
+        const asked = (error as { retryAfterMs?: number | null }).retryAfterMs;
+        const wait = Math.min(asked ?? Math.max(crawlPace.ms, delayMs) * 2 ** (attempt + 1), 30_000);
+        if (Date.now() + wait >= deadline) {
+          throw error;
+        }
+        await pause(wait);
+      }
+    }
   }
 
   /** The origin's robots.txt (none: everything may be read). */
@@ -514,7 +543,7 @@ function site(start: string, deadline: number, kept: unknown) {
 
   /** A page as an article: its title (its main heading, else its title) and main content, links and images made absolute. */
   async function article(id: string, collection: string | null, order: number): Promise<FeaturebaseArticle | null> {
-    const page = await get(id);
+    const page = await getRetrying(id);
     if (!page || !/html/i.test(page.type || "text/html")) {
       return null;
     }
