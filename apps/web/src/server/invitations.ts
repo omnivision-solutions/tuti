@@ -66,6 +66,11 @@ export async function createInvitation(
     // Room on the plan for members and invites still pending (a new invite to the same address replaces
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
     const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
+    // Their role again, under that lock: taking someone off the team or changing their role takes it too, then revokes their invites.
+    const me = await senderRole(tx, projectId, session.user.id);
+    if (!me || !canAssignRole(me, parsed.data.role)) {
+      return "role" as const;
+    }
     // The day's cap too, under that lock: an import's invites being sent at the same moment can't both take its last place.
     // Not for a link-only invite: nothing is emailed, and it doesn't count.
     if (!linkOnly && (await dayIsFull(tx, projectId, session.user.id))) {
@@ -77,7 +82,7 @@ export async function createInvitation(
     }
     // Replacing a pending invite revokes it, so it takes what revoking it would: an owner's owner invite is for owners to change.
     const pending = await tx.invitation.findMany({ where: { projectId, email: parsed.data.email, ...pendingInvitation() }, select: { role: true } });
-    if (pending.some(({ role }) => !canAssignRole(membership.role, role))) {
+    if (pending.some(({ role }) => !canAssignRole(me, role))) {
       return "owners" as const;
     }
     await tx.invitation.updateMany({
@@ -100,6 +105,9 @@ export async function createInvitation(
   if (full === "daily") {
     return { error: DAILY_LIMIT };
   }
+  if (full === "role") {
+    return { error: "You can't invite people with that role" };
+  }
   if (full === "owners") {
     return { error: `${parsed.data.email} has a pending owner invite. Only owners can change it.` };
   }
@@ -117,6 +125,10 @@ export async function createInvitation(
 }
 
 const DAILY_LIMIT = `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`;
+
+/** The sender's role on the project now (null: not on the team), read under the project's lock. */
+const senderRole = async (tx: Prisma.TransactionClient, projectId: string, userId: string) =>
+  (await tx.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { role: true } }))?.role ?? null;
 
 /**
  * Whether the last day's invites are used up (DAILY_INVITE_LIMIT), the project's or the sender's across all their
@@ -180,10 +192,15 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
   for (;;) {
     const claim = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
+      // Their role again, under the lock, each time: taken off the team or demoted partway, they send no more.
+      const me = await senderRole(tx, projectId, session.user.id);
+      if (!me || !isAdminRole(me)) {
+        return "gone" as const;
+      }
       if (await dayIsFull(tx, projectId, session.user.id)) {
         return "capped" as const;
       }
-      const invitation = await tx.invitation.findFirst({ where: unsent, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true, role: true } });
+      const invitation = await tx.invitation.findFirst({ where: { ...unsent, role: { in: roles.filter((role) => canAssignRole(me, role)) } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true, role: true } });
       if (!invitation) {
         return null;
       }
@@ -192,6 +209,10 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
       await tx.invitation.update({ where: { id: invitation.id }, data: { tokenHash: hashInvitationToken(token), sentAt: now, createdById: session.user.id, expiresAt: invitationExpiry(now.getTime()) } });
       return { ...invitation, email: invitation.email!, url: `${appUrl().origin}/invite/${token}` };
     });
+    if (claim === "gone") {
+      refresh();
+      return { error: "Only project owners and admins can send invites" };
+    }
     if (claim === "capped") {
       capped = true;
       break;

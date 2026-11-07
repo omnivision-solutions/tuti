@@ -1,6 +1,7 @@
 "use server";
 
 import { type Prisma, type TeamRole, prisma } from "@tuti/db";
+import { lockProject } from "@tuti/jobs";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -51,10 +52,12 @@ export async function changeTeamRole(projectSlug: string, memberId: string, role
   }
   // The invites they sent for roles they can't give any more go: nobody joins on the strength of a role they've lost.
   const cantGive = (["OWNER", "ADMIN", "MEMBER"] as const).filter((r) => !canAssignRole(parsedRole.data, r));
-  const [, cancelled] = await prisma.$transaction([
-    prisma.teamMember.update({ where: { id: target.id }, data: { role: parsedRole.data } }),
-    prisma.invitation.updateMany({ where: { ...sentPending(actor.project.id, target.userId), role: { in: cantGive } }, data: { revokedAt: new Date() } }),
-  ]);
+  const cancelled = await prisma.$transaction(async (tx) => {
+    // Under the project's lock, which inviting and sending take to check the sender's role: none of theirs slips in after.
+    await lockProject(tx, actor.project.id);
+    await tx.teamMember.update({ where: { id: target.id }, data: { role: parsedRole.data } });
+    return tx.invitation.updateMany({ where: { ...sentPending(actor.project.id, target.userId), role: { in: cantGive } }, data: { revokedAt: new Date() } });
+  });
   refresh();
   return cancelled.count > 0 ? { cancelledInvites: cancelled.count } : {};
 }
@@ -65,13 +68,15 @@ export async function changeTeamRole(projectSlug: string, memberId: string, role
  * Settings → Developers and stay dead if the person is invited back), as are the invites they sent.
  */
 async function removeFromTeam(projectId: string, userId: string, member: Prisma.TeamMemberWhereUniqueInput) {
-  await prisma.$transaction([
-    prisma.teamMember.delete({ where: member }),
-    prisma.conversation.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null, heldById: null } }),
-    prisma.post.updateMany({ where: { projectId, ownerId: userId }, data: { ownerId: null } }),
-    prisma.apiKey.updateMany({ where: { projectId, createdById: userId, revokedAt: null }, data: { revokedAt: new Date() } }),
-    prisma.invitation.updateMany({ where: sentPending(projectId, userId), data: { revokedAt: new Date() } }),
-  ]);
+  await prisma.$transaction(async (tx) => {
+    // Under the project's lock, which inviting and sending take to check the sender: none of theirs slips in after.
+    await lockProject(tx, projectId);
+    await tx.teamMember.delete({ where: member });
+    await tx.conversation.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null, heldById: null } });
+    await tx.post.updateMany({ where: { projectId, ownerId: userId }, data: { ownerId: null } });
+    await tx.apiKey.updateMany({ where: { projectId, createdById: userId, revokedAt: null }, data: { revokedAt: new Date() } });
+    await tx.invitation.updateMany({ where: sentPending(projectId, userId), data: { revokedAt: new Date() } });
+  });
 }
 
 /**

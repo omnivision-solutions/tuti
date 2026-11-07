@@ -15,6 +15,7 @@ import { mailbox } from "@/test/mailbox";
 import { homeOverview } from "./home";
 import { pendingInvitationsFor } from "./invitation-lookup";
 import { acceptInvitation, acceptInvitationById, createInvitation, revokeInvitation, sendAllInvitations, sendInvitation } from "./invitations";
+import { removeMember } from "./team";
 
 // The invite emails, as they are, unless a test runs something before one (to look at the database, or to fail it).
 const emailHook = vi.hoisted(() => ({ before: null as null | ((to: string) => Promise<void>) }));
@@ -179,6 +180,23 @@ test("Send emails one invitation, once, from whoever sends it, with a link that 
   actAs(ada2);
   expect(await redirectTarget(acceptInvitation(link))).toBe(`/app/${project.slug}`);
   expect(await prisma.teamMember.count({ where: { projectId: project.id, userId: ada2.id } })).toBe(1);
+});
+
+test("Send all stops when its sender is taken off the team partway: nothing they sent is left live", async () => {
+  admins(newAddress(), newAddress(), newAddress());
+  await importTeam();
+  const admin = await signUp("Avery Admin");
+  const { id: memberId } = await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
+  // While the first one is being emailed, an owner removes them.
+  emailHook.before = async () => {
+    emailHook.before = null;
+    actAs(owner);
+    expect(await removeMember(project.slug, memberId)).toEqual({});
+  };
+  actAs(admin);
+  expect(await sendAllInvitations(project.slug)).toEqual({ error: "Only project owners and admins can send invites" });
+  expect(await prisma.invitation.count({ where: { projectId: project.id, createdById: admin.id, revokedAt: null } })).toBe(0);
+  expect(await prisma.invitation.count({ where: { projectId: project.id, sentAt: null, revokedAt: null } })).toBe(2);
 });
 
 /** Invitations this project emailed today, `n` of them, as if sent earlier. */
