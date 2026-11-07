@@ -120,9 +120,9 @@ export function SubNav({
   items: { title: ReactNode; href: string }[];
   /**
    * The rest, under one last tab that opens them as a menu (`label`, or the one of them that's current, marked as the
-   * active tab): for a row with more than fits.
+   * active tab: as its `short` title, if it has one, its `name` to the ear): for a row with more than fits.
    */
-  more?: { label: string; items: { title: ReactNode; href: string }[] };
+  more?: { label: string; items: { title: ReactNode; href: string; short?: { title: ReactNode; name: string } }[] };
   /** The active item's href, when the URL's path alone doesn't say (views in the query string). */
   current?: string;
   /** `aria-current` on the active item: `true` when it's what's beside the page, not the page itself. */
@@ -167,10 +167,11 @@ export function SubNav({
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-current={picked ? currentIs : undefined}
+            aria-label={picked?.short?.name}
             data-active={picked ? true : undefined}
             className={tab(!!picked, cn("inline-flex items-center gap-1", itemClassName))}
           >
-            {picked?.title ?? more.label}
+            {picked ? (picked.short?.title ?? picked.title) : more.label}
             <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

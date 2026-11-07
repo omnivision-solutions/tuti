@@ -77,23 +77,19 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows.last().getByRole("link").first()).toHaveAccessibleName(/\(#1\)$/);
   // Waiting on the team says so where not all of them are (not in Needs reply, where it would be every row);
   // "Waiting on user" is the view of those the team answered.
-  await expect(rows.getByRole("img", { name: "Needs reply" })).toHaveCount(0);
+  await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(0);
   await expectMoreView(owner, "Waiting on user 0");
   await views.getByRole("link", { name: "Unassigned 2" }).click();
-  await expect(rows.getByRole("img", { name: "Needs reply" })).toHaveCount(2);
-  // A dot, said on hover too: over the row's link (which covers the row), so the pointer reaches it.
-  const dot = rows.first().getByRole("img", { name: "Needs reply" });
-  await expect(dot).toHaveAttribute("title", "Needs reply");
-  expect(await dot.evaluate((dot) => {
-    const box = dot.getBoundingClientRect();
-    return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === dot;
-  })).toBe(true);
+  await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(2);
+  // In words, on the message's line (not only a colour or a hover), where it fits on that one line.
+  await expect(rows.first().getByText("Needs reply", { exact: true })).toBeVisible();
+  expect((await rows.first().getByText("Needs reply", { exact: true }).locator("..").boundingBox())!.height).toBeLessThanOrEqual(17);
   await checkpoint(owner, "inbox-unassigned");
   await views.getByRole("link", { name: "Needs reply 2" }).click();
   await expect(views.getByRole("link", { name: "Needs reply 2" })).toHaveAttribute("aria-current", "page");
   // The age once, short (in words to screen readers and on hover): not again in the badge.
   const age = rows.first().locator("time");
-  await expect(age.locator("[aria-hidden]")).toHaveText(/^\d+m$/);
+  await expect(age).toHaveText(/^\d+m$/);
   await expect(age).toHaveAttribute("title", /^Waiting \d+ minutes?$/);
   await expect(rows.filter({ hasText: /Needs reply ·/ })).toHaveCount(0);
   await checkpoint(owner, "inbox");
@@ -274,12 +270,15 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me"]);
   await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
-  // Its row in the list beside it shows who has it: their face, their name on hover (over the row's link) and to the ear.
-  const assignee = list.getByRole("img", { name: "Assigned to Olive Owner" });
-  await expect(assignee).toHaveAttribute("title", "Assigned to Olive Owner");
-  expect(await assignee.evaluate((face) => {
+  // Its row in the list beside it shows who has it: their face, their name on hover (reached over the row's link, a click
+  // there opening it as anywhere in the row) and in the row's name to the ear.
+  const assigned = list.getByRole("link", { name: /, assigned to Olive Owner$/ });
+  await expect(assigned).toHaveCount(1);
+  const face = assigned.locator("xpath=ancestor::li").locator("[data-assignee]");
+  await expect(face).toHaveAttribute("title", "Olive Owner");
+  expect(await face.evaluate((face) => {
     const box = face.getBoundingClientRect();
-    return face.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    return face.closest("a")!.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
   })).toBe(true);
   await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeFocused();
   // Beside the messages, the linked posts aren't squeezed by who it's with under them: their button shows whole.
@@ -353,7 +352,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(/Back in [23] hours · Can't export to CSV/);
   // Waiting on Sam, not the team: its age is since the latest message, and nothing says it needs a reply.
   await expect(owner.getByRole("main").getByRole("listitem").locator("time")).toHaveAttribute("title", /^Latest message \d+ minutes? ago$/);
-  await expect(owner.getByRole("main").getByRole("listitem").getByRole("img", { name: "Needs reply" })).toHaveCount(0);
+  await expect(owner.getByRole("main").getByRole("listitem").getByText("Needs reply", { exact: true })).toHaveCount(0);
   await checkpoint(owner, "inbox-snoozed");
   await owner.goto(`/app/${slug}/inbox/1`);
   await owner.getByRole("button", { name: /^Snoozed till / }).click();
@@ -476,7 +475,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Do you have a discount for nonprofits?");
   // Still open, but not a reply the team owes.
-  await expect(rows.getByRole("img", { name: "Needs reply" })).toHaveCount(0);
+  await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(0);
 
   // A view name the page doesn't know (even one every object has) is the Open view, of this project only:
   // another project's open conversation stays out of it.
@@ -980,6 +979,41 @@ test("the Inbox's views are one row of tabs above the list, where they stay as a
     await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
     await expect(views.getByRole("link", { name: "Needs reply 1" })).toHaveAttribute("aria-current", "page");
     expect(await boxes()).toEqual(before);
+  }
+});
+
+test("with two-digit counts the views still fit, at every laptop width and on a phone, with one under More open too", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // Twelve waiting for the team (Needs reply 12, Unassigned 12), then twelve waiting on the user.
+  for (let i = 1; i <= 24; i++) {
+    await api("/conversations", { email: `e2e-asker-${i}@example.com`, body: `Question ${i}` });
+  }
+  // Answered by the team: waiting on the user.
+  for (let i = 13; i <= 24; i++) {
+    await api(`/conversations/${i}/messages`, { body: "Here's how." });
+  }
+  const views = owner.getByRole("navigation", { name: "Views" });
+  // 1024: laptop width at its narrowest, the list's column at its narrowest (22rem).
+  for (const [width, height] of [
+    [1024, 768],
+    [1280, 800],
+    [390, 844],
+  ]) {
+    await owner.setViewportSize({ width, height });
+    for (const view of ["", "?view=waiting"]) {
+      await owner.goto(`/app/${slug}/inbox${view}`);
+      await expect(views.getByRole("link", { name: "Unassigned 12" })).toBeVisible();
+      // Not one cut short at either end (the row would fade there and scroll).
+      await expect(views).not.toHaveAttribute("data-more");
+    }
+    // Open under More: its name alone, short, on the tab ("Waiting"), and in full with its count to the ear.
+    const open = views.getByRole("button", { name: "Waiting on user 12" });
+    await expect(open).toHaveAttribute("aria-current", "page");
+    await expect(open).toHaveText("Waiting");
   }
 });
 

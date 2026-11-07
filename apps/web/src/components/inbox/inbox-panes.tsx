@@ -18,6 +18,7 @@ import { SampleBadge } from "@/components/sample-badge";
 import { StatTile } from "@/components/stat-tile";
 import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { initial, longDuration, replyTime, rowBy, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { isAdminRole } from "@/lib/roles";
@@ -159,6 +160,8 @@ export async function InboxPanes({
         <span className="min-w-0">{VIEWS[v].title}</span> <span className="shrink-0 text-muted-foreground tabular-nums">{counts[views.indexOf(v)]}</span>
       </>
     ),
+    // Open under More, its tab is its name alone, short ("Waiting"), so the row still fits; in full to the ear.
+    short: { title: v === "waiting" ? "Waiting" : VIEWS[v].title, name: `${VIEWS[v].title} ${counts[views.indexOf(v)]}` },
   });
   const history = await historySince(projectId);
   const [counts, conversations, member, { supportInbox, plan }, stats] = await Promise.all([
@@ -202,6 +205,9 @@ export async function InboxPanes({
         // The three worked through most as tabs; the rest under More, which fits the list's third of the window.
         items={views.slice(0, TABS).map(tab)}
         more={{ label: "More", items: views.slice(TABS).map(tab) }}
+        // A little smaller and closer than other pages' tabs: four of them fit the list's third of the window (22rem at
+        // its narrowest), a phone's width too, with two-digit counts.
+        itemClassName="px-1.5 text-[0.8125rem]"
       />
 
       {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
@@ -268,7 +274,7 @@ export async function InboxPanes({
                             scroll={false}
                             data-row-link={c.number}
                             aria-current={c.number === open ? "page" : undefined}
-                            aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`}
+                            aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})${c.assignee ? `, assigned to ${c.assignee.name}` : ""}`}
                             className="block truncate after:absolute after:inset-0 hover:underline"
                           >
                             {/* In full on hover (over the link's cover, still inside the link); not read out again after the link's name. */}
@@ -283,33 +289,35 @@ export async function InboxPanes({
                           // One line, cut short (in full in the conversation): what it's about, then the latest message.
                           // Snoozed, when it's back first.
                           <span className="block truncate">
+                            {/* Waiting for the team, where the view doesn't already say so: small, so it stays one line. */}
+                            {needsReply && view !== "open" && (
+                              <Badge variant="highlight" className="mr-1.5 h-4 px-1.5 align-[1px] text-[0.625rem]">
+                                Needs reply
+                              </Badge>
+                            )}
                             {view === "snoozed" && c.snoozedUntil && `Back ${timeAgo(c.snoozedUntil)} · `}
                             <span className="text-foreground">{c.subject}</span>
                             {line && ` · ${line}`}
                           </span>
                         }
                         actions={
-                          <span className="flex items-center gap-1.5">
-                            {/* Waiting for the team, where the view doesn't already say so: the highlight colour, said on
-                                hover and to the ear. Relative, over the row's link, so the hover reaches it. */}
-                            {needsReply && view !== "open" && (
-                              <span role="img" aria-label="Needs reply" title="Needs reply" className="relative size-2 rounded-full bg-highlight-foreground" />
-                            )}
-                            {/* Who has it, as their face (their name on hover, and to the ear; Avatar is relative already). */}
-                            {c.assignee && (
-                              <Avatar role="img" aria-label={`Assigned to ${c.assignee.name}`} title={`Assigned to ${c.assignee.name}`} className="size-5">
-                                {c.assignee.image && <AvatarImage src={c.assignee.image} alt="" />}
-                                <AvatarFallback className="text-[0.625rem]">{initial(c.assignee.name)}</AvatarFallback>
-                              </Avatar>
-                            )}
-                            {/* Short to the eye, in words to the ear (and on hover: over the row's link, opening it too). */}
-                            <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
-                              <Link href={inboxHref(slug, view, c.number, pages)} scroll={false} tabIndex={-1} aria-hidden className="relative">
+                          // Who has it, as their face (their name on hover, and in the row's link to the ear), and the age,
+                          // short to the eye, in words to the ear (and on hover). A link of the row's own over its link, so
+                          // the hover reaches them and a click opens it too; not a stop of its own for the keyboard.
+                          <>
+                            <Link href={inboxHref(slug, view, c.number, pages)} scroll={false} tabIndex={-1} aria-hidden className="relative flex items-center gap-1.5">
+                              {c.assignee && (
+                                <Avatar title={c.assignee.name} data-assignee className="size-5">
+                                  {c.assignee.image && <AvatarImage src={c.assignee.image} alt="" />}
+                                  <AvatarFallback className="text-[0.625rem]">{initial(c.assignee.name)}</AvatarFallback>
+                                </Avatar>
+                              )}
+                              <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
                                 {shortDuration(since)}
-                              </Link>
-                              <span className="sr-only">{age}</span>
-                            </time>
-                          </span>
+                              </time>
+                            </Link>
+                            <span className="sr-only">{age}</span>
+                          </>
                         }
                       />
                     );
