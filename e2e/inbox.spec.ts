@@ -1221,6 +1221,79 @@ test("Needs reply lists the latest message first, as every view does: a new mess
   await expect(list.getByRole("link")).toHaveText([/Sam Smith/, /e2e-asker/]);
 });
 
+test("a view lists a hundred conversations, and a hundred more with each Load more: they stay listed as one of them opens", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // The first one, waiting longest, is the one past the first hundred.
+  await api("/conversations", { email: "e2e-first@example.com", subject: "The oldest question", body: "Still there?" });
+  for (let batch = 0; batch < 10; batch++) {
+    await Promise.all(Array.from({ length: 10 }, (_, i) => api("/conversations", { email: `e2e-asker-${batch * 10 + i}@example.com`, body: "A question" })));
+  }
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.goto(`/app/${slug}/inbox`);
+  const list = owner.getByRole("region", { name: "Conversations" });
+  const rows = list.locator("a[data-row-link]");
+  const more = list.getByRole("link", { name: "Load more" });
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Needs reply 101" })).toBeVisible();
+  await expect(rows).toHaveCount(100);
+  await expect(list).not.toContainText("The oldest question");
+
+  await more.click();
+  await expect(rows).toHaveCount(101);
+  await expect(more).toHaveCount(0);
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?page=2$`));
+  await checkpoint(owner, "inbox-loaded-more", { fullPage: false });
+
+  // Opened, the one loaded last is still in the list, beside it.
+  await rows.last().click();
+  await expect(owner.getByRole("heading", { level: 1, name: "The oldest question" })).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?page=2$`));
+  await expect(rows).toHaveCount(101);
+  await expect(rows.last()).toHaveAttribute("aria-current", "page");
+
+  // Another view starts at its first hundred again.
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(rows).toHaveCount(100);
+});
+
+test("a long conversation opens at its latest fifty messages; Show earlier messages loads the ones before, where they were read stays in view", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-long@example.com", body: "Message 1" });
+  for (let i = 2; i <= 55; i++) {
+    await api("/conversations/1/messages", { body: `Message ${i}` });
+  }
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
+  const earlier = owner.getByRole("link", { name: "Show earlier messages" });
+  await expect(messages).toHaveCount(50);
+  await expect(messages.first()).toContainText("Message 6");
+  await expect(messages.last()).toContainText("Message 55");
+  await expect(messages.last()).toBeInViewport();
+
+  await earlier.click();
+  await expect(messages).toHaveCount(55);
+  await expect(messages.first()).toContainText("Message 1");
+  await expect(earlier).toHaveCount(0);
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?messages=2$`));
+  // Still where they were: the message that was first, not the newest (the page doesn't jump to its end).
+  await expect(messages.nth(5)).toBeInViewport();
+  await expect(messages.last()).not.toBeInViewport();
+  await checkpoint(owner, "conversation-earlier-messages", { fullPage: false });
+
+  // A new message still takes it to the end.
+  await api("/conversations/1/messages", { body: "Message 56" });
+  await expect(messages.last()).toContainText("Message 56");
+  await expect(messages.last()).toBeInViewport();
+});
+
 test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
