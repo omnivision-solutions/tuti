@@ -193,6 +193,13 @@ test("someone signs up from a portal, signs out and signs back in there; their p
   await expect(ada).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
 
+  // Later, "Verify your email" from the inbox: that handoff is used up, so it comes back through a new one.
+  await ada.goto(linkIn(await latestEmailTo(email, { subject: /verify/i }), `${APP_URL}/api/auth/verify-email`));
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue" && url.searchParams.has("state"));
+  await backToPortal(ada);
+  await expect(ada).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
+  await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
+
   await ada.getByRole("button", { name: "Account" }).click();
   await ada.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(ada.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();

@@ -59,6 +59,22 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
   });
 }
 
+/**
+ * A verification link is opened later, maybe much later: its way back (callbackURL) mustn't carry a "Continue as"
+ * handoff's state, used once and kept 10 minutes (lib/portal-handoff.ts). A sign-up from a portal has one (its `next` is
+ * the app's /continue); without it, /continue starts a new handoff from the portal.
+ */
+function withoutHandoffState(link: string): string {
+  const url = new URL(link);
+  const back = url.searchParams.get("callbackURL");
+  if (back?.startsWith("/continue?")) {
+    const callback = new URL(back, url);
+    callback.searchParams.delete("state");
+    url.searchParams.set("callbackURL", `${callback.pathname}${callback.search}`);
+  }
+  return url.toString();
+}
+
 /** handOverOnVerified, never failing what verified the address (it's verified either way); a failure is logged. */
 const handOverPlaceholdersLogged = (userId: string) =>
   handOverOnVerified(userId).catch((error: unknown) => log.error("Handing an import's placeholders over failed", { error, userId }));
@@ -192,7 +208,7 @@ export const auth = betterAuth({
     expiresIn: 24 * 60 * 60,
     sendVerificationEmail: async ({ user, url }, request) => {
       try {
-        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url }) });
+        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: withoutHandoffState(url) }) });
       } catch (error) {
         log.error("Sending the verification email failed", { error });
         // A failed email mustn't fail a sign-up (it can be sent again), but asking

@@ -3,9 +3,13 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@tuti/db";
 import { expect, test } from "vitest";
 
+import ContinuePage from "@/app/(marketing)/continue/page";
+import { createProject, redirectTarget, signUp as signUpUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
+import { request } from "@/test/next-headers";
 
 import { auth } from "./auth";
+import { randomSecret } from "./portal-handoff";
 
 async function signUp(callbackURL?: string) {
   const email = `e2e-${randomUUID()}@example.com`;
@@ -101,4 +105,30 @@ test("with SMTP but no EMAIL_FROM, sending fails clearly instead of using someon
   } finally {
     process.env.EMAIL_FROM = from;
   }
+});
+
+test("signed up from a portal, the verification link comes back through a new handoff, not the used one", async () => {
+  const project = await createProject(await signUpUser("Owner"));
+  // Sent from the portal to the app's sign-up: its way back is this handoff's /continue, with its state.
+  const state = randomSecret();
+  const email = await signUp(`/continue?${new URLSearchParams({ portal: project.slug, state, redirect: "/feedback/ideas" })}`);
+  const { link } = await verificationLink(email);
+  const back = new URL(link.searchParams.get("callbackURL")!, link);
+  expect(back.pathname).toBe("/continue");
+  expect(Object.fromEntries(back.searchParams)).toEqual({ portal: project.slug, redirect: "/feedback/ideas" });
+  expect(link.toString()).not.toContain(state);
+
+  // Opened later: verified, then the app's /continue without a state starts a new handoff on the portal.
+  const response = await auth.handler(new Request(link));
+  expect(response.headers.get("location")).toBe(`${back.pathname}${back.search}`);
+  expect(await isVerified(email)).toBe(true);
+  request.host = new URL(process.env.APP_URL!).host;
+  const page = (query: Record<string, string>) =>
+    ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(query) } as PageProps<"/continue">);
+  expect(await redirectTarget(page(Object.fromEntries(back.searchParams)))).toBe(
+    `http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`,
+  );
+  // Only to a project's portal that exists: anything else is a link that isn't valid, going nowhere.
+  const notValid = (await page({ portal: "no-such-project", redirect: "/" })) as React.ReactElement;
+  expect(JSON.stringify(notValid.props)).toContain("Link not valid");
 });
