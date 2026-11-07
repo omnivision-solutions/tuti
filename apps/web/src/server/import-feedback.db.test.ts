@@ -206,8 +206,8 @@ test("a comment that's only an image comes across with it", async () => {
 });
 
 test("guests whose id is blank are each their own person, not one", async () => {
-  for (const post of fake.fixtures.posts.filter((post) => post.author?.type === "guest")) {
-    post.author = { ...post.author!, id: "" };
+  for (const post of fake.fixtures.posts.filter((post) => ["Keyboard shortcuts", "Export to PDF"].includes(post.title as string))) {
+    post.author = { ...(post.author as object), id: "" };
   }
   await importFeedback();
   const guests = await prisma.post.findMany({ where: { projectId: project.id, title: { in: ["Keyboard shortcuts", "Export to PDF"] } }, select: { authorId: true, author: { select: { name: true } } } });
