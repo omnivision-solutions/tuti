@@ -250,14 +250,20 @@ describe("repositories", () => {
     expect(await included(theirs.id)).toEqual([]);
   });
 
-  test("a list saved before it was the connecting person's keeps only the project's own repositories", async () => {
-    github.user("code-r18", [{ id: 791, account: "acme", repositories: [web, mobile] }]);
-    await connect(project.slug, 791, "code-r18");
-    await add(project.slug, web);
-    const migration = readFileSync(new URL("../../../../../../packages/db/prisma/migrations/20261106180000_github_lists_narrowed/migration.sql", import.meta.url), "utf8");
+  // The second runs again for lists the previous release widened while the first deployed.
+  test.each([
+    { name: "20261106180000_github_lists_narrowed", installation: 791 },
+    { name: "20261107210000_github_lists_narrowed_again", installation: 792 },
+  ])("a list saved before it was the connecting person's keeps only the project's own repositories ($name)", async ({ name, installation }) => {
+    const ours = { id: installation * 10 + 1, fullName: `acme-${installation}/web` };
+    const rest = { id: installation * 10 + 2, fullName: `acme-${installation}/mobile` };
+    github.user(`code-${installation}`, [{ id: installation, account: `acme-${installation}`, repositories: [ours, rest] }]);
+    await connect(project.slug, installation, `code-${installation}`);
+    await add(project.slug, ours);
+    const migration = readFileSync(new URL(`../../../../../../packages/db/prisma/migrations/${name}/migration.sql`, import.meta.url), "utf8");
     await prisma.$executeRawUnsafe(migration);
-    expect(await connected(project.id)).toMatchObject({ repositories: [web] });
-    expect(await add(project.slug, mobile)).toEqual({ error: NOT_LISTED });
+    expect(await connected(project.id)).toMatchObject({ repositories: [ours] });
+    expect(await add(project.slug, rest)).toEqual({ error: NOT_LISTED });
   });
 
   test("an account with thousands of repositories lists them all", async () => {
