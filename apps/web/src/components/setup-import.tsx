@@ -190,6 +190,8 @@ export function SetupImport({
   const parts = (Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][]).filter(([key]) => source?.parts.includes(key));
   const chosen = picked.filter((part) => source?.parts.includes(part));
   const running = latest?.state === "running";
+  // The import shown: the one running (only one can at a time), else the latest only when it was from the source picked.
+  const shown = running || latest?.source === from ? latest : null;
   // Started here, focus goes to Continue (the progress is said above it), the way on: once, when the page first shows
   // that import, not again on each refresh while it runs.
   // State, not a ref: the page may already show the import when the start returns, and the effect must run again then.
@@ -233,7 +235,11 @@ export function SetupImport({
           .filter(([value]) => next || value !== "fresh")
           .map(([value, label, description]) => (
           <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
-            <input type="radio" name="from" value={value} checked={from === value} onChange={() => setFrom(value)} className="mt-0.5 size-4 accent-primary" />
+            <input type="radio" name="from" value={value} checked={from === value} onChange={() => {
+                setFrom(value);
+                // The last source's refusal isn't this one's.
+                setError(null);
+              }} className="mt-0.5 size-4 accent-primary" />
             <span className="flex flex-col gap-0.5">
               <span className="text-sm font-medium">{label}</span>
               <span className="text-sm text-muted-foreground">{description}</span>
@@ -244,18 +250,18 @@ export function SetupImport({
       {/* On the page before there's anything in it, so screen readers hear the import start and end: the title while
           it runs, and the summary once it's over, never each page's count. */}
       <p role="status" className="sr-only">
-        {source && latest ? (running ? importTitle(latest) : `${importTitle(latest)}. ${importSummary(latest)}`) : ""}
+        {source && shown ? (running ? importTitle(shown) : `${importTitle(shown)}. ${importSummary(shown)}`) : ""}
       </p>
-      <CardContent className={source && latest ? undefined : "sr-only"}>
-        {source && latest && (
+      <CardContent className={source && shown ? undefined : "sr-only"}>
+        {source && shown && (
           <div ref={progressRef} tabIndex={-1} className="rounded-xl border p-4 outline-none">
             <p className="mb-3 text-sm font-medium">
-              {importTitle(latest)}
+              {importTitle(shown)}
               <span className="block font-normal text-muted-foreground">
-                {[importNote(latest), running && (next ? "It goes on while you finish setting up; Home shows how it's going." : "It goes on in the background; Home shows how it's going.")].filter(Boolean).join(" ")}
+                {[importNote(shown), running && (next ? "It goes on while you finish setting up; Home shows how it's going." : "It goes on in the background; Home shows how it's going.")].filter(Boolean).join(" ")}
               </span>
             </p>
-            <ImportProgress projectSlug={projectSlug} run={latest} invitations={latest.invitationsToSend} />
+            <ImportProgress projectSlug={projectSlug} run={shown} invitations={shown.invitationsToSend} />
           </div>
         )}
       </CardContent>
@@ -273,7 +279,9 @@ export function SetupImport({
                 </a>
               )}
             </div>
+            {/* One field per source (`key`), so one tool's key is never sent to another after switching. */}
             <Input
+              key={from}
               id={`${from}-key`}
               name="key"
               type={source.credential.kind === "key" ? "password" : "url"}
@@ -302,7 +310,7 @@ export function SetupImport({
                 </label>
               ))}
             </div>
-            {latest && <p className="text-sm text-muted-foreground">Importing again brings only what&apos;s new since: nothing comes twice.</p>}
+            {shown && <p className="text-sm text-muted-foreground">Importing again brings only what&apos;s new since: nothing comes twice.</p>}
             {boardsNote && chosen.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
           </div>
@@ -312,14 +320,14 @@ export function SetupImport({
         {source && !running && (
           <>
             {/* Done, going on is the main action; importing again (more parts, say) the other. */}
-            {latest?.state !== "done" && skip}
-            <Button type="submit" variant={latest?.state === "done" && next ? "outline" : "default"} disabled={pending || chosen.length === 0} focusableWhenDisabled>
-              {pending ? "Checking the key…" : latest?.state === "done" ? "Import again" : "Check the key and start"}
+            {shown?.state !== "done" && skip}
+            <Button type="submit" variant={shown?.state === "done" && next ? "outline" : "default"} disabled={pending || chosen.length === 0} focusableWhenDisabled>
+              {pending ? "Checking the key…" : shown?.state === "done" ? "Import again" : "Check the key and start"}
             </Button>
           </>
         )}
         {/* One Continue in one place, so it keeps focus as the import goes from running to done. */}
-        {next && (!source || running || latest?.state === "done") && (
+        {next && (!source || running || shown?.state === "done") && (
           <Link ref={continueRef} href={next} className={buttonVariants()}>
             Continue
           </Link>
