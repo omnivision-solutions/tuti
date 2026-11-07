@@ -455,9 +455,12 @@ export async function adminMember(tx: Tx, job: ImportJob, adminId: string, seen:
   const admin = job.admins.get(adminId) ?? { id: adminId, ...seen };
   const email = admin.email?.trim().toLowerCase() || null;
   if (email) {
+    // Theirs by a verified address, or by joining with this project's invite to it (handOverPlaceholders).
     const [member] = await tx.$queryRaw<{ userId: string }[]>`
       SELECT m."userId" FROM team_member m JOIN "user" u ON u.id = m."userId"
-      WHERE m."projectId" = ${job.projectId} AND lower(u.email) = ${email} AND u."emailVerified" LIMIT 1`;
+      WHERE m."projectId" = ${job.projectId} AND lower(u.email) = ${email}
+        AND (u."emailVerified" OR EXISTS (SELECT 1 FROM invitation i WHERE i."projectId" = m."projectId" AND i."acceptedById" = u.id AND i.email = ${email}))
+      LIMIT 1`;
     if (member) {
       return { userId: member.userId, member: true };
     }

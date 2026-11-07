@@ -361,3 +361,19 @@ test("end to end: Team and Feedback imported, the admin's invitation sent and ac
   expect(await prisma.post.findMany({ where: { id: { in: theirs.map((post) => post.id) } }, select: { authorId: true } })).toEqual(theirs.map(() => ({ authorId: joiner.id })));
   expect(await prisma.user.findUnique({ where: { id: placeholder.id } })).toBeNull();
 });
+
+test("an admin who joined by an invitation before the import is its author, and isn't invited again, though their address isn't verified", async () => {
+  const fern = newAddress();
+  fake.fixtures.admins[0]!.email = owner.email;
+  fake.fixtures.admins[1]!.email = fern;
+  actAs(owner);
+  const { url } = await createInvitation(project.slug, fern, "MEMBER");
+  const joiner = await signUp("Fern Former", fern);
+  actAs(joiner);
+  expect(await redirectTarget(acceptInvitation(url!.split("/invite/")[1]!))).toBe(`/app/${project.slug}`);
+
+  await importTeam(["team", "contacts", "feedback"]);
+  expect(await prisma.invitation.count({ where: { projectId: project.id, email: fern, acceptedAt: null } })).toBe(0);
+  expect(await prisma.user.findFirst({ where: { placeholderProjectId: project.id, placeholderFor: fern } })).toBeNull();
+  expect(await prisma.post.count({ where: { projectId: project.id, authorId: joiner.id } })).toBeGreaterThan(0);
+});
