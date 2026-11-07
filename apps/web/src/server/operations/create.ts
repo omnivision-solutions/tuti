@@ -4,7 +4,7 @@ import { enqueue, seenAs } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
-import { upsertProjectUser } from "@/server/project-users";
+import { namedProjectUser } from "@/server/project-users";
 
 import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
 import { emitEvent } from "../events";
@@ -34,7 +34,7 @@ export const author = z
 
 /**
  * Who writes it: the signed-in person; for an API key, someone from the project's
- * app when `author` is given (created on first sight), otherwise the key's creator.
+ * app when `author` is given (created on first sight; see namedProjectUser), otherwise the key's creator.
  */
 export async function authorId(context: { actor: Actor; projectId: string }, input: z.infer<typeof author>) {
   if (context.actor.kind === "user") {
@@ -46,7 +46,7 @@ export async function authorId(context: { actor: Actor; projectId: string }, inp
   if (!input) {
     return context.actor.createdById;
   }
-  return upsertProjectUser(context.projectId, input.id, { name: input.name, email: input.email });
+  return namedProjectUser(context.actor, context.projectId, input);
 }
 
 /** Saves content; an upload claimed by the cleanup meanwhile rolls the save back (see `attachMedia`). */
