@@ -75,6 +75,8 @@ test("a start is refused, nothing made, for a key Ferndesk refuses or one that c
 
 test("the help center comes across: sections and collections in their tree, articles with their content, images and links, published or draft as they were; again, nothing twice", async () => {
   const emailed = mailbox.emails.length;
+  // A few to a page, so every list is read past its first.
+  fake.pageSize = 2;
   const done = await importParts(["docs"]);
 
   expect(done).toMatchObject({ state: "done", counts: { collections: { imported: 5, leftOut: {} }, articles: { imported: 4, leftOut: {} } } });
@@ -120,7 +122,7 @@ test("the help center comes across: sections and collections in their tree, arti
   });
   expect(linksIn((await article("Paying by card")).content)).toEqual([{ text: "Welcome to Acme", href: `${portal}/docs/welcome-to-acme` }]);
   // A draft stays one; one in no collection goes in its section's.
-  expect(await article("Roadmap notes")).toMatchObject({ publishedAt: null, body: "Not ready yet.", collection: { name: "Getting started" } });
+  expect(await article("Roadmap notes")).toMatchObject({ slug: "2027-roadmap-notes", publishedAt: null, body: "Not ready yet.", collection: { name: "Getting started" } });
   expect(await article("API keys")).toMatchObject({ publishedAt: expect.any(Date), collection: { name: "API" } });
   expect(mailbox.emails.length).toBe(emailed);
 
@@ -165,8 +167,13 @@ test("users come across as Contacts, and the AI assistant's conversations as clo
   expect(visitor).toMatchObject({ subject: "Do you have an <API>?", status: "CLOSED", user: null, messages: [{ author: "USER", body: "Do you have an <API>?" }, { author: "AI" }] });
   expect(mailbox.emails.length).toBe(emailed);
 
+  // Mira asked again later: another import adds only that turn and the answer.
+  const later = fake.fixtures.conversations[0]!;
+  later.updatedAt = new Date().toISOString();
+  (later.transcript as unknown[]).push({ role: "user", text: "And to Excel?" }, { role: "assistant", text: "Open the CSV in Excel." });
   const again = await importParts(["contacts", "inbox"]);
-  expect(again.counts.conversations).toEqual({ imported: 0, leftOut: { "already brought across earlier": 2 } });
+  expect(again.counts).toMatchObject({ conversations: { imported: 0, leftOut: { "already brought across earlier": 2 } }, messages: { imported: 2 } });
   expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(2);
+  expect((await conversations())[0]!.messages.map((m) => m.body)).toEqual(["Can I export my data to CSV?", expect.stringContaining("Yes: Settings"), "And to Excel?", "Open the CSV in Excel."]);
   expect(await prisma.ssoIdentity.count({ where: { projectId: project.id } })).toBe(2);
 });

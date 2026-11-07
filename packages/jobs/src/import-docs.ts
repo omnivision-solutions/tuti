@@ -113,8 +113,8 @@ const mediaCaches = new Map<string, Parameters<typeof mediaImporter>[0]["cache"]
 
 /** A date from Featurebase, if it's one. */
 const dateOf = (value: string | null | undefined) => (value && !Number.isNaN(Date.parse(value)) ? new Date(value) : null);
-/** Featurebase's slug (`<id>-<name>`) without its id, Tuti's address for it where that's free. */
-const slugOf = (slug: string | null | undefined) => slug?.replace(/^\d+-/, "").trim() ?? "";
+/** Its slug without its id in front (Featurebase's `<id>-<name>`; another source's has none), Tuti's address for it where that's free. */
+const slugOf = ({ id, slug }: { id: string; slug?: string | null }) => (slug?.startsWith(`${id}-`) ? slug.slice(id.length + 1) : (slug ?? "")).trim();
 /** Featurebase's order (null: last), as Tuti's. */
 const orderOf = (order: number | null | undefined) => (Number.isFinite(order) ? Math.min(Math.max(Math.round(order!), 0), 1_000_000) : 1_000_000);
 
@@ -231,7 +231,7 @@ async function collectionsPage(job: ImportJob): Promise<StepPage> {
             projectId: job.projectId,
             parentId,
             tabId,
-            slug: await freeDocsSlug(tx, job.projectId, slugOf(collection.slug) || name, "collection"),
+            slug: await freeDocsSlug(tx, job.projectId, slugOf(collection) || name, "collection"),
             name,
             description: collection.description?.trim().slice(0, 300) ?? "",
             icon: icon ?? null,
@@ -269,7 +269,7 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
       data: {
         projectId: job.projectId,
         title,
-        slug: await freeDocsSlug(tx, job.projectId, slugOf(article.slug) || title, "article"),
+        slug: await freeDocsSlug(tx, job.projectId, slugOf(article) || title, "article"),
         description: article.description?.trim().slice(0, 300) ?? "",
         collectionId: collections.get(article.parentId ?? "")?.id ?? null,
         order: orderOf(article.order),

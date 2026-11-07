@@ -67,7 +67,8 @@ export function ferndeskFixtures(): FerndeskFixtures {
         contentHtml: "<p>Make one in Developers.</p>",
         ...at("2024-03-04T09:00:00.000Z"),
       }),
-      article("art_roadmap", "Roadmap notes", "roadmap-notes", "rdm01", {
+      // A slug that starts with a number keeps it.
+      article("art_roadmap", "Roadmap notes", "2027-roadmap-notes", "rdm01", {
         collectionId: "col_start",
         status: "draft",
         contentHtml: "<p>Not ready yet.</p>",
