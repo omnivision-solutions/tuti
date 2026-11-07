@@ -104,7 +104,7 @@ function refusal(source: ImportSourceDefinition, error: unknown, cant: { code: s
 export const startImport = defineOperation({
   name: "imports.start",
   summary:
-    "Start an import from another tool (`source`: featurebase, with an API key of its own; intercom, with an app's access token) and the parts to bring, of those the source has (Featurebase: all of them; Intercom: contacts, docs and avatars; any other is 400) (contacts: as the project's users, by their id in your app; feedback: boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates; docs: the help center's collections and articles, with their media and the links between them, published as they were; changelog: its entries, published at their dates or as drafts, with their images, quietly; avatars: contacts' uploaded profile pictures, copied last). Feedback and avatars need Contacts (400 without). The key is checked, then each part's list read once: a key the source refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Started again later, it brings only what's new since (contacts, posts, votes, comments, changelog entries, articles, conversations and their new messages), nothing twice. Only people can start it, in the app (its first run, or Settings → Import): API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
+    "Start an import from another tool (`source`: featurebase, with an API key of its own; intercom, with an app's access token; ferndesk, with an API key with Full access) and the parts to bring, of those the source has (Featurebase: all of them; Intercom: contacts, docs and avatars; Ferndesk: contacts, docs and inbox, its AI assistant's conversations, closed; any other is 400) (contacts: as the project's users, by their id in your app; feedback: boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates; docs: the help center's collections and articles, with their media and the links between them, published as they were; changelog: its entries, published at their dates or as drafts, with their images, quietly; avatars: contacts' uploaded profile pictures, copied last). For a source whose API doesn't say who may read each article (Ferndesk), `publishArticles` says whether its published articles come published; without it they come as drafts, to publish once checked (400 for another source). Feedback and avatars need Contacts (400 without). The key is checked, then each part's list read once: a key the source refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Started again later, it brings only what's new since (contacts, posts, votes, comments, changelog entries, articles, conversations and their new messages), nothing twice. Only people can start it, in the app (its first run, or Settings → Import): API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
   method: "POST",
   path: "/imports",
   scope: "write",
@@ -115,9 +115,15 @@ export const startImport = defineOperation({
       source: z.enum(Object.keys(IMPORT_SOURCES) as [ImportSourceKey, ...ImportSourceKey[]]),
       key: z.string().trim().max(500),
       parts: z.array(z.enum(Object.keys(IMPORT_PARTS) as [ImportPart, ...ImportPart[]])).min(1, "Pick what to bring"),
+      // Only for a source whose API doesn't say who may read each article (import-parts' askPublish): whether its
+      // published ones come published; without it, as drafts, as the setup step suggests.
+      publishArticles: z.boolean().optional(),
     })
-    .superRefine(({ source, key, parts }, ctx) => {
-      const { name, credential, parts: has } = IMPORT_SOURCES[source] as ImportSourceInfo;
+    .superRefine(({ source, key, parts, publishArticles }, ctx) => {
+      const { name, credential, parts: has, askPublish } = IMPORT_SOURCES[source] as ImportSourceInfo;
+      if (publishArticles !== undefined && !askPublish) {
+        ctx.addIssue({ code: "custom", path: ["publishArticles"], message: `${name} says who may read each article: its articles come as they were` });
+      }
       if (credential.kind === "key" ? key === "" : !z.url({ protocol: /^https?$/ }).safeParse(key).success) {
         ctx.addIssue({ code: "custom", path: ["key"], message: credential.kind === "key" ? `Paste your ${name} API key` : `Paste your ${name} address` });
       }
@@ -158,7 +164,15 @@ export const startImport = defineOperation({
       return (
         running ??
         (await tx.dataImport.create({
-          data: { projectId, source: sourceRow, startedById: actor.userId, apiKey: sealValue(IMPORT_KEY, input.key), parts, step: nextStep(parts, null) ?? "" },
+          data: {
+            projectId,
+            source: sourceRow,
+            startedById: actor.userId,
+            apiKey: sealValue(IMPORT_KEY, input.key),
+            parts,
+            publishArticles: (IMPORT_SOURCES[input.source] as ImportSourceInfo).askPublish ? (input.publishArticles ?? false) : true,
+            step: nextStep(parts, null) ?? "",
+          },
           select: { id: true },
         }))
       );

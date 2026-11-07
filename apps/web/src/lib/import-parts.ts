@@ -57,7 +57,7 @@ export const IMPORT_PARTS = {
     media: true,
     see: { label: "See docs", page: "docs" },
     steps: { "docs-collections": "Collections", "docs-articles": "Articles", "docs-content": "Their content", "docs-unreached": "Last check" },
-    kinds: ["collections", "articles", "privateDrafts", "limitDrafts", "unpublishedChanges", "articleImages", "articleFiles", "articleVideos"],
+    kinds: ["collections", "articles", "heldDrafts", "privateDrafts", "limitDrafts", "unpublishedChanges", "articleImages", "articleFiles", "articleVideos"],
   },
   inbox: {
     label: "Inbox",
@@ -129,15 +129,39 @@ export const IMPORT_SOURCES = {
       help: "In Intercom's Developer Hub, open or create an app; its access token is under Authentication. It's kept only while the import runs.",
     },
   },
+  ferndesk: {
+    name: "Ferndesk",
+    description: "Bring your help center, its users and your AI assistant's conversations across with an API key.",
+    parts: ["contacts", "docs", "inbox"],
+    // Its users have no company, and its conversations are the AI's, text only.
+    partDescriptions: {
+      contacts: "Your help center's users, with their attributes, as Users.",
+      inbox: "Your AI assistant's conversations with readers, closed, as the Inbox.",
+    },
+    askPublish: true,
+    credential: {
+      kind: "key",
+      keysUrl: "https://ferndesk.com/app/settings/developers",
+      // Drafts need Write content (Ferndesk's scopes); its Full access preset has every scope the import reads.
+      help: "In Ferndesk, Developers → API → New API key, with Full access (it reads drafts and AI conversations). It's kept only while the import runs.",
+    },
+  },
 } as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;
 
 export type ImportSourceInfo = {
   name: string;
   description: string;
   parts: readonly ImportPart[];
+  /** What a part brings from it, where that isn't what IMPORT_PARTS says for every source (partDescription). */
+  partDescriptions?: Partial<Record<ImportPart, string>>;
+  /** Its API doesn't say who may read each article: picking the help center asks whether its published ones come published or as drafts. */
+  askPublish?: true;
   credential: { kind: "key"; keysUrl: string; help: string } | { kind: "url"; help: string };
 };
 export type ImportSourceKey = keyof typeof IMPORT_SOURCES;
+
+/** What a part brings from a source, as the setup step and Settings → Import offer it. */
+export const partDescription = (source: ImportSourceInfo, part: ImportPart): string => source.partDescriptions?.[part] ?? IMPORT_PARTS[part].description;
 
 /**
  * The picked parts after ticking (`on`) or unticking one: ticking one ticks what it needs, unticking one unticks what
@@ -186,6 +210,7 @@ const KINDS: Record<string, [string, string]> = {
   collections: ["collection", "collections"],
   articles: ["article", "articles"],
   privateDrafts: ["article as a draft (only some people could see it)", "articles as drafts (only some people could see them)"],
+  heldDrafts: ["article as a draft (published there; publish it once you've checked it)", "articles as drafts (published there; publish them once you've checked them)"],
   limitDrafts: ["article as a draft (past the plan's article limit)", "articles as drafts (past the plan's article limit)"],
   unpublishedChanges: ["article's unpublished changes", "articles' unpublished changes"],
   images: ["image", "images"],
