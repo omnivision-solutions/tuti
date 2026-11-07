@@ -24,6 +24,7 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * /continue, and back. `forgotPassword` (a host that can
  * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account".
  * `social` (the apex only) puts Continue with Google / GitHub above the form; `socialError` says why one didn't work.
+ * `description` replaces the line under the title (on the app, on the way back to a portal).
  */
 export function AuthForm({
   mode,
@@ -35,6 +36,7 @@ export function AuthForm({
   signUp = true,
   social = [],
   socialError,
+  description,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -45,6 +47,7 @@ export function AuthForm({
   signUp?: boolean;
   social?: SocialProvider[];
   socialError?: SocialSignInError;
+  description?: string;
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -118,7 +121,7 @@ export function AuthForm({
       <CardHeader>
         <CardTitle>{isSignUp ? "Create an account" : "Sign in"}</CardTitle>
         <CardDescription>
-          {isSignUp ? "Start collecting feedback in minutes." : usePassword ? "Welcome back." : "We'll email you a link to sign in."}
+          {description ?? (isSignUp ? "Start collecting feedback in minutes." : usePassword ? "Welcome back." : "We'll email you a link to sign in.")}
         </CardDescription>
       </CardHeader>
       <form onSubmit={onSubmit}>

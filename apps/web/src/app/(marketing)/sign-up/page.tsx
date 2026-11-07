@@ -8,7 +8,7 @@ import { socialProviders, socialSignInError } from "@/lib/social-sign-in";
 import { getSession } from "@/server/session";
 
 import { TermsAgreement } from "../legal";
-import { WithPitch } from "../with-pitch";
+import { continuingTo, WithPitch } from "../with-pitch";
 
 export default async function SignUpPage(props: PageProps<"/sign-up">) {
   const { next, email, error, via } = await props.searchParams;
@@ -19,10 +19,20 @@ export default async function SignUpPage(props: PageProps<"/sign-up">) {
   if (!nextPath && !defaultEmail && (await getSession())) {
     redirect("/app");
   }
+  // From a portal's "Create an account": the account is for that portal, not a team.
+  const portal = await continuingTo(nextPath);
   return (
-    <WithPitch>
+    <WithPitch continuingTo={portal}>
       <div className="flex flex-col gap-4">
-        <AuthForm mode="sign-up" social={socialProviders()} socialError={socialSignInError(error, via, emailConfigured())} redirectTo="/app" next={nextPath || undefined} defaultEmail={defaultEmail} />
+        <AuthForm
+          mode="sign-up"
+          social={socialProviders()}
+          socialError={socialSignInError(error, via, emailConfigured())}
+          redirectTo="/app"
+          next={nextPath || undefined}
+          defaultEmail={defaultEmail}
+          description={portal ? `Create your Tuti account to continue to ${portal}.` : undefined}
+        />
         {plansEnabled() && <TermsAgreement by="signing up" />}
       </div>
     </WithPitch>

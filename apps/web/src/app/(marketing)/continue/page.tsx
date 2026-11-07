@@ -29,6 +29,12 @@ export default async function ContinuePage(props: PageProps<"/continue">) {
   if (project && state === undefined && (await isOwnWayBack(wayBack, session?.user.id))) {
     redirect(`${await portalAddress(project.slug)}/continue?${new URLSearchParams({ redirect: redirectPath })}`);
   }
+  // Opened signed out (its address was verified already, so verifying didn't sign anyone in): signing in first, then here
+  // again, where the MAC is checked for whoever signed in.
+  if (project && state === undefined && !session && typeof issued === "string" && typeof mac === "string") {
+    const here = `/continue?${new URLSearchParams({ portal: project.slug, redirect: wayBack.redirect, issued, mac })}`;
+    redirect(`/sign-in?${new URLSearchParams({ next: here })}`);
+  }
   if (!project || !isSecret(state)) {
     return (
       <Card className="mx-auto w-full max-w-sm">

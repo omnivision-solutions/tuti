@@ -48,6 +48,7 @@ export async function backToPortal(page: Page) {
  */
 export async function signInWithPassword(page: Page, email: string, password = "correct horse battery staple") {
   await page.getByRole("link", { name: "Use a password instead" }).click();
+  await expect(page.getByText(/^Sign in to continue to /)).toBeVisible();
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

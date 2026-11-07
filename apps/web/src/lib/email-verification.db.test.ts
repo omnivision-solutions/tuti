@@ -11,11 +11,22 @@ import { request } from "@/test/next-headers";
 import { auth, VERIFICATION_SECONDS } from "./auth";
 import { randomSecret } from "./portal-handoff";
 
+const APP_URL = process.env.APP_URL!;
+
+/** A POST to Better Auth's `path` on the app, as a browser's: no session. */
+const postOnApp = (path: string, body: object) =>
+  auth.handler(
+    new Request(`${APP_URL}/api/auth/${path}`, {
+      method: "POST",
+      headers: { host: new URL(APP_URL).host, origin: APP_URL, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+
+/** Signs up on the app as its form does. */
 async function signUp(callbackURL?: string) {
   const email = `e2e-${randomUUID()}@example.com`;
-  await auth.api.signUpEmail({
-    body: { email, name: "Ada", password: "correct horse battery staple", callbackURL },
-  });
+  expect((await postOnApp("sign-up/email", { email, name: "Ada", password: "correct horse battery staple", callbackURL })).ok).toBe(true);
   return email;
 }
 
@@ -153,10 +164,8 @@ test("signed up from a portal, the verification link comes back through a new ha
   await notValid({ ...signed, mac: `${signed.mac!.slice(0, middle)}${signed.mac![middle] === "A" ? "B" : "A"}${signed.mac!.slice(middle + 1)}` });
   // a portal that doesn't exist;
   await notValid({ ...signed, portal: "no-such-project" });
-  // the same link with someone else signed in (say its owner's teammate, who lifted it from their own email), or no one;
+  // the same link with someone else signed in (say its owner's teammate, who lifted it from their own email);
   actAs(await signUpUser("Someone else"));
-  await notValid(signed);
-  actAs(null);
   await notValid(signed);
   // and, for its account, once it's older than the verification link it came in.
   actAs(ada);
@@ -167,6 +176,20 @@ test("signed up from a portal, the verification link comes back through a new ha
     vi.useRealTimers();
   }
   expect(await redirectTarget(page(signed))).toContain("/continue?redirect=");
+
+  // Opened again, signed out on the app (the address is verified, so it doesn't sign in): verified, back to the same
+  // /continue, which asks to sign in first and then checks the MAC for whoever did.
+  const again = await auth.handler(new Request(link, { headers: { host: appHost } }));
+  expect(again.headers.get("location")).toBe(`${back.pathname}${back.search}`);
+  expect(again.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
+  actAs(null);
+  const signIn = new URL(await redirectTarget(page(signed)), APP_URL);
+  expect(signIn.pathname).toBe("/sign-in");
+  expect(signIn.searchParams.get("next")).toBe(`/continue?${new URLSearchParams({ portal: project.slug, redirect: signed.redirect!, issued: signed.issued!, mac: signed.mac! })}`);
+  actAs(ada);
+  expect(await redirectTarget(page(Object.fromEntries(new URL(signIn.searchParams.get("next")!, APP_URL).searchParams)))).toBe(
+    `http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`,
+  );
 });
 
 test("a way back someone gets signed by signing up with a hand-picked callback works for nobody else", async () => {
@@ -177,14 +200,32 @@ test("a way back someone gets signed by signing up with a hand-picked callback w
   const back = new URL(link.searchParams.get("callbackURL")!, link);
   expect(back.searchParams.get("mac")).toBeTruthy();
 
-  // Sent to anyone else, opened signed in as someone else or no one: not valid, and no redirect to that address.
-  request.host = new URL(process.env.APP_URL!).host;
+  // Sent to anyone else: signed in as someone else, not valid; signed out, asked to sign in (and then, as anyone but
+  // that account, not valid). Never a redirect to that address.
+  request.host = new URL(APP_URL).host;
   const open = () =>
     ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/continue">).catch(
       (error: { digest?: string }) => error.digest,
     );
-  for (const someone of [await signUpUser("Someone else"), null]) {
-    actAs(someone);
-    expect(JSON.stringify(((await open()) as React.ReactElement).props)).toContain("Link not valid");
-  }
+  actAs(await signUpUser("Someone else"));
+  expect(JSON.stringify(((await open()) as React.ReactElement).props)).toContain("Link not valid");
+  actAs(null);
+  expect(await open()).toMatch(/^NEXT_REDIRECT;[^;]+;\/sign-in\?next=%2Fcontinue%3F/);
+});
+
+test("asking for a verification email again never signs a way back: anyone can ask, for anyone's address", async () => {
+  // Bea signed up on the app and hasn't verified; someone else asks for her email again, with a way back to their portal.
+  const email = await signUp("/app");
+  const theirs = await createProject(await signUpUser("Owner"));
+  const asked = await postOnApp("send-verification-email", { email, callbackURL: `/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}` });
+  expect(asked.ok).toBe(true);
+  const { link } = await verificationLink(email);
+  // No way back to the portal in it: the app's home.
+  expect(link.searchParams.get("callbackURL")).toBe("/");
+  expect(link.toString()).not.toContain(theirs.slug);
+
+  // Bea opens it: verified and signed in, on the app's home, not that portal.
+  const response = await auth.handler(new Request(link, { headers: { host: new URL(APP_URL).host } }));
+  expect(response.headers.get("location")).toBe("/");
+  expect(await isVerified(email)).toBe(true);
 });

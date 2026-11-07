@@ -96,12 +96,15 @@ export async function isOwnWayBack(
  * A verification link is opened later, maybe much later: its way back (callbackURL) mustn't carry a "Continue as"
  * handoff's state, used once and kept 10 minutes (lib/portal-handoff.ts). A sign-up from a portal has one (its `next` is
  * the app's /continue); in its place go when it was made and the app's MAC for this account (isOwnWayBack), with which
- * /continue starts a new handoff.
+ * /continue starts a new handoff. Only for the sign-up's own email (`signingUp`): sending it again takes any address and
+ * callbackURL from anyone, so there it would sign a way back for someone else's account. Elsewhere it goes to the app.
  */
-async function withoutHandoffState(link: string, userId: string): Promise<string> {
+async function withoutHandoffState(link: string, userId: string, signingUp: boolean): Promise<string> {
   const url = new URL(link);
   const back = url.searchParams.get("callbackURL");
-  if (back?.startsWith("/continue?")) {
+  if (back?.startsWith("/continue?") && !signingUp) {
+    url.searchParams.set("callbackURL", "/");
+  } else if (back?.startsWith("/continue?")) {
     const callback = new URL(back, url);
     callback.searchParams.delete("state");
     const portal = callback.searchParams.get("portal");
@@ -248,7 +251,8 @@ export const auth = betterAuth({
     expiresIn: VERIFICATION_SECONDS,
     sendVerificationEmail: async ({ user, url }, request) => {
       try {
-        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: await withoutHandoffState(url, user.id) }) });
+        const signingUp = !!request && new URL(request.url).pathname.endsWith("/sign-up/email");
+        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: await withoutHandoffState(url, user.id, signingUp) }) });
       } catch (error) {
         log.error("Sending the verification email failed", { error });
         // A failed email mustn't fail a sign-up (it can be sent again), but asking
