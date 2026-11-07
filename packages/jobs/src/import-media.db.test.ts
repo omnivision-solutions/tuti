@@ -50,6 +50,12 @@ beforeAll(async () => {
       res.writeHead(302, { location: req.url === "/loop.png" ? "/loop.png" : "/a.png" }).end();
       return;
     }
+    if (req.url === "/stalled.mp4") {
+      // A video's first bytes, then nothing more: as slow as a copy can be.
+      res.writeHead(200, { "content-type": "video/mp4" });
+      res.write(MP4.subarray(0, 32));
+      return;
+    }
     if (req.url === "/streamed.png") {
       // No length up front: only reading it tells it's too big.
       res.writeHead(200, { "content-type": "image/png" });
@@ -184,6 +190,22 @@ test("an uploaded video in an article is copied, checked by its content, and pla
   s3.onPut = undefined;
   expect(puts).toEqual(Array(3).fill(expect.objectContaining({ "x-amz-content-sha256": "UNSIGNED-PAYLOAD", "content-length": String(MP4.length) })));
   expect(await readdir(temporary)).toEqual([]);
+  await rm(temporary, { recursive: true });
+});
+
+test("a copy that can't finish by the deadline is cut off and left out, its temporary file gone; a later run tries again", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "import-media-test-"));
+  vi.stubEnv("TMPDIR", temporary);
+  const cache = new Map();
+  const source = { kind: "video" as const, url: `${origin}/stalled.mp4`, key: "stalled", name: "stalled.mp4" };
+  const started = Date.now();
+  expect(await mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 300 })(source)).toEqual({ leftOut: "unreachable" });
+  expect(Date.now() - started).toBeLessThan(5_000);
+  expect(await readdir(temporary)).toEqual([]);
+  expect(await prisma.media.count({ where: { projectId } })).toBe(0);
+  // Not remembered as left out: the next page, with its own time, asks for it again.
+  await mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 300 })(source);
+  expect(served.filter((path) => path === "/stalled.mp4")).toHaveLength(2);
   await rm(temporary, { recursive: true });
 });
 

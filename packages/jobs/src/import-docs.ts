@@ -33,7 +33,11 @@ const CONTENT_PAGE = 20;
  * page again for the rest: import-step's time limit is 5 minutes, and a page reads Featurebase for up to 3. At least
  * one article a page, so it always gets on. Changeable for tests.
  */
-export const contentBudget = { ms: 90_000 };
+/**
+ * `mediaMs`: from the page's start, when every media copy is done or left out (mediaImporter's `deadline`), well inside
+ * import-step's 5 minutes: a video may take minutes to copy, and an article may hold several.
+ */
+export const contentBudget = { ms: 90_000, mediaMs: 240_000 };
 /** A content page's cursor that reads the list's page at the cursor after it again (none: the first): `again:<cursor>`. */
 const AGAIN = "again:";
 
@@ -404,7 +408,7 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const cache = mediaCaches.get(job.id) ?? new Map();
   mediaCaches.set(job.id, cache);
   // Copies are the import's starter's uploads (someone who left since: none copied).
-  const media = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById, cache }) : undefined;
+  const media = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById, cache, deadline: started + contentBudget.mediaMs }) : undefined;
   // `draftLost`: why its unpublished changes didn't come (the published version did), said in the summary.
   // `drafted`: it has a draft that differs, not converted (the team asked for drafts: only its published text is kept).
   const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null; draftLost: string | null; drafted: boolean }[] = [];

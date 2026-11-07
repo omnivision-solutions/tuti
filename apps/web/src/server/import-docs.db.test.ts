@@ -228,6 +228,32 @@ test("an article's draft is read before its media is copied, so a slow copy can'
   expect(await article("Paying by card")).toMatchObject({ publishedAt: expect.any(Date), changes: { body: expect.stringContaining("Amex is coming soon.") } });
 });
 
+test("a video too slow to copy by the page's media deadline is left out, and the page saves its articles inside its step's time", async () => {
+  await structureOnly();
+  // Second on the page: an article with a video (an MP4's first bytes are enough to tell it's one).
+  const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom\0\0\0\0isommp41"), Buffer.alloc(64, 7)]);
+  const video = fake.file("tour.mp4", "video/mp4", mp4);
+  const [first, paying] = fake.fixtures.articles;
+  paying!.body = `<video src="${video}"></video>${paying!.body}`;
+  fake.fixtures.articles = [first!, paying!];
+
+  const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["docs"], step: "docs-content" } });
+  const job = importJob(row)!;
+  // The video takes as long as can be: once it's asked for, the clock is five minutes on, past the media deadline.
+  const now = Date.now.bind(Date);
+  let copying = false;
+  fake.onFile = (name) => void (copying ||= name === "tour.mp4");
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => now() + (copying ? 5 * 60_000 : 0));
+  const page = await STEPS.docs!.steps[2]!.page(job, null).finally(() => clock.mockRestore());
+  expect(copying).toBe(true);
+  await prisma.$transaction((tx) => page.save(tx));
+  // Both articles saved; the video isn't in its article, nor stored or kept anywhere.
+  expect((await articles()).filter((a) => a.content).map((a) => a.title)).toEqual(expect.arrayContaining(["Welcome to Acme", "Paying by card"]));
+  expect(nodesOf((await article("Paying by card")).content as Node).some((node) => node.type === "video")).toBe(false);
+  expect(await prisma.media.count({ where: { projectId: project.id, filename: "tour.mp4" } })).toBe(0);
+  expect([...s3.objects.keys()].some((key) => key.endsWith("/video"))).toBe(false);
+});
+
 test("an empty article the team only retitled while the import was stopped stays theirs too", async () => {
   await structureOnly();
   const paying = await article("Paying by card");

@@ -1,4 +1,4 @@
-import { emailImageKey, fileKey, imageKey } from "@tuti/content";
+import { emailImageKey, fileKey, imageKey, videoKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -81,4 +81,18 @@ test("a file attachment is only ever a download, under its name", async () => {
   const file = await fetch(response.headers.get("location")!);
   expect(file.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''Notes.txt");
   expect(file.headers.get("content-type")).toBe("application/octet-stream");
+});
+
+test("an uploaded video plays as its video type, not a download; a file of the same upload's name would still download", async () => {
+  const media = await image();
+  await prisma.media.update({ where: { id: media.id }, data: { filename: "Tour.mp4", width: null, height: null } });
+  s3.objects.set(videoKey(media.id), { body: Buffer.from("video"), contentType: "video/mp4" });
+  s3.objects.set(fileKey(media.id), { body: Buffer.from("file"), contentType: "application/pdf" });
+  const video = (await open(lastingMediaUrl(videoKey(media.id)))).headers.get("location")!;
+  expect(new URL(video).searchParams.has("response-content-disposition")).toBe(false);
+  const played = await fetch(video);
+  expect(played.headers.get("content-type")).toBe("video/mp4");
+  expect(played.headers.get("content-disposition")).toBeNull();
+  const file = await fetch((await open(lastingMediaUrl(fileKey(media.id)))).headers.get("location")!);
+  expect(file.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''Tour.mp4");
 });

@@ -42,14 +42,28 @@ type Copied = ImportedMedia | { leftOut: LeftOutReason };
  *
  * `cache`, by the source's key: kept by the caller for a whole import, the same file is copied once. Left-out ones are
  * remembered too, so a file that's gone isn't fetched again for every post that has it.
+ *
+ * `deadline` (a time, in ms): every copy is done by then or left out (`unreachable`), its download and upload cut off,
+ * so a step holding several large videos stays inside its job's time limit. One cut off isn't remembered: a later run,
+ * with time of its own, tries again.
  */
-export function mediaImporter({ projectId, uploaderId, cache = new Map() }: { projectId: string; uploaderId: string; cache?: Map<string, Copied> }): MediaImporter {
+export function mediaImporter({
+  projectId,
+  uploaderId,
+  cache = new Map(),
+  deadline,
+}: {
+  projectId: string;
+  uploaderId: string;
+  cache?: Map<string, Copied>;
+  deadline?: number;
+}): MediaImporter {
   return async (source) => {
     const cached = cache.get(source.key);
     if (cached) {
       return cached;
     }
-    const { passing, ...copied } = await copy(projectId, uploaderId, source);
+    const { passing, ...copied } = await copy(projectId, uploaderId, source, deadline);
     // A failure of our own (storage, processing) may pass: the next document tries again.
     if (!passing) {
       cache.set(source.key, copied);
@@ -62,10 +76,12 @@ export function mediaImporter({ projectId, uploaderId, cache = new Map() }: { pr
 const PROCESSED_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 /** A video goes through a temporary file (never whole in memory: the worker is every project's), deleted however it ends. */
-async function copy(projectId: string, uploaderId: string, source: MediaSource): Promise<Copied & { passing?: true }> {
+async function copy(projectId: string, uploaderId: string, source: MediaSource, deadline?: number): Promise<Copied & { passing?: true }> {
+  const late = deadline === undefined ? undefined : AbortSignal.timeout(Math.max(1, deadline - Date.now()));
   const dir = source.kind === "video" ? await mkdtemp(join(tmpdir(), "tuti-video-")) : null;
   try {
-    return await copyThrough(projectId, uploaderId, source, dir && join(dir, "video"));
+    const copied = await copyThrough(projectId, uploaderId, source, dir && join(dir, "video"), late, deadline);
+    return late?.aborted && "leftOut" in copied ? { ...copied, passing: true } : copied;
   } finally {
     if (dir) {
       await rm(dir, { recursive: true, force: true });
@@ -73,7 +89,14 @@ async function copy(projectId: string, uploaderId: string, source: MediaSource):
   }
 }
 
-async function copyThrough(projectId: string, uploaderId: string, { kind, url, name }: MediaSource, path: string | null): Promise<Copied & { passing?: true }> {
+async function copyThrough(
+  projectId: string,
+  uploaderId: string,
+  { kind, url, name }: MediaSource,
+  path: string | null,
+  late: AbortSignal | undefined,
+  deadline: number | undefined,
+): Promise<Copied & { passing?: true }> {
   const storage = mediaStorage();
   if (!storage) {
     return { leftOut: "unsupported" };
@@ -85,9 +108,13 @@ async function copyThrough(projectId: string, uploaderId: string, { kind, url, n
   }
   const limit = kind === "image" ? "MEDIA_MAX_IMPORT_IMAGE_MB" : kind === "video" ? "MEDIA_MAX_VIDEO_MB_TEAM" : "MEDIA_MAX_FILE_MB_TEAM";
   // With `path`, the body is only its first bytes; the whole of it is in the file.
-  const body = await download(url, mediaLimit(limit), path ?? undefined);
+  const body = await download(url, mediaLimit(limit), path ?? undefined, late);
   if (typeof body === "string") {
     return { leftOut: body };
+  }
+  // Fetched, but too late to keep: nothing is stored.
+  if (deadline !== undefined && Date.now() > deadline) {
+    return { leftOut: "unreachable" };
   }
   if (kind === "file" && !isFileContent(extension, body)) {
     return { leftOut: "type" };
@@ -137,7 +164,7 @@ async function copyThrough(projectId: string, uploaderId: string, { kind, url, n
         return await leaveOut("type");
       }
     } else if (path) {
-      await storage.putFile(videoKey(media.id), path, UPLOAD_VIDEO_TYPES[extension]!);
+      await storage.putFile(videoKey(media.id), path, UPLOAD_VIDEO_TYPES[extension]!, late);
     } else {
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     }
@@ -154,10 +181,10 @@ async function copyThrough(projectId: string, uploaderId: string, { kind, url, n
 
 /**
  * The file at `url`, or why not: refused, unreachable, or more than `maxBytes`. With `to`, it's written to that file as it
- * arrives, and only its first bytes are returned (enough to tell what it is).
+ * arrives, and only its first bytes are returned (enough to tell what it is). `late` cuts it off (a caller's deadline).
  */
-export async function download(url: string, maxBytes: number, to?: string): Promise<Uint8Array | LeftOutReason> {
-  const signal = AbortSignal.timeout(timeoutFor(maxBytes));
+export async function download(url: string, maxBytes: number, to?: string, late?: AbortSignal): Promise<Uint8Array | LeftOutReason> {
+  const signal = AbortSignal.any([AbortSignal.timeout(timeoutFor(maxBytes)), ...(late ? [late] : [])]);
   try {
     for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
       await checkWebhookUrl(url);

@@ -18,8 +18,8 @@ export type MediaStorage = {
   /** The object's bytes, at most `maxBytes` of them when given (a ranged GET). */
   get(key: string, maxBytes?: number): Promise<Uint8Array>;
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
-  /** `put` of a file on disk, streamed (a video: never whole in memory). */
-  putFile(key: string, path: string, contentType: string): Promise<void>;
+  /** `put` of a file on disk, streamed (a video: never whole in memory); `signal` cuts it off, retries and all. */
+  putFile(key: string, path: string, contentType: string, signal?: AbortSignal): Promise<void>;
   /** Copies an object within the bucket (the storage does it: the bytes never pass through here), as this type. */
   copy(from: string, to: string, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
@@ -115,13 +115,15 @@ export function mediaStorage(): MediaStorage | null {
         headers: { "content-type": contentType, "cache-control": PRIVATE_CACHE },
       });
     },
-    async putFile(key, path, contentType) {
+    async putFile(key, path, contentType, signal) {
       const { size } = await stat(path);
       // The client's own retries would resend a stream the first try used up: each try here signs and sends a fresh one
       // (as many tries as the client's, on the same answers: 5xx and 429).
       for (let attempt = 0; ; attempt++) {
+        signal?.throwIfAborted();
         const request = await client.sign(objectUrl(key), {
           method: "PUT",
+          signal,
           body: Readable.toWeb(createReadStream(path)) as RequestInit["body"],
           // A stream isn't hashed for the signature: its length is signed instead.
           headers: { "content-type": contentType, "cache-control": PRIVATE_CACHE, "content-length": String(size), "x-amz-content-sha256": "UNSIGNED-PAYLOAD" },
