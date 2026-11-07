@@ -28,7 +28,14 @@ export default async function LicensePage(props: PageProps<"/license">) {
     notFound();
   }
   const { installation, project, claim, paid, failed } = await props.searchParams;
-  if (typeof installation !== "string" || typeof project !== "string" || !LICENSE_ID.test(installation) || !LICENSE_ID.test(project)) {
+  // A claim (the installation's secret's hash) is optional, for older releases' links; a broken one is a broken link.
+  if (
+    typeof installation !== "string" ||
+    typeof project !== "string" ||
+    !LICENSE_ID.test(installation) ||
+    !LICENSE_ID.test(project) ||
+    (claim !== undefined && (typeof claim !== "string" || !LICENSE_ID.test(claim)))
+  ) {
     return (
       <EmptyState
         title="Open this page from your Tuti"

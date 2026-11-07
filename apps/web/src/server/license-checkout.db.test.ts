@@ -4,7 +4,9 @@ import { prisma } from "@tuti/db";
 import { startStripeFake, type FakeStripeEvent, type StripeFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+import LicensePage from "@/app/(marketing)/license/page";
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
+import { EmptyState } from "@/components/empty-state";
 import { testLicensePrivateKey } from "@/test/license";
 
 import { installationId, licenseClaimHash } from "./license";
@@ -164,6 +166,17 @@ test("bought from an installation's link, only that installation (which has the 
   expect(await claim()).toEqual({ error: "in_use" });
   expect(await claim(randomUUID())).toEqual({ error: "in_use" });
   expect(await claim(secret)).toMatchObject({ key: expect.any(String) });
+});
+
+test("a link whose claim isn't one is sent back to Tuti, not round to the same buy form again", async () => {
+  const sessions = stripe.sessions.length;
+  const back = new URL(await buy("month", "not a claim"));
+  expect(stripe.sessions.length).toBe(sessions);
+  const page = (await LicensePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/license">)) as React.ReactElement<
+    React.ComponentProps<typeof EmptyState>
+  >;
+  expect(page.type).toBe(EmptyState);
+  expect(page.props.title).toBe("Open this page from your Tuti");
 });
 
 test("Tuti's cloud sells and renews no licence for itself: hiding the badge there is the add-on on a paid plan", async () => {
