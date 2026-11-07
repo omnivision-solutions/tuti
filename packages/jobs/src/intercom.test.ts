@@ -62,6 +62,20 @@ test("a request rate limited or failing for a while is tried again, waiting as I
   vi.useRealTimers();
 });
 
+test("a 429 with only its rate limit's reset waits till then by Intercom's clock (its Date), never less than the backoff", async () => {
+  // This machine's clock is a minute ahead of Intercom's: its own reading would make the reset look past.
+  vi.useFakeTimers({ now: new Date("2026-11-07T12:01:00Z"), toFake: ["Date"] });
+  const limited = (reset: string) =>
+    Response.json({ errors: [{ message: "Too many requests" }] }, { status: 429, headers: { "x-ratelimit-reset": String(Date.parse(reset) / 1000), date: new Date("2026-11-07T12:00:00Z").toUTCString() } });
+  const answers = [limited("2026-11-07T12:00:02Z"), limited("2026-11-07T12:00:00Z"), Response.json({ type: "admin.list", admins: [] })];
+  vi.stubGlobal("fetch", vi.fn(async () => answers.shift()!));
+  const waits: number[] = [];
+  await expect(intercom("token", { wait: async (ms) => void waits.push(ms) }).get("/admins")).resolves.toEqual({ type: "admin.list", admins: [] });
+  // Two seconds to the reset by Intercom's clock; then a reset that's now, so the second attempt's backoff.
+  expect(waits).toEqual([2000, 1000]);
+  vi.useRealTimers();
+});
+
 test("an article deleted while the list is read (those after it moving up a place) has the whole list read again, so none is missed", async () => {
   const fake = await startIntercomFake();
   try {

@@ -40,6 +40,11 @@ test("in the first run the team comes from Intercom: a bad token is refused, a g
   await key.fill("not_a_real_token");
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   await expect(owner.getByText("Intercom didn't accept this API key. Check you copied all of it, or make a new one.")).toBeVisible();
+  // Another source picked, Intercom's refusal isn't left under its field; back to Intercom to go on.
+  await owner.getByRole("radio", { name: /^Featurebase/ }).check();
+  await expect(owner.getByText("Intercom didn't accept this API key. Check you copied all of it, or make a new one.")).toHaveCount(0);
+  await owner.getByRole("radio", { name: /^Intercom/ }).check();
+  await owner.getByRole("checkbox", { name: /^Help center/ }).check();
 
   await key.fill(FAKE_INTERCOM_TOKEN);
   await owner.getByRole("button", { name: "Check the key and start" }).click();

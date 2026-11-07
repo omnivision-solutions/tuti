@@ -22,17 +22,24 @@ const MAX_WAIT_MS = 60_000;
 const TIMEOUT_MS = 30_000;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** How long to wait before trying again: Retry-After, else its rate limit's reset (epoch seconds), else 0.5s doubling up to 8s. */
+/**
+ * How long to wait before trying again: Retry-After; else, on a 429, till its rate limit's reset (epoch seconds),
+ * measured against the answer's own Date (Intercom's clock: this machine's may be ahead) and never less than the
+ * backoff; else 0.5s doubling up to 8s.
+ */
 function waitFor(response: Response | null, attempt: number): number {
+  const backoff = Math.min(500 * 2 ** attempt, 8_000);
   const after = Number(response?.headers.get("retry-after"));
   if (after > 0) {
     return Math.min(after * 1000, MAX_WAIT_MS);
   }
   const reset = Number(response?.headers.get("x-ratelimit-reset"));
   if (response?.status === 429 && reset > 0) {
-    return Math.min(Math.max(reset * 1000 - Date.now(), 0), MAX_WAIT_MS);
+    const date = Date.parse(response.headers.get("date") ?? "");
+    const now = Number.isNaN(date) ? Date.now() : date;
+    return Math.min(Math.max(reset * 1000 - now, backoff), MAX_WAIT_MS);
   }
-  return Math.min(500 * 2 ** attempt, 8_000);
+  return backoff;
 }
 
 /** Intercom's errors: { type: "error.list", errors: [{ code, message }] }. */
