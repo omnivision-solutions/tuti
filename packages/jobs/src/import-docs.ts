@@ -288,8 +288,9 @@ async function articlesPage(job: ImportJob, cursor: string | null): Promise<Step
 }
 
 /**
- * Where links to Featurebase's articles and collections go now: a path like /en/articles/1234567-setup (or
- * /articles/…, /en/help/articles/…, /collections/…), on any host, whose id came across, to that page on the portal.
+ * Where links to the source's articles and collections go now: a path like /en/articles/1234567-setup (or
+ * /articles/…, /en/help/articles/…, Intercom's /<workspace>/en/articles/…, /collections/…), on any host, whose id came
+ * across, to that page on the portal.
  */
 async function linksTo(job: ImportJob, portal: string, html: string[]): Promise<(href: string) => string | null> {
   // Only the ids the HTML mentions (a superset of what its links match below), not every page the import made.
@@ -302,7 +303,7 @@ async function linksTo(job: ImportJob, portal: string, html: string[]): Promise<
     } catch {
       return null;
     }
-    const [, kind, id] = /^\/(?:[A-Za-z-]+\/)?(?:help\/)?(articles|collections)\/(\d+)(?:-|\/|$)/.exec(path) ?? [];
+    const [, kind, id] = /^\/(?:[\w-]+\/){0,2}(articles|collections)\/(\d+)(?:-|\/|$)/.exec(path) ?? [];
     const page = id ? (kind === "articles" ? articles : collections).get(id) : undefined;
     return page && !page.deleted ? `${portal}/docs/${page.slug}` : null;
   };

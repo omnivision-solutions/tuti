@@ -118,6 +118,17 @@ export const IMPORT_SOURCES = {
       help: "In Featurebase, Settings → API. It's kept only while the import runs.",
     },
   },
+  intercom: {
+    name: "Intercom",
+    description: "Bring your users and help center across with an access token.",
+    parts: ["contacts", "docs", "avatars"],
+    credential: {
+      kind: "key",
+      // Its Developer Hub, where an app's access token is (Authentication).
+      keysUrl: "https://app.intercom.com/a/apps/_/developer-hub",
+      help: "In Intercom's Developer Hub, open or create an app; its access token is under Authentication. It's kept only while the import runs.",
+    },
+  },
 } as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;
 
 export type ImportSourceInfo = {
