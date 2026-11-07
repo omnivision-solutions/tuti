@@ -1221,6 +1221,222 @@ test("Needs reply lists the latest message first, as every view does: a new mess
   await expect(list.getByRole("link")).toHaveText([/Sam Smith/, /e2e-asker/]);
 });
 
+/** Holds the page's navigations to addresses `what` matches (not prefetches) until the function it returns is called. */
+async function holdNavigations(page: Page, what: RegExp) {
+  let release!: () => void;
+  const held = new Promise<void>((done) => (release = done));
+  await page.route(what, async (route) => {
+    const headers = route.request().headers();
+    if (headers["rsc"] && !headers["next-router-prefetch"]) {
+      await held;
+    }
+    await route.fallback();
+  });
+  return async () => {
+    release();
+    await page.unroute(what);
+  };
+}
+
+test("a view lists a hundred conversations, and a hundred more with each Load more: they stay listed as one of them opens", async ({ browser }, testInfo) => {
+  // A hundred and two conversations made through the API first.
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // The first one, waiting longest, is the one past the first hundred; who asked it writes again last, at the top.
+  await api("/conversations", { email: "e2e-first@example.com", subject: "The oldest question", body: "Still there?" });
+  for (let batch = 0; batch < 10; batch++) {
+    await Promise.all(Array.from({ length: 10 }, (_, i) => api("/conversations", { email: `e2e-asker-${batch * 10 + i}@example.com`, body: "A question" })));
+  }
+  await api("/conversations", { email: "e2e-first@example.com", subject: "The newest question", body: "And another thing" });
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.goto(`/app/${slug}/inbox`);
+  const list = owner.getByRole("region", { name: "Conversations" });
+  const rows = list.locator("a[data-row-link]");
+  const more = list.getByRole("link", { name: "Load more" });
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Needs reply 102" })).toBeVisible();
+  await expect(rows).toHaveCount(100);
+  await expect(list).not.toContainText("The oldest question");
+  await more.scrollIntoViewIfNeeded();
+  await checkpoint(owner, "inbox-load-more", { fullPage: false });
+
+  // The rest: the first of them has focus, the button gone with the last of them.
+  await more.click();
+  await expect(rows).toHaveCount(102);
+  await expect(more).toHaveCount(0);
+  await expect(rows.nth(100)).toBeFocused();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?page=2$`));
+  await checkpoint(owner, "inbox-loaded-more", { fullPage: false });
+
+  // Opened, from its row or from who asked it, the one loaded last is still in the list, beside it.
+  await rows.first().click();
+  await expect(owner.getByRole("heading", { level: 1, name: "The newest question" })).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/102\\?page=2$`));
+  await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: "The oldest question" }).click();
+  await expect(owner.getByRole("heading", { level: 1, name: "The oldest question" })).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?page=2$`));
+  await expect(rows).toHaveCount(102);
+  await expect(rows.last()).toHaveAttribute("aria-current", "page");
+
+  // Another view starts at its first hundred again; Load more there keeps the open conversation's earlier messages. Gone
+  // on to the reply box while they load, focus stays there.
+  await owner.goto(`/app/${slug}/inbox/1?messages=2`);
+  await expect(rows).toHaveCount(100);
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  const release = await holdNavigations(owner, /[?&]page=2/);
+  await more.click();
+  await reply.focus();
+  await expect(rows).toHaveCount(100);
+  await release();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?page=2&messages=2$`));
+  await expect(rows).toHaveCount(102);
+  await expect(reply).toBeFocused();
+  await expect(rows.last()).toHaveAttribute("aria-current", "page");
+
+  // Back to the list from a conversation, it's as long as it was.
+  await owner.locator('[data-slot="page-header"]').getByRole("link", { name: "Inbox" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?page=2$`));
+  await expect(rows).toHaveCount(102);
+
+  // The last one leaving its view opens none there, the list still as long.
+  await api("/conversations/1", { spam: true }, "PATCH");
+  await owner.goto(`/app/${slug}/inbox/1?view=spam&page=2`);
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Not spam" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=spam&page=2$`));
+});
+
+test("a long conversation opens at its latest fifty messages; Show earlier messages loads the ones before, where they were read stays in view", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-long@example.com", body: "Message 1" });
+  await api("/conversations/1/messages", { body: "Message 2" });
+  // The third, a reply with a tall image (from a view it isn't in: sending doesn't move on from it).
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.goto(`/app/${slug}/inbox/1?view=spam`);
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
+  await owner.locator('input[type="file"]').setInputFiles({ name: "tall.png", mimeType: "image/png", buffer: png(100, 600) });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText("tall.png");
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Message 3");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(messages).toHaveCount(3);
+  for (let i = 4; i <= 55; i++) {
+    await api("/conversations/1/messages", { body: `Message ${i}` });
+  }
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const earlier = owner.getByRole("link", { name: "Show earlier messages" });
+  await expect(messages).toHaveCount(50);
+  await expect(messages.first()).toContainText("Message 6");
+  await expect(messages.last()).toContainText("Message 55");
+  await expect(messages.last()).toBeInViewport();
+
+  // Scrolled up to it, the first message shown where it is on the screen. As in Safari, which keeps no place as what's
+  // above grows (Chrome's scroll anchoring does); the earlier ones' image still loading as they come.
+  await owner.addStyleTag({ content: "* { overflow-anchor: none }" });
+  let imagesIn!: () => void;
+  const images = new Promise<void>((done) => (imagesIn = done));
+  await owner.route("**/*", async (route) => {
+    if (route.request().resourceType() === "image") {
+      await images;
+    }
+    await route.fallback();
+  });
+  await earlier.scrollIntoViewIfNeeded();
+  const y = (await messages.first().boundingBox())!.y;
+  await checkpoint(owner, "conversation-show-earlier", { fullPage: false });
+  await earlier.click();
+  await expect(messages).toHaveCount(55);
+  await expect(messages.first()).toContainText("Message 1");
+  await expect(earlier).toHaveCount(0);
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?messages=2$`));
+  // Where they were: the earlier ones came in above it, and it hasn't moved (neither to the top of them, nor to the end).
+  await expect(messages.nth(5)).toContainText("Message 6");
+  expect(Math.abs((await messages.nth(5).boundingBox())!.y - y)).toBeLessThanOrEqual(1);
+  await expect(messages.first()).not.toBeInViewport();
+  // The one loaded just above it has focus (not the first, out of view), the button gone with the last of them.
+  await expect(messages.nth(4)).toContainText("Message 5");
+  await expect(messages.nth(4)).toBeFocused();
+  await checkpoint(owner, "conversation-earlier-messages", { fullPage: false });
+  // The image loading in a message above it (with no size till then) doesn't move it either.
+  imagesIn();
+  await expect(messages.nth(2).getByRole("img", { name: "tall.png" })).toHaveJSProperty("complete", true);
+  expect((await messages.nth(2).boundingBox())!.height).toBeGreaterThanOrEqual(150);
+  expect(Math.abs((await messages.nth(5).boundingBox())!.y - y)).toBeLessThanOrEqual(1);
+  await owner.unroute("**/*");
+  // Once it's in, the place isn't held any more: scrolled some other way (a screen reader's, say) and an image loading
+  // again above (as a refresh signs its link anew), nothing scrolls back.
+  const pane = owner.locator("#conversation");
+  await pane.evaluate((pane) => pane.scrollBy({ top: -100, behavior: "instant" }));
+  const scrolled = await pane.evaluate((pane) => pane.scrollTop);
+  await messages.nth(1).evaluate((message, src) => message.append(Object.assign(document.createElement("img"), { src })), `data:image/png;base64,${png(100, 600).toString("base64")}`);
+  await expect(messages.nth(1).locator("img")).toHaveJSProperty("complete", true);
+  expect(await pane.evaluate((pane) => pane.scrollTop)).toBe(scrolled);
+  // Nor once they've pressed a key (or a wheel, a touch, a click) while it came in, before any scroll of theirs is seen.
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(messages).toHaveCount(50);
+  await owner.addStyleTag({ content: "* { overflow-anchor: none }" });
+  let imagesAgain!: () => void;
+  const again = new Promise<void>((done) => (imagesAgain = done));
+  await owner.route("**/*", async (route) => {
+    if (route.request().resourceType() === "image") {
+      await again;
+    }
+    await route.fallback();
+  });
+  await earlier.click();
+  await expect(messages).toHaveCount(55);
+  await expect(messages.nth(4)).toBeFocused();
+  await owner.keyboard.press("Shift");
+  const pressed = await pane.evaluate((pane) => pane.scrollTop);
+  imagesAgain();
+  await expect(messages.nth(2).getByRole("img", { name: "tall.png" })).toHaveJSProperty("complete", true);
+  expect(await pane.evaluate((pane) => pane.scrollTop)).toBe(pressed);
+  await owner.unroute("**/*");
+
+  // A new message still takes it to the end.
+  await api("/conversations/1/messages", { body: "Message 56" });
+  await expect(messages.last()).toContainText("Message 56");
+  await expect(messages.last()).toBeInViewport();
+
+  // Notes filling the latest fifty: the team still wrote last, so it can still be marked as waiting on the user.
+  await api("/conversations/1", { status: "open" }, "PATCH");
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `INSERT INTO conversation_message (id, "projectId", "conversationId", author, channel, body, note, "createdAt")
+     SELECT gen_random_uuid()::text, c."projectId", c.id, 'TEAM', 'APP', 'Note ' || n, true, now() + n * interval '1 millisecond'
+     FROM conversation c, generate_series(1, 50) n WHERE c.number = 1 AND c."projectId" = (SELECT id FROM project WHERE slug = $1)`,
+    [slug],
+  );
+  await db.end();
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(messages.last()).toContainText("Note 50");
+  await expect(messages.first()).toContainText("Note 1");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toBeHidden();
+  // Gone on to the reply box while the earlier ones load, focus stays there; scrolled meanwhile, they stay where that left them.
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  const release = await holdNavigations(owner, /[?&]messages=2/);
+  await earlier.click();
+  await reply.focus();
+  await owner.locator("#conversation").evaluate((pane) => pane.scrollBy({ top: 150, behavior: "instant" }));
+  await expect(messages).toHaveCount(50);
+  const scrolledTo = (await messages.first().boundingBox())!.y;
+  await release();
+  await expect(messages).toHaveCount(100);
+  await expect(reply).toBeFocused();
+  await expect(messages.nth(50)).toContainText("Note 1");
+  expect(Math.abs((await messages.nth(50).boundingBox())!.y - scrolledTo)).toBeLessThanOrEqual(1);
+});
+
 test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });

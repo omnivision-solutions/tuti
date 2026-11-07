@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ConversationDetails } from "@/components/inbox/conversation-details";
 import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
+import { LoadMore } from "@/components/inbox/load-more";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -45,9 +46,27 @@ export function inboxView(param: string | string[] | undefined): View {
   return typeof param === "string" && Object.hasOwn(VIEWS, param) ? (param as View) : "open";
 }
 
-/** The inbox's address in a view, with a conversation open in it (`/inbox/<number>`) or none. */
-export function inboxHref(slug: string, view: View, number: number | null = null) {
-  return `/app/${slug}/inbox${number === null ? "" : `/${number}`}${view === "open" ? "" : `?view=${view}`}`;
+/** How many pages a `?page=` (or `?messages=`) asks for: 1 for none, or one that isn't a count. */
+export function inboxPages(param: string | string[] | undefined) {
+  const pages = Number(param);
+  return Number.isSafeInteger(pages) && pages > 1 ? pages : 1;
+}
+
+/** The list shows this many conversations, and this many more with each "Load more" (`?page=`). */
+const PER_PAGE = 100;
+
+/**
+ * The inbox's address in a view, with a conversation open in it (`/inbox/<number>`) or none, its list `pages` long
+ * (`?page=`: rows loaded with "Load more" stay as another conversation opens), and the open one's `messages` pages of
+ * messages (`?messages=`).
+ */
+export function inboxHref(slug: string, view: View, number: number | null = null, pages = 1, messages = 1) {
+  const params = new URLSearchParams({
+    ...(view !== "open" && { view }),
+    ...(pages > 1 && { page: String(pages) }),
+    ...(messages > 1 && { messages: String(messages) }),
+  });
+  return `/app/${slug}/inbox${number === null ? "" : `/${number}`}${params.size > 0 ? `?${params}` : ""}`;
 }
 
 /**
@@ -95,19 +114,34 @@ const LISTED = {
   user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
 } as const;
 
-/** A view's first hundred conversations, the latest message first. */
-async function listed(view: View, projectId: string, userId: string, history: Date | null) {
+/** A view's first `pages` pages of conversations, the latest message first. */
+async function listed(view: View, projectId: string, userId: string, history: Date | null, pages: number) {
   const where = viewWhere(view, projectId, userId, history);
-  return prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], take: 100, select: LISTED });
+  return prisma.conversation.findMany({ where, orderBy: [{ lastMessageAt: "desc" }, { number: "desc" }], take: PER_PAGE * pages, select: LISTED });
 }
 
 /**
  * The Inbox: its views, the list, and the conversation open beside it (`children`, the `open` one's), each
  * scrolling on its own under the header from laptop width up (the page itself doesn't); narrower, one at a time. The
  * views are a row of tabs above the list at every width, in the same place whether a conversation is open or not.
- * With none open, the pane beside the list has the Inbox's numbers (`children` only with one open).
+ * With none open, the pane beside the list has the Inbox's numbers (`children` only with one open). The list is `pages`
+ * pages long (`?page=`), with "Load more" under it while the view has more; it keeps the open one's `messages` pages.
  */
-export async function InboxPanes({ slug, view, open, children }: { slug: string; view: View; open: number | null; children?: ReactNode }) {
+export async function InboxPanes({
+  slug,
+  view,
+  open,
+  pages = 1,
+  messages = 1,
+  children,
+}: {
+  slug: string;
+  view: View;
+  open: number | null;
+  pages?: number;
+  messages?: number;
+  children?: ReactNode;
+}) {
   const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
   if (!membership || !session) {
     notFound();
@@ -119,7 +153,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
   const history = await historySince(projectId);
   const [counts, conversations, member, { supportInbox, plan }, stats] = await Promise.all([
     Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId, history) }))),
-    listed(view, projectId, userId, history),
+    listed(view, projectId, userId, history, pages),
     // The list's own header, with no conversation open (one that is has its own).
     open === null
       ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } })
@@ -181,7 +215,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
         <ListKeys
           place={`${slug}:${view}`}
           open={open}
-          none={inboxHref(slug, view)}
+          none={inboxHref(slug, view, null, pages)}
           aria-label="Conversations"
           // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
           className="p-6 lg:relative lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-3"
@@ -225,7 +259,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                           // Named for screen readers by whom, what and which: one person's conversations told apart.
                           // Who on one line, cut short (in full on hover, and in the conversation).
                           <Link
-                            href={inboxHref(slug, view, c.number)}
+                            href={inboxHref(slug, view, c.number, pages)}
                             scroll={false}
                             data-row-link={c.number}
                             aria-current={c.number === open ? "page" : undefined}
@@ -260,7 +294,7 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
                         actions={
                           // Short to the eye, in words to the ear (and on hover: over the row's link, opening it too).
                           <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
-                            <Link href={inboxHref(slug, view, c.number)} scroll={false} tabIndex={-1} aria-hidden className="relative">
+                            <Link href={inboxHref(slug, view, c.number, pages)} scroll={false} tabIndex={-1} aria-hidden className="relative">
                               {shortDuration(since)}
                             </Link>
                             <span className="sr-only">{age}</span>
@@ -273,6 +307,12 @@ export async function InboxPanes({ slug, view, open, children }: { slug: string;
               </CardContent>
             </Card>
           )}
+          <LoadMore
+            href={inboxHref(slug, view, open, pages + 1, messages)}
+            pages={pages}
+            last={conversations.at(-1)?.number ?? 0}
+            more={counts[views.indexOf(view)]! > conversations.length}
+          />
         </ListKeys>
       </div>
 
