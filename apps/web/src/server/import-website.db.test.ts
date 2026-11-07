@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { contentBudget, crawlBudget, crawlPace, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, importStep, portalAddress } from "@tuti/jobs";
+import { contentBudget, crawlBudget, crawlPace, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, importStep, pauseLimit, portalAddress } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { type HelpCenterFake, type S3Fake, startHelpCenterFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -34,6 +34,8 @@ let project: Awaited<ReturnType<typeof createProject>>;
 beforeAll(async () => {
   [site, s3] = await Promise.all([startHelpCenterFake(), startS3Fake()]);
   crawlPace.ms = 0;
+  // A pause the site asks for isn't waited out here: the run ends as paused at once.
+  pauseLimit.ms = 0;
 });
 afterAll(() => Promise.all([site.close(), s3.close()]));
 afterEach(() => {
@@ -456,4 +458,21 @@ test("a listed page the site refuses (a 403) is counted as gone, as the last che
   const done = await importSite();
   expect(done.state).toBe("done");
   expect(importSummary(done)).toContain("Left out: 2 articles gone from your help center (left as empty drafts)");
+});
+
+test("the run's first article asking for a pause (a 429, Retry-After 120) ends the run as paused, not the import: the next run brings it", async () => {
+  site.failing.set("/docs/getting-started", 429);
+  site.failingOnce.add("/docs/getting-started");
+  site.retryAfter = "120";
+  const done = await importSite();
+  expect(done.state).toBe("done");
+  expect((await articles()).find((a) => a.title === "Getting started")?.body).toBe("Start here.");
+});
+
+test("a site that asks for a pause run after run fails the import after five in a row, saying why", async () => {
+  site.failing.set("/docs/getting-started", 429);
+  site.retryAfter = "120";
+  const done = await importSite();
+  expect(done).toMatchObject({ state: "failed", error: expect.stringMatching(/^127\.0\.0\.1 answered 429\. /) });
+  expect(site.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(5);
 });
