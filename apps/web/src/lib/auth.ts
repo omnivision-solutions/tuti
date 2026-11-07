@@ -13,6 +13,7 @@ import { magicLink } from "better-auth/plugins/magic-link";
 
 import { portalAddress, requestTarget, sessionBinding, sessionWorksOn, siteMount } from "@/server/custom-domains";
 
+import { CLIENT_IP_HEADER, withClientIp } from "./client-ip";
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
 import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "./sign-in-link";
@@ -168,8 +169,6 @@ async function withoutSessionBoundElsewhere(ctx: Parameters<Parameters<typeof cr
   return { context: { headers } };
 }
 
-const TRUSTED_IP_HEADER = process.env.TRUSTED_IP_HEADER?.trim();
-
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // One deployment serves the app host and every portal host. Each host gets its
@@ -199,11 +198,11 @@ export const auth = betterAuth({
     // Behind a proxy (Cloudflare tunnel / load balancer) the original host and
     // protocol arrive in x-forwarded-* headers.
     trustedProxyHeaders: true,
-    // Who a request is from, for Better Auth's own limits (password sign-in, sign-up, verification emails): the header
-    // the proxy sets, as for the app's own limits (server/email-link-limits.ts). Its default, X-Forwarded-For, is
-    // whatever the visitor sends, or, when a proxy appends to it, one bucket everyone shares.
-    // Without it (README), X-Forwarded-For stays.
-    ...(TRUSTED_IP_HEADER ? { ipAddress: { ipAddressHeaders: [TRUSTED_IP_HEADER] } } : {}),
+    // Who a request is from, for Better Auth's own limits (password sign-in, sign-up, verification emails): the address
+    // in TRUSTED_IP_HEADER, read as the app's own limits read it (trustedClientIp), which the auth route and hooks.before
+    // put in CLIENT_IP_HEADER. Better Auth's default, X-Forwarded-For, is whatever the visitor sends, or, when a proxy
+    // appends to it, one bucket everyone shares. Without TRUSTED_IP_HEADER (README) that default stays.
+    ...(process.env.TRUSTED_IP_HEADER?.trim() ? { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } } : {}),
   },
   emailAndPassword: {
     enabled: true,
@@ -233,7 +232,9 @@ export const auth = betterAuth({
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
       await passwordOnAppOnly(ctx);
-      return withoutSessionBoundElsewhere(ctx);
+      const headers = (await withoutSessionBoundElsewhere(ctx))?.context.headers ?? ctx.headers;
+      // auth.api calls too (a session's IP address): the visitor's IP address as the auth route gives it.
+      return headers && { context: { headers: withClientIp(headers) } };
     }),
   },
   // Continue with Google / GitHub only signs people in: their tokens are never used, and GitHub's (through tuti.so's

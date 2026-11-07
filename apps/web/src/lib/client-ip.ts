@@ -31,3 +31,24 @@ export function clientKey(ip: string): string | null {
   }
   return `${[a, b, c, d].map((n) => n!.toString(16)).join(":")}::/64`;
 }
+
+/** The visitor's IP address as the proxy gave it in TRUSTED_IP_HEADER: its last value, the proxy's own if it appends to a list. */
+export function trustedClientIp(headers: Headers): string | null {
+  const header = process.env.TRUSTED_IP_HEADER?.trim();
+  return (header && headers.get(header)?.split(",").at(-1)?.trim()) || null;
+}
+
+/** Where Better Auth reads the visitor's IP address from (lib/auth.ts); set by withClientIp only. */
+export const CLIENT_IP_HEADER = "x-tuti-client-ip";
+
+/** `headers` with CLIENT_IP_HEADER set to trustedClientIp, or left out: never what the visitor sent under that name. */
+export function withClientIp(headers: Headers): Headers {
+  const result = new Headers(headers);
+  const ip = trustedClientIp(headers);
+  if (ip) {
+    result.set(CLIENT_IP_HEADER, ip);
+  } else {
+    result.delete(CLIENT_IP_HEADER);
+  }
+  return result;
+}

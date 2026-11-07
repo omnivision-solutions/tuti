@@ -1,4 +1,4 @@
-import { expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as authRoute } from "@/app/api/auth/[...all]/route";
 import { auth } from "@/lib/auth";
@@ -19,13 +19,24 @@ const signIn = (email: string, password: string, headers: Record<string, string>
     }),
   );
 
-test("password sign-in is limited per address in TRUSTED_IP_HEADER, whatever X-Forwarded-For says", async () => {
+beforeEach(async () => {
   // Better Auth's limiter is on in production only.
   (await auth.$context).rateLimit.enabled = true;
-  const user = await signUp();
-  // Its window (3 sign-ins per 10 seconds) runs on Date: frozen, so a slow run can't start it over.
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** Better Auth's window (3 sign-ins per 10 seconds) runs on Date: frozen, so a slow run can't start it over. */
+function freezeClock() {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+}
+
+test("password sign-in is limited per address in TRUSTED_IP_HEADER, whatever X-Forwarded-For says", async () => {
+  const user = await signUp();
+  freezeClock();
 
   const guesses: number[] = [];
   for (let i = 1; i <= 4; i++) {
@@ -37,5 +48,20 @@ test("password sign-in is limited per address in TRUSTED_IP_HEADER, whatever X-F
   // Another visitor, even one whose X-Forwarded-For has several values (a proxy that appends), isn't held up.
   const other = await signIn(user.email, "correct horse battery staple", { "x-forwarded-for": "203.0.113.9, 198.51.100.250", "cf-connecting-ip": "192.0.2.55" });
   expect(other.status).toBe(200);
-  vi.useRealTimers();
+});
+
+test("a proxy that appends to TRUSTED_IP_HEADER: its own value, the last, is who's asking", async () => {
+  const user = await signUp();
+  freezeClock();
+
+  const guesses: number[] = [];
+  for (let i = 1; i <= 4; i++) {
+    // What the visitor sent comes first, under the header and under the app's own name for the address.
+    const headers = { "cf-connecting-ip": `198.51.100.${i}, 203.0.113.8`, "x-tuti-client-ip": `198.51.100.${i}` };
+    guesses.push((await signIn(user.email, `wrong ${i}`, headers)).status);
+  }
+  expect(guesses).toEqual([401, 401, 401, 429]);
+
+  const other = await signIn(user.email, "correct horse battery staple", { "cf-connecting-ip": "203.0.113.8, 192.0.2.66" });
+  expect(other.status).toBe(200);
 });
