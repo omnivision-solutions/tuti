@@ -15,8 +15,11 @@ import { PASSWORD_RESET_MINUTES } from "@/lib/sign-in-link";
 import { emailPasswordReset, setNewPassword } from "@/server/password-reset";
 import { usePortalHref } from "@/components/portal-base";
 
-/** "Forgot your password?" on the app and on portals (server/password-reset.ts). `failed`: a reset link didn't work. */
-export function ForgotPasswordForm({ failed }: { failed: boolean }) {
+/**
+ * "Forgot your password?" on the app and on portals (server/password-reset.ts). `failed`: a reset link didn't work.
+ * `portal`: on the app, asked for that portal; `next`: the sign-in's way back, kept by "Back to sign in".
+ */
+export function ForgotPasswordForm({ failed, portal, next }: { failed: boolean; portal?: string; next?: string }) {
   const at = usePortalHref();
   const [error, setError] = useState<string>();
   const [sentTo, setSentTo] = useState<string>();
@@ -58,6 +61,7 @@ export function ForgotPasswordForm({ failed }: { failed: boolean }) {
         </CardHeader>
         <form {...keepingFields(submit)}>
           <CardContent>
+            {portal && <input type="hidden" name="portal" value={portal} />}
             <Field data-invalid={error ? true : undefined}>
               <FieldLabel htmlFor="email">Email</FieldLabel>
               <Input id="email" name="email" type="email" autoComplete="email" required aria-invalid={error ? true : undefined} />
@@ -68,7 +72,7 @@ export function ForgotPasswordForm({ failed }: { failed: boolean }) {
             <Button type="submit" disabled={pending} className="w-full">
               {pending ? "…" : "Email me a link"}
             </Button>
-            <Link href={at("/sign-in")} className="text-sm text-foreground underline underline-offset-4">
+            <Link href={at(next ? `/sign-in?${new URLSearchParams({ next })}` : "/sign-in")} className="text-sm text-foreground underline underline-offset-4">
               Back to sign in
             </Link>
           </CardFooter>
@@ -88,10 +92,9 @@ export function PasswordChangedAlert() {
   );
 }
 
-/** "Set a new password" on the page a reset link opens, for the account `email` (from the stored link). */
+/** "Set a new password" on the page a reset link opens (the app's), for the account `email` (from the stored link). */
 export function NewPasswordForm({ token, email }: { token: string; email: string }) {
   const router = useRouter();
-  const at = usePortalHref();
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
 
@@ -105,8 +108,8 @@ export function NewPasswordForm({ token, email }: { token: string; email: string
       if ("error" in result) {
         setError(result.error);
       } else {
-        // Sign in with the new password (or, for a dead link, ask for a new one).
-        router.push(at(result.location));
+        // Sign in with the new password, maybe on the way back to a portal (or, for a dead link, ask for a new one).
+        router.push(result.location);
       }
     });
 

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -19,11 +19,13 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * Used on the apex (team accounts → /app) and on portals (end users → the portal).
  * `next` (a same-site path, e.g. an invite link) overrides where to go afterwards and
  * is carried over when switching between sign-in and sign-up. `linkProject` (a portal
- * that can send email) makes signing in email first: "Email me a sign-in link" is the way in,
- * and "Use a password instead" shows the password (`withPassword` starts there, e.g. after a
- * reset); `forgotPassword` (a host that can
+ * that can send email) makes signing in "Email me a sign-in link": the password is typed on the app's
+ * host only (lib/auth.ts), so there "Use a password instead" goes to the app through the portal's
+ * /continue, and back. `forgotPassword` (a host that can
  * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account".
  * `social` (the apex only) puts Continue with Google / GitHub above the form; `socialError` says why one didn't work.
+ * `description` replaces the line under the title, and `forgotPasswordHref` where "Forgot your password?" goes (on the app,
+ * on the way back to a portal: that portal's, so the reset comes back there).
  */
 export function AuthForm({
   mode,
@@ -33,9 +35,10 @@ export function AuthForm({
   linkProject,
   forgotPassword,
   signUp = true,
-  withPassword = false,
   social = [],
   socialError,
+  description,
+  forgotPasswordHref,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -44,9 +47,10 @@ export function AuthForm({
   linkProject?: string;
   forgotPassword?: boolean;
   signUp?: boolean;
-  withPassword?: boolean;
   social?: SocialProvider[];
   socialError?: SocialSignInError;
+  description?: string;
+  forgotPasswordHref?: string;
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -56,8 +60,12 @@ export function AuthForm({
   const [sentTo, setSentTo] = useState<string>();
   const [pending, setPending] = useState(false);
   const isSignUp = mode === "sign-up";
-  // Signing in on a portal that sends email: the emailed link first, the password once asked for.
-  const [usePassword, setUsePassword] = useState(isSignUp || !linkProject || withPassword);
+  // Signing in on a portal: the emailed link, the password on the app.
+  const usePassword = isSignUp || !linkProject;
+  // A portal's way to the app's sign-in (or sign-up), coming back after (lib/portal-handoff.ts). A plain link's: /continue is a
+  // route that sets a cookie and leaves for the app host.
+  const onApp = (newAccount?: boolean) =>
+    at(`/continue?${new URLSearchParams({ ...(next && { redirect: next }), ...(newAccount && { "sign-up": "1" }) })}`);
 
   async function emailLink(form: HTMLFormElement) {
     const email = form.elements.namedItem("email") as HTMLInputElement;
@@ -116,7 +124,7 @@ export function AuthForm({
       <CardHeader>
         <CardTitle>{isSignUp ? "Create an account" : "Sign in"}</CardTitle>
         <CardDescription>
-          {isSignUp ? "Start collecting feedback in minutes." : usePassword ? "Welcome back." : "We'll email you a link to sign in."}
+          {description ?? (isSignUp ? "Start collecting feedback in minutes." : usePassword ? "Welcome back." : "We'll email you a link to sign in.")}
         </CardDescription>
       </CardHeader>
       <form onSubmit={onSubmit}>
@@ -128,7 +136,7 @@ export function AuthForm({
                 {socialError.reset && (
                   <>
                     {" "}
-                    <Link href="/forgot-password">Set a password by email</Link>
+                    <Link href={forgotPasswordHref ?? "/forgot-password"}>Set a password by email</Link>
                   </>
                 )}
               </AlertDescription>
@@ -160,7 +168,7 @@ export function AuthForm({
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                   <FieldLabel htmlFor="password">Password</FieldLabel>
                   {forgotPassword && !isSignUp && (
-                    <Link href={at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+                    <Link href={forgotPasswordHref ?? at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
                       Forgot your password?
                     </Link>
                   )}
@@ -172,8 +180,6 @@ export function AuthForm({
                   autoComplete={isSignUp ? "new-password" : "current-password"}
                   minLength={8}
                   required
-                  // Shown by "Use a password instead", which goes away: focus moves on to it.
-                  autoFocus={!!linkProject && !isSignUp && !withPassword}
                   aria-invalid={error ? true : undefined}
                 />
                 {error && <FieldError>{error}</FieldError>}
@@ -186,24 +192,24 @@ export function AuthForm({
             {pending ? "…" : isSignUp ? "Sign up" : usePassword ? "Sign in" : "Email me a sign-in link"}
           </Button>
           {!usePassword && (
-            <Button type="button" variant="ghost" disabled={pending} className="w-full" onClick={() => setUsePassword(true)}>
+            <a href={onApp()} className={buttonVariants({ variant: "ghost", className: "w-full" })}>
               Use a password instead
-            </Button>
+            </a>
           )}
-          {linkProject && !isSignUp && usePassword && (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pending}
-              className="w-full"
-              onClick={(event) => emailLink(event.currentTarget.form!)}
-            >
-              Email me a sign-in link
-            </Button>
+          {!usePassword && forgotPassword && (
+            // Asked here, its link opens on the app and comes back (server/password-reset.ts).
+            <Link href={at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+              Forgot your password?
+            </Link>
           )}
           {(isSignUp || signUp) && (
           <p className="text-sm text-muted-foreground">
             {isSignUp ? "Have an account? " : "New here? "}
+            {!usePassword ? (
+              <a href={onApp(true)} className="text-foreground underline underline-offset-4">
+                Create an account
+              </a>
+            ) : (
             <Link
               href={at(
                 `${isSignUp ? "/sign-in" : "/sign-up"}?${new URLSearchParams({
@@ -215,6 +221,7 @@ export function AuthForm({
             >
               {isSignUp ? "Sign in" : "Create an account"}
             </Link>
+            )}
           </p>
           )}
         </CardFooter>

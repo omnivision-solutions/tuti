@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, fillSignUp, postFeedback, signUp } from "./helpers";
+import { apiFor, backToPortal, createProject, fillSignUp, postFeedback, signInWithPassword, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 import { similar } from "./openai";
 
@@ -103,8 +103,11 @@ test("a portal post: the team's reply stands out, its status history and voters;
   }).toPass();
   await visitor.getByRole("button", { name: "Comment", exact: true }).click();
   await visitor.waitForURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === "/feedback/feature-requests/dark-mode-1");
+  // An account is made on the app, and back.
   await visitor.getByRole("link", { name: "Create an account" }).click();
   await fillSignUp(visitor, "Cy", `e2e-${randomUUID()}@example.com`);
+  await visitor.waitForURL((url) => url.pathname === "/continue");
+  await backToPortal(visitor);
   await visitor.waitForURL("**/feedback/feature-requests/dark-mode-1");
   await expect(box).toHaveText("Me too, please!");
   await expect(visitor.getByText("You'll sign in to post it.")).toHaveCount(0);
@@ -185,11 +188,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await visitor.goBack();
   await visitor.getByRole("link", { name: "Sign in to vote (1 vote)" }).click();
   await expect(visitor).toHaveURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === darkPath);
-  const main = visitor.getByRole("main");
-  await main.getByLabel("Email").fill(ada.email);
-  await main.getByRole("button", { name: "Use a password instead" }).click();
-  await main.getByLabel("Password").fill("correct horse battery staple");
-  await main.getByRole("button", { name: "Sign in" }).click();
+  await signInWithPassword(visitor, ada.email);
   await visitor.waitForURL((url) => url.pathname === darkPath);
   await expect(visitor.getByRole("button", { name: "Remove vote (1 vote)" })).toBeVisible();
   await visitor.context().close();

@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { backToPortal, createProject, newPerson, signInWithPassword, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 
 const PASSWORD = "correct horse battery staple";
@@ -169,7 +169,7 @@ test("an owner renames the project in Settings → General, and the app and its 
   await expect(visitor.getByRole("banner")).toContainText("Acme Help");
 });
 
-test("someone signs up on a portal, signs out and signs back in there", async ({ browser }, testInfo) => {
+test("someone signs up from a portal, signs out and signs back in there; their password is typed on the app", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -178,25 +178,46 @@ test("someone signs up on a portal, signs out and signs back in there", async ({
   const ada = await newPerson(browser, portalUrl(slug));
   await ada.goto("/feedback/feature-requests");
   await ada.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
+  // A team may run its portal's host (its own domain, or its site's path): the account, and its password, are made on the app.
   await ada.getByRole("link", { name: "Create an account" }).click();
-  await checkpoint(ada, "portal-sign-up");
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-up");
+  // For Acme, not the pitch to teams.
+  await expect(ada.getByText("Create your Tuti account to continue to Acme.")).toBeVisible();
+  await expect(ada.getByText("Feedback, roadmap, changelog and docs, kept up to date as you ship.")).toHaveCount(0);
+  await expect(ada.getByText("Start collecting feedback in minutes.")).toHaveCount(0);
+  await checkpoint(ada, "portal-sign-up-on-app");
   const email = `e2e-${randomUUID()}@example.com`;
   await ada.getByLabel("Name").fill("Ada");
   await ada.getByLabel("Email").fill(email);
   await ada.getByLabel("Password").fill(PASSWORD);
   await ada.getByRole("button", { name: "Sign up" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue");
+  await expect(ada.getByText("Continue to Acme")).toBeVisible();
+  await backToPortal(ada);
+  await expect(ada).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
+  await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
+
+  // Later, "Verify your email" from the inbox: that handoff is used up, so it comes back through a new one.
+  // It doesn't go on by itself: the page says where (the portal's address), and Ada clicks.
+  await ada.goto(linkIn(await latestEmailTo(email, { subject: /verify/i }), `${APP_URL}/api/auth/verify-email`));
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue" && url.searchParams.has("mac"));
+  await expect(ada.getByText(`Use your Tuti account on Acme's portal, at ${new URL(portalUrl(slug)).host}.`)).toBeVisible();
+  await ada.getByRole("link", { name: "Continue as Ada" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue" && url.searchParams.has("state"));
+  await backToPortal(ada);
+  await expect(ada).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
 
   await ada.getByRole("button", { name: "Account" }).click();
   await ada.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(ada.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
 
-  // Email first: the emailed link is the way in, the password a step away; a Tuti account below the form.
+  // The emailed link is the way in; no password here: it's a link to the app, as is a Tuti account below the form.
   await ada.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   const main = ada.getByRole("main");
   await expect(main.getByLabel("Password")).toHaveCount(0);
   await expect(main.getByRole("button", { name: "Email me a sign-in link" })).toHaveAttribute("type", "submit");
-  const form = (await main.getByRole("button", { name: "Use a password instead" }).boundingBox())!;
+  const form = (await main.getByRole("link", { name: "Use a password instead" }).boundingBox())!;
   const tuti = (await main.getByRole("link", { name: "Continue with your Tuti account" }).boundingBox())!;
   expect(tuti.y).toBeGreaterThan(form.y + form.height);
   for (const colorScheme of ["light", "dark"] as const) {
@@ -207,15 +228,19 @@ test("someone signs up on a portal, signs out and signs back in there", async ({
     await ada.setViewportSize({ width: 1280, height: 720 });
   }
   await ada.emulateMedia({ colorScheme: "light" });
-  await main.getByLabel("Email").fill(email);
-  await main.getByRole("button", { name: "Use a password instead" }).click();
-  await expect(main.getByLabel("Password")).toBeFocused();
-  await main.getByLabel("Password").fill(PASSWORD);
-  await checkpoint(ada, "portal-sign-in-password");
-  await main.getByRole("button", { name: "Sign in" }).click();
+  // Still signed in on the app (signing out of a portal is the portal's alone): one click back.
+  await main.getByRole("link", { name: "Use a password instead" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue");
+  await backToPortal(ada);
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
-  await ada.goto("/feedback/feature-requests");
-  await expect(ada.getByRole("button", { name: "Submit post" })).toBeVisible();
+
+  // On another device, the password typed on the app, and back.
+  const laptop = await newPerson(browser, portalUrl(slug));
+  await laptop.goto("/sign-in?next=%2Ffeedback%2Ffeature-requests");
+  await signInWithPassword(laptop, email, PASSWORD);
+  await expect(laptop).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
+  await expect(laptop.getByRole("button", { name: "Submit post" })).toBeVisible();
+  await expect(laptop.getByRole("button", { name: "Account" })).toBeVisible();
 });
 
 test("a visitor signs in to a portal with an emailed link and comes back to the post they started", async ({ browser }, testInfo) => {
@@ -327,46 +352,63 @@ test("a team member who forgot their password resets it by email and signs in wi
   await olive.waitForURL(/\/sign-in/);
 });
 
-test("a portal user who forgot their password resets it on the portal and signs in there", async ({ browser }, testInfo) => {
+test("a portal user who forgot their password asks on the portal, sets it on the app and is back on the portal", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.getByRole("button", { name: "Account" }).click();
-  await ada.getByRole("menuitem", { name: "Sign out" }).click();
+  const signedUp = await signUp(browser, portalUrl(slug), "Ada");
+  await signedUp.context().close();
 
+  // On another device: "Use a password instead" goes to the app's sign-in, whose "Forgot your password?" stays on the app
+  // and asks for Acme (its email comes from Acme), and comes back to Acme's card.
+  const ada = Object.assign(await newPerson(browser, portalUrl(slug)), { email: signedUp.email });
+  await ada.goto("/feedback/feature-requests");
   await ada.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
-  await ada.getByRole("button", { name: "Use a password instead" }).click();
+  await ada.getByRole("link", { name: "Use a password instead" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-in");
+  await expect(ada.getByText("Sign in to continue to Acme.")).toBeVisible();
   await ada.getByRole("link", { name: "Forgot your password?" }).click();
-  await ada.waitForURL("**/forgot-password");
-  // There's nothing to come back to here after signing in.
-  await expect(ada.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in");
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/forgot-password" && url.searchParams.get("portal") === slug);
+  // "Back to sign in" keeps the way back to Acme.
+  await ada.getByRole("link", { name: "Back to sign in" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-in");
+  await expect(ada.getByText("Sign in to continue to Acme.")).toBeVisible();
+  await ada.getByRole("link", { name: "Forgot your password?" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/forgot-password" && url.searchParams.get("portal") === slug);
   await ada.getByLabel("Email").fill(ada.email);
   await checkpoint(ada, "portal-forgot-password");
   await ada.getByRole("button", { name: "Email me a link" }).click();
   await expect(ada.getByText(`If there's an account for ${ada.email}, we've sent it a link`)).toBeVisible();
 
+  // From the portal, but the link is the app's: the password is set where it's typed.
   const message = await latestEmailTo(ada.email);
   expect(message.subject).toBe("Reset your password");
   expect(message.text).toContain("your account on Acme");
-  const link = linkIn(message, `${portalUrl(slug)}/reset-password?`);
+  const link = linkIn(message, `${APP_URL}/reset-password?`);
   await ada.goto(link);
-  // The link's token doesn't travel on in the sign-in link.
-  await expect(ada.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in");
   await ada.getByLabel("New password", { exact: true }).fill("a brand new passphrase");
   await ada.getByLabel("Confirm new password").fill("a brand new passphrase");
-  await checkpoint(ada, "portal-set-new-password");
+  await checkpoint(ada, "portal-set-new-password-on-app");
   await ada.getByRole("button", { name: "Set new password" }).click();
-  await ada.waitForURL("**/sign-in?reset=done");
+  // Back through the portal: signing in on the app with the new one, told it's changed, and on to the portal.
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-in" && url.searchParams.get("reset") === "done");
+  await expect(ada.getByText("Your password was changed. Sign in with the new one.")).toBeVisible();
   await ada.getByLabel("Email").fill(ada.email);
   await ada.getByLabel("Password").fill("a brand new passphrase");
   await checkpoint(ada, "portal-sign-in-after-reset");
-  await ada.getByRole("button", { name: "Sign in" }).click();
+  await ada.getByRole("button", { name: "Sign in", exact: true }).click();
+  // The app never goes on to the portal by itself: its card shows the portal's address, and Ada clicks.
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue" && url.searchParams.has("mac"));
+  await expect(ada.getByText(`Use your Tuti account on Acme's portal, at ${new URL(portalUrl(slug)).host}.`)).toBeVisible();
+  await ada.getByRole("link", { name: "Continue as Ada" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue" && url.searchParams.has("state"));
+  await backToPortal(ada);
+  await expect(ada).toHaveURL(new RegExp(`^${portalUrl(slug).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
 
-  // The link worked once.
+  // The link worked once: asking again is on the app.
   await ada.goto(link);
-  await ada.waitForURL("**/forgot-password?link=failed");
+  await ada.waitForURL(`${APP_URL}/forgot-password?link=failed`);
   await expect(ada.getByText("That link has expired or was already used. Ask for a new one.")).toBeVisible();
 });

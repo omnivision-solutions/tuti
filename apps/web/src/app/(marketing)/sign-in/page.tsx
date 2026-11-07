@@ -9,7 +9,7 @@ import { socialProviders, socialSignInError } from "@/lib/social-sign-in";
 import { getSession } from "@/server/session";
 
 import { TermsAgreement } from "../legal";
-import { WithPitch } from "../with-pitch";
+import { continuingTo, WithPitch } from "../with-pitch";
 
 export default async function SignInPage(props: PageProps<"/sign-in">) {
   const { next, email, reset, error, via } = await props.searchParams;
@@ -22,8 +22,10 @@ export default async function SignInPage(props: PageProps<"/sign-in">) {
     redirect("/app");
   }
   const social = socialProviders();
+  // From a portal ("Use a password instead", "Continue with your Tuti account"): signing in to go back there.
+  const portal = await continuingTo(nextPath);
   return (
-    <WithPitch>
+    <WithPitch continuingTo={portal}>
       <div className="mx-auto flex w-full max-w-sm flex-col gap-4">
         {reset === "done" && <PasswordChangedAlert />}
         <AuthForm
@@ -35,6 +37,8 @@ export default async function SignInPage(props: PageProps<"/sign-in">) {
           defaultEmail={defaultEmail}
           // Password resets need email that really goes out.
           forgotPassword={emailConfigured()}
+          description={portal ? `Sign in to continue to ${portal.name}.` : undefined}
+          forgotPasswordHref={portal?.forgotPassword}
         />
         {/* On tuti.so, Continue with Google or GitHub signs up someone new. */}
         {plansEnabled() && social.length > 0 && <TermsAgreement by="continuing" />}
