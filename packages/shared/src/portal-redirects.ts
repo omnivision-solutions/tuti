@@ -52,6 +52,19 @@ export function redirectFrom(input: string): { from: string } | { error: string 
   return { from };
 }
 
+/**
+ * A path that's one of the portal's own pages, or may be one (`/docs/<slug>`, `/changelog/…`, `/feedback/…`, …): a
+ * rule an import makes on its own never takes one, so it can't hide the portal's pages. A deeper path under /docs
+ * (an old help center's `/docs/billing/refunds`) isn't one.
+ */
+export function portalPage(from: string): boolean {
+  const [section, ...rest] = from.split("/").slice(1);
+  if (section === "docs") {
+    return rest.length <= 1 || (rest.length === 2 && rest[1] === "md");
+  }
+  return ["account", "changelog", "feedback", "roadmap"].includes(section ?? "");
+}
+
 /** Where a rule sends people: a path of the portal ("/docs/billing") or a whole https address. */
 export function redirectTo(input: string): { to: string } | { error: string } {
   const to = input.trim();

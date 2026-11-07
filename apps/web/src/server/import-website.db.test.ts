@@ -55,7 +55,7 @@ test("a help center's pages come across as drafts, in collections from its folde
 
   expect(done.state).toBe("done");
   expect(importSummary(done)).toBe(
-    "2 collections, 5 articles, 4 old addresses redirected brought across. Left out: 1 article gone from your help center (left as empty drafts).",
+    "2 collections, 5 articles, 4 old addresses redirected brought across. Left out: 1 article gone from your help center (left as empty drafts); 1 old address taken by the portal's own pages (not redirected).",
   );
   // Named as the start page's links name them.
   expect(await prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { order: "asc" }, select: { name: true, slug: true, parentId: true } })).toEqual([
@@ -93,6 +93,23 @@ test("a help center's pages come across as drafts, in collections from its folde
   // robots.txt's closed folder, and pages outside the address, aren't read.
   expect(site.requests).not.toContain("/docs/private/secret");
   expect(site.requests).not.toContain("/blog/launch");
+});
+
+test("old paths never take a redirect the portal has, nor one past its 200", async () => {
+  // A rule of the team's for one of the old paths, and 198 others: room for one more.
+  await prisma.portalRedirect.createMany({
+    data: [{ from: "/docs/billing/plans", to: "/docs" }, ...Array.from({ length: 198 }, (_, i) => ({ from: `/old/${i}`, to: "/docs" }))].map((rule) => ({ ...rule, projectId: project.id })),
+  });
+  const done = await importSite();
+
+  expect(done.counts.oldAddresses).toEqual({ imported: 1, leftOut: {} });
+  expect(done.counts.notRedirected?.leftOut).toEqual({
+    "taken by the portal's own pages (not redirected)": 1,
+    "already part of another redirect (not redirected)": 1,
+    "past the portal's 200 redirects (not redirected)": 2,
+  });
+  expect(await prisma.portalRedirect.findUniqueOrThrow({ where: { projectId_from: { projectId: project.id, from: "/docs/billing/plans" } }, select: { to: true } })).toEqual({ to: "/docs" });
+  expect(await prisma.portalRedirect.count({ where: { projectId: project.id } })).toBe(200);
 });
 
 test("importing again brings nothing twice", async () => {

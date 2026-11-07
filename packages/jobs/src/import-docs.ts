@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason } from "@tuti/content/html";
 import { Prisma, prisma } from "@tuti/db";
 import { articleLimit, MAX_ARTICLE_LENGTH } from "@tuti/shared";
-import { destinationKey, MAX_REDIRECTS, redirectFrom, redirectKey } from "@tuti/shared/portal-redirects";
+import { destinationKey, MAX_REDIRECTS, portalPage, redirectFrom, redirectKey } from "@tuti/shared/portal-redirects";
 
 import { recordRevision } from "./article-layers";
 import { freeDocsSlug } from "./docs-slugs";
@@ -287,7 +287,7 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
 /**
  * A crawled help center's article's old path (a source whose ids are its pages' addresses), redirected to its new page
  * (Settings → Domain → Redirects), so once the old domain points at the portal, links to it still land. Up to the
- * portal's MAX_REDIRECTS; never a path that has a rule, is a rule's destination, or is a page of the portal's own.
+ * portal's MAX_REDIRECTS; never a path that has a rule, is a rule's destination, or may be one of the portal's own pages.
  */
 async function keepOldAddress(tx: Tx, job: ImportJob, address: string, slug: string) {
   if (IMPORT_SOURCES[job.source].credential !== "url") {
@@ -299,13 +299,11 @@ async function keepOldAddress(tx: Tx, job: ImportJob, address: string, slug: str
   if ("error" in from || from.from === redirectKey(to)) {
     return;
   }
-  // Already a page of the portal's own (a collection's, say): it leads somewhere as it is.
-  const own = { projectId: job.projectId, slug: from.from.slice("/docs/".length) };
-  if (/^\/docs\/[^/]+$/.test(from.from) && (await tx.article.count({ where: own })) + (await tx.collection.count({ where: own })) > 0) {
-    return;
-  }
   const rules = await tx.portalRedirect.findMany({ where: { projectId: job.projectId }, select: { from: true, to: true } });
-  if (rules.some((rule) => rule.from === from.from || rule.from === redirectKey(to) || destinationKey(rule.to) === from.from)) {
+  // One of the portal's own pages (another article's or a collection's /docs/<slug>, its changelog, …): never hidden.
+  if (portalPage(from.from)) {
+    tally(job.counts, "notRedirected", "taken by the portal's own pages (not redirected)");
+  } else if (rules.some((rule) => rule.from === from.from || rule.from === redirectKey(to) || destinationKey(rule.to) === from.from)) {
     tally(job.counts, "notRedirected", "already part of another redirect (not redirected)");
   } else if (rules.length >= MAX_REDIRECTS) {
     tally(job.counts, "notRedirected", `past the portal's ${MAX_REDIRECTS} redirects (not redirected)`);

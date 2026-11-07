@@ -124,7 +124,7 @@ export const IMPORT_SOURCES = {
     parts: ["docs"],
     credential: {
       kind: "url",
-      help: "Your help center's home page, like https://help.example.com. Tuti reads its public pages; articles arrive as drafts for you to review and publish, and their old addresses redirect to them once your help center's domain points at Tuti.",
+      help: "Your help center's home page, like https://help.example.com. Tuti reads its public pages; articles arrive as drafts for you to review and publish, and their old addresses redirect to them when your portal takes over your help center's domain.",
     },
   },
 } as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;

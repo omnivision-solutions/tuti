@@ -183,17 +183,15 @@ function site(start: string, deadline: number) {
     return null;
   }
 
-  /** The origin's robots.txt (none, or unreadable: everything may be read). */
+  /** The origin's robots.txt (none: everything may be read). */
   function rules(origin: string) {
     if (!robots.has(origin)) {
       robots.set(
         origin,
+        // None (a 404) lets everything be read; one the site can't answer for (an error, no answer) nothing, as RFC 9309 has it.
         get(`${origin}/robots.txt`, { robotsFile: true })
           .catch((error: unknown) => {
-            if (error instanceof SiteError && error.status === 400) {
-              throw error;
-            }
-            return null;
+            throw error instanceof SiteError && error.status === 400 ? error : new SiteError(0, `${new URL(origin).hostname}'s robots.txt couldn't be read, so Tuti doesn't read the site yet.`);
           })
           .then((file) => {
             const parsed = robotsRules(file && !/html/i.test(file.type) ? file.text : "");
@@ -239,7 +237,8 @@ function site(start: string, deadline: number) {
 
   /** The addresses a sitemap (or sitemap index, one level down) lists. */
   async function sitemap(url: string, origin: string, depth = 0): Promise<string[]> {
-    const file = await get(url).catch(() => null);
+    // One that's gone is none; one that fails fails the step (tried again), rather than a help center coming across short.
+    const file = await get(url);
     if (!file) {
       return [];
     }
