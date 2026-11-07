@@ -193,6 +193,15 @@ test("a help center whose other section is its changelog is its own section's co
   expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(0);
 });
 
+test("a section a changelog shares with an article in no collection stays the help center's", async () => {
+  fake.fixtures.changelogs[0]!.sectionId = "sect_api";
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_changelog");
+  await importParts(["docs"], { publishArticles: true });
+  expect((await collections()).filter((c) => !c.parent).map((c) => c.name)).toEqual(["Guides", "API"]);
+  expect(await article("API keys")).toMatchObject({ collection: { name: "API" } });
+  expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(4);
+});
+
 test("the changelog comes across: entries oldest first, a page at a time, published at their dates and drafts as drafts with their draft's text, tags as tags, images; nothing emailed; again, nothing twice", async () => {
   const emailed = mailbox.emails.length;
   // One to a list page and two to an import page, so both are read past their first.

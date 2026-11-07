@@ -121,15 +121,19 @@ export const ferndeskSource: ImportSourceDefinition = {
     const allChangelogs = () => (changelogs ??= api.all<FerndeskChangelog>("/changelogs"));
     /**
      * The help center without its changelogs: Ferndesk lists each changelog as a collection too, its entries as
-     * articles, and the section it sits in as any (the Changelog part brings them). A section left with no other
-     * collection is a changelog's own.
+     * articles, and the section it sits in as any (the Changelog part brings them). A section with nothing else in it,
+     * no other collection and no article outside one, is a changelog's own.
      */
     let help: Promise<{ sections: FerndeskSection[]; changelogs: Set<string> }> | undefined;
     const helpCenter = () =>
-      (help ??= Promise.all([allSections(), allCollections(), allChangelogs()]).then(([sections, all, logs]) => {
+      (help ??= Promise.all([allSections(), allCollections(), allChangelogs()]).then(async ([sections, all, logs]) => {
         const ids = new Set(logs.map((log) => log.id));
-        const own = (s: FerndeskSection) => !logs.some((log) => log.sectionId === s.id) || all.some((c) => c.sectionId === s.id && !ids.has(c.id));
-        return { sections: sections.filter(own), changelogs: ids };
+        const shared = (s: FerndeskSection) => !logs.some((log) => log.sectionId === s.id) || all.some((c) => c.sectionId === s.id && !ids.has(c.id));
+        const candidates = sections.filter((s) => !shared(s));
+        // ponytail: whether one has articles outside a collection takes reading every article, once per connection, so
+        // only when there's a section to drop; ask Ferndesk for a section filter if help centers grow to thousands.
+        const loose = candidates.length ? new Set((await api.all<FerndeskArticle>("/articles", { status: "all" })).filter((a) => !a.collectionId).map((a) => a.sectionId)) : new Set();
+        return { sections: sections.filter((s) => shared(s) || loose.has(s.id)), changelogs: ids };
       }));
     let entries: Promise<FerndeskEntry[]> | undefined;
     let language: Promise<string> | undefined;
