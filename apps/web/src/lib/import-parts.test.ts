@@ -1,6 +1,8 @@
+import type { ImportSource } from "@tuti/db";
+import { IMPORT_SOURCES as JOB_SOURCES } from "@tuti/jobs";
 import { expect, test } from "vitest";
 
-import { homeInvitationsToSend, importAt, importBrief, IMPORT_PARTS, importProgress, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
+import { homeInvitationsToSend, importAt, importBrief, IMPORT_PARTS, IMPORT_SOURCES, importProgress, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -133,4 +135,13 @@ test("Home says how many invitations wait to be sent only to owners and admins (
   expect(homeInvitationsToSend(run("done"), true)).toBe(2);
   expect(homeInvitationsToSend(run("done"), false)).toBe(0);
   expect(homeInvitationsToSend(run("running"), true)).toBe(0);
+});
+
+test("the sources the app offers are the ones the jobs read, each with a check for every part it offers", () => {
+  expect(Object.keys(IMPORT_SOURCES).map((key) => key.toUpperCase()).sort()).toEqual(Object.keys(JOB_SOURCES).sort());
+  for (const [key, source] of Object.entries(IMPORT_SOURCES)) {
+    const job = JOB_SOURCES[key.toUpperCase() as ImportSource];
+    expect(job.credential).toBe(source.credential.kind);
+    expect(Object.keys(job.connect("key", { deadline: 0 }).checks).sort()).toEqual([...source.parts].sort());
+  }
 });

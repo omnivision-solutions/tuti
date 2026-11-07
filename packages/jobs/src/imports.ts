@@ -11,7 +11,7 @@ import { DOCS_STEPS } from "./import-docs";
 import { avatarsPage, feedbackSteps } from "./import-feedback";
 import { conversationsPage } from "./import-inbox";
 import { teamPage } from "./import-team";
-import { IMPORT_SOURCES, type ImportReaders } from "./import-sources";
+import { type ImportPart, IMPORT_SOURCES, type ImportReaders } from "./import-sources";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lockConflict } from "./lock-retries";
 import { isUniqueViolation, placeholderEmail, syncUsersIn, type UserDetails } from "./project-users";
@@ -68,7 +68,7 @@ type Step = { name: string; page: (job: ImportJob, cursor: string | null) => Pro
  * The parts an import can bring, in the order they run, and their steps (docs/plan.md, I1, I3–I6); which of them a
  * source has, and how its credential is checked for each, is its own (import-sources).
  */
-export const IMPORT_PARTS: Record<string, { steps: Step[] }> = {
+export const IMPORT_PARTS: Record<ImportPart, { steps: Step[] }> = {
   // First, so the team's invitations are ready to send while the rest comes across.
   team: { steps: [{ name: "team", page: teamPage }] },
   contacts: { steps: [{ name: "contacts", page: contactsPage }] },
@@ -218,7 +218,7 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
   const claim = { id: row.id, state: "RUNNING", step: row.step, cursor: row.cursor } as const;
   // A part this worker doesn't have (it's the release before the web that started the import, mid-deploy) fails it,
   // never skipped: an import that ended "done" without it would say nothing of what it left behind.
-  const unknown = row.parts.find((part) => !IMPORT_PARTS[part]);
+  const unknown = row.parts.find((part) => !(part in IMPORT_PARTS));
   if (unknown) {
     await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: `Tuti was updating as it started. ${AGAIN}`, finishedAt: new Date() } });
     return { failed: true };

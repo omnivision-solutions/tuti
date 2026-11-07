@@ -1,3 +1,5 @@
+import type { ImportSource } from "@tuti/db";
+
 import type { ImportView } from "@/server/operations/imports";
 
 /**
@@ -101,7 +103,8 @@ export type ImportPart = keyof typeof IMPORT_PARTS;
 /**
  * The tools an import brings from, as "Where are you coming from?" and Settings → Import list them, each with the parts
  * it has (in IMPORT_PARTS' order) and what the team gives it: an API key (`keysUrl`: where it's made) or a site's
- * address. Its reading is @tuti/jobs import-sources; adding one is an entry here and its file there.
+ * address, by the import row's `source` (lowercase; typecheck fails till each has one). Its reading is @tuti/jobs
+ * import-sources; adding one is an entry here and its file there.
  */
 export const IMPORT_SOURCES = {
   featurebase: {
@@ -115,7 +118,7 @@ export const IMPORT_SOURCES = {
       help: "In Featurebase, Settings → API. It's kept only while the import runs.",
     },
   },
-} as const satisfies Record<string, ImportSourceInfo>;
+} as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;
 
 export type ImportSourceInfo = {
   name: string;

@@ -45,12 +45,15 @@ export type ImportReaders = Partial<{
   conversation: (id: string) => Promise<FeaturebaseConversation | null>;
 }>;
 
+/** The parts an import can bring (IMPORT_PARTS' names). */
+export type ImportPart = "team" | "contacts" | "feedback" | "changelog" | "docs" | "inbox" | "avatars";
+
 /** A source connected with its credential: its key checked, each part's list checked, and read. */
 export type ImportConnection = {
   /** Fails when the source refuses the credential. */
   checkCredential: () => Promise<unknown>;
   /** The parts it can bring (@tuti/jobs IMPORT_PARTS' names), each with how a credential is checked for it (its list read once). */
-  checks: Record<string, () => Promise<unknown>>;
+  checks: Partial<Record<ImportPart, () => Promise<unknown>>>;
   read: ImportReaders;
 };
 
