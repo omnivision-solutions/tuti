@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { startCannyFake, startCloudflareFake, startDnsFake, startFeaturebaseFake, startFerndeskFake, startFrillFake, startGithubFake, startGoogleFake, startHelpCenterFake, startIntercomFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
+import { startCannyFake, startCloudflareFake, startDnsFake, startFeaturebaseFake, startFerndeskFake, startFrillFake, startGithubFake, startGoogleFake, startHelpCenterFake, startIntercomFake, startModelFake, startNoltFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
@@ -15,7 +15,7 @@ import { MAIL_DIR } from "./mail";
 /**
  * A throwaway Postgres, a local SMTP server (emails land in e2e-mail/), the
  * model fake (the AI provider: AI drafting, decisions, and embeddings for duplicate detection from the OpenAI fake behind it), the S3 fake (image uploads), the
- * DNS fake (custom domains' TXT records), the Cloudflare fake (their certificates), the Featurebase, Canny and Frill fakes (imports) and the
+ * DNS fake (custom domains' TXT records), the Cloudflare fake (their certificates), the Featurebase, Canny, Frill and Nolt fakes (imports) and the
  * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
  * with background jobs running inline: twice, as a self-hosted server (APP_URL) and as Tuti's cloud,
  * which sells plans (CLOUD_URL), both on the same database.
@@ -83,6 +83,8 @@ export default async function globalSetup() {
   process.env.E2E_HELP_CENTER_URL = helpCenter.url;
   // Frill's API, for imports: made-up followers, ideas and announcements, its key FAKE_FRILL_KEY.
   const frill = await startFrillFake();
+  // Nolt's API, for imports: made-up users and feedback, its key FAKE_NOLT_KEY.
+  const nolt = await startNoltFake();
   const postgres = await startMigratedPostgres("tuti_e2e");
   // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
   process.env.E2E_DATABASE_URL = postgres.url;
@@ -108,6 +110,7 @@ export default async function globalSetup() {
     ...ferndesk.env,
     ...canny.env,
     ...frill.env,
+    ...nolt.env,
     NODE_ENV: "production",
   };
   const started = await Promise.allSettled([startServer(APP_URL, env), startServer(CLOUD_URL, { ...env, ...cloudEnv })]);
@@ -120,7 +123,7 @@ export default async function globalSetup() {
 
   return async () => {
     servers.forEach((server) => server.kill());
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close(), featurebase.close(), intercom.close(), ferndesk.close(), canny.close(), helpCenter.close(), frill.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close(), featurebase.close(), intercom.close(), ferndesk.close(), canny.close(), helpCenter.close(), frill.close(), nolt.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };

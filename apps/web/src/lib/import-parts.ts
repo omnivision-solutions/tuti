@@ -193,6 +193,23 @@ export const IMPORT_SOURCES = {
       help: "Your help center's home page, like https://help.example.com. Tuti reads its public pages; articles arrive as drafts for you to review and publish, and up to 200 of their old addresses redirect to them once your help center's domain is your portal's own domain (on plans that have one).",
     },
   },
+  nolt: {
+    name: "Nolt",
+    description: "Bring your users and feedback across with an API key.",
+    parts: ["contacts", "feedback", "avatars"],
+    // Its users have no custom fields or company; its API doesn't say who may see the board, nor who's on the team.
+    partDescriptions: {
+      contacts: "Your board's users, as Users.",
+      feedback:
+        "Your board, with its posts, upvotes and comments and their dates. It comes turned off (seen only by your team), as Nolt's API doesn't say who can see it: turn it on in Feedback → Boards once you've checked. Posts and comments waiting for moderation stay out.",
+    },
+    credential: {
+      kind: "key",
+      // Each board has its own settings; Nolt's API docs say where its key is.
+      keysUrl: "https://nolt.io/docs/publicapi/authentication/",
+      help: "In Nolt, your board's Settings → APIs. It's kept only while the import runs.",
+    },
+  },
 } as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;
 
 export type ImportSourceInfo = {

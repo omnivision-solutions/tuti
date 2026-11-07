@@ -19,6 +19,7 @@ import { intercomSource } from "./intercom";
 import { ferndeskSource } from "./ferndesk";
 import { websiteSource } from "./website";
 import { frillSource } from "./frill";
+import { noltSource } from "./nolt";
 
 /**
  * How the import's part jobs read a source (packages/jobs/src/import-*.ts): each a page at a time (`cursor` null: the
@@ -100,4 +101,5 @@ export const IMPORT_SOURCES: Record<ImportSource, ImportSourceDefinition> = {
   CANNY: cannySource,
   WEBSITE: websiteSource,
   FRILL: frillSource,
+  NOLT: noltSource,
 };
