@@ -97,6 +97,7 @@ export type ReceiverOptions = {
   /** The limits above (tests set less). */
   maxPerSource?: number;
   maxInFlight?: number;
+  maxChecking?: number;
   maxBufferedBytes?: number;
   maxBufferedBytesPerSource?: number;
   sessionLifetimeMs?: number;
@@ -235,6 +236,7 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   const url = new URL("/api/inbound/email", options.appUrl).toString();
   const maxPerSource = options.maxPerSource ?? MAX_PER_SOURCE;
   const maxInFlight = options.maxInFlight ?? MAX_IN_FLIGHT;
+  const maxChecking = options.maxChecking ?? MAX_CHECKING;
   const maxBuffered = options.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
   const maxBufferedPerSource = options.maxBufferedBytesPerSource ?? MAX_BUFFERED_BYTES_PER_SOURCE;
   const lifetime = options.sessionLifetimeMs ?? SESSION_LIFETIME_MS;
@@ -395,7 +397,7 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   async function deliver(raw: Buffer, session: SMTPServerSession, source: string) {
     // A place among the messages being checked, until the check ends, whether the sender is still there
     // or not (its bytes stay counted until then too: they're released when the message is answered).
-    if (checking >= MAX_CHECKING || (checkingPerSource.get(source) ?? 0) >= MAX_CHECKING_PER_SOURCE) {
+    if (checking >= maxChecking || (checkingPerSource.get(source) ?? 0) >= MAX_CHECKING_PER_SOURCE) {
       return 451;
     }
     checking++;

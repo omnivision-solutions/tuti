@@ -76,6 +76,7 @@ type Limits = {
   maxRecipients?: number;
   maxPerSource?: number;
   maxInFlight?: number;
+  maxChecking?: number;
   maxBufferedBytes?: number;
   maxBufferedBytesPerSource?: number;
   sessionLifetimeMs?: number;
@@ -501,6 +502,38 @@ test("a network's messages being checked are capped, even once their senders han
   vi.useRealTimers();
   last.end();
   expect(posts.map((post) => post.headers["tuti-recipient"])).toContain("support@b.support.test");
+});
+
+// 127.0.0.1, 127.0.1.1 and 127.0.2.1 are three networks (Linux only: macOS has only 127.0.0.1; CI runs Linux).
+test.skipIf(process.platform === "darwin")("messages being checked are capped in all, across networks: past it, try again later (451), until checks end", async () => {
+  const lookups: string[] = [];
+  const { open, posts } = await receiver([], { maxChecking: 2, resolver: slowKeys(lookups) });
+  const [first, second, third] = await Promise.all(["127.0.0.1", "127.0.1.1", "127.0.2.1"].map((address) => open(address)));
+  for (const session of [first!, second!, third!]) {
+    await startMessage(session);
+  }
+  // The checks' timers from here on are fake: two networks' messages whose checks their DNS drags out.
+  fakeCheckTimers();
+  first!.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  second!.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  await vi.waitFor(() => expect(lookups.filter((name) => name === "s0._domainkey.signer.example")).toHaveLength(2));
+  // A third network, well within its own share: the cap in all is reached.
+  third!.write(`${signed(0)}\r\n.`);
+  await third!.reply("451");
+  // Once the checks have ended, its next message is checked and taken.
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  for (const [line, code] of [
+    ["MAIL FROM:<sam@example.org>", "250"],
+    ["RCPT TO:<support@c.support.test>", "250"],
+    ["DATA", "354"],
+    [`${signed(0)}\r\n.`, "250"],
+  ] as const) {
+    third!.write(line);
+    await third!.reply(code);
+  }
+  vi.useRealTimers();
+  [first, second, third].forEach((session) => session!.end());
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toContain("support@c.support.test");
 });
 
 // Linux routes all of 127.0.0.0/8 to loopback, so 127.0.1.1 is another network; macOS has only 127.0.0.1 (CI runs Linux).
