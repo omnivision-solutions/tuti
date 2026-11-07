@@ -6,7 +6,7 @@ import type { FeaturebaseArticle, FeaturebaseCollection, Page } from "../feature
 import type { ImportSourceDefinition } from "./index";
 
 /**
- * A public help center, by its address (docs/plan.md, Import a public help center by URL): GitBook, Notion sites,
+ * A public help center, by its address (docs/plan.md, Import a public help center by URL): GitBook,
  * Docusaurus, Intercom or Zendesk's public centers, or a team's own. Its pages under the address are found from its
  * sitemap (else the links from the address's page, and theirs), and each page's main content becomes an article,
  * as a draft; its collections are the address's folders, named as the start page's links name them. Every fetch is to
@@ -606,37 +606,27 @@ export const websiteSource: ImportSourceDefinition = {
           items: (await reader.list()).collections.map((c, order) => ({ id: c.id, parentId: c.parent, name: c.name, slug: c.id.split("/").at(-1), order })),
           next: null,
         }),
-        // Without a limit (making them empty, first): the list, titled from their addresses. With one: each page read.
-        articles: async (cursor, limit) => {
+        // The list, titled from their addresses: each page is read when the content pass gets to it (`article`).
+        articles: async (cursor, limit = 100) => {
           const { pages } = await reader.list();
           const from = Number(cursor ?? 0);
-          if (!limit) {
-            const items = pages.slice(from, from + 100).map((p, i) => {
-              const segment = new URL(p.id).pathname.split("/").at(-1) ?? "";
-              return { id: p.id, parentId: p.collection, title: fromSlug(segment), slug: segment, order: from + i, isPublished: false, state: "draft" as const };
-            });
-            return { items, next: from + 100 < pages.length ? String(from + 100) : null };
-          }
-          const items: FeaturebaseArticle[] = [];
-          let at = from;
-          for (; at < Math.min(from + limit, pages.length); at++) {
-            // Out of time: the rest on the next page, unless this one has none yet.
-            if (at > from && Date.now() > deadline - PAGE_TIMEOUT_MS - 5_000) {
-              break;
-            }
-            // One that's gone or refused is left for the last check (articleExists) to say.
-            const read = await reader.article(pages[at]!.id, pages[at]!.collection, at).catch((error: unknown) => {
-              // Only the site's own answers: anything else is ours, and fails the page.
-              if (!(error instanceof SiteError) || (error.status === 0 && at === from)) {
-                throw error;
-              }
+          const items = pages.slice(from, from + limit).map((p, i) => {
+            const segment = new URL(p.id).pathname.split("/").at(-1) ?? "";
+            return { id: p.id, parentId: p.collection, title: fromSlug(segment), slug: segment, order: from + i, isPublished: false, state: "draft" as const };
+          });
+          return { items, next: from + limit < pages.length ? String(from + limit) : null };
+        },
+        article: async (item) => {
+          try {
+            return await reader.article(item.id, item.parentId ?? null, item.order ?? 0);
+          } catch (error) {
+            // Refused (robots.txt, not public) or answered with a 4xx: none, for the last check to say. Anything else
+            // (a 429, a 5xx, no answer, out of time) is for a while, and thrown.
+            if (error instanceof SiteError && (error.reason === "refused" || (!error.reason && error.status >= 400 && error.status < 500 && error.status !== 429))) {
               return null;
-            });
-            if (read) {
-              items.push(read);
             }
+            throw error;
           }
-          return { items, next: at < pages.length ? String(at) : null };
         },
         articleDraft: async () => null,
         articleExists: async (id) => (await reader.article(id, null, 0)) !== null,

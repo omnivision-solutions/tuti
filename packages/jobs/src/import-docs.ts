@@ -407,10 +407,33 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   // `draftLost`: why its unpublished changes didn't come (the published version did), said in the summary.
   // `drafted`: it has a draft that differs, not converted (the team asked for drafts: only its published text is kept).
   const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null; draftLost: string | null; drafted: boolean }[] = [];
-  for (const article of todo) {
-    if (texts.length > 0 && Date.now() - started > contentBudget.ms) {
+  // How many of `todo` this run got to (one a source no longer has too): the page is read again for the rest.
+  let reached = 0;
+  for (const item of todo) {
+    if (reached > 0 && Date.now() - started > contentBudget.ms) {
       break;
     }
+    // A source whose list is only addresses reads each article now, so one done before is never fetched again. One
+    // failing for a while stops the page here (read again next); the first of a page failing fails the step, so a
+    // source that keeps failing fails the import.
+    let article = item;
+    if (job.read.article) {
+      let read: FeaturebaseArticle | null;
+      try {
+        read = await job.read.article(item);
+      } catch (error) {
+        if (reached === 0) {
+          throw error;
+        }
+        break;
+      }
+      if (!read) {
+        reached++;
+        continue;
+      }
+      article = read;
+    }
+    reached++;
     // Its draft is read first, while the page is within its time (contentBudget): converting copies media, which
     // Featurebase's read deadline (import-step's PAGE_READ_MS) doesn't wait for.
     const draftVersion = await draftOf(job, article);
@@ -431,9 +454,9 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
     // Brought as a draft of its published text, its draft isn't converted: its media would be copied for nothing, using up the quota.
     const draft = draftVersion && job.publishArticles && !("error" in live) ? await convert(draftVersion) : null;
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
-    texts.push({ article, live, draft: differs ? (draft as Text) : null, draftLost: draft && "error" in draft ? draft.error : null, drafted: Boolean(draftVersion) && !job.publishArticles && (draftVersion!.title !== article.title || draftVersion!.body !== article.body) });
+    texts.push({ article: item, live, draft: differs ? (draft as Text) : null, draftLost: draft && "error" in draft ? draft.error : null, drafted: Boolean(draftVersion) && !job.publishArticles && (draftVersion!.title !== article.title || draftVersion!.body !== article.body) });
   }
-  const next = texts.length < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
+  const next = reached < todo.length ? `${AGAIN}${listCursor ?? ""}` : listNext;
   if (!next) {
     mediaCaches.delete(job.id);
   }

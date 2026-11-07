@@ -27,7 +27,7 @@ test("in the first run the team brings its help center across by its address: it
 
   // No key: its address, and the help center is what comes.
   await owner.getByRole("radio", { name: /^Your help center/ }).check();
-  await expect(owner.getByText("GitBook, Notion, Docusaurus, Intercom, Zendesk or your own: its articles come across from its address, no key needed.")).toBeVisible();
+  await expect(owner.getByText("GitBook, Docusaurus, Intercom, Zendesk or your own: its articles come across from its address, no key needed.")).toBeVisible();
   await expect(owner.getByRole("link", { name: /^Get your API key/ })).toHaveCount(0);
   await expect(owner.getByRole("checkbox", { name: /^Help center/ })).toBeChecked();
   await expect(owner.getByText(/articles arrive as drafts for you to review and publish, and up to 200 of their old addresses redirect to them/)).toBeVisible();
@@ -44,7 +44,14 @@ test("in the first run the team brings its help center across by its address: it
   try {
     await owner.getByRole("button", { name: "Check the address and start" }).click();
     await expect(owner.getByRole("button", { name: "Checking the address…" })).toBeVisible();
-    await expect(owner.getByRole("radio", { name: /^Featurebase/ })).toBeDisabled();
+    // Said to screen readers, and switching does nothing; the radios keep keyboard focus.
+    const featurebase = owner.getByRole("radio", { name: /^Featurebase/ });
+    await expect(featurebase).toHaveAttribute("aria-disabled", "true");
+    await featurebase.focus();
+    await expect(featurebase).toBeFocused();
+    await owner.keyboard.press("Space");
+    await expect(featurebase).not.toBeChecked();
+    await expect(owner.getByRole("radio", { name: /^Your help center/ })).toBeChecked();
   } finally {
     // Always let it go, so nothing after waits on it.
     await fetch(`${fake}/_fake/release`, { method: "POST" });

@@ -162,7 +162,7 @@ export const IMPORT_SOURCES = {
   },
   website: {
     name: "your help center",
-    description: "GitBook, Notion, Docusaurus, Intercom, Zendesk or your own: its articles come across from its address, no key needed.",
+    description: "GitBook, Docusaurus, Intercom, Zendesk or your own: its articles come across from its address, no key needed.",
     parts: ["docs"],
     // Read from its pages, not an API: drafts, in collections from its folders.
     partDescriptions: {

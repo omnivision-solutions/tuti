@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { crawlBudget, crawlPace, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, importStep, portalAddress } from "@tuti/jobs";
+import { contentBudget, crawlBudget, crawlPace, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, importStep, portalAddress } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { type HelpCenterFake, type S3Fake, startHelpCenterFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -25,6 +25,7 @@ vi.mock("node:dns/promises", async (original) => {
 
 /** Importing a public help center by its address (docs/plan.md, Import a public help center by URL), against a local static site. */
 
+const budgetMs = contentBudget.ms;
 let site: HelpCenterFake;
 let s3: S3Fake;
 let owner: TestUser;
@@ -38,6 +39,7 @@ afterAll(() => Promise.all([site.close(), s3.close()]));
 afterEach(() => {
   vi.unstubAllEnvs();
   crawlBudget.fetches = Infinity;
+  contentBudget.ms = budgetMs;
 });
 beforeEach(async () => {
   for (const [name, value] of Object.entries(s3.env)) {
@@ -47,6 +49,7 @@ beforeEach(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   site.requests = [];
   site.failing.clear();
+  site.failingOnce.clear();
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -351,4 +354,28 @@ test("a page with no content container and no heading of its own is titled by it
     await importStep({ importId: row.id }, log);
   }
   expect((await articles()).map((a) => [a.title, a.body])).toEqual([["Status | Acme Help", "All systems go."]]);
+});
+
+test("an article page that fails for a while (a 503) is read again by the next page, its text brought across", async () => {
+  site.failing.set("/docs/getting-started/install", 503);
+  site.failingOnce.add("/docs/getting-started/install");
+  expect((await importSite()).state).toBe("done");
+  expect((await articles()).find((a) => a.title === "Install Acme")?.body).toBe("Download the app, then make your first project.\nThe installer");
+  expect(site.requests.filter((path) => path === "/docs/getting-started/install")).toHaveLength(2);
+});
+
+test("an article page that keeps failing fails the import, saying why, rather than being read forever", async () => {
+  site.failing.set("/docs/getting-started/install", 503);
+  const done = await importSite();
+  expect(done).toMatchObject({ state: "failed", error: expect.stringMatching(/^127\.0\.0\.1 answered 503\. /) });
+});
+
+test("each article's page is fetched once, however often the content pass reads its list page again", async () => {
+  // No time for more than one article a run: the list page is read again for each of the rest.
+  contentBudget.ms = 0;
+  expect((await importSite()).state).toBe("done");
+  for (const path of ["/docs/getting-started", "/docs/getting-started/install", "/docs/getting-started/first-project", "/docs/billing/plans", "/docs/billing/refunds"]) {
+    expect(site.requests.filter((p) => p === path), path).toHaveLength(1);
+  }
+  expect((await articles()).filter((a) => a.body).length).toBe(5);
 });

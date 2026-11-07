@@ -42,6 +42,12 @@ export type ImportReaders = Partial<{
   collections: (cursor: string | null) => Promise<Page<FeaturebaseCollection>>;
   /** Drafts too. */
   articles: (cursor: string | null, limit?: number) => Promise<Page<FeaturebaseArticle>>;
+  /**
+   * A source whose list is only its articles' addresses (a crawled site): an article's text, read when the content pass
+   * gets to it, within its time, so one already brought across is never read again. Null: gone or refused (left for
+   * the last check, articleExists); throws: failing for a while (the pass stops there, and reads it again next).
+   */
+  article: (item: FeaturebaseArticle) => Promise<FeaturebaseArticle | null>;
   /** Its unpublished changes. */
   articleDraft: (id: string) => Promise<FeaturebaseArticle | null>;
   articleExists: (id: string) => Promise<boolean>;

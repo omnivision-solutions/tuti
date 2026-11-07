@@ -247,9 +247,13 @@ export function SetupImport({
               name="from"
               value={value}
               checked={from === value}
-              // While a check runs, its answer is the picked source's: no switching under it.
-              disabled={pending}
+              // While a check runs, its answer is the picked source's: no switching under it. aria-disabled, not
+              // disabled, so a radio with focus keeps it (a disabled one drops it to the page).
+              aria-disabled={pending || undefined}
               onChange={() => {
+                if (pending) {
+                  return;
+                }
                 setFrom(value);
                 // The last source's refusal isn't this one's.
                 setError(null);
