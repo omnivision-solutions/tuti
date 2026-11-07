@@ -41,14 +41,12 @@ export function trustedClientIp(headers: Headers): string | null {
 /** Where Better Auth reads the visitor's IP address from (lib/auth.ts); set by withClientIp only. */
 export const CLIENT_IP_HEADER = "x-tuti-client-ip";
 
-/** `headers` with CLIENT_IP_HEADER set to trustedClientIp, or left out: never what the visitor sent under that name. */
+/**
+ * `headers` with CLIENT_IP_HEADER set to trustedClientIp, or empty (no address): never what the visitor sent under that
+ * name. Set, not deleted: Better Auth copies a hook's headers onto the request's, so a deletion wouldn't reach it.
+ */
 export function withClientIp(headers: Headers): Headers {
   const result = new Headers(headers);
-  const ip = trustedClientIp(headers);
-  if (ip) {
-    result.set(CLIENT_IP_HEADER, ip);
-  } else {
-    result.delete(CLIENT_IP_HEADER);
-  }
+  result.set(CLIENT_IP_HEADER, trustedClientIp(headers) ?? "");
   return result;
 }

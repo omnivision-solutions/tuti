@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as authRoute } from "@/app/api/auth/[...all]/route";
@@ -64,4 +65,19 @@ test("a proxy that appends to TRUSTED_IP_HEADER: its own value, the last, is who
 
   const other = await signIn(user.email, "correct horse battery staple", { "cf-connecting-ip": "203.0.113.8, 192.0.2.66" });
   expect(other.status).toBe(200);
+});
+
+test("a session made by a server-side call keeps the address in TRUSTED_IP_HEADER, never the one the visitor sent", async () => {
+  const user = await signUp();
+  const signInAs = async (headers: Record<string, string>) => {
+    const { token } = await auth.api.signInEmail({
+      body: { email: user.email, password: "correct horse battery staple" },
+      headers: new Headers({ host: appUrl().host, ...headers }),
+    });
+    return (await prisma.session.findUniqueOrThrow({ where: { token }, select: { ipAddress: true } })).ipAddress;
+  };
+
+  expect(await signInAs({ "cf-connecting-ip": "198.51.100.1, 192.0.2.77", "x-tuti-client-ip": "198.51.100.1" })).toBe("192.0.2.77");
+  // No trusted header (the request didn't come through the proxy): not what it said either.
+  expect(await signInAs({ "x-tuti-client-ip": "203.0.113.99" })).not.toBe("203.0.113.99");
 });
