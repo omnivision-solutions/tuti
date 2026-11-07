@@ -118,6 +118,17 @@ export const IMPORT_SOURCES = {
       help: "In Featurebase, Settings → API. It's kept only while the import runs.",
     },
   },
+  ferndesk: {
+    name: "Ferndesk",
+    description: "Bring your help center, its users and your AI assistant's conversations across with an API key.",
+    parts: ["contacts", "docs", "inbox"],
+    credential: {
+      kind: "key",
+      keysUrl: "https://ferndesk.com/app/settings/developers",
+      // Drafts need Write content (Ferndesk's scopes); its Full access preset has every scope the import reads.
+      help: "In Ferndesk, Developers → API → New API key, with Full access (it reads drafts and AI conversations). It's kept only while the import runs.",
+    },
+  },
 } as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;
 
 export type ImportSourceInfo = {

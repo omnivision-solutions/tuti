@@ -14,6 +14,7 @@ import type {
   Page,
 } from "../featurebase";
 import { featurebaseSource } from "./featurebase";
+import { ferndeskSource } from "./ferndesk";
 
 /**
  * How the import's part jobs read a source (packages/jobs/src/import-*.ts): each a page at a time (`cursor` null: the
@@ -67,9 +68,15 @@ export type ImportSourceDefinition = {
   connect: (credential: string, options: { deadline: number }) => ImportConnection;
   /** A source's error's HTTP status (0: unreachable), null for any other error. */
   status: (error: unknown) => number | null;
+  /**
+   * What a link in its help center's content points at, by its address's path: an article or collection (`kind`, or
+   * either) by its id or its `ref` (FeaturebaseArticle's), null for neither. Without it, links stay as they are.
+   */
+  docsLink?: (path: string) => { kind?: "article" | "collection"; ref: string } | null;
 };
 
 /** Every source, by the import row's `source`: adding one is its enum value, its file and its line here. */
 export const IMPORT_SOURCES: Record<ImportSource, ImportSourceDefinition> = {
   FEATUREBASE: featurebaseSource,
+  FERNDESK: ferndeskSource,
 };

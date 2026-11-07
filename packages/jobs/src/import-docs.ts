@@ -119,17 +119,17 @@ const slugOf = (slug: string | null | undefined) => slug?.replace(/^\d+-/, "").t
 const orderOf = (order: number | null | undefined) => (Number.isFinite(order) ? Math.min(Math.max(Math.round(order!), 0), 1_000_000) : 1_000_000);
 
 /**
- * What the project's imports from this source made of `kind` (collection, article), by Featurebase id: those whose
- * row is still there (a deleted article is there till it's purged, `deleted`), with its address.
+ * What the project's imports from this source made of `kind` (collection, article), by Featurebase id (or, `…-ref`,
+ * by its `ref`): those whose row is still there (a deleted article is there till it's purged, `deleted`), with its address.
  */
-async function recorded(db: Tx, job: ImportJob, kind: "collection" | "article", externalIds?: string[]) {
+async function recorded(db: Tx, job: ImportJob, kind: RecordKind, externalIds?: string[]) {
   const records = await db.importedRecord.findMany({
     where: { projectId: job.projectId, source: job.source, kind, ...(externalIds && { externalId: { in: externalIds } }) },
     select: { id: true, externalId: true, localId: true, contentLanded: true, madeTitle: true, countedIn: true },
   });
   const where = { id: { in: records.map((record) => record.localId) } };
   const rows = new Map<string, { id: string; slug: string; deleted: boolean; createdById: string | null; title?: string; saved?: boolean }>(
-    kind === "collection"
+    kind.startsWith("collection")
       ? (await db.collection.findMany({ where, select: { id: true, slug: true } })).map((row) => [row.id, { ...row, deleted: false, createdById: null }] as const)
       : await articleRows(db, records.map((record) => record.localId)),
   );
@@ -159,8 +159,10 @@ const titleOf = (version: { title?: string | null }) => version.title?.trim().sl
 const teamSaved = (local: { saved?: boolean; title?: string; madeTitle?: string | null }) =>
   Boolean(local.saved) || (local.madeTitle != null && local.title !== undefined && local.title !== local.madeTitle);
 
+type RecordKind = "collection" | "article" | "collection-ref" | "article-ref";
+
 /** Saves what `kind` records became here; one whose row was deleted since is replaced. */
-async function remember(tx: Tx, job: ImportJob, kind: "collection" | "article", made: { externalId: string; localId: string; madeTitle?: string }[]) {
+async function remember(tx: Tx, job: ImportJob, kind: RecordKind, made: { externalId: string; localId: string; madeTitle?: string }[]) {
   const where = { projectId: job.projectId, source: job.source, kind };
   await tx.importedRecord.deleteMany({ where: { ...where, externalId: { in: made.map((record) => record.externalId) } } });
   await tx.importedRecord.createMany({ data: made.map((record) => ({ ...where, ...record })) });
@@ -242,6 +244,7 @@ async function collectionsPage(job: ImportJob): Promise<StepPage> {
         local.set(collection.id, id);
       }
       await remember(tx, job, "collection", made);
+      await remember(tx, job, "collection-ref", refs(made, byId));
     },
   };
 }
@@ -278,6 +281,7 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
     made.push({ externalId: article.id, localId: id, madeTitle: title });
   }
   await remember(tx, job, "article", made);
+  await remember(tx, job, "article-ref", refs(made, new Map(fresh.map((article) => [article.id, article]))));
 }
 
 /** Pass 1's articles: every one (drafts too), made empty, a page at a time. */
@@ -287,23 +291,40 @@ async function articlesPage(job: ImportJob, cursor: string | null): Promise<Step
   return { next, save: (tx) => makeArticles(tx, job, items) };
 }
 
+/** The `…-ref` records of what was made from records that have a `ref` (their public address's id, when not theirs). */
+const refs = (made: { externalId: string; localId: string }[], byId: Map<string, { ref?: string | null }>) =>
+  made.flatMap(({ externalId, localId }) => {
+    const ref = byId.get(externalId)?.ref;
+    return ref ? [{ externalId: ref, localId }] : [];
+  });
+
 /**
- * Where links to Featurebase's articles and collections go now: a path like /en/articles/1234567-setup (or
- * /articles/…, /en/help/articles/…, /collections/…), on any host, whose id came across, to that page on the portal.
+ * Where links to the source's articles and collections go now (on any host, as its docsLink reads their path): one
+ * whose id or ref came across, to that page on the portal.
  */
 async function linksTo(job: ImportJob, portal: string, html: string[]): Promise<(href: string) => string | null> {
-  // Only the ids the HTML mentions (a superset of what its links match below), not every page the import made.
-  const ids = (kind: string) => [...html.join("\n").matchAll(new RegExp(`/${kind}/(\\d+)`, "g"))].map((match) => match[1]!);
-  const [articles, collections] = await Promise.all([recorded(prisma, job, "article", ids("articles")), recorded(prisma, job, "collection", ids("collections"))]);
-  return (href) => {
-    let path: string;
+  const parse = IMPORT_SOURCES[job.source].docsLink;
+  const target = (href: string) => {
     try {
-      path = new URL(href, "https://featurebase.invalid").pathname;
+      return parse?.(new URL(href, "https://source.invalid").pathname) ?? null;
     } catch {
       return null;
     }
-    const [, kind, id] = /^\/(?:[A-Za-z-]+\/)?(?:help\/)?(articles|collections)\/(\d+)(?:-|\/|$)/.exec(path) ?? [];
-    const page = id ? (kind === "articles" ? articles : collections).get(id) : undefined;
+  };
+  // Only the pages the HTML's links name, not every page the import made.
+  const links = [...html.join("\n").matchAll(/href\s*=\s*["']([^"']+)["']/gi)].flatMap((match) => target(match[1]!) ?? []);
+  const lookup = async (kind: "article" | "collection"): Promise<Awaited<ReturnType<typeof recorded>>> => {
+    const named = links.filter((link) => (link.kind ?? kind) === kind).map((link) => link.ref);
+    if (named.length === 0) {
+      return new Map();
+    }
+    const [byId, byRef] = await Promise.all([recorded(prisma, job, kind, named), recorded(prisma, job, `${kind}-ref`, named)]);
+    return new Map([...byId, ...byRef]);
+  };
+  const [articles, collections] = await Promise.all([lookup("article"), lookup("collection")]);
+  return (href) => {
+    const link = target(href);
+    const page = link && ((link.kind !== "collection" && articles.get(link.ref)) || (link.kind !== "article" && collections.get(link.ref)));
     return page && !page.deleted ? `${portal}/docs/${page.slug}` : null;
   };
 }
