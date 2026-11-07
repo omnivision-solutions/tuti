@@ -72,11 +72,11 @@ The worker can receive the mail itself: an SMTP server for the support domain's 
   or a different `INBOUND_SECRET`, which the worker logs), so the sending server retries on its own.
 - **Limits:** 100 senders connected at once, 3 from one network (an IPv4 /24 or IPv6 /48), each
   session 10 minutes at most, closed after a minute without a message or 3 minutes into one still
-  arriving; 10 messages being received or delivered at once, 2 from one network; 20 recipients per
-  message; SPF, DKIM and DMARC checked within 30 seconds;
-  mail whose checks take longer, with more than 10 DKIM signatures, or with a header over 1 MB, is
-  taken as failing DMARC (spam). Past them, senders are told to come back later or to send the rest
-  separately, as SMTP expects.
+  arriving; 10 messages being checked and delivered at once, 2 from one network; 250 MB of mail held
+  at once, arriving or being delivered; 20 recipients per message; SPF, DKIM and DMARC checked
+  within 30 seconds; mail whose checks take longer, with more than 10 DKIM signatures, or with a
+  header over 1 MB, is taken as failing DMARC (spam). Past them, senders are told to come back later
+  or to send the rest separately, as SMTP expects.
 
 ### Amazon SES (tuti.so)
 

@@ -32,9 +32,15 @@ export const MAX_RECIPIENTS = 20;
  * flight, not by the connections.
  */
 export const MAX_PER_SOURCE = 3;
-/** Messages being received or delivered at once, whether their sender is still connected or not, and from one network (451 past them). */
+/**
+ * Messages being checked and delivered at once, whether their sender is still connected or not, and
+ * from one network (451 past them). A message still arriving takes no place: its bytes count against
+ * MAX_BUFFERED_BYTES instead, so a sender trickling one in holds next to nothing.
+ */
 export const MAX_IN_FLIGHT = 10;
 export const MAX_IN_FLIGHT_PER_SOURCE = 2;
+/** Bytes of messages held at once, arriving or being delivered: a message that would go past it is refused (451) and not kept. */
+export const MAX_BUFFERED_BYTES = MAX_IN_FLIGHT * MAX_BYTES;
 /** A session's longest life, however busy it keeps itself (NOOPs reset the idle timeout). */
 export const SESSION_LIFETIME_MS = 10 * 60_000;
 /** How long a session may go without sending a message (from its start, or its last message) before it's closed. */
@@ -73,6 +79,7 @@ export type ReceiverOptions = {
   /** The limits above (tests set less). */
   maxPerSource?: number;
   maxInFlight?: number;
+  maxBufferedBytes?: number;
   sessionLifetimeMs?: number;
   /** DNS for the checks (tests give a fake one). */
   resolver?: Resolver;
@@ -188,6 +195,7 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   const url = new URL("/api/inbound/email", options.appUrl).toString();
   const maxPerSource = options.maxPerSource ?? MAX_PER_SOURCE;
   const maxInFlight = options.maxInFlight ?? MAX_IN_FLIGHT;
+  const maxBuffered = options.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
   const lifetime = options.sessionLifetimeMs ?? SESSION_LIFETIME_MS;
   /**
    * Open sessions per network; when each accepted session started; and by when it must have sent a
@@ -198,6 +206,7 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   const deadline = new Map<string, number>();
   let inFlight = 0;
   const inFlightPerSource = new Map<string, number>();
+  let buffered = 0;
   /** Messages still arriving, by session: a sender that hangs up mid-DATA never ends its stream, so its slot goes when it closes. */
   const arriving = new Map<string, () => void>();
 
@@ -257,19 +266,55 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
         answered(...args);
       };
       const source = sourceOf(session.remoteAddress);
-      if (inFlight >= maxInFlight || (inFlightPerSource.get(source) ?? 0) >= MAX_IN_FLIGHT_PER_SOURCE) {
-        // Busy: none of it kept, and the sender tries again later.
-        stream.on("data", () => {});
-        stream.on("end", () => callback(answer(451, "Busy: try again later")));
-        return;
-      }
-      inFlight++;
-      inFlightPerSource.set(source, (inFlightPerSource.get(source) ?? 0) + 1);
+      const chunks: Buffer[] = [];
+      /** Its bytes counted in `buffered`, until it's answered; and whether it ran past the budget (nothing more kept). */
+      let held = 0;
+      let overBudget = false;
       let settled = false;
       const done: typeof callback = (...args) => {
         arriving.delete(session.id);
         if (!settled) {
           settled = true;
+          buffered -= held;
+          held = 0;
+          callback(...args);
+        }
+      };
+      // A sender that hangs up mid-DATA never ends its stream: its bytes go when it closes.
+      arriving.set(session.id, () => done(answer(451, "Try again later")));
+      // Past the size limit or the budget, nothing more is kept: it's refused at the end.
+      stream.on("data", (chunk: Buffer) => {
+        if ((stream as { sizeExceeded?: boolean }).sizeExceeded || overBudget) {
+          return;
+        }
+        if (buffered + chunk.length > maxBuffered) {
+          overBudget = true;
+          buffered -= held;
+          held = 0;
+          chunks.length = 0;
+          return;
+        }
+        chunks.push(chunk);
+        held += chunk.length;
+        buffered += chunk.length;
+      });
+      stream.on("error", (error) => done(error));
+      stream.on("end", () => {
+        // All here: from now on it's delivered, and stays counted until then, even if the sender hangs up.
+        arriving.delete(session.id);
+        deadline.delete(session.id);
+        if ((stream as { sizeExceeded?: boolean }).sizeExceeded) {
+          done(answer(552, "Message too large"));
+          return;
+        }
+        if (overBudget || inFlight >= maxInFlight || (inFlightPerSource.get(source) ?? 0) >= MAX_IN_FLIGHT_PER_SOURCE) {
+          // Busy: none of it kept, and the sender tries again later.
+          done(answer(451, "Busy: try again later"));
+          return;
+        }
+        inFlight++;
+        inFlightPerSource.set(source, (inFlightPerSource.get(source) ?? 0) + 1);
+        const delivered: typeof done = (...args) => {
           inFlight--;
           const count = inFlightPerSource.get(source)! - 1;
           if (count > 0) {
@@ -277,32 +322,15 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
           } else {
             inFlightPerSource.delete(source);
           }
-          callback(...args);
-        }
-      };
-      arriving.set(session.id, () => done(answer(451, "Try again later")));
-      const chunks: Buffer[] = [];
-      // Past the limit, nothing more is kept: it's refused at the end, whatever its size.
-      stream.on("data", (chunk: Buffer) => {
-        if (!(stream as { sizeExceeded?: boolean }).sizeExceeded) {
-          chunks.push(chunk);
-        }
-      });
-      stream.on("error", (error) => done(error));
-      stream.on("end", () => {
-        // All here: it stays counted until it's delivered, even if the sender hangs up now.
-        arriving.delete(session.id);
-        deadline.delete(session.id);
-        if ((stream as { sizeExceeded?: boolean }).sizeExceeded) {
-          done(answer(552, "Message too large"));
-          return;
-        }
+          done(...args);
+        };
         const raw = Buffer.concat(chunks);
+        chunks.length = 0;
         deliver(raw, session)
-          .then((code) => done(code === 250 ? null : answer(code, code === 550 ? "No such address here" : code === 552 ? "Message too large" : "Try again later")))
+          .then((code) => delivered(code === 250 ? null : answer(code, code === 550 ? "No such address here" : code === 552 ? "Message too large" : "Try again later")))
           .catch((error: unknown) => {
             log.error("Posting a received email to the app failed", { error: String(error) });
-            done(answer(451, "Try again later"));
+            delivered(answer(451, "Try again later"));
           });
       });
     },

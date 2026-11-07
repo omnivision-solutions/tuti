@@ -71,6 +71,7 @@ type Limits = {
   maxRecipients?: number;
   maxPerSource?: number;
   maxInFlight?: number;
+  maxBufferedBytes?: number;
   sessionLifetimeMs?: number;
   resolver?: (name: string, type: string) => Promise<unknown>;
 };
@@ -124,7 +125,10 @@ async function receiver(
         resolve({ greeting: data.toString(), closed, write: (line) => socket.write(`${line}\r\n`), reply, end: () => socket.destroy() }),
       );
     });
-  return { posts, send, sendRaw, open };
+  /** Sends from another address (another network for 127.0.1.x). */
+  const sendFrom = (localAddress: string, from: string, to: string[]) =>
+    nodemailer.createTransport({ host: "127.0.0.1", port, localAddress, secure: false, ignoreTLS: true }).sendMail({ envelope: { from, to }, from, to, subject: "Help", text: "Hello" });
+  return { posts, send, sendRaw, sendFrom, open };
 }
 
 type Session = Awaited<ReturnType<Awaited<ReturnType<typeof receiver>>["open"]>>;
@@ -238,21 +242,13 @@ test("messages still being delivered count, even after their sender hangs up: pa
   expect(posts).toHaveLength(2);
 });
 
-test("a sender that hangs up halfway through a message doesn't keep its place among the messages in flight", async () => {
-  const { open, send, posts } = await receiver([], { maxInFlight: 1 });
+test("messages still arriving share a budget of bytes: one that would go past it is refused (451), and a sender hanging up halfway frees its share", async () => {
+  const { open, send, posts } = await receiver([], { maxBufferedBytes: 2_000 });
   const quitter = await open();
-  for (const [line, code] of [
-    ["EHLO quitter.example", "250"],
-    ["MAIL FROM:<sam@example.org>", "250"],
-    ["RCPT TO:<support@a.support.test>", "250"],
-    ["DATA", "354"],
-  ] as const) {
-    quitter.write(line);
-    await quitter.reply(code);
-  }
-  quitter.write("Subject: Half");
-  // Its message holds the one place: another gets "try again later".
-  await expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  await startMessage(quitter);
+  quitter.write(`X-Big: ${"x".repeat(1_900)}`);
+  // Its bytes are held: another message, a few hundred bytes, would go past the budget; alone, it fits.
+  await vi.waitFor(() => expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 }));
   quitter.end();
   await quitter.closed;
   await vi.waitFor(() => expect(send("sam@example.org", ["support@b.support.test"])).resolves.toBeDefined());
@@ -418,34 +414,59 @@ test("a session isn't idle while its message is delivered, and is again once it'
   await session.closed;
 });
 
-test("a message that arrives too slowly is cut off, long before the session's lifetime, and its place freed", async () => {
-  fakeSessionClock();
-  const { open, send } = await receiver([], { maxInFlight: 1 });
-  const slow = await open();
-  await startMessage(slow);
-  slow.write("Subject: Slow");
-  // Past the idle timeout, but still arriving: it keeps its place.
-  vi.advanceTimersByTime(IDLE_TIMEOUT_MS + 30_000);
-  slow.write("X-More: still coming");
+test("a message being delivered still counts against the budget until it's answered", async () => {
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => (release = resolve));
+  // Room for one message of a few hundred bytes, not two.
+  const { send, posts } = await receiver([], { maxBufferedBytes: 400 }, async () => {
+    if (posts.length === 1) {
+      await slow;
+    }
+    return { status: 200, outcome: "conversation" };
+  });
+  const first = send("sam@example.org", ["support@a.support.test"]);
+  await vi.waitFor(() => expect(posts).toHaveLength(1));
   await expect(send("sam@example.org", ["support@b.support.test"])).rejects.toMatchObject({ responseCode: 451 });
-  vi.advanceTimersByTime(ARRIVAL_TIMEOUT_MS);
-  await slow.closed;
-  await send("sam@example.org", ["support@b.support.test"]);
+  release();
+  await first;
+  await send("sam@example.org", ["support@c.support.test"]);
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@a.support.test", "support@c.support.test"]);
 });
 
-test("one network can't take every message in flight: past its share, try again later (451)", async () => {
-  expect(MAX_IN_FLIGHT_PER_SOURCE).toBeLessThan(MAX_IN_FLIGHT / 3);
-  const { open, send } = await receiver();
-  const sessions = await Promise.all(Array.from({ length: MAX_IN_FLIGHT_PER_SOURCE }, () => open()));
-  for (const session of sessions) {
-    await startMessage(session);
-    session.write("Subject: Half");
+// Linux routes all of 127.0.0.0/8 to loopback, so 127.0.1.1 is another network; macOS has only 127.0.0.1 (CI runs Linux).
+test.skipIf(process.platform === "darwin")("senders trickling their messages in hold no place: another network's mail is taken, and they're cut off at the arrival deadline", async () => {
+  fakeSessionClock();
+  const { open, sendFrom, posts } = await receiver([], { maxInFlight: 1 });
+  const tricklers = await Promise.all(Array.from({ length: MAX_PER_SOURCE }, () => open()));
+  for (const trickler of tricklers) {
+    await startMessage(trickler);
+    trickler.write("Subject: Slow");
   }
-  await expect(send("sam@example.org", ["support@b.support.test"])).rejects.toMatchObject({ responseCode: 451 });
-  sessions[0]!.end();
-  await sessions[0]!.closed;
-  await vi.waitFor(() => expect(send("sam@example.org", ["support@b.support.test"])).resolves.toBeDefined());
-  sessions.forEach((session) => session.end());
+  // Past the idle timeout, a byte more each: still arriving.
+  vi.advanceTimersByTime(IDLE_TIMEOUT_MS + 30_000);
+  tricklers.forEach((trickler) => trickler.write("X"));
+  await sendFrom("127.0.1.1", "sam@example.org", ["support@b.support.test"]);
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
+  vi.advanceTimersByTime(ARRIVAL_TIMEOUT_MS);
+  await Promise.all(tricklers.map((trickler) => trickler.closed));
+});
+
+// 127.0.0.3 is in 127.0.0.1's /24 (Linux only: macOS has only 127.0.0.1; CI runs Linux).
+test.skipIf(process.platform === "darwin")("one network can't have every message being checked and delivered: past its share, try again later (451)", async () => {
+  expect(MAX_IN_FLIGHT_PER_SOURCE).toBeLessThan(MAX_IN_FLIGHT / 3);
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => (release = resolve));
+  const { send, sendFrom, posts } = await receiver([], {}, async () => {
+    await slow;
+    return { status: 200, outcome: "conversation" };
+  });
+  const delivering = Array.from({ length: MAX_IN_FLIGHT_PER_SOURCE }, (_, i) => send("sam@example.org", [`support@d${i}.support.test`]));
+  await vi.waitFor(() => expect(posts).toHaveLength(MAX_IN_FLIGHT_PER_SOURCE));
+  // From another address in the same network.
+  await expect(sendFrom("127.0.0.3", "sam@example.org", ["support@b.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  release();
+  await Promise.all(delivering);
+  await send("sam@example.org", ["support@c.support.test"]);
 });
 
 // Linux routes all of 127.0.0.0/8 to loopback; macOS has only 127.0.0.1 (CI runs Linux).
