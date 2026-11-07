@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 
@@ -41,6 +41,41 @@ describe("a project keeps at least one owner", () => {
     actAs(owner);
     expect(await redirectTarget(leaveProject(project.slug))).toBe("/app");
     expect(await roleOf(ownerMemberId)).toBeUndefined();
+  });
+
+  // Each decided on what it read before the other changed anything, both would pass and leave no owner.
+  const owners = () => prisma.teamMember.count({ where: { projectId: project.id, role: "OWNER" } });
+  /** Holds each transaction until both are waiting: each has read whatever it reads before its own. */
+  const meetAtTransactions = () => {
+    const real = prisma.$transaction.bind(prisma);
+    const { promise: met, resolve } = Promise.withResolvers<void>();
+    let waiting = 0;
+    const spy = vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof real>) => {
+      if (++waiting === 2) {
+        resolve();
+      }
+      await met;
+      return real(...args);
+    }) as never);
+    onTestFinished(() => spy.mockRestore());
+  };
+
+  test("two owners stepped down at once: one is refused, an owner is left", async () => {
+    const second = await addMember(project.id, "OWNER");
+    actAs(owner);
+    meetAtTransactions();
+    const results = await Promise.all([changeTeamRole(project.slug, ownerMemberId, "ADMIN"), changeTeamRole(project.slug, second.memberId, "ADMIN")]);
+    expect(results.filter((result) => result.error)).toHaveLength(1);
+    expect(await owners()).toBe(1);
+  });
+
+  test("one owner removed while the other steps down: one is refused, an owner is left", async () => {
+    const second = await addMember(project.id, "OWNER");
+    actAs(owner);
+    meetAtTransactions();
+    const results = await Promise.all([changeTeamRole(project.slug, ownerMemberId, "ADMIN"), removeMember(project.slug, second.memberId)]);
+    expect(results.filter((result) => result.error)).toHaveLength(1);
+    expect(await owners()).toBe(1);
   });
 });
 

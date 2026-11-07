@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { DAILY_INVITE_LIMIT, hashInvitationToken } from "@tuti/jobs";
 import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
@@ -158,6 +158,20 @@ describe("inviting by email", () => {
     expect(await createInvitation(project.slug, newEmail(), "OWNER")).toEqual({
       error: "You can't invite people with that role",
     });
+  });
+
+  test("someone made a member while their invite is being made is refused", async () => {
+    const admin = await addMember(project.id, "ADMIN");
+    actAs(admin);
+    // Demoted after inviting read their role, before its transaction runs.
+    const real = prisma.$transaction.bind(prisma);
+    const spy = vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (...args: Parameters<typeof real>) => {
+      await prisma.teamMember.update({ where: { id: admin.memberId }, data: { role: "MEMBER" } });
+      return real(...args);
+    }) as never);
+    onTestFinished(() => spy.mockRestore());
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({ error: "You can't invite people with that role" });
+    expect(await prisma.invitation.count({ where: { createdById: admin.id } })).toBe(0);
   });
 
   test("admins can't replace an owner's pending owner invite by inviting the address again", async () => {

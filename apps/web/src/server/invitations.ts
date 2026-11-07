@@ -12,7 +12,7 @@ import { appUrl } from "@/lib/hosts";
 import { asksToVerifyEmail } from "@/lib/verify-email";
 import { canAssignRole, isAdminRole, ROLE_LABELS } from "@/lib/roles";
 
-import { getMembership } from "./membership";
+import { getMembership, teamRoleIn } from "./membership";
 import { getAccountSession, getSession } from "./session";
 
 type Result = { error?: string };
@@ -67,7 +67,7 @@ export async function createInvitation(
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
     const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
     // Their role again, under that lock: taking someone off the team or changing their role takes it too, then revokes their invites.
-    const me = await senderRole(tx, projectId, session.user.id);
+    const me = await teamRoleIn(tx, projectId, session.user.id);
     if (!me || !canAssignRole(me, parsed.data.role)) {
       return "role" as const;
     }
@@ -125,10 +125,6 @@ export async function createInvitation(
 }
 
 const DAILY_LIMIT = `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`;
-
-/** The sender's role on the project now (null: not on the team), read under the project's lock. */
-const senderRole = async (tx: Prisma.TransactionClient, projectId: string, userId: string) =>
-  (await tx.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { role: true } }))?.role ?? null;
 
 /**
  * Whether the last day's invites are used up (DAILY_INVITE_LIMIT), the project's or the sender's across all their
@@ -193,7 +189,7 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
     const claim = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       // Their role again, under the lock, each time: taken off the team or demoted partway, they send no more.
-      const me = await senderRole(tx, projectId, session.user.id);
+      const me = await teamRoleIn(tx, projectId, session.user.id);
       if (!me || !isAdminRole(me)) {
         return "gone" as const;
       }
