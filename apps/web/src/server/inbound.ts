@@ -59,12 +59,12 @@ export { mailSubdomain } from "@tuti/jobs";
 
 /**
  * An email's HTML as text: links kept, images left out, quotes as "> ". Only so much of it and so
- * deep (the reply is at the top), and a quote within a quote isn't marked again, so the text grows
- * with the HTML rather than with how deep its quotes go.
+ * deep (the reply is at the top), and quotes marked up to five deep, so the text grows with the
+ * HTML rather than with how deep its quotes go.
  */
 function htmlAsText(html: string): string {
-  let quoting = false;
-  return htmlToText(html.slice(0, 1_000_000), {
+  let depth = 0;
+  return htmlToText(html.slice(0, 500_000), {
     wordwrap: false,
     limits: { maxDepth: 200 },
     selectors: [
@@ -73,15 +73,14 @@ function htmlAsText(html: string): string {
     ],
     formatters: {
       quote: (elem, walk, builder) => {
-        const outer = !quoting;
-        quoting = true;
-        builder.openBlock({ leadingLineBreaks: 2, reservedLineLength: outer ? 2 : 0 });
+        const marked = ++depth <= 5;
+        builder.openBlock({ leadingLineBreaks: 2, reservedLineLength: marked ? 2 : 0 });
         walk(elem.children, builder);
         builder.closeBlock({
           trailingLineBreaks: 2,
-          blockTransform: outer ? (text) => trimLineBreaks(text).split("\n").map((line) => `> ${line}`).join("\n") : undefined,
+          blockTransform: marked ? (text) => trimLineBreaks(text).split("\n").map((line) => `> ${line}`).join("\n") : undefined,
         });
-        quoting = !outer;
+        depth--;
       },
     },
   });
@@ -141,9 +140,9 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
     return { status: 404, outcome: "no such address" };
   }
   const projectId = owner.projectId;
-  // The parser turns no HTML into text (htmlAsText does, in readEmail), and marks where it would
-  // have with textConversionError; nor does it look for links in the text or inline images.
-  const mail = await simpleParser(raw, { maxHtmlLengthToParse: 0, skipTextLinks: true, skipImageLinks: true });
+  // The parser turns no HTML into text (htmlAsText does, in readEmail) but says where it would have,
+  // in textConversionError, and makes no HTML of the text or inline images.
+  const mail = await simpleParser(raw, { maxHtmlLengthToParse: 0, skipTextToHtml: true, skipImageLinks: true });
   const sender = mail.from?.value[0]?.address?.toLowerCase() ?? "";
   const messageId = mail.messageId ?? null;
   const dedupeKey = sha256(messageId ? `${messageId}\n${sender}` : raw);
@@ -326,9 +325,10 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     return ignore("from_own_address");
   }
 
-  // Its plain text, or, where its words are in HTML (all of it, or a part beside the text), its HTML
-  // as text, which then holds its text parts too.
-  const plain = (mail.textConversionError || !mail.text) && typeof mail.html === "string" ? htmlAsText(mail.html) : (mail.text ?? "");
+  // Its plain text and, where its words are in HTML (all of them, or a part beside the text rather
+  // than instead of it), its HTML as text after it.
+  const html = (mail.textConversionError || !mail.text) && typeof mail.html === "string" ? htmlAsText(mail.html).trim() : "";
+  const plain = html ? [mail.text?.trim(), html].filter(Boolean).join("\n\n") : (mail.text ?? "");
   const { text, stripped } = stripQuotes(plain, subject);
   const body = (text || "(No text)").slice(0, MAX_MESSAGE_LENGTH);
   // What came with it (not the images its HTML shows inline: logos, signatures), kept before its
