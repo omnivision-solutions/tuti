@@ -15,11 +15,13 @@ let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
   owner = await signUp("Olive Owner");
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   project = await createProject(owner);
   actAs(owner);
 });
 
 const newEmail = () => `e2e-${randomUUID()}@example.com`;
+const emailsTo = (address: string) => mailbox.emails.filter((email) => email.to.includes(address)).length;
 const tokenOf = (url: string) => url.split("/invite/")[1]!;
 const isMember = async (userId: string) =>
   (await prisma.teamMember.count({ where: { projectId: project.id, userId } })) === 1;
@@ -77,6 +79,40 @@ describe("inviting by email", () => {
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({
       error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`,
     });
+  });
+
+  test("the day's invites are counted per sender too, across their projects", async () => {
+    const projects = [project, await createProject(owner), await createProject(owner)];
+    const perProject = Math.ceil(DAILY_INVITE_LIMIT / projects.length);
+    let sent = 0;
+    for (const p of projects) {
+      for (let i = 0; i < perProject && sent < DAILY_INVITE_LIMIT; i++, sent++) {
+        expect(await createInvitation(p.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+      }
+    }
+    const fresh = await createProject(owner);
+    const email = newEmail();
+    expect(await createInvitation(fresh.slug, email, "MEMBER")).toEqual({
+      error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`,
+    });
+    expect(emailsTo(email)).toBe(0);
+    // Another admin there still can.
+    const admin = await addMember(fresh.id, "ADMIN");
+    await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
+    actAs(admin);
+    expect(await createInvitation(fresh.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+  });
+
+  test("an unverified sender gets the link to copy, but nothing is emailed until they verify", async () => {
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
+    const email = newEmail();
+    const result = await createInvitation(project.slug, email, "MEMBER");
+    expect(result).toEqual({ url: expect.stringMatching(/\/invite\/[\w-]+$/), emailSent: false, unverified: true });
+    expect(emailsTo(email)).toBe(0);
+
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+    expect(await createInvitation(project.slug, email, "MEMBER")).toMatchObject({ emailSent: true });
+    expect(emailsTo(email)).toBe(1);
   });
 
   test("admins can't invite owners", async () => {

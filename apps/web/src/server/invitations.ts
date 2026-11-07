@@ -31,12 +31,13 @@ const inviteSchema = z.object({
  * Invites someone by email: they get an email with a single-use link, which only an
  * account with that email can accept. The link is also returned (once) to copy, for
  * installs without email. A new invite to the same address replaces the pending one.
+ * Only emailed once the sender's address is verified (`unverified`: it wasn't); till then, the link is to copy.
  */
 export async function createInvitation(
   projectSlug: string,
   email: string,
   role: string,
-): Promise<Result & { url?: string; emailSent?: boolean }> {
+): Promise<Result & { url?: string; emailSent?: boolean; unverified?: boolean }> {
   const membership = await getMembership(projectSlug);
   const session = await getSession();
   if (!membership || !session || !isAdminRole(membership.role)) {
@@ -64,7 +65,7 @@ export async function createInvitation(
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
     const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
     // The day's cap too, under that lock: an import's invites being sent at the same moment can't both take its last place.
-    if ((await sentToday(projectId, tx)) >= DAILY_INVITE_LIMIT) {
+    if (await dayIsFull(tx, projectId, session.user.id)) {
       return "daily" as const;
     }
     const limit = project ? teamLimit(project.plan) : null;
@@ -94,6 +95,10 @@ export async function createInvitation(
     return { error: teamFull(full) };
   }
   const url = `${appUrl().origin}/invite/${token}`;
+  if (mayNotEmail(session.user)) {
+    refresh();
+    return { url, emailSent: false, unverified: true };
+  }
   const emailSent = await emailInvite({ to: parsed.data.email, role: parsed.data.role, url, inviter: session.user, projectName: membership.project.name });
   refresh();
   return { url, emailSent };
@@ -101,8 +106,24 @@ export async function createInvitation(
 
 const DAILY_LIMIT = `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`;
 
-/** Invites the project emailed in the last day: inviting emails any address, so it's capped (DAILY_INVITE_LIMIT). */
-const sentToday = (projectId: string, db: Prisma.TransactionClient = prisma) => db.invitation.count({ where: { projectId, sentAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } });
+/**
+ * Whether the last day's invites are used up (DAILY_INVITE_LIMIT), the project's or the sender's across all their
+ * projects (projects are free to make): inviting emails any address, so it's capped. Takes the sender's lock, after
+ * the project's, so two of their invites at once (in different projects too) can't both take the last place.
+ */
+async function dayIsFull(tx: Prisma.TransactionClient, projectId: string, senderId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(7, hashtext(${senderId}))`;
+  const sentAt = { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) };
+  return (
+    (await tx.invitation.count({ where: { projectId, sentAt } })) >= DAILY_INVITE_LIMIT ||
+    (await tx.invitation.count({ where: { createdById: senderId, sentAt } })) >= DAILY_INVITE_LIMIT
+  );
+}
+
+/** Invites are emailed only from a verified address (on servers that send email, where it can be verified). */
+const mayNotEmail = (sender: { emailVerified: boolean }) => !sender.emailVerified && emailConfigured();
+
+const VERIFY_FIRST = "Verify your email to send invites: open the link we emailed you.";
 
 /** Emails an invite's link from `inviter` (replies reach them); false when the email couldn't be sent. */
 async function emailInvite({ to, role, url, inviter, projectName }: { to: string; role: TeamRole; url: string; inviter: { name: string; email: string }; projectName: string }) {
@@ -129,6 +150,9 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
   if (!membership || !session || !isAdminRole(membership.role)) {
     return { error: "Only project owners and admins can send invites" };
   }
+  if (mayNotEmail(session.user)) {
+    return { error: VERIFY_FIRST };
+  }
   const projectId = membership.project.id;
   // Only roles the sender may give (an import's are all members).
   const roles = (["OWNER", "ADMIN", "MEMBER"] as const).filter((role) => canAssignRole(membership.role, role));
@@ -143,7 +167,7 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
   for (;;) {
     const claim = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
-      if ((await sentToday(projectId, tx)) >= DAILY_INVITE_LIMIT) {
+      if (await dayIsFull(tx, projectId, session.user.id)) {
         return "capped" as const;
       }
       const invitation = await tx.invitation.findFirst({ where: unsent, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true, role: true } });

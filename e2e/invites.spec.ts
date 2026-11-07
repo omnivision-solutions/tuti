@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { fillSignUp, newPerson, png, signUp, skipSetup } from "./helpers";
-import { latestEmailTo, linkIn } from "./mail";
+import { countEmailsTo, latestEmailTo, linkIn, verifyEmail } from "./mail";
 
 test("an owner invites someone by email, who signs up from the email and joins", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -19,7 +19,17 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await owner.getByRole("button", { name: "Create project" }).click();
   await skipSetup(owner, slug);
 
-  // The owner invites by email address; the pending invite shows who it's for.
+  // Until the owner's email is verified, an invite isn't emailed: its link is there to copy.
+  await owner.goto(`/app/${slug}/team`);
+  await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
+  await owner.getByRole("button", { name: "Send invite" }).click();
+  await expect(owner.getByText(`Verify your email to email invites: for now, send ${inviteeEmail} this link`)).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Copy link" })).toBeVisible();
+  await checkpoint(owner, "team-invite-unverified");
+  expect(countEmailsTo(inviteeEmail)).toBe(0);
+
+  // Verified, the owner invites again (replacing that one); the pending invite shows who it's for.
+  await verifyEmail(owner);
   await owner.goto(`/app/${slug}/team`);
   await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(inviteeEmail);
   await owner.getByRole("button", { name: "Send invite" }).click();
@@ -128,6 +138,7 @@ test("an invite for someone else says so", async ({ browser }, testInfo) => {
   const inviteeEmail = `e2e-${randomUUID()}@example.com`;
 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await verifyEmail(owner);
   await owner.goto("/app/new");
   await owner.getByLabel("Name").fill("Acme");
   await owner.getByLabel("URL").fill(slug);
@@ -160,6 +171,7 @@ test("someone with an account sees invites on the dashboard, declines one and ac
 
   // An owner invites her to two projects.
   const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await verifyEmail(owner);
   for (const [slug, name] of [
     [first, "Acme"],
     [second, "Globex"],

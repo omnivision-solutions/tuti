@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
-import { latestEmailTo, linkIn } from "./mail";
+import { latestEmailTo, linkIn, verifyEmail } from "./mail";
 
 test("the team sets what readers can do with an article and the docs' home, seeing each change before saving it", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
@@ -306,6 +306,7 @@ test("on a laptop Customize fits the window under the top bar, and each pane scr
   await owner.goto(linkIn(await latestEmailTo(owner.email), `${APP_URL}/api/auth/verify-email`));
   await owner.goto(`/app/${slug}/customize/branding`);
   const inviter = await signUp(browser, APP_URL, "Ivan Inviter");
+  await verifyEmail(inviter);
   for (const name of ["Globex", "Initech", "Umbrella", "Hooli"]) {
     const other = `e2e-${randomUUID().slice(0, 8)}`;
     await createProject(inviter, name, other);

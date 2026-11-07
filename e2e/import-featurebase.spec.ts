@@ -6,12 +6,15 @@ import { FAKE_FEATUREBASE_KEY, FAKE_FEATUREBASE_SLOW_KEY } from "@tuti/testkit";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl } from "./env";
 import { createProject, newPerson, signUp } from "./helpers";
+import { verifyEmail } from "./mail";
 
 test("in the first run the team comes from Featurebase: a bad key is refused, a good one brings its contacts across as Users while setup goes on, and its team as invitations to send", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
+  // Verified, so the team's invitations can be sent.
+  await verifyEmail(owner);
   await owner.goto("/app/new");
   await owner.getByLabel("Name").fill("Acme");
   await owner.getByLabel("URL").fill(slug);
