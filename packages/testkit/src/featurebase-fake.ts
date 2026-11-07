@@ -42,6 +42,8 @@ const PNG = Buffer.from(
   "base64",
 );
 
+export { PNG as FAKE_PNG };
+
 const DAY_MS = 86_400_000;
 /** An ISO date `days` ago, `minutes` on. */
 const ago = (days: number, minutes = 0) => new Date(Date.now() - days * DAY_MS + minutes * 60_000).toISOString();

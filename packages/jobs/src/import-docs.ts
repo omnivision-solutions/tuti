@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason } from "@tuti/content/html";
 import { Prisma, prisma } from "@tuti/db";
 import { articleLimit, MAX_ARTICLE_LENGTH } from "@tuti/shared";
+import { destinationKey, MAX_REDIRECTS, portalPage, redirectFrom, redirectKey } from "@tuti/shared/portal-redirects";
 
 import { recordRevision } from "./article-layers";
 import { freeDocsSlug } from "./docs-slugs";
@@ -174,6 +175,12 @@ async function remember(tx: Tx, job: ImportJob, kind: RecordKind, made: { extern
  * first tab (as tabFor does), each after what's there, siblings in Featurebase's order.
  */
 async function collectionsPage(job: ImportJob): Promise<StepPage> {
+  // A source that crawls finds its pages first, a page of this step at a time, its progress kept on the import.
+  const found = job.read.find ? await job.read.find() : null;
+  const keep = (tx: Tx) => found && tx.dataImport.update({ where: { id: job.id }, data: { sourceState: found.state as Prisma.InputJsonValue } });
+  if (found && !found.done) {
+    return { next: `find:${found.progress}`, save: async (tx) => void (await keep(tx)) };
+  }
   let page = await job.read.collections!(null);
   const all = [...page.items];
   while (page.next) {
@@ -195,6 +202,7 @@ async function collectionsPage(job: ImportJob): Promise<StepPage> {
   return {
     next: null,
     save: async (tx) => {
+      await keep(tx);
       const known = await recorded(tx, job, "collection");
       const firstTab = await tx.docsTab.findFirst({ where: { projectId: job.projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { id: true } });
       const local = new Map([...known].map(([id, row]) => [id, row.id]));
@@ -265,11 +273,12 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
   for (const article of fresh) {
     const title = titleOf(article);
     const author = article.author?.authorId ? await adminMember(tx, job, article.author.authorId, { name: article.author.name }) : null;
+    const slug = await freeDocsSlug(tx, job.projectId, slugOf(article) || title, "article");
     const { id } = await tx.article.create({
       data: {
         projectId: job.projectId,
         title,
-        slug: await freeDocsSlug(tx, job.projectId, slugOf(article) || title, "article"),
+        slug,
         description: article.description?.trim().slice(0, 300) ?? "",
         collectionId: collections.get(article.parentId ?? "")?.id ?? null,
         order: orderOf(article.order),
@@ -279,9 +288,39 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
       select: { id: true },
     });
     made.push({ externalId: article.id, localId: id, madeTitle: title });
+    await keepOldAddress(tx, job, article.id, slug);
   }
   await remember(tx, job, "article", made);
   await remember(tx, job, "article-ref", refs(made, new Map(fresh.map((article) => [article.id, article]))));
+}
+
+/**
+ * A crawled help center's article's old path (a source whose ids are its pages' addresses), redirected to its new page
+ * (Settings → Domain → Redirects), so once the old domain points at the portal, links to it still land. Up to the
+ * portal's MAX_REDIRECTS; never a path that has a rule, is a rule's destination, or may be one of the portal's own pages.
+ */
+async function keepOldAddress(tx: Tx, job: ImportJob, address: string, slug: string) {
+  if (IMPORT_SOURCES[job.source].credential !== "url") {
+    return;
+  }
+  const from = redirectFrom(address);
+  const to = `/docs/${slug}`;
+  // Not a path a rule can have (the home, the portal's own), or the same address as before.
+  if ("error" in from || from.from === redirectKey(to)) {
+    return;
+  }
+  const rules = await tx.portalRedirect.findMany({ where: { projectId: job.projectId }, select: { from: true, to: true } });
+  // One of the portal's own pages (another article's or a collection's /docs/<slug>, its changelog, …): never hidden.
+  if (portalPage(from.from)) {
+    tally(job.counts, "notRedirected", "taken by the portal's own pages (not redirected)");
+  } else if (rules.some((rule) => rule.from === from.from || rule.from === redirectKey(to) || destinationKey(rule.to) === from.from)) {
+    tally(job.counts, "notRedirected", "already part of another redirect (not redirected)");
+  } else if (rules.length >= MAX_REDIRECTS) {
+    tally(job.counts, "notRedirected", `past the portal's ${MAX_REDIRECTS} redirects (not redirected)`);
+  } else {
+    await tx.portalRedirect.create({ data: { projectId: job.projectId, from: from.from, to } });
+    tally(job.counts, "oldAddresses", null);
+  }
 }
 
 /** Pass 1's articles: every one (drafts too), made empty, a page at a time. */
@@ -306,7 +345,8 @@ async function linksTo(job: ImportJob, portal: string, html: string[]): Promise<
   const parse = IMPORT_SOURCES[job.source].docsLink;
   const target = (href: string) => {
     try {
-      return parse?.(new URL(href, "https://source.invalid").pathname) ?? null;
+      const url = new URL(href, "https://source.invalid");
+      return parse?.(url.pathname, url) ?? null;
     } catch {
       return null;
     }

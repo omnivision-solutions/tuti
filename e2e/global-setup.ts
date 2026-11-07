@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { startCannyFake, startCloudflareFake, startDnsFake, startFeaturebaseFake, startFerndeskFake, startGithubFake, startGoogleFake, startIntercomFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
+import { startCannyFake, startCloudflareFake, startDnsFake, startFeaturebaseFake, startFerndeskFake, startGithubFake, startGoogleFake, startHelpCenterFake, startIntercomFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
@@ -78,6 +78,9 @@ export default async function globalSetup() {
   const ferndesk = await startFerndeskFake();
   // Canny's API, for imports: made-up users, feedback and changelog, its key FAKE_CANNY_KEY.
   const canny = await startCannyFake();
+  // A team's public help center, for imports by address (served on this machine: the servers allow private addresses).
+  const helpCenter = await startHelpCenterFake();
+  process.env.E2E_HELP_CENTER_URL = helpCenter.url;
   const postgres = await startMigratedPostgres("tuti_e2e");
   // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
   process.env.E2E_DATABASE_URL = postgres.url;
@@ -114,7 +117,7 @@ export default async function globalSetup() {
 
   return async () => {
     servers.forEach((server) => server.kill());
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close(), featurebase.close(), intercom.close(), ferndesk.close(), canny.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close(), featurebase.close(), intercom.close(), ferndesk.close(), canny.close(), helpCenter.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };

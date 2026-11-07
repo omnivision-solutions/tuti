@@ -17,6 +17,7 @@ import { cannySource } from "./canny";
 import { featurebaseSource } from "./featurebase";
 import { intercomSource } from "./intercom";
 import { ferndeskSource } from "./ferndesk";
+import { websiteSource } from "./website";
 
 /**
  * How the import's part jobs read a source (packages/jobs/src/import-*.ts): each a page at a time (`cursor` null: the
@@ -46,6 +47,12 @@ export type ImportReaders = Partial<{
   articleExists: (id: string) => Promise<boolean>;
   conversations: (cursor: string | null, limit: number) => Promise<Page<FeaturebaseConversation>>;
   conversation: (id: string) => Promise<FeaturebaseConversation | null>;
+  /**
+   * A source that finds its records by crawling (a help center by address): a step's worth of finding, from where the
+   * import's kept state (connect's `state`) left it. The help center's first step runs it until `done`, keeping `state` on
+   * the import (`data_import.sourceState`) with each page, so every later step, in whichever worker, reads the same list.
+   */
+  find: () => Promise<{ state: unknown; done: boolean; progress: string }>;
 }>;
 
 /** The parts an import can bring (IMPORT_PARTS' names). */
@@ -66,15 +73,16 @@ export type ImportSourceDefinition = {
   name: string;
   /** What the team gives it: an API key, or the address of a public site. */
   credential: "key" | "url";
-  /** Reading stops past `deadline` (ms since the epoch). */
-  connect: (credential: string, options: { deadline: number }) => ImportConnection;
+  /** Reading stops past `deadline` (ms since the epoch). `state`: what its `find` kept on the import (none yet, or a check). */
+  connect: (credential: string, options: { deadline: number; state?: unknown }) => ImportConnection;
   /** A source's error's HTTP status (0: unreachable), null for any other error. */
   status: (error: unknown) => number | null;
   /**
-   * What a link in its help center's content points at, by its address's path: an article or collection (`kind`, or
+   * What a link in its help center's content points at, by its address's path (and the whole address, `url`, for a
+   * source whose ids are addresses): an article or collection (`kind`, or
    * either) by its id or its `ref` (FeaturebaseArticle's), null for neither. Without it, links stay as they are.
    */
-  docsLink?: (path: string) => { kind?: "article" | "collection"; ref: string } | null;
+  docsLink?: (path: string, url: URL) => { kind?: "article" | "collection"; ref: string } | null;
 };
 
 /** Every source, by the import row's `source`: adding one is its enum value, its file and its line here. */
@@ -83,4 +91,5 @@ export const IMPORT_SOURCES: Record<ImportSource, ImportSourceDefinition> = {
   INTERCOM: intercomSource,
   FERNDESK: ferndeskSource,
   CANNY: cannySource,
+  WEBSITE: websiteSource,
 };

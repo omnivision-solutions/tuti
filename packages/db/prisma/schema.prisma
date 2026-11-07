@@ -2521,6 +2521,8 @@ enum ImportSource {
   INTERCOM
   FERNDESK
   CANNY
+  /// A public help center, crawled from its address (packages/jobs import-sources/website.ts).
+  WEBSITE
 }
 
 enum ImportState {
@@ -2552,6 +2554,9 @@ model DataImport {
   cursor      String?
   /// What came across, per kind: { contacts: { imported: 12, leftOut: { "<reason>": 2 } } }.
   counts      Json         @default("{}")
+  /// What the source keeps for the import's later steps (packages/jobs import-sources SourceMemo): a crawled help
+  /// center's list of pages, found by its first step, so every step pages through the same list.
+  sourceState Json?
   /// Why it failed, in words.
   error       String       @default("")
   createdAt   DateTime     @default(now())

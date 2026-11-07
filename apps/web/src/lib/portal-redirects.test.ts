@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { destinationKey, redirectFrom, redirectKey, redirectLocation, redirectTo } from "./portal-redirects";
+import { destinationKey, portalPage, redirectFrom, redirectKey, redirectLocation, redirectTo } from "./portal-redirects";
 
 test("an old address as pasted becomes a path, lowercase and without a trailing slash", () => {
   expect(redirectFrom(" /hc/en-us/Articles/123/ ")).toEqual({ from: "/hc/en-us/articles/123" });
@@ -53,4 +53,13 @@ test("matching keys: lowercase, trailing slashes gone, quick on a long run of th
   expect(redirectKey("/KB/Billing///")).toBe("/kb/billing");
   expect(redirectKey("///")).toBe("/");
   expect(redirectKey(`/a${"/".repeat(100_000)}`)).toBe("/a");
+});
+
+test("the portal's own pages, which an import's redirects never take: a deeper path under /docs isn't one", () => {
+  for (const path of ["/docs", "/docs/billing", "/docs/billing/md", "/changelog", "/changelog/12", "/feedback/ideas/1", "/roadmap", "/account"]) {
+    expect(portalPage(path)).toBe(true);
+  }
+  for (const path of ["/docs/billing/refunds", "/docs/a/b/c", "/hc/en-us/articles/123", "/help/refunds"]) {
+    expect(portalPage(path)).toBe(false);
+  }
 });

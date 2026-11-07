@@ -13,7 +13,8 @@
     "./inbound-signature": "./src/inbound-signature.ts",
     "./email-quotes": "./src/email-quotes.ts",
     "./signed": "./src/signed.ts",
-    "./user-properties": "./src/user-properties.ts"
+    "./user-properties": "./src/user-properties.ts",
+    "./portal-redirects": "./src/portal-redirects.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
