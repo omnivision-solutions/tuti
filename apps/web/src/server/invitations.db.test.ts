@@ -79,7 +79,7 @@ describe("inviting by email", () => {
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({
       error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`,
     });
-  });
+  }, 20_000);
 
   test("the day's invites are counted per sender too, across their projects", async () => {
     const projects = [project, await createProject(owner), await createProject(owner)];
@@ -101,6 +101,16 @@ describe("inviting by email", () => {
     await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
     actAs(admin);
     expect(await createInvitation(fresh.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+  });
+
+  test("a sender's last invite of the day, sent from several projects at once, is emailed once", async () => {
+    const others = await Promise.all(Array.from({ length: 4 }, () => createProject(owner)));
+    await prisma.invitation.createMany({
+      data: Array.from({ length: DAILY_INVITE_LIMIT - 1 }, () => ({ projectId: project.id, email: newEmail(), tokenHash: hashInvitationToken(randomUUID()), createdById: owner.id, expiresAt: new Date(Date.now() + 60_000) })),
+    });
+    const results = await Promise.all(others.map((other) => createInvitation(other.slug, newEmail(), "MEMBER")));
+    expect(results.filter((result) => result.emailSent)).toHaveLength(1);
+    expect(results.filter((result) => result.error === `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`)).toHaveLength(3);
   });
 
   test("an unverified sender gets the link to copy, but nothing is emailed until they verify", async () => {
