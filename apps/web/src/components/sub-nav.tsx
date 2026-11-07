@@ -1,9 +1,11 @@
 "use client";
 
+import { ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect, useRef } from "react";
 
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { activeHref } from "@/lib/active-link";
 import { cn } from "@/lib/utils";
 
@@ -95,9 +97,19 @@ export function useScrollingRow(current: unknown, items: unknown) {
 /** A scrolling row's classes: no scrollbar, and the fade at the end (or ends) with more. */
 export const SCROLLING_ROW = cn("overflow-x-auto [scrollbar-width:none]", FADE_AT_MORE);
 
+/** A tab's classes, active (`data-active`) or not. */
+const tab = (active: boolean, className?: string) =>
+  cn(
+    // scroll-mx-12: a tab tabbed or scrolled to clears the fade at the row's ends.
+    "shrink-0 scroll-mx-12 border-b-2 px-2 py-2 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+    active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+    className,
+  );
+
 export function SubNav({
   label,
   items,
+  more,
   current: given,
   currentIs = "page",
   scroll,
@@ -106,6 +118,11 @@ export function SubNav({
 }: {
   label: string;
   items: { title: ReactNode; href: string }[];
+  /**
+   * The rest, under one last tab that opens them as a menu (`label`, or the one of them that's current, marked as the
+   * active tab): for a row with more than fits.
+   */
+  more?: { label: string; items: { title: ReactNode; href: string }[] };
   /** The active item's href, when the URL's path alone doesn't say (views in the query string). */
   current?: string;
   /** `aria-current` on the active item: `true` when it's what's beside the page, not the page itself. */
@@ -117,8 +134,9 @@ export function SubNav({
   itemClassName?: string;
 }) {
   const pathname = usePathname();
-  const current = given ?? activeHref(pathname, items.map((item) => item.href));
+  const current = given ?? activeHref(pathname, [...items, ...(more?.items ?? [])].map((item) => item.href));
   const nav = useScrollingRow(current, items);
+  const picked = more?.items.find((item) => item.href === current);
   return (
     // The line under the row is a shadow inside it: a border would sit outside what scrolls, under the active tab's.
     <nav
@@ -139,17 +157,35 @@ export function SubNav({
             scroll={scroll}
             aria-current={active ? currentIs : undefined}
             data-active={active || undefined}
-            className={cn(
-              // scroll-mx-12: a tab tabbed or scrolled to clears the fade at the row's ends.
-              "shrink-0 scroll-mx-12 border-b-2 px-2 py-2 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-              active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-              itemClassName,
-            )}
+            className={tab(active, itemClassName)}
           >
             {item.title}
           </Link>
         );
       })}
+      {more && (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-current={picked ? currentIs : undefined}
+            data-active={picked ? true : undefined}
+            className={tab(!!picked, cn("inline-flex items-center gap-1", itemClassName))}
+          >
+            {picked?.title ?? more.label}
+            <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {more.items.map((item) => (
+              <DropdownMenuItem
+                key={item.href}
+                render={<Link href={item.href} scroll={scroll} aria-current={item.href === current ? currentIs : undefined} />}
+                className="justify-between gap-4"
+              >
+                {item.title}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </nav>
   );
 }

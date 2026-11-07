@@ -7,7 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { publishMx } from "./dns";
 import { setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { afterIntersections, apiFor, createProject, expectOneRowOfTabs, png, signUp } from "./helpers";
+import { afterIntersections, apiFor, createProject, expectMoreView, expectOneRowOfTabs, moreView, png, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
@@ -56,8 +56,13 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("link", { name: "Inbox", exact: true }).locator("..")).toContainText("2 open");
   await expect(owner).toHaveTitle(/^\(2\) /);
   await expect(views.getByRole("link", { name: "Needs reply 2" })).toHaveAttribute("aria-current", "page");
-  // What needs the team first: Needs reply, Mine, Unassigned, Waiting on user; then the rest.
-  await expect(views.getByRole("link")).toHaveText([/^Needs reply/, /^Mine/, /^Unassigned/, /^Waiting on user/, /^Snoozed/, /^Closed/, /^Spam/]);
+  // What needs the team first as tabs: Needs reply, Mine, Unassigned; then the rest under More, Waiting on user first.
+  await expect(views.getByRole("link")).toHaveText([/^Needs reply/, /^Mine/, /^Unassigned/]);
+  await views.getByRole("button", { name: "More" }).click();
+  await expect(owner.getByRole("menuitem")).toHaveText([/^Waiting on user/, /^Snoozed/, /^Closed/, /^Spam/]);
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("menuitem")).toHaveCount(0);
+  await checkpoint(owner, "inbox-views");
   await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
   const rows = owner.getByRole("main").getByRole("listitem");
   await expect(rows).toHaveCount(2);
@@ -68,11 +73,12 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows.first()).toContainText("Do you have a discount for nonprofits?");
   await expect(rows.last().getByRole("link")).toHaveText("Sam Smith · Initech");
   await expect(rows.last()).toContainText("Can't export to CSV · The export button does nothing on the reports page.");
-  await expect(rows.last()).toContainText("#1");
+  // Its number to the ear (and in the conversation), not a line of its own.
+  await expect(rows.last().getByRole("link").first()).toHaveAccessibleName(/\(#1\)$/);
   // Waiting on the team says so where not all of them are (not in Needs reply, where it would be every row);
   // "Waiting on user" is the view of those the team answered.
   await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(0);
-  await expect(views.getByRole("link", { name: "Waiting on user 0" })).toBeVisible();
+  await expectMoreView(owner, "Waiting on user 0");
   await views.getByRole("link", { name: "Unassigned 2" }).click();
   await expect(rows.getByText("Needs reply", { exact: true })).toHaveCount(2);
   await checkpoint(owner, "inbox-unassigned");
@@ -90,8 +96,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
     const list = (await owner.getByRole("region", { name: "Conversations", exact: true }).boundingBox())!;
     const who = (await rows.first().getByRole("link").boundingBox())!;
     expect(who.height).toBeLessThan(30);
-    // Who, two lines of the message, then the number: four lines at most, not five or six.
-    expect((await rows.first().boundingBox())!.height).toBeLessThan(100);
+    // Who on one line, the message on the other: two lines (the first row has no padding above it).
+    expect((await rows.first().boundingBox())!.height).toBeLessThanOrEqual(48);
     expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     return list.width;
   };
@@ -100,9 +106,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await checkpoint(owner, "inbox-1440", { fullPage: false });
   await owner.setViewportSize({ width: 390, height: 844 });
   await rowsRead(390);
-  // Its views don't fit: faded out at the end with more, nothing of a tab cut there in the last 1rem.
-  await expect(views).toHaveAttribute("data-more", "end");
-  expect(await views.evaluate((row) => getComputedStyle(row).maskImage)).toMatch(/^linear-gradient\((to left|270deg), rgba\(0, 0, 0, 0\) 16px, rgb\(0, 0, 0\) 48px\)$/);
+  // Its views fit, on a phone too (the rest under More): nothing faded out, no tab cut short.
+  await expect(views).not.toHaveAttribute("data-more");
   await checkpoint(owner, "inbox-phone-rows", { fullPage: false });
   // Scrolled under the page's header (room made below to scroll that far), a row's name (above its row's link) stays
   // under it too.
@@ -179,7 +184,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(messages.last()).toContainText("Thanks, Sam! A fix is on its way.");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   // In the view it's in now: Waiting on user.
-  await views.getByRole("link", { name: "Waiting on user 1" }).click();
+  await (await moreView(owner, "Waiting on user 1")).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=waiting$`));
   await list.getByRole("link", { name: /Can't export to CSV/ }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?view=waiting$`));
@@ -327,11 +332,11 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.getByRole("menuitem", { name: "In 3 hours" }).click();
   await expect(owner.getByText(/^Snoozed till /).first()).toBeVisible();
   await owner.goto(`/app/${slug}/inbox?view=snoozed`);
-  await expect(views.getByRole("link", { name: "Snoozed 1" })).toHaveAttribute("aria-current", "page");
+  await expect(views.getByRole("button", { name: "Snoozed 1" })).toHaveAttribute("aria-current", "page");
   // Out of Mine (it's assigned to Olive) while it's snoozed.
   await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
-  await expect(owner.getByRole("main").getByRole("listitem")).toContainText(/back in 3 hours|back in 2 hours/);
+  await expect(owner.getByRole("main").getByRole("listitem")).toContainText(/Back in [23] hours · Can't export to CSV/);
   // Waiting on Sam, not the team: its age is since the latest message, and nothing says it needs a reply.
   await expect(owner.getByRole("main").getByRole("listitem").locator("time")).toHaveAttribute("title", /^Latest message \d+ minutes? ago$/);
   await expect(owner.getByRole("main").getByRole("listitem").getByText("Needs reply")).toHaveCount(0);
@@ -408,7 +413,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.goto(`/app/${slug}/inbox`);
   await expect(views.getByRole("link", { name: "Needs reply 1" })).toBeVisible();
   await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
-  await views.getByRole("link", { name: "Closed 1" }).click();
+  await (await moreView(owner, "Closed 1")).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Can't export to CSV · You: It ships on Monday.");
   // A snooze left on it while closed (as a release from before could leave one) doesn't take it out of Closed.
@@ -418,7 +423,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await db.end();
   await owner.reload();
   await expect(rows).toContainText("Can't export to CSV");
-  await expect(views.getByRole("link", { name: "Snoozed 0" })).toBeVisible();
+  await expectMoreView(owner, "Snoozed 0");
 
   // Nobody's waiting now but the one about to be marked as spam; and the owner turns the emails off.
   await expect(owner).toHaveTitle(/^\(1\) /);
@@ -453,7 +458,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(conversations).toHaveCount(0);
   await owner.goto(`/app/${slug}/inbox`);
   await expect(views.getByRole("link", { name: "Needs reply 0" })).toBeVisible();
-  await views.getByRole("link", { name: "Spam 1" }).click();
+  await (await moreView(owner, "Spam 1")).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Do you have a discount for nonprofits?");
   // Still open, but not a reply the team owes.
@@ -733,14 +738,14 @@ test("the team member's own action taking the open conversation out of its view 
   await checkpoint(owner, "unassigned-none-left", { fullPage: false });
 
   // Reopened in Closed, it leaves Closed: the same.
-  await views.getByRole("link", { name: "Closed 1" }).click();
+  await (await moreView(owner, "Closed 1")).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=closed$`));
   await row(2).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2\\?view=closed$`));
   await owner.getByRole("button", { name: "Reopen" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=closed$`));
   await expect(owner.getByText("No closed conversations yet.")).toBeVisible();
-  await expect(views.getByRole("link", { name: "Closed 0" })).toBeFocused();
+  await expect(views.getByRole("button", { name: "Closed 0" })).toBeFocused();
 
   // Closed, but the team went to another page (Reporting) through ⌘K before it was done (its answer held here): they stay there,
   // and back on it, it stays open.
@@ -935,7 +940,7 @@ test("the Inbox's views are one row of tabs above the list, where they stay as a
   }
   // The last view, past the window's edge: opened, the row is scrolled to it.
   await owner.goto(`/app/${slug}/inbox?view=spam`);
-  await expect(views.getByRole("link", { name: "Spam 0" })).toHaveAttribute("aria-current", "page");
+  await expect(views.getByRole("button", { name: "Spam 0" })).toHaveAttribute("aria-current", "page");
   await expectOneRowOfTabs(owner, views);
   await checkpoint(owner, "inbox-390-last-view", { fullPage: false });
 
@@ -1026,7 +1031,7 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await expect(pane).toBeHidden();
 });
 
-test("an Inbox row reads in four lines at most: who on one, cut short, and the message in two", async ({ browser }) => {
+test("an Inbox row reads in two lines: who on one and the message on the other, each cut short", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
@@ -1049,8 +1054,10 @@ test("an Inbox row reads in four lines at most: who on one, cut short, and the m
     const who = row.getByRole("link");
     await expect(who.locator("[title]")).toHaveAttribute("title", `${name} · Vandelay Industries International Holdings`);
     expect((await who.boundingBox())!.height).toBeLessThan(30);
-    // The subject and the first line: two lines of small text at most.
-    expect((await row.getByText("Exports stopped working").locator("..").boundingBox())!.height).toBeLessThanOrEqual(2 * 16 + 1);
+    // The subject and the first line: one line of small text.
+    expect((await row.getByText("Exports stopped working").locator("..").boundingBox())!.height).toBeLessThanOrEqual(16 + 1);
+    // So the row is those two lines (and its padding): about twice as many fit on the screen as before.
+    expect((await row.boundingBox())!.height).toBeLessThanOrEqual(56);
     expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   }
 });
@@ -1155,7 +1162,7 @@ test("a reply sent as another conversation opens isn't kept as unsent", async ({
   await owner.unroute("**/*");
   // Back on it (answered, it waits on Sam now), the reply is in the conversation and the box is empty: Send again
   // wouldn't send it twice.
-  await owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Waiting on user 1" }).click();
+  await (await moreView(owner, "Waiting on user 1")).click();
   await expect(owner).toHaveURL(/\/inbox\?view=waiting$/);
   await sam.click();
   await expect(owner).toHaveURL(/\/inbox\/1\?view=waiting$/);
@@ -1677,7 +1684,7 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await owner.getByRole("button", { name: "Send and close" }).click();
   // Closed, it leaves Mine, the only one there: back to Mine's list.
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=mine$`));
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Closed 1" })).toBeVisible();
+  await expectMoreView(owner, "Closed 1");
 });
 
 test("the reply box stays at the bottom of the screen, and a long conversation opens at its newest message", async ({ browser }, testInfo) => {
@@ -2123,7 +2130,7 @@ test("on a server selling plans, a conversation closed before the plan's history
   await db.end();
 
   await owner.goto(`/app/${slug}/inbox?view=closed`);
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Closed 0" })).toBeVisible();
+  await expectMoreView(owner, "Closed 0");
   await expect(owner.getByText("No closed conversations yet.")).toBeVisible();
   // Said above the list, rather than an empty one alone.
   const notice = owner.getByRole("note").filter({ hasText: "Closed conversations with nothing done in them for more than 7 days are past your plan's history." });

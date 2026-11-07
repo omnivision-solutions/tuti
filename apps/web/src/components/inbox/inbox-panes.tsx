@@ -18,7 +18,6 @@ import { SampleBadge } from "@/components/sample-badge";
 import { StatTile } from "@/components/stat-tile";
 import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { initial, longDuration, replyTime, rowBy, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { isAdminRole } from "@/lib/roles";
@@ -27,6 +26,9 @@ import { conversationCompanies } from "@/server/inbox-companies";
 import { inboxStats } from "@/server/inbox-stats";
 import { awake, conversationPerson, latestMessages } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
+
+/** How many of the views (the first) are tabs of their own; the rest are under More. */
+const TABS = 3;
 
 /** The inbox's views: what needs an answer first, then the rest. */
 const VIEWS = {
@@ -109,7 +111,7 @@ const LISTED = {
   snoozedUntil: true,
   sample: true,
   id: true,
-  assignee: { select: { name: true } },
+  assignee: { select: { name: true, image: true } },
   userId: true,
   user: { select: { name: true, email: true, emailVerified: true, image: true, ssoIdentity: { select: { externalId: true, email: true, properties: true } } } },
 } as const;
@@ -150,6 +152,14 @@ export async function InboxPanes({
   const userId = session.user.id;
 
   const views = Object.keys(VIEWS) as View[];
+  const tab = (v: View) => ({
+    href: inboxHref(slug, v),
+    title: (
+      <>
+        <span className="min-w-0">{VIEWS[v].title}</span> <span className="shrink-0 text-muted-foreground tabular-nums">{counts[views.indexOf(v)]}</span>
+      </>
+    ),
+  });
   const history = await historySince(projectId);
   const [counts, conversations, member, { supportInbox, plan }, stats] = await Promise.all([
     Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId, history) }))),
@@ -189,14 +199,9 @@ export async function InboxPanes({
         // The view the list shows: the page itself, or, with a conversation open, the one beside it.
         currentIs={open === null ? "page" : "true"}
         className={cn("mx-6 mt-4 lg:mx-0 lg:mt-0 lg:border-r lg:px-3", open !== null && "max-lg:hidden")}
-        items={views.map((v, i) => ({
-          href: inboxHref(slug, v),
-          title: (
-            <>
-              <span className="min-w-0">{VIEWS[v].title}</span> <span className="shrink-0 text-muted-foreground tabular-nums">{counts[i]}</span>
-            </>
-          ),
-        }))}
+        // The three worked through most as tabs; the rest under More, which fits the list's third of the window.
+        items={views.slice(0, TABS).map(tab)}
+        more={{ label: "More", items: views.slice(TABS).map(tab) }}
       />
 
       {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
@@ -275,30 +280,38 @@ export async function InboxPanes({
                         }
                         badges={c.sample && <SampleBadge />}
                         meta={
-                          <>
-                            {/* Two lines at most; long words (a pasted link) wrap, rather than running out of the row. */}
-                            <span className="line-clamp-2 wrap-anywhere">
-                              <span className="text-foreground">{c.subject}</span>
-                              {line && ` · ${line}`}
-                            </span>
-                            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                              {needsReply && view !== "open" && <Badge variant="highlight">Needs reply</Badge>}
-                              <span>
-                                #{c.number}
-                                {c.assignee && ` · ${c.assignee.name}`}
-                                {view === "snoozed" && c.snoozedUntil && ` · back ${timeAgo(c.snoozedUntil)}`}
-                              </span>
-                            </span>
-                          </>
+                          // One line, cut short (in full in the conversation): what it's about, then the latest message.
+                          // Snoozed, when it's back first.
+                          <span className="block truncate">
+                            {view === "snoozed" && c.snoozedUntil && `Back ${timeAgo(c.snoozedUntil)} · `}
+                            <span className="text-foreground">{c.subject}</span>
+                            {line && ` · ${line}`}
+                          </span>
                         }
                         actions={
-                          // Short to the eye, in words to the ear (and on hover: over the row's link, opening it too).
-                          <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
-                            <Link href={inboxHref(slug, view, c.number, pages)} scroll={false} tabIndex={-1} aria-hidden className="relative">
-                              {shortDuration(since)}
-                            </Link>
-                            <span className="sr-only">{age}</span>
-                          </time>
+                          <span className="flex items-center gap-1.5">
+                            {/* Waiting for the team, where the view doesn't already say so. */}
+                            {needsReply && view !== "open" && (
+                              <span title="Needs reply" className="size-2 rounded-full bg-primary">
+                                <span className="sr-only">Needs reply</span>
+                              </span>
+                            )}
+                            {/* Who has it, as their face (their name on hover, and to the ear). */}
+                            {c.assignee && (
+                              <Avatar title={`Assigned to ${c.assignee.name}`} className="size-5">
+                                {c.assignee.image && <AvatarImage src={c.assignee.image} alt="" />}
+                                <AvatarFallback className="text-[0.625rem]">{initial(c.assignee.name)}</AvatarFallback>
+                                <span className="sr-only">Assigned to {c.assignee.name}</span>
+                              </Avatar>
+                            )}
+                            {/* Short to the eye, in words to the ear (and on hover: over the row's link, opening it too). */}
+                            <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
+                              <Link href={inboxHref(slug, view, c.number, pages)} scroll={false} tabIndex={-1} aria-hidden className="relative">
+                                {shortDuration(since)}
+                              </Link>
+                              <span className="sr-only">{age}</span>
+                            </time>
+                          </span>
                         }
                       />
                     );

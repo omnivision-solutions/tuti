@@ -5,7 +5,7 @@ import { FAKE_FEATUREBASE_KEY, FAKE_FEATUREBASE_SLOW_KEY } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { createProject, moreView, newPerson, signUp } from "./helpers";
 import { verifyEmail } from "./mail";
 
 test("in the first run the team comes from Featurebase: a bad key is refused, a good one brings its contacts across as Users while setup goes on, and its team as invitations to send", async ({ browser }, testInfo) => {
@@ -429,7 +429,7 @@ test("the inbox comes across from Featurebase: its conversations with their mess
 
   // Snoozed after the team's reply, which the user hadn't read: never emailed, so it says it was imported.
   await owner.goto(`/app/${slug}/inbox`);
-  await views.getByRole("link", { name: /^Snoozed/ }).click();
+  await (await moreView(owner, /^Snoozed/)).click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText("Invoice for October");
   await rows.first().getByRole("link").click();
@@ -449,7 +449,7 @@ test("the inbox comes across from Featurebase: its conversations with their mess
 
   // Closed: the bot's and the one from two years ago (this server keeps every closed conversation).
   await owner.goto(`/app/${slug}/inbox`);
-  await views.getByRole("link", { name: /^Closed/ }).click();
+  await (await moreView(owner, /^Closed/)).click();
   await expect(rows).toHaveCount(2);
   await expect(rows.filter({ hasText: "How do I reset my password?" })).toHaveCount(1);
   await expect(rows.filter({ hasText: "Dark mode?" })).toHaveCount(1);

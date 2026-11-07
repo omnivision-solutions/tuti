@@ -135,13 +135,17 @@ the list picks none to approve at once.
   and the open conversation side by side from laptop width up, each scrolling on
   its own under the header (the page itself doesn't; `InboxPanes`); the views always
   the row of tabs above the list, in the same place whether or not a conversation is open
-  (they never move as one opens or closes); the list a third
+  (they never move as one opens or closes): Needs reply, Mine and Unassigned as tabs, the
+  rest (Waiting on user, Snoozed, Closed, Spam) under More, which reads as the one of them
+  open, so the row fits the list's width (`SubNav`'s `more`); the list a third
   of the width (22–25rem), the conversation the rest; on phones and
-  tablets the list or the conversation, its Back to the list. A row reads in four
-  lines at most: who and their company on one (cut short, in full on hover) with
-  its age at the right, short ("4m": how long they've waited, or since the latest
-  message), the subject and the latest message's first line in two at most, then
-  "Needs reply" (the highlight colour, no time in it; not in the Needs reply view, where every row would say it), its number and assignee.
+  tablets the list or the conversation, its Back to the list. A row reads in two
+  lines, as Featurebase's: who and their company on one (cut short, in full on hover) with,
+  at the right, a dot when it needs a reply (not in the Needs reply view, where every row
+  would), the assignee's face and its age, short ("4m": how long they've waited, or since
+  the latest message); the subject and the latest message's first line on the other, cut
+  short (in Snoozed, when it's back first). Its number is in the conversation, and read out
+  with the row.
   Every view lists the latest message first, Needs reply too. A conversation keeps
   its own address (`/inbox/<number>`), the list beside it where it was, its row
   marked; J and K open the next and the previous one. Until one opens, the pane
@@ -228,7 +232,7 @@ the list picks none to approve at once.
   box's Reply and Note, a docs tab's Content, Access and Settings) is a segmented
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
 redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
-  never wraps: too narrow, it scrolls sideways, with the active tab scrolled
+  never wraps (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
   into view, faded at the end that has more (`useScrollingRow`; the portal's
   parts and their rows too). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
