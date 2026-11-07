@@ -19,9 +19,10 @@ type Copied = ImportedMedia | { leftOut: LeftOutReason };
 /**
  * Copies images and files from another tool into a project's media (imports: `htmlToContent`'s `media`), as uploads
  * by `uploaderId`: fetched like webhooks (public addresses only, each redirect checked again, a time limit), up to the
- * upload limit for their kind (read while streaming), checked by content (images re-encoded at once by the image
- * job's own processing, so they're READY with their size; files by their first bytes), and within the project's
- * quota, under the same lock as uploads from the app.
+ * limit for their kind (read while streaming; images have the import's own, larger than the app's, as they're
+ * re-encoded before they're kept), checked by content (images re-encoded at once by the image job's own processing,
+ * so they're READY with the size of what's kept, not of the original; files by their first bytes), and within the
+ * project's quota, under the same lock as uploads from the app.
  *
  * Each copy is attached from the start: an import saves its content in later jobs, and the daily release frees any
  * that no saved content uses (packages/jobs cleanup.ts), so nothing is left for the 24-hour cleanup of unfinished
@@ -60,7 +61,7 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
   if (kind === "file" && !(extension in UPLOAD_FILE_TYPES)) {
     return { leftOut: "type" };
   }
-  const body = await download(url, mediaLimit(kind === "image" ? "MEDIA_MAX_IMAGE_MB_TEAM" : "MEDIA_MAX_FILE_MB_TEAM"));
+  const body = await download(url, mediaLimit(kind === "image" ? "MEDIA_MAX_IMPORT_IMAGE_MB" : "MEDIA_MAX_FILE_MB_TEAM"));
   if (typeof body === "string") {
     return { leftOut: body };
   }
@@ -68,15 +69,18 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
     return { leftOut: "type" };
   }
 
+  // An image counts until it's re-encoded at no more than the app's per-image limit: what's kept (WebP sizes, set by
+  // processing) is always well under it, so a large original doesn't use up quota it won't keep.
+  const size = kind === "image" ? Math.min(body.byteLength, mediaLimit("MEDIA_MAX_IMAGE_MB_TEAM")) : body.byteLength;
   const media = await prisma.$transaction(async (tx) => {
     // As createUpload (apps/web server/media.ts): one at a time per project, so nothing overruns the quota together.
     await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
     const { _sum } = await tx.media.aggregate({ where: { projectId, status: { not: "FAILED" } }, _sum: { size: true } });
-    if ((_sum.size ?? 0) + body.byteLength > mediaLimit("MEDIA_PROJECT_QUOTA_MB")) {
+    if ((_sum.size ?? 0) + size > mediaLimit("MEDIA_PROJECT_QUOTA_MB")) {
       return null;
     }
     return tx.media.create({
-      data: { projectId, uploaderId, size: body.byteLength, filename, status: "PROCESSING", attachedAt: new Date(), createdAt: new Date(Date.now() - OUTSIDE_UPLOAD_LIMIT_MS) },
+      data: { projectId, uploaderId, size, filename, status: "PROCESSING", attachedAt: new Date(), createdAt: new Date(Date.now() - OUTSIDE_UPLOAD_LIMIT_MS) },
       select: { id: true },
     });
   });

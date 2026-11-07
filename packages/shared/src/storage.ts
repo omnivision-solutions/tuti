@@ -34,8 +34,19 @@ export const SIGNED_WINDOW_SECONDS = 60 * 60;
 /** Only the reader's browser may keep a file, and not past a window: no shared cache serves it after its URL expires. */
 const PRIVATE_CACHE = `private, max-age=${SIGNED_WINDOW_SECONDS}`;
 
-/** Upload limits in megabytes, each overridable by its env var: per image (the team's, readers'), per file, per project. */
-const MEDIA_LIMITS_MB = { MEDIA_MAX_IMAGE_MB_TEAM: 10, MEDIA_MAX_IMAGE_MB_USER: 5, MEDIA_MAX_FILE_MB_TEAM: 25, MEDIA_PROJECT_QUOTA_MB: 1024 };
+/**
+ * Upload limits in megabytes, each overridable by its env var: per image (the team's, readers', an import's), per file,
+ * per project. An import's images come from another tool, uncompressed as often as not, and are re-encoded to WebP
+ * before they're kept (packages/jobs images.ts), so they may be larger going in: as large as a file, so a copy takes
+ * no more memory than an attachment does. sharp's pixel limit still applies.
+ */
+const MEDIA_LIMITS_MB = {
+  MEDIA_MAX_IMAGE_MB_TEAM: 10,
+  MEDIA_MAX_IMAGE_MB_USER: 5,
+  MEDIA_MAX_IMPORT_IMAGE_MB: 25,
+  MEDIA_MAX_FILE_MB_TEAM: 25,
+  MEDIA_PROJECT_QUOTA_MB: 1024,
+};
 
 /** One of the upload limits, in bytes. */
 export function mediaLimit(name: keyof typeof MEDIA_LIMITS_MB): number {
