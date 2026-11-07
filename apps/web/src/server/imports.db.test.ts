@@ -12,7 +12,7 @@ import { generateInvitationToken, hashInvitationToken } from "@tuti/jobs";
 import { updateConversation } from "@/server/operations/conversations";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -187,6 +187,70 @@ test("a page Featurebase refuses fails the import, saying so, and clears its key
   });
   expect(await usersOf()).toEqual([]);
 });
+
+test.each([
+  ["removed from the team", (admin: { memberId: string }) => prisma.teamMember.delete({ where: { id: admin.memberId } })],
+  ["made a member", (admin: { memberId: string }) => prisma.teamMember.update({ where: { id: admin.memberId }, data: { role: "MEMBER" } })],
+])("an import whose starter is %s while a page reads stops, saving nothing more, its key cleared", async (_, change) => {
+  const admin = await addMember(project.id, "ADMIN");
+  const row = await running();
+  await prisma.dataImport.update({ where: { id: row.id }, data: { startedById: admin.id } });
+  const transaction = prisma.$transaction.bind(prisma) as (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) => Promise<unknown>;
+  // The change lands after the page is read, just before its save.
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) =>
+    change(admin).then(() => transaction(fn, options))) as never);
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ failed: true });
+  const stopped = {
+    state: "FAILED",
+    apiKey: null,
+    error: "Whoever started it is no longer an owner or admin of this project. Start it again to go on: what came across already is skipped.",
+    finishedAt: expect.any(Date),
+  };
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject(stopped);
+  expect(await usersOf()).toEqual([]);
+
+  // A page that starts after the change reads nothing from the source.
+  await prisma.dataImport.update({ where: { id: row.id }, data: { state: "RUNNING", apiKey: sealedKey(), error: "", finishedAt: null } });
+  fake.requests.length = 0;
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ failed: true });
+  expect(fake.requests).toEqual([]);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject(stopped);
+  expect(await usersOf()).toEqual([]);
+});
+
+test("removing an import's starter, or changing their role, while a page saves waits for the page to be saved", async () => {
+  const admin = await addMember(project.id, "ADMIN");
+  const row = await running();
+  await prisma.dataImport.update({ where: { id: row.id }, data: { startedById: admin.id } });
+  const transaction = prisma.$transaction.bind(prisma) as (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) => Promise<unknown>;
+  let demoted!: Promise<unknown>;
+  // The demotion comes in, from another connection, once the page has saved and before it commits.
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) =>
+    transaction(async (tx) => {
+      const saved = await fn(tx);
+      demoted = prisma.teamMember.update({ where: { id: admin.memberId }, data: { role: "MEMBER" } }).then(() => undefined);
+      await waitingOnTeamMember();
+      return saved;
+    }, options)) as never);
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ step: "done" });
+  await demoted;
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ state: "DONE", counts: { contacts: { imported: 3, leftOut: {} } } });
+  expect(await prisma.teamMember.findUniqueOrThrow({ where: { id: admin.memberId } })).toMatchObject({ role: "MEMBER" });
+});
+
+/** Until a change to a team member's row (in another connection) waits on a lock: in this file's own database only. */
+async function waitingOnTeamMember() {
+  for (let tries = 0; tries < 100; tries++) {
+    const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid() AND query ILIKE '%UPDATE%team_member%'`;
+    if (waiting > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("No change to a team member came to wait on a lock");
+}
 
 test("a stuck import goes on when it's looked at; one that hasn't moved for a day is failed by the daily job, its key cleared", async () => {
   const stuck = await running({ updatedAt: new Date(Date.now() - 10 * 60_000) });
