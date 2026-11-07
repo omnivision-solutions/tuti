@@ -374,7 +374,7 @@ test("a portal user who forgot their password asks on the portal, sets it on the
   await ada.getByRole("button", { name: "Sign in", exact: true }).click();
   await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/continue");
   await backToPortal(ada);
-  await expect(ada).toHaveURL(new RegExp(`^${portalUrl(slug).replace(/[.:]/g, "\\$&")}/`));
+  await expect(ada).toHaveURL(new RegExp(`^${portalUrl(slug).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
 
   // The link worked once.

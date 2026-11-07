@@ -113,7 +113,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/sign-in?next=%2Fdocs`);
   // The account is made on the app (a password is never typed on the team's site), and back under the path.
   await visitor.getByRole("link", { name: "Create an account" }).click();
-  await expect(visitor).toHaveURL(new RegExp(`^${APP_URL.replace(/[.:]/g, "\\$&")}/sign-up\\?`));
+  await expect(visitor).toHaveURL(new RegExp(`^${APP_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sign-up\\?`));
   const email = `e2e-${randomUUID()}@example.com`;
   await fillSignUp(visitor, "Ada", email);
   await visitor.waitForURL((url) => url.pathname === "/continue");
