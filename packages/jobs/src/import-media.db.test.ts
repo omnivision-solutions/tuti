@@ -16,6 +16,8 @@ let origin: string;
 /** Requests the other tool's server answered, by path. */
 let served: string[];
 let png: Buffer;
+/** Just over the app's 10 MB per image: uncompressed, as other tools often keep screenshots. */
+let bigPng: Buffer;
 /** Runs as each file is asked for, before it's answered. */
 let whileServing: (() => Promise<void>) | undefined;
 const PDF = Buffer.from("%PDF-1.4\n%invented test file\n");
@@ -23,8 +25,10 @@ const PDF = Buffer.from("%PDF-1.4\n%invented test file\n");
 beforeAll(async () => {
   s3 = await startS3Fake();
   png = await sharp({ create: { width: 640, height: 480, channels: 3, background: "#3a7" } }).png().toBuffer();
+  bigPng = await sharp({ create: { width: 2000, height: 1800, channels: 3, background: "#37a" } }).png({ compressionLevel: 0 }).toBuffer();
   const files: Record<string, { type: string; body: Buffer }> = {
     "/a.png": { type: "image/png", body: png },
+    "/big.png": { type: "image/png", body: bigPng },
     "/page.png": { type: "image/png", body: Buffer.from("<!doctype html><p>Not an image</p>") },
     "/huge.png": { type: "image/png", body: Buffer.alloc(2 * 1024 * 1024 + 1) },
     "/guide.pdf": { type: "application/pdf", body: PDF },
@@ -70,7 +74,7 @@ beforeEach(async () => {
     vi.stubEnv(name, value);
   }
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
-  vi.stubEnv("MEDIA_MAX_IMAGE_MB_TEAM", "2");
+  vi.stubEnv("MEDIA_MAX_IMPORT_IMAGE_MB", "2");
   const slug = `import-${Math.random().toString(36).slice(2, 10)}`;
   projectId = (await prisma.project.create({ data: { slug, name: "Import" } })).id;
   uploaderId = (await prisma.user.create({ data: { id: slug, name: "Importer", email: `e2e-${slug}@example.com` } })).id;
@@ -98,6 +102,21 @@ test("an image is copied, processed at once and attached, and the content points
   // Not in what the app's hourly upload limit counts for the person who ran the import.
   expect(await prisma.media.count({ where: { uploaderId, createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) } } })).toBe(0);
   expect([...s3.objects.keys()].filter((key) => key.startsWith("uploads/"))).toEqual([]);
+});
+
+test("an image over the app's upload limit but within the import's is copied, kept at the size of what's stored", async () => {
+  vi.unstubAllEnvs();
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  expect(bigPng.byteLength).toBeGreaterThan(10 * 1024 * 1024);
+  const copy = await importer()({ kind: "image", url: `${origin}/big.png`, key: "big" });
+  expect(copy).toMatchObject({ mediaId: expect.any(String), width: 2000, height: 1800 });
+  // The quota counts the WebP sizes and email JPEG kept, not the original.
+  const { size } = await prisma.media.findUniqueOrThrow({ where: { id: (copy as { mediaId: string }).mediaId } });
+  expect(size).toBeGreaterThan(0);
+  expect(size).toBeLessThan(1024 * 1024);
 });
 
 test("an attached document in an article is copied as a file, checked by its content", async () => {
@@ -158,6 +177,23 @@ test("a private address is refused before anything is fetched", async () => {
   const copy = await importer()({ kind: "image", url: `https://127.0.0.1:${new URL(origin).port}/a.png`, key: "a" });
   expect(copy).toEqual({ leftOut: "unreachable" });
   expect(served).toEqual([]);
+});
+
+test("a large image counts against the quota no more than the app's per-image limit while it's processed", async () => {
+  vi.stubEnv("MEDIA_MAX_IMPORT_IMAGE_MB", "");
+  vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "11");
+  // Room for 10 MB more, not for the whole original.
+  await prisma.media.create({ data: { projectId, uploaderId, size: 1024 * 1024 - 100, status: "READY" } });
+  expect(await importer()({ kind: "image", url: `${origin}/big.png`, key: "big" })).toMatchObject({ mediaId: expect.any(String) });
+});
+
+test("a self-hoster's lower upload limit doesn't shrink what an imported image reserves while it's processed", async () => {
+  vi.stubEnv("MEDIA_MAX_IMPORT_IMAGE_MB", "");
+  vi.stubEnv("MEDIA_MAX_IMAGE_MB_TEAM", "1");
+  vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "6");
+  // Room for 5 MB: the image reserves the fixed 10 MB bound, not the 1 MB editor limit, so it doesn't fit.
+  await prisma.media.create({ data: { projectId, uploaderId, size: 1024 * 1024, status: "READY" } });
+  expect(await importer()({ kind: "image", url: `${origin}/big.png`, key: "big" })).toEqual({ leftOut: "quota" });
 });
 
 test("a full project's quota leaves the image out", async () => {
