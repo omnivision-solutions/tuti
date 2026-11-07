@@ -2,7 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { emailConfigured, inviteEmail, sendEmail } from "@tuti/email";
-import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, pendingInvitation, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -76,7 +76,7 @@ export async function createInvitation(
       return limit;
     }
     // Replacing a pending invite revokes it, so it takes what revoking it would: an owner's owner invite is for owners to change.
-    const pending = await tx.invitation.findMany({ where: { projectId, email: parsed.data.email, acceptedAt: null, revokedAt: null }, select: { role: true } });
+    const pending = await tx.invitation.findMany({ where: { projectId, email: parsed.data.email, ...pendingInvitation() }, select: { role: true } });
     if (pending.some(({ role }) => !canAssignRole(membership.role, role))) {
       return "owners" as const;
     }
