@@ -37,7 +37,8 @@ export default async function SignInPage(props: PageProps<"/sign-in">) {
           defaultEmail={defaultEmail}
           // Password resets need email that really goes out.
           forgotPassword={emailConfigured()}
-          description={portal ? `Sign in to continue to ${portal}.` : undefined}
+          description={portal ? `Sign in to continue to ${portal.name}.` : undefined}
+          forgotPasswordHref={portal?.forgotPassword}
         />
         {/* On tuti.so, Continue with Google or GitHub signs up someone new. */}
         {plansEnabled() && social.length > 0 && <TermsAgreement by="continuing" />}

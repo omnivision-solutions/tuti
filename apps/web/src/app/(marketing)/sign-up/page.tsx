@@ -31,7 +31,8 @@ export default async function SignUpPage(props: PageProps<"/sign-up">) {
           redirectTo="/app"
           next={nextPath || undefined}
           defaultEmail={defaultEmail}
-          description={portal ? `Create your Tuti account to continue to ${portal}.` : undefined}
+          description={portal ? `Create your Tuti account to continue to ${portal.name}.` : undefined}
+          forgotPasswordHref={portal?.forgotPassword}
         />
         {plansEnabled() && <TermsAgreement by="signing up" />}
       </div>

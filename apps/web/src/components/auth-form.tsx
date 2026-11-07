@@ -24,7 +24,8 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * /continue, and back. `forgotPassword` (a host that can
  * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account".
  * `social` (the apex only) puts Continue with Google / GitHub above the form; `socialError` says why one didn't work.
- * `description` replaces the line under the title (on the app, on the way back to a portal).
+ * `description` replaces the line under the title, and `forgotPasswordHref` where "Forgot your password?" goes (on the app,
+ * on the way back to a portal: that portal's, so the reset comes back there).
  */
 export function AuthForm({
   mode,
@@ -37,6 +38,7 @@ export function AuthForm({
   social = [],
   socialError,
   description,
+  forgotPasswordHref,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -48,6 +50,7 @@ export function AuthForm({
   social?: SocialProvider[];
   socialError?: SocialSignInError;
   description?: string;
+  forgotPasswordHref?: string;
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -133,7 +136,7 @@ export function AuthForm({
                 {socialError.reset && (
                   <>
                     {" "}
-                    <Link href="/forgot-password">Set a password by email</Link>
+                    <Link href={forgotPasswordHref ?? "/forgot-password"}>Set a password by email</Link>
                   </>
                 )}
               </AlertDescription>
@@ -165,7 +168,7 @@ export function AuthForm({
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                   <FieldLabel htmlFor="password">Password</FieldLabel>
                   {forgotPassword && !isSignUp && (
-                    <Link href={at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+                    <Link href={forgotPasswordHref ?? at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
                       Forgot your password?
                     </Link>
                   )}

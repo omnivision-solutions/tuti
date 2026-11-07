@@ -166,15 +166,28 @@ test("a link is used on the app only, wherever it was asked", async () => {
   await ask(user.email);
   const appLink = await linkTo(user.email);
   for (const host of [portalHost(), domainHost, portalHost(onSite.slug), "elsewhere.example"]) {
-    for (const link of [portalLink, appLink]) {
-      expect(await setPassword(link, NEW_PASSWORD, { host })).toEqual({ location: FAILED });
-    }
+    // Back to "Forgot your password?" where each was asked.
+    expect(await setPassword(portalLink, NEW_PASSWORD, { host })).toEqual({ location: `http://${portalHost()}${FAILED}` });
+    expect(await setPassword(appLink, NEW_PASSWORD, { host })).toEqual({ location: FAILED });
   }
   expect(await signsInWith(user.email, OLD_PASSWORD)).toBe(true);
 
   expect(await view(portalLink)).toEqual({ email: user.email });
   expect(await setPassword(appLink)).toEqual({ location: "/sign-in?reset=done" });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
+  // Dead now: one asked on a portal (its own domain or its team's site too) sends people to ask again there, where the
+  // new one comes back to; one asked on the app, to the app's.
+  expect(await view(portalLink)).toEqual({ location: `http://${portalHost()}${FAILED}` });
+  expect(await view(appLink)).toEqual({ location: FAILED });
+  for (const [host, address] of [
+    [domainHost, `http://${domainHost}`],
+    [portalHost(onSite.slug), "https://site.example/help"],
+  ] as const) {
+    await ask(user.email, host);
+    const link = await linkTo(user.email);
+    await setPassword(link, `${NEW_PASSWORD} ${host}`);
+    expect(await view(link)).toEqual({ location: `${address}${FAILED}` });
+  }
 
   // Made-up or missing tokens go the same way.
   expect(await view(new URL(`http://${APP_HOST}/reset-password?token=nope`))).toEqual({ location: FAILED });

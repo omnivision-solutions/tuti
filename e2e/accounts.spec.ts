@@ -357,11 +357,17 @@ test("a portal user who forgot their password asks on the portal, sets it on the
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.getByRole("button", { name: "Account" }).click();
-  await ada.getByRole("menuitem", { name: "Sign out" }).click();
+  const signedUp = await signUp(browser, portalUrl(slug), "Ada");
+  await signedUp.context().close();
 
+  // On another device: "Use a password instead" goes to the app's sign-in, whose "Forgot your password?" is the portal's,
+  // so the reset is asked there (from Acme) and comes back there.
+  const ada = Object.assign(await newPerson(browser, portalUrl(slug)), { email: signedUp.email });
+  await ada.goto("/feedback/feature-requests");
   await ada.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
+  await ada.getByRole("link", { name: "Use a password instead" }).click();
+  await ada.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-in");
+  await expect(ada.getByText("Sign in to continue to Acme.")).toBeVisible();
   await ada.getByRole("link", { name: "Forgot your password?" }).click();
   await ada.waitForURL(`${portalUrl(slug)}/forgot-password`);
   // There's nothing to come back to here after signing in.
@@ -393,8 +399,8 @@ test("a portal user who forgot their password asks on the portal, sets it on the
   await expect(ada).toHaveURL(new RegExp(`^${portalUrl(slug).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
 
-  // The link worked once.
+  // The link worked once: asking again is on the portal, so the new one comes back there too.
   await ada.goto(link);
-  await ada.waitForURL(`${APP_URL}/forgot-password?link=failed`);
+  await ada.waitForURL(`${portalUrl(slug)}/forgot-password?link=failed`);
   await expect(ada.getByText("That link has expired or was already used. Ask for a new one.")).toBeVisible();
 });

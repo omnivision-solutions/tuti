@@ -1,6 +1,8 @@
 import { prisma } from "@tuti/db";
 import type { ReactNode } from "react";
 
+import { portalAddress } from "@/server/custom-domains";
+
 import { TutiMark } from "@/components/tuti-logo";
 
 /**
@@ -8,7 +10,7 @@ import { TutiMark } from "@/components/tuti-logo";
  * with the form's top so it stays put between the two pages. On the way back to a portal (`continuingTo`),
  * whose readers came for that portal, not for Tuti, the forms alone.
  */
-export function WithPitch({ children, continuingTo }: { children: ReactNode; continuingTo?: string | null }) {
+export function WithPitch({ children, continuingTo }: { children: ReactNode; continuingTo?: object | null }) {
   if (continuingTo) {
     return <div className="mx-auto w-full max-w-sm">{children}</div>;
   }
@@ -25,9 +27,13 @@ export function WithPitch({ children, continuingTo }: { children: ReactNode; con
   );
 }
 
-/** The project whose portal a sign-in or sign-up is on the way back to (`next` is the app's /continue for it), or null. */
-export async function continuingTo(next: string): Promise<string | null> {
+/**
+ * The project whose portal a sign-in or sign-up is on the way back to (`next` is the app's /continue for it), or null:
+ * its name, and its "Forgot your password?", so a reset is asked there and comes back there (server/password-reset.ts).
+ */
+export async function continuingTo(next: string): Promise<{ name: string; forgotPassword: string } | null> {
   const url = new URL(next || "/", "http://localhost");
   const slug = url.pathname === "/continue" ? url.searchParams.get("portal") : null;
-  return slug ? ((await prisma.project.findUnique({ where: { slug }, select: { name: true } }))?.name ?? null) : null;
+  const project = slug ? await prisma.project.findUnique({ where: { slug }, select: { slug: true, name: true } }) : null;
+  return project && { name: project.name, forgotPassword: `${await portalAddress(project.slug)}/forgot-password` };
 }

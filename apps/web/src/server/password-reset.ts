@@ -11,7 +11,7 @@ import { auth } from "@/lib/auth";
 import { portalAddress, requestTarget } from "@/server/custom-domains";
 
 import { countEmailedLink } from "./email-link-limits";
-import { FAILED_PASSWORD_RESET_PATH, pendingPasswordReset } from "./sign-in-link-lookup";
+import { failedPasswordReset, pendingPasswordReset } from "./sign-in-link-lookup";
 
 /*
  * "Forgot your password?" with Better Auth's reset flow (lib/auth.ts). It can be asked on the
@@ -82,7 +82,7 @@ export async function setNewPassword(form: FormData): Promise<{ error: string } 
   }
   const reset = (await thisHost()).slug === null ? await pendingPasswordReset(token) : null;
   if (!reset) {
-    return { location: FAILED_PASSWORD_RESET_PATH };
+    return { location: await failedPasswordReset(token) };
   }
   try {
     await auth.api.resetPassword({ body: { token, newPassword: password } });
@@ -95,7 +95,7 @@ export async function setNewPassword(form: FormData): Promise<{ error: string } 
       return { error: error.message };
     }
     // Otherwise used up since the check: the same as any other dead link.
-    return { location: FAILED_PASSWORD_RESET_PATH };
+    return { location: await failedPasswordReset(token) };
   }
   // Asked on a portal: back there, whose /continue signs them in on the app (saying it's changed) and hands over (lib/portal-handoff.ts).
   return { location: reset.askedOn ? `${await portalAddress(reset.askedOn)}/continue?reset=done` : "/sign-in?reset=done" };

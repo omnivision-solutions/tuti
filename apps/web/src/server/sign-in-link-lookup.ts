@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@tuti/db";
 
 import { hashSecret } from "@/lib/portal-handoff";
+import { portalAddress } from "@/server/custom-domains";
 
 /**
  * A sign-in link that can still be used on this portal, with the address it was
@@ -61,3 +62,15 @@ export async function pendingPasswordReset(token: string) {
 
 /** Where a reset link that didn't work sends people: "Forgot your password?", to ask for a new one. */
 export const FAILED_PASSWORD_RESET_PATH = "/forgot-password?link=failed";
+
+/**
+ * FAILED_PASSWORD_RESET_PATH for `token`'s link: on the portal it was asked on (its sign_in_link row, kept an hour, says),
+ * so the new one is asked there and comes back there too; otherwise, or for a token nobody was sent, the app's.
+ */
+export async function failedPasswordReset(token: string): Promise<string> {
+  const link =
+    token && token.length <= 100
+      ? await prisma.signInLink.findUnique({ where: { tokenHash: hashSecret(token) }, select: { project: { select: { slug: true } } } })
+      : null;
+  return link?.project ? `${await portalAddress(link.project.slug)}${FAILED_PASSWORD_RESET_PATH}` : FAILED_PASSWORD_RESET_PATH;
+}
