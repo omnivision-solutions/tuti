@@ -42,6 +42,16 @@ const elements = (node: unknown): React.ReactElement<{ children?: unknown; href?
   return [element, ...elements(element.props.children)];
 };
 
+/** All the text in a rendered tree, as it reads. */
+const textOf = (node: unknown): string =>
+  typeof node === "string"
+    ? node
+    : Array.isArray(node)
+      ? node.map(textOf).join("")
+      : node && typeof node === "object" && "props" in node
+        ? textOf((node as React.ReactElement<{ children?: unknown }>).props.children)
+        : "";
+
 /** Where the "Continue to <project>" card's button goes, for a page that rendered one (never a redirect by itself). */
 async function continueButton(rendered: Promise<unknown>): Promise<string | undefined> {
   const tree = await rendered;
@@ -167,7 +177,7 @@ test("signed up from a portal, the verification link comes back through a new ha
   const signed = Object.fromEntries(back.searchParams);
   // Not by itself: the card names the portal and its address, and the person clicks on.
   const rendered = await page(signed);
-  expect(JSON.stringify((rendered as React.ReactElement).props)).toContain(`at ${project.slug}.localhost:3100.`);
+  expect(textOf(rendered)).toContain(`at ${project.slug}.localhost:3100.`);
   expect(await continueButton(Promise.resolve(rendered))).toBe(`http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`);
 
   // Anything else is a link that isn't valid, going nowhere (a portal's address can be its team's own domain or site):

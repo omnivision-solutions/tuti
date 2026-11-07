@@ -1,8 +1,6 @@
 import { prisma } from "@tuti/db";
 import type { ReactNode } from "react";
 
-import { portalAddress } from "@/server/custom-domains";
-
 import { TutiMark } from "@/components/tuti-logo";
 
 /**
@@ -29,11 +27,12 @@ export function WithPitch({ children, continuingTo }: { children: ReactNode; con
 
 /**
  * The project whose portal a sign-in or sign-up is on the way back to (`next` is the app's /continue for it), or null:
- * its name, and its "Forgot your password?", so a reset is asked there and comes back there (server/password-reset.ts).
+ * its name, and "Forgot your password?" for it, on the app (anyone can make such a `next`: nothing here leaves the app's
+ * host), whose reset is asked for that portal and comes back to its card (server/password-reset.ts).
  */
 export async function continuingTo(next: string): Promise<{ name: string; forgotPassword: string } | null> {
   const url = new URL(next || "/", "http://localhost");
   const slug = url.pathname === "/continue" ? url.searchParams.get("portal") : null;
   const project = slug ? await prisma.project.findUnique({ where: { slug }, select: { slug: true, name: true } }) : null;
-  return project && { name: project.name, forgotPassword: `${await portalAddress(project.slug)}/forgot-password` };
+  return project && { name: project.name, forgotPassword: `/forgot-password?${new URLSearchParams({ portal: project.slug })}` };
 }

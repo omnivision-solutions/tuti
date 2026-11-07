@@ -15,8 +15,11 @@ import { PASSWORD_RESET_MINUTES } from "@/lib/sign-in-link";
 import { emailPasswordReset, setNewPassword } from "@/server/password-reset";
 import { usePortalHref } from "@/components/portal-base";
 
-/** "Forgot your password?" on the app and on portals (server/password-reset.ts). `failed`: a reset link didn't work. */
-export function ForgotPasswordForm({ failed }: { failed: boolean }) {
+/**
+ * "Forgot your password?" on the app and on portals (server/password-reset.ts). `failed`: a reset link didn't work.
+ * `portal`: on the app, asked for that portal.
+ */
+export function ForgotPasswordForm({ failed, portal }: { failed: boolean; portal?: string }) {
   const at = usePortalHref();
   const [error, setError] = useState<string>();
   const [sentTo, setSentTo] = useState<string>();
@@ -58,6 +61,7 @@ export function ForgotPasswordForm({ failed }: { failed: boolean }) {
         </CardHeader>
         <form {...keepingFields(submit)}>
           <CardContent>
+            {portal && <input type="hidden" name="portal" value={portal} />}
             <Field data-invalid={error ? true : undefined}>
               <FieldLabel htmlFor="email">Email</FieldLabel>
               <Input id="email" name="email" type="email" autoComplete="email" required aria-invalid={error ? true : undefined} />

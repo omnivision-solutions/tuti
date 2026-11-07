@@ -93,6 +93,15 @@ export async function isOwnWayBack(
 }
 
 /**
+ * A way back to `portal`'s `redirect` for the account `userId`, made by the app: the app's /continue with when it was made
+ * and its MAC, which shows that account the "Continue to <project>" card, with the portal's address, to click on.
+ */
+export async function signedWayBack(portal: string, redirect: string, userId: string): Promise<string> {
+  const issued = String(Math.floor(Date.now() / 1000));
+  return `/continue?${new URLSearchParams({ portal, redirect, issued, mac: await wayBackMac(portal, redirect, userId, issued) })}`;
+}
+
+/**
  * A verification link is opened later, maybe much later: its way back (callbackURL) mustn't carry a "Continue as"
  * handoff's state, used once and kept 10 minutes (lib/portal-handoff.ts). A sign-up from a portal has one (its `next` is
  * the app's /continue); in its place go when it was made and the app's MAC for this account (isOwnWayBack), with which
@@ -106,14 +115,8 @@ async function withoutHandoffState(link: string, userId: string, signingUp: bool
     url.searchParams.set("callbackURL", "/");
   } else if (back?.startsWith("/continue?")) {
     const callback = new URL(back, url);
-    callback.searchParams.delete("state");
     const portal = callback.searchParams.get("portal");
-    if (portal) {
-      const issued = String(Math.floor(Date.now() / 1000));
-      callback.searchParams.set("issued", issued);
-      callback.searchParams.set("mac", await wayBackMac(portal, callback.searchParams.get("redirect") ?? "", userId, issued));
-    }
-    url.searchParams.set("callbackURL", `${callback.pathname}${callback.search}`);
+    url.searchParams.set("callbackURL", portal ? await signedWayBack(portal, callback.searchParams.get("redirect") ?? "", userId) : "/");
   }
   return url.toString();
 }

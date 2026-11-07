@@ -13,7 +13,7 @@ import { getAccountSession } from "@/server/session";
 
 /** "Continue as <name>": a portal sent someone here to sign in with their Tuti account (see lib/portal-handoff.ts). */
 export default async function ContinuePage(props: PageProps<"/continue">) {
-  const { portal, state, redirect: redirectParam, "sign-up": signUp, reset, issued, mac } = await props.searchParams;
+  const { portal, state, redirect: redirectParam, "sign-up": signUp, issued, mac } = await props.searchParams;
   const project =
     typeof portal === "string"
       ? await prisma.project.findUnique({ where: { slug: portal }, select: { slug: true, name: true } })
@@ -50,26 +50,24 @@ export default async function ContinuePage(props: PageProps<"/continue">) {
 
   const here = isSecret(state) ? `/continue?${new URLSearchParams({ portal: project.slug, state, redirect: redirectPath })}` : "";
   if (!session) {
-    // After a reset asked on the portal, its sign-in says the password was changed.
-    redirect(`/${signUp ? "sign-up" : "sign-in"}?${new URLSearchParams({ ...(reset === "done" && !signUp && { reset: "done" }), next: here })}`);
+    redirect(`/${signUp ? "sign-up" : "sign-in"}?${new URLSearchParams({ next: here })}`);
   }
-  const address = ownWayBack ? await portalAddress(project.slug) : null;
+  // The app never sends anyone to a portal's address by itself: here it's shown, and the person clicks on.
+  const address = await portalAddress(project.slug);
 
   return (
     <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
         <CardTitle>Continue to {project.name}</CardTitle>
         <CardDescription className="break-words">
-          {address
-            ? `Use your Tuti account on ${project.name}'s portal, at ${address.replace(/^https?:\/\//, "")}.`
-            : `Use your Tuti account on ${project.name}'s portal.`}
+          Use your Tuti account on {project.name}&apos;s portal, at {address.replace(/^https?:\/\//, "")}.
         </CardDescription>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
         Signed in as <span className="break-all text-foreground">{session.user.email}</span>.
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
-        {address ? (
+        {ownWayBack ? (
           // A plain link: the portal's /continue is a route that sets its state cookie and comes back here.
           <a href={`${address}/continue?${new URLSearchParams({ redirect: redirectPath })}`} className={buttonVariants()}>
             Continue as {session.user.name}
