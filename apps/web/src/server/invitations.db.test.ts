@@ -151,7 +151,7 @@ describe("invites someone sent go when they can't give that role any more", () =
 
   test("an admin made a member", async () => {
     const { sender, accept } = await sendAs("ADMIN");
-    expect(await changeTeamRole(project.slug, sender.memberId, "MEMBER")).toEqual({});
+    expect(await changeTeamRole(project.slug, sender.memberId, "MEMBER")).toEqual({ cancelledInvites: 1 });
     expect(await prisma.invitation.count({ where: { createdById: sender.id, revokedAt: null } })).toBe(0);
     expect(await accept()).toEqual(gone);
   });
@@ -161,7 +161,8 @@ describe("invites someone sent go when they can't give that role any more", () =
     actAs(sender);
     const memberInvite = await createInvitation(project.slug, newEmail(), "MEMBER");
     actAs(owner);
-    expect(await changeTeamRole(project.slug, sender.memberId, "ADMIN")).toEqual({});
+    expect(await changeTeamRole(project.slug, sender.memberId, "ADMIN")).toEqual({ cancelledInvites: 1 });
+    expect(await prisma.invitation.count({ where: { createdById: sender.id, role: "OWNER", revokedAt: null } })).toBe(0);
     expect(await prisma.invitation.findUnique({ where: { tokenHash: hashInvitationToken(tokenOf(memberInvite.url!)) }, select: { revokedAt: true } })).toEqual({ revokedAt: null });
     expect(await accept()).toEqual(gone);
   });

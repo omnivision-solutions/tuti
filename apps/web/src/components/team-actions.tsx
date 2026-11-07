@@ -67,7 +67,14 @@ export function MemberActions({
                     if (result.error) {
                       toast.error(result.error);
                     } else {
-                      toast.success(`Role changed to ${ROLE_LABELS[value as TeamRole]}`);
+                      const n = result.cancelledInvites ?? 0;
+                      const cancelled =
+                        n === 1
+                          ? ". The invite they sent for a role they can't give any more was cancelled."
+                          : n > 1
+                            ? `. The ${n} invites they sent for roles they can't give any more were cancelled.`
+                            : "";
+                      toast.success(`Role changed to ${ROLE_LABELS[value as TeamRole]}${cancelled}`);
                     }
                   })
                 }
