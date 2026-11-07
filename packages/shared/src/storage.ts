@@ -14,6 +14,8 @@ export type MediaStorage = {
   /** The object's bytes, at most `maxBytes` of them when given (a ranged GET). */
   get(key: string, maxBytes?: number): Promise<Uint8Array>;
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
+  /** Copies an object within the bucket (the storage does it: the bytes never pass through here), as this type. */
+  copy(from: string, to: string, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
   /**
    * A URL that reads the file for a while (see SIGNED_WINDOW_SECONDS). With `download`, the browser
@@ -36,8 +38,8 @@ const PRIVATE_CACHE = `private, max-age=${SIGNED_WINDOW_SECONDS}`;
 
 /**
  * Upload limits in megabytes, each overridable by its env var: per image (the team's, readers', an import's), per file,
- * per project. An import's images come from another tool, uncompressed as often as not, and are re-encoded to WebP
- * before they're kept (packages/jobs images.ts), so they may be larger going in: as large as a file, so a copy takes
+ * per video, per project. An import's images come from another tool, uncompressed as often as not, and are re-encoded to
+ * WebP before they're kept (packages/jobs images.ts), so they may be larger going in: as large as a file, so a copy takes
  * no more memory than an attachment does. sharp's pixel limit still applies.
  */
 const MEDIA_LIMITS_MB = {
@@ -45,6 +47,7 @@ const MEDIA_LIMITS_MB = {
   MEDIA_MAX_IMAGE_MB_USER: 5,
   MEDIA_MAX_IMPORT_IMAGE_MB: 25,
   MEDIA_MAX_FILE_MB_TEAM: 25,
+  MEDIA_MAX_VIDEO_MB_TEAM: 200,
   MEDIA_PROJECT_QUOTA_MB: 1024,
 };
 
@@ -104,6 +107,17 @@ export function mediaStorage(): MediaStorage | null {
         method: "PUT",
         body: body as RequestInit["body"],
         headers: { "content-type": contentType, "cache-control": PRIVATE_CACHE },
+      });
+    },
+    async copy(from, to, contentType) {
+      await send(to, {
+        method: "PUT",
+        headers: {
+          "x-amz-copy-source": `/${env.MEDIA_S3_BUCKET}/${from.split("/").map(encodeURIComponent).join("/")}`,
+          "x-amz-metadata-directive": "REPLACE",
+          "content-type": contentType,
+          "cache-control": PRIVATE_CACHE,
+        },
       });
     },
     async delete(key) {

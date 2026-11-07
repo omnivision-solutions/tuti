@@ -1,5 +1,5 @@
 import type { ImportedMedia, LeftOutReason, MediaImporter, MediaSource } from "@tuti/content/html";
-import { attachmentName, fileExtension, fileKey, isFileContent, originalKey, UPLOAD_FILE_TYPES } from "@tuti/content/media";
+import { attachmentName, fileExtension, fileKey, isFileContent, originalKey, UPLOAD_FILE_TYPES, UPLOAD_VIDEO_TYPES, videoFormat, videoKey } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
 import { checkWebhookUrl, publicOnlyLookup } from "@tuti/shared/webhook-url";
@@ -59,17 +59,28 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
   if (!storage) {
     return { leftOut: "unsupported" };
   }
-  const filename = kind === "file" ? attachmentName(name) : null;
-  const extension = filename ? fileExtension(filename) : "";
+  let filename = kind === "file" ? attachmentName(name) : null;
+  let extension = filename ? fileExtension(filename) : "";
   if (kind === "file" && !(extension in UPLOAD_FILE_TYPES)) {
     return { leftOut: "type" };
   }
-  const body = await download(url, mediaLimit(kind === "image" ? "MEDIA_MAX_IMPORT_IMAGE_MB" : "MEDIA_MAX_FILE_MB_TEAM"));
+  const limit = kind === "image" ? "MEDIA_MAX_IMPORT_IMAGE_MB" : kind === "video" ? "MEDIA_MAX_VIDEO_MB_TEAM" : "MEDIA_MAX_FILE_MB_TEAM";
+  const body = await download(url, mediaLimit(limit));
   if (typeof body === "string") {
     return { leftOut: body };
   }
   if (kind === "file" && !isFileContent(extension, body)) {
     return { leftOut: "type" };
+  }
+  // A video by its content, whatever its address says; named so it's a video upload (isVideoFile).
+  if (kind === "video") {
+    const format = videoFormat(body);
+    if (!format) {
+      return { leftOut: "type" };
+    }
+    const named = attachmentName(name);
+    filename = fileExtension(named) in UPLOAD_VIDEO_TYPES ? named : `${named.slice(0, 190)}.${format}`;
+    extension = fileExtension(filename);
   }
 
   // An image counts at most PROCESSED_IMAGE_MAX_BYTES until it's re-encoded: what's kept (WebP sizes and the email
@@ -104,6 +115,8 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
       if (!processed.ready) {
         return await leaveOut("type");
       }
+    } else if (kind === "video") {
+      await storage.put(videoKey(media.id), body, UPLOAD_VIDEO_TYPES[extension]!);
     } else {
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     }

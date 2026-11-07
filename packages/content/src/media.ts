@@ -19,6 +19,8 @@ export const imageKey = (mediaId: string, width: number) => `m/${mediaId}/${widt
 export const emailImageKey = (mediaId: string) => `m/${mediaId}/email.jpg`;
 /** A file attachment (articles), kept as uploaded: only ever served as a download. */
 export const fileKey = (mediaId: string) => `m/${mediaId}/file`;
+/** An uploaded video (articles), kept as uploaded (no transcoding): played from its signed URL with its video type. */
+export const videoKey = (mediaId: string) => `m/${mediaId}/video`;
 
 /** URLs to load stored files from, by key: the bucket is private, so the server signs one per file (apps/web server/media-urls.ts). */
 export type MediaUrls = Record<string, string>;
@@ -26,7 +28,7 @@ export type MediaUrls = Record<string, string>;
 /** Every file an upload may have in storage (the original until processed, then its sizes). */
 export function mediaKeys(media: { id: string; width: number | null }): string[] {
   const sizes = media.width ? imageWidths(media.width).map((width) => imageKey(media.id, width)) : [];
-  return [originalKey(media.id), ...sizes, emailImageKey(media.id), fileKey(media.id)];
+  return [originalKey(media.id), ...sizes, emailImageKey(media.id), fileKey(media.id), videoKey(media.id)];
 }
 
 /** Formats people may upload; everything is re-encoded, and SVG (which can carry scripts) is never accepted. */
@@ -55,6 +57,28 @@ export const UPLOAD_FILE_TYPES: Record<string, string> = {
   odp: "application/vnd.oasis.opendocument.presentation",
 };
 
+/**
+ * Videos the team may upload into articles, by extension: uploaded like file attachments (a file named so is a
+ * video), checked by content, then played in place with a native player, never re-encoded.
+ */
+export const UPLOAD_VIDEO_TYPES: Record<string, string> = { mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" };
+
+/** Whether an upload's file name makes it a video (UPLOAD_VIDEO_TYPES). */
+export const isVideoFile = (name: string | null | undefined) => !!name && fileExtension(name) in UPLOAD_VIDEO_TYPES;
+
+/** A video's format by its first bytes ("mp4" for any ISO media file, "mov" for QuickTime's), or null if it's none. */
+export function videoFormat(bytes: Uint8Array): "mp4" | "mov" | "webm" | null {
+  const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
+  if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
+    return "webm"; // EBML (WebM, Matroska)
+  }
+  if (ascii(4, 8) === "ftyp") {
+    return ascii(8, 12) === "qt  " ? "mov" : "mp4";
+  }
+  // Older QuickTime files start with a movie or data atom instead.
+  return ["moov", "mdat", "wide", "free", "skip"].includes(ascii(4, 8)) ? "mov" : null;
+}
+
 /** A file name's extension, lower case ("Report.PDF" → "pdf"), or "" without one. */
 export const fileExtension = (name: string) => /\.([a-z0-9]{1,8})$/i.exec(name)?.[1]?.toLowerCase() ?? "";
 
@@ -71,6 +95,11 @@ export function isFileContent(extension: string, bytes: Uint8Array): boolean {
   const startsWith = (...signature: number[]) => signature.every((byte, i) => bytes[i] === byte);
   const ole = () => startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1); // OLE compound file
   switch (extension) {
+    case "mp4":
+    case "mov":
+    case "webm":
+      // Any of them: browsers play the content, whatever the name says (a .mov is often an MP4).
+      return videoFormat(bytes) !== null;
     case "pdf":
       return startsWith(0x25, 0x50, 0x44, 0x46, 0x2d); // %PDF-
     case "doc":

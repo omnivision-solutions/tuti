@@ -1,4 +1,4 @@
-import { type Doc, fromPlainText, mediaIdsIn, parseDoc, type Profile, toPlainText, updateFiles, updateImages } from "@tuti/content";
+import { type Doc, fromPlainText, hostedVideoIdsIn, isVideoFile, mediaIdsIn, parseDoc, type Profile, toPlainText, updateFiles, updateImages } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 
 type ContentResult = { doc: Doc; text: string; mediaIds: string[]; error?: never } | { error: string };
@@ -44,9 +44,10 @@ export async function readContent(
       select: { id: true, width: true, height: true, filename: true, size: true },
     });
     const byId = new Map(media.map((m) => [m.id, m]));
-    // Each must be an upload of its kind: an image node can't show a file, nor a file node hold an image.
+    // Each must be an upload of its kind: an image node can't show a file, nor a file node hold an image or a video,
+    // nor a video node play anything but a video.
     let imageGone = false;
-    let fileGone = false;
+    let fileGone = hostedVideoIdsIn(doc).some((id) => !isVideoFile(byId.get(id)?.filename));
     updateImages(doc, (id) => {
       const upload = byId.get(id);
       imageGone ||= !upload || upload.filename !== null;
@@ -54,7 +55,7 @@ export async function readContent(
     });
     updateFiles(doc, (id) => {
       const upload = byId.get(id);
-      fileGone ||= !upload || upload.filename === null;
+      fileGone ||= !upload || upload.filename === null || isVideoFile(upload.filename);
       return { name: upload?.filename, size: upload?.size };
     });
     if (imageGone || fileGone) {

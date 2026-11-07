@@ -197,7 +197,7 @@ describe("uploads", () => {
 
   test.each(["page.html", "logo.svg", "setup.exe", "run.sh", "app.js", "README"])("refuses %s", async (name) => {
     expect(await attach(name, Buffer.from("hello"))).toEqual({
-      error: "Only PDF, text (TXT, CSV, Markdown), JSON, ZIP, and Office or OpenDocument files can be attached",
+      error: "Only PDF, text (TXT, CSV, Markdown), JSON, ZIP, Office or OpenDocument files, and MP4, WebM or MOV videos can be attached",
     });
   });
 

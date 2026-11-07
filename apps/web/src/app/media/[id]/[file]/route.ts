@@ -26,6 +26,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     status: 302,
     // The URL it points to works for at least a window, so the browser may keep the redirect that long.
     // A file attachment is only ever a download, under its name.
-    headers: { location: await storage.signedUrl(key, undefined, media.filename ?? undefined), "cache-control": `private, max-age=${SIGNED_WINDOW_SECONDS}` },
+    // A video plays (as the video type it's stored with).
+    headers: { location: await storage.signedUrl(key, undefined, file === "video" ? undefined : (media.filename ?? undefined)), "cache-control": `private, max-age=${SIGNED_WINDOW_SECONDS}` },
   });
 }

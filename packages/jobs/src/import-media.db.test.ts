@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { fileKey, imageKey } from "@tuti/content";
+import { fileKey, imageKey, videoKey } from "@tuti/content";
 import { htmlToContent } from "@tuti/content/html";
 import { prisma } from "@tuti/db";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
@@ -21,6 +21,8 @@ let bigPng: Buffer;
 /** Runs as each file is asked for, before it's answered. */
 let whileServing: (() => Promise<void>) | undefined;
 const PDF = Buffer.from("%PDF-1.4\n%invented test file\n");
+/** The start of an MP4 (an ISO media file's `ftyp` box), then made-up frames. */
+const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom\0\0\0\0isommp41"), Buffer.alloc(64, 7)]);
 
 beforeAll(async () => {
   s3 = await startS3Fake();
@@ -33,6 +35,10 @@ beforeAll(async () => {
     "/huge.png": { type: "image/png", body: Buffer.alloc(2 * 1024 * 1024 + 1) },
     "/guide.pdf": { type: "application/pdf", body: PDF },
     "/fake.pdf": { type: "application/pdf", body: Buffer.from("<html>not a pdf</html>") },
+    "/demo.mp4": { type: "video/mp4", body: MP4 },
+    "/stream": { type: "video/mp4", body: MP4 },
+    "/fake.mp4": { type: "video/mp4", body: Buffer.from("<!doctype html><p>Not a video</p>") },
+    "/huge.mp4": { type: "video/mp4", body: Buffer.concat([MP4, Buffer.alloc(1024 * 1024)]) },
   };
   server = createServer(async (req, res) => {
     served.push(req.url!);
@@ -137,6 +143,34 @@ test("an attached document in an article is copied as a file, checked by its con
   expect(result.leftOut).toEqual([{ kind: "file", url: `${origin}/fake.pdf`, reason: "type" }]);
   expect(s3.objects.get(fileKey(mediaId!))?.body).toEqual(PDF);
   expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "READY", filename: "Setup guide.pdf" });
+});
+
+test("an uploaded video in an article is copied, checked by its content, and plays from the copy", async () => {
+  vi.stubEnv("MEDIA_MAX_VIDEO_MB_TEAM", "1");
+  const result = await htmlToContent(
+    "article",
+    `<video src="${origin}/demo.mp4" controls></video><video><source src="${origin}/stream" type="video/mp4"></video>` +
+      `<video src="${origin}/fake.mp4"></video><video src="${origin}/huge.mp4"></video>`,
+    { media: importer() },
+  );
+  if ("error" in result) {
+    throw new Error(result.error);
+  }
+  const [demo, stream] = result.mediaIds;
+  expect(result.doc.content).toEqual([
+    { type: "video", attrs: { provider: "upload", id: demo } },
+    { type: "video", attrs: { provider: "upload", id: stream } },
+  ]);
+  expect(result.leftOut).toEqual([
+    { kind: "video", url: `${origin}/fake.mp4`, reason: "type" },
+    { kind: "video", url: `${origin}/huge.mp4`, reason: "size" },
+  ]);
+  expect(s3.objects.get(videoKey(demo!))).toEqual({ body: MP4, contentType: "video/mp4" });
+  // Named so it's a video upload: as its address has it, or by its content when the address has no name for it.
+  expect(await prisma.media.findMany({ where: { id: { in: [demo!, stream!] } }, select: { filename: true, status: true, size: true }, orderBy: { filename: "asc" } })).toEqual([
+    { filename: "demo.mp4", status: "READY", size: MP4.length },
+    { filename: "stream.mp4", status: "READY", size: MP4.length },
+  ]);
 });
 
 test("what can't be copied is left out with its reason, keeping its alt text, and nothing is kept for it", async () => {

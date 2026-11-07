@@ -27,7 +27,7 @@ test("the team attaches a file to an article from the / menu, publishes it, and 
   await team.keyboard.type("/file");
   await team.getByRole("listbox", { name: "Blocks" }).getByRole("option", { name: "File" }).click();
   await (await chooser).setFiles({ name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from("MZ") });
-  const refused = team.getByText("Only PDF, text (TXT, CSV, Markdown), JSON, ZIP, and Office or OpenDocument files can be attached");
+  const refused = team.getByText("Only PDF, text (TXT, CSV, Markdown), JSON, ZIP, Office or OpenDocument files, and MP4, WebM or MOV videos can be attached");
   await expect(refused).toHaveRole("alert");
 
   // A PDF is: it shows with its type, name and size.

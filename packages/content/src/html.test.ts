@@ -129,10 +129,34 @@ describe("Featurebase's blocks", () => {
     expect(await blocks("comment", html)).toEqual([link("https://www.youtube.com/embed/dQw4w9WgXcQ"), link("https://example.com/embed/1")]);
   });
 
-  test("an uploaded video is left out and counted", async () => {
-    const result = await convert("article", '<p>Watch</p><video src="https://files.example.com/demo.mp4"></video>');
-    expect(result.doc.content).toEqual([p(text("Watch"))]);
-    expect(result.leftOut).toEqual([{ kind: "video", url: "https://files.example.com/demo.mp4", reason: "unsupported" }]);
+  test("an uploaded video is copied into an article and plays from the copy, its first source if it has several", async () => {
+    const { media, copied } = fakeMedia();
+    const html =
+      '<p>Watch</p><video src="https://files.example.com/demo.mp4" controls></video>' +
+      '<video><source src="https://files.example.com/tour.webm" type="video/webm"><source src="https://files.example.com/tour.mp4"></video>';
+    const result = await convert("article", html, { media });
+    expect(copied).toEqual([
+      { kind: "video", url: "https://files.example.com/demo.mp4", key: "https://files.example.com/demo.mp4", name: "demo.mp4" },
+      { kind: "video", url: "https://files.example.com/tour.webm", key: "https://files.example.com/tour.webm", name: "tour.webm" },
+    ]);
+    expect(result.doc.content).toEqual([
+      p(text("Watch")),
+      { type: "video", attrs: { provider: "upload", id: "media00000000000000000001" } },
+      { type: "video", attrs: { provider: "upload", id: "media00000000000000000002" } },
+    ]);
+    expect(result.mediaIds).toEqual(["media00000000000000000001", "media00000000000000000002"]);
+    expect(result.leftOut).toEqual([]);
+  });
+
+  test("an uploaded video that can't be copied, or outside an article, is left out and counted", async () => {
+    const html = '<p>Watch</p><video src="https://files.example.com/demo.mp4"></video>';
+    const tooBig = await convert("article", html, { media: async () => ({ leftOut: "size" }) });
+    expect(tooBig.doc.content).toEqual([p(text("Watch"))]);
+    expect(tooBig.leftOut).toEqual([{ kind: "video", url: "https://files.example.com/demo.mp4", reason: "size" }]);
+    const { media, copied } = fakeMedia();
+    const changelog = await convert("changelog", html, { media });
+    expect(copied).toEqual([]);
+    expect(changelog.leftOut).toEqual([{ kind: "video", url: "https://files.example.com/demo.mp4", reason: "unsupported" }]);
   });
 
   test("task lists are lists", async () => {

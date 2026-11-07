@@ -19,7 +19,7 @@ export type S3Fake = {
 };
 
 /**
- * A local stand-in for S3-compatible storage: PUT, GET, HEAD and DELETE on
+ * A local stand-in for S3-compatible storage: PUT (and copies), GET, HEAD and DELETE on
  * path-style URLs (reads honouring `response-content-type` and `response-content-disposition`), with
  * CORS so browsers can upload to it. Like the real (private)
  * bucket, it refuses requests that aren't signed, presigned or with a signed header;
@@ -67,7 +67,14 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
             res.writeHead(500).end();
             return;
           }
-          objects.set(key, { body: Buffer.concat(chunks), contentType: req.headers["content-type"] ?? "" });
+          // A copy (CopyObject) takes the source's bytes, as the type given.
+          const source = req.headers["x-amz-copy-source"];
+          const copied = typeof source === "string" ? objects.get(decodeURIComponent(source).slice(prefix.length)) : undefined;
+          if (typeof source === "string" && !copied) {
+            res.writeHead(404).end();
+            return;
+          }
+          objects.set(key, { body: copied?.body ?? Buffer.concat(chunks), contentType: req.headers["content-type"] ?? "" });
           res.writeHead(200).end();
           return;
         case "GET":
