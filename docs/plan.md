@@ -860,7 +860,8 @@ One PR per item; 2 doesn't need 1, and 3, 4 and 5 need both:
 - [ ] Import from Canny
 - [ ] Import from Ferndesk
 - [ ] Import a public help center by URL (keep its URLs with redirects)
-- [ ] Import from Intercom (help center, contacts)
+- [x] Import from Intercom (help center, contacts). Done: the `INTERCOM` source (`@tuti/jobs` intercom.ts and import-sources/intercom.ts: an access token as a Bearer key, `Intercom-Version` 2.17, retries for 429 and 5xx, the region (US, EU, Australia) found by the first address that takes the token; `INTERCOM_API_URL` for the fake, `startIntercomFake` in `@tuti/testkit`), with Contacts (external_id, else `intercom:<id>`; leads as leads; custom attributes as properties; the first company's name as `company`, each company read once), Help center (collections by `parent_id` and `order`, articles in their first collection, published or draft, those not for everyone as drafts, authors through `adminMember`, images copied, links at `intercom.help/<workspace>/en/articles/…` pointed at their new pages; the default locale only; Intercom's API gives only the published version, so unpublished changes aren't brought) and Profile pictures. Team isn't offered: Team & roles says its invitations are from Featurebase
+- [ ] Import from Intercom: conversations (inbox), and its admins as the Team part
 - [ ] Import from Frill and Nolt (after Canny)
 
 ## Private posts (asked 2026-11-06)

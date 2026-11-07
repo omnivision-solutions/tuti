@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { startCloudflareFake, startDnsFake, startFeaturebaseFake, startGithubFake, startGoogleFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
+import { startCloudflareFake, startDnsFake, startFeaturebaseFake, startGithubFake, startGoogleFake, startIntercomFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
@@ -72,6 +72,8 @@ export default async function globalSetup() {
   const featurebase = await startFeaturebaseFake();
   // Journeys run in other processes; they let the slow key's pages answer through the fake's /_fake/release.
   process.env.E2E_FEATUREBASE_URL = featurebase.url;
+  // Intercom's API, for imports: made-up contacts and a help center, its token FAKE_INTERCOM_TOKEN.
+  const intercom = await startIntercomFake();
   const postgres = await startMigratedPostgres("tuti_e2e");
   // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
   process.env.E2E_DATABASE_URL = postgres.url;
@@ -93,6 +95,7 @@ export default async function globalSetup() {
     ...cloudflare.env,
     ...ses.env,
     ...featurebase.env,
+    ...intercom.env,
     NODE_ENV: "production",
   };
   const started = await Promise.allSettled([startServer(APP_URL, env), startServer(CLOUD_URL, { ...env, ...cloudEnv })]);
@@ -105,7 +108,7 @@ export default async function globalSetup() {
 
   return async () => {
     servers.forEach((server) => server.kill());
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close(), featurebase.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close(), featurebase.close(), intercom.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };
