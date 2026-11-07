@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { startCloudflareFake, startDnsFake, startFeaturebaseFake, startGithubFake, startGoogleFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
+import { startCannyFake, startCloudflareFake, startDnsFake, startFeaturebaseFake, startGithubFake, startGoogleFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
@@ -15,7 +15,7 @@ import { MAIL_DIR } from "./mail";
 /**
  * A throwaway Postgres, a local SMTP server (emails land in e2e-mail/), the
  * model fake (the AI provider: AI drafting, decisions, and embeddings for duplicate detection from the OpenAI fake behind it), the S3 fake (image uploads), the
- * DNS fake (custom domains' TXT records), the Cloudflare fake (their certificates), the Featurebase fake (imports) and the
+ * DNS fake (custom domains' TXT records), the Cloudflare fake (their certificates), the Featurebase and Canny fakes (imports) and the
  * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
  * with background jobs running inline: twice, as a self-hosted server (APP_URL) and as Tuti's cloud,
  * which sells plans (CLOUD_URL), both on the same database.
@@ -72,6 +72,8 @@ export default async function globalSetup() {
   const featurebase = await startFeaturebaseFake();
   // Journeys run in other processes; they let the slow key's pages answer through the fake's /_fake/release.
   process.env.E2E_FEATUREBASE_URL = featurebase.url;
+  // Canny's API, for imports: made-up users, feedback and changelog, its key FAKE_CANNY_KEY.
+  const canny = await startCannyFake();
   const postgres = await startMigratedPostgres("tuti_e2e");
   // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
   process.env.E2E_DATABASE_URL = postgres.url;
@@ -93,6 +95,7 @@ export default async function globalSetup() {
     ...cloudflare.env,
     ...ses.env,
     ...featurebase.env,
+    ...canny.env,
     NODE_ENV: "production",
   };
   const started = await Promise.allSettled([startServer(APP_URL, env), startServer(CLOUD_URL, { ...env, ...cloudEnv })]);
@@ -105,7 +108,7 @@ export default async function globalSetup() {
 
   return async () => {
     servers.forEach((server) => server.kill());
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close(), featurebase.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), google.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close(), featurebase.close(), canny.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };

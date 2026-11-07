@@ -49,6 +49,19 @@ function entryTitle(title: string | null | undefined): string {
 
 const dateOf = (value: string | null | undefined) => (value && !Number.isNaN(Date.parse(value)) ? new Date(value) : null);
 
+/**
+ * The posts an entry ships (`postIds`), those Feedback brought and still here, as its "Shipped in" links: nothing
+ * completed or emailed. Again on a later import, for posts that came since; none for an entry the team deleted.
+ */
+async function linkPosts(tx: Prisma.TransactionClient, job: ImportJob, entryId: string, entry: FeaturebaseChangelog) {
+  if (!entry.postIds?.length || !(await tx.changelogEntry.count({ where: { id: entryId, projectId: job.projectId } }))) {
+    return;
+  }
+  const records = await tx.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "post", externalId: { in: entry.postIds } }, select: { localId: true } });
+  const posts = await tx.post.findMany({ where: { projectId: job.projectId, id: { in: records.map((record) => record.localId) } }, select: { id: true } });
+  await tx.changelogEntryPost.createMany({ data: posts.map((post) => ({ entryId, postId: post.id })), skipDuplicates: true });
+}
+
 export async function changelogPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = CHANGELOG_PAGE.now();
   const at: ChangelogAt = cursor ? JSON.parse(cursor) : { page: null, after: null };
@@ -60,10 +73,10 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
   const rest = listed.items.slice(index >= 0 ? index + 1 : later >= 0 ? later : listed.items.length);
   // Read again in the page's transaction, under its lock: what the check before copying saw may have changed.
   const recorded = async (db: Prisma.TransactionClient) =>
-    new Set(
-      (await db.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: { in: rest.map((entry) => entry.id) } }, select: { externalId: true } })).map(
-        (record) => record.externalId,
-      ),
+    new Map(
+      (
+        await db.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: { in: rest.map((entry) => entry.id) } }, select: { externalId: true, localId: true } })
+      ).map((record) => [record.externalId, record.localId]),
     );
   const known = await recorded(prisma);
   const copy = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById }) : undefined;
@@ -102,6 +115,10 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
           continue;
         }
         if (saved.has(entry.id) || !made) {
+          // Its posts may have come since (Feedback imported after it): linked now.
+          if (saved.has(entry.id)) {
+            await linkPosts(tx, job, saved.get(entry.id)!, entry);
+          }
           tally(job.counts, "changelogEntries", ALREADY_HERE);
           continue;
         }
@@ -132,6 +149,7 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
           select: { id: true },
         });
         await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: entry.id, localId: created.id } });
+        await linkPosts(tx, job, created.id, entry);
         // Emailed by Featurebase, not Tuti: its sidebar says so (a send Tuti makes later is its own).
         if (entry.emailSentToSubscribers) {
           await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "changelog-emailed", externalId: entry.id, localId: created.id } });

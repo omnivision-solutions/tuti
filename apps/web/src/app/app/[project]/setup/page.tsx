@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { appUrl } from "@/lib/hosts";
 import { canAssignRole } from "@/lib/roles";
 import { getMembership, isAdminRole } from "@/server/membership";
-import { boardsNote, latestImport } from "@/server/operations/imports";
+import { boardsNotes, latestImport } from "@/server/operations/imports";
 import { hasSampleContent } from "@/server/sample-content";
 
 const STEPS = ["from", "use", "widget", "team"] as const;
@@ -61,7 +61,7 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
               projectSlug={slug}
               latest={await latestImport(membership.project.id)}
               mediaStorage={mediaStorage() !== null}
-              boardsNote={boardsNote(membership.project.plan)}
+              boardsNotes={boardsNotes(membership.project.plan)}
               next={next("use")}
               skip={skip(next("use"))}
             />

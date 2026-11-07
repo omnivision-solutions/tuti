@@ -201,6 +201,12 @@ async function locked<T>(projectId: string, fn: (tx: Tx) => Promise<T>): Promise
  */
 export async function importStep({ importId }: JobInput<"importStep">, log: JobLogger): Promise<JobResult> {
   const row = await prisma.dataImport.findUnique({ where: { id: importId } });
+  // A source this worker doesn't have (the release before the web that started it, mid-deploy): failed as a part it
+  // doesn't have is, not as a key it can't read.
+  if (row && !(row.source in IMPORT_SOURCES)) {
+    await prisma.dataImport.updateMany({ where: { id: importId, state: "RUNNING" }, data: { state: "FAILED", apiKey: null, error: `Tuti was updating as it started. ${AGAIN}`, finishedAt: new Date() } });
+    return { failed: true };
+  }
   let job: ImportJob | null;
   try {
     job = row && importJob(row);
