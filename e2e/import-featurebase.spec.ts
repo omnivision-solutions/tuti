@@ -59,7 +59,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(owner.getByText("Part 2 of 3.", { exact: false })).toBeVisible();
   await expect(part("Team")).toContainText("2 invitations ready to send.");
   // Said once, with their link: no count of its own besides.
-  await expect(part("Team")).not.toContainText("2 invitations.");
+  await expect(part("Team")).not.toContainText(/2 invitations(?! ready)/);
   await expect(part("Team")).toContainText("Done");
   await expect(part("Contacts")).toContainText("Starting…");
   await expect(part("Contacts")).toContainText("In progress");
@@ -88,7 +88,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await owner.getByRole("button", { name: "View details" }).click();
   const details = owner.getByRole("dialog", { name: "Imported from Featurebase" });
   await expect(details.getByRole("listitem").filter({ hasText: "Team" })).toContainText("2 invitations ready to send.");
-  await expect(details.getByRole("listitem").filter({ hasText: "Team" })).not.toContainText("2 invitations.");
+  await expect(details.getByRole("listitem").filter({ hasText: "Team" })).not.toContainText(/2 invitations(?! ready)/);
   await expect(details.getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("3 contacts");
   await expect(details.getByRole("link", { name: "See users" })).toBeVisible();
   // Each row says it's done to screen readers too, beside its link.
