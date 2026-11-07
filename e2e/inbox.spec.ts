@@ -1879,7 +1879,7 @@ test("on a server selling plans, a new project's email is capped in its first we
   // Said as it's sent.
   await expect(owner.getByRole("region", { name: /Notifications/ })).toContainText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day");
   // Answered, it leaves Needs reply for Waiting on user, and stays open.
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
+  await expectMoreView(owner, /^Waiting on user 1/);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
   await expect(owner.getByText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day")).toBeVisible();
@@ -2054,7 +2054,7 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
 
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   // Answered, it leaves Needs reply for Waiting on user, and stays open.
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
+  await expectMoreView(owner, /^Waiting on user 1/);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
   const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");

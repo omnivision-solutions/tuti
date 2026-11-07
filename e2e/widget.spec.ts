@@ -2772,7 +2772,7 @@ test("someone who emailed the team sees that conversation in the widget's Messag
   await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing → Invoices.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   // Answered, it leaves Needs reply for Waiting on user, and stays open.
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
+  await expectMoreView(owner, /^Waiting on user 1/);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
