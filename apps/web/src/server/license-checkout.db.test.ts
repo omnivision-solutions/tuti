@@ -4,9 +4,12 @@ import { prisma } from "@tuti/db";
 import { startStripeFake, type FakeStripeEvent, type StripeFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
+import LicensePage from "@/app/(marketing)/license/page";
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
+import { EmptyState } from "@/components/empty-state";
 import { testLicensePrivateKey } from "@/test/license";
 
+import { installationId, licenseClaimHash } from "./license";
 import { buyLicense } from "./license-checkout";
 import { refreshLicense } from "./license-server";
 
@@ -39,12 +42,15 @@ const deliver = async (...events: FakeStripeEvent[]) => {
 };
 
 /** Where buyLicense sent the buyer. */
-async function buy(interval?: "month" | "year"): Promise<string> {
+async function buy(interval?: "month" | "year", claim?: string): Promise<string> {
   const form = new FormData();
   form.set("installation", ids.installation);
   form.set("project", ids.project);
   if (interval) {
     form.set("interval", interval);
+  }
+  if (claim) {
+    form.set("claim", claim);
   }
   try {
     await buyLicense(form);
@@ -67,8 +73,8 @@ async function bought(): Promise<string> {
 }
 
 const license = () => prisma.license.findUnique({ where: { installationId_projectId: { installationId: ids.installation, projectId: ids.project } } });
-/** The installation's first renewal: a key, or why not. */
-const claim = () => refreshLicense({ ...ids, token: null, requestId: randomUUID() });
+/** The installation's first renewal (with its licenseSecret, `secret`): a key, or why not. */
+const claim = (secret?: string) => refreshLicense({ ...ids, token: null, requestId: randomUUID(), claim: secret });
 
 test("bought with Stripe Checkout at the add-on's monthly price: once paid, the installation's renewals get keys", async () => {
   expect(await buy()).toBe(stripe.sessions.at(-1)!.url);
@@ -147,6 +153,64 @@ test("a disputed month ends it too, and renewals are refused", async () => {
   expect(stripe.subscriptions.get(subscription)!.status).toBe("canceled");
   expect(await license()).toMatchObject({ active: false });
   expect(await claim()).toEqual({ error: "not_licensed" });
+});
+
+test("bought from an installation's link, only that installation (which has the secret behind the link's claim) can claim it first", async () => {
+  const secret = randomUUID();
+  await buy("month", licenseClaimHash(secret));
+  const session = stripe.sessions.at(-1)!;
+  expect(session.metadata).toMatchObject({ licenseClaim: licenseClaimHash(secret) });
+  await deliver(...stripe.pay(session.id));
+
+  // Knowing the ids isn't enough.
+  expect(await claim()).toEqual({ error: "in_use" });
+  expect(await claim(randomUUID())).toEqual({ error: "in_use" });
+  // Its answer lost, the installation's retry (same request id, with the secret) gets it again.
+  const requestId = randomUUID();
+  const first = await refreshLicense({ ...ids, token: null, requestId, claim: secret });
+  expect(first).toMatchObject({ key: expect.any(String) });
+  expect(await refreshLicense({ ...ids, token: null, requestId, claim: secret })).toMatchObject({ token: (first as { token: string }).token });
+  expect(await refreshLicense({ ...ids, token: null, requestId })).toEqual({ error: "in_use" });
+});
+
+test("cancelled, then bought again from a link without a claim (an older release's), it keeps the claim it had", async () => {
+  const secret = randomUUID();
+  await buy("month", licenseClaimHash(secret));
+  const session = stripe.sessions.at(-1)!;
+  await deliver(...stripe.pay(session.id));
+  await deliver(stripe.update(session.subscription!, { status: "canceled" }));
+  expect(await license()).toMatchObject({ active: false });
+
+  await bought();
+  expect(await license()).toMatchObject({ active: true, claimHash: licenseClaimHash(secret) });
+  expect(await claim()).toEqual({ error: "in_use" });
+  expect(await claim(secret)).toMatchObject({ key: expect.any(String) });
+});
+
+test("a link whose claim isn't one (not a hash, or cut short) is sent back to Tuti, not round to the same buy form again", async () => {
+  // Paid with a claim no installation can match, the licence could never be claimed.
+  for (const claim of ["not a claim", licenseClaimHash(randomUUID()).slice(0, -1)]) {
+    const sessions = stripe.sessions.length;
+    const back = new URL(await buy("month", claim));
+    expect(stripe.sessions.length).toBe(sessions);
+    const page = (await LicensePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/license">)) as React.ReactElement<
+      React.ComponentProps<typeof EmptyState>
+    >;
+    expect(page.type).toBe(EmptyState);
+    expect(page.props.title).toBe("Open this page from your Tuti");
+  }
+});
+
+test("Tuti's cloud sells and renews no licence for itself: hiding the badge there is the add-on on a paid plan", async () => {
+  vi.stubEnv("PLANS", "on");
+  ids.installation = await installationId();
+  const sessions = stripe.sessions.length;
+  expect(await buy()).toBe(`https://app.tuti.example/license?installation=${ids.installation}&project=${ids.project}`);
+  expect(stripe.sessions.length).toBe(sessions);
+  // Nor one activated by hand.
+  await prisma.license.create({ data: { installationId: ids.installation, projectId: ids.project } });
+  expect(await claim()).toEqual({ error: "not_licensed" });
+  expect(await license()).toMatchObject({ generation: 0 });
 });
 
 test("at most 20 checkouts in any minute across everyone (the page is public): more are asked to try again in a moment", async () => {

@@ -4,13 +4,14 @@ import { prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
 
 import packageJson from "../../package.json";
-import { installation as thisInstallation, licensedUntil, licenseNow, licenseServer } from "./license";
+import { licensedUntil, licenseNow, licenseServer } from "./license";
 
 /**
  * Installations renew each project's licence key from Tuti's licence server (tuti.so; see
  * server/license-server.ts): after a portal page, at most daily, and when an admin chooses
  * Check now. Only projects an admin asked a licence for (or that have one) ever contact it, and
- * only with this installation's id, the project's id, the refresh token (once it has one), the
+ * only with this installation's id, the project's id, the refresh token (once it has one; until
+ * then its licenseSecret, which proves it's the installation the licence was bought for), the
  * request id and the app version.
  *
  * tuti.so down keeps the current key, so a portal never breaks: once the key expires (35 days),
@@ -41,7 +42,7 @@ export async function renewLicense(projectId: string, { olderThan = CHECK_LEASE_
   if (!claimed) {
     return "busy";
   }
-  const installation = await thisInstallation();
+  const installation = await prisma.installation.findUniqueOrThrow({ where: { singleton: 1 }, select: { id: true, latestSeenAt: true, licenseSecret: true } });
   let response: Response;
   try {
     response = await fetch(new URL("/api/license/refresh", licenseServer()), {
@@ -53,6 +54,7 @@ export async function renewLicense(projectId: string, { olderThan = CHECK_LEASE_
         token: claimed.licenseToken,
         requestId: claimed.licenseRequestId,
         version: packageJson.version,
+        ...(claimed.licenseToken === null && { claim: installation.licenseSecret }),
       }),
       signal: AbortSignal.timeout(10_000),
     });

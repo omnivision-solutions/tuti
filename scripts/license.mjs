@@ -8,12 +8,16 @@
 //   activate  sells the licence (or turns a cancelled one back on); the installation's next check gets a key
 //   cancel    stops renewals, so the installation's key lapses within a month and the badge comes back
 //   reset     forgets which installation holds it (support's answer when the wrong copy of a cloned
-//             installation kept renewing): the next installation to claim it gets it
+//             installation kept renewing): the next copy to claim it gets it (any installation, for one activated here)
+//             --forget-claim also clears its claim hash, so any installation may claim it: for one bought with a
+//             claim no installation can match; check it's the buyer asking first
 import { randomUUID } from "node:crypto";
 
 import pg from "pg";
 
-const [command, installation, project] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const forgetClaim = args.includes("--forget-claim");
+const [command, installation, project] = args.filter((arg) => arg !== "--forget-claim");
 const QUERIES = {
   activate: [
     `INSERT INTO license (id, "installationId", "projectId") VALUES ($3, $1, $2)
@@ -22,12 +26,12 @@ const QUERIES = {
   ],
   cancel: [`UPDATE license SET active = false WHERE "installationId" = $1 AND "projectId" = $2`, [installation, project]],
   reset: [
-    `UPDATE license SET generation = 0, "requestId" = NULL WHERE "installationId" = $1 AND "projectId" = $2`,
+    `UPDATE license SET generation = 0, "requestId" = NULL${forgetClaim ? ', "claimHash" = NULL' : ""} WHERE "installationId" = $1 AND "projectId" = $2`,
     [installation, project],
   ],
 };
-if (!QUERIES[command] || !installation || !project || !process.env.DATABASE_URL) {
-  console.error("Usage: DATABASE_URL=… node scripts/license.mjs <activate|cancel|reset> <installation id> <project id>");
+if (!QUERIES[command] || !installation || !project || !process.env.DATABASE_URL || (forgetClaim && command !== "reset")) {
+  console.error("Usage: DATABASE_URL=… node scripts/license.mjs <activate|cancel|reset [--forget-claim]> <installation id> <project id>");
   process.exit(1);
 }
 

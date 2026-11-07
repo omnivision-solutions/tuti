@@ -15,6 +15,7 @@ const body = z.object({
   token: id.nullable(),
   requestId: z.string().min(16).max(100),
   version: z.string().max(50).optional(),
+  claim: id.optional(),
 });
 
 const MESSAGES = {
