@@ -822,11 +822,13 @@ export function widgetLoader(portalTemplate: string): string {
       }
     },
     // \`returnFocus\` (the portal's own): where focus goes back to on closing, for a panel opened from a dialog of the page's.
+    // On a page still loading, once its panel is in it (whenBody runs them in order), so focus and covering the page work.
     open: function (options) {
       var back = options && options.returnFocus;
-      open(options, back && back.nodeType === 1 && document.contains(back) ? back : document.activeElement);
+      var from = back && back.nodeType === 1 && document.contains(back) ? back : document.activeElement;
+      whenBody(function () { open(options, from); });
     },
-    close: function () { close(); },
+    close: function () { whenBody(function () { close(); }); },
     // Light, dark or auto (the project's colour scheme), for sites that switch theirs without a reload.
     setTheme: function (value) {
       if (!isTheme(value)) return;

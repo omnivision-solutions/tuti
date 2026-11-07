@@ -60,8 +60,8 @@ class FakeElement {
     (this.listeners[type] ??= []).push(listener);
   }
   focus() {
-    // Nothing hidden takes focus.
-    if (this.ancestors().some((element) => element.style.visibility === "hidden")) return;
+    // Nothing hidden, or not in the page, takes focus.
+    if (this.ancestors().some((element) => element.style.visibility === "hidden") || !this.page.document.contains(this)) return;
     this.page.document.activeElement = this;
   }
   closest(selector: string) {
@@ -387,14 +387,16 @@ test("data-hide-launcher or TutiSettings.hideLauncher leaves the button out; Tut
 });
 
 test("on a page still loading, its panel and button go in once the page is parsed, after the page's own elements", async () => {
-  const page = loadWidget({ before: (page) => Object.assign(page.document, { readyState: "loading" }) });
+  const page = loadWidget({ motion: "reduced", before: (page) => Object.assign(page.document, { readyState: "loading" }) });
   const own = page.body.appendChild(new FakeElement("div", page));
   await settled();
+  // Opened meanwhile, it opens once it's in the page: focus goes into it.
   page.Tuti.open();
   expect(page.body.children).toEqual([own]);
   page.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
   expect(page.body.children[0]).toBe(own);
   expect(page.panel.style.display).toBe("block");
+  expect(page.document.activeElement).toBe(page.frame);
   expect(page.button).toBeDefined();
 });
 
