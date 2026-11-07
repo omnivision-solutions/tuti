@@ -88,6 +88,8 @@ test("renewals are at most daily, each with the next token", async () => {
   expect(second.licenseToken).not.toBe(first.licenseToken);
   expect(second.licenseKey).not.toBeNull();
   expect(second.licenseRequestId).toBeNull();
+  // With a token, the installation's secret stays home.
+  expect(JSON.parse(tutiSo.mock.lastCall![1]!.body as string)).not.toHaveProperty("claim");
 });
 
 test("an answer lost on the way back is asked for again with the same request id, and tuti.so gives it", async () => {

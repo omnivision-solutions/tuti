@@ -165,6 +165,25 @@ test("bought from an installation's link, only that installation (which has the 
   // Knowing the ids isn't enough.
   expect(await claim()).toEqual({ error: "in_use" });
   expect(await claim(randomUUID())).toEqual({ error: "in_use" });
+  // Its answer lost, the installation's retry (same request id, with the secret) gets it again.
+  const requestId = randomUUID();
+  const first = await refreshLicense({ ...ids, token: null, requestId, claim: secret });
+  expect(first).toMatchObject({ key: expect.any(String) });
+  expect(await refreshLicense({ ...ids, token: null, requestId, claim: secret })).toMatchObject({ token: (first as { token: string }).token });
+  expect(await refreshLicense({ ...ids, token: null, requestId })).toEqual({ error: "in_use" });
+});
+
+test("cancelled, then bought again from a link without a claim (an older release's), it keeps the claim it had", async () => {
+  const secret = randomUUID();
+  await buy("month", licenseClaimHash(secret));
+  const session = stripe.sessions.at(-1)!;
+  await deliver(...stripe.pay(session.id));
+  await deliver(stripe.update(session.subscription!, { status: "canceled" }));
+  expect(await license()).toMatchObject({ active: false });
+
+  await bought();
+  expect(await license()).toMatchObject({ active: true, claimHash: licenseClaimHash(secret) });
+  expect(await claim()).toEqual({ error: "in_use" });
   expect(await claim(secret)).toMatchObject({ key: expect.any(String) });
 });
 
