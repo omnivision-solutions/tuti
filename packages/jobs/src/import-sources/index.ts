@@ -14,6 +14,7 @@ import type {
   Page,
 } from "../featurebase";
 import { featurebaseSource } from "./featurebase";
+import { websiteSource } from "./website";
 
 /**
  * How the import's part jobs read a source (packages/jobs/src/import-*.ts): each a page at a time (`cursor` null: the
@@ -72,4 +73,5 @@ export type ImportSourceDefinition = {
 /** Every source, by the import row's `source`: adding one is its enum value, its file and its line here. */
 export const IMPORT_SOURCES: Record<ImportSource, ImportSourceDefinition> = {
   FEATUREBASE: featurebaseSource,
+  WEBSITE: websiteSource,
 };

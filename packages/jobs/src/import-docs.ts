@@ -3,12 +3,14 @@ import { isDeepStrictEqual } from "node:util";
 import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason } from "@tuti/content/html";
 import { Prisma, prisma } from "@tuti/db";
 import { articleLimit, MAX_ARTICLE_LENGTH } from "@tuti/shared";
+import { destinationKey, MAX_REDIRECTS, redirectFrom, redirectKey } from "@tuti/shared/portal-redirects";
 
 import { recordRevision } from "./article-layers";
 import { freeDocsSlug } from "./docs-slugs";
 import type { FeaturebaseArticle } from "./featurebase";
 import { mediaImporter } from "./import-media";
 import { IMPORT_SOURCES } from "./import-sources";
+import { pageId } from "./import-sources/website";
 import { adminMember, ALREADY_HERE, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
 import { enqueue } from "./index";
 import { portalAddress } from "./portal-address";
@@ -262,11 +264,12 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
   for (const article of fresh) {
     const title = titleOf(article);
     const author = article.author?.authorId ? await adminMember(tx, job, article.author.authorId, { name: article.author.name }) : null;
+    const slug = await freeDocsSlug(tx, job.projectId, slugOf(article.slug) || title, "article");
     const { id } = await tx.article.create({
       data: {
         projectId: job.projectId,
         title,
-        slug: await freeDocsSlug(tx, job.projectId, slugOf(article.slug) || title, "article"),
+        slug,
         description: article.description?.trim().slice(0, 300) ?? "",
         collectionId: collections.get(article.parentId ?? "")?.id ?? null,
         order: orderOf(article.order),
@@ -276,8 +279,40 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
       select: { id: true },
     });
     made.push({ externalId: article.id, localId: id, madeTitle: title });
+    await keepOldAddress(tx, job, article.id, slug);
   }
   await remember(tx, job, "article", made);
+}
+
+/**
+ * A crawled help center's article's old path (a source whose ids are its pages' addresses), redirected to its new page
+ * (Settings → Domain → Redirects), so once the old domain points at the portal, links to it still land. Up to the
+ * portal's MAX_REDIRECTS; never a path that has a rule, is a rule's destination, or is a page of the portal's own.
+ */
+async function keepOldAddress(tx: Tx, job: ImportJob, address: string, slug: string) {
+  if (IMPORT_SOURCES[job.source].credential !== "url") {
+    return;
+  }
+  const from = redirectFrom(address);
+  const to = `/docs/${slug}`;
+  // Not a path a rule can have (the home, the portal's own), or the same address as before.
+  if ("error" in from || from.from === redirectKey(to)) {
+    return;
+  }
+  // Already a page of the portal's own (a collection's, say): it leads somewhere as it is.
+  const own = { projectId: job.projectId, slug: from.from.slice("/docs/".length) };
+  if (/^\/docs\/[^/]+$/.test(from.from) && (await tx.article.count({ where: own })) + (await tx.collection.count({ where: own })) > 0) {
+    return;
+  }
+  const rules = await tx.portalRedirect.findMany({ where: { projectId: job.projectId }, select: { from: true, to: true } });
+  if (rules.some((rule) => rule.from === from.from || rule.from === redirectKey(to) || destinationKey(rule.to) === from.from)) {
+    tally(job.counts, "notRedirected", "already part of another redirect (not redirected)");
+  } else if (rules.length >= MAX_REDIRECTS) {
+    tally(job.counts, "notRedirected", `past the portal's ${MAX_REDIRECTS} redirects (not redirected)`);
+  } else {
+    await tx.portalRedirect.create({ data: { projectId: job.projectId, from: from.from, to } });
+    tally(job.counts, "oldAddresses", null);
+  }
 }
 
 /** Pass 1's articles: every one (drafts too), made empty, a page at a time. */
@@ -294,8 +329,20 @@ async function articlesPage(job: ImportJob, cursor: string | null): Promise<Step
 async function linksTo(job: ImportJob, portal: string, html: string[]): Promise<(href: string) => string | null> {
   // Only the ids the HTML mentions (a superset of what its links match below), not every page the import made.
   const ids = (kind: string) => [...html.join("\n").matchAll(new RegExp(`/${kind}/(\\d+)`, "g"))].map((match) => match[1]!);
-  const [articles, collections] = await Promise.all([recorded(prisma, job, "article", ids("articles")), recorded(prisma, job, "collection", ids("collections"))]);
+  // A crawled help center's ids are its pages' addresses (import-sources/website.ts).
+  const byAddress = IMPORT_SOURCES[job.source].credential === "url";
+  const addresses = byAddress ? [...html.join("\n").matchAll(/href="([^"]+)"/g)].flatMap((match) => (URL.canParse(match[1]!) ? [pageId(match[1]!)] : [])) : [];
+  const [articles, collections] = await Promise.all([
+    recorded(prisma, job, "article", [...ids("articles"), ...addresses]),
+    recorded(prisma, job, "collection", [...ids("collections"), ...addresses]),
+  ]);
   return (href) => {
+    if (byAddress && URL.canParse(href)) {
+      const page = articles.get(pageId(href)) ?? collections.get(pageId(href));
+      if (page && !page.deleted) {
+        return `${portal}/docs/${page.slug}`;
+      }
+    }
     let path: string;
     try {
       path = new URL(href, "https://featurebase.invalid").pathname;
