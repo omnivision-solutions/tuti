@@ -61,6 +61,9 @@ test("once done, each part shows its numbers and folds away what it left out and
   expect(html).toMatch(/<span class="font-semibold tabular-nums">218<\/span> <span class="text-muted-foreground">posts<\/span>/);
   expect(html).toMatch(/<details[^>]*><summary[^>]*>12 left out<\/summary><ul[^>]*><li>9 comments deleted or spam<\/li><li>2 comments with nothing left in them<\/li><li>1 video Tuti has no place for<\/li><\/ul><\/details>/);
   expect(html).not.toContain("281");
+  // Its tick says it's done; a pill beside no link reads as a button, so only screen readers hear it.
+  expect(html).not.toContain("rounded-full border");
+  expect(html).toMatch(/Profile pictures<\/p>.*<span class="sr-only">Done<\/span><\/li><\/ol>/);
   expect(rows(r)).toEqual(["Contacts Nothing new. Done See users", expect.stringMatching(/^Feedback 218 posts 253 comments 12 left out .* Done See feedback$/), "Profile pictures Nothing new. Done"]);
 });
 
