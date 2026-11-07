@@ -42,7 +42,7 @@ type ArticlesCursor = {
   page: number;
   /** Only those updated since (Unix seconds); 0: the whole list. */
   since: number;
-  /** The list's count as this pass read its first page, and when that was (Intercom's clock). */
+  /** The list's count at the page before, and when this pass read its first page (Intercom's clock). */
   count: number;
   began: number;
   /** This pass saw articles deleted. */
@@ -160,7 +160,9 @@ export const intercomSource: ImportSourceDefinition = {
             // Strictly later than the pass before, so passes can't repeat within one second of Intercom's clock.
             Object.assign(at, { count, began: Math.max(api.now(), at.began + 1), shrank: false });
           }
+          // Against the page before: a creation earlier in the pass mustn't hide a deletion after it.
           at.shrank ||= count < at.count;
+          at.count = count;
           const items = at.since ? body.data.filter((a) => (a.updated_at ?? 0) >= at.since) : body.data;
           // A re-read ends at the first article older than it looks for (or the list's end).
           if (items.length === body.data.length && nextPage(body.pages, at.page)) {

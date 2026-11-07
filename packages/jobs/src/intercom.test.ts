@@ -87,6 +87,36 @@ test("an article deleted while the list is read (those after it moving up a plac
   }
 });
 
+test("an article created, then another deleted, as the list is read (the count back where it began) still has the whole list read again", async () => {
+  const fake = await startIntercomFake();
+  try {
+    vi.stubEnv("INTERCOM_API_URL", fake.url);
+    fake.pageSize = 2;
+    const old = fake.fixtures.articles[0]!;
+    fake.fixtures.articles = ["A", "B", "C", "D", "E", "F"].map((id, i) => ({ ...old, id, updated_at: 1_700_000_000 - i }));
+    const { read } = intercomSource.connect(FAKE_INTERCOM_TOKEN, { deadline: Infinity });
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page = await read.articles!(cursor, 2);
+      ids.push(...page.items.map((a) => a.id));
+      cursor = page.next;
+      pages++;
+      // After the first page, one is made (first in the list); after the second, A is deleted: D moves onto page 2.
+      if (pages === 1) {
+        fake.fixtures.articles.unshift({ ...old, id: "N", updated_at: fake.clock });
+      } else if (pages === 2) {
+        fake.fixtures.articles = fake.fixtures.articles.filter((a) => a.id !== "A");
+      }
+    } while (cursor && pages < 20);
+    expect(new Set(ids)).toEqual(new Set(["A", "B", "C", "D", "E", "F", "N"]));
+    expect(pages).toBeLessThan(20);
+  } finally {
+    await fake.close();
+  }
+});
+
 test("an article edited while a re-read is past its first page still comes: another re-read follows one that needed several pages", async () => {
   const fake = await startIntercomFake();
   try {
