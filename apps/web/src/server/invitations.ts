@@ -67,7 +67,8 @@ export async function createInvitation(
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
     const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
     // The day's cap too, under that lock: an import's invites being sent at the same moment can't both take its last place.
-    if (await dayIsFull(tx, projectId, session.user.id)) {
+    // Not for a link-only invite: nothing is emailed, and it doesn't count.
+    if (!linkOnly && (await dayIsFull(tx, projectId, session.user.id))) {
       return "daily" as const;
     }
     const limit = project ? teamLimit(project.plan) : null;

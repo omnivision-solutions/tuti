@@ -129,6 +129,18 @@ describe("inviting by email", () => {
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
   });
 
+  test("an unverified sender still gets a link once the day's emailed invites are used up", async () => {
+    const admin = await addMember(project.id, "ADMIN");
+    await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
+    actAs(admin);
+    for (let i = 0; i < DAILY_INVITE_LIMIT; i++) {
+      expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+    }
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
+    actAs(owner);
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({ url: expect.stringMatching(/\/invite\/[\w-]+$/), emailSent: false, unverified: true });
+  });
+
   test("admins can't invite owners", async () => {
     const admin = await addMember(project.id, "ADMIN");
     actAs(admin);
