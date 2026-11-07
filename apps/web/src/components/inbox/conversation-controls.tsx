@@ -24,7 +24,7 @@ export function CloseButton({ projectSlug, number, closed }: Props & { closed: b
       focusableWhenDisabled
       onClick={() =>
         startTransition(async () => {
-          const moved = actOn(number);
+          const moved = actOn(number, !closed);
           const result = await setConversationStatus(projectSlug, number, closed ? "open" : "closed");
           if (result.error) {
             toast.error(result.error);
@@ -161,7 +161,7 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
   );
   const snooze = (until: Date | null) =>
     startTransition(async () => {
-      const moved = actOn(number);
+      const moved = actOn(number, until !== null);
       const result = await snoozeConversation(projectSlug, number, until && until.toISOString());
       if (result.error) {
         toast.error(result.error);
@@ -195,7 +195,7 @@ export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolea
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          const moved = actOn(number);
+          const moved = actOn(number, !spam);
           const result = await markConversationSpam(projectSlug, number, !spam);
           if (result.error) {
             toast.error(result.error);

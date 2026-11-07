@@ -170,13 +170,15 @@ test("conversations from the API land in the inbox, where the team replies, assi
   expect((await about.getByRole("definition").filter({ hasText: "enterprise" }).boundingBox())!.height).toBeLessThan(line * 1.5);
   await expect(about.getByRole("region", { name: "Other conversations" })).toContainText("None.");
 
-  // The team replies (⌘/Ctrl+Enter sends): it's waiting on the user now, out of Needs reply, so the next one there opens.
-  // The messages themselves (a message's attachments are a list of their own).
+  // The team replies (⌘/Ctrl+Enter sends): it's waiting on the user now, out of Needs reply, and stays open (only Send
+  // and close moves on). The messages themselves (a message's attachments are a list of their own).
   const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
   await owner.getByRole("textbox", { name: "Reply" }).fill("Thanks, Sam! A fix is on its way.");
   await owner.getByRole("textbox", { name: "Reply" }).press("ControlOrMeta+Enter");
-  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
-  // Back to it where it is now: Waiting on user.
+  await expect(list.getByRole("link", { name: /Can't export to CSV/ })).toHaveCount(0);
+  await expect(messages.last()).toContainText("Thanks, Sam! A fix is on its way.");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  // In the view it's in now: Waiting on user.
   await views.getByRole("link", { name: "Waiting on user 1" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=waiting$`));
   await list.getByRole("link", { name: /Can't export to CSV/ }).click();
@@ -704,13 +706,17 @@ test("the team member's own action taking the open conversation out of its view 
   await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
 
-  // Answered, the last one in the list leaves it (waiting on the user): with none below it, the first opens.
+  // Only answered (Send, not Send and close), it leaves the list (waiting on the user) but stays open, the reply there to
+  // read. K goes on up the list from where it stood.
   await reply.fill("Thanks, on it.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("region", { name: /Notifications/ })).toContainText("Sent");
+  await expect(row(1)).toHaveCount(0);
+  await expect(owner.getByRole("list", { name: "Messages" })).toContainText("Thanks, on it.");
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await owner.keyboard.press("k");
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/3$`));
   await expect(row(3)).toBeFocused();
-  // Said as it goes, the conversation gone from the page.
-  await expect(owner.getByRole("region", { name: /Notifications/ })).toContainText("Sent");
 
   // In Unassigned, taken: it leaves Unassigned, the only one there, so the view's numbers show, nothing open.
   await views.getByRole("link", { name: "Unassigned 1" }).click();
@@ -1437,6 +1443,75 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   expect(Math.abs((await messages.nth(50).boundingBox())!.y - scrolledTo)).toBeLessThanOrEqual(1);
 });
 
+test("answered with Send, a conversation stays open though it's left Needs reply; only closing it then opens the next one down", async ({ browser }) => {
+  const { slug, owner, api, list, reply } = await twoConversations(browser);
+  await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
+  const row = (number: number) => list.getByRole("link", { name: new RegExp(`\\(#${number}\\)$`) });
+  const send = async (text: string) => {
+    await reply.fill(text);
+    await owner.getByRole("button", { name: "Send", exact: true }).focus();
+    await owner.keyboard.press("Enter");
+    await expect(row(2)).toHaveCount(0);
+    await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+    // The keyboard's focus stays on Send (nothing else opens to take it), not back at the top of the page.
+    await expect(owner.getByRole("button", { name: "Send", exact: true })).toBeFocused();
+  };
+  // Needs reply, the latest first: #3, #2, #1.
+  await owner.goto(`/app/${slug}/inbox/2`);
+  await expect(row(3)).toBeVisible();
+  await send("Looking into it.");
+  // Marked as open again, it's back in the list: it stays.
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Mark as open" }).click();
+  await expect(row(2)).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  // Answered again, then taken: still being worked on, it stays.
+  await send("Found it.");
+  await owner.getByRole("button", { name: "Assign", exact: true }).click();
+  await owner.getByRole("menuitem", { name: "Assign to me" }).click();
+  await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
+  await api("/conversations", { email: "e2e-fourth@example.com", body: "A fourth question" });
+  await expect(row(4)).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  // Closed, it's done with: the next one down from where it stood opens.
+  await owner.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await expect(row(1)).toBeFocused();
+  // The last one in the list, answered and closed at once: with none below it, the first opens.
+  await reply.fill("All sorted.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
+  await expect(row(4)).toBeFocused();
+});
+
+test("after a Send that kept it open, Snooze and Mark as spam are done with it too: the next one down opens", async ({ browser }) => {
+  const { slug, owner, api, list, reply } = await twoConversations(browser);
+  await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
+  await api("/conversations", { email: "e2e-fourth@example.com", body: "A fourth question" });
+  const row = (number: number) => list.getByRole("link", { name: new RegExp(`\\(#${number}\\)$`) });
+  const send = async (number: number, text: string) => {
+    await reply.fill(text);
+    await owner.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(row(number)).toHaveCount(0);
+    await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/${number}$`));
+  };
+  // Needs reply, the latest first: #4, #3, #2, #1.
+  await owner.goto(`/app/${slug}/inbox/3`);
+  await expect(row(4)).toBeVisible();
+  await send(3, "Looking into it.");
+  // Snoozed till later, it's done with for now: the next one down opens.
+  await owner.getByRole("button", { name: "Snooze", exact: true }).click();
+  await owner.getByRole("menuitem", { name: "In 3 hours" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await expect(row(2)).toBeFocused();
+  // Answered, then marked as spam: the same.
+  await send(2, "Is this about the export?");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Mark as spam" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await expect(row(1)).toBeFocused();
+});
+
 test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
@@ -1478,12 +1553,9 @@ test("a reply kept while another conversation was open keeps its files", async (
   await expect(reply).toHaveValue("Here's the invoice, attached.");
   await expect(files).toContainText(/invoice\.pdf\s*1 KB/);
   await owner.getByRole("button", { name: "Send", exact: true }).click();
-  // Answered, it's waiting on Sam: the next one in Needs reply opens. Where it went, the file went with the reply.
-  await expect(owner).toHaveURL(/\/inbox\/2$/);
-  await owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Waiting on user 1" }).click();
-  await expect(owner).toHaveURL(/\/inbox\?view=waiting$/);
-  await sam.click();
+  // Answered, it's waiting on Sam, and stays open: the file went with the reply.
   await expect(messages.last().getByRole("link", { name: "invoice.pdf" })).toBeVisible();
+  await expect(owner).toHaveURL(/\/inbox\/1$/);
   await expect(files).toHaveCount(0);
 });
 
@@ -1783,10 +1855,11 @@ test("on a server selling plans, a new project's email is capped in its first we
   await owner.goto(`/app/${slug}/inbox/1`);
   await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
-  // Said as it's sent, as the page moves on.
+  // Said as it's sent.
   await expect(owner.getByRole("region", { name: /Notifications/ })).toContainText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day");
-  // Answered, it leaves Needs reply (none left there): it's in Waiting on user.
-  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
+  // Answered, it leaves Needs reply for Waiting on user, and stays open.
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
   await expect(owner.getByText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day")).toBeVisible();
   await checkpoint(owner, "reply-waits-for-daily-cap");
@@ -1959,8 +2032,9 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await expect(reply).toBeFocused();
 
   await owner.getByRole("button", { name: "Send", exact: true }).click();
-  // Answered, it leaves Needs reply (none left there): it's in Waiting on user.
-  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
+  // Answered, it leaves Needs reply for Waiting on user, and stays open.
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: /^Waiting on user 1/ })).toBeVisible();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await owner.goto(`/app/${slug}/inbox/1?view=waiting`);
   const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
   await expect(messages).toHaveCount(2);

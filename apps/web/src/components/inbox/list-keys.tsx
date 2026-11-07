@@ -28,9 +28,12 @@ let acted: { number: number; from: number[]; picks: number } | null = null;
 let moveOn: ((number: number, from: number[]) => void) | null = null;
 
 /**
- * Called as the team member's own action on the open conversation (`number`) starts (Close, Assign, a reply, …); the
- * function it returns, once it's done. Moved out of the view by it, the next one down from where it stood in the list
- * as it was opens (the first, with none below it), or none with none left. Not for a change someone else made, which
+ * Called as the team member's own action on the open conversation (`number`) starts (Close, Assign, Send and close, …);
+ * the function it returns, once it's done. Moved out of the view by it, the next one down from where it stood in the list
+ * as it was opens (the first, with none below it), or none with none left. Already out of it (answered with Send, which
+ * keeps it open), only an action `done` with it (Close, Snooze, Mark as spam, Send and close) moves on, from where it
+ * stood as it opened, once the list after it shows it gone: not one that keeps it open (Assign) or brings it back (Mark
+ * as open). Not for a change someone else made, which
  * the live refresh shows: jumping away while they read or type would be wrong. Nor once they've gone somewhere
  * themselves while it saved (another row, a tab, J or K): that's where they go.
  *
@@ -39,15 +42,16 @@ let moveOn: ((number: number, from: number[]) => void) | null = null;
  * refresh, read after the action was saved, got there first), it moves on right away; still in it then (one read
  * before), the next render decides.
  */
-export function actOn(number: number) {
-  const from = rows;
+export function actOn(number: number, done = false) {
+  const gone = done && !rows.includes(number) && known.order.includes(number);
+  const from = gone ? known.order : rows;
   const at = picks;
   return () => {
     // Not in the list as the action started (opened from who they are): it hasn't left it.
     if (!from.includes(number) || picks !== at) {
       return;
     }
-    if (rows.includes(number)) {
+    if (gone || rows.includes(number)) {
       acted = { number, from, picks: at };
     } else {
       moveOn?.(number, from);
