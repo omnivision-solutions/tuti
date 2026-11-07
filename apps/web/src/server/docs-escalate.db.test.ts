@@ -316,7 +316,7 @@ describe("limits", () => {
     });
     const reader = asReader();
     const question = await asked(reader);
-    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ error: expect.stringContaining("a lot of emails in the last hour") });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ error: "This site has sent a lot of emails in the last hour. Try again later." });
   });
 });
 

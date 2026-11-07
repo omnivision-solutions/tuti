@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
@@ -242,6 +243,16 @@ test("new conversations are limited per day and per typed address, and messages 
   }
   expect(results.slice(0, 5).every((r) => "number" in r)).toBe(true);
   expect(results[5]).toMatchObject({ error: expect.stringContaining("a lot of emails to this address") });
+});
+
+test("signed out, a new conversation on a site at its hourly limit for emails says so", async () => {
+  const { project } = await setup();
+  await prisma.signInLink.createMany({
+    data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }, (_, i) => ({ projectId: project.id, emailHash: `h${i}` })),
+  });
+  expect(await widgetStartConversation(project.slug, {}, "Hello?", "e2e-visitor@example.com")).toEqual({
+    error: "This site has sent a lot of emails in the last hour. Try again later.",
+  });
 });
 
 test("the total unseen count includes conversations older than the latest 50 the list shows", async () => {
