@@ -1443,6 +1443,22 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   expect(Math.abs((await messages.nth(50).boundingBox())!.y - scrolledTo)).toBeLessThanOrEqual(1);
 });
 
+test("answered with Send, a conversation stays open though it's left Needs reply; closed then, the next one down opens", async ({ browser }) => {
+  const { slug, owner, api, list, reply } = await twoConversations(browser);
+  await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
+  const row = (number: number) => list.getByRole("link", { name: new RegExp(`\\(#${number}\\)$`) });
+  // Needs reply, the latest first: #3, #2, #1.
+  await owner.goto(`/app/${slug}/inbox/2`);
+  await expect(row(3)).toBeVisible();
+  await reply.fill("Looking into it.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(row(2)).toHaveCount(0);
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await owner.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await expect(row(1)).toBeFocused();
+});
+
 test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
