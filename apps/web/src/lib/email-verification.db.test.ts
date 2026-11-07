@@ -115,7 +115,8 @@ test("signed up from a portal, the verification link comes back through a new ha
   const { link } = await verificationLink(email);
   const back = new URL(link.searchParams.get("callbackURL")!, link);
   expect(back.pathname).toBe("/continue");
-  expect(Object.fromEntries(back.searchParams)).toEqual({ portal: project.slug, redirect: "/feedback/ideas" });
+  // In the state's place, the app's MAC: only a way back the app made starts a new handoff.
+  expect(Object.fromEntries(back.searchParams)).toEqual({ portal: project.slug, redirect: "/feedback/ideas", mac: expect.any(String) });
   expect(link.toString()).not.toContain(state);
 
   // Opened later: verified, then the app's /continue without a state starts a new handoff on the portal.
@@ -128,7 +129,20 @@ test("signed up from a portal, the verification link comes back through a new ha
   expect(await redirectTarget(page(Object.fromEntries(back.searchParams)))).toBe(
     `http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`,
   );
-  // Only to a project's portal that exists: anything else is a link that isn't valid, going nowhere.
-  const notValid = (await page({ portal: "no-such-project", redirect: "/" })) as React.ReactElement;
-  expect(JSON.stringify(notValid.props)).toContain("Link not valid");
+
+  // Anything else is a link that isn't valid, going nowhere (a portal's address can be its team's own domain or site):
+  const notValid = async (query: Record<string, string>) => {
+    const rendered = await page(query).catch((error: { digest?: string }) => error.digest);
+    expect(JSON.stringify((rendered as React.ReactElement).props)).toContain("Link not valid");
+  };
+  const mac = back.searchParams.get("mac")!;
+  // unsigned, for a project that exists;
+  await notValid({ portal: project.slug, redirect: "/feedback/ideas" });
+  // its MAC, with another path, another portal, or bent;
+  await notValid({ portal: project.slug, redirect: "/elsewhere", mac });
+  const other = await createProject(await signUpUser("Other owner"));
+  await notValid({ portal: other.slug, redirect: "/feedback/ideas", mac });
+  await notValid({ portal: project.slug, redirect: "/feedback/ideas", mac: `${mac.slice(0, -1)}${mac.endsWith("A") ? "B" : "A"}` });
+  // a portal that doesn't exist.
+  await notValid({ portal: "no-such-project", redirect: "/feedback/ideas", mac });
 });

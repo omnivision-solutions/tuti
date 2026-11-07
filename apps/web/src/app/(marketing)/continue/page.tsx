@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ContinueToPortalButton } from "@/components/continue-to-portal";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { isOwnWayBack } from "@/lib/auth";
 import { isSecret } from "@/lib/portal-handoff";
 import { safeRedirectPath } from "@/lib/redirects";
 import { portalAddress } from "@/server/custom-domains";
@@ -12,7 +13,7 @@ import { getAccountSession } from "@/server/session";
 
 /** "Continue as <name>": a portal sent someone here to sign in with their Tuti account (see lib/portal-handoff.ts). */
 export default async function ContinuePage(props: PageProps<"/continue">) {
-  const { portal, state, redirect: redirectParam, "sign-up": signUp, reset } = await props.searchParams;
+  const { portal, state, redirect: redirectParam, "sign-up": signUp, reset, mac } = await props.searchParams;
   const project =
     typeof portal === "string"
       ? await prisma.project.findUnique({ where: { slug: portal }, select: { slug: true, name: true } })
@@ -20,8 +21,9 @@ export default async function ContinuePage(props: PageProps<"/continue">) {
 
   const redirectPath = safeRedirectPath(typeof redirectParam === "string" ? redirectParam : undefined, "/");
   // No state: a way back opened later (a sign-up's verification email; see lib/auth.ts), whose handoff is long used up.
-  // A new one, started on that project's portal (only one that exists), which comes back here with its own state.
-  if (project && state === undefined) {
+  // A new one, started on that project's portal, which comes back here with its own state; only for a way back the app
+  // made (its MAC), since a portal's address can be its team's own domain or site. Anything else isn't valid.
+  if (project && state === undefined && (await isOwnWayBack(project.slug, typeof redirectParam === "string" ? redirectParam : "", mac))) {
     redirect(`${await portalAddress(project.slug)}/continue?${new URLSearchParams({ redirect: redirectPath })}`);
   }
   if (!project || !isSecret(state)) {

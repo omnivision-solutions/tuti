@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 import { prisma } from "@tuti/db";
 import { handOverOnVerified, projectSender } from "@tuti/jobs";
 import { passwordChangedEmail, passwordResetEmail, sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
@@ -59,17 +61,39 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
   });
 }
 
+/** What marks a way back to a portal as one the app made (withoutHandoffState): an HMAC of the portal and the path, with the auth secret. */
+async function wayBackMac(portal: string, redirect: string): Promise<string> {
+  return createHmac("sha256", (await auth.$context).secret).update(`continue\n${portal}\n${redirect}`).digest("base64url");
+}
+
+/**
+ * Whether the app's /continue may start a new handoff for `portal` and `redirect` on its own: only for a way back it made
+ * itself (`mac`), never for any link someone crafts, since a portal's address can be its team's own domain or site.
+ */
+export async function isOwnWayBack(portal: string, redirect: string, mac: unknown): Promise<boolean> {
+  if (typeof mac !== "string") {
+    return false;
+  }
+  const given = Buffer.from(mac);
+  const wanted = Buffer.from(await wayBackMac(portal, redirect));
+  return given.length === wanted.length && timingSafeEqual(given, wanted);
+}
+
 /**
  * A verification link is opened later, maybe much later: its way back (callbackURL) mustn't carry a "Continue as"
  * handoff's state, used once and kept 10 minutes (lib/portal-handoff.ts). A sign-up from a portal has one (its `next` is
- * the app's /continue); without it, /continue starts a new handoff from the portal.
+ * the app's /continue); in its place goes the app's MAC (isOwnWayBack), with which /continue starts a new handoff.
  */
-function withoutHandoffState(link: string): string {
+async function withoutHandoffState(link: string): Promise<string> {
   const url = new URL(link);
   const back = url.searchParams.get("callbackURL");
   if (back?.startsWith("/continue?")) {
     const callback = new URL(back, url);
     callback.searchParams.delete("state");
+    const portal = callback.searchParams.get("portal");
+    if (portal) {
+      callback.searchParams.set("mac", await wayBackMac(portal, callback.searchParams.get("redirect") ?? ""));
+    }
     url.searchParams.set("callbackURL", `${callback.pathname}${callback.search}`);
   }
   return url.toString();
@@ -208,7 +232,7 @@ export const auth = betterAuth({
     expiresIn: 24 * 60 * 60,
     sendVerificationEmail: async ({ user, url }, request) => {
       try {
-        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: withoutHandoffState(url) }) });
+        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url: await withoutHandoffState(url) }) });
       } catch (error) {
         log.error("Sending the verification email failed", { error });
         // A failed email mustn't fail a sign-up (it can be sent again), but asking
