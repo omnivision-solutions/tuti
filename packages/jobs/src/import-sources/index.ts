@@ -18,6 +18,7 @@ import { featurebaseSource } from "./featurebase";
 import { intercomSource } from "./intercom";
 import { ferndeskSource } from "./ferndesk";
 import { websiteSource } from "./website";
+import { frillSource } from "./frill";
 
 /**
  * How the import's part jobs read a source (packages/jobs/src/import-*.ts): each a page at a time (`cursor` null: the
@@ -98,4 +99,5 @@ export const IMPORT_SOURCES: Record<ImportSource, ImportSourceDefinition> = {
   FERNDESK: ferndeskSource,
   CANNY: cannySource,
   WEBSITE: websiteSource,
+  FRILL: frillSource,
 };

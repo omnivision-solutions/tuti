@@ -2523,6 +2523,7 @@ enum ImportSource {
   CANNY
   /// A public help center, crawled from its address (packages/jobs import-sources/website.ts).
   WEBSITE
+  FRILL
 }
 
 enum ImportState {
@@ -2548,6 +2549,9 @@ model DataImport {
   /// Whether the help center's articles published in the source come published, else as drafts: a source that can't
   /// say who may read each one asks (apps/web lib/import-parts.ts `askPublish`); the others bring them as they were.
   publishArticles Boolean  @default(true)
+  /// Whether feedback comes as it was, else onto Private boards, each post Private: a source that can't say who may see
+  /// each post asks (apps/web lib/import-parts.ts `askPostVisibility`); the others bring them as they were.
+  publicPosts     Boolean  @default(true)
   state       ImportState  @default(RUNNING)
   /// The step under way (packages/jobs/src/imports.ts STEPS) and where it got to in it (the source's cursor; null: its first page).
   step        String       @default("")

@@ -160,6 +160,26 @@ export const IMPORT_SOURCES = {
       help: "In Canny, Settings → API. It's kept only while the import runs.",
     },
   },
+  frill: {
+    name: "Frill",
+    description: "Bring your users, ideas and announcements across with an API key.",
+    parts: ["contacts", "feedback", "changelog", "avatars"],
+    // Its API gives followers no custom fields or company, doesn't say which boards or ideas are private, and calls posts ideas
+    // and its changelog announcements.
+    askPostVisibility: true,
+    partDescriptions: {
+      contacts: "Your Frill users, with their names and email addresses, as Users.",
+      feedback:
+        "Your ideas, with their statuses, votes, comments and images, in one board; the team's notes as notes. Bugs come as Private; ideas waiting for approval, rejected or archived stay out.",
+      changelog:
+        "Your announcements, published at their dates (drafts and scheduled ones as drafts), with their images; categories like New, Improved and Fixed become tags, and each is linked to the ideas it shipped (a published one only to those already completed) when Feedback comes in with it or before. Nothing is emailed.",
+    },
+    credential: {
+      kind: "key",
+      keysUrl: "https://app.frill.co/settings/company",
+      help: "In Frill, Settings → Company. It's kept only while the import runs.",
+    },
+  },
   website: {
     name: "your help center",
     description: "GitBook, Docusaurus, Intercom, Zendesk or your own: its articles come across from its address, no key needed.",
@@ -183,6 +203,8 @@ export type ImportSourceInfo = {
   partDescriptions?: Partial<Record<ImportPart, string>>;
   /** Its API doesn't say who may read each article: picking the help center asks whether its published ones come published or as drafts. */
   askPublish?: true;
+  /** Its API doesn't say who may see each post: picking Feedback asks whether its posts come onto a Public board or a Private one. */
+  askPostVisibility?: true;
   credential: { kind: "key"; keysUrl: string; help: string } | { kind: "url"; help: string };
 };
 export type ImportSourceKey = keyof typeof IMPORT_SOURCES;

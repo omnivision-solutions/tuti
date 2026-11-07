@@ -148,8 +148,10 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
       if (same) {
         id = same.id;
         await tx.board.update({ where: { id }, data: words });
-        // Only their author's in Featurebase: Private here too, unless the team chose already (Private or Team only).
-        madePrivate &&= (await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } })).count > 0;
+        // Only their author's in Featurebase: Private here too, unless the team chose already (Private or Team only). Brought
+        // Private by the team's choice (postsPage), only a board of theirs still untouched: its posts come Private anyway.
+        const untouched = job.publicPosts || (await tx.post.count({ where: { boardId: id, sample: false } })) === 0;
+        madePrivate &&= untouched && (await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } })).count > 0;
       } else {
         // No room on the plan: brought turned off, for an upgrade to turn on.
         const off = !spare && limit !== null && existing.filter((b) => !b.off).length >= limit;
@@ -170,7 +172,9 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
               update: { boardId: spare.id },
             });
           }
-          await tx.board.update({ where: { id: spare.id }, data: { name, slug, ...words, ...boardVisibility(board) } });
+          await tx.board.update({ where: { id: spare.id }, data: { name, slug, ...words } });
+          // Private only from Public, as a board of the same name: one the team keeps to itself (Team only) stays so.
+          madePrivate &&= (await tx.board.updateMany({ where: { id: spare.id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } })).count > 0;
           Object.assign(spare, { name, slug });
           id = spare.id;
           spare = undefined;
@@ -187,9 +191,10 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
       if (madePrivate) {
         await remember(tx, job, "board-made-private", board.id, id);
       }
-    } else if (!folded && boardVisibility(board).postVisibility && !(await recorded(tx, job, "board-made-private", [board.id])).size) {
+    } else if (job.publicPosts && !folded && boardVisibility(board).postVisibility && !(await recorded(tx, job, "board-made-private", [board.id])).size) {
       // Brought by an import from before author-only boards came Private: made so now, once (a board the team made Public
-      // again since stays so), if it's still Public.
+      // again since stays so), if it's still Public. Not for the team's choice of Private (postsPage): that's the posts
+      // this import brings, never a board an earlier import made.
       const { count: changed } = await tx.board.updateMany({ where: { id, postVisibility: "PUBLIC" }, data: { postVisibility: "PRIVATE" } });
       if (changed > 0) {
         await tx.importedRecord.createMany({ data: [{ projectId: job.projectId, source: job.source, kind: "board-made-private", externalId: board.id, localId: id }], skipDuplicates: true });
@@ -292,7 +297,9 @@ type PostsAt = { page: string | null; after: { id: string; createdAt: string } |
 async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = FEEDBACK_PAGE.now();
   const at = cursor ? (JSON.parse(cursor) as PostsAt) : { page: null, after: null };
-  const boards = await job.read.boards!();
+  // Brought Private (the team's choice, for a source that can't say who saw each post): each board as one whose posts
+  // are only their author's, so the boards' rules make it Private and its posts with it.
+  const boards = (await job.read.boards!()).map((board) => (job.publicPosts ? board : { ...board, postDefaults: { ...board.postDefaults, visibility: "authorOnly" as const } }));
   const { items, next } = await job.read.posts!(at.page);
   const byId = new Map(boards.map((board) => [board.id, board]));
   // After the last one done; one gone since (merged, deleted), after where it was by date.
