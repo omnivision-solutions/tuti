@@ -168,6 +168,8 @@ async function withoutSessionBoundElsewhere(ctx: Parameters<Parameters<typeof cr
   return { context: { headers } };
 }
 
+const TRUSTED_IP_HEADER = process.env.TRUSTED_IP_HEADER?.trim();
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // One deployment serves the app host and every portal host. Each host gets its
@@ -197,6 +199,11 @@ export const auth = betterAuth({
     // Behind a proxy (Cloudflare tunnel / load balancer) the original host and
     // protocol arrive in x-forwarded-* headers.
     trustedProxyHeaders: true,
+    // Who a request is from, for Better Auth's own limits (password sign-in, sign-up, verification emails): the header
+    // the proxy sets, as for the app's own limits (server/email-link-limits.ts). Its default, X-Forwarded-For, is
+    // whatever the visitor sends, or, when a proxy appends to it, one bucket everyone shares.
+    // Without it (README), X-Forwarded-For stays.
+    ...(TRUSTED_IP_HEADER ? { ipAddress: { ipAddressHeaders: [TRUSTED_IP_HEADER] } } : {}),
   },
   emailAndPassword: {
     enabled: true,
