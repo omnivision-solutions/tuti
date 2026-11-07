@@ -73,20 +73,31 @@ describe("a project keeps at least one owner", () => {
   test("while something else holds the project past the wait, nothing changes and they're told to try again", async () => {
     const second = await addMember(project.id, "OWNER");
     const real = prisma.$transaction.bind(prisma);
-    // Something else (an import's page, say) holds the project's lock for 2 s.
-    const { promise: locked, resolve } = Promise.withResolvers<void>();
+    // Something else (an import's page, say) holds the project's lock until the change's wait is over. Postgres doesn't
+    // give up on a query waiting for a lock: the change only hears it expired once the lock is let go.
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
     const holding = real(async (tx) => {
       await lockProject(tx, project.id);
-      resolve();
-      await new Promise((done) => setTimeout(done, 2000));
-    }, { timeout: 10_000 });
-    await locked;
+      locked.resolve();
+      await release.promise;
+    }, { timeout: 15_000 });
+    await locked.promise;
     // The wait cut to half a second (it's a minute).
     const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((fn: never, options?: object) => real(fn, { ...options, timeout: 500 })) as never);
     onTestFinished(() => spy.mockRestore());
     actAs(owner);
-    expect(await changeTeamRole(project.slug, second.memberId, "ADMIN")).toEqual({ error: "Something else is changing this project right now. Try again in a minute." });
+    const change = changeTeamRole(project.slug, second.memberId, "ADMIN");
+    // It's waiting for the lock (so its transaction has begun); past its half second from now, let go.
+    await vi.waitFor(async () => {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`SELECT count(*)::int AS waiting FROM pg_locks WHERE NOT granted`;
+      expect(waiting).toBeGreaterThan(0);
+    }, { timeout: 10_000, interval: 50 });
+    await new Promise((done) => setTimeout(done, 600));
+    release.resolve();
+    const result = await change;
     await holding;
+    expect(result).toEqual({ error: "Something else is changing this project right now. Try again in a minute." });
     expect(await roleOf(second.memberId)).toBe("OWNER");
   }, 20_000);
 
