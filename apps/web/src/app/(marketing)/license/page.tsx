@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { BADGE_PRICE, licenseBilling } from "@/lib/plans";
-import { isCloudInstallation } from "@/server/license";
+import { isCloudInstallation, LICENSE_CLAIM } from "@/server/license";
 import { buyLicense } from "@/server/license-checkout";
 import { LICENSE_ID, licensePrice } from "@/server/license-sales";
 import { licensePrivateKey } from "@/server/license-server";
@@ -34,7 +34,7 @@ export default async function LicensePage(props: PageProps<"/license">) {
     typeof project !== "string" ||
     !LICENSE_ID.test(installation) ||
     !LICENSE_ID.test(project) ||
-    (claim !== undefined && (typeof claim !== "string" || !LICENSE_ID.test(claim)))
+    (claim !== undefined && (typeof claim !== "string" || !LICENSE_CLAIM.test(claim)))
   ) {
     return (
       <EmptyState

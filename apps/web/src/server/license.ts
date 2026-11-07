@@ -30,6 +30,9 @@ export async function isCloudInstallation(id: string): Promise<boolean> {
   return plansEnabled() && id === (await installationId());
 }
 
+/** A claim as licenseClaimHash makes it (a SHA-256, base64url): one cut short or edited could never be matched. */
+export const LICENSE_CLAIM = /^[A-Za-z0-9_-]{43}$/;
+
 /** The hash of an installation's licenseSecret, which its buy links carry and its first claim must match. */
 export function licenseClaimHash(secret: string): string {
   return createHash("sha256").update(secret).digest("base64url");

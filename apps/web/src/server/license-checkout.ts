@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
 import { redirect } from "next/navigation";
 
-import { isCloudInstallation } from "./license";
+import { isCloudInstallation, LICENSE_CLAIM } from "./license";
 import { LICENSE_ID, licensePage, licensePrice } from "./license-sales";
 import { createSubscriptionCheckout } from "./stripe";
 
@@ -41,7 +41,7 @@ export async function buyLicense(form: FormData): Promise<void> {
   const price = licensePrice(form.get("interval") === "year" ? "year" : "month");
   // Back to the page with what the link said; a link from an older release has no claim.
   const page = (extra?: Record<string, string>) => licensePage({ installation, project, ...(claim && { claim }) }, extra).toString();
-  if (!price || !LICENSE_ID.test(installation) || !LICENSE_ID.test(project) || (claim && !LICENSE_ID.test(claim)) || (await isCloudInstallation(installation))) {
+  if (!price || !LICENSE_ID.test(installation) || !LICENSE_ID.test(project) || (claim && !LICENSE_CLAIM.test(claim)) || (await isCloudInstallation(installation))) {
     redirect(page());
   }
   const license = await prisma.license.findUnique({ where: { installationId_projectId: { installationId: installation, projectId: project } } });

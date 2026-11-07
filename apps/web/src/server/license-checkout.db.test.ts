@@ -187,15 +187,18 @@ test("cancelled, then bought again from a link without a claim (an older release
   expect(await claim(secret)).toMatchObject({ key: expect.any(String) });
 });
 
-test("a link whose claim isn't one is sent back to Tuti, not round to the same buy form again", async () => {
-  const sessions = stripe.sessions.length;
-  const back = new URL(await buy("month", "not a claim"));
-  expect(stripe.sessions.length).toBe(sessions);
-  const page = (await LicensePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/license">)) as React.ReactElement<
-    React.ComponentProps<typeof EmptyState>
-  >;
-  expect(page.type).toBe(EmptyState);
-  expect(page.props.title).toBe("Open this page from your Tuti");
+test("a link whose claim isn't one (not a hash, or cut short) is sent back to Tuti, not round to the same buy form again", async () => {
+  // Paid with a claim no installation can match, the licence could never be claimed.
+  for (const claim of ["not a claim", licenseClaimHash(randomUUID()).slice(0, -1)]) {
+    const sessions = stripe.sessions.length;
+    const back = new URL(await buy("month", claim));
+    expect(stripe.sessions.length).toBe(sessions);
+    const page = (await LicensePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/license">)) as React.ReactElement<
+      React.ComponentProps<typeof EmptyState>
+    >;
+    expect(page.type).toBe(EmptyState);
+    expect(page.props.title).toBe("Open this page from your Tuti");
+  }
 });
 
 test("Tuti's cloud sells and renews no licence for itself: hiding the badge there is the add-on on a paid plan", async () => {
