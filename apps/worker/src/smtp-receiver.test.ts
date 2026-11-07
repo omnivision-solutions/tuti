@@ -12,6 +12,7 @@ import {
   checkAuth,
   IDLE_TIMEOUT_MS,
   LOOKUP_TIMEOUT_MS,
+  PROBE_TIMEOUT_MS,
   MAX_CLIENTS,
   MAX_DKIM_SIGNATURES,
   MAX_HEADER_BYTES,
@@ -278,7 +279,7 @@ const slowKeys = (lookups: string[]) => (name: string, type: string) => {
     : resolver(name, type);
 };
 
-test("checks that run past their deadline leave the message untaken, try again later (451), and its place is freed", async () => {
+test("checks that run past their deadline, our DNS answering, can't pass DMARC, and the message's place is freed", async () => {
   const lookups: string[] = [];
   const { open, sendRaw, posts } = await receiver([], { maxInFlight: 1, resolver: slowKeys(lookups) });
   const session = await open();
@@ -288,22 +289,42 @@ test("checks that run past their deadline leave the message untaken, try again l
   session.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
   // The deadline starts with the checks: move the clock only once they're under way.
   await vi.waitFor(() => expect(lookups).not.toEqual([]));
-  await elapse(AUTH_TIMEOUT_MS + 1_000);
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  vi.useRealTimers();
+  await session.reply("250");
+  session.end();
+  // The probe of our own name was answered (no MX there): the delay was the sender's.
+  expect(lookups).toContain("support.test");
+  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=none dkim=none dmarc=fail");
+  await sendRaw("sam@example.org", ["support@b.support.test"], signed(0));
+  expect(posts).toHaveLength(2);
+});
+
+test("checks that run past their deadline because our own DNS doesn't answer leave the message untaken: try again later (451)", async () => {
+  const lookups: string[] = [];
+  const slow = slowKeys(lookups);
+  // Nothing answers for our own name either.
+  const down = (name: string, type: string) => (name === "support.test" ? new Promise<never>(() => {}) : slow(name, type));
+  const { open, posts } = await receiver([], { resolver: down });
+  const session = await open();
+  await startMessage(session);
+  fakeCheckTimers();
+  session.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  await vi.waitFor(() => expect(lookups).not.toEqual([]));
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
   vi.useRealTimers();
   await session.reply("451");
   session.end();
   expect(posts).toEqual([]);
-  await sendRaw("sam@example.org", ["support@b.support.test"], signed(0));
-  expect(posts).toHaveLength(1);
 });
 
-const from127 = { ip: "127.0.0.1", helo: "mail.example.org", serverName: "mx.support.test" };
+const from127 = { ip: "127.0.0.1", helo: "mail.example.org", serverName: "mx.support.test", probe: "support.test" };
 
-test("checks whose DNS answers just inside each lookup's limit still end by their deadline, unfinished", async () => {
+test("checks whose DNS answers just inside each lookup's limit still end by their deadline, and can't pass DMARC", async () => {
   fakeCheckTimers();
   const result = checkAuth(Buffer.from(signed(MAX_DKIM_SIGNATURES)), { ...from127, sender: "sam@example.org", resolver: slowKeys([]) });
-  await elapse(AUTH_TIMEOUT_MS + 1_000);
-  await expect(result).resolves.toBeNull();
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  await expect(result).resolves.toEqual({ spf: "none", dkim: "none", dmarc: "fail" });
 });
 
 test("a DKIM key lookup that never answers gives up on its own, and SPF and DMARC are still checked", async () => {

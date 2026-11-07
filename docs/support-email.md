@@ -74,10 +74,10 @@ The worker can receive the mail itself: an SMTP server for the support domain's 
   session 10 minutes at most, closed after a minute without a message or 3 minutes into one still
   arriving; 10 messages being checked and delivered at once, 2 from one network; 250 MB of mail held
   at once, arriving or being delivered; 20 recipients per message; SPF, DKIM and DMARC checked
-  within 30 seconds (mail whose checks take longer, its DNS or yours too slow, isn't taken yet: its
-  sender tries again later); mail with more than 10 DKIM signatures or a header over 1 MB is taken as
-  failing DMARC (spam). Past them, senders are told to come back later or to send the rest
-  separately, as SMTP expects.
+  within 30 seconds: mail whose checks take longer is taken as failing DMARC (spam), unless the
+  worker's own DNS isn't answering, when its sender is told to try again later; mail with more than
+  10 DKIM signatures or a header over 1 MB is taken as failing DMARC too. Past them, senders are
+  told to come back later or to send the rest separately, as SMTP expects.
 
 ### Amazon SES (tuti.so)
 

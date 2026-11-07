@@ -49,11 +49,12 @@ export const IDLE_TIMEOUT_MS = 60_000;
 export const ARRIVAL_TIMEOUT_MS = 3 * 60_000;
 /**
  * How long one DNS lookup for the checks may take (past it, that check can't tell: a temperror), and
- * all of them: past it, the message isn't taken and its sender tries again later (451), whether the
- * delay was the sender's DNS or ours.
+ * all of them. Past that, one lookup we know answers (PROBE_TIMEOUT_MS) tells whose DNS was slow: the
+ * sender's, and the message can't pass DMARC (spam); ours, and the sender tries again later (451).
  */
 export const LOOKUP_TIMEOUT_MS = 5_000;
 export const AUTH_TIMEOUT_MS = 30_000;
+export const PROBE_TIMEOUT_MS = 3_000;
 /** DKIM signatures checked per message (each is a DNS lookup): a message with more isn't checked, and can't pass DMARC (spam). */
 export const MAX_DKIM_SIGNATURES = 10;
 /** The largest header the checks read: a message whose header runs longer isn't checked, and can't pass DMARC (spam). */
@@ -138,7 +139,24 @@ function dkimSignatures(raw: Buffer) {
 
 const UNVERIFIED = { spf: "none", dkim: "none", dmarc: "fail" };
 
-/** SPF, DKIM and DMARC as the app reads them (`spf=pass dkim=none dmarc=fail`), or null if they didn't finish in time. */
+/**
+ * Whether our DNS answers: a lookup of `name` (the support domain's MX, a name the sender doesn't
+ * pick) gives an answer in time, records or "none there" alike. A timeout or a server failure means it doesn't.
+ */
+async function dnsAnswers(resolver: Resolver, name: string) {
+  try {
+    await Promise.race([resolver(name, "MX"), timeout(PROBE_TIMEOUT_MS)]);
+    return true;
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    return code === "ENOTFOUND" || code === "ENODATA";
+  }
+}
+
+/**
+ * SPF, DKIM and DMARC as the app reads them (`spf=pass dkim=none dmarc=fail`). Null if they didn't
+ * finish in time because our own DNS doesn't answer (`probe`, a name it should always answer for).
+ */
 export async function checkAuth(
   raw: Buffer,
   {
@@ -146,8 +164,9 @@ export async function checkAuth(
     helo,
     sender,
     serverName,
+    probe,
     resolver = dns.resolve as Resolver,
-  }: { ip: string; helo: string; sender: string; serverName: string; resolver?: Resolver },
+  }: { ip: string; helo: string; sender: string; serverName: string; probe: string; resolver?: Resolver },
 ) {
   if (dkimSignatures(raw) > MAX_DKIM_SIGNATURES) {
     return UNVERIFIED;
@@ -180,7 +199,8 @@ export async function checkAuth(
     };
   } catch (error) {
     if (expired) {
-      return null;
+      // The sender's DNS, most likely (it picks the names): it can't pass DMARC (spam). Unless ours is down.
+      return (await dnsAnswers(resolver, probe)) ? UNVERIFIED : null;
     }
     // A check that couldn't run proves nothing: as if nothing was checked (nothing joins a conversation).
     log.warn("Checking a received email's SPF, DKIM and DMARC failed", { error: String(error) });
@@ -343,11 +363,12 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       helo: session.hostNameAppearsAs,
       sender: session.envelope.mailFrom ? session.envelope.mailFrom.address : "",
       serverName,
+      probe: domain,
       ...(options.resolver && { resolver: options.resolver }),
     });
     if (!results) {
-      // DNS too slow to tell, the sender's or ours: not taken, and the sender tries again later.
-      log.warn("Checking a received email's SPF, DKIM and DMARC took too long: the sender will try again later");
+      // Our DNS doesn't answer: not taken, and the sender tries again later.
+      log.warn("Checking a received email's SPF, DKIM and DMARC took too long and this server's DNS isn't answering: the sender will try again later");
       return 451;
     }
     const auth = `spf=${results.spf} dkim=${results.dkim} dmarc=${results.dmarc}`;
