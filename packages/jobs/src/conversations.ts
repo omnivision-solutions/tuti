@@ -183,13 +183,31 @@ export async function sendConversationReplies(_: JobInput<"sendConversationRepli
   }
   // New projects past their daily cap wait for tomorrow, and aren't picked, so they can't crowd out the rest.
   const capped = await cappedProjects(now);
-  const due = await prisma.conversationMessage.findMany({
-    where: { ...unsent(now), ...(capped.length > 0 && { projectId: { notIn: capped } }) },
-    distinct: ["conversationId"],
-    orderBy: { createdAt: "asc" },
-    select: { conversationId: true, projectId: true },
-    take: 100,
-  });
+  // Fair across projects: each project's longest-waiting conversation first, then each one's second, and so on, so one
+  // project's backlog can't hold up everyone else's replies. Mirrors `unsent` (sendReplies' claim checks it again).
+  const due = await prisma.$queryRaw<{ conversationId: string; projectId: string }[]>`
+    SELECT "conversationId", "projectId" FROM (
+      SELECT m."conversationId", m."projectId", min(m."createdAt") AS "first",
+        row_number() OVER (PARTITION BY m."projectId" ORDER BY min(m."createdAt")) AS "turn"
+      FROM "conversation_message" m
+      JOIN "conversation" c ON c."id" = m."conversationId"
+      JOIN "project" p ON p."id" = m."projectId"
+      WHERE m."author" = 'TEAM'
+        AND NOT m."note"
+        AND m."seenAt" IS NULL
+        AND m."importId" IS NULL
+        AND m."emailStatus" IS NULL
+        AND m."emailAttempts" < ${MAX_TRIES}
+        AND m."createdAt" <= ${new Date(now.getTime() - EMAIL_UNSEEN_AFTER_MS)}
+        AND (m."emailClaimedAt" IS NULL OR m."emailClaimedAt" < ${new Date(now.getTime() - CLAIM_FOR_MS)})
+        AND NOT c."spam"
+        AND NOT c."sample"
+        AND (${!plansEnabled()} OR p."emailPausedAt" IS NULL)
+        AND m."projectId" <> ALL(${capped})
+      GROUP BY m."conversationId", m."projectId"
+    ) d
+    ORDER BY "turn", "first"
+    LIMIT 100`;
   let sent = 0;
   for (const { conversationId, projectId } of due) {
     // A send that then doesn't happen keeps its slot: the cap errs low.

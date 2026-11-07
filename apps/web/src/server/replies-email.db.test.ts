@@ -74,6 +74,31 @@ test("a reply they haven't seen a minute on is emailed from the project's addres
   expect(emailsTo(kim)).toHaveLength(1);
 });
 
+test("one project's backlog doesn't hold up another's replies: each project gets a turn in every run", async () => {
+  // A has more waiting replies than one run sends (100), all older than B's one.
+  const a = await setup();
+  await call(replyToConversation, a.team, { number: 1, body: "Looking into it." });
+  const { id: _id, replyToken: _token, number: _number, ...conversation } = await prisma.conversation.findFirstOrThrow({ where: { projectId: a.project.id } });
+  await prisma.conversation.createMany({ data: Array.from({ length: 100 }, (_, i) => ({ ...conversation, number: i + 2 })) });
+  const backlog = await prisma.conversation.findMany({ where: { projectId: a.project.id, number: { gt: 1 } }, select: { id: true } });
+  await prisma.conversationMessage.createMany({
+    data: backlog.map(({ id }) => ({ projectId: a.project.id, conversationId: id, author: "TEAM" as const, channel: "APP" as const, body: "Looking into it." })),
+  });
+  await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '10 minutes' WHERE "projectId" = ${a.project.id}`;
+
+  const b = await setup();
+  await call(replyToConversation, b.team, { number: 1, body: "Fixed now." });
+  await aMinuteOn(b.project.id);
+
+  await run();
+  expect(emailsTo(b.kim)).toHaveLength(1);
+  expect(emailsTo(a.kim)).toHaveLength(99);
+  // A's two newest wait for the next run.
+  expect(await prisma.conversationMessage.count({ where: { projectId: a.project.id, author: "TEAM", emailStatus: null } })).toBe(2);
+  await run();
+  expect(emailsTo(a.kim)).toHaveLength(101);
+}, 60_000);
+
 test("their reply naming our Message-ID joins the conversation, even to the plain address", async () => {
   const { project, address, team, kim } = await setup();
   await call(replyToConversation, team, { number: 1, body: "Found it?" });
