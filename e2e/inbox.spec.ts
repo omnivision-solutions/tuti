@@ -353,7 +353,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(/Back in [23] hours · Can't export to CSV/);
   // Waiting on Sam, not the team: its age is since the latest message, and nothing says it needs a reply.
   await expect(owner.getByRole("main").getByRole("listitem").locator("time")).toHaveAttribute("title", /^Latest message \d+ minutes? ago$/);
-  await expect(owner.getByRole("main").getByRole("listitem").getByText("Needs reply")).toHaveCount(0);
+  await expect(owner.getByRole("main").getByRole("listitem").getByRole("img", { name: "Needs reply" })).toHaveCount(0);
   await checkpoint(owner, "inbox-snoozed");
   await owner.goto(`/app/${slug}/inbox/1`);
   await owner.getByRole("button", { name: /^Snoozed till / }).click();
@@ -476,7 +476,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Do you have a discount for nonprofits?");
   // Still open, but not a reply the team owes.
-  await expect(rows.getByText(/^Needs reply/)).toHaveCount(0);
+  await expect(rows.getByRole("img", { name: "Needs reply" })).toHaveCount(0);
 
   // A view name the page doesn't know (even one every object has) is the Open view, of this project only:
   // another project's open conversation stays out of it.
