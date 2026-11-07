@@ -204,3 +204,19 @@ test("statuses: Nolt's own by their type (completed → Completed; archived, mer
     ["Quarterly planning", "OPEN"],
   ]);
 });
+
+test("two Nolt boards of the same name, the first still off, are two boards, each with its own posts", async () => {
+  await importParts(["contacts", "feedback"]);
+  // A second board's key, its board named as the first: the first was never turned on.
+  Object.assign(fake.fixtures, { board: { id: "nb2", name: "Acme Feedback" } });
+  for (const post of fake.fixtures.posts) {
+    post.id = `two-${post.id}`;
+    post.title = `${String(post.title)} (two)`;
+    post.comments.forEach((comment) => (comment.id = `two-${String(comment.id)}`));
+  }
+  await importParts(["contacts", "feedback"]);
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: [{ createdAt: "asc" }, { slug: "asc" }], select: { name: true, off: true, posts: { orderBy: { number: "asc" }, select: { title: true } } } })).toEqual([
+    { name: "Acme Feedback", off: true, posts: ["Dark mode", "CSV export", "Keyboard shortcuts", "Quarterly planning"].map((title) => ({ title })) },
+    { name: "Acme Feedback", off: true, posts: ["Dark mode", "CSV export", "Keyboard shortcuts", "Quarterly planning"].map((title) => ({ title: `${title} (two)` })) },
+  ]);
+});

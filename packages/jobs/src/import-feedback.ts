@@ -143,9 +143,10 @@ async function importBoards(tx: Tx, job: ImportJob, boards: FeaturebaseBoard[], 
       here = false;
       const name = board.name.trim().slice(0, 60) || "Feedback";
       let same = existing.find((b) => sameName(b.name, name));
-      // One the source can't say who sees (`off`) never lands in a board the team has on with posts of its own: that board
-      // would go dark on the portal. It's a new board, turned off, beside it.
-      if (same && board.off && !same.off && (await tx.post.count({ where: { boardId: same.id, sample: false } })) > 0) {
+      // One the source can't say who sees (`off`) never lands in a board with posts of its own, on or off: one on would go
+      // dark on the portal, and another board's posts (another import's, still off) would be mixed in. It's a new board,
+      // turned off, beside it; only an untouched board is taken.
+      if (same && board.off && (await tx.post.count({ where: { boardId: same.id, sample: false } })) > 0) {
         same = undefined;
       }
       const words = boardWords(board);
