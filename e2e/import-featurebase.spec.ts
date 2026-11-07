@@ -178,7 +178,7 @@ test("after setup, Settings → Import brings what's in Featurebase across any t
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Import again" }).click();
   await expect(status).toContainText("Nothing brought across.", { timeout: 15_000 });
-  await expect(status).toContainText("3 contacts already brought across earlier");
+  await expect(status).toContainText("Skipped what was already brought across earlier.");
   await checkpoint(owner, "settings-import-again");
 });
 

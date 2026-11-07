@@ -152,7 +152,7 @@ test("imported again, nothing comes twice: not a collection, article, revision, 
   const again = await importDocs();
   // Said as what it is: nothing new, everything there from before.
   expect(again.counts).toEqual({ collections: { imported: 0, leftOut: { "already brought across earlier": 3 } }, articles: { imported: 0, leftOut: { "already brought across earlier": 4 } } });
-  expect(importSummary(again)).toBe("Nothing brought across. Left out: 3 collections already brought across earlier; 4 articles already brought across earlier.");
+  expect(importSummary(again)).toBe("Nothing brought across. Skipped what was already brought across earlier.");
   // Its own fates, marked as counted by it (the first import's marks don't stop it).
   expect(new Set((await prisma.importedRecord.findMany({ where: { projectId: project.id, kind: "article" }, select: { countedIn: true } })).map((r) => r.countedIn))).toEqual(new Set([again.id]));
   expect({ collections: await collections(), articles: await articles(), media: await prisma.media.count({ where: { projectId: project.id } }) }).toEqual(before);

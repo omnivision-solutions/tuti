@@ -66,12 +66,12 @@ test("each part's place: done before the step under way, the next one after it, 
   expect(importAt(run("running", "contacts"))).toBe("Part 2 of 5");
   // A part's later step is still that part.
   expect(states(run("running", "votes"))).toEqual(["team done", "contacts done", "feedback now", "docs next", "inbox waiting"]);
-  expect(importProgress(run("running", "votes"))[2]).toMatchObject({ step: "votes", brought: "4 posts, 1 image", leftOut: "" });
-  expect(importProgress(run("running", "docs-content"))[3]).toMatchObject({ state: "now", brought: "", leftOut: "2 images in articles too large" });
+  expect(importProgress(run("running", "votes"))[2]).toMatchObject({ step: "votes", brought: [["4", "posts"], ["1", "image"]], leftOut: [] });
+  expect(importProgress(run("running", "docs-content"))[3]).toMatchObject({ state: "now", brought: [], leftOut: ["2 images in articles too large"], leftOutCount: 2 });
   // An import from before they were counted apart, without feedback: its images are the help center's.
   const older = { state: "done", step: null, parts: ["docs"], counts: { articles: { imported: 3, leftOut: {} }, images: { imported: 0, leftOut: { "too large": 1 } } } } as never;
-  expect(importProgress(older)).toEqual([{ part: "docs", state: "done", step: null, brought: "3 articles", leftOut: "1 image too large" }]);
-  expect(importProgress(run("running", "contacts"))[0]).toMatchObject({ brought: "2 invitations", leftOut: "1 invitation for people already invited" });
+  expect(importProgress(older)).toEqual([{ part: "docs", state: "done", step: null, brought: [["3", "articles"]], leftOut: ["1 image too large"], leftOutCount: 1, skipped: 0 }]);
+  expect(importProgress(run("running", "contacts"))[0]).toMatchObject({ brought: [["2", "invitations"]], leftOut: ["1 invitation for people already invited"] });
   // Failed, where it stopped; done, all of them.
   expect(states(run("failed", "posts"))).toEqual(["team done", "contacts done", "feedback stopped", "docs waiting", "inbox waiting"]);
   expect(importAt(run("failed", "posts"))).toBeNull();
@@ -79,20 +79,20 @@ test("each part's place: done before the step under way, the next one after it, 
   // Profile pictures last, after the inbox; one from before they were a part counted them in feedback.
   const pictures = { ...(run("running", "avatars") as object), parts: ["contacts", "feedback", "inbox", "avatars"], counts: { avatars: { imported: 800, leftOut: {} } } } as never;
   expect(states(pictures)).toEqual(["contacts done", "feedback done", "inbox done", "avatars now"]);
-  expect(importProgress(pictures)[3]).toMatchObject({ brought: "800 profile pictures" });
+  expect(importProgress(pictures)[3]).toMatchObject({ brought: [["800", "profile pictures"]] });
   const before = { state: "done", step: null, parts: ["contacts", "feedback"], counts: { avatars: { imported: 2, leftOut: {} } } } as never;
-  expect(importProgress(before)[1]).toMatchObject({ part: "feedback", brought: "2 profile pictures" });
+  expect(importProgress(before)[1]).toMatchObject({ part: "feedback", brought: [["2", "profile pictures"]] });
   // One that stopped at Feedback's avatars then: where it stopped is still Feedback.
   const stopped = { state: "failed", step: "avatars", parts: ["contacts", "feedback"], counts: { contacts: { imported: 3, leftOut: {} } } } as never;
   expect(importProgress(stopped).map(({ part, state }) => `${part} ${state}`)).toEqual(["contacts done", "feedback stopped"]);
-  expect(importProgress(stopped)[0]).toMatchObject({ brought: "3 contacts" });
+  expect(importProgress(stopped)[0]).toMatchObject({ brought: [["3", "contacts"]] });
 });
 
 test("the changelog runs after feedback and says its own images, apart from feedback's and the help center's", () => {
   const counts = { images: { imported: 4, leftOut: {} }, changelogEntries: { imported: 29, leftOut: {} }, changelogImages: { imported: 6, leftOut: { "that couldn't be fetched": 1 } } };
   const run = { state: "running", step: "changelog", parts: ["docs", "changelog", "feedback", "contacts"], counts } as never;
   expect(importProgress(run).map(({ part, state }) => `${part} ${state}`)).toEqual(["contacts done", "feedback done", "changelog now", "docs next"]);
-  expect(importProgress(run)[2]).toMatchObject({ brought: "29 changelog entries, 6 images in the changelog", leftOut: "1 image in the changelog that couldn't be fetched" });
+  expect(importProgress(run)[2]).toMatchObject({ brought: [["29", "changelog entries"], ["6", "images in the changelog"]], leftOut: ["1 image in the changelog that couldn't be fetched"] });
 });
 
 test("an import in a line, as Home's card says it", () => {
@@ -116,8 +116,8 @@ test("an import in a line, as Home's card says it", () => {
     parts: ["contacts", "inbox"],
     counts: { messages: { imported: 2, leftOut: {} }, conversations: { imported: 0, leftOut: { "already brought across earlier": 3 } } },
   } as never;
-  expect(importSummary(messages)).toBe("2 new messages in conversations already here brought across. Left out: 3 conversations already brought across earlier.");
-  expect(importProgress(messages)[1]).toMatchObject({ part: "inbox", brought: "2 new messages in conversations already here" });
+  expect(importSummary(messages)).toBe("2 new messages in conversations already here brought across. Skipped what was already brought across earlier.");
+  expect(importProgress(messages)[1]).toMatchObject({ part: "inbox", brought: [["2", "new messages in conversations already here"]], leftOut: [], skipped: 3 });
   expect(importBrief(messages)).toBe("Inbox brought across.");
 });
 
