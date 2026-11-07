@@ -1,5 +1,7 @@
+import { readdir } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 
 import { fileKey, imageKey, videoKey } from "@tuti/content";
 import { htmlToContent } from "@tuti/content/html";
@@ -147,6 +149,11 @@ test("an attached document in an article is copied as a file, checked by its con
 
 test("an uploaded video in an article is copied, checked by its content, and plays from the copy", async () => {
   vi.stubEnv("MEDIA_MAX_VIDEO_MB_TEAM", "1");
+  // Streamed from a temporary file, never whole in the worker's memory, and the file gone after.
+  const puts: Record<string, string | string[] | undefined>[] = [];
+  s3.onPut = (_key, headers) => puts.push(headers);
+  const temporary = async () => (await readdir(tmpdir())).filter((name) => name.startsWith("tuti-video-"));
+  const before = await temporary();
   const result = await htmlToContent(
     "article",
     `<video src="${origin}/demo.mp4" controls></video><video><source src="${origin}/stream" type="video/mp4"></video>` +
@@ -171,6 +178,12 @@ test("an uploaded video in an article is copied, checked by its content, and pla
     { filename: "demo.mp4", status: "READY", size: MP4.length },
     { filename: "stream.mp4", status: "READY", size: MP4.length },
   ]);
+  s3.onPut = undefined;
+  expect(puts).toEqual([
+    expect.objectContaining({ "x-amz-content-sha256": "UNSIGNED-PAYLOAD", "content-length": String(MP4.length) }),
+    expect.objectContaining({ "x-amz-content-sha256": "UNSIGNED-PAYLOAD", "content-length": String(MP4.length) }),
+  ]);
+  expect(await temporary()).toEqual(before);
 });
 
 test("what can't be copied is left out with its reason, keeping its alt text, and nothing is kept for it", async () => {

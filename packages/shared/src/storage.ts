@@ -1,3 +1,7 @@
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
+
 import { AwsClient } from "aws4fetch";
 
 /**
@@ -14,6 +18,8 @@ export type MediaStorage = {
   /** The object's bytes, at most `maxBytes` of them when given (a ranged GET). */
   get(key: string, maxBytes?: number): Promise<Uint8Array>;
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
+  /** `put` of a file on disk, streamed (a video: never whole in memory). */
+  putFile(key: string, path: string, contentType: string): Promise<void>;
   /** Copies an object within the bucket (the storage does it: the bytes never pass through here), as this type. */
   copy(from: string, to: string, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
@@ -107,6 +113,15 @@ export function mediaStorage(): MediaStorage | null {
         method: "PUT",
         body: body as RequestInit["body"],
         headers: { "content-type": contentType, "cache-control": PRIVATE_CACHE },
+      });
+    },
+    async putFile(key, path, contentType) {
+      const { size } = await stat(path);
+      await send(key, {
+        method: "PUT",
+        body: Readable.toWeb(createReadStream(path)) as RequestInit["body"],
+        // A stream isn't hashed for the signature: its length is signed instead.
+        headers: { "content-type": contentType, "cache-control": PRIVATE_CACHE, "content-length": String(size), "x-amz-content-sha256": "UNSIGNED-PAYLOAD" },
       });
     },
     async copy(from, to, contentType) {

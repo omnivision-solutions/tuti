@@ -1,3 +1,7 @@
+import { mkdtemp, open, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { ImportedMedia, LeftOutReason, MediaImporter, MediaSource } from "@tuti/content/html";
 import { attachmentName, fileExtension, fileKey, isFileContent, originalKey, UPLOAD_FILE_TYPES, UPLOAD_VIDEO_TYPES, videoFormat, videoKey } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
@@ -13,6 +17,9 @@ const MAX_REDIRECTS = 3;
 const OUTSIDE_UPLOAD_LIMIT_MS = 2 * 60 * 60 * 1000;
 /** For one download, body and all: 30 seconds, or longer for a bigger limit (videos), at 1 MB a second. */
 const timeoutFor = (maxBytes: number) => Math.max(30_000, Math.round(maxBytes / 1024));
+
+/** What `download` keeps of a file it writes to disk. */
+const HEAD_BYTES = 64;
 
 type Copied = ImportedMedia | { leftOut: LeftOutReason };
 
@@ -54,7 +61,19 @@ export function mediaImporter({ projectId, uploaderId, cache = new Map() }: { pr
 /** More than processing ever keeps for one image (a 2400px WebP set and the email JPEG): its quota while it's processed. */
 const PROCESSED_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
-async function copy(projectId: string, uploaderId: string, { kind, url, name }: MediaSource): Promise<Copied & { passing?: true }> {
+/** A video goes through a temporary file (never whole in memory: the worker is every project's), deleted however it ends. */
+async function copy(projectId: string, uploaderId: string, source: MediaSource): Promise<Copied & { passing?: true }> {
+  const dir = source.kind === "video" ? await mkdtemp(join(tmpdir(), "tuti-video-")) : null;
+  try {
+    return await copyThrough(projectId, uploaderId, source, dir && join(dir, "video"));
+  } finally {
+    if (dir) {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+}
+
+async function copyThrough(projectId: string, uploaderId: string, { kind, url, name }: MediaSource, path: string | null): Promise<Copied & { passing?: true }> {
   const storage = mediaStorage();
   if (!storage) {
     return { leftOut: "unsupported" };
@@ -65,7 +84,8 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
     return { leftOut: "type" };
   }
   const limit = kind === "image" ? "MEDIA_MAX_IMPORT_IMAGE_MB" : kind === "video" ? "MEDIA_MAX_VIDEO_MB_TEAM" : "MEDIA_MAX_FILE_MB_TEAM";
-  const body = await download(url, mediaLimit(limit));
+  // With `path`, the body is only its first bytes; the whole of it is in the file.
+  const body = await download(url, mediaLimit(limit), path ?? undefined);
   if (typeof body === "string") {
     return { leftOut: body };
   }
@@ -85,7 +105,8 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
 
   // An image counts at most PROCESSED_IMAGE_MAX_BYTES until it's re-encoded: what's kept (WebP sizes and the email
   // JPEG, set by processing) is always well under it, so a large original doesn't use up quota it won't keep.
-  const size = kind === "image" ? Math.min(body.byteLength, PROCESSED_IMAGE_MAX_BYTES) : body.byteLength;
+  // A video's whole size is its file's (the body is only its first bytes).
+  const size = path ? (await stat(path)).size : kind === "image" ? Math.min(body.byteLength, PROCESSED_IMAGE_MAX_BYTES) : body.byteLength;
   const media = await prisma.$transaction(async (tx) => {
     // As createUpload (apps/web server/media.ts): one at a time per project, so nothing overruns the quota together.
     await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
@@ -115,8 +136,8 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
       if (!processed.ready) {
         return await leaveOut("type");
       }
-    } else if (kind === "video") {
-      await storage.put(videoKey(media.id), body, UPLOAD_VIDEO_TYPES[extension]!);
+    } else if (path) {
+      await storage.putFile(videoKey(media.id), path, UPLOAD_VIDEO_TYPES[extension]!);
     } else {
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     }
@@ -131,8 +152,11 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
   return { mediaId: id, ...ready };
 }
 
-/** The file at `url`, or why not: refused, unreachable, or more than `maxBytes`. */
-export async function download(url: string, maxBytes: number): Promise<Uint8Array | LeftOutReason> {
+/**
+ * The file at `url`, or why not: refused, unreachable, or more than `maxBytes`. With `to`, it's written to that file as it
+ * arrives, and only its first bytes are returned (enough to tell what it is).
+ */
+export async function download(url: string, maxBytes: number, to?: string): Promise<Uint8Array | LeftOutReason> {
   const signal = AbortSignal.timeout(timeoutFor(maxBytes));
   try {
     for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
@@ -159,14 +183,24 @@ export async function download(url: string, maxBytes: number): Promise<Uint8Arra
       }
       const chunks: Uint8Array[] = [];
       let size = 0;
-      for await (const chunk of response.body) {
-        size += chunk.byteLength;
-        if (size > maxBytes) {
-          return "size";
+      const file = to ? await open(to, "w") : null;
+      try {
+        for await (const chunk of response.body) {
+          size += chunk.byteLength;
+          if (size > maxBytes) {
+            return "size";
+          }
+          if (file) {
+            await file.write(chunk);
+          }
+          if (!file || size - chunk.byteLength < HEAD_BYTES) {
+            chunks.push(chunk);
+          }
         }
-        chunks.push(chunk);
+      } finally {
+        await file?.close();
       }
-      return Buffer.concat(chunks);
+      return file ? Buffer.concat(chunks).subarray(0, HEAD_BYTES) : Buffer.concat(chunks);
     }
   } catch {
     // Refused (a private address, not https), not found, too slow.
