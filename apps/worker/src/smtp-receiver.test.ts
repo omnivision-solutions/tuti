@@ -8,6 +8,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import {
   ARRIVAL_TIMEOUT_MS,
+  ARRIVAL_WINDOW_MS,
   AUTH_TIMEOUT_MS,
   checkAuth,
   IDLE_TIMEOUT_MS,
@@ -19,6 +20,7 @@ import {
   MAX_IN_FLIGHT,
   MAX_IN_FLIGHT_PER_SOURCE,
   MAX_PER_SOURCE,
+  MIN_ARRIVAL_BYTES,
   receiverFromEnv,
   sourceOf,
   startSmtpReceiver,
@@ -73,6 +75,7 @@ type Limits = {
   maxPerSource?: number;
   maxInFlight?: number;
   maxBufferedBytes?: number;
+  maxBufferedBytesPerSource?: number;
   sessionLifetimeMs?: number;
   resolver?: (name: string, type: string) => Promise<unknown>;
 };
@@ -293,8 +296,8 @@ test("checks that run past their deadline, our DNS answering, can't pass DMARC, 
   vi.useRealTimers();
   await session.reply("250");
   session.end();
-  // The probe of our own name was answered (no MX there): the delay was the sender's.
-  expect(lookups).toContain("support.test");
+  // The probe, a new name under our own domain, was answered (no such name): the delay was the sender's.
+  expect(lookups).toContainEqual(expect.stringMatching(/^[0-9a-f]{16}\.probe\.support\.test$/));
   expect(posts[0]!.headers["tuti-auth"]).toBe("spf=none dkim=none dmarc=fail");
   await sendRaw("sam@example.org", ["support@b.support.test"], signed(0));
   expect(posts).toHaveLength(2);
@@ -303,8 +306,8 @@ test("checks that run past their deadline, our DNS answering, can't pass DMARC, 
 test("checks that run past their deadline because our own DNS doesn't answer leave the message untaken: try again later (451)", async () => {
   const lookups: string[] = [];
   const slow = slowKeys(lookups);
-  // Nothing answers for our own name either.
-  const down = (name: string, type: string) => (name === "support.test" ? new Promise<never>(() => {}) : slow(name, type));
+  // Nothing answers for a new name under our own domain either.
+  const down = (name: string, type: string) => (name.endsWith(".probe.support.test") ? new Promise<never>(() => {}) : slow(name, type));
   const { open, posts } = await receiver([], { resolver: down });
   const session = await open();
   await startMessage(session);
@@ -322,9 +325,16 @@ const from127 = { ip: "127.0.0.1", helo: "mail.example.org", serverName: "mx.sup
 
 test("checks whose DNS answers just inside each lookup's limit still end by their deadline, and can't pass DMARC", async () => {
   fakeCheckTimers();
-  const result = checkAuth(Buffer.from(signed(MAX_DKIM_SIGNATURES)), { ...from127, sender: "sam@example.org", resolver: slowKeys([]) });
+  const lookups: string[] = [];
+  const check = () => checkAuth(Buffer.from(signed(MAX_DKIM_SIGNATURES)), { ...from127, sender: "sam@example.org", resolver: slowKeys(lookups) });
+  const results = Promise.all([check(), check()]);
   await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
-  await expect(result).resolves.toEqual({ spf: "none", dkim: "none", dmarc: "fail" });
+  const unverified = { spf: "none", dkim: "none", dmarc: "fail" };
+  await expect(results).resolves.toEqual([unverified, unverified]);
+  // Each probe asks a name of its own, which no cache can have.
+  const probes = lookups.filter((name) => name.endsWith(".probe.support.test"));
+  expect(probes).toHaveLength(2);
+  expect(new Set(probes).size).toBe(2);
 });
 
 test("a DKIM key lookup that never answers gives up on its own, and SPF and DMARC are still checked", async () => {
@@ -454,7 +464,7 @@ test("a message being delivered still counts against the budget until it's answe
 });
 
 // Linux routes all of 127.0.0.0/8 to loopback, so 127.0.1.1 is another network; macOS has only 127.0.0.1 (CI runs Linux).
-test.skipIf(process.platform === "darwin")("senders trickling their messages in hold no place: another network's mail is taken, and they're cut off at the arrival deadline", async () => {
+test.skipIf(process.platform === "darwin")("senders trickling their messages in hold no place: another network's mail is taken, and they're cut off within the minimum rate's window", async () => {
   fakeSessionClock();
   const { open, sendFrom, posts } = await receiver([], { maxInFlight: 1 });
   const tricklers = await Promise.all(Array.from({ length: MAX_PER_SOURCE }, () => open()));
@@ -462,17 +472,99 @@ test.skipIf(process.platform === "darwin")("senders trickling their messages in 
     await startMessage(trickler);
     trickler.write("Subject: Slow");
   }
-  // Past the idle timeout, a byte more each: still arriving.
-  vi.advanceTimersByTime(IDLE_TIMEOUT_MS + 30_000);
-  tricklers.forEach((trickler) => trickler.write("X"));
   await sendFrom("127.0.1.1", "sam@example.org", ["support@b.support.test"]);
   expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
-  vi.advanceTimersByTime(ARRIVAL_TIMEOUT_MS);
+  // Far less than the minimum in their window (checked every 30 s, so by the second check): closed,
+  // long before the arrival deadline.
+  vi.advanceTimersByTime(2 * ARRIVAL_WINDOW_MS);
+  expect(2 * ARRIVAL_WINDOW_MS).toBeLessThan(ARRIVAL_TIMEOUT_MS);
   await Promise.all(tricklers.map((trickler) => trickler.closed));
 });
 
+/** `bytes` of header lines, under 1,000 characters each. */
+const headerLines = (bytes: number) => Array.from({ length: Math.ceil(bytes / 1_000) }, () => `X-More: ${"x".repeat(990)}`).join("\r\n");
+
+test("a message arriving at the minimum rate is still cut off at the arrival deadline", async () => {
+  fakeSessionClock();
+  const { open } = await receiver();
+  const session = await open();
+  await startMessage(session);
+  let closed = false;
+  void session.closed.then(() => (closed = true));
+  /** A window's worth of bytes, past the minimum; then the window. */
+  const keepUp = async () => {
+    session.write(headerLines(MIN_ARRIVAL_BYTES + 10_000));
+    // Real time for the bytes to reach the server (only the receiver's clock is fake).
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    vi.advanceTimersByTime(ARRIVAL_WINDOW_MS);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  };
+  for (let passed = ARRIVAL_WINDOW_MS; passed < ARRIVAL_TIMEOUT_MS; passed += ARRIVAL_WINDOW_MS) {
+    await keepUp();
+  }
+  expect(closed).toBe(false);
+  // Keeping up the rate, past the deadline (checked every 30 s): closed by it.
+  await keepUp();
+  await keepUp();
+  await session.closed;
+});
+
+test("a message that arrives fast and then stalls is cut off within the minimum rate's window, and its bytes freed", async () => {
+  fakeSessionClock();
+  // Room for the stalled message, not for another beside it.
+  const { open, send } = await receiver([], { maxBufferedBytes: 100_100 });
+  const staller = await open();
+  await startMessage(staller);
+  staller.write(headerLines(100_000));
+  await vi.waitFor(() => expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 }));
+  // Its first window had plenty; the next has nothing (windows checked every 30 s): closed, long
+  // before the arrival deadline.
+  vi.advanceTimersByTime(3 * ARRIVAL_WINDOW_MS);
+  expect(3 * ARRIVAL_WINDOW_MS).toBeLessThan(ARRIVAL_TIMEOUT_MS);
+  await staller.closed;
+  await send("sam@example.org", ["support@b.support.test"]);
+});
+
+// 127.0.0.3 is in 127.0.0.1's /24, 127.0.1.1 isn't (Linux only, as above).
+test.skipIf(process.platform === "darwin")("one network can't hold more than its share of the bytes: past it, try again later (451), while another network's mail is taken", async () => {
+  fakeSessionClock();
+  const { open, sendFrom, posts } = await receiver([], { maxBufferedBytesPerSource: 2_000 });
+  const holder = await open("127.0.0.1");
+  await startMessage(holder);
+  holder.write(`X-Big: ${"x".repeat(1_900)}`);
+  await vi.waitFor(() => expect(sendFrom("127.0.0.3", "sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 }));
+  await sendFrom("127.0.1.1", "sam@example.org", ["support@b.support.test"]);
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
+  holder.end();
+});
+
+// 127.0.0.1, 127.0.1.1 and 127.0.2.1 are three networks (Linux only, as above).
+test.skipIf(process.platform === "darwin")("messages in slow checks hold no place among those being posted: another network's message is delivered", async () => {
+  const lookups: string[] = [];
+  const { open, posts } = await receiver([], { maxInFlight: 1, resolver: slowKeys(lookups) });
+  const [first, second, third] = await Promise.all(["127.0.0.1", "127.0.1.1", "127.0.2.1"].map((address) => open(address)));
+  for (const [session, to] of [
+    [first, "support@a.support.test"],
+    [second, "support@b.support.test"],
+    [third, "support@c.support.test"],
+  ] as const) {
+    await startMessage(session!, to);
+  }
+  // The checks' timers from here on are fake: two messages whose checks the sender's DNS drags out.
+  fakeCheckTimers();
+  first!.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  second!.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  await vi.waitFor(() => expect(lookups.filter((name) => name === "s0._domainkey.signer.example")).toHaveLength(2));
+  // A third network's message, quick to check, is posted while they're still checked.
+  third!.write(`${signed(0)}\r\n.`);
+  await vi.waitFor(() => expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@c.support.test"]));
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  vi.useRealTimers();
+  [first, second, third].forEach((session) => session!.end());
+});
+
 // 127.0.0.3 is in 127.0.0.1's /24 (Linux only: macOS has only 127.0.0.1; CI runs Linux).
-test.skipIf(process.platform === "darwin")("one network can't have every message being checked and delivered: past its share, try again later (451)", async () => {
+test.skipIf(process.platform === "darwin")("one network can't have every message being posted to the app: past its share, try again later (451)", async () => {
   expect(MAX_IN_FLIGHT_PER_SOURCE).toBeLessThan(MAX_IN_FLIGHT / 3);
   let release!: () => void;
   const slow = new Promise<void>((resolve) => (release = resolve));

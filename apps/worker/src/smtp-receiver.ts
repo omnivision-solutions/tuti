@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { promises as dns } from "node:dns";
 import { readFileSync } from "node:fs";
 import { isIPv4 } from "node:net";
@@ -33,20 +34,27 @@ export const MAX_RECIPIENTS = 20;
  */
 export const MAX_PER_SOURCE = 3;
 /**
- * Messages being checked and delivered at once, whether their sender is still connected or not, and
- * from one network (451 past them). A message still arriving takes no place: its bytes count against
- * MAX_BUFFERED_BYTES instead, so a sender trickling one in holds next to nothing.
+ * Messages being posted to the app at once, whether their sender is still connected or not, and from
+ * one network (451 past them). A message still arriving or being checked takes no place (the sender
+ * decides how long those take): its bytes count against MAX_BUFFERED_BYTES instead.
  */
 export const MAX_IN_FLIGHT = 10;
 export const MAX_IN_FLIGHT_PER_SOURCE = 2;
-/** Bytes of messages held at once, arriving or being delivered: a message that would go past it is refused (451) and not kept. */
+/**
+ * Bytes of messages held at once, arriving, being checked or delivered, and from one network: a
+ * message that would go past either is refused (451) and not kept.
+ */
 export const MAX_BUFFERED_BYTES = MAX_IN_FLIGHT * MAX_BYTES;
+export const MAX_BUFFERED_BYTES_PER_SOURCE = MAX_IN_FLIGHT_PER_SOURCE * MAX_BYTES;
 /** A session's longest life, however busy it keeps itself (NOOPs reset the idle timeout). */
 export const SESSION_LIFETIME_MS = 10 * 60_000;
 /** How long a session may go without sending a message (from its start, or its last message) before it's closed. */
 export const IDLE_TIMEOUT_MS = 60_000;
 /** How long a message may take to arrive (25 MB at about 140 kB/s); past it, the session is closed and the sender tries again. */
 export const ARRIVAL_TIMEOUT_MS = 3 * 60_000;
+/** A message arriving slower than this (bytes in a window) is cut off, its session closed, so it can't sit on its bytes. */
+export const MIN_ARRIVAL_BYTES = 64 * 1024;
+export const ARRIVAL_WINDOW_MS = 30_000;
 /**
  * How long one DNS lookup for the checks may take (past it, that check can't tell: a temperror), and
  * all of them. Past that, one lookup we know answers (PROBE_TIMEOUT_MS) tells whose DNS was slow: the
@@ -82,6 +90,7 @@ export type ReceiverOptions = {
   maxPerSource?: number;
   maxInFlight?: number;
   maxBufferedBytes?: number;
+  maxBufferedBytesPerSource?: number;
   sessionLifetimeMs?: number;
   /** DNS for the checks (tests give a fake one). */
   resolver?: Resolver;
@@ -140,12 +149,13 @@ function dkimSignatures(raw: Buffer) {
 const UNVERIFIED = { spf: "none", dkim: "none", dmarc: "fail" };
 
 /**
- * Whether our DNS answers: a lookup of `name` (the support domain's MX, a name the sender doesn't
- * pick) gives an answer in time, records or "none there" alike. A timeout or a server failure means it doesn't.
+ * Whether our DNS answers: a lookup of a new random name under `domain` (the support domain, which
+ * the sender doesn't pick; never asked before, so no cache on this host can answer it) gives an
+ * answer in time, records or "no such name" alike. A timeout or a server failure means it doesn't.
  */
-async function dnsAnswers(resolver: Resolver, name: string) {
+async function dnsAnswers(resolver: Resolver, domain: string) {
   try {
-    await Promise.race([resolver(name, "MX"), timeout(PROBE_TIMEOUT_MS)]);
+    await Promise.race([resolver(`${randomBytes(8).toString("hex")}.probe.${domain}`, "A"), timeout(PROBE_TIMEOUT_MS)]);
     return true;
   } catch (error) {
     const code = (error as { code?: unknown }).code;
@@ -155,7 +165,7 @@ async function dnsAnswers(resolver: Resolver, name: string) {
 
 /**
  * SPF, DKIM and DMARC as the app reads them (`spf=pass dkim=none dmarc=fail`). Null if they didn't
- * finish in time because our own DNS doesn't answer (`probe`, a name it should always answer for).
+ * finish in time because our own DNS doesn't answer (`probe`: the support domain, asked under a random name).
  */
 export async function checkAuth(
   raw: Buffer,
@@ -211,11 +221,12 @@ export async function checkAuth(
 export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer> {
   const domain = options.domain.toLowerCase();
   const serverName = options.serverName ?? hostname();
-  const post = options.post ?? postWithFetch;
+  const postToApp = options.post ?? postWithFetch;
   const url = new URL("/api/inbound/email", options.appUrl).toString();
   const maxPerSource = options.maxPerSource ?? MAX_PER_SOURCE;
   const maxInFlight = options.maxInFlight ?? MAX_IN_FLIGHT;
   const maxBuffered = options.maxBufferedBytes ?? MAX_BUFFERED_BYTES;
+  const maxBufferedPerSource = options.maxBufferedBytesPerSource ?? MAX_BUFFERED_BYTES_PER_SOURCE;
   const lifetime = options.sessionLifetimeMs ?? SESSION_LIFETIME_MS;
   /**
    * Open sessions per network; when each accepted session started; and by when it must have sent a
@@ -227,6 +238,18 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   let inFlight = 0;
   const inFlightPerSource = new Map<string, number>();
   let buffered = 0;
+  const bufferedPerSource = new Map<string, number>();
+  /** Messages arriving, by session: since when their window runs, and the bytes in it. */
+  const arrival = new Map<string, { since: number; bytes: number }>();
+  /** Adds `by` to `key`'s count, dropping it at zero. */
+  const adjust = (counts: Map<string, number>, key: string, by: number) => {
+    const count = (counts.get(key) ?? 0) + by;
+    if (count > 0) {
+      counts.set(key, count);
+    } else {
+      counts.delete(key);
+    }
+  };
   /** Messages still arriving, by session: a sender that hangs up mid-DATA never ends its stream, so its slot goes when it closes. */
   const arriving = new Map<string, () => void>();
 
@@ -256,6 +279,7 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
     onClose(session) {
       arriving.get(session.id)?.();
       deadline.delete(session.id);
+      arrival.delete(session.id);
       // Only sessions it let in (a refused one closes too).
       if (started.delete(session.id)) {
         const source = sourceOf(session.remoteAddress);
@@ -277,8 +301,9 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       callback(recipient.endsWith(`.${domain}`) ? undefined : answer(550, "No such address here"));
     },
     onData(stream, session, answered) {
-      // It has a while to arrive, none while it's delivered, and is idle again once it's answered.
+      // It has a while to arrive, at a minimum rate; none while it's delivered; and is idle again once it's answered.
       deadline.set(session.id, Date.now() + ARRIVAL_TIMEOUT_MS);
+      arrival.set(session.id, { since: Date.now(), bytes: 0 });
       const callback: typeof answered = (...args) => {
         if (started.has(session.id)) {
           deadline.set(session.id, Date.now() + IDLE_TIMEOUT_MS);
@@ -291,73 +316,70 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       let held = 0;
       let overBudget = false;
       let settled = false;
+      const release = () => {
+        buffered -= held;
+        adjust(bufferedPerSource, source, -held);
+        held = 0;
+      };
       const done: typeof callback = (...args) => {
         arriving.delete(session.id);
         if (!settled) {
           settled = true;
-          buffered -= held;
-          held = 0;
+          release();
           callback(...args);
         }
       };
       // A sender that hangs up mid-DATA never ends its stream: its bytes go when it closes.
       arriving.set(session.id, () => done(answer(451, "Try again later")));
-      // Past the size limit or the budget, nothing more is kept: it's refused at the end.
+      // Past the size limit or a budget, nothing more is kept: it's refused at the end.
       stream.on("data", (chunk: Buffer) => {
+        const window = arrival.get(session.id);
+        if (window) {
+          window.bytes += chunk.length;
+        }
         if ((stream as { sizeExceeded?: boolean }).sizeExceeded || overBudget) {
           return;
         }
-        if (buffered + chunk.length > maxBuffered) {
+        if (buffered + chunk.length > maxBuffered || (bufferedPerSource.get(source) ?? 0) + chunk.length > maxBufferedPerSource) {
           overBudget = true;
-          buffered -= held;
-          held = 0;
+          release();
           chunks.length = 0;
           return;
         }
         chunks.push(chunk);
         held += chunk.length;
         buffered += chunk.length;
+        adjust(bufferedPerSource, source, chunk.length);
       });
       stream.on("error", (error) => done(error));
       stream.on("end", () => {
-        // All here: from now on it's delivered, and stays counted until then, even if the sender hangs up.
+        // All here: from now on it's checked and delivered, its bytes counted until then, even if the sender hangs up.
         arriving.delete(session.id);
         deadline.delete(session.id);
+        arrival.delete(session.id);
         if ((stream as { sizeExceeded?: boolean }).sizeExceeded) {
           done(answer(552, "Message too large"));
           return;
         }
-        if (overBudget || inFlight >= maxInFlight || (inFlightPerSource.get(source) ?? 0) >= MAX_IN_FLIGHT_PER_SOURCE) {
+        if (overBudget) {
           // Busy: none of it kept, and the sender tries again later.
           done(answer(451, "Busy: try again later"));
           return;
         }
-        inFlight++;
-        inFlightPerSource.set(source, (inFlightPerSource.get(source) ?? 0) + 1);
-        const delivered: typeof done = (...args) => {
-          inFlight--;
-          const count = inFlightPerSource.get(source)! - 1;
-          if (count > 0) {
-            inFlightPerSource.set(source, count);
-          } else {
-            inFlightPerSource.delete(source);
-          }
-          done(...args);
-        };
         const raw = Buffer.concat(chunks);
         chunks.length = 0;
-        deliver(raw, session)
-          .then((code) => delivered(code === 250 ? null : answer(code, code === 550 ? "No such address here" : code === 552 ? "Message too large" : "Try again later")))
+        deliver(raw, session, source)
+          .then((code) => done(code === 250 ? null : answer(code, code === 550 ? "No such address here" : code === 552 ? "Message too large" : "Try again later")))
           .catch((error: unknown) => {
             log.error("Posting a received email to the app failed", { error: String(error) });
-            delivered(answer(451, "Try again later"));
+            done(answer(451, "Try again later"));
           });
       });
     },
   });
 
   /** The answer for the whole message: taken (250) unless the app refused it everywhere, or needs a retry. */
-  async function deliver(raw: Buffer, session: SMTPServerSession) {
+  async function deliver(raw: Buffer, session: SMTPServerSession, source: string) {
     const results = await checkAuth(raw, {
       ip: session.remoteAddress,
       helo: session.hostNameAppearsAs,
@@ -371,12 +393,28 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       log.warn("Checking a received email's SPF, DKIM and DMARC took too long and this server's DNS isn't answering: the sender will try again later");
       return 451;
     }
+    // A place among the messages being posted, only for the posting (the app answers quickly).
+    if (inFlight >= maxInFlight || (inFlightPerSource.get(source) ?? 0) >= MAX_IN_FLIGHT_PER_SOURCE) {
+      return 451;
+    }
+    inFlight++;
+    adjust(inFlightPerSource, source, 1);
+    try {
+      return await post(raw, session, results);
+    } finally {
+      inFlight--;
+      adjust(inFlightPerSource, source, -1);
+    }
+  }
+
+  /** Posts it to the app for each recipient, and the answer for the whole message. */
+  async function post(raw: Buffer, session: SMTPServerSession, results: { spf: string; dkim: string; dmarc: string }) {
     const auth = `spf=${results.spf} dkim=${results.dkim} dmarc=${results.dmarc}`;
     const answers: Answer[] = [];
     for (const { address } of session.envelope.rcptTo) {
       const recipient = address.toLowerCase();
       answers.push(
-        await post(url, {
+        await postToApp(url, {
           body: raw,
           headers: {
             "content-type": "message/rfc822",
@@ -408,14 +446,21 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
     return 250;
   }
 
-  // Sessions past their lifetime or their deadline (idle, or a message taking too long to arrive) are closed, however busy they keep themselves.
+  // Sessions past their lifetime or their deadline (idle, or a message taking too long to arrive), or
+  // whose message arrives too slowly, are closed, however busy they keep themselves.
   const reaper = setInterval(
     () => {
+      const now = Date.now();
       for (const connection of server.connections as Set<{ session?: { id: string }; close(): void }>) {
         const id = connection.session?.id ?? "";
         const since = started.get(id);
         const by = deadline.get(id);
-        if ((since && Date.now() - since > lifetime) || (by && Date.now() > by)) {
+        const window = arrival.get(id);
+        const slow = window && now - window.since >= ARRIVAL_WINDOW_MS && window.bytes < MIN_ARRIVAL_BYTES;
+        if (window && now - window.since >= ARRIVAL_WINDOW_MS) {
+          Object.assign(window, { since: now, bytes: 0 });
+        }
+        if ((since && now - since > lifetime) || (by && now > by) || slow) {
           connection.close();
         }
       }
