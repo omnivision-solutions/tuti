@@ -11,7 +11,10 @@ import { getSession } from "@/server/session";
 
 export default async function AppHome() {
   const session = await getSession();
-  const projects = session ? await listMyProjects(session.user.id) : [];
+  if (!session) {
+    redirect("/sign-in");
+  }
+  const projects = await listMyProjects(session.user.id);
   const lastSlug = (await cookies()).get(LAST_PROJECT_COOKIE)?.value;
   const target = projects.find((p) => p.slug === lastSlug) ?? projects[0];
   if (target) {
