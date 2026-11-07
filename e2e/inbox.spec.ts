@@ -1476,6 +1476,34 @@ test("answered with Send, a conversation stays open though it's left Needs reply
   await expect(row(1)).toBeFocused();
 });
 
+test("after a Send that kept it open, Snooze and Mark as spam are done with it too: the next one down opens", async ({ browser }) => {
+  const { slug, owner, api, list, reply } = await twoConversations(browser);
+  await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
+  await api("/conversations", { email: "e2e-fourth@example.com", body: "A fourth question" });
+  const row = (number: number) => list.getByRole("link", { name: new RegExp(`\\(#${number}\\)$`) });
+  const send = async (number: number, text: string) => {
+    await reply.fill(text);
+    await owner.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(row(number)).toHaveCount(0);
+    await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/${number}$`));
+  };
+  // Needs reply, the latest first: #4, #3, #2, #1.
+  await owner.goto(`/app/${slug}/inbox/3`);
+  await expect(row(4)).toBeVisible();
+  await send(3, "Looking into it.");
+  // Snoozed till later, it's done with for now: the next one down opens.
+  await owner.getByRole("button", { name: "Snooze", exact: true }).click();
+  await owner.getByRole("menuitem", { name: "In 3 hours" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+  await expect(row(2)).toBeFocused();
+  // Answered, then marked as spam: the same.
+  await send(2, "Is this about the export?");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Mark as spam" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+  await expect(row(1)).toBeFocused();
+});
+
 test("J goes on down the list after a reply, though the one answered moves to its top", async ({ browser }) => {
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
