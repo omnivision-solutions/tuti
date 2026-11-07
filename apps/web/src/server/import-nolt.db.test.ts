@@ -73,8 +73,8 @@ test("contacts: Nolt's users with an id in the team's app or an address, by that
   expect(await usersOf()).toEqual([
     { externalId: "app-mira", email: "e2e-nolt-mira@example.com", user: { name: "Mira Fenwick" } },
     // Without an id in the team's app: their address, as Nolt's own.
-    { externalId: "nolt:e2e-nolt-olive@example.com", email: "e2e-nolt-olive@example.com", user: { name: "Olive Owner" } },
-    { externalId: "nolt:e2e-nolt-tobias@example.com", email: "e2e-nolt-tobias@example.com", user: { name: "Tobias Quill" } },
+    { externalId: "nolt:email:e2e-nolt-olive@example.com", email: "e2e-nolt-olive@example.com", user: { name: "Olive Owner" } },
+    { externalId: "nolt:email:e2e-nolt-tobias@example.com", email: "e2e-nolt-tobias@example.com", user: { name: "Tobias Quill" } },
   ]);
 });
 
@@ -172,4 +172,35 @@ test("comments over several pages, each a request's worth, all come and the impo
   const done = await importParts(["contacts", "feedback"]);
   expect(done).toMatchObject({ state: "done", error: null, counts: { comments: { imported: 3, leftOut: { "waiting for moderation": 1 } } } });
   expect(await prisma.comment.count({ where: { post: { projectId: project.id } } })).toBe(3);
+});
+
+test("an SSO user whose id is an address and someone who only typed that address are two people, each with their own posts", async () => {
+  const jane = "e2e-nolt-jane@example.com";
+  fake.fixtures.users.push({ ssoId: jane, name: "Jane Signed In", email: jane, image: null }, { ssoId: null, name: "Jane Typed", email: jane, image: null });
+  const [, csv, , keys] = fake.fixtures.posts;
+  csv!.comments[0]!.user = { ssoId: jane, name: "Jane Signed In", email: jane, image: null };
+  keys!.comments[0]!.user = { ssoId: null, name: "Jane Typed", email: jane, image: null };
+  await importParts(["contacts", "feedback"]);
+  expect((await usersOf()).filter((user) => user.email === jane)).toEqual([
+    { externalId: jane, email: jane, user: { name: "Jane Signed In" } },
+    { externalId: `nolt:email:${jane}`, email: jane, user: { name: "Jane Typed" } },
+  ]);
+  const authors = await prisma.post.findMany({ where: { projectId: project.id, title: { in: ["CSV export", "Keyboard shortcuts"] } }, orderBy: { number: "asc" }, select: { title: true, author: { select: { name: true } } } });
+  expect(authors).toEqual([
+    { title: "CSV export", author: { name: "Jane Signed In" } },
+    { title: "Keyboard shortcuts", author: { name: "Jane Typed" } },
+  ]);
+});
+
+test("statuses: Nolt's own by their type (completed → Completed; archived, merged → Closed; unassigned → Open), the team's own by name", async () => {
+  const statusOf: Record<string, string> = { np1: "s-shipped", np2: "s-archived", np4: "s-merged", np6: "s-open" };
+  fake.fixtures.posts.forEach((post) => (post.statusId = statusOf[post.id] ?? post.statusId));
+  await importParts(["contacts", "feedback"]);
+  expect((await postsOf()).map((post) => [post.title, post.status])).toEqual([
+    // "Shipped" by its name would be Open: its type makes it Completed.
+    ["Dark mode", "COMPLETED"],
+    ["CSV export", "CLOSED"],
+    ["Keyboard shortcuts", "CLOSED"],
+    ["Quarterly planning", "OPEN"],
+  ]);
 });

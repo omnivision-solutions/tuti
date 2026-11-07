@@ -41,6 +41,11 @@ export function noltFixtures(): NoltFixtures {
       { id: "s-review", name: "Under review", type: "CUSTOM" },
       { id: "s-planned", name: "Planned", type: "CUSTOM" },
       { id: "s-beta", name: "Beta", type: "CUSTOM" },
+      // Nolt's own, listed by their type (a post may also carry a system value as its statusId: "COMPLETED").
+      { id: "s-shipped", name: "Shipped", type: "COMPLETED" },
+      { id: "s-archived", name: "Archived", type: "ARCHIVED" },
+      { id: "s-merged", name: "Merged", type: "MERGED" },
+      { id: "s-open", name: "Inbox", type: "UNASSIGNED" },
     ],
     posts: [
       post(

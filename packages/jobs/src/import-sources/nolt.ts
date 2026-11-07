@@ -134,8 +134,11 @@ const unlessGone = <T>(read: Promise<{ post: T | null }>): Promise<{ post: T | n
     throw error;
   });
 
-/** Their id here: their id in the team's app, else their address (null: neither, someone of their own). */
-const idOf = (user: NoltUser) => user.ssoId?.trim() || user.email?.trim().toLowerCase() || null;
+/**
+ * Their id here: `sso:<their id in the team's app>`, else `email:<their address>` (null: neither, someone of their own).
+ * Apart, so an app whose ids are addresses never makes its signed-in user and someone who only typed that address one.
+ */
+const idOf = (user: NoltUser) => (user.ssoId?.trim() ? `sso:${user.ssoId.trim()}` : user.email?.trim() ? `email:${user.email.trim().toLowerCase()}` : null);
 
 const contactOf = (user: NoltUser, id: string): FeaturebaseContact => ({
   id,
