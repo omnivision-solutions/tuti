@@ -85,20 +85,23 @@ export function leftOut(path: string): Exclude<LeftOut, "size"> | undefined {
 }
 
 const MASK = "[secret]";
+// Whole repository files go through these on the worker, so each must take time in step with the text: no unbounded run
+// that a pattern can retry from many starting points (a JWT starts only where a run of its characters does, or after a diff's
+// "-", an env line's spaces never cross lines).
 const SECRETS: [RegExp, string][] = [
   // A private key, to its end (or the end of the text, if the diff was cut).
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, MASK],
   // Tokens with a known shape: GitHub, OpenAI and OpenRouter, Slack, AWS, Google, GitLab, Stripe, JWTs, Tuti's own.
   [
-    /\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abposr]-[A-Za-z0-9-]{10,}|A[KS]IA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|glpat-[A-Za-z0-9_-]{20,}|[sr]k_(live|test)_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|tuti_[A-Za-z0-9_-]{20,})/g,
+    /\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abposr]-[A-Za-z0-9-]{10,}|A[KS]IA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|glpat-[A-Za-z0-9_-]{20,}|[sr]k_(live|test)_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|(?<!\w|[^\n]-)eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|tuti_[A-Za-z0-9_-]{20,})/g,
     MASK,
   ],
   // The password in a connection string (postgres://user:password@host).
   [/\b([a-z][a-z0-9+.-]{0,20}:\/\/[^\s:/@'"]{1,200}:)[^\s@/'"]{1,200}@/gi, `$1${MASK}@`],
   // A quoted value given to something named like a secret: password: "…", apiKey = '…'.
-  [/((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|auth)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["'])[^"'\s]{8,}\2/gi, `$1$2${MASK}$2`],
+  [/((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|auth)[A-Za-z0-9_-]{0,60}["']?\s*[:=]\s*)(["'])[^"'\s]{8,}\2/gi, `$1$2${MASK}$2`],
   // An env-style line: SOMETHING_SECRET=value.
-  [/^([+ -]?\s*(?:export\s+)?[A-Z0-9_]{0,60}(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|ACCESS_KEY)[A-Z0-9_]{0,60}\s*=\s*)\S{8,}$/gm, `$1${MASK}`],
+  [/^([+ -]?[ \t]*(?:export[ \t]+)?[A-Z0-9_]{0,60}(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|ACCESS_KEY)[A-Z0-9_]{0,60}[ \t]*=[ \t]*)\S{8,}$/gm, `$1${MASK}`],
 ];
 
 /** The text with secret-looking strings masked. */
