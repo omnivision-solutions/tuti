@@ -228,30 +228,57 @@ test("an article's draft is read before its media is copied, so a slow copy can'
   expect(await article("Paying by card")).toMatchObject({ publishedAt: expect.any(Date), changes: { body: expect.stringContaining("Amex is coming soon.") } });
 });
 
-test("a video too slow to copy by the page's media deadline is left out, and the page saves its articles inside its step's time", async () => {
-  await structureOnly();
-  // Second on the page: an article with a video (an MP4's first bytes are enough to tell it's one).
-  const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom\0\0\0\0isommp41"), Buffer.alloc(64, 7)]);
-  const video = fake.file("tour.mp4", "video/mp4", mp4);
-  const [first, paying] = fake.fixtures.articles;
-  paying!.body = `<video src="${video}"></video>${paying!.body}`;
-  fake.fixtures.articles = [first!, paying!];
+/** A video served by the fake (an MP4's first bytes are enough to tell it's one); its address. */
+const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom\0\0\0\0isommp41"), Buffer.alloc(64, 7)]);
 
+/** The help center's content step, a page at a time from the first, as its job runs it (a row past its first pass). */
+async function contentJob() {
   const row = await prisma.dataImport.create({ data: { projectId: project.id, source: "FEATUREBASE", startedById: owner.id, apiKey: sealValue(IMPORT_KEY, FAKE_FEATUREBASE_KEY), parts: ["docs"], step: "docs-content" } });
-  const job = importJob(row)!;
-  // The video takes as long as can be: once it's asked for, the clock is five minutes on, past the media deadline.
+  return importJob(row)!;
+}
+
+/** Runs one content page with the clock five minutes on (past the media deadline) from the moment the video is asked for. */
+async function slowVideoPage(job: ReturnType<typeof importJob> & object, cursor: string | null) {
   const now = Date.now.bind(Date);
   let copying = false;
   fake.onFile = (name) => void (copying ||= name === "tour.mp4");
   const clock = vi.spyOn(Date, "now").mockImplementation(() => now() + (copying ? 5 * 60_000 : 0));
-  const page = await STEPS.docs!.steps[2]!.page(job, null).finally(() => clock.mockRestore());
+  const page = await STEPS.docs!.steps[2]!.page(job, cursor).finally(() => clock.mockRestore());
+  fake.onFile = undefined;
   expect(copying).toBe(true);
   await prisma.$transaction((tx) => page.save(tx));
-  // Both articles saved; the video isn't in its article, nor stored or kept anywhere.
-  expect((await articles()).filter((a) => a.content).map((a) => a.title)).toEqual(expect.arrayContaining(["Welcome to Acme", "Paying by card"]));
-  expect(nodesOf((await article("Paying by card")).content as Node).some((node) => node.type === "video")).toBe(false);
+  return page;
+}
+const hasVideo = async (title: string) => nodesOf((await article(title)).content as Node).some((node) => node.type === "video");
+
+test("a video too slow to copy by the page's media deadline, in the run's first article, is left out and the article lands", async () => {
+  await structureOnly();
+  const [first] = fake.fixtures.articles;
+  first!.body = `<video src="${fake.file("tour.mp4", "video/mp4", mp4)}"></video>${first!.body}`;
+  fake.fixtures.articles = [first!];
+  await slowVideoPage(await contentJob(), null);
+  expect((await article("Welcome to Acme")).content).not.toBeNull();
+  expect(await hasVideo("Welcome to Acme")).toBe(false);
   expect(await prisma.media.count({ where: { projectId: project.id, filename: "tour.mp4" } })).toBe(0);
   expect([...s3.objects.keys()].some((key) => key.endsWith("/video"))).toBe(false);
+});
+
+test("an article whose video is cut off by the media deadline, not the run's first, is read first by the next run and copied there", async () => {
+  await structureOnly();
+  const [first, paying] = fake.fixtures.articles;
+  paying!.body = `<video src="${fake.file("tour.mp4", "video/mp4", mp4)}"></video>${paying!.body}`;
+  fake.fixtures.articles = [first!, paying!];
+  const job = await contentJob();
+  const page = await slowVideoPage(job, null);
+  // The first landed; the second didn't (nor was counted): the same page is read again for it.
+  expect(page.next).toMatch(/^again:/);
+  expect((await article("Welcome to Acme")).content).not.toBeNull();
+  expect((await article("Paying by card")).content).toBeNull();
+  // In time, the next run copies it.
+  const again = await STEPS.docs!.steps[2]!.page(job, page.next);
+  await prisma.$transaction((tx) => again.save(tx));
+  expect(await hasVideo("Paying by card")).toBe(true);
+  expect(await prisma.media.findFirstOrThrow({ where: { projectId: project.id, filename: "tour.mp4" } })).toMatchObject({ status: "READY" });
 });
 
 test("an empty article the team only retitled while the import was stopped stays theirs too", async () => {

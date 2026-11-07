@@ -21,6 +21,8 @@ let served: string[];
 let png: Buffer;
 /** Just over the app's 10 MB per image: uncompressed, as other tools often keep screenshots. */
 let bigPng: Buffer;
+/** Runs once /stalled.mp4 has sent its first bytes (and will send no more). */
+let stalled: (() => void) | undefined;
 /** Runs as each file is asked for, before it's answered. */
 let whileServing: (() => Promise<void>) | undefined;
 const PDF = Buffer.from("%PDF-1.4\n%invented test file\n");
@@ -54,6 +56,7 @@ beforeAll(async () => {
       // A video's first bytes, then nothing more: as slow as a copy can be.
       res.writeHead(200, { "content-type": "video/mp4" });
       res.write(MP4.subarray(0, 32));
+      stalled?.();
       return;
     }
     if (req.url === "/streamed.png") {
@@ -198,15 +201,39 @@ test("a copy that can't finish by the deadline is cut off and left out, its temp
   vi.stubEnv("TMPDIR", temporary);
   const cache = new Map();
   const source = { kind: "video" as const, url: `${origin}/stalled.mp4`, key: "stalled", name: "stalled.mp4" };
-  const started = Date.now();
-  expect(await mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 300 })(source)).toEqual({ leftOut: "unreachable" });
-  expect(Date.now() - started).toBeLessThan(5_000);
-  expect(await readdir(temporary)).toEqual([]);
+  // Cut off as the download hangs: the caller's stop, as the deadline's own timer would.
+  const cutOff = () => {
+    const stop = new AbortController();
+    stalled = () => stop.abort();
+    return mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 60_000, signal: stop.signal })(source);
+  };
+  try {
+    expect(await cutOff()).toEqual({ leftOut: "unreachable" });
+    expect(await readdir(temporary)).toEqual([]);
+    expect(await prisma.media.count({ where: { projectId } })).toBe(0);
+    // Not remembered as left out: the next page, with its own time, asks for it again.
+    expect(await cutOff()).toEqual({ leftOut: "unreachable" });
+    expect(served.filter((path) => path === "/stalled.mp4")).toHaveLength(2);
+  } finally {
+    stalled = undefined;
+    await rm(temporary, { recursive: true });
+  }
+});
+
+test("a copy fetched after the deadline, before its timer cuts it off, isn't kept or remembered: a later run tries again", async () => {
+  const cache = new Map();
+  const source = { kind: "video" as const, url: `${origin}/demo.mp4`, key: "demo", name: "demo.mp4" };
+  // The clock passes the deadline as the video is served; the deadline's own timer (a minute off) hasn't fired.
+  const now = Date.now.bind(Date);
+  let late = false;
+  whileServing = async () => void (late = true);
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => now() + (late ? 2 * 60_000 : 0));
+  const copied = await mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 60_000 })(source).finally(() => clock.mockRestore());
+  expect(copied).toEqual({ leftOut: "unreachable" });
   expect(await prisma.media.count({ where: { projectId } })).toBe(0);
-  // Not remembered as left out: the next page, with its own time, asks for it again.
-  await mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 300 })(source);
-  expect(served.filter((path) => path === "/stalled.mp4")).toHaveLength(2);
-  await rm(temporary, { recursive: true });
+  whileServing = undefined;
+  expect(await mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 60_000 })(source)).toMatchObject({ mediaId: expect.any(String) });
+  expect(served.filter((path) => path === "/demo.mp4")).toHaveLength(2);
 });
 
 test("what can't be copied is left out with its reason, keeping its alt text, and nothing is kept for it", async () => {

@@ -44,26 +44,28 @@ type Copied = ImportedMedia | { leftOut: LeftOutReason };
  * remembered too, so a file that's gone isn't fetched again for every post that has it.
  *
  * `deadline` (a time, in ms): every copy is done by then or left out (`unreachable`), its download and upload cut off,
- * so a step holding several large videos stays inside its job's time limit. One cut off isn't remembered: a later run,
- * with time of its own, tries again.
+ * so a step holding several large videos stays inside its job's time limit. `signal` cuts copies off too, when it's
+ * aborted (a caller's own stop; tests). One cut off isn't remembered: a later run, with time of its own, tries again.
  */
 export function mediaImporter({
   projectId,
   uploaderId,
   cache = new Map(),
   deadline,
+  signal,
 }: {
   projectId: string;
   uploaderId: string;
   cache?: Map<string, Copied>;
   deadline?: number;
+  signal?: AbortSignal;
 }): MediaImporter {
   return async (source) => {
     const cached = cache.get(source.key);
     if (cached) {
       return cached;
     }
-    const { passing, ...copied } = await copy(projectId, uploaderId, source, deadline);
+    const { passing, ...copied } = await copy(projectId, uploaderId, source, deadline, signal);
     // A failure of our own (storage, processing) may pass: the next document tries again.
     if (!passing) {
       cache.set(source.key, copied);
@@ -76,8 +78,9 @@ export function mediaImporter({
 const PROCESSED_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 /** A video goes through a temporary file (never whole in memory: the worker is every project's), deleted however it ends. */
-async function copy(projectId: string, uploaderId: string, source: MediaSource, deadline?: number): Promise<Copied & { passing?: true }> {
-  const late = deadline === undefined ? undefined : AbortSignal.timeout(Math.max(1, deadline - Date.now()));
+async function copy(projectId: string, uploaderId: string, source: MediaSource, deadline?: number, signal?: AbortSignal): Promise<Copied & { passing?: true }> {
+  const stops = [...(deadline === undefined ? [] : [AbortSignal.timeout(Math.max(1, deadline - Date.now()))]), ...(signal ? [signal] : [])];
+  const late = stops.length > 0 ? AbortSignal.any(stops) : undefined;
   const dir = source.kind === "video" ? await mkdtemp(join(tmpdir(), "tuti-video-")) : null;
   try {
     const copied = await copyThrough(projectId, uploaderId, source, dir && join(dir, "video"), late, deadline);
@@ -112,9 +115,9 @@ async function copyThrough(
   if (typeof body === "string") {
     return { leftOut: body };
   }
-  // Fetched, but too late to keep: nothing is stored.
+  // Fetched, but too late to keep: nothing is stored, and it's not remembered (the deadline's timer may not have fired yet).
   if (deadline !== undefined && Date.now() > deadline) {
-    return { leftOut: "unreachable" };
+    return { leftOut: "unreachable", passing: true };
   }
   if (kind === "file" && !isFileContent(extension, body)) {
     return { leftOut: "type" };
