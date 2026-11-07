@@ -275,19 +275,28 @@ test("reset links and sign-in links share the hourly limit per address", async (
   expect(sentTo(user.email, ["Reset your password", `Sign in to ${project.name}`])).toBe(SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR);
 });
 
-test("the app host and each portal send a limited number an hour", async () => {
-  const full = { error: "This site has sent a lot of emails in the last hour. Try again later." };
+test("the app host and each portal send a limited number an hour, quietly", async () => {
   await prisma.signInLink.createMany({
     data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }, (_, i) => ({ projectId: null, emailHash: `h${i}` })),
   });
-  expect(await ask(user.email)).toEqual(full);
+  expect(await ask(user.email)).toEqual({ sentTo: user.email });
+  expect(sentTo(user.email)).toBe(0);
   // Portals have their own.
   expect(await ask(user.email, portalHost())).toEqual({ sentTo: user.email });
+  expect(sentTo(user.email)).toBe(1);
+});
 
+test("at the site's limit, an address with an account and one without get the same answers", async () => {
+  // One short of it: only resets that send count toward it, so a refusal mustn't tell which ones would have.
   await prisma.signInLink.createMany({
-    data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }, (_, i) => ({ projectId: project.id, emailHash: `p${i}` })),
+    data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR - 1 }, (_, i) => ({ projectId: null, emailHash: `h${i}` })),
   });
-  expect(await ask(newAddress(), portalHost())).toEqual(full);
+  const unknown = newAddress();
+  const probe = newAddress();
+  expect(await ask(unknown)).toEqual({ sentTo: unknown });
+  expect(await ask(probe)).toEqual({ sentTo: probe });
+  expect(await ask(user.email)).toEqual({ sentTo: user.email });
+  expect(await ask(probe)).toEqual({ sentTo: probe });
   expect(sentTo(user.email)).toBe(1);
 });
 

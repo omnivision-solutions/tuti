@@ -18,7 +18,7 @@ import {
  * link) against the hourly limits, which both kinds share: per address on any
  * host, per visitor, and per site (a portal, or the app host when `projectId` is
  * null). Returns the new sign_in_link row's id, an error to show, or no id when
- * the visitor is over their limit (which isn't shown: send nothing, answer as usual).
+ * the visitor or the site is over its limit (which isn't shown: send nothing, answer as usual).
  *
  * `emails` is who the request emails: the address (the default), nobody (a reset for an
  * address with no account: counted against the address all the same, so the answer can't
@@ -60,8 +60,9 @@ export async function countEmailedLink(
     if (byClient >= SIGN_IN_LINKS_PER_CLIENT_PER_HOUR) {
       return { id: null };
     }
+    // Quiet too: only requests that send count toward it, so an error would tell whether this one would have.
     if (bySite >= SIGN_IN_LINKS_PER_PORTAL_PER_HOUR) {
-      return { error: "This site has sent a lot of emails in the last hour. Try again later." };
+      return { id: null };
     }
     return tx.signInLink.create({ data: { projectId, emailHash, clientHash: client, sent: emails !== "nobody" }, select: { id: true } });
   });
