@@ -86,3 +86,36 @@ test("an article deleted while the list is read (those after it moving up a plac
     await fake.close();
   }
 });
+
+test("an article edited while a re-read is past its first page still comes: another re-read follows one that needed several pages", async () => {
+  const fake = await startIntercomFake();
+  try {
+    vi.stubEnv("INTERCOM_API_URL", fake.url);
+    fake.pageSize = 2;
+    const old = fake.fixtures.articles[0]!;
+    fake.fixtures.articles = ["301", "302", "303", "304", "305", "306", "307", "308"].map((id, i) => ({ ...old, id, updated_at: 1_700_000_000 - i }));
+    /** Edits an article: Intercom lists it first, dated now. */
+    const edit = (id: string) => {
+      const at = fake.fixtures.articles.findIndex((a) => a.id === id);
+      const [edited] = fake.fixtures.articles.splice(at, 1);
+      fake.fixtures.articles.unshift({ ...edited, updated_at: fake.clock });
+    };
+    // What happens after each page is read: 306 edited during the whole pass, 301 and 302 near its end (so the re-read
+    // needs two pages), and 306 again while the re-read is on its first page.
+    const after: Record<number, () => void> = { 1: () => edit("306"), 3: () => (edit("301"), edit("302")), 5: () => edit("306") };
+    const { read } = intercomSource.connect(FAKE_INTERCOM_TOKEN, { deadline: Infinity });
+    const ids = new Set<string>();
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page = await read.articles!(cursor, 2);
+      page.items.forEach((a) => ids.add(a.id));
+      cursor = page.next;
+      after[++pages]?.();
+    } while (cursor && pages < 30);
+    expect([...ids].sort()).toEqual(["301", "302", "303", "304", "305", "306", "307", "308"]);
+    expect(pages).toBeLessThan(30);
+  } finally {
+    await fake.close();
+  }
+});

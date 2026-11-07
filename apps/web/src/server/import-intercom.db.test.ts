@@ -146,7 +146,7 @@ test("an article edited while the import reads the list (moving to its front, on
   fake.onRequest = (url) => {
     if (url.pathname === "/articles" && url.searchParams.get("page") === "2") {
       const [edited] = fake.fixtures.articles.splice(2, 1);
-      fake.fixtures.articles.unshift({ ...edited, updated_at: fake.clock - 3 });
+      fake.fixtures.articles.unshift({ ...edited, updated_at: fake.clock - 2 });
     }
   };
   const done = await run(["docs"]);

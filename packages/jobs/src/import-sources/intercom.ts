@@ -21,34 +21,35 @@ const COMPANIES_AT_ONCE = 10;
 /** Whole passes over the articles at most, after the first, when articles were deleted as it read them. */
 const MAX_FULL_PASSES = 3;
 /**
- * How far back a pass after the first looks, before the pass it follows began (seconds): Intercom stamps its answer
- * after it read the list, and an edit can take a moment to reach the list, so one edited just before is looked at too.
+ * How far back a re-read looks before the pass it follows began (seconds, Intercom's clock): Intercom stamps its answer
+ * just after it read the list, so one edited in the second before is looked at too.
  */
-const EDIT_MARGIN = 60;
+const STAMP_MARGIN = 1;
+/** Re-reads at most after a pass (each one more only when the last needed several pages): edits never stopping can't keep it going. */
+const MAX_REREADS = 10;
 
 /**
  * Where a read of the articles list got to (its cursor, as JSON). Intercom lists them newest updated first, by page
  * number, so the list moves as it's read: one edited moves to the front (to a page already read, and would be missed),
- * one deleted moves those after it up a place (the first of the next page to the page before). So once a pass ends,
- * another reads from the front only what was updated since it began (by Intercom's clock, with EDIT_MARGIN), and again
- * until a pass finds nothing edited after it began itself (what it read from before then, the pass before had in view); one that saw articles deleted (the count fell) reads the whole list again instead. What comes twice is
- * skipped by the import, as a repeated page is.
+ * one deleted moves those after it up a place (the first of the next page to the page before). So once a whole pass
+ * ends, a re-read takes from the front what was updated since it began (by Intercom's clock); a re-read that needed
+ * more than its first page could have missed one edited as it read, so another follows it, till one fits on a page (one
+ * answer, which misses nothing). A pass that saw articles deleted (the count fell) reads the whole list again instead.
+ * What comes twice is skipped by the import, as a repeated page is.
  */
 type ArticlesCursor = {
   /** The page to read. */
   page: number;
   /** Only those updated since (Unix seconds); 0: the whole list. */
   since: number;
-  /** The list's count as this pass read its first page, and when it began: by Intercom's clock, and the earliest of it and this machine's. */
+  /** The list's count as this pass read its first page, and when that was (Intercom's clock). */
   count: number;
   began: number;
-  from: number;
-  /** This pass found articles edited after it began: there may be more it didn't see. */
-  brought: boolean;
   /** This pass saw articles deleted. */
   shrank: boolean;
-  /** Whole passes after the first. */
+  /** Whole passes after the first, and re-reads since the last whole pass. */
   passes: number;
+  rereads: number;
 };
 
 /** Intercom's generic picture for someone without one (…/default-avatars/…): left out, so Tuti draws its own. */
@@ -152,28 +153,28 @@ export const intercomSource: ImportSourceDefinition = {
         },
         collections: (cursor) => numbered("/help_center/collections", cursor, 250, collection),
         articles: async (cursor, limit) => {
-          const at: ArticlesCursor = cursor ? (JSON.parse(cursor) as ArticlesCursor) : { page: 1, since: 0, count: 0, began: 0, from: 0, brought: false, shrank: false, passes: 0 };
-          const before = Math.floor(Date.now() / 1000);
+          const at: ArticlesCursor = cursor ? (JSON.parse(cursor) as ArticlesCursor) : { page: 1, since: 0, count: 0, began: 0, shrank: false, passes: 0, rereads: 0 };
           const body = await api.get<{ data: IntercomArticle[]; total_count?: number; pages?: IntercomPages }>("/articles", { page: at.page, per_page: limit ?? 100 });
           const count = body.total_count ?? 0;
           if (at.page === 1) {
             // Strictly later than the pass before, so passes can't repeat within one second of Intercom's clock.
-            const began = Math.max(api.now(), at.began + 1);
-            Object.assign(at, { count, began, from: Math.min(before, began), brought: false, shrank: false });
+            Object.assign(at, { count, began: Math.max(api.now(), at.began + 1), shrank: false });
           }
           at.shrank ||= count < at.count;
           const items = at.since ? body.data.filter((a) => (a.updated_at ?? 0) >= at.since) : body.data;
-          at.brought ||= items.some((a) => (a.updated_at ?? 0) >= at.began);
-          // A pass after the first ends at the first article older than it looks for (or the list's end).
+          // A re-read ends at the first article older than it looks for (or the list's end).
           if (items.length === body.data.length && nextPage(body.pages, at.page)) {
             return { items: items.map(article), next: JSON.stringify({ ...at, page: at.page + 1 }) };
           }
+          const reread = { ...at, page: 1, since: at.began - STAMP_MARGIN };
           const next: ArticlesCursor | null =
             at.shrank && at.passes < MAX_FULL_PASSES
-              ? { ...at, page: 1, since: 0, passes: at.passes + 1 }
-              : at.since === 0 || at.brought
-                ? { ...at, page: 1, since: at.from - EDIT_MARGIN }
-                : null;
+              ? { ...at, page: 1, since: 0, passes: at.passes + 1, rereads: 0 }
+              : at.since === 0
+                ? { ...reread, rereads: 0 }
+                : at.page > 1 && at.rereads < MAX_REREADS
+                  ? { ...reread, rereads: at.rereads + 1 }
+                  : null;
           return { items: items.map(article), next: next && JSON.stringify(next) };
         },
         articleExists: (id) =>
