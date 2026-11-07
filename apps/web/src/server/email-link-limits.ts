@@ -5,7 +5,7 @@ import { lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { auth } from "@/lib/auth";
-import { clientKey } from "@/lib/client-ip";
+import { clientKey, trustedClientIp } from "@/lib/client-ip";
 import { hashSecret } from "@/lib/portal-handoff";
 import {
   SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR,
@@ -87,8 +87,7 @@ async function clientHash(requestHeaders: Headers): Promise<string | null> {
     }
     return null;
   }
-  // The proxy's own value is the last one if it appends to a list.
-  const ip = requestHeaders.get(header)?.split(",").at(-1)?.trim();
+  const ip = trustedClientIp(requestHeaders);
   if (!ip) {
     return null;
   }
