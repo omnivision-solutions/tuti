@@ -110,8 +110,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.setViewportSize({ width: 390, height: 844 });
   await rowsRead(390);
   // Its views fit, on a phone too (the rest under More): nothing faded out, no tab cut short.
-  // Measured, not the fade the page marks once its script runs: nothing past the row's width.
-  expect(await views.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+  // Measured, not the fade the page marks once its script runs: nothing past the row's width (a pixel's rounding aside, as
+  // showMore allows).
+  await expect.poll(() => views.evaluate((row) => row.scrollWidth - row.clientWidth)).toBeLessThanOrEqual(1);
   await checkpoint(owner, "inbox-phone-rows", { fullPage: false });
   // Scrolled under the page's header (room made below to scroll that far), a row's name (above its row's link) stays
   // under it too.
@@ -1009,8 +1010,9 @@ test("with two-digit counts the views still fit, at every laptop width and on a 
       await owner.goto(`/app/${slug}/inbox${view}`);
       await expect(views.getByRole("link", { name: "Unassigned 12" })).toBeVisible();
       // Not one cut short at either end (the row would fade there and scroll).
-      // Measured, not the fade the page marks once its script runs: nothing past the row's width.
-      expect(await views.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+      // Measured, not the fade the page marks once its script runs: nothing past the row's width (a pixel's rounding aside, as
+      // showMore allows).
+      await expect.poll(() => views.evaluate((row) => row.scrollWidth - row.clientWidth)).toBeLessThanOrEqual(1);
     }
     // Open under More: its name alone, short, on the tab ("Waiting"), and in full with its count to the ear.
     const open = views.getByRole("button", { name: "Waiting on user 12" });
