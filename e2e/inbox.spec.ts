@@ -1221,6 +1221,23 @@ test("Needs reply lists the latest message first, as every view does: a new mess
   await expect(list.getByRole("link")).toHaveText([/Sam Smith/, /e2e-asker/]);
 });
 
+/** Holds the page's navigations to addresses `what` matches (not prefetches) until the function it returns is called. */
+async function holdNavigations(page: Page, what: RegExp) {
+  let release!: () => void;
+  const held = new Promise<void>((done) => (release = done));
+  await page.route(what, async (route) => {
+    const headers = route.request().headers();
+    if (headers["rsc"] && !headers["next-router-prefetch"]) {
+      await held;
+    }
+    await route.fallback();
+  });
+  return async () => {
+    release();
+    await page.unroute(what);
+  };
+}
+
 test("a view lists a hundred conversations, and a hundred more with each Load more: they stay listed as one of them opens", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -1262,11 +1279,19 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
   await expect(rows).toHaveCount(102);
   await expect(rows.last()).toHaveAttribute("aria-current", "page");
 
-  // Another view starts at its first hundred again; Load more there keeps the open conversation's earlier messages.
+  // Another view starts at its first hundred again; Load more there keeps the open conversation's earlier messages. Gone
+  // on to the reply box while they load, focus stays there.
   await owner.goto(`/app/${slug}/inbox/1?messages=2`);
   await expect(rows).toHaveCount(100);
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  const release = await holdNavigations(owner, /[?&]page=2/);
   await more.click();
+  await reply.focus();
+  await expect(rows).toHaveCount(100);
+  await release();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?page=2&messages=2$`));
+  await expect(rows).toHaveCount(102);
+  await expect(reply).toBeFocused();
   await expect(rows.last()).toHaveAttribute("aria-current", "page");
 
   // Back to the list from a conversation, it's as long as it was.
@@ -1337,6 +1362,15 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   await owner.goto(`/app/${slug}/inbox/1`);
   await expect(messages.last()).toContainText("Note 50");
   await expect(messages.first()).toContainText("Note 1");
+  // Gone on to the reply box while the earlier ones load, focus stays there.
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  const release = await holdNavigations(owner, /[?&]messages=2/);
+  await earlier.click();
+  await reply.focus();
+  await expect(messages).toHaveCount(50);
+  await release();
+  await expect(messages).toHaveCount(100);
+  await expect(reply).toBeFocused();
   await owner.getByRole("button", { name: "More actions" }).click();
   await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toBeVisible();
 });

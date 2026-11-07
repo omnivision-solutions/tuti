@@ -51,9 +51,11 @@ export function LoadMore({ href, pages, last, more }: { href: string; pages: num
  * "Show earlier messages" (`href`, while there are `more`): the earlier ones come in above the message shown first
  * (`first`, its id, as `data-message`), which stays where it was on the screen. Browsers don't keep it there on their
  * own: Chrome's scroll anchoring stops at the top of what scrolls, where this is, and Safari has none. The first one it
- * loads has focus then, rather than nothing (the page) once the button's gone with the last of them.
+ * loads has focus then, rather than nothing (the page) once the button's gone with the last of them; only from the
+ * button: where they've gone on meanwhile (the reply box), focus stays.
  */
 export function EarlierMessages({ href, first, more }: { href: string; first: string; more: boolean }) {
+  const link = useRef<HTMLAnchorElement>(null);
   const was = useRef<{ id: string; top: number } | null>(null);
   useLayoutEffect(() => {
     const kept = was.current;
@@ -66,14 +68,18 @@ export function EarlierMessages({ href, first, more }: { href: string; first: st
     const pane = document.getElementById("conversation");
     const scroller = pane && getComputedStyle(pane).overflowY === "auto" ? pane : document.scrollingElement!;
     scroller.scrollBy({ top: message.getBoundingClientRect().top - kept.top, behavior: "instant" });
-    const loaded = document.querySelector<HTMLElement>("[data-message]")!;
-    loaded.tabIndex = -1;
-    loaded.focus({ preventScroll: true });
+    const focused = document.activeElement;
+    if (focused === document.body || focused === link.current) {
+      const loaded = document.querySelector<HTMLElement>("[data-message]")!;
+      loaded.tabIndex = -1;
+      loaded.focus({ preventScroll: true });
+    }
   }, [first]);
 
   return (
     more && (
       <Link
+        ref={link}
         href={href}
         scroll={false}
         onClick={(event) => {
