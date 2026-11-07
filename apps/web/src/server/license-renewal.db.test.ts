@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -7,7 +7,7 @@ import { POST } from "@/app/api/license/refresh/route";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { issueLicense, testLicensePrivateKey } from "@/test/license";
 
-import { installationId } from "./license";
+import { installationId, projectLicense } from "./license";
 import { DAY_MS, renewLicense } from "./license-renewal";
 import { signLicense } from "./license-server";
 import { getBranding, updateBranding } from "./operations/branding";
@@ -62,6 +62,8 @@ test("Check now before buying says so; once bought it gets a key, and Powered by
     token: null,
     requestId: expect.any(String),
     version: expect.any(String),
+    // This installation's secret, until it has a token: the buy link carries its hash.
+    claim: expect.any(String),
   });
 
   await sell();
@@ -178,4 +180,30 @@ test("keys expire by the latest time tuti.so has said it is, so setting the cloc
   await prisma.installation.updateMany({ data: { latestSeenAt: new Date(Date.now() + 60 * DAY_MS) } });
   expect(await poweredBy()).toBe(true);
   await prisma.installation.updateMany({ data: { latestSeenAt: null } });
+});
+
+test("a licence bought from this project's link is claimed by this installation, whoever else knows its ids", async () => {
+  const { buyUrl } = await projectLicense(project.id);
+  const claimHash = new URL(buyUrl).searchParams.get("claim");
+  expect(claimHash).toEqual(expect.any(String));
+  await prisma.license.create({ data: { installationId: await installationId(), projectId: project.id, claimHash } });
+
+  // Someone with the ids but not this installation claims first: refused.
+  const other = await POST(
+    new Request("http://tuti.test/api/license/refresh", {
+      method: "POST",
+      body: JSON.stringify({ installation: await installationId(), project: project.id, token: null, requestId: randomUUID() }),
+    }),
+  );
+  expect(other.status).toBe(403);
+  expect(await check()).toMatchObject({ status: "licensed", licensedUntil: expect.any(Date) });
+});
+
+test("on Tuti's cloud a licence key doesn't hide the badge: only the add-on on a paid plan does", async () => {
+  vi.stubEnv("PLANS", "on");
+  const key = issueLicense({ installation: await installationId(), project: project.id });
+  await prisma.project.update({ where: { id: project.id }, data: { licenseKey: key, poweredBy: false } });
+  expect(await poweredBy()).toBe(true);
+  expect((await projectLicense(project.id)).licensedUntil).toBeNull();
+  await expect(call(updateBranding, team(), { poweredBy: false })).rejects.toThrow();
 });

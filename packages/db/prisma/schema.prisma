@@ -154,6 +154,9 @@ model Installation {
   /// The latest time tuti.so has said it is: keys expire by it too, so setting the clock back
   /// doesn't bring an expired one back.
   latestSeenAt   DateTime?
+  /// Never leaves this installation except to tuti.so, once, to claim a licence it bought: the buy link
+  /// carries its hash, so only this installation (or a copy of it) can claim the licence first.
+  licenseSecret  String    @default(dbgenerated("gen_random_uuid()::text"))
   createdAt      DateTime  @default(now())
   /// When this server started keeping docs searches a year (they were kept 30 days before; the update's migration sets it): so
   /// searches are counted from 29 days before it, and Reporting says so for a range starting earlier.
@@ -2658,6 +2661,9 @@ model License {
   /// False once cancelled: renewals are refused, so the installation's key lapses.
   active               Boolean   @default(true)
   generation           Int       @default(0)
+  /// The SHA-256 (base64url) of the buying installation's licenseSecret, from the buy link: the first claim
+  /// (generation 0) must bring the secret. Null for one activated by hand or bought from an older release's link.
+  claimHash            String?
   /// The request that made the current generation: a retry of it with the previous token (its answer
   /// was lost) gets the same answer again.
   requestId            String?

@@ -2,6 +2,8 @@ import { createHmac, createPrivateKey, type KeyObject, sign, timingSafeEqual } f
 
 import { prisma } from "@tuti/db";
 
+import { isCloudInstallation, licenseClaimHash } from "./license";
+
 /**
  * Tuti's licence server (on tuti.so: only where LICENSE_PRIVATE_KEY, Tuti's Ed25519 private key,
  * is set). Installations renew each licensed project's key here (POST /api/license/refresh);
@@ -11,12 +13,15 @@ import { prisma } from "@tuti/db";
  * means the installation was cloned, so it's refused: one copy keeps renewing, the other's key
  * lapses. Except when the answer was lost: a retry carries the same request id as the attempt
  * whose answer it missed, so the previous token with that request id gets that answer again.
+ *
+ * The first claim has no token: it brings the installation's licenseSecret instead, whose hash the buy
+ * link carried into the licence (claimHash), so knowing the ids isn't enough to claim it first.
  */
 
 /** How long a key lasts. Installations renew daily, so a cancelled licence shows the badge again within this. */
 export const LICENSE_DAYS = 35;
 
-export type Refresh = { installation: string; project: string; token: string | null; requestId: string; version?: string };
+export type Refresh = { installation: string; project: string; token: string | null; requestId: string; version?: string; claim?: string };
 export type Refreshed = { key: string; token: string; now: Date } | { error: "not_licensed" | "in_use" };
 
 /** Tuti's private key, or null on any installation but Tuti's own. */
@@ -45,6 +50,9 @@ export async function refreshLicense(request: Refresh, now = new Date()): Promis
   if (!privateKey) {
     return null;
   }
+  if (await isCloudInstallation(request.installation)) {
+    return { error: "not_licensed" };
+  }
   const where = { installationId: request.installation, projectId: request.project };
   return prisma.$transaction(async (tx) => {
     // One renewal of a licence at a time, so two can't both spend the same token.
@@ -53,10 +61,11 @@ export async function refreshLicense(request: Refresh, now = new Date()): Promis
     if (!license?.active) {
       return { error: "not_licensed" as const };
     }
-    // Generation 0 is the first claim, which has no token yet.
+    // Generation 0 is the first claim, which has no token yet: the buying installation's secret instead, if the licence has its hash.
     const holds = (generation: number) => {
       if (generation === 0 || request.token === null) {
-        return generation === 0 && request.token === null;
+        const claimed = license.claimHash === null || (request.claim !== undefined && licenseClaimHash(request.claim) === license.claimHash);
+        return generation === 0 && request.token === null && claimed;
       }
       const expected = Buffer.from(refreshToken(privateKey, license.id, generation));
       const given = Buffer.from(request.token);

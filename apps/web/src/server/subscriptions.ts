@@ -32,9 +32,9 @@ export async function syncSubscription(id: string): Promise<string | null> {
     async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(5, hashtext(${id}))`;
       const first = await getSubscription(id);
-      const { projectId, licenseInstallation, licenseProject } = first.metadata ?? {};
+      const { projectId, licenseInstallation, licenseProject, licenseClaim } = first.metadata ?? {};
       if (licenseInstallation && licenseProject) {
-        await syncLicense(tx, first, { installationId: licenseInstallation, projectId: licenseProject });
+        await syncLicense(tx, first, { installationId: licenseInstallation, projectId: licenseProject, claimHash: licenseClaim ?? null });
         return null;
       }
       if (!projectId) {
@@ -80,18 +80,24 @@ export async function syncSubscription(id: string): Promise<string | null> {
  * A self-hosted project's licence bought on tuti.so/license (docs/plan.md, Licences): active while its
  * subscription is live, so its installation's renewals get keys; cancelled once it isn't, so its key
  * lapses. A second live subscription for a licence another one pays for changes nothing and is logged
- * for the operator to refund, like a plan's.
+ * for the operator to refund, like a plan's. Its claim hash (from the buy link) says which installation may claim it
+ * first; a purchase without one keeps the hash the licence has.
  */
-async function syncLicense(tx: Prisma.TransactionClient, subscription: StripeSubscription, license: { installationId: string; projectId: string }) {
+async function syncLicense(
+  tx: Prisma.TransactionClient,
+  subscription: StripeSubscription,
+  { claimHash, ...license }: { installationId: string; projectId: string; claimHash: string | null },
+) {
   if (!LIVE.has(subscription.status)) {
     await tx.license.updateMany({ where: { stripeSubscriptionId: subscription.id }, data: { active: false } });
     return;
   }
   // Its own, or one nothing pays for (cancelled, or activated by hand): this subscription pays for it now.
   const taken = await tx.$executeRaw`
-    INSERT INTO license (id, "installationId", "projectId", "stripeSubscriptionId")
-    VALUES (${randomUUID()}, ${license.installationId}, ${license.projectId}, ${subscription.id})
-    ON CONFLICT ("installationId", "projectId") DO UPDATE SET active = true, "stripeSubscriptionId" = EXCLUDED."stripeSubscriptionId"
+    INSERT INTO license (id, "installationId", "projectId", "stripeSubscriptionId", "claimHash")
+    VALUES (${randomUUID()}, ${license.installationId}, ${license.projectId}, ${subscription.id}, ${claimHash})
+    ON CONFLICT ("installationId", "projectId") DO UPDATE SET active = true, "stripeSubscriptionId" = EXCLUDED."stripeSubscriptionId",
+      "claimHash" = COALESCE(EXCLUDED."claimHash", license."claimHash")
     WHERE license."stripeSubscriptionId" = EXCLUDED."stripeSubscriptionId" OR license."stripeSubscriptionId" IS NULL OR NOT license.active`;
   if (taken === 0) {
     log.error("A second live Stripe subscription for a licence: cancel and refund it", { ...license, subscription: subscription.id });

@@ -8,7 +8,7 @@
 //   activate  sells the licence (or turns a cancelled one back on); the installation's next check gets a key
 //   cancel    stops renewals, so the installation's key lapses within a month and the badge comes back
 //   reset     forgets which installation holds it (support's answer when the wrong copy of a cloned
-//             installation kept renewing): the next installation to claim it gets it
+//             installation kept renewing): the next copy to claim it gets it (any installation, for one activated here)
 import { randomUUID } from "node:crypto";
 
 import pg from "pg";

@@ -1,6 +1,7 @@
-import { createPublicKey, verify } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 
 import { prisma } from "@tuti/db";
+import { plansEnabled } from "@tuti/shared";
 
 import { LICENSE_PUBLIC_KEYS } from "./license-key";
 
@@ -9,6 +10,7 @@ import { LICENSE_PUBLIC_KEYS } from "./license-key";
  * tuti.so and self-hosted alike. A licence key is `<claims>.<signature>`, both base64url: the
  * claims are `{ installation, project, exp }` (this installation's id, the project's id, and Unix
  * seconds), signed with Tuti's private key. It's checked here, offline, every time it's used.
+ * Tuti's cloud (where plans are sold) has no licences of its own: there it's the add-on on a paid plan.
  */
 
 const publicKeys = LICENSE_PUBLIC_KEYS.map((key) => createPublicKey({ key: Buffer.from(key, "base64"), format: "der", type: "spki" }));
@@ -21,6 +23,16 @@ export async function installationId(): Promise<string> {
 /** This installation: its id, and the latest time tuti.so has said it is. */
 export function installation(): Promise<{ id: string; latestSeenAt: Date | null }> {
   return prisma.installation.findUniqueOrThrow({ where: { singleton: 1 }, select: { id: true, latestSeenAt: true } });
+}
+
+/** Whether `id` is this installation and it's Tuti's cloud, which neither sells nor honours licences for itself. */
+export async function isCloudInstallation(id: string): Promise<boolean> {
+  return plansEnabled() && id === (await installationId());
+}
+
+/** The hash of an installation's licenseSecret, which its buy links carry and its first claim must match. */
+export function licenseClaimHash(secret: string): string {
+  return createHash("sha256").update(secret).digest("base64url");
 }
 
 /** The time keys expire by: now, or the latest time tuti.so has said it is if that's later (a clock set back). */
@@ -52,6 +64,11 @@ export function licensedUntil(
   }
 }
 
+/** Until when the project's key licenses it here: never on Tuti's cloud, where only the add-on hides the badge. */
+function projectLicensedUntil(licenseKey: string | null, project: string, installation: { id: string; latestSeenAt: Date | null }): Date | null {
+  return plansEnabled() ? null : licensedUntil(licenseKey, { installation: installation.id, project }, licenseNow(installation));
+}
+
 /**
  * Whether the project may hide "Powered by tuti": a valid licence key for it on this installation, or on
  * tuti.so the add-on on its plan (`badgeAddOn`, true only while the plan and the add-on are both live).
@@ -60,7 +77,7 @@ export function badgeLicensed(
   project: { id: string; licenseKey: string | null; badgeAddOn: boolean },
   installation: { id: string; latestSeenAt: Date | null },
 ): boolean {
-  return project.badgeAddOn || licensedUntil(project.licenseKey, { installation: installation.id, project: project.id }, licenseNow(installation)) !== null;
+  return project.badgeAddOn || projectLicensedUntil(project.licenseKey, project.id, installation) !== null;
 }
 
 /** Tuti's licence server. LICENSE_SERVER_URL is for tests: keys from any other server don't verify. */
@@ -72,12 +89,9 @@ export function licenseServer(): string {
 export async function projectLicense(projectId: string): Promise<{ licensedUntil: Date | null; buyUrl: string }> {
   const [project, current] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { licenseKey: true } }),
-    installation(),
+    prisma.installation.findUniqueOrThrow({ where: { singleton: 1 }, select: { id: true, latestSeenAt: true, licenseSecret: true } }),
   ]);
   const buyUrl = new URL("/license", licenseServer());
-  buyUrl.search = new URLSearchParams({ installation: current.id, project: projectId }).toString();
-  return {
-    licensedUntil: licensedUntil(project.licenseKey, { installation: current.id, project: projectId }, licenseNow(current)),
-    buyUrl: buyUrl.toString(),
-  };
+  buyUrl.search = new URLSearchParams({ installation: current.id, project: projectId, claim: licenseClaimHash(current.licenseSecret) }).toString();
+  return { licensedUntil: projectLicensedUntil(project.licenseKey, projectId, current), buyUrl: buyUrl.toString() };
 }
