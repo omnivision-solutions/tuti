@@ -95,17 +95,7 @@ test("secret-looking strings are masked; ordinary code stays as it was", () => {
   ]);
 });
 
-test("masking takes time in step with the text's length, whatever the text", () => {
-  // Shapes that made a pattern rescan the rest of the text from each of many starting points.
-  const size = 1_000_000;
-  const shapes = ["\n", "\r\n", "eyJ-", "eyJaaaaaaaaaaaa.eyJ-", "auth", "a.a.a.a.a.a.a.a.a.a://b:", "-----BEGIN ", 'password="'];
-  for (const shape of shapes) {
-    const text = shape.repeat(size / shape.length);
-    const started = performance.now();
-    maskSecrets(text);
-    // Generous for a slow runner: it takes milliseconds now, and minutes when a pattern rescans.
-    expect(performance.now() - started, JSON.stringify(shape)).toBeLessThan(5000);
-  }
+test("masking patterns stop where a match can't go on, so none rescans the text (see pull-request.live.test.ts)", () => {
   // Still masked: a secret on a line of its own, among the blank lines.
   expect(maskSecrets("\n\n  export API_SECRET=abcdefgh12\n\n")).toBe("\n\n  export API_SECRET=[secret]\n\n");
   // A JWT's shape, put together here so the file holds no token.
@@ -113,6 +103,11 @@ test("masking takes time in step with the text's length, whatever the text", () 
   expect(maskSecrets(`Authorization: "Bearer" ${jwt}`)).toBe('Authorization: "Bearer" [secret]');
   // A removed line in a diff, and one that wasn't touched.
   expect(maskSecrets(`-${jwt}\n ${jwt}`)).toBe("-[secret]\n [secret]");
+  // Not masked: an env line's name and value on different lines, a JWT glued to a word by a dash, and a name running
+  // more than 60 characters past its keyword.
+  for (const text of ["API_SECRET\n=abcdefgh12", `foo-${jwt}`, `password${"x".repeat(61)}="abcdefghij"`]) {
+    expect(maskSecrets(text)).toBe(text);
+  }
 });
 
 test("reads the pull request, its commits and its files; the diff without what's left out, masked and capped", async () => {
