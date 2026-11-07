@@ -14,8 +14,8 @@ import FeedbackPage from "./[project]/feedback/page";
 
 type Page = (props: unknown) => unknown;
 
-/** Under a layout for owners and admins only. */
-const adminOnly = (file: string) => /^\[project\]\/(customize|settings\/\(admin\))\//.test(file);
+/** Owners' and admins' only: under their layouts, and Setup. */
+const adminOnly = (file: string) => /^\[project\]\/(customize\/|settings\/\(admin\)\/|setup\/)/.test(file);
 
 const pages = readdirSync(import.meta.dirname, { recursive: true, encoding: "utf8" })
   .filter((file) => file.endsWith("page.tsx"))
