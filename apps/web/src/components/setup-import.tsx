@@ -220,6 +220,15 @@ export function SetupImport({
       (continueRef.current ?? progressRef.current)?.focus();
     }
   }, [started, shownId]);
+  // Once an import ends the picker comes back above its progress: the way on (Continue, or the progress in Settings)
+  // stays in view, so a phone without scroll anchoring doesn't jump to the picker.
+  const wasRunning = useRef(running);
+  useEffect(() => {
+    if (wasRunning.current && !running) {
+      (continueRef.current ?? progressRef.current)?.scrollIntoView({ block: "nearest" });
+    }
+    wasRunning.current = running;
+  }, [running]);
   // Images and files need media storage: said before starting, while a part that has them is offered.
   const noMedia = !mediaStorage && parts.some(([, part]) => part.media);
 

@@ -77,6 +77,8 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(continueLink).toBeFocused();
   // Over, the picker is back, the source it came from picked, to import again.
   await expect(picker.getByRole("radio", { name: /^Featurebase/ })).toBeChecked();
+  // Above the progress, it doesn't push the way on out of view.
+  await expect(continueLink).toBeInViewport();
   // Nothing was emailed: the invitations wait for the team to send them.
   await expect(owner.getByText("2 invitations ready to send.")).toBeVisible();
   await checkpoint(owner, "setup-featurebase-imported");
