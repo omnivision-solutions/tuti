@@ -407,7 +407,11 @@ describe("when a post ships", () => {
     const elsewhere = await call(createPost, { actor: { kind: "user", userId: voter.id }, projectId: other.id }, { board: "feature-requests", title: "Elsewhere" });
     const comment = await call(createComment, { actor: { kind: "user", userId: otherOwner.id }, projectId: other.id }, { number: elsewhere.number, body: "Thanks" });
     const reply = { commentId: comment.id, userId: voter.id };
-    await prisma.replyEmail.upsert({ where: { commentId_userId: reply }, create: { ...reply, sentAt: new Date() }, update: { sentAt: new Date() } });
+    // Claimed but not sent yet: not emailed.
+    await prisma.replyEmail.upsert({ where: { commentId_userId: reply }, create: { ...reply, sentAt: null }, update: { sentAt: null } });
+    expect((await oneClick(other.slug, legacy)).status).toBe(404);
+    expect(await optOuts()).toEqual([]);
+    await prisma.replyEmail.update({ where: { commentId_userId: reply }, data: { sentAt: new Date() } });
     expect((await oneClick(other.slug, await tokenOf(voter.id))).status).toBe(404);
     expect(await optOuts()).toEqual([]);
     expect((await oneClick(other.slug, legacy)).status).toBe(200);
