@@ -487,12 +487,13 @@ export async function adminMember(tx: Tx, job: ImportJob, adminId: string, seen:
  * joining or on verifying their address later: what the placeholder wrote (posts, votes, comments, notes, uploads,
  * articles and their versions, messages), the conversations it still holds (heldById, still unassigned), and the record
  * map's row; then it's deleted, once nothing points at it. Under the project's lock (as import pages write). Nothing for
- * someone not on the team, or whose address isn't verified.
+ * someone not on the team, or whose address isn't verified, unless `invited`: they joined by this project's invite to
+ * their address, which its team chose to trust (it doesn't verify the address: see acceptInvitation).
  */
-export async function handOverPlaceholders(tx: Tx, projectId: string, userId: string) {
+export async function handOverPlaceholders(tx: Tx, projectId: string, userId: string, invited = false) {
   await lockProject(tx, projectId);
   const user = await tx.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true, teamMemberships: { where: { projectId }, select: { id: true } } } });
-  if (!user?.emailVerified || user.teamMemberships.length === 0) {
+  if (!user || !(user.emailVerified || invited) || user.teamMemberships.length === 0) {
     return;
   }
   const email = user.email;

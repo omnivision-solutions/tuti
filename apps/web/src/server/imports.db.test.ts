@@ -389,12 +389,11 @@ async function placeholderWithHistory() {
   return { placeholder, theirs: theirs!, both: both!, conversations };
 }
 
-/** The placeholder's admin, with their address verified, invited to the team (to their address); `accept` joins. */
+/** The placeholder's admin, invited to the team (to their address); `accept` joins. */
 async function invite() {
   actAs(owner);
   const { url } = await createInvitation(project.slug, formerEmail, "MEMBER");
   const joiner = await signUp("Fern Former", formerEmail);
-  await prisma.user.update({ where: { id: joiner.id }, data: { emailVerified: true } });
   return {
     joiner,
     accept: () => {

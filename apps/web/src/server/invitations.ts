@@ -315,8 +315,9 @@ async function join(invitation: InvitationForJoining, userId: string) {
           throw new TeamFullError();
         }
         await tx.teamMember.create({ data: { projectId: invitation.projectId, userId, role: invitation.role } });
-        // Placeholders an import made for them (a teammate in the other tool) hand over to them, if their address is verified.
-        await handOverPlaceholders(tx, invitation.projectId, userId);
+        // Placeholders an import made for them (a teammate in the other tool) hand over to them: invited to their address,
+        // or with their address verified.
+        await handOverPlaceholders(tx, invitation.projectId, userId, Boolean(invitation.email));
         // Waits for an import page's save (the project lock) and moves what the placeholder wrote: as long as the other handover path.
       }, { timeout: 60_000 });
     } catch (error) {
