@@ -329,7 +329,7 @@ const matrix: Matrix = {
     startImport: {
       allowed: "ADMIN",
       call: async (slug) => {
-        const started = await imports.startImport(slug, FAKE_FEATUREBASE_KEY, ["contacts"]);
+        const started = await imports.startImport(slug, "featurebase", FAKE_FEATUREBASE_KEY, ["contacts"]);
         await importsSettled();
         return started;
       },

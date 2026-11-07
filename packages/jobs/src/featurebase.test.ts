@@ -173,7 +173,7 @@ test("a contact becomes a user: their app's id (else Featurebase's), details the
       profilePicture: "https://images.example.com/mira.png",
       customFields: { plan: "pro", seats: 12, beta: true, features: ["sso"], nested: { no: true }, mixed: ["a", 1], long: "x".repeat(201), gone: null, company: "Theirs" },
       companies: [{ name: "Fenwick Labs" }, { name: "Side Gig" }],
-    }),
+    }, "FEATUREBASE"),
   ).toEqual({
     externalId: "app-1",
     name: "Mira",
@@ -182,14 +182,21 @@ test("a contact becomes a user: their app's id (else Featurebase's), details the
     properties: { company: "Fenwick Labs", plan: "pro", seats: 12, beta: true, features: ["sso"] },
   });
   // Their app's id as the app's SSO sends it, spaces and all; only a blank one isn't one.
-  expect(contactDetails({ id: "c3", userId: " app-3 " }).externalId).toBe(" app-3 ");
-  expect(contactDetails({ id: "c4", userId: "  " }).externalId).toBe("featurebase:c4");
+  expect(contactDetails({ id: "c3", userId: " app-3 " }, "FEATUREBASE").externalId).toBe(" app-3 ");
+  expect(contactDetails({ id: "c4", userId: "  " }, "FEATUREBASE").externalId).toBe("featurebase:c4");
   // Nothing of their own: Featurebase's id, and only what they have (Featurebase's placeholder avatar isn't theirs).
-  expect(contactDetails({ id: "c2", userId: null, name: "", email: null, profilePicture: "https://global.featurebase-attachments.com/a/shapes/3_200_200.png", companies: [] })).toEqual({
+  expect(contactDetails({ id: "c2", userId: null, name: "", email: null, profilePicture: "https://global.featurebase-attachments.com/a/shapes/3_200_200.png", companies: [] }, "FEATUREBASE")).toEqual({
     externalId: "featurebase:c2",
     name: undefined,
     email: undefined,
     image: undefined,
     properties: {},
   });
+});
+
+test("someone without an id in the team's app is kept apart per source: two sources' same id are two users", () => {
+  // Another source's enum value, as one added later would be.
+  const other = "CANNY" as Parameters<typeof contactDetails>[1];
+  expect(contactDetails({ id: "c1" }, "FEATUREBASE").externalId).toBe("featurebase:c1");
+  expect(contactDetails({ id: "c1" }, other).externalId).toBe("canny:c1");
 });

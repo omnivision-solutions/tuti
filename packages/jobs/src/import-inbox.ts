@@ -8,8 +8,9 @@ import { stripQuotes } from "@tuti/shared/email-quotes";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { MAX_TRIES } from "./conversations";
-import { type FeaturebaseConversation, FeaturebaseError, inFeaturebaseStorage, type FeaturebasePart, type FeaturebasePartAuthor } from "./featurebase";
+import { type FeaturebaseConversation, inFeaturebaseStorage, type FeaturebasePart, type FeaturebasePartAuthor } from "./featurebase";
 import { download } from "./import-media";
+import { IMPORT_SOURCES } from "./import-sources";
 import { ALREADY_HERE, adminMember, contactUsers, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
 
 /**
@@ -96,7 +97,7 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
   const started = Date.now();
   const again = cursor?.startsWith(AGAIN) ?? false;
   const listCursor = again ? cursor!.slice(AGAIN.length) || null : cursor;
-  const { items, next } = await job.featurebase.page<FeaturebaseConversation>("/conversations", listCursor, { limit: PAGE });
+  const { items, next } = await job.read.conversations!(listCursor, PAGE);
   await loadAdmins(job);
   let cut = false;
   // Closed ones older than Tuti keeps would be deleted by the daily history job: counted, not imported.
@@ -116,12 +117,7 @@ export async function conversationsPage(job: ImportJob, cursor: string | null): 
       break;
     }
     // Read and its files copied at once: their signed addresses expire within the hour. One deleted since is skipped.
-    const conversation = await job.featurebase.get<FeaturebaseConversation>(`/conversations/${encodeURIComponent(listed.id)}`).catch((error: unknown) => {
-      if (error instanceof FeaturebaseError && error.status === 404) {
-        return null;
-      }
-      throw error;
-    });
+    const conversation = await job.read.conversation!(listed.id);
     if (conversation) {
       read.push(await readConversation(job, conversation, started + COPY_FOR_MS, here.get(listed.id)?.since));
     }
@@ -397,7 +393,7 @@ async function saveConversation(tx: Tx, job: ImportJob, read: Read, users: Map<s
   });
   await saveMessages(tx, job, id, read, messages, users, userId);
   if (read.cutShort) {
-    tally(job.counts, "conversations", "whose messages before their newest 500 are missing: Featurebase gives no more");
+    tally(job.counts, "conversations", `whose messages before their newest 500 are missing: ${IMPORT_SOURCES[job.source].name} gives no more`);
   }
   await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "conversation", externalId: c.id, localId: id, sourceUpdatedAt: lastActive(c) } });
 }

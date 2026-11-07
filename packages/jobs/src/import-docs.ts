@@ -6,8 +6,9 @@ import { articleLimit, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 
 import { recordRevision } from "./article-layers";
 import { freeDocsSlug } from "./docs-slugs";
-import { type Featurebase, type FeaturebaseArticle, type FeaturebaseCollection, FeaturebaseError } from "./featurebase";
+import type { FeaturebaseArticle } from "./featurebase";
 import { mediaImporter } from "./import-media";
+import { IMPORT_SOURCES } from "./import-sources";
 import { adminMember, ALREADY_HERE, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
 import { enqueue } from "./index";
 import { portalAddress } from "./portal-address";
@@ -35,8 +36,6 @@ export const contentBudget = { ms: 90_000 };
 /** A content page's cursor that reads the list's page at the cursor after it again (none: the first): `again:<cursor>`. */
 const AGAIN = "again:";
 
-/** The key is checked against the help center's lists before an import starts. */
-export const checkDocs = (api: Featurebase) => Promise.all([api.get("/help_center/help_centers", { limit: 1 }), api.get("/help_center/articles", { limit: 1, state: "all" })]);
 
 export const DOCS_STEPS = [
   { name: "docs-collections", page: collectionsPage },
@@ -173,10 +172,10 @@ async function remember(tx: Tx, job: ImportJob, kind: "collection" | "article", 
  * first tab (as tabFor does), each after what's there, siblings in Featurebase's order.
  */
 async function collectionsPage(job: ImportJob): Promise<StepPage> {
-  let page = await job.featurebase.page<FeaturebaseCollection>("/help_center/collections", null);
+  let page = await job.read.collections!(null);
   const all = [...page.items];
   while (page.next) {
-    page = await job.featurebase.page<FeaturebaseCollection>("/help_center/collections", page.next);
+    page = await job.read.collections!(page.next);
     all.push(...page.items);
   }
   const byId = new Map(all.map((collection) => [collection.id, collection]));
@@ -283,7 +282,7 @@ async function makeArticles(tx: Tx, job: ImportJob, articles: FeaturebaseArticle
 
 /** Pass 1's articles: every one (drafts too), made empty, a page at a time. */
 async function articlesPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
-  const { items, next } = await job.featurebase.page<FeaturebaseArticle>("/help_center/articles", cursor, { state: "all" });
+  const { items, next } = await job.read.articles!(cursor);
   await loadAdmins(job);
   return { next, save: (tx) => makeArticles(tx, job, items) };
 }
@@ -314,12 +313,7 @@ async function draftOf(job: ImportJob, article: FeaturebaseArticle): Promise<Fea
   if (!article.isPublished || !article.isDraftDiffersFromLive) {
     return null;
   }
-  return job.featurebase.get<FeaturebaseArticle>(`/help_center/articles/${encodeURIComponent(article.id)}`, { state: "draft" }).catch((error: unknown) => {
-    if (error instanceof FeaturebaseError && error.status === 404) {
-      return null;
-    }
-    throw error;
-  });
+  return job.read.articleDraft!(article.id);
 }
 
 type Text = { title: string; content: HtmlContent };
@@ -334,7 +328,7 @@ type Text = { title: string; content: HtmlContent };
 async function contentPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const started = Date.now();
   const listCursor = cursor?.startsWith(AGAIN) ? cursor.slice(AGAIN.length) || null : cursor;
-  const { items, next: listNext } = await job.featurebase.page<FeaturebaseArticle>("/help_center/articles", listCursor, { state: "all", limit: CONTENT_PAGE });
+  const { items, next: listNext } = await job.read.articles!(listCursor, CONTENT_PAGE);
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
   const todo = items.filter((article) => {
@@ -478,29 +472,6 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
 }
 
 /**
- * Whether Featurebase still has an article: its draft (every article has one; a never-published one only that), else
- * its live version. Gone only on a 404 for both; any other failure (429, 5xx, the page's deadline) throws.
- */
-async function stillThere(job: ImportJob, id: string): Promise<boolean> {
-  const path = `/help_center/articles/${encodeURIComponent(id)}`;
-  for (const query of [{ state: "draft" }, {}]) {
-    const found = await job.featurebase.get(path, query).then(
-      () => true,
-      (error: unknown) => {
-        if (error instanceof FeaturebaseError && error.status === 404) {
-          return false;
-        }
-        throw error;
-      },
-    );
-    if (found) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
  * After the content pass: the articles it made empty that no page of it reached (not landed, not counted by this
  * import) and that are still empty here, checked against Featurebase a page at a time (by their record, reading with
  * no lock held). Nothing is deleted: one Featurebase no longer has is counted as gone and left as the empty draft it is
@@ -534,11 +505,11 @@ async function unreachedPage(job: ImportJob, cursor: string | null): Promise<Ste
       continue;
     }
     // This step only reports: a read that fails for any other reason than a 404 leaves it as not reached.
-    const there = await stillThere(job, record.externalId).catch(() => true);
+    const there = await job.read.articleExists!(record.externalId).catch(() => true);
     reasons.set(
       record.id,
       !there
-        ? "gone from Featurebase (left as empty drafts)"
+        ? `gone from ${IMPORT_SOURCES[job.source].name} (left as empty drafts)`
         : record.madeTitle !== null && article.title !== record.madeTitle
           ? "edited here before their text came, so left as they are"
           : "not reached (import again to bring their text)",

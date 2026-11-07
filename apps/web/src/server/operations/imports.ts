@@ -1,10 +1,10 @@
-import { prisma, type Prisma } from "@tuti/db";
-import { continueImport, failStaleImports, featurebase, FeaturebaseError, type ImportCounts, IMPORT_KEY, IMPORT_PARTS as STEPS, importStale, importStuck, lockProject, nextStep, resumeImport } from "@tuti/jobs";
+import { type ImportSource, prisma, type Prisma } from "@tuti/db";
+import { continueImport, failStaleImports, type ImportCounts, IMPORT_KEY, IMPORT_SOURCES as SOURCES, type ImportSourceDefinition, importStale, importStuck, lockProject, nextStep, resumeImport } from "@tuti/jobs";
 import { boardLimit, log } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { z } from "zod";
 
-import { IMPORT_PARTS, type ImportPart, missingNeed } from "@/lib/import-parts";
+import { IMPORT_PARTS, IMPORT_SOURCES, type ImportPart, type ImportSourceInfo, type ImportSourceKey, missingNeed } from "@/lib/import-parts";
 
 import { defineOperation, OperationError } from "./define";
 
@@ -35,7 +35,7 @@ type ImportRow = Prisma.DataImportGetPayload<{ select: typeof importSelect }>;
 async function importView(row: ImportRow) {
   return {
     id: row.id,
-    source: row.source.toLowerCase() as "featurebase",
+    source: row.source.toLowerCase() as ImportSourceKey,
     /** running, done, or failed (`error` says why; started again, what came across already is skipped). */
     state: row.state.toLowerCase() as "running" | "done" | "failed",
     parts: row.parts as ImportPart[],
@@ -86,16 +86,17 @@ export function boardsNote(plan: "FREE" | "PRO" | "BUSINESS"): string | null {
 
 const label = (part: ImportPart) => IMPORT_PARTS[part].label;
 
-/** Featurebase's answer to a check, as the form says it: `cant` is what a refusal (401, 403) means. */
-/** How long starting an import may spend asking Featurebase (the key, then each part's list). */
+/** How long starting an import may spend asking the source (the key, then each part's list). */
 export const START_CHECK_MS = 20_000;
 
-function refusal(error: unknown, cant: { code: string; message: string }): never {
-  if (error instanceof FeaturebaseError && (error.status === 401 || error.status === 403)) {
+/** The source's answer to a check, as the form says it: `cant` is what a refusal (401, 403) means. */
+function refusal(source: ImportSourceDefinition, error: unknown, cant: { code: string; message: string }): never {
+  const status = source.status(error);
+  if (status === 401 || status === 403) {
     throw new OperationError(400, cant.code, cant.message);
   }
-  if (error instanceof FeaturebaseError) {
-    throw new OperationError(502, "unavailable", error.status === 0 ? `${error.message} Try again in a moment.` : `Featurebase answered ${error.status} (${error.message}). Try again in a moment.`);
+  if (status !== null && error instanceof Error) {
+    throw new OperationError(502, "unavailable", status === 0 ? `${error.message} Try again in a moment.` : `${source.name} answered ${status} (${error.message}). Try again in a moment.`);
   }
   throw error;
 }
@@ -108,11 +109,22 @@ export const startImport = defineOperation({
   path: "/imports",
   scope: "write",
   access: "admin",
-  input: z.object({
-    source: z.literal("featurebase"),
-    key: z.string().trim().min(1, "Paste your Featurebase API key").max(500),
-    parts: z.array(z.enum(Object.keys(IMPORT_PARTS) as [ImportPart, ...ImportPart[]])).min(1, "Pick what to bring"),
-  }),
+  // `key`: the source's API key, or its site's address (import-parts IMPORT_SOURCES' credential); `parts`: only those it has.
+  input: z
+    .object({
+      source: z.enum(Object.keys(IMPORT_SOURCES) as [ImportSourceKey, ...ImportSourceKey[]]),
+      key: z.string().trim().max(500),
+      parts: z.array(z.enum(Object.keys(IMPORT_PARTS) as [ImportPart, ...ImportPart[]])).min(1, "Pick what to bring"),
+    })
+    .superRefine(({ source, key, parts }, ctx) => {
+      const { name, credential, parts: has } = IMPORT_SOURCES[source] as ImportSourceInfo;
+      if (credential.kind === "key" ? key === "" : !z.url({ protocol: /^https?$/ }).safeParse(key).success) {
+        ctx.addIssue({ code: "custom", path: ["key"], message: credential.kind === "key" ? `Paste your ${name} API key` : `Paste your ${name} address` });
+      }
+      for (const part of parts.filter((p) => !has.includes(p))) {
+        ctx.addIssue({ code: "custom", path: ["parts"], message: `${name} has no ${IMPORT_PARTS[part].label} to bring` });
+      }
+    }),
   run: async ({ actor, projectId }, input) => {
     // It takes another tool's key, pasted into the app.
     if (actor.kind !== "user") {
@@ -127,14 +139,16 @@ export const startImport = defineOperation({
     if (latest?.state === "running") {
       return latest;
     }
-    // Someone waits on "Checking the key…": a slow or rate-limited Featurebase is said at once, not waited out.
-    const api = featurebase(input.key, { deadline: Date.now() + START_CHECK_MS });
-    await api.get("/admins").catch((error: unknown) =>
-      refusal(error, { code: "bad_key", message: "Featurebase didn't accept this API key. Check you copied all of it, or make a new one." }),
+    const sourceRow = input.source.toUpperCase() as ImportSource;
+    const source = SOURCES[sourceRow];
+    // Someone waits on "Checking the key…": a slow or rate-limited source is said at once, not waited out.
+    const connection = source.connect(input.key, { deadline: Date.now() + START_CHECK_MS });
+    await connection.checkCredential().catch((error: unknown) =>
+      refusal(source, error, { code: "bad_key", message: `${source.name} didn't accept this API key. Check you copied all of it, or make a new one.` }),
     );
     for (const part of parts) {
-      await STEPS[part]!.check(api).catch((error: unknown) =>
-        refusal(error, { code: "cant_read", message: `This key can't read ${label(part)} in Featurebase. Use a key that can, or leave ${label(part)} out.` }),
+      await connection.checks[part]!().catch((error: unknown) =>
+        refusal(source, error, { code: "cant_read", message: `This key can't read ${label(part)} in ${source.name}. Use a key that can, or leave ${label(part)} out.` }),
       );
     }
     // Under the project's lock: two starts at once make one.
@@ -144,7 +158,7 @@ export const startImport = defineOperation({
       return (
         running ??
         (await tx.dataImport.create({
-          data: { projectId, source: "FEATUREBASE", startedById: actor.userId, apiKey: sealValue(IMPORT_KEY, input.key), parts, step: nextStep(parts, null) ?? "" },
+          data: { projectId, source: sourceRow, startedById: actor.userId, apiKey: sealValue(IMPORT_KEY, input.key), parts, step: nextStep(parts, null) ?? "" },
           select: { id: true },
         }))
       );
