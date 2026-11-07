@@ -74,9 +74,12 @@ async function removeFromTeam(projectId: string, userId: string, member: Prisma.
   ]);
 }
 
-/** Invites `userId` sent that nobody has used yet. Not an import's still unsent: they're the team's to review, and whoever sends one becomes its sender. */
+/**
+ * Invites `userId` sent that could still be accepted. Not an import's still unsent: they're the team's to review, and
+ * whoever sends one becomes its sender. Not expired ones: nobody can use them, and Change role's toast counts the rest.
+ */
 const sentPending = (projectId: string, userId: string) =>
-  ({ projectId, createdById: userId, acceptedAt: null, revokedAt: null, sentAt: { not: null } }) satisfies Prisma.InvitationWhereInput;
+  ({ projectId, createdById: userId, acceptedAt: null, revokedAt: null, sentAt: { not: null }, expiresAt: { gt: new Date() } }) satisfies Prisma.InvitationWhereInput;
 
 export async function removeMember(projectSlug: string, memberId: string): Promise<Result> {
   const pair = await loadPair(projectSlug, memberId);
