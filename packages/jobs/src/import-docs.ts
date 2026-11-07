@@ -414,15 +414,16 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       break;
     }
     // A source whose list is only addresses reads each article now, so one done before is never fetched again. One
-    // failing for a while stops the page here (read again next); the first of a page failing fails the step, so a
-    // source that keeps failing fails the import.
+    // failing for a while stops the page here (read again next), once this run brought one across; with none brought
+    // (a gone one before it doesn't count: it's reached again next run) it fails the step, so a source that keeps
+    // failing fails the import, never reads the page again forever.
     let article = item;
     if (job.read.article) {
       let read: FeaturebaseArticle | null;
       try {
         read = await job.read.article(item);
       } catch (error) {
-        if (reached === 0) {
+        if (texts.length === 0) {
           throw error;
         }
         break;

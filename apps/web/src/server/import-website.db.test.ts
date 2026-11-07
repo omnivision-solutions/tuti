@@ -388,3 +388,19 @@ test("the first article of a run that fails once (a 503) is asked for again at o
   expect((await articles()).find((a) => a.title === "Getting started")?.body).toBe("Start here.");
   expect(site.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(2);
 });
+
+test("a gone article before one that keeps failing fails the import, rather than reading the page again forever", async () => {
+  const at = (path: string) => `${site.origin}${path}`;
+  const folder = at("/docs/getting-started");
+  site.failing.set("/docs/getting-started/install", 503);
+  const row = await runningImport(site.url, {
+    list: { pages: [{ id: at("/docs/getting-started/gone"), collection: folder }, { id: at("/docs/getting-started/install"), collection: folder }], collections: [{ id: folder, parent: null, name: "Getting started" }] },
+  });
+  for (let step = 0; step < 10 && (await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).state === "RUNNING"; step++) {
+    await importStep({ importId: row.id }, log);
+  }
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id }, select: { state: true, error: true } })).toMatchObject({
+    state: "FAILED",
+    error: expect.stringMatching(/^127\.0\.0\.1 answered 503\. /),
+  });
+});
