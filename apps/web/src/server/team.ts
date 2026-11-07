@@ -48,7 +48,12 @@ export async function changeTeamRole(projectSlug: string, memberId: string, role
   if (parsedRole.data !== "OWNER" && (await isLastOwner(actor.project.id, target.role))) {
     return { error: "A project needs at least one owner. Make someone else an owner first." };
   }
-  await prisma.teamMember.update({ where: { id: target.id }, data: { role: parsedRole.data } });
+  // The invites they sent for roles they can't give any more go: nobody joins on the strength of a role they've lost.
+  const cantGive = (["OWNER", "ADMIN", "MEMBER"] as const).filter((r) => !canAssignRole(parsedRole.data, r));
+  await prisma.$transaction([
+    prisma.teamMember.update({ where: { id: target.id }, data: { role: parsedRole.data } }),
+    prisma.invitation.updateMany({ where: { ...sentPending(actor.project.id, target.userId), role: { in: cantGive } }, data: { revokedAt: new Date() } }),
+  ]);
   refresh();
   return {};
 }
@@ -56,7 +61,7 @@ export async function changeTeamRole(projectSlug: string, memberId: string, role
 /**
  * Takes someone off the team; the conversations assigned to them become unassigned, the posts they owned have no
  * owner, and the API keys they created are revoked (they'd stop working anyway, without a role; revoked, they come off
- * Settings → Developers and stay dead if the person is invited back).
+ * Settings → Developers and stay dead if the person is invited back), as are the invites they sent.
  */
 async function removeFromTeam(projectId: string, userId: string, member: Prisma.TeamMemberWhereUniqueInput) {
   await prisma.$transaction([
@@ -64,8 +69,13 @@ async function removeFromTeam(projectId: string, userId: string, member: Prisma.
     prisma.conversation.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null, heldById: null } }),
     prisma.post.updateMany({ where: { projectId, ownerId: userId }, data: { ownerId: null } }),
     prisma.apiKey.updateMany({ where: { projectId, createdById: userId, revokedAt: null }, data: { revokedAt: new Date() } }),
+    prisma.invitation.updateMany({ where: sentPending(projectId, userId), data: { revokedAt: new Date() } }),
   ]);
 }
+
+/** Invites `userId` sent that nobody has used yet. Not an import's still unsent: they're the team's to review, and whoever sends one becomes its sender. */
+const sentPending = (projectId: string, userId: string) =>
+  ({ projectId, createdById: userId, acceptedAt: null, revokedAt: null, sentAt: { not: null } }) satisfies Prisma.InvitationWhereInput;
 
 export async function removeMember(projectSlug: string, memberId: string): Promise<Result> {
   const pair = await loadPair(projectSlug, memberId);
