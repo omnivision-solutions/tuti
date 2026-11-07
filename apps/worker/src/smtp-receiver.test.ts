@@ -14,6 +14,7 @@ import {
   IDLE_TIMEOUT_MS,
   LOOKUP_TIMEOUT_MS,
   PROBE_TIMEOUT_MS,
+  MAX_CHECKING_PER_SOURCE,
   MAX_CLIENTS,
   MAX_DKIM_SIGNATURES,
   MAX_HEADER_BYTES,
@@ -78,6 +79,7 @@ type Limits = {
   maxBufferedBytesPerSource?: number;
   sessionLifetimeMs?: number;
   resolver?: (name: string, type: string) => Promise<unknown>;
+  onReceived?: (bytes: number) => void;
 };
 
 async function receiver(
@@ -463,6 +465,43 @@ test("a message being delivered still counts against the budget until it's answe
   expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@a.support.test", "support@c.support.test"]);
 });
 
+test("a network's messages being checked are capped, even once their senders hang up: past it, try again later (451)", async () => {
+  const lookups: string[] = [];
+  // One more connection than the cap, to try one more message while the others are checked.
+  const { open, posts } = await receiver([], { maxPerSource: MAX_CHECKING_PER_SOURCE + 1, resolver: slowKeys(lookups) });
+  const sessions = await Promise.all(Array.from({ length: MAX_CHECKING_PER_SOURCE + 1 }, () => open()));
+  for (const session of sessions) {
+    await startMessage(session);
+  }
+  const quitters = sessions.slice(0, MAX_CHECKING_PER_SOURCE);
+  const last = sessions[MAX_CHECKING_PER_SOURCE]!;
+  // The checks' timers from here on are fake: messages whose checks the sender's DNS drags out, their senders gone.
+  fakeCheckTimers();
+  for (const quitter of quitters) {
+    quitter.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  }
+  await vi.waitFor(() => expect(lookups.filter((name) => name === "s0._domainkey.signer.example")).toHaveLength(MAX_CHECKING_PER_SOURCE));
+  quitters.forEach((quitter) => quitter.end());
+  await Promise.all(quitters.map((quitter) => quitter.closed));
+  // Their checks still count.
+  last.write(`${signed(0)}\r\n.`);
+  await last.reply("451");
+  // Once they've ended, the network's next message is checked and taken.
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  for (const [line, code] of [
+    ["MAIL FROM:<sam@example.org>", "250"],
+    ["RCPT TO:<support@b.support.test>", "250"],
+    ["DATA", "354"],
+    [`${signed(0)}\r\n.`, "250"],
+  ] as const) {
+    last.write(line);
+    await last.reply(code);
+  }
+  vi.useRealTimers();
+  last.end();
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toContain("support@b.support.test");
+});
+
 // Linux routes all of 127.0.0.0/8 to loopback, so 127.0.1.1 is another network; macOS has only 127.0.0.1 (CI runs Linux).
 test.skipIf(process.platform === "darwin")("senders trickling their messages in hold no place: another network's mail is taken, and they're cut off within the minimum rate's window", async () => {
   fakeSessionClock();
@@ -486,18 +525,19 @@ const headerLines = (bytes: number) => Array.from({ length: Math.ceil(bytes / 1_
 
 test("a message arriving at the minimum rate is still cut off at the arrival deadline", async () => {
   fakeSessionClock();
-  const { open } = await receiver();
+  let received = 0;
+  const { open } = await receiver([], { onReceived: (bytes) => (received += bytes) });
   const session = await open();
   await startMessage(session);
   let closed = false;
   void session.closed.then(() => (closed = true));
   /** A window's worth of bytes, past the minimum; then the window. */
   const keepUp = async () => {
+    const before = received;
     session.write(headerLines(MIN_ARRIVAL_BYTES + 10_000));
-    // Real time for the bytes to reach the server (only the receiver's clock is fake).
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The bytes have reached the receiver (past the minimum) before its clock moves on.
+    await vi.waitFor(() => expect(received - before).toBeGreaterThanOrEqual(MIN_ARRIVAL_BYTES));
     vi.advanceTimersByTime(ARRIVAL_WINDOW_MS);
-    await new Promise((resolve) => setTimeout(resolve, 50));
   };
   for (let passed = ARRIVAL_WINDOW_MS; passed < ARRIVAL_TIMEOUT_MS; passed += ARRIVAL_WINDOW_MS) {
     await keepUp();

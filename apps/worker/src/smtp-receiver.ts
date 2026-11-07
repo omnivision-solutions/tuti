@@ -41,6 +41,13 @@ export const MAX_PER_SOURCE = 3;
 export const MAX_IN_FLIGHT = 10;
 export const MAX_IN_FLIGHT_PER_SOURCE = 2;
 /**
+ * Messages being checked (SPF, DKIM, DMARC: DNS lookups, many of names the sender picks) at once, and
+ * from one network, as many as it may have connections: whether their sender is still connected or
+ * not, so hanging up and coming back doesn't start more (451 past them).
+ */
+export const MAX_CHECKING = 30;
+export const MAX_CHECKING_PER_SOURCE = MAX_PER_SOURCE;
+/**
  * Bytes of messages held at once, arriving, being checked or delivered, and from one network: a
  * message that would go past either is refused (451) and not kept.
  */
@@ -94,6 +101,8 @@ export type ReceiverOptions = {
   sessionLifetimeMs?: number;
   /** DNS for the checks (tests give a fake one). */
   resolver?: Resolver;
+  /** Told of each chunk of a message as it arrives (tests wait on it). */
+  onReceived?: (bytes: number) => void;
   post?: Post;
 };
 
@@ -236,6 +245,8 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   const started = new Map<string, number>();
   const deadline = new Map<string, number>();
   let inFlight = 0;
+  let checking = 0;
+  const checkingPerSource = new Map<string, number>();
   const inFlightPerSource = new Map<string, number>();
   let buffered = 0;
   const bufferedPerSource = new Map<string, number>();
@@ -337,6 +348,7 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
         if (window) {
           window.bytes += chunk.length;
         }
+        options.onReceived?.(chunk.length);
         if ((stream as { sizeExceeded?: boolean }).sizeExceeded || overBudget) {
           return;
         }
@@ -380,14 +392,27 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
 
   /** The answer for the whole message: taken (250) unless the app refused it everywhere, or needs a retry. */
   async function deliver(raw: Buffer, session: SMTPServerSession, source: string) {
-    const results = await checkAuth(raw, {
-      ip: session.remoteAddress,
-      helo: session.hostNameAppearsAs,
-      sender: session.envelope.mailFrom ? session.envelope.mailFrom.address : "",
-      serverName,
-      probe: domain,
-      ...(options.resolver && { resolver: options.resolver }),
-    });
+    // A place among the messages being checked, until the check ends, whether the sender is still there
+    // or not (its bytes stay counted until then too: they're released when the message is answered).
+    if (checking >= MAX_CHECKING || (checkingPerSource.get(source) ?? 0) >= MAX_CHECKING_PER_SOURCE) {
+      return 451;
+    }
+    checking++;
+    adjust(checkingPerSource, source, 1);
+    let results: Awaited<ReturnType<typeof checkAuth>>;
+    try {
+      results = await checkAuth(raw, {
+        ip: session.remoteAddress,
+        helo: session.hostNameAppearsAs,
+        sender: session.envelope.mailFrom ? session.envelope.mailFrom.address : "",
+        serverName,
+        probe: domain,
+        ...(options.resolver && { resolver: options.resolver }),
+      });
+    } finally {
+      checking--;
+      adjust(checkingPerSource, source, -1);
+    }
     if (!results) {
       // Our DNS doesn't answer: not taken, and the sender tries again later.
       log.warn("Checking a received email's SPF, DKIM and DMARC took too long and this server's DNS isn't answering: the sender will try again later");
