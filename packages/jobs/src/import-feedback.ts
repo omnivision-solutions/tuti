@@ -6,9 +6,10 @@ import { titleSlug } from "@tuti/shared/post-urls";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { embedPosts } from "./duplicates";
-import { type FeaturebaseAuthor, type FeaturebaseBoard, type FeaturebaseComment, FeaturebaseError, type FeaturebaseLocalized, type FeaturebasePost, type FeaturebaseVoter } from "./featurebase";
+import { type FeaturebaseAuthor, type FeaturebaseBoard, type FeaturebaseComment, type FeaturebaseLocalized, type FeaturebasePost, type FeaturebaseVoter } from "./featurebase";
 import { mediaImporter } from "./import-media";
-import { adminMember, ALREADY_HERE, contactUsers, type ImportJob, loadAdmins, type StepPage, tally } from "./imports";
+import { IMPORT_SOURCES } from "./import-sources";
+import { adminMember, ALREADY_HERE, contactUsers, type ImportJob, loadAdmins, sourceUserId, type StepPage, tally } from "./imports";
 import { lastingMediaUrl } from "./lasting-media";
 import { syncUsersIn } from "./project-users";
 
@@ -263,7 +264,7 @@ async function authorOf(tx: Tx, job: ImportJob, author: FeaturebaseAuthor, conta
   if (contact) {
     return contact;
   }
-  const externalId = author?.id ? `featurebase:${author.id}` : `featurebase:guest:${of}`;
+  const externalId = sourceUserId(job.source, author?.id || `guest:${of}`);
   // Made once: their name isn't changed by what a later post says.
   const known = await guestUser(tx, job, externalId);
   if (known) {
@@ -291,8 +292,8 @@ type PostsAt = { page: string | null; after: { id: string; createdAt: string } |
 async function postsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = FEEDBACK_PAGE.now();
   const at = cursor ? (JSON.parse(cursor) as PostsAt) : { page: null, after: null };
-  const boards = await job.featurebase.get<FeaturebaseBoard[]>("/boards");
-  const { items, next } = await job.featurebase.page<FeaturebasePost>("/posts", at.page, { sortBy: "createdAt", sortOrder: "asc" });
+  const boards = await job.read.boards!();
+  const { items, next } = await job.read.posts!(at.page);
   const byId = new Map(boards.map((board) => [board.id, board]));
   // After the last one done; one gone since (merged, deleted), after where it was by date.
   const index = at.after ? items.findIndex((post) => post.id === at.after!.id) : -1;
@@ -434,13 +435,8 @@ async function votesPage(job: ImportJob, cursor: string | null): Promise<StepPag
       break;
     }
     do {
-      const page = await job.featurebase.page<FeaturebaseVoter>(`/posts/${encodeURIComponent(post.externalId)}/voters`, voters).catch((error: unknown) => {
-        // A post an earlier import brought that Featurebase no longer has (deleted, merged): its votes here stay as they are.
-        if (error instanceof FeaturebaseError && error.status === 404) {
-          return null;
-        }
-        throw error;
-      });
+      // Null: a post an earlier import brought that the source no longer has (deleted, merged): its votes here stay as they are.
+      const page = await job.read.voters!(post.externalId, voters);
       requests++;
       if (page) {
         read.push({ postId: post.localId, voters: page.items });
@@ -467,11 +463,11 @@ async function votesPage(job: ImportJob, cursor: string | null): Promise<StepPag
             voter.type === "admin" ? (await adminMember(tx, job, voter.id, voter)).userId : voter.type === "customer" || voter.type === "lead" ? users.get(voter.id) : undefined;
           // A guest (or someone Featurebase no longer has) among their own post's voters: the author's vote, made and
           // counted with the post.
-          if (!userId && voter.id && (await guestUser(tx, job, `featurebase:${voter.id}`)) === post!.authorId) {
+          if (!userId && voter.id && (await guestUser(tx, job, sourceUserId(job.source, voter.id))) === post!.authorId) {
             continue;
           }
           if (!userId) {
-            tally(job.counts, "votes", voter.type === "customer" || voter.type === "lead" ? "by people Featurebase no longer has" : "by guests");
+            tally(job.counts, "votes", voter.type === "customer" || voter.type === "lead" ? `by people ${IMPORT_SOURCES[job.source].name} no longer has` : "by guests");
             continue;
           }
           if (userId === post!.authorId) {
@@ -524,7 +520,7 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
   const at: CommentsAt = cursor?.startsWith("{") ? JSON.parse(cursor) : { page: cursor, after: null };
   let done = 0;
   const media = timedImporter(job, begun, () => done === 0);
-  const page = await job.featurebase.page<FeaturebaseComment>("/comments", at.page, { privacy: "all", sortBy: "old" });
+  const page = await job.read.comments!(at.page);
   const listed = page.items.filter((comment) => comment.postId);
   // After the last one done; one gone since (deleted, its post merged), after where it was by date.
   const index = at.after ? listed.findIndex((comment) => comment.id === at.after!.id) : -1;

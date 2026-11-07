@@ -10,13 +10,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { IMPORT_PARTS, type ImportPart, importNote, importProgress, importSummary, importTitle, pickPart } from "@/lib/import-parts";
+import { IMPORT_PARTS, IMPORT_SOURCES, type ImportPart, type ImportSourceInfo, type ImportSourceKey, importNote, importProgress, importSummary, importTitle, pickPart } from "@/lib/import-parts";
 import { cn } from "@/lib/utils";
 import { startImport } from "@/server/imports";
 import type { ImportView } from "@/server/operations/imports";
-
-/** Where Featurebase's API keys are made (its dashboard's Settings → API, after signing in). */
-const KEYS_URL = "https://auth.featurebase.app/login?redirect=/settings/api";
 
 /** The invitations an import made that wait to be sent, and where to send them (nothing when there are none). */
 export function InvitationsToSend({ projectSlug, count }: { projectSlug: string; count: number }) {
@@ -137,8 +134,8 @@ export function RefreshWhile({ on }: { on: boolean }) {
 }
 
 /**
- * The first run's "Where are you coming from?": starting fresh, or Featurebase, with an API key and the parts to bring
- * (imports.start). Started, it shows the import's progress while it runs, and Continue goes on with setup meanwhile.
+ * The first run's "Where are you coming from?": starting fresh, or a tool to import from (IMPORT_SOURCES), with its API
+ * key (or its site's address) and the parts to bring (imports.start). Started, it shows the import's progress while it runs, and Continue goes on with setup meanwhile.
  * Without `next` it's Settings → Import: only the tools to import from, any time.
  */
 export function SetupImport({
@@ -160,10 +157,13 @@ export function SetupImport({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [from, setFrom] = useState<"fresh" | "featurebase">(latest || !next ? "featurebase" : "fresh");
+  const [from, setFrom] = useState<"fresh" | ImportSourceKey>(latest?.source ?? (next ? "fresh" : (Object.keys(IMPORT_SOURCES)[0] as ImportSourceKey)));
+  const source: ImportSourceInfo | null = from === "fresh" ? null : IMPORT_SOURCES[from];
   const [picked, setPicked] = useState<ImportPart[]>(["team", "contacts", "avatars"]);
   const [error, setError] = useState<string | null>(null);
-  const parts = Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][];
+  // The parts the source has, and those of them picked.
+  const parts = (Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][]).filter(([key]) => source?.parts.includes(key));
+  const chosen = picked.filter((part) => source?.parts.includes(part));
   const running = latest?.state === "running";
   // Started here, focus goes to Continue (the progress is said above it), the way on: once, when the page first shows
   // that import, not again on each refresh while it runs.
@@ -191,7 +191,7 @@ export function SetupImport({
         const field = event.currentTarget.elements.namedItem("key") as HTMLInputElement;
         const key = field.value;
         startTransition(async () => {
-          const result = await startImport(projectSlug, key, picked);
+          const result = await startImport(projectSlug, from, key, chosen);
           setError(result.error ?? null);
           if (result.import) {
             // Kept on the server while it runs, not in the page.
@@ -204,12 +204,7 @@ export function SetupImport({
     >
       <RefreshWhile on={running} />
       <CardContent role="radiogroup" aria-label="Where are you coming from?" className="grid gap-3 sm:grid-cols-2">
-        {(
-          [
-            ["fresh", "Starting fresh", "Set Tuti up from scratch."],
-            ["featurebase", "Featurebase", "Bring your team, users, feedback, help center and inbox across with an API key."],
-          ] as const
-        )
+        {[["fresh", "Starting fresh", "Set Tuti up from scratch."] as const, ...(Object.entries(IMPORT_SOURCES) as [ImportSourceKey, ImportSourceInfo][]).map(([value, { name, description }]) => [value, name, description] as const)]
           .filter(([value]) => next || value !== "fresh")
           .map(([value, label, description]) => (
           <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
@@ -224,10 +219,10 @@ export function SetupImport({
       {/* On the page before there's anything in it, so screen readers hear the import start and end: the title while
           it runs, and the summary once it's over, never each page's count. */}
       <p role="status" className="sr-only">
-        {from === "featurebase" && latest ? (running ? importTitle(latest) : `${importTitle(latest)}. ${importSummary(latest)}`) : ""}
+        {source && latest ? (running ? importTitle(latest) : `${importTitle(latest)}. ${importSummary(latest)}`) : ""}
       </p>
-      <CardContent className={from === "featurebase" && latest ? undefined : "sr-only"}>
-        {from === "featurebase" && latest && (
+      <CardContent className={source && latest ? undefined : "sr-only"}>
+        {source && latest && (
           <div ref={progressRef} tabIndex={-1} className="rounded-xl border p-4 outline-none">
             <p className="mb-3 text-sm font-medium">
               {importTitle(latest)}
@@ -239,20 +234,29 @@ export function SetupImport({
           </div>
         )}
       </CardContent>
-      {from === "featurebase" && !running && (
+      {source && !running && (
         <CardContent className="flex flex-col gap-4">
           <Field data-invalid={error ? true : undefined}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <FieldLabel htmlFor="featurebase-key">API key</FieldLabel>
-              {/* Where it's made, in Featurebase, beside the field that wants it: a new tab, so the form stays as it is. */}
-              <a href={KEYS_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline">
-                Get your API key
-                <ExternalLinkIcon className="size-3.5" aria-hidden />
-                <span className="sr-only"> (Featurebase, opens in a new tab)</span>
-              </a>
+              <FieldLabel htmlFor={`${from}-key`}>{source.credential.kind === "key" ? "API key" : "Address"}</FieldLabel>
+              {/* Where it's made, in the tool, beside the field that wants it: a new tab, so the form stays as it is. */}
+              {source.credential.kind === "key" && (
+                <a href={source.credential.keysUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline">
+                  Get your API key
+                  <ExternalLinkIcon className="size-3.5" aria-hidden />
+                  <span className="sr-only"> ({source.name}, opens in a new tab)</span>
+                </a>
+              )}
             </div>
-            <Input id="featurebase-key" name="key" type="password" autoComplete="off" required aria-invalid={error ? true : undefined} />
-            <FieldDescription>In Featurebase, Settings → API. It&apos;s kept only while the import runs.</FieldDescription>
+            <Input
+              id={`${from}-key`}
+              name="key"
+              type={source.credential.kind === "key" ? "password" : "url"}
+              autoComplete="off"
+              required
+              aria-invalid={error ? true : undefined}
+            />
+            <FieldDescription>{source.credential.help}</FieldDescription>
             {error && <FieldError>{error}</FieldError>}
           </Field>
           <div role="group" aria-label="What to bring" className="flex flex-col gap-2">
@@ -262,7 +266,7 @@ export function SetupImport({
                 <label key={key} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
                   <input
                     type="checkbox"
-                    checked={picked.includes(key)}
+                    checked={chosen.includes(key)}
                     onChange={(event) => setPicked(pickPart(picked, key, event.target.checked, IMPORT_PARTS))}
                     className="mt-0.5 size-4 accent-primary"
                   />
@@ -274,23 +278,23 @@ export function SetupImport({
               ))}
             </div>
             {latest && <p className="text-sm text-muted-foreground">Importing again brings only what&apos;s new since: nothing comes twice.</p>}
-            {boardsNote && picked.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
+            {boardsNote && chosen.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}
           </div>
         </CardContent>
       )}
       <CardFooter className="justify-end gap-2">
-        {from === "featurebase" && !running && (
+        {source && !running && (
           <>
             {/* Done, going on is the main action; importing again (more parts, say) the other. */}
             {latest?.state !== "done" && skip}
-            <Button type="submit" variant={latest?.state === "done" && next ? "outline" : "default"} disabled={pending || picked.length === 0} focusableWhenDisabled>
+            <Button type="submit" variant={latest?.state === "done" && next ? "outline" : "default"} disabled={pending || chosen.length === 0} focusableWhenDisabled>
               {pending ? "Checking the key…" : latest?.state === "done" ? "Import again" : "Check the key and start"}
             </Button>
           </>
         )}
         {/* One Continue in one place, so it keeps focus as the import goes from running to done. */}
-        {next && (from !== "featurebase" || running || latest?.state === "done") && (
+        {next && (!source || running || latest?.state === "done") && (
           <Link ref={continueRef} href={next} className={buttonVariants()}>
             Continue
           </Link>

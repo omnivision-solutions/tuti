@@ -5,12 +5,13 @@ import type { JobInput } from "@tuti/shared";
 import { openValue } from "@tuti/shared/signed";
 import { type PropertyChanges, propertyChanges } from "@tuti/shared/user-properties";
 
-import { type Featurebase, featurebase, type FeaturebaseAdmin, type FeaturebaseContact, FeaturebaseError } from "./featurebase";
+import type { FeaturebaseAdmin, FeaturebaseContact } from "./featurebase";
 import { changelogPage } from "./import-changelog";
-import { checkDocs, DOCS_STEPS } from "./import-docs";
+import { DOCS_STEPS } from "./import-docs";
 import { avatarsPage, feedbackSteps } from "./import-feedback";
 import { conversationsPage } from "./import-inbox";
 import { teamPage } from "./import-team";
+import { type ImportPart, IMPORT_SOURCES, type ImportReaders } from "./import-sources";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lockConflict } from "./lock-retries";
 import { isUniqueViolation, placeholderEmail, syncUsersIn, type UserDetails } from "./project-users";
@@ -28,15 +29,15 @@ type Tx = Prisma.TransactionClient;
 /** What an import brought across, per kind (contacts, …): how many, and how many it left out, by reason. */
 export type ImportCounts = Record<string, { imported: number; leftOut: Record<string, number> }>;
 
-/** One page's work: the import, a client for its source, and its counts, to add to. */
+/** One page's work: the import, its source's readers (import-sources), and its counts, to add to. */
 export type ImportJob = {
   id: string;
   projectId: string;
   source: ImportSource;
   startedById: string | null;
-  featurebase: Featurebase;
+  read: ImportReaders;
   counts: ImportCounts;
-  /** Featurebase's admins, read before a page's transaction that needs them (loadAdmins). */
+  /** The source's admins, read before a page's transaction that needs them (loadAdmins). */
   admins?: Map<string, FeaturebaseAdmin>;
 };
 
@@ -64,19 +65,19 @@ export type StepPage = {
 type Step = { name: string; page: (job: ImportJob, cursor: string | null) => Promise<StepPage> };
 
 /**
- * The parts an import can bring, in the order they run: how a key is checked for each before it starts (its list read
- * once), and its steps (docs/plan.md, I1, I3–I6).
+ * The parts an import can bring, in the order they run, and their steps (docs/plan.md, I1, I3–I6); which of them a
+ * source has, and how its credential is checked for each, is its own (import-sources).
  */
-export const IMPORT_PARTS: Record<string, { check: (api: Featurebase) => Promise<unknown>; steps: Step[] }> = {
+export const IMPORT_PARTS: Record<ImportPart, { steps: Step[] }> = {
   // First, so the team's invitations are ready to send while the rest comes across.
-  team: { check: (api) => api.get("/admins"), steps: [{ name: "team", page: teamPage }] },
-  contacts: { check: (api) => api.get("/contacts", { limit: 1, contactType: "all" }), steps: [{ name: "contacts", page: contactsPage }] },
-  feedback: { check: (api) => Promise.all([api.get("/boards"), api.get("/posts", { limit: 1 })]), steps: feedbackSteps },
-  changelog: { check: (api) => api.get("/changelogs", { limit: 1, state: "all" }), steps: [{ name: "changelog", page: changelogPage }] },
-  docs: { check: checkDocs, steps: DOCS_STEPS },
-  inbox: { check: (api) => api.get("/conversations", { limit: 1 }), steps: [{ name: "conversations", page: conversationsPage }] },
-  // Last: the least of it, and the slowest, so nothing waits for it (it reads only what's here: nothing to check).
-  avatars: { check: async () => undefined, steps: [{ name: "avatars", page: avatarsPage }] },
+  team: { steps: [{ name: "team", page: teamPage }] },
+  contacts: { steps: [{ name: "contacts", page: contactsPage }] },
+  feedback: { steps: feedbackSteps },
+  changelog: { steps: [{ name: "changelog", page: changelogPage }] },
+  docs: { steps: DOCS_STEPS },
+  inbox: { steps: [{ name: "conversations", page: conversationsPage }] },
+  // Last: the least of it, and the slowest, so nothing waits for it.
+  avatars: { steps: [{ name: "avatars", page: avatarsPage }] },
 };
 
 const STEPS = Object.entries(IMPORT_PARTS).flatMap(([part, { steps }]) => steps.map((step) => ({ ...step, part })));
@@ -92,7 +93,7 @@ export const IMPORT_STUCK_MS = 6 * 60_000;
 /** One that hasn't moved for a day is failed by the daily fail-stale-imports (or, inline, when it's looked at), its key cleared. */
 const STALE_MS = 24 * 60 * 60_000;
 /**
- * How long a page may spend reading Featurebase, retries and their waits included: import-step's time limit is 5
+ * How long a page may spend reading its source, retries and their waits included: import-step's time limit is 5
  * minutes (apps/worker tasks.ts), so a page has time left to save, and IMPORT_STUCK_MS is longer than both.
  */
 const PAGE_READ_MS = 3 * 60_000;
@@ -149,21 +150,24 @@ export function importJob(row: DataImport): ImportJob | null {
     return null;
   }
   const counts = structuredClone(row.counts ?? {}) as ImportCounts;
-  return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, featurebase: featurebase(openValue(IMPORT_KEY, row.apiKey), { deadline: Date.now() + PAGE_READ_MS }), counts };
+  const { read } = IMPORT_SOURCES[row.source].connect(openValue(IMPORT_KEY, row.apiKey), { deadline: Date.now() + PAGE_READ_MS });
+  return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, read, counts };
 }
 
 /** What an import's API key is sealed for while it's kept (sealValue: encrypted at rest). */
 export const IMPORT_KEY = "import-key";
 
 /** Why a page failed, in words, for the team. */
-function failure(error: unknown): string {
-  if (!(error instanceof FeaturebaseError)) {
+function failure(source: ImportSource, error: unknown): string {
+  const { name, status: statusOf } = IMPORT_SOURCES[source];
+  const status = statusOf(error);
+  if (status === null || !(error instanceof Error)) {
     return `Something went wrong. ${AGAIN}`;
   }
-  if (error.status === 401 || error.status === 403) {
-    return `Featurebase stopped accepting the API key (${error.message}). ${AGAIN}`;
+  if (status === 401 || status === 403) {
+    return `${name} stopped accepting the API key (${error.message}). ${AGAIN}`;
   }
-  return error.status === 0 ? `${error.message} ${AGAIN}` : `Featurebase answered ${error.status} (${error.message}). ${AGAIN}`;
+  return status === 0 ? `${error.message} ${AGAIN}` : `${name} answered ${status} (${error.message}). ${AGAIN}`;
 }
 
 /** Runs a page's transaction under the project's lock; one that lost a race to someone's first sight (a sign-in) runs again. */
@@ -214,7 +218,7 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
   const claim = { id: row.id, state: "RUNNING", step: row.step, cursor: row.cursor } as const;
   // A part this worker doesn't have (it's the release before the web that started the import, mid-deploy) fails it,
   // never skipped: an import that ended "done" without it would say nothing of what it left behind.
-  const unknown = row.parts.find((part) => !IMPORT_PARTS[part]);
+  const unknown = row.parts.find((part) => !(part in IMPORT_PARTS));
   if (unknown) {
     await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: `Tuti was updating as it started. ${AGAIN}`, finishedAt: new Date() } });
     return { failed: true };
@@ -261,7 +265,7 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
     });
   } catch (error) {
     log.warn(`Import ${importId}: ${row.step} failed (${String(error)})`);
-    await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: failure(error), finishedAt: new Date() } });
+    await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: failure(row.source, error), finishedAt: new Date() } });
     return { failed: true };
   }
   if (saved) {
@@ -299,6 +303,9 @@ async function recordedUsers(tx: Tx, job: ImportJob, kind: string, externalIds: 
   return new Map(rows.filter((row) => users.has(row.localId)).map((row) => [row.externalId, row.localId]));
 }
 
+/** A user's external id for someone of a source's without an id in the team's app (`featurebase:<id>`): one namespace per source. */
+export const sourceUserId = (source: ImportSource, id: string) => `${source.toLowerCase()}:${id}`;
+
 /** Featurebase's generated avatars (coloured shapes): left out, so Tuti draws its own. */
 const PLACEHOLDER_AVATAR = /^https:\/\/global\.featurebase-attachments\.com\/a\/shapes\//;
 
@@ -309,17 +316,17 @@ const avatar = (url: string | null | undefined) => {
 };
 
 /**
- * A Featurebase contact as one of the project's users: their id in the team's app (`userId`, so its SSO finds them),
- * else `featurebase:<id>`; their name, email and avatar where they have one (what they don't have stays as it is); their
+ * A source's contact as one of the project's users: their id in the team's app (`userId`, so its SSO finds them),
+ * else `<source>:<id>` (`featurebase:<id>`), so two sources' ids never meet; their name, email and avatar where they have one (what they don't have stays as it is); their
  * custom fields as properties, those Tuti's properties take (the rest left out), and their first company's name as `company`.
  */
-export function contactDetails(contact: FeaturebaseContact): UserDetails {
+export function contactDetails(contact: FeaturebaseContact, source: ImportSource): UserDetails {
   const company = contact.companies?.[0]?.name?.trim();
   const fields = Object.entries(contact.customFields ?? {}).filter(([name, value]) => value !== null && !(company && name.trim() === "company"));
   const properties = Object.entries(propertyChanges(Object.fromEntries(company ? [["company", company], ...fields] : fields)));
   return {
     // As the app's SSO sends it (`sub` isn't trimmed), so the two find the same user.
-    externalId: contact.userId?.trim() ? contact.userId : `featurebase:${contact.id}`,
+    externalId: contact.userId?.trim() ? contact.userId : sourceUserId(source, contact.id),
     name: contact.name?.trim() || undefined,
     email: contact.email?.trim() || undefined,
     image: avatar(contact.profilePicture),
@@ -337,7 +344,7 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
     // import) is that user, and one whose address another customer on the page has is theirs. Never by a lead's: anyone
     // can type any address as a lead, and would see that person's conversations. Someone with an id in their app keeps
     // it, so the app's SSO finds them.
-    const all = fresh.map((contact) => contactDetails(contact));
+    const all = fresh.map((contact) => contactDetails(contact, job.source));
     const byAddress = (contact: FeaturebaseContact) => (contact.type !== "lead" && !contact.userId?.trim() && contact.email?.trim().toLowerCase()) || null;
     const emails = fresh.flatMap((contact) => byAddress(contact) ?? []);
     const byEmail = new Map(
@@ -402,7 +409,7 @@ async function importContacts(tx: Tx, job: ImportJob, contacts: FeaturebaseConta
 
 /** Contacts: every one (customers and leads), a page at a time. */
 async function contactsPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
-  const { items, next } = await job.featurebase.page<FeaturebaseContact>("/contacts", cursor, { contactType: "all" });
+  const { items, next } = await job.read.contacts!(cursor);
   return { next, save: (tx) => importContacts(tx, job, items).then(() => undefined) };
 }
 
@@ -416,12 +423,7 @@ export async function contactUsers(job: ImportJob, contactIds: string[]): Promis
   const known = await recordedUsers(prisma, job, "contact", ids);
   const fetched: FeaturebaseContact[] = [];
   for (const id of ids.filter((id) => !known.has(id))) {
-    const contact = await job.featurebase.get<FeaturebaseContact>(`/contacts/${encodeURIComponent(id)}`).catch((error: unknown) => {
-      if (error instanceof FeaturebaseError && error.status === 404) {
-        return null;
-      }
-      throw error;
-    });
+    const contact = await job.read.contact!(id);
     if (contact) {
       fetched.push(contact);
     }
@@ -435,9 +437,9 @@ export async function contactUsers(job: ImportJob, contactIds: string[]): Promis
   };
 }
 
-/** Reads Featurebase's admins once for the job, before a page's transaction that looks them up (adminMember). */
+/** Reads the source's admins once for the job, before a page's transaction that looks them up (adminMember). */
 export async function loadAdmins(job: ImportJob): Promise<void> {
-  job.admins ??= new Map((await job.featurebase.get<{ data: FeaturebaseAdmin[] }>("/admins")).data.map((admin) => [admin.id, admin]));
+  job.admins ??= new Map((await job.read.admins!()).map((admin) => [admin.id, admin]));
 }
 
 /**

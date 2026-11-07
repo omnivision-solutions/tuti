@@ -8,7 +8,7 @@ vi.mock("@/server/imports", () => ({}));
 const { ImportDetails, ImportProgress } = await import("./setup-import");
 
 type Run = Parameters<typeof ImportProgress>[0]["run"];
-const run = (state: string, step: string | null, counts: object = {}) => ({ state, step, error: null, parts: ["contacts", "feedback", "docs"], counts }) as unknown as Run;
+const run = (state: string, step: string | null, counts: object = {}) => ({ source: "featurebase", state, step, error: null, parts: ["contacts", "feedback", "docs"], counts }) as unknown as Run;
 /** Each part's row as text, its tags and screen-reader text included. */
 const rows = (r: Run) =>
   [...renderToStaticMarkup(createElement(ImportProgress, { projectSlug: "acme", run: r, invitations: 0 })).matchAll(/<li class="flex items-start[^"]*">(.*?)<\/li>(?=<li class="flex items-start|<\/ol>$)/g)].map((m) =>

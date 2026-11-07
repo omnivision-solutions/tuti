@@ -205,6 +205,16 @@ test("a comment that's only an image comes across with it", async () => {
   expect(JSON.stringify(only!.content)).toContain('"type":"image"');
 });
 
+test("guests whose id is blank are each their own person, not one", async () => {
+  for (const post of fake.fixtures.posts.filter((post) => ["Keyboard shortcuts", "Export to PDF"].includes(post.title as string))) {
+    post.author = { ...(post.author as object), id: "" };
+  }
+  await importFeedback();
+  const guests = await prisma.post.findMany({ where: { projectId: project.id, title: { in: ["Keyboard shortcuts", "Export to PDF"] } }, select: { authorId: true, author: { select: { name: true } } } });
+  expect(guests.map((post) => post.author.name).sort()).toEqual(["Another visitor", "Visitor"]);
+  expect(new Set(guests.map((post) => post.authorId)).size).toBe(2);
+});
+
 test("posts imported into a board the team made private take its visibility, as a new post there does", async () => {
   await prisma.board.update({ where: { id: project.boards[0]!.id }, data: { postVisibility: "PRIVATE" } });
   await importFeedback();

@@ -1,3 +1,5 @@
+import type { ImportSource } from "@tuti/db";
+
 import type { ImportView } from "@/server/operations/imports";
 
 /**
@@ -99,6 +101,34 @@ export type ImportPartInfo = {
 export type ImportPart = keyof typeof IMPORT_PARTS;
 
 /**
+ * The tools an import brings from, as "Where are you coming from?" and Settings → Import list them, each with the parts
+ * it has (in IMPORT_PARTS' order) and what the team gives it: an API key (`keysUrl`: where it's made) or a site's
+ * address, by the import row's `source` (lowercase; typecheck fails till each has one). Its reading is @tuti/jobs
+ * import-sources; adding one is an entry here and its file there.
+ */
+export const IMPORT_SOURCES = {
+  featurebase: {
+    name: "Featurebase",
+    description: "Bring your team, users, feedback, help center and inbox across with an API key.",
+    parts: ["team", "contacts", "feedback", "changelog", "docs", "inbox", "avatars"],
+    credential: {
+      kind: "key",
+      // Its dashboard's Settings → API, after signing in.
+      keysUrl: "https://auth.featurebase.app/login?redirect=/settings/api",
+      help: "In Featurebase, Settings → API. It's kept only while the import runs.",
+    },
+  },
+} as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;
+
+export type ImportSourceInfo = {
+  name: string;
+  description: string;
+  parts: readonly ImportPart[];
+  credential: { kind: "key"; keysUrl: string; help: string } | { kind: "url"; help: string };
+};
+export type ImportSourceKey = keyof typeof IMPORT_SOURCES;
+
+/**
  * The picked parts after ticking (`on`) or unticking one: ticking one ticks what it needs, unticking one unticks what
  * needs it, all the way along.
  */
@@ -173,8 +203,10 @@ export const kindCount = (kind: string, n: number) => {
 };
 
 /** An import's title, as the setup step and Home say it. */
-export const importTitle = (run: ImportView) =>
-  run.state === "running" ? "Importing from Featurebase" : run.state === "done" ? "Imported from Featurebase" : "The import from Featurebase stopped";
+export const importTitle = (run: ImportView) => {
+  const { name } = IMPORT_SOURCES[run.source];
+  return run.state === "running" ? `Importing from ${name}` : run.state === "done" ? `Imported from ${name}` : `The import from ${name} stopped`;
+};
 
 /** What `counts` brought of `kinds` ("12 contacts") and what they left out and why ("2 contacts without a name"), in `kinds`' order. */
 function described(counts: ImportView["counts"], kinds: readonly string[]) {

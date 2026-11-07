@@ -52,7 +52,7 @@ const dateOf = (value: string | null | undefined) => (value && !Number.isNaN(Dat
 export async function changelogPage(job: ImportJob, cursor: string | null): Promise<StepPage> {
   const begun = CHANGELOG_PAGE.now();
   const at: ChangelogAt = cursor ? JSON.parse(cursor) : { page: null, after: null };
-  const listed = await job.featurebase.page<FeaturebaseChangelog>("/changelogs", at.page, { state: "all", sortBy: "date", sortOrder: "asc", limit: CHANGELOG_PAGE.entries });
+  const listed = await job.read.changelog!(at.page, CHANGELOG_PAGE.entries);
   // After the last one done; one gone since (deleted, made a segment's), from its date on: entries of the same date may
   // not be done yet (one done already is skipped by its record, counted as brought earlier).
   const index = at.after ? listed.items.findIndex((entry) => entry.id === at.after!.id) : -1;

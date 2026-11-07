@@ -28,7 +28,7 @@ export const TEAM_LEFT_OUT = {
 
 /** The team's one page: Featurebase's admins (one list, unpaged), read before the page's transaction. */
 export async function teamPage(job: ImportJob): Promise<StepPage> {
-  const { data: admins } = await job.featurebase.get<{ data: FeaturebaseAdmin[] }>("/admins");
+  const admins = await job.read.admins!();
   return { next: null, save: (tx) => inviteAdmins(tx, job, admins) };
 }
 
