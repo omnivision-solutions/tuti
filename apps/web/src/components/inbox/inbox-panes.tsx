@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ConversationDetails } from "@/components/inbox/conversation-details";
 import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
+import { LoadMore } from "@/components/inbox/load-more";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -18,7 +19,6 @@ import { StatTile } from "@/components/stat-tile";
 import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { initial, longDuration, replyTime, rowBy, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { isAdminRole } from "@/lib/roles";
@@ -125,9 +125,23 @@ async function listed(view: View, projectId: string, userId: string, history: Da
  * scrolling on its own under the header from laptop width up (the page itself doesn't); narrower, one at a time. The
  * views are a row of tabs above the list at every width, in the same place whether a conversation is open or not.
  * With none open, the pane beside the list has the Inbox's numbers (`children` only with one open). The list is `pages`
- * pages long (`?page=`), with "Load more" under it while the view has more.
+ * pages long (`?page=`), with "Load more" under it while the view has more; it keeps the open one's `messages` pages.
  */
-export async function InboxPanes({ slug, view, open, pages = 1, children }: { slug: string; view: View; open: number | null; pages?: number; children?: ReactNode }) {
+export async function InboxPanes({
+  slug,
+  view,
+  open,
+  pages = 1,
+  messages = 1,
+  children,
+}: {
+  slug: string;
+  view: View;
+  open: number | null;
+  pages?: number;
+  messages?: number;
+  children?: ReactNode;
+}) {
   const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
   if (!membership || !session) {
     notFound();
@@ -293,15 +307,11 @@ export async function InboxPanes({ slug, view, open, pages = 1, children }: { sl
               </CardContent>
             </Card>
           )}
-          {counts[views.indexOf(view)]! > conversations.length && (
-            <Link
-              href={inboxHref(slug, view, open, pages + 1)}
-              scroll={false}
-              className={buttonVariants({ variant: "outline", className: "mx-auto mt-3 flex w-fit" })}
-            >
-              Load more
-            </Link>
-          )}
+          <LoadMore
+            href={inboxHref(slug, view, open, pages + 1, messages)}
+            last={conversations.at(-1)?.number ?? 0}
+            more={counts[views.indexOf(view)]! > conversations.length}
+          />
         </ListKeys>
       </div>
 

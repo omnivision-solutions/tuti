@@ -7,6 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
+import { EarlierMessages } from "@/components/inbox/load-more";
 import { DetailsToggle } from "@/components/inbox/conversation-details";
 import { ConversationPosts } from "@/components/inbox/conversation-posts";
 import { AssignMenu, CloseButton, MarkStatusButton, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
@@ -186,7 +187,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const detailsHidden = (await cookies()).get(DETAILS_HIDDEN_COOKIE)?.value === "1";
 
   return (
-    <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages}>
+    <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
       <ConversationPane open detailsHidden={detailsHidden}>
         <PageHeader
           back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }}
@@ -258,21 +259,16 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   // Its name as the page shows it: an emailed name only once the address is verified.
                   person={{ ...conversation, name: person.name }}
                   besides={conversation.number}
-                  inbox={{ view, userId: membership.userId }}
+                  inbox={{ view, pages, userId: membership.userId }}
                 />
               </PersonDetails>
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-4 @3xl:col-start-1 @3xl:row-start-1">
-              {conversation._count.messages > shown && (
-                // Not what keeps its place as the earlier ones come in above it (overflow-anchor): the message it was over does.
-                <Link
-                  href={inboxHref(slug, view, conversation.number, pages, messagePages + 1)}
-                  scroll={false}
-                  className={buttonVariants({ variant: "outline", size: "sm", className: "self-center [overflow-anchor:none]" })}
-                >
-                  Show earlier messages
-                </Link>
-              )}
+              <EarlierMessages
+                href={inboxHref(slug, view, conversation.number, pages, messagePages + 1)}
+                first={conversation.messages[0]?.id ?? ""}
+                more={conversation._count.messages > shown}
+              />
               <ol className="flex flex-col gap-3" aria-label="Messages">
                 {conversation.messages.map((message) => {
                   const fromTeam = message.author !== "USER";
@@ -282,7 +278,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                       ? (message.fromAddress ?? personName)
                       : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
                   return (
-                    <li key={message.id} className={cn("flex", fromTeam && "justify-end", message.note && "justify-center")}>
+                    <li key={message.id} data-message={message.id} className={cn("flex", fromTeam && "justify-end", message.note && "justify-center")}>
                       <Card size="sm" className={cn("max-w-[85%]", fromTeam && "bg-muted", message.note && "border-dashed bg-highlight/40")}>
                         <CardContent className="flex flex-col gap-1">
                           <p className="text-xs text-muted-foreground">
