@@ -6,7 +6,8 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { ConversationPane, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
+import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
+import { EarlierMessages } from "@/components/inbox/load-more";
 import { DetailsToggle } from "@/components/inbox/conversation-details";
 import { ConversationPosts } from "@/components/inbox/conversation-posts";
 import { AssignMenu, CloseButton, MarkStatusButton, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
@@ -46,11 +47,21 @@ const EMAIL_STATUS: Record<EmailStatus, (error: string | null) => string> = {
   FAILED: (error) => `Couldn't email it${error ? `: ${error}` : ""}`,
 };
 
-/** One conversation: its messages, the reply box, status, assignee and spam; beside the inbox's list, in its view (`?view=`). */
+/** A conversation shows its latest this many messages, and this many earlier ones with each "Show earlier messages" (`?messages=`). */
+const MESSAGES_PER_PAGE = 50;
+
+/**
+ * One conversation: its latest messages, the reply box, status, assignee and spam; beside the inbox's list, in its view
+ * (`?view=`), as long as it's been loaded (`?page=`).
+ */
 export default async function ConversationPage(props: PageProps<"/app/[project]/inbox/[number]">) {
   const { project: slug, number: param } = await props.params;
   const number = Number(param);
-  const view = inboxView((await props.searchParams).view);
+  const searchParams = await props.searchParams;
+  const view = inboxView(searchParams.view);
+  const pages = inboxPages(searchParams.page);
+  const messagePages = inboxPages(searchParams.messages);
+  const shown = MESSAGES_PER_PAGE * messagePages;
   const membership = await getMembership(slug);
   if (!membership || !Number.isInteger(number) || number < 1) {
     notFound();
@@ -61,7 +72,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const emailPaused =
     plansEnabled() && !!supportDomain() && !!(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
   const history = await historySince(projectId);
-  const [conversation, team] = await Promise.all([
+  const [conversation, team, said] = await Promise.all([
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number }, AND: [visibleConversations(history)] },
       select: {
@@ -82,8 +93,11 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         createdAt: true,
         user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
         posts: { orderBy: { createdAt: "asc" }, select: { post: { select: { number: true, title: true, status: true } } } },
+        _count: { select: { messages: true } },
+        // The latest ones, newest first (put in order below).
         messages: {
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: shown,
           select: {
             id: true,
             author: true,
@@ -108,6 +122,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       orderBy: { createdAt: "asc" },
       select: { userId: true, user: { select: { name: true, image: true } } },
     }),
+    // Who wrote last, past the messages shown too (a run of notes can fill them).
+    prisma.conversationMessage.findFirst({
+      where: { conversation: { projectId, number }, note: false },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { author: true },
+    }),
   ]);
   if (!conversation) {
     // Closed before the plan's history starts: kept (for a while), and back with a plan that reaches it.
@@ -115,13 +135,14 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     if (past) {
       const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
       return (
-        <InboxPanes slug={slug} view={view} open={number}>
-          <PastHistory slug={slug} view={view} number={number} days={historyDays(plan)!} admin={isAdminRole(membership.role)} upgrade={inSomePlansHistory(past)} />
+        <InboxPanes slug={slug} view={view} open={number} pages={pages}>
+          <PastHistory slug={slug} view={view} pages={pages} number={number} days={historyDays(plan)!} admin={isAdminRole(membership.role)} upgrade={inSomePlansHistory(past)} />
         </InboxPanes>
       );
     }
     notFound();
   }
+  conversation.messages.reverse();
   // Signed as the page renders: an image is shown, any other file is saved under its name.
   // Out of AI credits: the AI's buttons show, disabled (the layout says why).
   const paused = aiEnabled() && (await aiPaused(projectId));
@@ -145,7 +166,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       : null;
   const personName = person.name ?? person.email ?? "Unknown";
   // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
-  const answered = conversation.messages.findLast((m) => !m.note)?.author === "TEAM";
+  const answered = said?.author === "TEAM";
   // What's done with every conversation: in the top bar, and on phones under the title as well as in its menu.
   const actions = (
     <>
@@ -172,10 +193,10 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const detailsHidden = (await cookies()).get(DETAILS_HIDDEN_COOKIE)?.value === "1";
 
   return (
-    <InboxPanes slug={slug} view={view} open={conversation.number}>
+    <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
       <ConversationPane open detailsHidden={detailsHidden}>
         <PageHeader
-          back={{ href: inboxHref(slug, view), label: "Inbox" }}
+          back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }}
           title={conversation.subject}
           meta={
             <>
@@ -244,11 +265,16 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   // Its name as the page shows it: an emailed name only once the address is verified.
                   person={{ ...conversation, name: person.name }}
                   besides={conversation.number}
-                  inbox={{ view, userId: membership.userId }}
+                  inbox={{ view, pages, userId: membership.userId }}
                 />
               </PersonDetails>
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-4 @3xl:col-start-1 @3xl:row-start-1">
+              <EarlierMessages
+                href={inboxHref(slug, view, conversation.number, pages, messagePages + 1)}
+                first={conversation.messages[0]?.id ?? ""}
+                more={conversation._count.messages > shown}
+              />
               <ol className="flex flex-col gap-3" aria-label="Messages">
                 {conversation.messages.map((message) => {
                   const fromTeam = message.author !== "USER";
@@ -258,7 +284,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                       ? (message.fromAddress ?? personName)
                       : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
                   return (
-                    <li key={message.id} className={cn("flex", fromTeam && "justify-end", message.note && "justify-center")}>
+                    <li key={message.id} data-message={message.id} className={cn("flex", fromTeam && "justify-end", message.note && "justify-center")}>
                       <Card size="sm" className={cn("max-w-[85%]", fromTeam && "bg-muted", message.note && "border-dashed bg-highlight/40")}>
                         <CardContent className="flex flex-col gap-1">
                           <p className="text-xs text-muted-foreground">
@@ -297,7 +323,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               </ol>
 
               {/* Opens at the newest message, and follows new ones. */}
-              <ScrollToEnd count={conversation.messages.length} within="conversation" />
+              <ScrollToEnd count={conversation._count.messages} within="conversation" />
               {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the pane's own padding).
                   Tuti's chat launcher isn't in the Inbox (AppWidget), so nothing sits over its buttons. */}
               <div className="sticky bottom-0 -mb-6 mt-auto bg-background pt-2 pb-6">
@@ -326,10 +352,10 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
  * A conversation with nothing done in it for longer than the plan's history (`days`): what happened to it, and how to see it
  * again. `upgrade`: it's in some plan's history (inSomePlansHistory), so an upgrade shows it; past every plan's, nothing does.
  */
-function PastHistory({ slug, view, number, days, admin, upgrade }: { slug: string; view: ReturnType<typeof inboxView>; number: number; days: number; admin: boolean; upgrade: boolean }) {
+function PastHistory({ slug, view, pages, number, days, admin, upgrade }: { slug: string; view: ReturnType<typeof inboxView>; pages: number; number: number; days: number; admin: boolean; upgrade: boolean }) {
   return (
     <ConversationPane open>
-      <PageHeader back={{ href: inboxHref(slug, view), label: "Inbox" }} title={`Conversation #${number}`} />
+      <PageHeader back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }} title={`Conversation #${number}`} />
       <EmptyState
         title="Past your plan's history"
         description={`Nothing has happened in it for more than ${days} days, longer than your plan keeps inbox history. ${

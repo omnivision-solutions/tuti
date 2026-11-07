@@ -100,7 +100,7 @@ export async function PersonPanel({
    * Beside a conversation in the Inbox: the view its list shows, and who's looking. Their conversations in that view
    * open beside it there; the others in the Inbox's first view (one without them would have no row for it).
    */
-  inbox?: { view: View; userId: string };
+  inbox?: { view: View; pages: number; userId: string };
   /** On their own page (Users): their avatar and name as its heading, the profile beside the activity, all of it. */
   page?: boolean;
 }) {
@@ -252,7 +252,7 @@ export async function PersonPanel({
       <Section title={besides === undefined ? "Conversations" : "Other conversations"} count={otherCount}>
         <Links
           items={others.map((c) => ({
-            href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number) : `/app/${slug}/inbox/${c.number}`,
+            href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages) : `/app/${slug}/inbox/${c.number}`,
             title: c.subject,
             meta: (
               <>
