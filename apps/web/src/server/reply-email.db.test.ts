@@ -61,6 +61,8 @@ test("the team's reply with Email voters goes to the post's voters, each once; n
     expect(email!.text).toContain("Owner from");
     expect(email!.text).toContain("Dark mode ships next week.");
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
+    // The person's token for this project (projectUnsubscribeToken), never their bare one.
+    expect(email!.headers["list-unsubscribe"]).toMatch(/\?token=[^.>]+\.[\w-]+>$/);
     expect(email!.headers["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
   }
   // Not the team (who wrote it), nor an address nobody verified.
