@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 
 import { lastingImage } from "./media-urls";
 import { toReviewCounts } from "./operations/code-changes";
@@ -24,6 +24,10 @@ export async function getMembership(slug: string) {
     select: { role: true, userId: true, project: { select: { id: true, slug: true, name: true, plan: true, ssoSecret: true, ssoSignInUrl: true, askingProperty: true, propertyFormats: true } } },
   });
 }
+
+/** Someone's role in a project now (null: not on its team), for a change to read under the project's lock. */
+export const teamRoleIn = async (tx: Prisma.TransactionClient, projectId: string, userId: string) =>
+  (await tx.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { role: true } }))?.role ?? null;
 
 /** The project, if the signed-in user owns it (settings only owners change, like Autopilot's). */
 export async function getOwnerProject(slug: string) {

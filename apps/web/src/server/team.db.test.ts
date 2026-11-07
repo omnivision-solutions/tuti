@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
-import { beforeEach, describe, expect, test } from "vitest";
+import { lockProject } from "@tuti/jobs";
+import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 
@@ -41,6 +42,75 @@ describe("a project keeps at least one owner", () => {
     actAs(owner);
     expect(await redirectTarget(leaveProject(project.slug))).toBe("/app");
     expect(await roleOf(ownerMemberId)).toBeUndefined();
+  });
+
+  // Each decided on what it read before the other changed anything, both would pass and leave no owner.
+  const owners = () => prisma.teamMember.count({ where: { projectId: project.id, role: "OWNER" } });
+  /** Holds each transaction until both are waiting: each has read whatever it reads before its own. */
+  const meetAtTransactions = () => {
+    const real = prisma.$transaction.bind(prisma);
+    const { promise: met, resolve } = Promise.withResolvers<void>();
+    let waiting = 0;
+    const spy = vi.spyOn(prisma, "$transaction").mockImplementation((async (...args: Parameters<typeof real>) => {
+      if (++waiting === 2) {
+        resolve();
+      }
+      await met;
+      return real(...args);
+    }) as never);
+    onTestFinished(() => spy.mockRestore());
+  };
+
+  test("two owners stepped down at once: one is refused, an owner is left", async () => {
+    const second = await addMember(project.id, "OWNER");
+    actAs(owner);
+    meetAtTransactions();
+    const results = await Promise.all([changeTeamRole(project.slug, ownerMemberId, "ADMIN"), changeTeamRole(project.slug, second.memberId, "ADMIN")]);
+    expect(results.filter((result) => result.error)).toHaveLength(1);
+    expect(await owners()).toBe(1);
+  });
+
+  test("while something else holds the project past the wait, nothing changes and they're told to try again", async () => {
+    const second = await addMember(project.id, "OWNER");
+    const real = prisma.$transaction.bind(prisma);
+    // Something else (an import's page, say) holds the project's lock until the change's wait is over. Postgres doesn't
+    // give up on a query waiting for a lock: the change only hears it expired once the lock is let go.
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const holding = real(async (tx) => {
+      await lockProject(tx, project.id);
+      locked.resolve();
+      await release.promise;
+    }, { timeout: 15_000 });
+    await locked.promise;
+    // The wait cut to half a second (it's a minute).
+    const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((fn: never, options?: object) => real(fn, { ...options, timeout: 500 })) as never);
+    onTestFinished(() => spy.mockRestore());
+    actAs(owner);
+    const change = changeTeamRole(project.slug, second.memberId, "ADMIN");
+    // It's waiting for the lock (so its transaction has begun); past its half second from now, let go.
+    await vi.waitFor(async () => {
+      // In this file's own database (the server is shared), on the project's row lock (lockProject's FOR UPDATE).
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+        SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FROM project WHERE id%FOR UPDATE%'`;
+      expect(waiting).toBeGreaterThan(0);
+    }, { timeout: 10_000, interval: 50 });
+    await new Promise((done) => setTimeout(done, 600));
+    release.resolve();
+    const result = await change;
+    await holding;
+    expect(result).toEqual({ error: "Something else is changing this project right now. Try again in a minute." });
+    expect(await roleOf(second.memberId)).toBe("OWNER");
+  }, 20_000);
+
+  test("one owner removed while the other steps down: one is refused, an owner is left", async () => {
+    const second = await addMember(project.id, "OWNER");
+    actAs(owner);
+    meetAtTransactions();
+    const results = await Promise.all([changeTeamRole(project.slug, ownerMemberId, "ADMIN"), removeMember(project.slug, second.memberId)]);
+    expect(results.filter((result) => result.error)).toHaveLength(1);
+    expect(await owners()).toBe(1);
   });
 });
 

@@ -107,10 +107,10 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(invitee.getByRole("img", { name: "Photo preview" })).toHaveAttribute("src", /^http/);
   await expect(invitee.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 
-  // Removing asks first, and says their API keys go with them.
+  // Removing asks first, and says their API keys and the invites they sent go with them.
   await owner.getByRole("button", { name: /^Actions for / }).click();
   await owner.getByRole("menuitem", { name: "Remove" }).click();
-  await expect(owner.getByRole("alertdialog")).toContainText("the API keys they created stop working");
+  await expect(owner.getByRole("alertdialog")).toContainText("the API keys they created stop working, and the invites they sent are cancelled");
   await checkpoint(owner, "remove-member", { fullPage: false });
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(/ removed$/)).toBeVisible();

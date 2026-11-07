@@ -2,7 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { emailConfigured, inviteEmail, sendEmail } from "@tuti/email";
-import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, pendingInvitation, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -12,7 +12,7 @@ import { appUrl } from "@/lib/hosts";
 import { asksToVerifyEmail } from "@/lib/verify-email";
 import { canAssignRole, isAdminRole, ROLE_LABELS } from "@/lib/roles";
 
-import { getMembership } from "./membership";
+import { getMembership, teamRoleIn } from "./membership";
 import { getAccountSession, getSession } from "./session";
 
 type Result = { error?: string };
@@ -66,6 +66,11 @@ export async function createInvitation(
     // Room on the plan for members and invites still pending (a new invite to the same address replaces
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
     const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
+    // Their role again, under that lock: taking someone off the team or changing their role takes it too, then revokes their invites.
+    const me = await teamRoleIn(tx, projectId, session.user.id);
+    if (!me || !canAssignRole(me, parsed.data.role)) {
+      return "role" as const;
+    }
     // The day's cap too, under that lock: an import's invites being sent at the same moment can't both take its last place.
     // Not for a link-only invite: nothing is emailed, and it doesn't count.
     if (!linkOnly && (await dayIsFull(tx, projectId, session.user.id))) {
@@ -74,6 +79,11 @@ export async function createInvitation(
     const limit = project ? teamLimit(project.plan) : null;
     if (limit !== null && (await teamPlacesTaken(tx, projectId, parsed.data.email)) >= limit) {
       return limit;
+    }
+    // Replacing a pending invite revokes it, so it takes what revoking it would: an owner's owner invite is for owners to change.
+    const pending = await tx.invitation.findMany({ where: { projectId, email: parsed.data.email, ...pendingInvitation() }, select: { role: true } });
+    if (pending.some(({ role }) => !canAssignRole(me, role))) {
+      return "owners" as const;
     }
     await tx.invitation.updateMany({
       where: { projectId, email: parsed.data.email, acceptedAt: null, revokedAt: null },
@@ -94,6 +104,12 @@ export async function createInvitation(
   });
   if (full === "daily") {
     return { error: DAILY_LIMIT };
+  }
+  if (full === "role") {
+    return { error: "You can't invite people with that role" };
+  }
+  if (full === "owners") {
+    return { error: `${parsed.data.email} has a pending owner invite. Only owners can change it.` };
   }
   if (full !== null) {
     return { error: teamFull(full) };
@@ -172,10 +188,15 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
   for (;;) {
     const claim = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
+      // Their role again, under the lock, each time: taken off the team or demoted partway, they send no more.
+      const me = await teamRoleIn(tx, projectId, session.user.id);
+      if (!me || !isAdminRole(me)) {
+        return "gone" as const;
+      }
       if (await dayIsFull(tx, projectId, session.user.id)) {
         return "capped" as const;
       }
-      const invitation = await tx.invitation.findFirst({ where: unsent, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true, role: true } });
+      const invitation = await tx.invitation.findFirst({ where: { ...unsent, role: { in: roles.filter((role) => canAssignRole(me, role)) } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, email: true, role: true } });
       if (!invitation) {
         return null;
       }
@@ -184,6 +205,10 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
       await tx.invitation.update({ where: { id: invitation.id }, data: { tokenHash: hashInvitationToken(token), sentAt: now, createdById: session.user.id, expiresAt: invitationExpiry(now.getTime()) } });
       return { ...invitation, email: invitation.email!, url: `${appUrl().origin}/invite/${token}` };
     });
+    if (claim === "gone") {
+      refresh();
+      return { error: "Only project owners and admins can send invites" };
+    }
     if (claim === "capped") {
       capped = true;
       break;
@@ -314,10 +339,11 @@ const invitationForJoining = {
   email: true,
   role: true,
   projectId: true,
+  createdById: true,
   project: { select: { slug: true } },
 } as const;
 
-type InvitationForJoining = { id: string; email: string | null; role: TeamRole; projectId: string; project: { slug: string } };
+type InvitationForJoining = { id: string; email: string | null; role: TeamRole; projectId: string; createdById: string; project: { slug: string } };
 
 /** Claims the invite (once) and adds the user to the team, then opens the project. */
 async function join(invitation: InvitationForJoining, userId: string) {
@@ -336,7 +362,9 @@ async function join(invitation: InvitationForJoining, userId: string) {
           where: { id: invitation.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, sentAt: { not: null } },
           data: { acceptedAt: new Date(), acceptedById: userId },
         });
-        if (claimed.count !== 1) {
+        // Whoever sent it must still be able to give that role: an invite is no way back in after they're removed or demoted.
+        const inviter = await tx.teamMember.findUnique({ where: { projectId_userId: { projectId: invitation.projectId, userId: invitation.createdById } }, select: { role: true } });
+        if (claimed.count !== 1 || !inviter || !canAssignRole(inviter.role, invitation.role)) {
           throw new InvitationUnavailableError();
         }
         const limit = project ? teamLimit(project.plan) : null;
