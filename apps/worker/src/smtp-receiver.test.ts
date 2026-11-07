@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { connect } from "node:net";
 
 import { inboundSignatureValid } from "@tuti/shared/inbound-signature";
@@ -5,7 +6,7 @@ import nodemailer from "nodemailer";
 import type { SMTPServer } from "smtp-server";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { receiverFromEnv, startSmtpReceiver } from "./smtp-receiver";
+import { MAX_CLIENTS, MAX_PER_SOURCE, receiverFromEnv, sourceOf, startSmtpReceiver } from "./smtp-receiver";
 
 const SECRET = "a-test-secret-of-at-least-32-characters";
 
@@ -28,7 +29,17 @@ let server: SMTPServer | undefined;
 afterEach(() => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())));
 
 /** A receiver for support.test, posting to a fake app that answers `answers` in turn (then 200). */
-type Limits = { maxBytes?: number; maxRecipients?: number; maxPerSource?: number; maxInFlight?: number; sessionLifetimeMs?: number };
+type Limits = {
+  maxBytes?: number;
+  maxRecipients?: number;
+  maxPerSource?: number;
+  maxInFlight?: number;
+  sessionLifetimeMs?: number;
+  idleTimeoutMs?: number;
+  authTimeoutMs?: number;
+  lookupTimeoutMs?: number;
+  resolver?: (name: string, type: string) => Promise<unknown>;
+};
 
 async function receiver(
   answers: { status: number; outcome?: string }[] = [],
@@ -53,6 +64,8 @@ async function receiver(
   const { port } = server.server.address() as { port: number };
   const transport = nodemailer.createTransport({ host: "127.0.0.1", port, secure: false, ignoreTLS: true });
   const send = (from: string, to: string[], text = "Hello") => transport.sendMail({ envelope: { from, to }, from, to, subject: "Help", text });
+  /** A message as it is, headers and all. */
+  const sendRaw = (from: string, to: string[], raw: string) => transport.sendMail({ envelope: { from, to }, raw });
   /** A raw connection: what the server says first, and when it hangs up. */
   const open = () =>
     new Promise<{
@@ -77,7 +90,7 @@ async function receiver(
         resolve({ greeting: data.toString(), closed, write: (line) => socket.write(`${line}\r\n`), reply, end: () => socket.destroy() }),
       );
     });
-  return { posts, send, open };
+  return { posts, send, sendRaw, open };
 }
 
 test("mail for a project's address is posted to the app signed, with SPF and DMARC as checked here", async () => {
@@ -195,6 +208,102 @@ test("a sender that hangs up halfway through a message doesn't keep its place am
   await quitter.closed;
   await vi.waitFor(() => expect(send("sam@example.org", ["support@b.support.test"])).resolves.toBeDefined());
   expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
+});
+
+/** A message carrying `count` DKIM signatures from signer.example (whose keys are never found): right for the body, so each is a lookup. */
+const signed = (count: number) =>
+  [
+    ...Array.from(
+      { length: count },
+      (_, i) => `DKIM-Signature: v=1; a=rsa-sha256; c=simple/simple; d=signer.example; s=s${i}; h=from; bh=${createHash("sha256").update("Hello\r\n").digest("base64")}; b=AAAA`,
+    ),
+    "From: sam@example.org",
+    "To: support@acme.support.test",
+    "Subject: Help",
+    "",
+    "Hello",
+    "",
+  ].join("\r\n");
+
+test("checks whose DNS never answers give up by their deadline: its place is freed, and it can't pass DMARC", async () => {
+  const lookups: string[] = [];
+  const silent = (name: string) => {
+    lookups.push(name);
+    return new Promise<never>(() => {});
+  };
+  const { sendRaw, posts } = await receiver([], { maxInFlight: 1, authTimeoutMs: 200, resolver: silent });
+  await sendRaw("sam@example.org", ["support@a.support.test"], signed(1));
+  expect(lookups).toContain("s0._domainkey.signer.example");
+  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=none dkim=none dmarc=fail");
+  await sendRaw("sam@example.org", ["support@b.support.test"], signed(1));
+  expect(posts).toHaveLength(2);
+});
+
+test("a DKIM key lookup that never answers gives up on its own, and SPF and DMARC are still checked", async () => {
+  const silentKeys = (name: string, type: string) => (name.includes("._domainkey.") ? new Promise<never>(() => {}) : resolver(name, type));
+  const { sendRaw, posts } = await receiver([], { lookupTimeoutMs: 100, resolver: silentKeys });
+  await sendRaw("ceo@forged.example", ["support@a.support.test"], signed(1).replace("From: sam@example.org", "From: ceo@forged.example"));
+  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=fail dkim=temperror dmarc=fail");
+});
+
+test("a message with more DKIM signatures than any sender adds isn't checked, and can't pass DMARC", async () => {
+  const lookups: string[] = [];
+  const counting = (name: string, type: string) => {
+    lookups.push(name);
+    return resolver(name, type);
+  };
+  const { sendRaw, posts } = await receiver([], { resolver: counting });
+  await sendRaw("sam@example.org", ["support@a.support.test"], signed(11));
+  // However its lines end.
+  await sendRaw("sam@example.org", ["support@a.support.test"], signed(11).replaceAll("\r\n", "\n"));
+  expect(lookups).toEqual([]);
+  expect(posts.map((post) => post.headers["tuti-auth"])).toEqual(["spf=none dkim=none dmarc=fail", "spf=none dkim=none dmarc=fail"]);
+  // At the limit, they're checked.
+  await sendRaw("sam@example.org", ["support@a.support.test"], signed(10));
+  expect(lookups).toContain("s9._domainkey.signer.example");
+});
+
+test("a session that sends no message is closed long before its lifetime, however busy it keeps itself", async () => {
+  const { open } = await receiver([], { idleTimeoutMs: 300 });
+  const session = await open();
+  session.write("EHLO idle.example");
+  const busy = setInterval(() => session.write("NOOP"), 50);
+  await session.closed;
+  clearInterval(busy);
+});
+
+test("a session isn't idle while its message is delivered, and is again once it's answered", async () => {
+  const { open, posts } = await receiver([], { idleTimeoutMs: 300 }, async () => {
+    // Longer than the idle timeout.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    return { status: 200, outcome: "conversation" };
+  });
+  const session = await open();
+  session.write("EHLO busy.example");
+  await session.reply("250");
+  for (const to of ["support@a.support.test", "support@b.support.test"]) {
+    for (const [line, code] of [
+      [`MAIL FROM:<sam@example.org>`, "250"],
+      [`RCPT TO:<${to}>`, "250"],
+      ["DATA", "354"],
+      ["Subject: Help\r\n\r\nHello\r\n.", "250"],
+    ] as const) {
+      session.write(line);
+      await session.reply(code);
+    }
+  }
+  expect(posts).toHaveLength(2);
+  // Quiet from then on: closed.
+  await session.closed;
+});
+
+test("connections are counted by network (IPv4 /24, IPv6 /64), and a few networks can't take them all", () => {
+  expect(sourceOf("::ffff:198.51.100.1")).toBe(sourceOf("198.51.100.2"));
+  expect(sourceOf("198.51.100.1")).not.toBe(sourceOf("198.51.101.1"));
+  expect(sourceOf("2001:db8::1")).toBe(sourceOf("2001:db8:0:0:1::2"));
+  expect(sourceOf("2001:DB8:0000::1")).toBe(sourceOf("2001:db8::ffff"));
+  expect(sourceOf("2001:db8:0:1::1")).not.toBe(sourceOf("2001:db8::1"));
+  expect(MAX_CLIENTS).toBeGreaterThanOrEqual(10 * MAX_PER_SOURCE);
 });
 
 test("off without INBOUND_SMTP_PORT; with it, the rest is needed", () => {

@@ -1,4 +1,6 @@
+import { promises as dns } from "node:dns";
 import { readFileSync } from "node:fs";
+import { isIPv4 } from "node:net";
 import { hostname } from "node:os";
 
 import { log } from "@tuti/shared";
@@ -22,18 +24,33 @@ export const MAX_BYTES = 25 * 1024 * 1024;
  * app): what one unauthenticated client can make the worker hold and send. Over them, senders are
  * told to come back (421) or to send the rest separately (452), as SMTP expects.
  */
-export const MAX_CLIENTS = 10;
+export const MAX_CLIENTS = 100;
 export const MAX_RECIPIENTS = 20;
-/** Connections from one address at once, so one sender can't hold them all (421 past it). */
+/**
+ * Connections from one network at once (an IPv4 /24, an IPv6 /64: one host can use any address in
+ * them), so a few senders can't hold them all (421 past it). Memory is bounded by the messages in
+ * flight, not by the connections.
+ */
 export const MAX_PER_SOURCE = 3;
 /** Messages being received or delivered at once, whether their sender is still connected or not (451 past it). */
 export const MAX_IN_FLIGHT = 10;
 /** A session's longest life, however busy it keeps itself (NOOPs reset the idle timeout). */
 export const SESSION_LIFETIME_MS = 10 * 60_000;
+/** How long a session may go without sending a message (from its start, or its last message) before it's closed. */
+export const IDLE_TIMEOUT_MS = 60_000;
+/**
+ * How long one DNS lookup for the checks may take (past it, that check can't tell: a temperror), and
+ * all of them: a sender whose DNS takes longer than that has its mail taken as failing DMARC (spam).
+ */
+export const LOOKUP_TIMEOUT_MS = 5_000;
+export const AUTH_TIMEOUT_MS = 30_000;
+/** DKIM signatures checked per message (each is a DNS lookup): a message with more isn't checked, and can't pass DMARC (spam). */
+export const MAX_DKIM_SIGNATURES = 10;
 
 /** The app's answer: its status, and for a 200 or 404 its `outcome` (`no such address` for a 404 that means it). */
 type Answer = { status: number; outcome?: string };
 type Post = (url: string, request: { body: Buffer; headers: Record<string, string> }) => Promise<Answer>;
+type Resolver = (name: string, type: string) => Promise<unknown>;
 
 export type ReceiverOptions = {
   domain: string;
@@ -52,8 +69,11 @@ export type ReceiverOptions = {
   maxPerSource?: number;
   maxInFlight?: number;
   sessionLifetimeMs?: number;
+  idleTimeoutMs?: number;
+  authTimeoutMs?: number;
+  lookupTimeoutMs?: number;
   /** DNS for the checks (tests give a fake one). */
-  resolver?: (name: string, type: string) => Promise<unknown>;
+  resolver?: Resolver;
   post?: Post;
 };
 
@@ -66,21 +86,74 @@ const postWithFetch: Post = async (url, { body, headers }) => {
 /** An SMTP answer as smtp-server sends it: an error carrying its code. */
 const answer = (code: number, message: string) => Object.assign(new Error(message), { responseCode: code });
 
+/** Where a connection comes from, for its limit: its IPv4 /24 or IPv6 /64 (IPv4 arrives as `::ffff:a.b.c.d` on a dual-stack server). */
+export function sourceOf(address: string) {
+  const v4 = address.replace(/^::ffff:/i, "");
+  if (isIPv4(v4)) {
+    return v4.split(".").slice(0, 3).join(".");
+  }
+  const [head = "", tail] = address.toLowerCase().split("%")[0]!.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = [...left, ...Array<string>(Math.max(8 - left.length - right.length, 0)).fill("0"), ...right];
+  return groups
+    .slice(0, 4)
+    .map((group) => parseInt(group, 16).toString(16))
+    .join(":");
+}
+
+/** A promise that fails once `signal` has aborted, as a DNS timeout does (a temperror to the checks). */
+const timedOut = (signal: AbortSignal) =>
+  new Promise<never>((_, reject) => {
+    const fail = () => reject(Object.assign(new Error("DNS lookup timed out"), { code: "ETIMEOUT" }));
+    if (signal.aborted) {
+      fail();
+    } else {
+      signal.addEventListener("abort", fail, { once: true });
+    }
+  });
+
+/** DKIM-Signature fields in its header (lines end in CRLF or LF, as the checks read them). */
+function dkimSignatures(raw: Buffer) {
+  const text = raw.toString("latin1");
+  const end = text.search(/\r?\n\r?\n/);
+  return text.slice(0, end < 0 ? text.length : end).match(/^dkim-signature[ \t]*:/gim)?.length ?? 0;
+}
+
+const UNVERIFIED = { spf: "none", dkim: "none", dmarc: "fail" };
+
 /** SPF, DKIM and DMARC as the app reads them (`spf=pass dkim=none dmarc=fail`). */
 export async function checkAuth(
   raw: Buffer,
-  { ip, helo, sender, serverName, resolver }: { ip: string; helo: string; sender: string; serverName: string; resolver?: ReceiverOptions["resolver"] },
+  {
+    ip,
+    helo,
+    sender,
+    serverName,
+    resolver = dns.resolve as Resolver,
+    timeoutMs = AUTH_TIMEOUT_MS,
+    lookupTimeoutMs = LOOKUP_TIMEOUT_MS,
+  }: { ip: string; helo: string; sender: string; serverName: string; resolver?: Resolver; timeoutMs?: number; lookupTimeoutMs?: number },
 ) {
+  if (dkimSignatures(raw) > MAX_DKIM_SIGNATURES) {
+    return UNVERIFIED;
+  }
+  // A sender's nameserver that answers slowly or never can't keep the checks going: each lookup, and all of them, have a deadline.
+  const signal = AbortSignal.timeout(timeoutMs);
+  const deadline = timedOut(signal);
   try {
-    const { spf, dkim, dmarc } = await authenticate(raw, {
-      ip,
-      helo,
-      sender,
-      mta: serverName,
-      disableArc: true,
-      disableBimi: true,
-      ...(resolver && { resolver: resolver as never }),
-    });
+    const { spf, dkim, dmarc } = await Promise.race([
+      authenticate(raw, {
+        ip,
+        helo,
+        sender,
+        mta: serverName,
+        disableArc: true,
+        disableBimi: true,
+        resolver: ((name: string, type: string) => Promise.race([resolver(name, type), timedOut(AbortSignal.any([signal, AbortSignal.timeout(lookupTimeoutMs)]))])) as never,
+      }),
+      deadline,
+    ]);
     const dkimResults = (dkim?.results ?? []).map((result) => result.status?.result);
     return {
       spf: (spf && spf.status?.result) || "none",
@@ -88,6 +161,10 @@ export async function checkAuth(
       dmarc: (dmarc && dmarc.status?.result) || "none",
     };
   } catch (error) {
+    if (signal.aborted) {
+      // Its own DNS kept the checks from finishing: it can't pass for its From domain (kept as spam).
+      return UNVERIFIED;
+    }
     // A check that couldn't run proves nothing: as if nothing was checked (nothing joins a conversation).
     log.warn("Checking a received email's SPF, DKIM and DMARC failed", { error: String(error) });
     return { spf: "none", dkim: "none", dmarc: "none" };
@@ -102,9 +179,11 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   const maxPerSource = options.maxPerSource ?? MAX_PER_SOURCE;
   const maxInFlight = options.maxInFlight ?? MAX_IN_FLIGHT;
   const lifetime = options.sessionLifetimeMs ?? SESSION_LIFETIME_MS;
-  /** Open sessions per address, and when each accepted session started. */
+  const idleTimeout = options.idleTimeoutMs ?? IDLE_TIMEOUT_MS;
+  /** Open sessions per network, when each accepted session started, and since when it has sent no message (none while one arrives or is delivered). */
   const perSource = new Map<string, number>();
   const started = new Map<string, number>();
+  const idleSince = new Map<string, number>();
   let inFlight = 0;
   /** Messages still arriving, by session: a sender that hangs up mid-DATA never ends its stream, so its slot goes when it closes. */
   const arriving = new Map<string, () => void>();
@@ -121,24 +200,28 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
     // The checks don't use the client's hostname, so no DNS lookup for it.
     disableReverseLookup: true,
     onConnect(session, callback) {
-      const count = perSource.get(session.remoteAddress) ?? 0;
+      const source = sourceOf(session.remoteAddress);
+      const count = perSource.get(source) ?? 0;
       if (count >= maxPerSource) {
         callback(answer(421, "Too many connections from you: try again later"));
         return;
       }
-      perSource.set(session.remoteAddress, count + 1);
+      perSource.set(source, count + 1);
       started.set(session.id, Date.now());
+      idleSince.set(session.id, Date.now());
       callback();
     },
     onClose(session) {
       arriving.get(session.id)?.();
+      idleSince.delete(session.id);
       // Only sessions it let in (a refused one closes too).
       if (started.delete(session.id)) {
-        const count = (perSource.get(session.remoteAddress) ?? 1) - 1;
+        const source = sourceOf(session.remoteAddress);
+        const count = (perSource.get(source) ?? 1) - 1;
         if (count > 0) {
-          perSource.set(session.remoteAddress, count);
+          perSource.set(source, count);
         } else {
-          perSource.delete(session.remoteAddress);
+          perSource.delete(source);
         }
       }
     },
@@ -151,7 +234,15 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       // Only the projects' addresses, `<anything>@<subdomain>.<domain>`: this server relays nothing.
       callback(recipient.endsWith(`.${domain}`) ? undefined : answer(550, "No such address here"));
     },
-    onData(stream, session, callback) {
+    onData(stream, session, answered) {
+      // Busy with a message until it's answered; idle again from then on.
+      idleSince.delete(session.id);
+      const callback: typeof answered = (...args) => {
+        if (started.has(session.id)) {
+          idleSince.set(session.id, Date.now());
+        }
+        answered(...args);
+      };
       if (inFlight >= maxInFlight) {
         // Busy: none of it kept, and the sender tries again later.
         stream.on("data", () => {});
@@ -202,7 +293,9 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       helo: session.hostNameAppearsAs,
       sender: session.envelope.mailFrom ? session.envelope.mailFrom.address : "",
       serverName,
-      resolver: options.resolver,
+      ...(options.resolver && { resolver: options.resolver }),
+      ...(options.authTimeoutMs && { timeoutMs: options.authTimeoutMs }),
+      ...(options.lookupTimeoutMs && { lookupTimeoutMs: options.lookupTimeoutMs }),
     });
     const auth = `spf=${results.spf} dkim=${results.dkim} dmarc=${results.dmarc}`;
     const answers: Answer[] = [];
@@ -241,17 +334,19 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
     return 250;
   }
 
-  // Sessions past their lifetime are closed, however busy they keep themselves.
+  // Sessions past their lifetime, or that sent no message for a while, are closed, however busy they keep themselves.
   const reaper = setInterval(
     () => {
       for (const connection of server.connections as Set<{ session?: { id: string }; close(): void }>) {
-        const since = connection.session && started.get(connection.session.id);
-        if (since && Date.now() - since > lifetime) {
+        const id = connection.session?.id ?? "";
+        const since = started.get(id);
+        const idle = idleSince.get(id);
+        if ((since && Date.now() - since > lifetime) || (idle && Date.now() - idle > idleTimeout)) {
           connection.close();
         }
       }
     },
-    Math.min(lifetime / 2, 30_000),
+    Math.min(lifetime / 2, idleTimeout / 2, 30_000),
   );
   reaper.unref();
   server.on("close", () => clearInterval(reaper));
