@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { connect } from "node:net";
 
 import { inboundSignatureValid } from "@tuti/shared/inbound-signature";
@@ -5,7 +6,27 @@ import nodemailer from "nodemailer";
 import type { SMTPServer } from "smtp-server";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { receiverFromEnv, startSmtpReceiver } from "./smtp-receiver";
+import {
+  ARRIVAL_TIMEOUT_MS,
+  ARRIVAL_WINDOW_MS,
+  AUTH_TIMEOUT_MS,
+  checkAuth,
+  IDLE_TIMEOUT_MS,
+  LOOKUP_TIMEOUT_MS,
+  PROBE_TIMEOUT_MS,
+  MAX_CHECKING,
+  MAX_CHECKING_PER_SOURCE,
+  MAX_CLIENTS,
+  MAX_DKIM_SIGNATURES,
+  MAX_HEADER_BYTES,
+  MAX_IN_FLIGHT,
+  MAX_IN_FLIGHT_PER_SOURCE,
+  MAX_PER_SOURCE,
+  MIN_ARRIVAL_BYTES,
+  receiverFromEnv,
+  sourceOf,
+  startSmtpReceiver,
+} from "./smtp-receiver";
 
 const SECRET = "a-test-secret-of-at-least-32-characters";
 
@@ -25,10 +46,43 @@ const resolver = async (name: string, type: string) => {
 };
 
 let server: SMTPServer | undefined;
-afterEach(() => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())));
+afterEach(() => {
+  vi.useRealTimers();
+  const closing = server;
+  server = undefined;
+  return new Promise<void>((resolve) => (closing ? closing.close(() => resolve()) : resolve()));
+});
+
+/**
+ * The receiver's clock, faked: time moves only when a test moves it. Its timeouts (idle, a message's
+ * arrival, the lifetime) are a clock its reaper reads on an interval; smtp-server's own timers stay real.
+ */
+const fakeSessionClock = () => vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+
+/** The checks' timers, faked: their deadlines are timeouts. */
+const fakeCheckTimers = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+/** Moves fake time on by `ms`, a second at a time, letting the real work in between (streams, I/O) catch up: timers set during a step can fire up to a second late, so callers add a second. */
+async function elapse(ms: number) {
+  for (let passed = 0; passed < ms; passed += 1_000) {
+    await vi.advanceTimersByTimeAsync(Math.min(1_000, ms - passed));
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
 
 /** A receiver for support.test, posting to a fake app that answers `answers` in turn (then 200). */
-type Limits = { maxBytes?: number; maxRecipients?: number; maxPerSource?: number; maxInFlight?: number; sessionLifetimeMs?: number };
+type Limits = {
+  maxBytes?: number;
+  maxRecipients?: number;
+  maxPerSource?: number;
+  maxInFlight?: number;
+  maxChecking?: number;
+  maxBufferedBytes?: number;
+  maxBufferedBytesPerSource?: number;
+  sessionLifetimeMs?: number;
+  resolver?: (name: string, type: string) => Promise<unknown>;
+  onBuffered?: (bytes: number) => void;
+};
 
 async function receiver(
   answers: { status: number; outcome?: string }[] = [],
@@ -36,6 +90,8 @@ async function receiver(
   post?: (url: string, request: { body: Buffer; headers: Record<string, string> }) => Promise<{ status: number; outcome?: string }>,
 ) {
   const posts: { url: string; body: Buffer; headers: Record<string, string> }[] = [];
+  /** The bytes of mail the receiver holds, as it last said. */
+  let buffered = 0;
   server = await startSmtpReceiver({
     domain: "support.test",
     appUrl: "https://app.example.com",
@@ -44,6 +100,7 @@ async function receiver(
     host: "127.0.0.1",
     serverName: "mx.support.test",
     resolver,
+    onBuffered: (bytes) => (buffered = bytes),
     ...limits,
     post: async (url, request) => {
       posts.push({ url, ...request });
@@ -53,8 +110,10 @@ async function receiver(
   const { port } = server.server.address() as { port: number };
   const transport = nodemailer.createTransport({ host: "127.0.0.1", port, secure: false, ignoreTLS: true });
   const send = (from: string, to: string[], text = "Hello") => transport.sendMail({ envelope: { from, to }, from, to, subject: "Help", text });
-  /** A raw connection: what the server says first, and when it hangs up. */
-  const open = () =>
+  /** A message as it is, headers and all. */
+  const sendRaw = (from: string, to: string[], raw: string) => transport.sendMail({ envelope: { from, to }, raw });
+  /** A raw connection (from `localAddress`, 127.0.0.1 by default): what the server says first, and when it hangs up. */
+  const open = (localAddress?: string) =>
     new Promise<{
       greeting: string;
       closed: Promise<void>;
@@ -63,7 +122,7 @@ async function receiver(
       reply: (code: string) => Promise<void>;
       end: () => void;
     }>((resolve) => {
-      const socket = connect(port, "127.0.0.1");
+      const socket = connect({ port, host: "127.0.0.1", ...(localAddress && { localAddress }) });
       const closed = new Promise<void>((done) => socket.on("close", () => done()));
       let heard = "";
       socket.on("data", (data) => (heard += data.toString()));
@@ -77,7 +136,25 @@ async function receiver(
         resolve({ greeting: data.toString(), closed, write: (line) => socket.write(`${line}\r\n`), reply, end: () => socket.destroy() }),
       );
     });
-  return { posts, send, open };
+  /** Sends from another address (another network for 127.0.1.x). */
+  const sendFrom = (localAddress: string, from: string, to: string[]) =>
+    nodemailer.createTransport({ host: "127.0.0.1", port, localAddress, secure: false, ignoreTLS: true }).sendMail({ envelope: { from, to }, from, to, subject: "Help", text: "Hello" });
+  return { posts, send, sendRaw, sendFrom, open, buffered: () => buffered };
+}
+
+type Session = Awaited<ReturnType<Awaited<ReturnType<typeof receiver>>["open"]>>;
+
+/** Starts a message on a raw session, up to DATA's go-ahead. */
+async function startMessage(session: Session, to = "support@a.support.test") {
+  for (const [line, code] of [
+    ["EHLO sender.example", "250"],
+    ["MAIL FROM:<sam@example.org>", "250"],
+    [`RCPT TO:<${to}>`, "250"],
+    ["DATA", "354"],
+  ] as const) {
+    session.write(line);
+    await session.reply(code);
+  }
 }
 
 test("mail for a project's address is posted to the app signed, with SPF and DMARC as checked here", async () => {
@@ -176,25 +253,446 @@ test("messages still being delivered count, even after their sender hangs up: pa
   expect(posts).toHaveLength(2);
 });
 
-test("a sender that hangs up halfway through a message doesn't keep its place among the messages in flight", async () => {
-  const { open, send, posts } = await receiver([], { maxInFlight: 1 });
+test("messages still arriving share a budget of bytes: one that would go past it is refused (451), and a sender hanging up halfway frees its share", async () => {
+  const { open, send, posts, buffered } = await receiver([], { maxBufferedBytes: 2_000 });
   const quitter = await open();
-  for (const [line, code] of [
-    ["EHLO quitter.example", "250"],
-    ["MAIL FROM:<sam@example.org>", "250"],
-    ["RCPT TO:<support@a.support.test>", "250"],
-    ["DATA", "354"],
-  ] as const) {
-    quitter.write(line);
-    await quitter.reply(code);
-  }
-  quitter.write("Subject: Half");
-  // Its message holds the one place: another gets "try again later".
+  await startMessage(quitter);
+  quitter.write(`X-Big: ${"x".repeat(1_900)}`);
+  // Its bytes are held: another message, a few hundred bytes, would go past the budget; alone, it fits.
+  await vi.waitFor(() => expect(buffered()).toBeGreaterThanOrEqual(1_900));
   await expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 });
   quitter.end();
-  await quitter.closed;
-  await vi.waitFor(() => expect(send("sam@example.org", ["support@b.support.test"])).resolves.toBeDefined());
+  await vi.waitFor(() => expect(buffered()).toBe(0));
+  await send("sam@example.org", ["support@b.support.test"]);
   expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
+});
+
+/** A message carrying `count` DKIM signatures from signer.example (whose keys are never found): right for the body, so each is a lookup. */
+const signed = (count: number) =>
+  [
+    ...Array.from(
+      { length: count },
+      (_, i) => `DKIM-Signature: v=1; a=rsa-sha256; c=simple/simple; d=signer.example; s=s${i}; h=from; bh=${createHash("sha256").update("Hello\r\n").digest("base64")}; b=AAAA`,
+    ),
+    "From: sam@example.org",
+    "To: support@acme.support.test",
+    "Subject: Help",
+    "",
+    "Hello",
+    "",
+  ].join("\r\n");
+
+/** DNS whose DKIM keys are never found, each answer just inside a lookup's limit (on the fake clock); the rest as `resolver`. */
+const slowKeys = (lookups: string[]) => (name: string, type: string) => {
+  lookups.push(name);
+  return name.includes("._domainkey.")
+    ? new Promise<never>((_, reject) => setTimeout(() => reject(Object.assign(new Error("not found"), { code: "ENOTFOUND" })), LOOKUP_TIMEOUT_MS - 1_000))
+    : resolver(name, type);
+};
+
+test("checks that run past their deadline, our DNS answering, can't pass DMARC, and the message's place is freed", async () => {
+  const lookups: string[] = [];
+  const { open, sendRaw, posts } = await receiver([], { maxInFlight: 1, resolver: slowKeys(lookups) });
+  const session = await open();
+  await startMessage(session);
+  // The checks' timers from here on are fake.
+  fakeCheckTimers();
+  session.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  // The deadline starts with the checks: move the clock only once they're under way.
+  await vi.waitFor(() => expect(lookups).not.toEqual([]));
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  vi.useRealTimers();
+  await session.reply("250");
+  session.end();
+  // The probe, a new name under our own domain, was answered (no such name): the delay was the sender's.
+  expect(lookups).toContainEqual(expect.stringMatching(/^[0-9a-f]{16}\.probe\.support\.test$/));
+  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=none dkim=none dmarc=fail");
+  await sendRaw("sam@example.org", ["support@b.support.test"], signed(0));
+  expect(posts).toHaveLength(2);
+});
+
+test("checks that run past their deadline because our own DNS doesn't answer leave the message untaken: try again later (451)", async () => {
+  const lookups: string[] = [];
+  const slow = slowKeys(lookups);
+  // Nothing answers for a new name under our own domain either.
+  const down = (name: string, type: string) => (name.endsWith(".probe.support.test") ? new Promise<never>(() => {}) : slow(name, type));
+  const { open, posts } = await receiver([], { resolver: down });
+  const session = await open();
+  await startMessage(session);
+  fakeCheckTimers();
+  session.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  await vi.waitFor(() => expect(lookups).not.toEqual([]));
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  vi.useRealTimers();
+  await session.reply("451");
+  session.end();
+  expect(posts).toEqual([]);
+});
+
+const from127 = { ip: "127.0.0.1", helo: "mail.example.org", serverName: "mx.support.test", probe: "support.test" };
+
+test("checks whose DNS answers just inside each lookup's limit still end by their deadline, and can't pass DMARC", async () => {
+  fakeCheckTimers();
+  const lookups: string[] = [];
+  const check = () => checkAuth(Buffer.from(signed(MAX_DKIM_SIGNATURES)), { ...from127, sender: "sam@example.org", resolver: slowKeys(lookups) });
+  const results = Promise.all([check(), check()]);
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  const unverified = { spf: "none", dkim: "none", dmarc: "fail" };
+  await expect(results).resolves.toEqual([unverified, unverified]);
+  // Each probe asks a name of its own, which no cache can have.
+  const probes = lookups.filter((name) => name.endsWith(".probe.support.test"));
+  expect(probes).toHaveLength(2);
+  expect(new Set(probes).size).toBe(2);
+});
+
+test("a DKIM key lookup that never answers gives up on its own, and SPF and DMARC are still checked", async () => {
+  fakeCheckTimers();
+  const silentKeys = (name: string, type: string) => (name.includes("._domainkey.") ? new Promise<never>(() => {}) : resolver(name, type));
+  const result = checkAuth(Buffer.from(signed(1).replace("From: sam@example.org", "From: ceo@forged.example")), {
+    ...from127,
+    sender: "ceo@forged.example",
+    resolver: silentKeys,
+  });
+  await elapse(LOOKUP_TIMEOUT_MS + 1_000);
+  await expect(result).resolves.toEqual({ spf: "fail", dkim: "temperror", dmarc: "fail" });
+});
+
+test("a message with more DKIM signatures than any sender adds isn't checked, and can't pass DMARC", async () => {
+  const lookups: string[] = [];
+  const counting = (name: string, type: string) => {
+    lookups.push(name);
+    return resolver(name, type);
+  };
+  const { sendRaw, posts } = await receiver([], { resolver: counting });
+  await sendRaw("sam@example.org", ["support@a.support.test"], signed(11));
+  // However its lines end.
+  await sendRaw("sam@example.org", ["support@a.support.test"], signed(11).replaceAll("\r\n", "\n"));
+  expect(lookups).toEqual([]);
+  expect(posts.map((post) => post.headers["tuti-auth"])).toEqual(["spf=none dkim=none dmarc=fail", "spf=none dkim=none dmarc=fail"]);
+  // At the limit, they're checked.
+  await sendRaw("sam@example.org", ["support@a.support.test"], signed(10));
+  expect(lookups).toContain("s9._domainkey.signer.example");
+});
+
+test("a message with no blank line is all header: checked when it's short, not when it's longer than a header can be", async () => {
+  const lookups: string[] = [];
+  const counting = (name: string, type: string) => {
+    lookups.push(name);
+    return resolver(name, type);
+  };
+  const { sendRaw, posts } = await receiver([], { resolver: counting });
+  const headerOnly = "From: sam@example.org\r\nTo: support@acme.support.test\r\nSubject: Help\r\n";
+  await sendRaw("sam@example.org", ["support@a.support.test"], headerOnly);
+  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=pass dkim=none dmarc=pass");
+  lookups.length = 0;
+  const filler = Array.from({ length: Math.ceil(MAX_HEADER_BYTES / 900) }, () => `X-Filler: ${"x".repeat(900)}\r\n`).join("");
+  await sendRaw("sam@example.org", ["support@a.support.test"], headerOnly + filler);
+  expect(lookups).toEqual([]);
+  expect(posts[1]!.headers["tuti-auth"]).toBe("spf=none dkim=none dmarc=fail");
+});
+
+test("a header that ends right at the limit is checked, its blank line just past it", async () => {
+  const { sendRaw, posts } = await receiver();
+  let header = "From: sam@example.org\r\nTo: support@acme.support.test\r\nSubject: Help\r\n";
+  while (MAX_HEADER_BYTES - header.length > 950) {
+    header += `X-Filler: ${"x".repeat(900)}\r\n`;
+  }
+  header += `X-Filler: ${"x".repeat(MAX_HEADER_BYTES - header.length - "X-Filler: \r\n".length)}\r\n`;
+  // Its last line ends on the limit's last byte; the blank line after it is past the limit.
+  expect(header.length).toBe(MAX_HEADER_BYTES);
+  await sendRaw("sam@example.org", ["support@a.support.test"], `${header}\r\nHello\r\n`);
+  expect(posts[0]!.headers["tuti-auth"]).toBe("spf=pass dkim=none dmarc=pass");
+});
+
+test("a session that sends no message is closed after a minute, long before its lifetime, however busy it keeps itself", async () => {
+  fakeSessionClock();
+  const { open } = await receiver();
+  const session = await open();
+  session.write("EHLO idle.example");
+  await session.reply("250");
+  for (const _ of [1, 2]) {
+    vi.advanceTimersByTime(IDLE_TIMEOUT_MS / 2);
+    session.write("NOOP");
+    await session.reply("250");
+  }
+  vi.advanceTimersByTime(IDLE_TIMEOUT_MS / 2);
+  await session.closed;
+});
+
+test("a session isn't idle while its message is delivered, and is again once it's answered", async () => {
+  fakeSessionClock();
+  let release!: () => void;
+  const { open, posts } = await receiver([], {}, async () => {
+    if (posts.length === 1) {
+      await new Promise<void>((resolve) => (release = resolve));
+    }
+    return { status: 200, outcome: "conversation" };
+  });
+  const session = await open();
+  await startMessage(session);
+  session.write("Subject: Help\r\n\r\nHello\r\n.");
+  await vi.waitFor(() => expect(posts).toHaveLength(1));
+  // Long past every deadline while it's delivered: still open, and its answer is heard.
+  vi.advanceTimersByTime(ARRIVAL_TIMEOUT_MS + IDLE_TIMEOUT_MS);
+  release();
+  await session.reply("250");
+  // Another message on the same session.
+  for (const [line, code] of [
+    ["MAIL FROM:<sam@example.org>", "250"],
+    ["RCPT TO:<support@b.support.test>", "250"],
+    ["DATA", "354"],
+    ["Subject: Help\r\n\r\nHello\r\n.", "250"],
+  ] as const) {
+    session.write(line);
+    await session.reply(code);
+  }
+  expect(posts).toHaveLength(2);
+  // Quiet from then on: closed.
+  vi.advanceTimersByTime(IDLE_TIMEOUT_MS + 30_000);
+  await session.closed;
+});
+
+test("a message being delivered still counts against the budget until it's answered", async () => {
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => (release = resolve));
+  // Room for one message of a few hundred bytes, not two.
+  const { send, posts } = await receiver([], { maxBufferedBytes: 400 }, async () => {
+    if (posts.length === 1) {
+      await slow;
+    }
+    return { status: 200, outcome: "conversation" };
+  });
+  const first = send("sam@example.org", ["support@a.support.test"]);
+  await vi.waitFor(() => expect(posts).toHaveLength(1));
+  await expect(send("sam@example.org", ["support@b.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  release();
+  await first;
+  await send("sam@example.org", ["support@c.support.test"]);
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@a.support.test", "support@c.support.test"]);
+});
+
+test("a network's messages being checked are capped, even once their senders hang up: past it, try again later (451)", async () => {
+  const lookups: string[] = [];
+  // One more connection than the cap, to try one more message while the others are checked.
+  const { open, posts } = await receiver([], { maxPerSource: MAX_CHECKING_PER_SOURCE + 1, resolver: slowKeys(lookups) });
+  const sessions = await Promise.all(Array.from({ length: MAX_CHECKING_PER_SOURCE + 1 }, () => open()));
+  for (const session of sessions) {
+    await startMessage(session);
+  }
+  const quitters = sessions.slice(0, MAX_CHECKING_PER_SOURCE);
+  const last = sessions[MAX_CHECKING_PER_SOURCE]!;
+  // The checks' timers from here on are fake: messages whose checks the sender's DNS drags out, their senders gone.
+  fakeCheckTimers();
+  for (const quitter of quitters) {
+    quitter.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  }
+  await vi.waitFor(() => expect(lookups.filter((name) => name === "s0._domainkey.signer.example")).toHaveLength(MAX_CHECKING_PER_SOURCE));
+  quitters.forEach((quitter) => quitter.end());
+  await Promise.all(quitters.map((quitter) => quitter.closed));
+  // Their checks still count.
+  last.write(`${signed(0)}\r\n.`);
+  await last.reply("451");
+  // Once they've ended, the network's next message is checked and taken.
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  for (const [line, code] of [
+    ["MAIL FROM:<sam@example.org>", "250"],
+    ["RCPT TO:<support@b.support.test>", "250"],
+    ["DATA", "354"],
+    [`${signed(0)}\r\n.`, "250"],
+  ] as const) {
+    last.write(line);
+    await last.reply(code);
+  }
+  vi.useRealTimers();
+  last.end();
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toContain("support@b.support.test");
+});
+
+// 127.0.0.1, 127.0.1.1 and 127.0.2.1 are three networks (Linux only: macOS has only 127.0.0.1; CI runs Linux).
+test.skipIf(process.platform === "darwin")("messages being checked are capped in all, across networks: past it, try again later (451), until checks end", async () => {
+  const lookups: string[] = [];
+  const { open, posts } = await receiver([], { maxChecking: 2, resolver: slowKeys(lookups) });
+  const [first, second, third] = await Promise.all(["127.0.0.1", "127.0.1.1", "127.0.2.1"].map((address) => open(address)));
+  for (const session of [first!, second!, third!]) {
+    await startMessage(session);
+  }
+  // The checks' timers from here on are fake: two networks' messages whose checks their DNS drags out.
+  fakeCheckTimers();
+  first!.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  second!.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  await vi.waitFor(() => expect(lookups.filter((name) => name === "s0._domainkey.signer.example")).toHaveLength(2));
+  // A third network, well within its own share: the cap in all is reached.
+  third!.write(`${signed(0)}\r\n.`);
+  await third!.reply("451");
+  // Once the checks have ended, its next message is checked and taken.
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  for (const [line, code] of [
+    ["MAIL FROM:<sam@example.org>", "250"],
+    ["RCPT TO:<support@c.support.test>", "250"],
+    ["DATA", "354"],
+    [`${signed(0)}\r\n.`, "250"],
+  ] as const) {
+    third!.write(line);
+    await third!.reply(code);
+  }
+  vi.useRealTimers();
+  [first, second, third].forEach((session) => session!.end());
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toContain("support@c.support.test");
+});
+
+// Linux routes all of 127.0.0.0/8 to loopback, so 127.0.1.1 is another network; macOS has only 127.0.0.1 (CI runs Linux).
+test.skipIf(process.platform === "darwin")("senders trickling their messages in hold no place: another network's mail is taken, and they're cut off within the minimum rate's window", async () => {
+  fakeSessionClock();
+  const { open, sendFrom, posts } = await receiver([], { maxInFlight: 1 });
+  const tricklers = await Promise.all(Array.from({ length: MAX_PER_SOURCE }, () => open()));
+  for (const trickler of tricklers) {
+    await startMessage(trickler);
+    trickler.write("Subject: Slow");
+  }
+  await sendFrom("127.0.1.1", "sam@example.org", ["support@b.support.test"]);
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
+  // Far less than the minimum in their window (checked every 30 s, so by the second check): closed,
+  // long before the arrival deadline.
+  vi.advanceTimersByTime(2 * ARRIVAL_WINDOW_MS);
+  expect(2 * ARRIVAL_WINDOW_MS).toBeLessThan(ARRIVAL_TIMEOUT_MS);
+  await Promise.all(tricklers.map((trickler) => trickler.closed));
+});
+
+/** `bytes` of header lines, under 1,000 characters each. */
+const headerLines = (bytes: number) => Array.from({ length: Math.ceil(bytes / 1_000) }, () => `X-More: ${"x".repeat(990)}`).join("\r\n");
+
+test("a message arriving at the minimum rate is still cut off at the arrival deadline", async () => {
+  fakeSessionClock();
+  const { open, buffered } = await receiver();
+  const session = await open();
+  await startMessage(session);
+  let closed = false;
+  void session.closed.then(() => (closed = true));
+  /** A window's worth of bytes, past the minimum; then the window. */
+  const keepUp = async () => {
+    const before = buffered();
+    session.write(headerLines(MIN_ARRIVAL_BYTES + 10_000));
+    // The bytes have reached the receiver (past the minimum) before its clock moves on.
+    await vi.waitFor(() => expect(buffered() - before).toBeGreaterThanOrEqual(MIN_ARRIVAL_BYTES));
+    vi.advanceTimersByTime(ARRIVAL_WINDOW_MS);
+  };
+  for (let passed = ARRIVAL_WINDOW_MS; passed < ARRIVAL_TIMEOUT_MS; passed += ARRIVAL_WINDOW_MS) {
+    await keepUp();
+  }
+  expect(closed).toBe(false);
+  // Keeping up the rate, past the deadline (checked every 30 s): closed by it.
+  await keepUp();
+  await keepUp();
+  await session.closed;
+});
+
+test("a message that arrives fast and then stalls is cut off within the minimum rate's window, and its bytes freed", async () => {
+  fakeSessionClock();
+  // Room for the stalled message, not for another beside it.
+  const { open, send, buffered } = await receiver([], { maxBufferedBytes: 100_100 });
+  const staller = await open();
+  await startMessage(staller);
+  staller.write(headerLines(100_000));
+  // All of it held, but for the few bytes the receiver keeps back while it looks for the message's end.
+  await vi.waitFor(() => expect(buffered()).toBeGreaterThanOrEqual(99_900));
+  await expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  // Its first window had plenty; the next has nothing (windows checked every 30 s): closed, long
+  // before the arrival deadline.
+  vi.advanceTimersByTime(3 * ARRIVAL_WINDOW_MS);
+  expect(3 * ARRIVAL_WINDOW_MS).toBeLessThan(ARRIVAL_TIMEOUT_MS);
+  await staller.closed;
+  await vi.waitFor(() => expect(buffered()).toBe(0));
+  await send("sam@example.org", ["support@b.support.test"]);
+});
+
+// 127.0.0.3 is in 127.0.0.1's /24, 127.0.1.1 isn't (Linux only, as above).
+test.skipIf(process.platform === "darwin")("one network can't hold more than its share of the bytes: past it, try again later (451), while another network's mail is taken", async () => {
+  fakeSessionClock();
+  const { open, sendFrom, posts, buffered } = await receiver([], { maxBufferedBytesPerSource: 2_000 });
+  const holder = await open("127.0.0.1");
+  await startMessage(holder);
+  holder.write(`X-Big: ${"x".repeat(1_900)}`);
+  await vi.waitFor(() => expect(buffered()).toBeGreaterThanOrEqual(1_900));
+  await expect(sendFrom("127.0.0.3", "sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  await sendFrom("127.0.1.1", "sam@example.org", ["support@b.support.test"]);
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
+  holder.end();
+});
+
+// 127.0.0.1, 127.0.1.1 and 127.0.2.1 are three networks (Linux only, as above).
+test.skipIf(process.platform === "darwin")("messages in slow checks hold no place among those being posted: another network's message is delivered", async () => {
+  const lookups: string[] = [];
+  const { open, posts } = await receiver([], { maxInFlight: 1, resolver: slowKeys(lookups) });
+  const [first, second, third] = await Promise.all(["127.0.0.1", "127.0.1.1", "127.0.2.1"].map((address) => open(address)));
+  for (const [session, to] of [
+    [first, "support@a.support.test"],
+    [second, "support@b.support.test"],
+    [third, "support@c.support.test"],
+  ] as const) {
+    await startMessage(session!, to);
+  }
+  // The checks' timers from here on are fake: two messages whose checks the sender's DNS drags out.
+  fakeCheckTimers();
+  first!.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  second!.write(`${signed(MAX_DKIM_SIGNATURES)}\r\n.`);
+  await vi.waitFor(() => expect(lookups.filter((name) => name === "s0._domainkey.signer.example")).toHaveLength(2));
+  // A third network's message, quick to check, is posted while they're still checked.
+  third!.write(`${signed(0)}\r\n.`);
+  await vi.waitFor(() => expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@c.support.test"]));
+  await elapse(AUTH_TIMEOUT_MS + PROBE_TIMEOUT_MS + 1_000);
+  vi.useRealTimers();
+  [first, second, third].forEach((session) => session!.end());
+});
+
+// 127.0.0.3 is in 127.0.0.1's /24 (Linux only: macOS has only 127.0.0.1; CI runs Linux).
+test.skipIf(process.platform === "darwin")("one network can't have every message being posted to the app: past its share, try again later (451)", async () => {
+  expect(MAX_IN_FLIGHT_PER_SOURCE).toBeLessThan(MAX_IN_FLIGHT / 3);
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => (release = resolve));
+  const { send, sendFrom, posts } = await receiver([], {}, async () => {
+    await slow;
+    return { status: 200, outcome: "conversation" };
+  });
+  const delivering = Array.from({ length: MAX_IN_FLIGHT_PER_SOURCE }, (_, i) => send("sam@example.org", [`support@d${i}.support.test`]));
+  await vi.waitFor(() => expect(posts).toHaveLength(MAX_IN_FLIGHT_PER_SOURCE));
+  // From another address in the same network.
+  await expect(sendFrom("127.0.0.3", "sam@example.org", ["support@b.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  release();
+  await Promise.all(delivering);
+  await send("sam@example.org", ["support@c.support.test"]);
+});
+
+// Linux routes all of 127.0.0.0/8 to loopback; macOS has only 127.0.0.1 (CI runs Linux).
+test.skipIf(process.platform === "darwin")("two addresses in one network share its connections, and one closing frees a place for either", async () => {
+  const { open } = await receiver([], { maxPerSource: 2 });
+  const first = await open("127.0.0.1");
+  const second = await open("127.0.0.3");
+  expect([first.greeting, second.greeting]).toEqual([expect.stringMatching(/^220 /), expect.stringMatching(/^220 /)]);
+  const third = await open("127.0.0.3");
+  expect(third.greeting).toMatch(/^421 /);
+  first.end();
+  await first.closed;
+  await vi.waitFor(async () => {
+    const next = await open("127.0.0.3");
+    next.end();
+    expect(next.greeting).toMatch(/^220 /);
+  });
+  second.end();
+  third.end();
+});
+
+test("connections are counted by network (IPv4 /24, IPv6 /48), and a few networks can't take them all", () => {
+  expect(sourceOf("::ffff:198.51.100.1")).toBe(sourceOf("198.51.100.2"));
+  expect(sourceOf("198.51.100.1")).not.toBe(sourceOf("198.51.101.1"));
+  expect(sourceOf("2001:db8::1")).toBe(sourceOf("2001:db8:0:0:1::2"));
+  expect(sourceOf("2001:DB8:0000::1")).toBe(sourceOf("2001:db8::ffff"));
+  // A customer's /56 or /48 is one network.
+  expect(sourceOf("2001:db8:0:ff00::1")).toBe(sourceOf("2001:db8::1"));
+  expect(sourceOf("2001:db8:1::1")).not.toBe(sourceOf("2001:db8::1"));
+  expect(MAX_CLIENTS).toBeGreaterThanOrEqual(10 * MAX_PER_SOURCE);
+  // Checks fill up no sooner than connections do.
+  expect(MAX_CHECKING).toBe(MAX_CLIENTS);
+  expect(MAX_CHECKING_PER_SOURCE).toBe(MAX_PER_SOURCE);
 });
 
 test("off without INBOUND_SMTP_PORT; with it, the rest is needed", () => {
