@@ -1377,6 +1377,27 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   await messages.nth(1).evaluate((message, src) => message.append(Object.assign(document.createElement("img"), { src })), `data:image/png;base64,${png(100, 600).toString("base64")}`);
   await expect(messages.nth(1).locator("img")).toHaveJSProperty("complete", true);
   expect(await pane.evaluate((pane) => pane.scrollTop)).toBe(scrolled);
+  // Nor once they've pressed a key (or a wheel, a touch, a click) while it came in, before any scroll of theirs is seen.
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(messages).toHaveCount(50);
+  await owner.addStyleTag({ content: "* { overflow-anchor: none }" });
+  let imagesAgain!: () => void;
+  const again = new Promise<void>((done) => (imagesAgain = done));
+  await owner.route("**/*", async (route) => {
+    if (route.request().resourceType() === "image") {
+      await again;
+    }
+    await route.fallback();
+  });
+  await earlier.click();
+  await expect(messages).toHaveCount(55);
+  await expect(messages.nth(4)).toBeFocused();
+  await owner.keyboard.press("Shift");
+  const pressed = await pane.evaluate((pane) => pane.scrollTop);
+  imagesAgain();
+  await expect(messages.nth(2).getByRole("img", { name: "tall.png" })).toHaveJSProperty("complete", true);
+  expect(await pane.evaluate((pane) => pane.scrollTop)).toBe(pressed);
+  await owner.unroute("**/*");
 
   // A new message still takes it to the end.
   await api("/conversations/1/messages", { body: "Message 56" });

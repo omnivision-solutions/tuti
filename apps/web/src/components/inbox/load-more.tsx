@@ -107,10 +107,13 @@ export function EarlierMessages({ href, first, more }: { href: string; first: st
       }
     };
     const scrolled = () => Math.abs(scroller.scrollTop - at) > 1 && stop();
+    // Theirs, at once: an image coming in before their scroll is seen (scroll events wait for the next frame) would undo it.
+    const moved = ["wheel", "touchstart", "keydown", "pointerdown"];
     const stop = () => {
       document.removeEventListener("load", settled, true);
       document.removeEventListener("error", settled, true);
       document.removeEventListener("scroll", scrolled, true);
+      moved.forEach((type) => document.removeEventListener(type, stop, true));
     };
     unpin.current();
     unpin.current = stop;
@@ -119,6 +122,7 @@ export function EarlierMessages({ href, first, more }: { href: string; first: st
       document.addEventListener("load", settled, true);
       document.addEventListener("error", settled, true);
       document.addEventListener("scroll", scrolled, true);
+      moved.forEach((type) => document.addEventListener(type, stop, true));
     }
     const focused = document.activeElement;
     if (focused === document.body || focused === link.current) {
