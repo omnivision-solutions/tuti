@@ -778,8 +778,9 @@ beforeAll(async () => {
   );
   users = { OWNER: OWNER!, ADMIN: ADMIN!, MEMBER: MEMBER!, outsider: outsider!, ssoUser: ssoUser! };
   otherProject = await createProject(users.outsider);
-  // The account that's allowed to act on its own email invites (allowedActor for "signed in").
-  await prisma.user.update({ where: { id: users.outsider.id }, data: { emailVerified: true } });
+  // The account that's allowed to act on its own email invites (allowedActor for "signed in"), and the ones allowed to
+  // send invites (only from a verified address).
+  await prisma.user.updateMany({ where: { id: { in: [users.outsider.id, users.OWNER.id, users.ADMIN.id] } }, data: { emailVerified: true } });
   await prisma.ssoIdentity.create({
     data: { projectId: otherProject.id, externalId: "ext-1", userId: users.ssoUser.id },
   });

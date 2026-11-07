@@ -15,11 +15,13 @@ let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
   owner = await signUp("Olive Owner");
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   project = await createProject(owner);
   actAs(owner);
 });
 
 const newEmail = () => `e2e-${randomUUID()}@example.com`;
+const emailsTo = (address: string) => mailbox.emails.filter((email) => email.to.includes(address)).length;
 const tokenOf = (url: string) => url.split("/invite/")[1]!;
 const isMember = async (userId: string) =>
   (await prisma.teamMember.count({ where: { projectId: project.id, userId } })) === 1;
@@ -77,6 +79,76 @@ describe("inviting by email", () => {
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({
       error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`,
     });
+  }, 20_000);
+
+  test("the day's invites are counted per sender too, across their projects", async () => {
+    const projects = [project, await createProject(owner), await createProject(owner)];
+    const perProject = Math.ceil(DAILY_INVITE_LIMIT / projects.length);
+    let sent = 0;
+    for (const p of projects) {
+      for (let i = 0; i < perProject && sent < DAILY_INVITE_LIMIT; i++, sent++) {
+        expect(await createInvitation(p.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+      }
+    }
+    const fresh = await createProject(owner);
+    const email = newEmail();
+    expect(await createInvitation(fresh.slug, email, "MEMBER")).toEqual({
+      error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`,
+    });
+    expect(emailsTo(email)).toBe(0);
+    // Another admin there still can.
+    const admin = await addMember(fresh.id, "ADMIN");
+    await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
+    actAs(admin);
+    expect(await createInvitation(fresh.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+  });
+
+  test("a sender's last invite of the day, sent from several projects at once, is emailed once", async () => {
+    const others = await Promise.all(Array.from({ length: 4 }, () => createProject(owner)));
+    await prisma.invitation.createMany({
+      data: Array.from({ length: DAILY_INVITE_LIMIT - 1 }, () => ({ projectId: project.id, email: newEmail(), tokenHash: hashInvitationToken(randomUUID()), createdById: owner.id, expiresAt: new Date(Date.now() + 60_000) })),
+    });
+    const results = await Promise.all(others.map((other) => createInvitation(other.slug, newEmail(), "MEMBER")));
+    expect(results.filter((result) => result.emailSent)).toHaveLength(1);
+    expect(results.filter((result) => result.error === `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`)).toHaveLength(3);
+  });
+
+  test("an unverified sender gets the link to copy, but nothing is emailed until they verify", async () => {
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
+    const email = newEmail();
+    const result = await createInvitation(project.slug, email, "MEMBER");
+    expect(result).toEqual({ url: expect.stringMatching(/\/invite\/[\w-]+$/), emailSent: false, unverified: true });
+    expect(emailsTo(email)).toBe(0);
+
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+    expect(await createInvitation(project.slug, email, "MEMBER")).toMatchObject({ emailSent: true });
+    expect(emailsTo(email)).toBe(1);
+  });
+
+  test("links an unverified sender copies don't count toward the day's invites", async () => {
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
+    for (let i = 0; i < DAILY_INVITE_LIMIT; i++) {
+      expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: false, unverified: true });
+    }
+    // Still room for the owner once verified, and for a verified admin there.
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+    const admin = await addMember(project.id, "ADMIN");
+    await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
+    actAs(admin);
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+  });
+
+  test("an unverified sender still gets a link once the day's emailed invites are used up", async () => {
+    const admin = await addMember(project.id, "ADMIN");
+    await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
+    actAs(admin);
+    for (let i = 0; i < DAILY_INVITE_LIMIT; i++) {
+      expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+    }
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
+    actAs(owner);
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({ url: expect.stringMatching(/\/invite\/[\w-]+$/), emailSent: false, unverified: true });
   });
 
   test("admins can't invite owners", async () => {

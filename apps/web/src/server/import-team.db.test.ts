@@ -150,6 +150,12 @@ test("Send emails one invitation, once, from whoever sends it, with a link that 
   await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
   actAs(admin);
 
+  // Not from an unverified address.
+  expect(await sendInvitation(project.slug, first!.id)).toEqual({ error: "Verify your email to send invites: open the link we emailed you." });
+  expect(await sendAllInvitations(project.slug)).toEqual({ error: "Verify your email to send invites: open the link we emailed you." });
+  expect(emailsTo(first!.email!, second!.email!, third!.email!)).toHaveLength(0);
+  await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
+
   expect(await sendInvitation(project.slug, first!.id)).toEqual({ sent: 1, waiting: 0 });
   const [email] = emailsTo(first!.email!);
   expect(emailsTo(first!.email!)).toHaveLength(1);

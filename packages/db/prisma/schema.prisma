@@ -878,6 +878,9 @@ model Invitation {
   /// owner or admin to review and send from Team & roles; its token is one nobody has until then, so it can't be
   /// accepted. Defaults to now, so an invite made the usual way (by the release before this column, too) is sent.
   sentAt       DateTime? @default(now())
+  /// False: made link-only (its sender's address wasn't verified), so nothing was emailed and it doesn't count toward
+  /// the day's invite caps.
+  emailed      Boolean   @default(true)
   createdAt    DateTime  @default(now())
 
   project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -886,6 +889,8 @@ model Invitation {
 
   @@index([projectId])
   @@index([projectId, email])
+  /// The day's invites a sender sent, across their projects (the cap in apps/web/src/server/invitations.ts).
+  @@index([createdById, sentAt])
   @@map("invitation")
 }
 

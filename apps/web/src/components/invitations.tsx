@@ -28,7 +28,7 @@ import { acceptInvitation, createInvitation, revokeInvitation, sendAllInvitation
 
 export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles: TeamRole[] }) {
   const [role, setRole] = useState<TeamRole>("MEMBER");
-  const [sent, setSent] = useState<{ email: string; url: string; emailSent: boolean }>();
+  const [sent, setSent] = useState<{ email: string; url: string; emailSent: boolean; unverified: boolean }>();
   const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -46,7 +46,7 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
               toast.error(result.error ?? "Couldn't create the invite");
               return;
             }
-            setSent({ email: email.trim().toLowerCase(), url: result.url, emailSent: result.emailSent ?? false });
+            setSent({ email: email.trim().toLowerCase(), url: result.url, emailSent: result.emailSent ?? false, unverified: result.unverified ?? false });
             setCopied(false);
             form.reset();
           });
@@ -82,7 +82,11 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
       {sent && (
         <Alert>
           <AlertTitle>
-            {sent.emailSent ? `Invite sent to ${sent.email}` : `Couldn't email ${sent.email}: send them this link`}
+            {sent.emailSent
+              ? `Invite sent to ${sent.email}`
+              : sent.unverified
+                ? `Verify your email to email invites: for now, send ${sent.email} this link`
+                : `Couldn't email ${sent.email}: send them this link`}
           </AlertTitle>
           <AlertDescription className="flex flex-col gap-2">
             <div className="flex w-full items-center gap-2">

@@ -6,3 +6,7 @@ import { emailConfigured } from "@tuti/email";
  * would ask for something the person can't do.
  */
 export const asksToVerifyEmail = (user: { emailVerified: boolean }) => !user.emailVerified && emailConfigured();
+
+/** The invite form's line: invites are only emailed from a verified address (server/invitations.ts); until then, links. */
+export const inviteNote = (user: { emailVerified: boolean }) =>
+  `${asksToVerifyEmail(user) ? "Verify your email to email invites; until then you'll get a link to send them." : "We'll email them an invite."} Only that email address can accept it.`;
