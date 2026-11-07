@@ -155,7 +155,41 @@ test("an email whose HTML part comes beside its text part, not instead of it, ar
   ].join("\r\n");
   expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200 });
   const [conversation] = await conversations(project.id);
-  expect(conversation!.messages[0]!.body).toBe("The export fails:\n    at run (app.js:10:5)\n\nSent from Acme");
+  expect(conversation!.messages[0]!.body).toBe("The export fails:\n    at run (app.js:10:5)\nSent from Acme");
+});
+
+test("an email with its text and HTML versions and an HTML part beside them arrives with its words once", async () => {
+  const { project, address } = await setup();
+  const raw = [
+    "From: Kim Lee <e2e-kim@example.com>",
+    `To: ${address}`,
+    "Subject: Export",
+    `Message-ID: <${crypto.randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="mixed"',
+    "",
+    "--mixed",
+    'Content-Type: multipart/alternative; boundary="alt"',
+    "",
+    "--alt",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "The export fails.",
+    "--alt",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    "<p>The export fails.</p>",
+    "--alt--",
+    "--mixed",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    "<p>Sent via Acme</p>",
+    "--mixed--",
+    "",
+  ].join("\r\n");
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200 });
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails.\nSent via Acme");
 });
 
 test("the subdomain is the project's for good: taken names get a number, and a renamed project keeps its own", async () => {

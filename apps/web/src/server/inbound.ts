@@ -142,7 +142,13 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
   const projectId = owner.projectId;
   // The parser turns no HTML into text (htmlAsText does, in readEmail) but says where it would have,
   // in textConversionError, and makes no HTML of the text or inline images.
-  const mail = await simpleParser(raw, { maxHtmlLengthToParse: 0, skipTextToHtml: true, skipImageLinks: true });
+  let mail = await simpleParser(raw, { maxHtmlLengthToParse: 0, skipTextToHtml: true, skipImageLinks: true });
+  // An HTML part beside the text rather than instead of it: only the parser knows which part that
+  // is, so it reads the email again and turns that part into text, where that's quick (short HTML,
+  // few quotes). Past that, readEmail puts all its HTML, as text, after the text.
+  if (mail.textConversionError && mail.text?.trim() && typeof mail.html === "string" && mail.html.length <= 200_000 && (mail.html.match(/<blockquote/gi) ?? []).length <= 5) {
+    mail = await simpleParser(raw, { skipTextToHtml: true, skipImageLinks: true });
+  }
   const sender = mail.from?.value[0]?.address?.toLowerCase() ?? "";
   const messageId = mail.messageId ?? null;
   const dedupeKey = sha256(messageId ? `${messageId}\n${sender}` : raw);
@@ -325,8 +331,8 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     return ignore("from_own_address");
   }
 
-  // Its plain text and, where its words are in HTML (all of them, or a part beside the text rather
-  // than instead of it), its HTML as text after it.
+  // Its plain text and, where the parser left words in HTML (all of them, or a long part beside the
+  // text), its HTML as text after it.
   const html = (mail.textConversionError || !mail.text) && typeof mail.html === "string" ? htmlAsText(mail.html).trim() : "";
   const plain = html ? [mail.text?.trim(), html].filter(Boolean).join("\n\n") : (mail.text ?? "");
   const { text, stripped } = stripQuotes(plain, subject);
