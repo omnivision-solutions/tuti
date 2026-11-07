@@ -2508,6 +2508,7 @@ model VerifyAll {
 /// The tool an import (DataImport) brings a project's things from.
 enum ImportSource {
   FEATUREBASE
+  CANNY
 }
 
 enum ImportState {

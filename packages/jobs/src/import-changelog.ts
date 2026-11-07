@@ -132,6 +132,12 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
           select: { id: true },
         });
         await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "changelog", externalId: entry.id, localId: created.id } });
+        // The posts it ships, those Feedback brought (and still here), as "Shipped in" links: nothing completed or emailed.
+        if (entry.postIds?.length) {
+          const records = await tx.importedRecord.findMany({ where: { projectId: job.projectId, source: job.source, kind: "post", externalId: { in: entry.postIds } }, select: { localId: true } });
+          const posts = await tx.post.findMany({ where: { projectId: job.projectId, id: { in: records.map((record) => record.localId) } }, select: { id: true } });
+          await tx.changelogEntryPost.createMany({ data: posts.map((post) => ({ entryId: created.id, postId: post.id })), skipDuplicates: true });
+        }
         // Emailed by Featurebase, not Tuti: its sidebar says so (a send Tuti makes later is its own).
         if (entry.emailSentToSubscribers) {
           await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "changelog-emailed", externalId: entry.id, localId: created.id } });

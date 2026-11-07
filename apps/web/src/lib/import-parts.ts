@@ -11,7 +11,7 @@ import type { ImportView } from "@/server/operations/imports";
 export const IMPORT_PARTS = {
   team: {
     label: "Team",
-    description: "Your Featurebase team, as invitations you review and send. They join as members; owners can change roles in Team & roles.",
+    description: "Your {source} team, as invitations you review and send. They join as members; owners can change roles in Team & roles.",
     brings: "Your team, as invitations to send",
     needs: [],
     media: false,
@@ -84,7 +84,7 @@ export const IMPORT_PARTS = {
 } as const satisfies Record<string, ImportPartInfo>;
 
 /**
- * `brings`: what it brings, in a few words, while it waits its turn. `see`: where what it brought is in the app, once the
+ * `description`: as the setup step offers it, `{source}` the tool's name. `brings`: what it brings, in a few words, while it waits its turn. `see`: where what it brought is in the app, once the
  * import ends (null: another part's link goes there). `steps`: its steps (@tuti/jobs IMPORT_PARTS) and what each is called; `kinds`: what it counts (imports'
  * counts), in the order it brings them.
  */
@@ -116,6 +116,16 @@ export const IMPORT_SOURCES = {
       // Its dashboard's Settings → API, after signing in.
       keysUrl: "https://auth.featurebase.app/login?redirect=/settings/api",
       help: "In Featurebase, Settings → API. It's kept only while the import runs.",
+    },
+  },
+  canny: {
+    name: "Canny",
+    description: "Bring your users, feedback and changelog across with an API key.",
+    parts: ["contacts", "feedback", "changelog", "avatars"],
+    credential: {
+      kind: "key",
+      keysUrl: "https://canny.io/admin/settings/api",
+      help: "In Canny, Settings → API. It's kept only while the import runs.",
     },
   },
 } as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;

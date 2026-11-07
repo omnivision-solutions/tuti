@@ -13,6 +13,7 @@ import type {
   FeaturebaseVoter,
   Page,
 } from "../featurebase";
+import { cannySource } from "./canny";
 import { featurebaseSource } from "./featurebase";
 
 /**
@@ -72,4 +73,5 @@ export type ImportSourceDefinition = {
 /** Every source, by the import row's `source`: adding one is its enum value, its file and its line here. */
 export const IMPORT_SOURCES: Record<ImportSource, ImportSourceDefinition> = {
   FEATUREBASE: featurebaseSource,
+  CANNY: cannySource,
 };
