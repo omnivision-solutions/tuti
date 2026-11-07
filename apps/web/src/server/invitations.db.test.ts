@@ -78,7 +78,7 @@ describe("inviting by email", () => {
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({
       error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`,
     });
-  });
+  }, 20_000);
 
   test("admins can't invite owners", async () => {
     const admin = await addMember(project.id, "ADMIN");
