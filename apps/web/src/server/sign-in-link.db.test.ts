@@ -213,12 +213,12 @@ test("an address gets a limited number of links an hour, on any portal", async (
   expect(await ask(email)).toEqual({ sentTo: email });
 });
 
-test("a portal sends a limited number of links an hour", async () => {
+test("a portal sends a limited number of links an hour, quietly", async () => {
   await prisma.signInLink.createMany({
     data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }, (_, i) => ({ projectId: project.id, emailHash: `h${i}` })),
   });
   const email = newAddress();
-  expect(await ask(email)).toEqual({ error: "This site has sent a lot of emails in the last hour. Try again later." });
+  expect(await ask(email)).toEqual({ sentTo: email });
   expect(mailbox.emails.filter((e) => e.to.includes(email))).toEqual([]);
 });
 

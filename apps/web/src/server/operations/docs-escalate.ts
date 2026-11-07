@@ -155,7 +155,7 @@ export async function escalateQuestion(
   if (question.escalatedAt) {
     throw new OperationError(409, "already_escalated", "You've already passed this question to the team");
   }
-  const limited = await countEmailedLink(projectId, input.email, requestHeaders);
+  const limited = await countEmailedLink(projectId, input.email, requestHeaders, "team");
   if ("error" in limited || !limited.id) {
     throw new OperationError(429, "rate_limited", "error" in limited ? limited.error : "You've sent a lot of emails in the last hour. Try again later.");
   }

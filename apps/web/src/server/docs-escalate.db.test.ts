@@ -280,11 +280,15 @@ describe("asking a person", () => {
 describe("limits", () => {
   beforeEach(turnOn);
 
-  test("per address, shared with emailed sign-in links", async () => {
-    const reader = asReader();
+  test("per address on this project, apart from the address's own sign-in links", async () => {
     const visitor = newAddress();
+    // Its sign-in links don't count: escalating emails the team, not the address.
     await prisma.signInLink.createMany({ data: Array.from({ length: SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR }, () => ({ projectId: project.id, emailHash: hashSecret(visitor) })) });
-    const question = await asked(reader);
+    for (let i = 0; i < SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR; i++) {
+      model.reply("They want to pay in crypto.");
+      expect(await escalateDocs(project.slug, (await asked(asReader())).id, visitor, "")).toMatchObject({ conversation: i + 1 });
+    }
+    const question = await asked(asReader());
     expect(await escalateDocs(project.slug, question.id, visitor, "")).toEqual({ error: expect.stringContaining("a lot of emails to this address") });
     expect(await escalated(question.id)).toBeNull();
   });
@@ -312,7 +316,7 @@ describe("limits", () => {
     });
     const reader = asReader();
     const question = await asked(reader);
-    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ error: expect.stringContaining("This site has sent a lot of emails") });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ error: "This site has sent a lot of emails in the last hour. Try again later." });
   });
 });
 

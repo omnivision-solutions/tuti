@@ -18,14 +18,21 @@ import {
  * link) against the hourly limits, which both kinds share: per address on any
  * host, per visitor, and per site (a portal, or the app host when `projectId` is
  * null). Returns the new sign_in_link row's id, an error to show, or no id when
- * the visitor is over their limit (which isn't shown: send nothing, answer as usual).
+ * the visitor, or for links the site, is over its limit (which isn't shown: send nothing, answer as usual).
+ *
+ * `emails` is who the request emails: the address (the default), nobody (a reset for an
+ * address with no account: counted against the address all the same, so the answer can't
+ * tell, but not against the site, so requests that send nothing can't use it up), or the
+ * team (a conversation started with the address, never verified: counted against the address
+ * on this site only, so it can't use up the address's own links elsewhere).
  */
 export async function countEmailedLink(
   projectId: string | null,
   email: string,
   requestHeaders: Headers,
+  emails: "address" | "nobody" | "team" = "address",
 ): Promise<{ error: string } | { id: string | null }> {
-  const emailHash = hashSecret(email);
+  const emailHash = hashSecret(emails === "team" ? `${projectId}:${email}` : email);
   const client = await clientHash(requestHeaders);
   const since = new Date(Date.now() - 60 * 60 * 1000);
   await prisma.signInLink.deleteMany({ where: { createdAt: { lt: since } } });
@@ -44,7 +51,7 @@ export async function countEmailedLink(
     const [byAddress, byClient, bySite] = await Promise.all([
       tx.signInLink.count({ where: { emailHash, createdAt: { gt: since } } }),
       client ? tx.signInLink.count({ where: { clientHash: client, createdAt: { gt: since } } }) : 0,
-      tx.signInLink.count({ where: { projectId, createdAt: { gt: since } } }),
+      tx.signInLink.count({ where: { projectId, sent: true, createdAt: { gt: since } } }),
     ]);
     if (byAddress >= SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR) {
       return { error: "We've sent a lot of emails to this address in the last hour. Try again later." };
@@ -53,10 +60,12 @@ export async function countEmailedLink(
     if (byClient >= SIGN_IN_LINKS_PER_CLIENT_PER_HOUR) {
       return { id: null };
     }
+    // Quiet for links: only requests that send count toward it, so an error would tell whether this one would have.
+    // A conversation's answer tells nothing of the kind, so it says why.
     if (bySite >= SIGN_IN_LINKS_PER_PORTAL_PER_HOUR) {
-      return { error: "This site has sent a lot of emails in the last hour. Try again later." };
+      return emails === "team" ? { error: "This site has sent a lot of emails in the last hour. Try again later." } : { id: null };
     }
-    return tx.signInLink.create({ data: { projectId, emailHash, clientHash: client }, select: { id: true } });
+    return tx.signInLink.create({ data: { projectId, emailHash, clientHash: client, sent: emails !== "nobody" }, select: { id: true } });
   });
 }
 

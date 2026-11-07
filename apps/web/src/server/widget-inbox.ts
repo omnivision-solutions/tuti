@@ -258,8 +258,8 @@ export async function widgetStartConversation(
     return { error: files.error! };
   }
   if (signedOutEmail) {
-    // Counted like emailed links (per address, per visitor's IP and per project), as replies go to it by email.
-    const counted = await countEmailedLink(who.projectId, signedOutEmail, await headers());
+    // Counted like emailed links (per address here, per visitor's IP and per project), as replies go to it by email.
+    const counted = await countEmailedLink(who.projectId, signedOutEmail, await headers(), "team");
     if ("error" in counted || counted.id === null) {
       return { error: "error" in counted ? counted.error : "Too many messages from here in the last hour. Try again later." };
     }

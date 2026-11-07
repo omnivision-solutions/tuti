@@ -13,7 +13,7 @@ import { POST as confirmRoute } from "@/app/portal/[project]/(site)/changelog/su
 import { POST as unsubscribeRoute } from "@/app/portal/[project]/(site)/changelog/subscription/unsubscribe/route";
 import { POST as emailsOnRoute } from "@/app/portal/[project]/(site)/changelog/subscription/emails-on/route";
 import { POST as optOutRoute } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
-import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR } from "@/lib/sign-in-link";
+import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { entryTold } from "@/server/changelog-queries";
 import { createChangelogEntry, publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
 import { createPost } from "@/server/operations/create";
@@ -379,6 +379,19 @@ describe("subscribing", () => {
     }
     expect(await subscribe(kim)).toEqual({ error: "We've sent a lot of emails to this address in the last hour. Try again later." });
     expect(emailsTo(kim)).toHaveLength(SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR);
+  });
+
+  test("asking for an address that already gets them sends nothing, and doesn't count toward the portal's hourly limit", async () => {
+    const kim = newAddress();
+    await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: kim, confirmedAt: new Date() } });
+    await prisma.signInLink.createMany({
+      data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR - 1 }, (_, i) => ({ projectId: project.id, emailHash: `h${i}` })),
+    });
+    expect(await subscribe(kim)).toEqual({ sentTo: kim });
+    expect(emailsTo(kim)).toEqual([]);
+    const ada = newAddress();
+    expect(await subscribe(ada)).toEqual({ sentTo: ada });
+    expect(emailsTo(ada)).toHaveLength(1);
   });
 });
 

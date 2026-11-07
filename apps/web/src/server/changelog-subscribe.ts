@@ -28,7 +28,12 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
     return { error: parsed.error.issues[0]!.message };
   }
   const { email } = parsed.data;
-  const limited = await countEmailedLink(project.id, email, await headers());
+  // Already getting it (changelogReach), or the project's email is paused: nothing to send (the same answer), so
+  // counted as sending nothing.
+  const existing = await prisma.changelogSubscriber.findUnique({ where: { projectId_email: { projectId: project.id, email } }, select: { confirmedAt: true } });
+  const reach = await changelogReach(project.id, { email, confirmed: !!existing?.confirmedAt });
+  const sends = !reached(reach) && !(await projectEmailWaits(project.id));
+  const limited = await countEmailedLink(project.id, email, await headers(), sends ? "address" : "nobody");
   if ("error" in limited) {
     return { error: limited.error };
   }
@@ -42,9 +47,7 @@ export async function subscribeToChangelog(projectSlug: string, form: FormData):
     update: {},
     select: { id: true, email: true, confirmedAt: true },
   });
-  // Already getting it (changelogReach), or the project's email is paused: nothing to send (the same answer).
-  const reach = await changelogReach(project.id, { email, confirmed: subscriber.confirmedAt !== null });
-  if (reached(reach) || (await projectEmailWaits(project.id))) {
+  if (!sends) {
     return { sentTo: email };
   }
   // A new one, one not confirmed (asked before, or unsubscribed since), or one who's turned all of the project's

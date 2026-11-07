@@ -20,6 +20,7 @@ import { request } from "@/test/next-headers";
 
 import { emailPasswordReset, setNewPassword } from "./password-reset";
 import { emailSignInLink } from "./sign-in-link";
+import { widgetStartConversation } from "./widget-inbox";
 
 const OLD_PASSWORD = "correct horse battery staple"; // what signUp() sets
 const NEW_PASSWORD = "a brand new password";
@@ -274,20 +275,55 @@ test("reset links and sign-in links share the hourly limit per address", async (
   expect(sentTo(user.email, ["Reset your password", `Sign in to ${project.name}`])).toBe(SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR);
 });
 
-test("the app host and each portal send a limited number an hour", async () => {
-  const full = { error: "This site has sent a lot of emails in the last hour. Try again later." };
+test("the app host and each portal send a limited number an hour, quietly", async () => {
   await prisma.signInLink.createMany({
     data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }, (_, i) => ({ projectId: null, emailHash: `h${i}` })),
   });
-  expect(await ask(user.email)).toEqual(full);
+  expect(await ask(user.email)).toEqual({ sentTo: user.email });
+  expect(sentTo(user.email)).toBe(0);
   // Portals have their own.
   expect(await ask(user.email, portalHost())).toEqual({ sentTo: user.email });
-
-  await prisma.signInLink.createMany({
-    data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }, (_, i) => ({ projectId: project.id, emailHash: `p${i}` })),
-  });
-  expect(await ask(newAddress(), portalHost())).toEqual(full);
   expect(sentTo(user.email)).toBe(1);
+});
+
+test("at the site's limit, an address with an account and one without get the same answers", async () => {
+  // One short of it: only resets that send count toward it, so a refusal mustn't tell which ones would have.
+  await prisma.signInLink.createMany({
+    data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR - 1 }, (_, i) => ({ projectId: null, emailHash: `h${i}` })),
+  });
+  const unknown = newAddress();
+  const probe = newAddress();
+  expect(await ask(unknown)).toEqual({ sentTo: unknown });
+  expect(await ask(probe)).toEqual({ sentTo: probe });
+  expect(await ask(user.email)).toEqual({ sentTo: user.email });
+  expect(await ask(probe)).toEqual({ sentTo: probe });
+  expect(sentTo(user.email)).toBe(1);
+});
+
+test("resets that send nothing (no account) don't use up the site's hourly limit", async () => {
+  for (let i = 0; i < SIGN_IN_LINKS_PER_PORTAL_PER_HOUR; i++) {
+    const unknown = newAddress();
+    expect(await ask(unknown)).toEqual({ sentTo: unknown });
+  }
+  expect(await ask(user.email)).toEqual({ sentTo: user.email });
+  expect(sentTo(user.email)).toBe(1);
+});
+
+test("conversations started in another project's widget don't use up an address's resets and sign-in links", async () => {
+  const other = await createProject(await signUp("Other owner"));
+  await prisma.project.update({ where: { id: other.id }, data: { supportInbox: true } });
+  for (let i = 0; i < SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR; i++) {
+    expect(await widgetStartConversation(other.slug, {}, "Hello?", user.email)).toMatchObject({ number: i + 1 });
+  }
+  // Still limited there, per address.
+  expect(await widgetStartConversation(other.slug, {}, "Hello?", user.email)).toEqual({
+    error: "We've sent a lot of emails to this address in the last hour. Try again later.",
+  });
+  expect(await ask(user.email)).toEqual({ sentTo: user.email });
+  const form = new FormData();
+  form.set("email", user.email);
+  expect(await emailSignInLink(project.slug, "/", form)).toEqual({ sentTo: user.email });
+  expect(sentTo(user.email, ["Reset your password", `Sign in to ${project.name}`])).toBe(2);
 });
 
 test("a visitor gets a limited number an hour, quietly", async () => {
