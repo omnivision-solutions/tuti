@@ -60,6 +60,7 @@ export async function createInvitation(
   }
 
   const token = generateInvitationToken();
+  const linkOnly = mayNotEmail(session.user);
   const full = await prisma.$transaction(async (tx) => {
     // Room on the plan for members and invites still pending (a new invite to the same address replaces
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
@@ -84,6 +85,7 @@ export async function createInvitation(
         tokenHash: hashInvitationToken(token),
         createdById: session.user.id,
         expiresAt: invitationExpiry(),
+        emailed: !linkOnly,
       },
     });
     return null;
@@ -95,7 +97,7 @@ export async function createInvitation(
     return { error: teamFull(full) };
   }
   const url = `${appUrl().origin}/invite/${token}`;
-  if (mayNotEmail(session.user)) {
+  if (linkOnly) {
     refresh();
     return { url, emailSent: false, unverified: true };
   }
@@ -108,15 +110,16 @@ const DAILY_LIMIT = `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try
 
 /**
  * Whether the last day's invites are used up (DAILY_INVITE_LIMIT), the project's or the sender's across all their
- * projects (projects are free to make): inviting emails any address, so it's capped. Takes the sender's lock, after
+ * projects (projects are free to make): inviting emails any address, so it's capped. Links only copied (`emailed`
+ * false) don't count. Takes the sender's lock, after
  * the project's, so two of their invites at once (in different projects too) can't both take the last place.
  */
 async function dayIsFull(tx: Prisma.TransactionClient, projectId: string, senderId: string) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(8, hashtext(${senderId}))`;
-  const sentAt = { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) };
+  const today = { sentAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }, emailed: true };
   return (
-    (await tx.invitation.count({ where: { projectId, sentAt } })) >= DAILY_INVITE_LIMIT ||
-    (await tx.invitation.count({ where: { createdById: senderId, sentAt } })) >= DAILY_INVITE_LIMIT
+    (await tx.invitation.count({ where: { projectId, ...today } })) >= DAILY_INVITE_LIMIT ||
+    (await tx.invitation.count({ where: { createdById: senderId, ...today } })) >= DAILY_INVITE_LIMIT
   );
 }
 

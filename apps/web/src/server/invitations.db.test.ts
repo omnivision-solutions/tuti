@@ -115,6 +115,20 @@ describe("inviting by email", () => {
     expect(emailsTo(email)).toBe(1);
   });
 
+  test("links an unverified sender copies don't count toward the day's invites", async () => {
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: false } });
+    for (let i = 0; i < DAILY_INVITE_LIMIT; i++) {
+      expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: false, unverified: true });
+    }
+    // Still room for the owner once verified, and for a verified admin there.
+    await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+    const admin = await addMember(project.id, "ADMIN");
+    await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
+    actAs(admin);
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+  });
+
   test("admins can't invite owners", async () => {
     const admin = await addMember(project.id, "ADMIN");
     actAs(admin);
