@@ -5,6 +5,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import ForgotPasswordPage from "@/app/(marketing)/forgot-password/page";
 import ResetPasswordPage from "@/app/(marketing)/reset-password/page";
+import PortalSignInPage from "@/app/portal/[project]/(site)/sign-in/page";
+import { AuthForm } from "@/components/auth-form";
 import { NewPasswordForm } from "@/components/password-reset-forms";
 import { auth } from "@/lib/auth";
 import {
@@ -421,4 +423,41 @@ test("signing in or up with a password is refused on every host but the app's, i
 
   expect((await post(APP_HOST, "sign-in/email", { email: user.email, password: OLD_PASSWORD })).status).toBe(200);
   expect((await post(APP_HOST, "sign-up/email", { email: newcomer, password: OLD_PASSWORD, name: "New" })).status).toBe(200);
+});
+
+test("a portal's sign-in page has no password form, without email set up too: its Tuti account link goes to the app", async () => {
+  /** Every element in a rendered tree (server components' output: client components aren't rendered further). */
+  const elements = (node: unknown): React.ReactElement<{ children?: unknown; href?: string }>[] => {
+    if (Array.isArray(node)) {
+      return node.flatMap(elements);
+    }
+    if (!node || typeof node !== "object" || !("props" in node)) {
+      return [];
+    }
+    const element = node as React.ReactElement<{ children?: unknown; href?: string }>;
+    return [element, ...elements(element.props.children)];
+  };
+  const render = async () =>
+    elements(
+      await PortalSignInPage({
+        params: Promise.resolve({ project: project.slug }),
+        searchParams: Promise.resolve({}),
+      } as PageProps<"/portal/[project]/sign-in">),
+    );
+
+  request.host = portalHost();
+  // With email: the emailed link's form, whose "Use a password instead" goes to the app.
+  const form = (await render()).find((element) => element.type === AuthForm);
+  expect(form?.props).toMatchObject({ mode: "sign-in", linkProject: project.slug });
+
+  const smtpHost = process.env.SMTP_HOST;
+  delete process.env.SMTP_HOST;
+  try {
+    const page = await render();
+    expect(page.filter((element) => element.type === AuthForm)).toEqual([]);
+    expect(page.filter((element) => element.type === "input")).toEqual([]);
+    expect(page.some((element) => element.props.href === "/continue")).toBe(true);
+  } finally {
+    process.env.SMTP_HOST = smtpHost;
+  }
 });
