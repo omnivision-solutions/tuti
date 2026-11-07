@@ -218,7 +218,7 @@ test.each([
   expect(await usersOf()).toEqual([]);
 });
 
-test("removing an import's starter, or changing their role, while a page saves waits for the page, which the next page then stops on", async () => {
+test("removing an import's starter, or changing their role, while a page saves waits for the page to be saved", async () => {
   const admin = await addMember(project.id, "ADMIN");
   const row = await running();
   await prisma.dataImport.update({ where: { id: row.id }, data: { startedById: admin.id } });
