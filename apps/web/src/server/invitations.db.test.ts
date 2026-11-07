@@ -223,8 +223,14 @@ describe("invites someone sent go when they can't give that role any more", () =
 
   test("an admin made a member", async () => {
     const { sender, accept } = await sendAs("ADMIN");
+    // One they sent has expired already: nobody can use it, so it isn't counted as cancelled.
+    actAs(sender);
+    const expired = newEmail();
+    await createInvitation(project.slug, expired, "MEMBER");
+    await prisma.invitation.updateMany({ where: { projectId: project.id, email: expired }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    actAs(owner);
     expect(await changeTeamRole(project.slug, sender.memberId, "MEMBER")).toEqual({ cancelledInvites: 1 });
-    expect(await prisma.invitation.count({ where: { createdById: sender.id, revokedAt: null } })).toBe(0);
+    expect(await prisma.invitation.count({ where: { createdById: sender.id, revokedAt: null, expiresAt: { gt: new Date() } } })).toBe(0);
     expect(await accept()).toEqual(gone);
   });
 
