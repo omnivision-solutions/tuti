@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import ContinuePage from "@/app/(marketing)/continue/page";
-import { createProject, redirectTarget, signUp as signUpUser } from "@/test/helpers";
+import { actAs, createProject, redirectTarget, signUp as signUpUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
-import { auth } from "./auth";
+import { auth, VERIFICATION_SECONDS } from "./auth";
 import { randomSecret } from "./portal-handoff";
 
 async function signUp(callbackURL?: string) {
@@ -115,34 +115,76 @@ test("signed up from a portal, the verification link comes back through a new ha
   const { link } = await verificationLink(email);
   const back = new URL(link.searchParams.get("callbackURL")!, link);
   expect(back.pathname).toBe("/continue");
-  // In the state's place, the app's MAC: only a way back the app made starts a new handoff.
-  expect(Object.fromEntries(back.searchParams)).toEqual({ portal: project.slug, redirect: "/feedback/ideas", mac: expect.any(String) });
+  // In the state's place, when it was made and the app's MAC for this account: only that starts a new handoff.
+  expect(Object.fromEntries(back.searchParams)).toEqual({
+    portal: project.slug,
+    redirect: "/feedback/ideas",
+    issued: expect.stringMatching(/^\d+$/),
+    mac: expect.any(String),
+  });
   expect(link.toString()).not.toContain(state);
 
-  // Opened later: verified, then the app's /continue without a state starts a new handoff on the portal.
-  const response = await auth.handler(new Request(link));
+  // Opened later: verified and signed in on the app, then its /continue without a state starts a new handoff on the portal.
+  const appHost = new URL(process.env.APP_URL!).host;
+  const response = await auth.handler(new Request(link, { headers: { host: appHost } }));
   expect(response.headers.get("location")).toBe(`${back.pathname}${back.search}`);
   expect(await isVerified(email)).toBe(true);
-  request.host = new URL(process.env.APP_URL!).host;
+  const ada = { id: (await prisma.user.findUniqueOrThrow({ where: { email } })).id, email, cookie: response.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ") };
+  request.host = appHost;
+  actAs(ada);
   const page = (query: Record<string, string>) =>
     ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(query) } as PageProps<"/continue">);
-  expect(await redirectTarget(page(Object.fromEntries(back.searchParams)))).toBe(
-    `http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`,
-  );
+  const signed = Object.fromEntries(back.searchParams);
+  expect(await redirectTarget(page(signed))).toBe(`http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`);
 
   // Anything else is a link that isn't valid, going nowhere (a portal's address can be its team's own domain or site):
   const notValid = async (query: Record<string, string>) => {
     const rendered = await page(query).catch((error: { digest?: string }) => error.digest);
     expect(JSON.stringify((rendered as React.ReactElement).props)).toContain("Link not valid");
   };
-  const mac = back.searchParams.get("mac")!;
   // unsigned, for a project that exists;
   await notValid({ portal: project.slug, redirect: "/feedback/ideas" });
-  // its MAC, with another path, another portal, or bent;
-  await notValid({ portal: project.slug, redirect: "/elsewhere", mac });
+  // its MAC, with another path, another portal, another time, or bent (in the middle: the last character can be padding);
+  await notValid({ ...signed, redirect: "/elsewhere" });
   const other = await createProject(await signUpUser("Other owner"));
-  await notValid({ portal: other.slug, redirect: "/feedback/ideas", mac });
-  await notValid({ portal: project.slug, redirect: "/feedback/ideas", mac: `${mac.slice(0, -1)}${mac.endsWith("A") ? "B" : "A"}` });
-  // a portal that doesn't exist.
-  await notValid({ portal: "no-such-project", redirect: "/feedback/ideas", mac });
+  await notValid({ ...signed, portal: other.slug });
+  await notValid({ ...signed, issued: String(Number(signed.issued) - 1) });
+  const middle = Math.floor(signed.mac!.length / 2);
+  await notValid({ ...signed, mac: `${signed.mac!.slice(0, middle)}${signed.mac![middle] === "A" ? "B" : "A"}${signed.mac!.slice(middle + 1)}` });
+  // a portal that doesn't exist;
+  await notValid({ ...signed, portal: "no-such-project" });
+  // the same link with someone else signed in (say its owner's teammate, who lifted it from their own email), or no one;
+  actAs(await signUpUser("Someone else"));
+  await notValid(signed);
+  actAs(null);
+  await notValid(signed);
+  // and, for its account, once it's older than the verification link it came in.
+  actAs(ada);
+  vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + (VERIFICATION_SECONDS + 1) * 1000 });
+  try {
+    await notValid(signed);
+  } finally {
+    vi.useRealTimers();
+  }
+  expect(await redirectTarget(page(signed))).toContain("/continue?redirect=");
+});
+
+test("a way back someone gets signed by signing up with a hand-picked callback works for nobody else", async () => {
+  // Their own project (whose address they may run), and a sign-up through the API asking for a way back there.
+  const theirs = await createProject(await signUpUser("Owner"));
+  const email = await signUp(`/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}`);
+  const { link } = await verificationLink(email);
+  const back = new URL(link.searchParams.get("callbackURL")!, link);
+  expect(back.searchParams.get("mac")).toBeTruthy();
+
+  // Sent to anyone else, opened signed in as someone else or no one: not valid, and no redirect to that address.
+  request.host = new URL(process.env.APP_URL!).host;
+  const open = () =>
+    ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/continue">).catch(
+      (error: { digest?: string }) => error.digest,
+    );
+  for (const someone of [await signUpUser("Someone else"), null]) {
+    actAs(someone);
+    expect(JSON.stringify(((await open()) as React.ReactElement).props)).toContain("Link not valid");
+  }
 });

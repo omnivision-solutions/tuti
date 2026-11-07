@@ -13,17 +13,20 @@ import { getAccountSession } from "@/server/session";
 
 /** "Continue as <name>": a portal sent someone here to sign in with their Tuti account (see lib/portal-handoff.ts). */
 export default async function ContinuePage(props: PageProps<"/continue">) {
-  const { portal, state, redirect: redirectParam, "sign-up": signUp, reset, mac } = await props.searchParams;
+  const { portal, state, redirect: redirectParam, "sign-up": signUp, reset, issued, mac } = await props.searchParams;
   const project =
     typeof portal === "string"
       ? await prisma.project.findUnique({ where: { slug: portal }, select: { slug: true, name: true } })
       : null;
 
   const redirectPath = safeRedirectPath(typeof redirectParam === "string" ? redirectParam : undefined, "/");
+  const session = await getAccountSession();
   // No state: a way back opened later (a sign-up's verification email; see lib/auth.ts), whose handoff is long used up.
   // A new one, started on that project's portal, which comes back here with its own state; only for a way back the app
-  // made (its MAC), since a portal's address can be its team's own domain or site. Anything else isn't valid.
-  if (project && state === undefined && (await isOwnWayBack(project.slug, typeof redirectParam === "string" ? redirectParam : "", mac))) {
+  // made for the account signed in (its MAC), since a portal's address can be its team's own domain or site. Anything
+  // else isn't valid.
+  const wayBack = { portal: project?.slug ?? "", redirect: typeof redirectParam === "string" ? redirectParam : "", issued, mac };
+  if (project && state === undefined && (await isOwnWayBack(wayBack, session?.user.id))) {
     redirect(`${await portalAddress(project.slug)}/continue?${new URLSearchParams({ redirect: redirectPath })}`);
   }
   if (!project || !isSecret(state)) {
@@ -38,7 +41,6 @@ export default async function ContinuePage(props: PageProps<"/continue">) {
   }
 
   const here = `/continue?${new URLSearchParams({ portal: project.slug, state, redirect: redirectPath })}`;
-  const session = await getAccountSession();
   if (!session) {
     // After a reset asked on the portal, its sign-in says the password was changed.
     redirect(`/${signUp ? "sign-up" : "sign-in"}?${new URLSearchParams({ ...(reset === "done" && !signUp && { reset: "done" }), next: here })}`);
