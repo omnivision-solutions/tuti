@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { BADGE_PRICE, licenseBilling } from "@/lib/plans";
+import { isCloudInstallation, LICENSE_CLAIM } from "@/server/license";
 import { buyLicense } from "@/server/license-checkout";
 import { LICENSE_ID, licensePrice } from "@/server/license-sales";
 import { licensePrivateKey } from "@/server/license-server";
@@ -26,14 +27,24 @@ export default async function LicensePage(props: PageProps<"/license">) {
   if (!licensePrivateKey()) {
     notFound();
   }
-  const { installation, project, paid, failed } = await props.searchParams;
-  if (typeof installation !== "string" || typeof project !== "string" || !LICENSE_ID.test(installation) || !LICENSE_ID.test(project)) {
+  const { installation, project, claim, paid, failed } = await props.searchParams;
+  // A claim (the installation's secret's hash) is optional, for older releases' links; a broken one is a broken link.
+  if (
+    typeof installation !== "string" ||
+    typeof project !== "string" ||
+    !LICENSE_ID.test(installation) ||
+    !LICENSE_ID.test(project) ||
+    (claim !== undefined && (typeof claim !== "string" || !LICENSE_CLAIM.test(claim)))
+  ) {
     return (
       <EmptyState
         title="Open this page from your Tuti"
         description='In Customize → Branding, untick "Powered by tuti" and choose Get a licence: the link says which project it is for.'
       />
     );
+  }
+  if (await isCloudInstallation(installation)) {
+    return <EmptyState title="Licences are for self-hosted Tuti" description={`On Tuti's cloud, hiding "Powered by tuti" is an add-on to a paid plan, in Billing.`} />;
   }
   const license = await prisma.license.findUnique({
     where: { installationId_projectId: { installationId: installation, projectId: project } },
@@ -95,6 +106,7 @@ export default async function LicensePage(props: PageProps<"/license">) {
         <form action={buyLicense} className="flex flex-col gap-3">
           <input type="hidden" name="installation" value={installation} />
           <input type="hidden" name="project" value={project} />
+          {typeof claim === "string" && <input type="hidden" name="claim" value={claim} />}
           {failed && <p className="text-sm text-destructive">Couldn&apos;t open Stripe&apos;s checkout. Try again in a moment.</p>}
           <p>Pay by card with Stripe, {billing.billed}. It renews until you cancel it.</p>
           <TermsAgreement by="buying" />

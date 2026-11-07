@@ -4,6 +4,7 @@ import { prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
 import { redirect } from "next/navigation";
 
+import { isCloudInstallation, LICENSE_CLAIM } from "./license";
 import { LICENSE_ID, licensePage, licensePrice } from "./license-sales";
 import { createSubscriptionCheckout } from "./stripe";
 
@@ -29,38 +30,43 @@ function checkoutAllowed(now = Date.now()): boolean {
  * "Buy a licence" on tuti.so/license (docs/plan.md, Licences): a Stripe Checkout page for the licence
  * of one project on one installation, billed each month or each year (`interval`). Anyone with the page may pay for it; what they buy is
  * named by the ids in the link "Get a licence" opened. The subscription carries both ids, and Stripe's
- * webhook turns the licence on once it's paid (server/subscriptions.ts).
+ * webhook turns the licence on once it's paid (server/subscriptions.ts). The link's `claim` (its installation's
+ * secret's hash) goes with it, so only that installation can claim it. Never for Tuti's cloud itself, where
+ * hiding the badge is the add-on on a paid plan.
  */
 export async function buyLicense(form: FormData): Promise<void> {
   const installation = String(form.get("installation") ?? "");
   const project = String(form.get("project") ?? "");
+  const claim = String(form.get("claim") ?? "");
   const price = licensePrice(form.get("interval") === "year" ? "year" : "month");
-  if (!price || !LICENSE_ID.test(installation) || !LICENSE_ID.test(project)) {
-    redirect(licensePage({ installation, project }).toString());
+  // Back to the page with what the link said; a link from an older release has no claim.
+  const page = (extra?: Record<string, string>) => licensePage({ installation, project, ...(claim && { claim }) }, extra).toString();
+  if (!price || !LICENSE_ID.test(installation) || !LICENSE_ID.test(project) || (claim && !LICENSE_CLAIM.test(claim)) || (await isCloudInstallation(installation))) {
+    redirect(page());
   }
   const license = await prisma.license.findUnique({ where: { installationId_projectId: { installationId: installation, projectId: project } } });
   if (license?.active) {
-    redirect(licensePage({ installation, project }).toString());
+    redirect(page());
   }
   if (!checkoutAllowed()) {
     log.warn("Licence checkouts over their limit a minute", { installation, project });
-    redirect(licensePage({ installation, project }, { failed: "1" }).toString());
+    redirect(page({ failed: "1" }));
   }
   let url: string;
   try {
     ({ url } = await createSubscriptionCheckout({
       price,
-      metadata: { licenseInstallation: installation, licenseProject: project },
+      metadata: { licenseInstallation: installation, licenseProject: project, ...(claim && { licenseClaim: claim }) },
       description: `Tuti licence for project ${project} on installation ${installation}`,
       reference: installation,
       customer: null,
       email: null,
-      successUrl: licensePage({ installation, project }, { paid: "1" }).toString(),
-      cancelUrl: licensePage({ installation, project }).toString(),
+      successUrl: page({ paid: "1" }),
+      cancelUrl: page(),
     }));
   } catch (error) {
     log.error("Couldn't start a licence's Stripe Checkout", { installation, project, error: String(error) });
-    redirect(licensePage({ installation, project }, { failed: "1" }).toString());
+    redirect(page({ failed: "1" }));
   }
   redirect(url);
 }
