@@ -5,7 +5,7 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, newPerson, signUp } from "./helpers";
+import { apiFor, backToPortal, createProject, fillSignUp, newPerson, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -111,13 +111,13 @@ test("the team puts the portal under a path of its own site: its site forwards i
   // Signing up, posting and signing out there, all under the path.
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/sign-in?next=%2Fdocs`);
+  // The account is made on the app (a password is never typed on the team's site), and back under the path.
   await visitor.getByRole("link", { name: "Create an account" }).click();
-  await expect(visitor).toHaveURL(new RegExp(`^${siteUrl().replace(/[.:]/g, "\\$&")}/portal/sign-up`));
-  await visitor.getByLabel("Name").fill("Ada");
+  await expect(visitor).toHaveURL(new RegExp(`^${APP_URL.replace(/[.:]/g, "\\$&")}/sign-up\\?`));
   const email = `e2e-${randomUUID()}@example.com`;
-  await visitor.getByLabel("Email").fill(email);
-  await visitor.getByLabel("Password").fill("correct horse battery staple");
-  await visitor.getByRole("button", { name: "Sign up" }).click();
+  await fillSignUp(visitor, "Ada", email);
+  await visitor.waitForURL((url) => url.pathname === "/continue");
+  await backToPortal(visitor);
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/docs`);
   await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
   await visitor.goto("/portal/feedback/feature-requests");
@@ -334,10 +334,9 @@ test("the widget's panel under a path of the team's site keeps the path in its t
 
   // Signed in there, Messages listens for changes through the site too.
   await visitor.goto("/help/sign-up");
-  await visitor.getByLabel("Name").fill("Ada");
-  await visitor.getByLabel("Email").fill(`e2e-${randomUUID()}@example.com`);
-  await visitor.getByLabel("Password").fill("correct horse battery staple");
-  await visitor.getByRole("button", { name: "Sign up" }).click();
+  await fillSignUp(visitor, "Ada", `e2e-${randomUUID()}@example.com`);
+  await visitor.waitForURL((url) => url.pathname === "/continue");
+  await backToPortal(visitor);
   await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
   const live = visitor.waitForRequest((request) => request.url().includes("/api/widget/live"));
   await visitor.goto("/help/widget?tab=messages");

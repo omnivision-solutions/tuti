@@ -4,7 +4,6 @@ import { cn } from "cn";
 import { CircleAlertIcon, LockIcon } from "lucide-react";
 
 import { AuthForm } from "@/components/auth-form";
-import { PasswordChangedAlert } from "@/components/password-reset-forms";
 import { TutiMark } from "@/components/tuti-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -15,7 +14,7 @@ import { portalLinks } from "@/server/portal-base";
 
 export default async function PortalSignInPage(props: PageProps<"/portal/[project]/sign-in">) {
   const at = await portalLinks();
-  const [{ project }, { continue: handoff, link, next, reset, title }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project }, { continue: handoff, link, next, title }] = await Promise.all([props.params, props.searchParams]);
   // Where they were (e.g. a board with a prefilled post), to go back to afterwards.
   // A board's "Share your idea" posted here before its script ran: the title typed comes along, for the way back.
   const back = typeof next === "string" && typeof title === "string" && title.trim() ? withTitle(next, title.trim().slice(0, 200)) : next;
@@ -57,7 +56,6 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           </AlertDescription>
         </Alert>
       )}
-      {reset === "done" && <PasswordChangedAlert />}
       {portal && ssoUrl && (
         <>
           {/* Names run up to 60 characters: the button grows to wrap them. */}
@@ -70,19 +68,21 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           <Or />
         </>
       )}
-      <AuthForm
-        mode="sign-in"
-        redirectTo="/"
-        next={nextPath || undefined}
-        // Sign-in links and password resets need email that really goes out.
-        linkProject={emailConfigured() ? project : undefined}
-        forgotPassword={emailConfigured()}
-        // Accounts made here can't read a private portal.
-        signUp={!isPrivate}
-        // Just set a new one.
-        withPassword={reset === "done"}
-      />
-      <Or />
+      {/* Sign-in links need email that really goes out. Passwords are typed on the app (lib/auth.ts): its "Use a password instead" and the Tuti account below go there. */}
+      {emailConfigured() && (
+        <>
+          <AuthForm
+            mode="sign-in"
+            redirectTo="/"
+            next={nextPath || undefined}
+            linkProject={project}
+            forgotPassword
+            // Accounts made here can't read a private portal.
+            signUp={!isPrivate}
+          />
+          <Or />
+        </>
+      )}
       {/* A plain link: /continue is a route that sets a cookie and leaves for the app host. */}
       <a
         href={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}

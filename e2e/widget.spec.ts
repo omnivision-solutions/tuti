@@ -8,7 +8,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { spendCredits } from "./credits";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, newPerson, png, postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { latestEmailTo, linkIn } from "./mail";
 import { heldModelReply, modelRequests, nextModelReply, releaseModelReply } from "./model";
@@ -212,10 +212,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   const [ideaTab] = await Promise.all([visitor.waitForEvent("popup"), visitorIdeas.getByRole("link", { name: "Sign in to vote (1 vote)" }).click()]);
   // Its script loaded, so the form signs in rather than sending itself as a page's address.
   await ideaTab.waitForLoadState("load");
-  await ideaTab.getByLabel("Email").fill(bea.email);
-  await ideaTab.getByRole("button", { name: "Use a password instead" }).click();
-  await ideaTab.getByLabel("Password").fill("correct horse battery staple");
-  await ideaTab.getByRole("button", { name: "Sign in", exact: true }).click();
+  await signInWithPassword(ideaTab, bea.email);
   await ideaTab.getByRole("button", { name: "Upvote (1 vote)" }).click();
   await expect(ideaTab.getByRole("button", { name: "Remove vote (2 votes)" })).toBeVisible();
   await visitor.reload();

@@ -245,27 +245,19 @@ test("a session a portal on its team's own site starts doesn't work on the app h
   expect(await getSession()).toBeNull();
 });
 
-test("signing in with a password on a portal starts a session for that portal only; on the app, one for the app", async () => {
-  const signIn = async (host: string) => {
-    const { headers } = await auth.api.signInEmail({
+test("signing in with a password works on the app only (a portal's team may run its host); there it starts a session for the app", async () => {
+  const signIn = (host: string) =>
+    auth.api.signInEmail({
       body: { email: ada.email, password: "correct horse battery staple" },
       headers: new Headers({ host }),
       returnHeaders: true,
     });
-    return headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
-  };
-  const sessionOn = async (cookie: string, host: string) => {
-    actAs({ ...ada, cookie });
-    request.host = host;
-    return (await getSession())?.user.id ?? null;
-  };
+  await expect(signIn(portalHost())).rejects.toMatchObject({ statusCode: 403 });
 
-  const portal = await signIn(portalHost());
-  expect(await sessionOn(portal, portalHost())).toBe(ada.id);
-  expect(await sessionOn(portal, APP_HOST)).toBeNull();
-
-  const app = await signIn(APP_HOST);
-  expect(await sessionOn(app, APP_HOST)).toBe(ada.id);
+  const { headers } = await signIn(APP_HOST);
+  actAs({ ...ada, cookie: headers.getSetCookie().map((c) => c.split(";")[0]).join("; ") });
+  request.host = APP_HOST;
+  expect((await getSession())?.user.id).toBe(ada.id);
 });
 
 test("a session from before sessions were bound works nowhere", async () => {

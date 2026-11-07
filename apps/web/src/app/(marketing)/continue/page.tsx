@@ -11,7 +11,7 @@ import { getAccountSession } from "@/server/session";
 
 /** "Continue as <name>": a portal sent someone here to sign in with their Tuti account (see lib/portal-handoff.ts). */
 export default async function ContinuePage(props: PageProps<"/continue">) {
-  const { portal, state, redirect: redirectParam } = await props.searchParams;
+  const { portal, state, redirect: redirectParam, "sign-up": signUp } = await props.searchParams;
   const project =
     typeof portal === "string"
       ? await prisma.project.findUnique({ where: { slug: portal }, select: { slug: true, name: true } })
@@ -32,7 +32,7 @@ export default async function ContinuePage(props: PageProps<"/continue">) {
   const here = `/continue?${new URLSearchParams({ portal: project.slug, state, redirect: redirectPath })}`;
   const session = await getAccountSession();
   if (!session) {
-    redirect(`/sign-in?${new URLSearchParams({ next: here })}`);
+    redirect(`/${signUp ? "sign-up" : "sign-in"}?${new URLSearchParams({ next: here })}`);
   }
 
   return (
