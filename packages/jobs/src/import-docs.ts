@@ -411,9 +411,10 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   const { items, next: listNext } = await job.read.articles!(listCursor, CONTENT_PAGE);
   await loadAdmins(job);
   const known = await recorded(prisma, job, "article", items.map((article) => article.id));
+  // Not yet landed, and not decided by this import already (one gone when a run of it read it: a later import reads it again).
   const todo = items.filter((article) => {
     const local = known.get(article.id);
-    return !local || (!local.landed && !local.deleted && !teamSaved(local));
+    return !local || (!local.landed && !local.deleted && !teamSaved(local) && local.countedIn !== job.id);
   });
   const portal = todo.length > 0 ? await portalAddress((await prisma.project.findUniqueOrThrow({ where: { id: job.projectId }, select: { slug: true } })).slug) : "";
   // Those of imports that ended without their last page (failed, or failed as stale) go.
@@ -430,12 +431,14 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   let reached = 0;
   // The source asked for a pause (`later`): the run ends here, read again next, nothing failed.
   let paused = false;
-  // Those the source no longer has (its `article` reader's null), decided in this run: counted as gone, and marked so
-  // that a page read again doesn't fetch them again.
+  // Those the source no longer has (its `article` reader's null), decided in this run: counted as gone and marked
+  // counted by this import (not landed), so a page read again doesn't fetch them again, but a later import does (a
+  // page that was refused for a while, by a firewall or a redeploy, isn't an empty draft for good).
   const gone = new Set<FeaturebaseArticle>();
   for (const item of todo) {
-    // Gone ones don't count towards the time: only an article brought across lets the run stop for want of it.
-    if (texts.length > 0 && Date.now() - started > contentBudget.ms) {
+    // Out of time once it decided something (an article brought across, or one gone: decided ones are saved, so a run of
+    // slow gone pages stops here and goes on next, rather than reaching the read deadline).
+    if ((texts.length > 0 || gone.size > 0) && Date.now() - started > contentBudget.ms) {
       break;
     }
     // A source whose list is only addresses reads each article now, so one done before is never fetched again. One
@@ -525,10 +528,11 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
             landedRecords.push(local.record);
           }
         };
-        // Gone from the source (or refused) as this run read it: an empty draft, decided, never fetched again.
+        // Gone from the source (or refused) as this run read it: an empty draft, decided for this import (not landed:
+        // a later import reads it again).
         if (gone.has(article)) {
           count("articles", `gone from ${IMPORT_SOURCES[job.source].name} (left as empty drafts)`);
-          decided({ contentLanded: true });
+          decided();
           continue;
         }
         // Deleted here before its content landed: left deleted and not landed, so if it's restored, a later import fills it in.

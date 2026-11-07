@@ -476,3 +476,55 @@ test("a site that asks for a pause run after run fails the import after five in 
   expect(done).toMatchObject({ state: "failed", error: expect.stringMatching(/^127\.0\.0\.1 answered 429\. /) });
   expect(site.requests.filter((path) => path === "/docs/getting-started")).toHaveLength(5);
 });
+
+test("a page refused for a while (a 403) in one import is read again by the next, which brings its text", async () => {
+  site.failing.set("/docs/billing/refunds", 403);
+  expect((await importSite()).state).toBe("done");
+  expect((await articles()).find((a) => a.slug === "refunds")?.body).toBe("");
+
+  site.failing.clear();
+  const again = await importSite();
+  expect(again.state).toBe("done");
+  expect((await articles()).find((a) => a.slug === "refunds")).toMatchObject({ title: "Refunds", body: "Within 30 days." });
+});
+
+test("gone pages count towards a run's time: with none left, two gone ones before a real one end the run, and the import finishes", async () => {
+  contentBudget.ms = 0;
+  const at = (path: string) => `${site.origin}${path}`;
+  const folder = at("/docs/getting-started");
+  const row = await runningImport(site.url, {
+    list: {
+      pages: [
+        { id: at("/docs/getting-started/gone-1"), collection: folder },
+        { id: at("/docs/getting-started/gone-2"), collection: folder },
+        { id: at("/docs/getting-started/install"), collection: folder },
+      ],
+      collections: [{ id: folder, parent: null, name: "Getting started" }],
+    },
+  });
+  // The first content run: out of time after the first gone page, it stops there (its decision saved).
+  let job = importJob(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } }))!;
+  for (const step of STEPS.docs.steps.slice(0, 2)) {
+    for (let cursor: string | null = null, first = true; first || cursor; first = false) {
+      const page = await step.page(job, cursor);
+      await prisma.$transaction((tx) => page.save(tx));
+      cursor = page.next;
+      job = importJob(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } }))!;
+    }
+  }
+  await prisma.dataImport.update({ where: { id: row.id }, data: { step: "docs-content", cursor: null } });
+  const firstRun = await STEPS.docs.steps[2]!.page(job, null);
+  expect(firstRun.next).toBe("again:");
+  expect(site.requests).not.toContain("/docs/getting-started/gone-2");
+  await prisma.$transaction((tx) => firstRun.save(tx));
+  await prisma.dataImport.update({ where: { id: row.id }, data: { cursor: "again:" } });
+  // The rest, run by run, to the end.
+  for (let step = 0; step < 12 && (await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).state === "RUNNING"; step++) {
+    await importStep({ importId: row.id }, log);
+  }
+  expect((await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).state).toBe("DONE");
+  for (const path of ["/docs/getting-started/gone-1", "/docs/getting-started/gone-2"]) {
+    expect(site.requests.filter((p) => p === path), path).toHaveLength(1);
+  }
+  expect((await articles()).find((a) => a.title === "Install Acme")?.body).toBe("Download the app, then make your first project.\nThe installer");
+});
