@@ -56,7 +56,7 @@ export const IMPORT_PARTS = {
     needs: [],
     media: true,
     see: { label: "See docs", page: "docs" },
-    steps: { "docs-collections": "Collections", "docs-articles": "Articles", "docs-content": "Their content", "docs-unreached": "Last check" },
+    steps: { "docs-collections": "Collections", "docs-articles": "Articles", "docs-content": "Text and images", "docs-unreached": "Final check" },
     kinds: ["collections", "articles", "heldDrafts", "privateDrafts", "limitDrafts", "unpublishedChanges", "articleImages", "articleFiles", "articleVideos", "oldAddresses", "notRedirected"],
   },
   inbox: {

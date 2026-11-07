@@ -9,6 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { ImportSourceLogo } from "@/components/import-source-logo";
 import { Input } from "@/components/ui/input";
 import { IMPORT_PARTS, IMPORT_SOURCES, type ImportPart, type ImportSourceInfo, type ImportSourceKey, importNote, importProgress, importSummary, importTitle, partDescription, pickPart } from "@/lib/import-parts";
 import { cn } from "@/lib/utils";
@@ -160,7 +161,7 @@ export function RefreshWhile({ on }: { on: boolean }) {
 
 /**
  * The first run's "Where are you coming from?": starting fresh, or a tool to import from (IMPORT_SOURCES), with its API
- * key (or its site's address) and the parts to bring (imports.start). Started, it shows the import's progress while it runs, and Continue goes on with setup meanwhile.
+ * key (or its site's address) and the parts to bring (imports.start). Started, only the import's progress shows while it runs (the picker comes back once it ends), and Continue goes on with setup meanwhile.
  * Without `next` it's Settings → Import: only the tools to import from, any time.
  */
 export function SetupImport({
@@ -242,34 +243,46 @@ export function SetupImport({
       }}
     >
       <RefreshWhile on={running} />
-      <CardContent role="radiogroup" aria-label="Where are you coming from?" className="grid gap-3 sm:grid-cols-2">
-        {[["fresh", "Starting fresh", "Set Tuti up from scratch."] as const, ...(Object.entries(IMPORT_SOURCES) as [ImportSourceKey, ImportSourceInfo][]).map(([value, { name, description }]) => [value, name[0]!.toUpperCase() + name.slice(1), description] as const)]
-          .filter(([value]) => next || value !== "fresh")
-          .map(([value, label, description]) => (
-          <label key={value} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
-            <input
-              type="radio"
-              name="from"
-              value={value}
-              checked={from === value}
-              // While a check runs, its answer is the picked source's: no switching under it. aria-disabled, not
-              // disabled, so a radio with focus keeps it (a disabled one drops it to the page).
-              aria-disabled={pending || undefined}
-              onChange={() => {
-                if (pending) {
-                  return;
-                }
-                setFrom(value);
-                // The last source's refusal isn't this one's.
-                setError(null);
-              }} className="mt-0.5 size-4 accent-primary" />
-            <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">{label}</span>
-              <span className="text-sm text-muted-foreground">{description}</span>
-            </span>
-          </label>
-        ))}
-      </CardContent>
+      {/* While an import runs only its progress shows: one runs at a time, so there's nothing to pick until it ends. */}
+      {!running && (
+        <CardContent role="radiogroup" aria-label="Where are you coming from?" className="grid gap-3 sm:grid-cols-2">
+          {[["fresh", "Starting fresh", "Set Tuti up from scratch."] as const, ...(Object.entries(IMPORT_SOURCES) as [ImportSourceKey, ImportSourceInfo][]).map(([value, { name, description }]) => [value, name[0]!.toUpperCase() + name.slice(1), description] as const)]
+            .filter(([value]) => next || value !== "fresh")
+            .map(([value, label, description]) => (
+            // Native radios, invisible over their cards (so a click anywhere on one is on it): arrow keys move between them; the card
+            // shows the pick (its border, fill and tick) and the focus.
+            <label
+              key={value}
+              className="group/source relative flex cursor-pointer items-start gap-3 rounded-xl border p-4 pr-9 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+            >
+              <input
+                type="radio"
+                name="from"
+                value={value}
+                checked={from === value}
+                // While a check runs, its answer is the picked source's: no switching under it. aria-disabled, not
+                // disabled, so a radio with focus keeps it (a disabled one drops it to the page).
+                aria-disabled={pending || undefined}
+                onChange={() => {
+                  if (pending) {
+                    return;
+                  }
+                  setFrom(value);
+                  // The last source's refusal isn't this one's.
+                  setError(null);
+                }}
+                className="absolute inset-0 size-full cursor-pointer appearance-none rounded-xl opacity-0"
+              />
+              <ImportSourceLogo source={value} />
+              <CircleCheckIcon aria-hidden className="absolute top-3 right-3 hidden size-4.5 text-primary group-has-checked/source:block" />
+              <span className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium">{label}</span>
+                <span className="text-sm text-muted-foreground">{description}</span>
+              </span>
+            </label>
+          ))}
+        </CardContent>
+      )}
       {/* On the page before there's anything in it, so screen readers hear the import start and end: the title while
           it runs, and the summary once it's over, never each page's count. */}
       <p role="status" className="sr-only">
