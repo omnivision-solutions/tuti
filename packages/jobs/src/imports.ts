@@ -39,6 +39,8 @@ export type ImportJob = {
   counts: ImportCounts;
   /** Whether articles published in the source come published (DataImport.publishArticles), else as drafts. */
   publishArticles: boolean;
+  /** Whether posts come as they were (DataImport.publicPosts), else onto Private boards, each post Private. */
+  publicPosts: boolean;
   /** The source's admins, read before a page's transaction that needs them (loadAdmins). */
   admins?: Map<string, FeaturebaseAdmin>;
 };
@@ -153,7 +155,7 @@ export function importJob(row: DataImport): ImportJob | null {
   }
   const counts = structuredClone(row.counts ?? {}) as ImportCounts;
   const { read } = IMPORT_SOURCES[row.source].connect(openValue(IMPORT_KEY, row.apiKey), { deadline: Date.now() + PAGE_READ_MS, state: row.sourceState ?? undefined });
-  return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, read, counts, publishArticles: row.publishArticles };
+  return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, read, counts, publishArticles: row.publishArticles, publicPosts: row.publicPosts };
 }
 
 /** What an import's API key is sealed for while it's kept (sealValue: encrypted at rest). */

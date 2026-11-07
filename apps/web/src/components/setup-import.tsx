@@ -196,6 +196,11 @@ export function SetupImport({
   const [publishArticles, setPublishArticles] = useState(false);
   const asksPublish = Boolean(source?.askPublish && chosen.includes("docs"));
   const publishId = useId();
+  // A source that can't say who saw each post asks where its posts come: a Private board to begin with, so nothing only
+  // some people saw goes public.
+  const [publicPosts, setPublicPosts] = useState(false);
+  const asksVisibility = Boolean(source?.askPostVisibility && chosen.includes("feedback"));
+  const visibilityId = useId();
   const running = latest?.state === "running";
   // The import shown: the one running (only one can at a time), else the latest only when it was from the source picked.
   const shown = running || latest?.source === from ? latest : null;
@@ -225,7 +230,7 @@ export function SetupImport({
         const field = event.currentTarget.elements.namedItem("key") as HTMLInputElement;
         const key = field.value;
         startTransition(async () => {
-          const result = await startImport(projectSlug, from, key, chosen, asksPublish ? publishArticles : undefined);
+          const result = await startImport(projectSlug, from, key, chosen, asksPublish ? publishArticles : undefined, asksVisibility ? publicPosts : undefined);
           setError(result.error ?? null);
           if (result.import) {
             // Kept on the server while it runs, not in the page.
@@ -347,6 +352,32 @@ export function SetupImport({
                   ).map(([value, label, description]) => (
                     <label key={label} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
                       <input type="radio" name="publishArticles" checked={publishArticles === value} onChange={() => setPublishArticles(value)} className="mt-0.5 size-4 accent-primary" />
+                      <span className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium">{label}</span>
+                        <span className="text-sm text-muted-foreground">{description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {asksVisibility && source && (
+              <div role="radiogroup" aria-labelledby={`${visibilityId}-label`} aria-describedby={`${visibilityId}-why`} className="mt-2 flex flex-col gap-2">
+                <p id={`${visibilityId}-label`} className="text-sm font-medium">
+                  Ideas from {source.name}
+                </p>
+                <p id={`${visibilityId}-why`} className="text-sm text-muted-foreground">
+                  {source.name} doesn&apos;t tell Tuti which ideas only some people could see, so a Public board could show private ones.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(
+                    [
+                      [false, "On a Private board", "Each idea is seen only by its author and your team."],
+                      [true, "On a Public board", "Everyone sees them, as on a public board there."],
+                    ] as const
+                  ).map(([value, label, description]) => (
+                    <label key={label} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
+                      <input type="radio" name="publicPosts" checked={publicPosts === value} onChange={() => setPublicPosts(value)} className="mt-0.5 size-4 accent-primary" />
                       <span className="flex flex-col gap-0.5">
                         <span className="text-sm font-medium">{label}</span>
                         <span className="text-sm text-muted-foreground">{description}</span>
