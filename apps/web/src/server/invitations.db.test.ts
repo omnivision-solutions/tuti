@@ -191,7 +191,9 @@ describe("inviting by email", () => {
     const email = newEmail();
     await createInvitation(project.slug, email, "OWNER");
     await prisma.invitation.updateMany({ where: { projectId: project.id, email }, data: { expiresAt: new Date(Date.now() - 1000) } });
-    actAs(await addMember(project.id, "ADMIN"));
+    const admin = await addMember(project.id, "ADMIN");
+    await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
+    actAs(admin);
     expect(await createInvitation(project.slug, email, "MEMBER")).toMatchObject({ emailSent: true });
   });
 });

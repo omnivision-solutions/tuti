@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { DAILY_INVITE_LIMIT, generateInvitationToken, handlers, hashInvitationToken, IMPORT_KEY, importsSettled, lockProject, UNSENT_EXPIRY } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
-import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
 import { getImport, startImport } from "@/server/operations/imports";
@@ -186,8 +186,12 @@ test("Send all stops when its sender is taken off the team partway: nothing they
   admins(newAddress(), newAddress(), newAddress());
   await importTeam();
   const admin = await signUp("Avery Admin");
+  await prisma.user.update({ where: { id: admin.id }, data: { emailVerified: true } });
   const { id: memberId } = await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
   // While the first one is being emailed, an owner removes them.
+  onTestFinished(() => {
+    emailHook.before = null;
+  });
   emailHook.before = async () => {
     emailHook.before = null;
     actAs(owner);
