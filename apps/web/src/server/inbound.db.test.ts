@@ -88,9 +88,29 @@ test("an email with only an HTML body (an image in it, no plain-text part) arriv
   expect(conversation!.messages[0]!.original).toContain("> Can you try again?");
 });
 
-test("an email whose HTML nests quotes very deep is read in a moment, its reply kept", async () => {
+test("an email whose HTML quotes very deep and long is read in a moment, its reply kept", async () => {
   const { project, address } = await setup();
-  const deep = `<p>Earlier</p>${"<blockquote>quoted words on this line, a few of them".repeat(990)}`;
+  const quotes = `On Mon, Olive wrote:${"<blockquote>Earlier".repeat(195)}${"x<br>".repeat(200_000)}`;
+  const raw = [
+    "From: Kim Lee <e2e-kim@example.com>",
+    `To: ${address}`,
+    "Subject: Export",
+    `Message-ID: <${crypto.randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    `<p>The export fails.</p>${quotes}`,
+    "",
+  ].join("\r\n");
+  const start = performance.now();
+  expect(await postEmail(raw, { recipient: address })).toEqual({ status: 200, body: { outcome: "added" } });
+  expect(performance.now() - start).toBeLessThan(2000);
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails.");
+});
+
+test("an email whose HTML part comes beside its text part, not instead of it, arrives with both", async () => {
+  const { project, address } = await setup();
   const raw = [
     "From: Kim Lee <e2e-kim@example.com>",
     `To: ${address}`,
@@ -100,18 +120,19 @@ test("an email whose HTML nests quotes very deep is read in a moment, its reply 
     'Content-Type: multipart/mixed; boundary="mixed"',
     "",
     "--mixed",
+    "Content-Type: text/html; charset=utf-8",
+    "",
+    "<p>The <b>export</b> fails.</p>",
+    "--mixed",
     "Content-Type: text/plain; charset=utf-8",
     "",
-    "The export fails.",
-    ...Array.from({ length: 4 }, () => ["--mixed", "Content-Type: text/html; charset=utf-8", "", deep]).flat(),
+    "Sent through the Acme list",
     "--mixed--",
     "",
   ].join("\r\n");
-  const start = performance.now();
-  expect(await postEmail(raw, { recipient: address })).toEqual({ status: 200, body: { outcome: "added" } });
-  expect(performance.now() - start).toBeLessThan(1000);
+  expect(await postEmail(raw, { recipient: address })).toMatchObject({ status: 200 });
   const [conversation] = await conversations(project.id);
-  expect(conversation!.messages[0]!.body).toBe("The export fails.");
+  expect(conversation!.messages[0]!.body).toMatch(/^The export fails\.\n+Sent through the Acme list$/);
 });
 
 test("the subdomain is the project's for good: taken names get a number, and a renamed project keeps its own", async () => {

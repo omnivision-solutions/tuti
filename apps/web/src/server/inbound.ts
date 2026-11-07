@@ -30,8 +30,6 @@ import { storeAttachments } from "./attachments";
 export const MAX_RECEIVED_BYTES = 25 * 1024 * 1024;
 /** More than this an hour, and a project's mail is refused (kept as a row, without its body). */
 export const RECEIVED_PER_HOUR = 500;
-/** How much of an email's HTML is turned into text. */
-const MAX_HTML_LENGTH = 1_000_000;
 /** Raw bodies not yet read or failed, per project and per server: past either, mail is refused. */
 const PENDING_BYTES_PER_PROJECT = 1024 ** 3;
 const PENDING_BYTES_PER_SERVER = 20 * 1024 ** 3;
@@ -58,6 +56,44 @@ function recipientOf(address: string, domain: string) {
 }
 
 export { mailSubdomain } from "@tuti/jobs";
+
+/**
+ * An email's HTML as text: links kept, images left out, quotes as "> ". Only so much of it and so
+ * deep (the reply is at the top), and a quote within a quote isn't marked again, so the text grows
+ * with the HTML rather than with how deep its quotes go.
+ */
+function htmlAsText(html: string): string {
+  let quoting = false;
+  return htmlToText(html.slice(0, 1_000_000), {
+    wordwrap: false,
+    limits: { maxDepth: 200 },
+    selectors: [
+      { selector: "img", format: "skip" },
+      { selector: "blockquote", format: "quote" },
+    ],
+    formatters: {
+      quote: (elem, walk, builder) => {
+        const outer = !quoting;
+        quoting = true;
+        builder.openBlock({ leadingLineBreaks: 2, reservedLineLength: outer ? 2 : 0 });
+        walk(elem.children, builder);
+        builder.closeBlock({
+          trailingLineBreaks: 2,
+          blockTransform: outer ? (text) => trimLineBreaks(text).split("\n").map((line) => `> ${line}`).join("\n") : undefined,
+        });
+        quoting = !outer;
+      },
+    },
+  });
+}
+
+function trimLineBreaks(text: string) {
+  let start = 0;
+  let end = text.length;
+  while (text[start] === "\n") start++;
+  while (end > start && text[end - 1] === "\n") end--;
+  return text.slice(start, end);
+}
 
 export type Authentication = { spf: string; dkim: string; dmarc: string };
 
@@ -105,9 +141,9 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
     return { status: 404, outcome: "no such address" };
   }
   const projectId = owner.projectId;
-  // Its HTML is turned into text in readEmail, within limits; nothing here needs the parser's own
-  // conversions (text from HTML, HTML from text, inline images in the HTML).
-  const mail = await simpleParser(raw, { skipHtmlToText: true, skipTextToHtml: true, skipImageLinks: true });
+  // The parser turns no HTML into text (htmlAsText does, in readEmail), and marks where it would
+  // have with textConversionError; nor does it look for links in the text or inline images.
+  const mail = await simpleParser(raw, { maxHtmlLengthToParse: 0, skipTextLinks: true, skipImageLinks: true });
   const sender = mail.from?.value[0]?.address?.toLowerCase() ?? "";
   const messageId = mail.messageId ?? null;
   const dedupeKey = sha256(messageId ? `${messageId}\n${sender}` : raw);
@@ -290,14 +326,9 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     return ignore("from_own_address");
   }
 
-  // Its plain text, or, for mail sent as HTML only, the HTML as text (links kept, quotes as "> ").
-  // Only so much of it, and so deep: the reply is at the top, and quoting each level of a deep nest
-  // costs more than the last.
-  const plain =
-    mail.text ||
-    (typeof mail.html === "string"
-      ? htmlToText(mail.html.slice(0, MAX_HTML_LENGTH), { wordwrap: false, selectors: [{ selector: "img", format: "skip" }], limits: { maxDepth: 200 } })
-      : "");
+  // Its plain text, or, where its words are in HTML (all of it, or a part beside the text), its HTML
+  // as text, which then holds its text parts too.
+  const plain = (mail.textConversionError || !mail.text) && typeof mail.html === "string" ? htmlAsText(mail.html) : (mail.text ?? "");
   const { text, stripped } = stripQuotes(plain, subject);
   const body = (text || "(No text)").slice(0, MAX_MESSAGE_LENGTH);
   // What came with it (not the images its HTML shows inline: logos, signatures), kept before its
