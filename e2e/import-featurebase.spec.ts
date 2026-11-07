@@ -59,7 +59,7 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await expect(owner.getByText("Part 2 of 3.", { exact: false })).toBeVisible();
   await expect(part("Team")).toContainText("2 invitations ready to send.");
   // Said once, with their link: no count of its own besides.
-  await expect(part("Team")).not.toContainText("2 invitations.");
+  await expect(part("Team")).not.toContainText(/2 invitations(?! ready)/);
   await expect(part("Team")).toContainText("Done");
   await expect(part("Contacts")).toContainText("Starting…");
   await expect(part("Contacts")).toContainText("In progress");
@@ -88,8 +88,8 @@ test("in the first run the team comes from Featurebase: a bad key is refused, a 
   await owner.getByRole("button", { name: "View details" }).click();
   const details = owner.getByRole("dialog", { name: "Imported from Featurebase" });
   await expect(details.getByRole("listitem").filter({ hasText: "Team" })).toContainText("2 invitations ready to send.");
-  await expect(details.getByRole("listitem").filter({ hasText: "Team" })).not.toContainText("2 invitations.");
-  await expect(details.getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("3 contacts.");
+  await expect(details.getByRole("listitem").filter({ hasText: "Team" })).not.toContainText(/2 invitations(?! ready)/);
+  await expect(details.getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("3 contacts");
   await expect(details.getByRole("link", { name: "See users" })).toBeVisible();
   // Each row says it's done to screen readers too, beside its link.
   await expect(details.getByRole("listitem").filter({ hasText: "Contacts" })).toContainText("Done");
@@ -178,7 +178,7 @@ test("after setup, Settings → Import brings what's in Featurebase across any t
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Import again" }).click();
   await expect(status).toContainText("Nothing brought across.", { timeout: 15_000 });
-  await expect(status).toContainText("3 contacts already brought across earlier");
+  await expect(status).toContainText("Skipped what was already brought across earlier.");
   await checkpoint(owner, "settings-import-again");
 });
 

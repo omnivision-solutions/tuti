@@ -196,11 +196,17 @@ const KINDS: Record<string, [string, string]> = {
   attachments: ["attachment", "attachments"],
 };
 
-/** An import's count of a kind, in words ("12 contacts"). */
-export const kindCount = (kind: string, n: number) => {
+/** An import's count of a kind, as its number and what it counts (["12", "contacts"]). */
+const kindParts = (kind: string, n: number) => {
   const [one, many] = KINDS[kind] ?? [kind, kind];
-  return `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
+  return [n.toLocaleString("en"), n === 1 ? one : many] as const;
 };
+
+/** An import's count of a kind, in words ("12 contacts"). */
+export const kindCount = (kind: string, n: number) => kindParts(kind, n).join(" ");
+
+/** Why an import skips what an earlier one brought: ALREADY_HERE in @tuti/jobs (which a page in the browser can't import). */
+const ALREADY_HERE = "already brought across earlier";
 
 /** An import's title, as the setup step and Home say it. */
 export const importTitle = (run: ImportView) => {
@@ -208,22 +214,33 @@ export const importTitle = (run: ImportView) => {
   return run.state === "running" ? `Importing from ${name}` : run.state === "done" ? `Imported from ${name}` : `The import from ${name} stopped`;
 };
 
-/** What `counts` brought of `kinds` ("12 contacts") and what they left out and why ("2 contacts without a name"), in `kinds`' order. */
+/**
+ * What `counts` brought of `kinds` (["12", "contacts"]), what they left out and why ("2 contacts without a name") and
+ * how many, in `kinds`' order; and how many they skipped as already brought across earlier, which isn't left out.
+ */
 function described(counts: ImportView["counts"], kinds: readonly string[]) {
   const present = kinds.filter((kind) => counts[kind]);
+  const leftOut = present.flatMap((kind) => Object.entries(counts[kind]!.leftOut).filter(([reason]) => reason !== ALREADY_HERE).map(([reason, n]) => [kind, reason, n] as const));
   return {
-    brought: present.flatMap((kind) => (counts[kind]!.imported > 0 ? [kindCount(kind, counts[kind]!.imported)] : [])).join(", "),
-    leftOut: present.flatMap((kind) => Object.entries(counts[kind]!.leftOut).map(([reason, n]) => `${kindCount(kind, n)} ${reason}`)).join("; "),
+    brought: present.flatMap((kind) => (counts[kind]!.imported > 0 ? [kindParts(kind, counts[kind]!.imported)] : [])),
+    leftOut: leftOut.map(([kind, reason, n]) => `${kindCount(kind, n)} ${reason}`),
+    leftOutCount: leftOut.reduce((sum, [, , n]) => sum + n, 0),
+    skipped: present.reduce((sum, kind) => sum + (counts[kind]!.leftOut[ALREADY_HERE] ?? 0), 0),
   };
 }
+
+/** What was brought, in words ("12 contacts, 3 posts"). */
+export const broughtWords = (brought: readonly (readonly [string, string])[]) => brought.map((count) => count.join(" ")).join(", ");
 
 /** What an import brought so far, and what it left out and why, in a sentence or two. */
 export function importSummary(run: ImportView) {
   // In the order the import brings them (the database keeps them in its own); a kind only left out isn't "brought".
   const known = Object.values(IMPORT_PARTS).flatMap((part) => part.kinds as readonly string[]);
-  const { brought, leftOut } = described(run.counts, [...known, ...Object.keys(run.counts).filter((kind) => !known.includes(kind))]);
+  const counts = described(run.counts, [...known, ...Object.keys(run.counts).filter((kind) => !known.includes(kind))]);
+  const brought = broughtWords(counts.brought);
   const done = run.state === "running" ? (brought ? `${brought} so far.` : "Starting…") : `${brought || "Nothing"} brought across.`;
-  return [done, leftOut && `Left out: ${leftOut}.`, run.error].filter(Boolean).join(" ");
+  const leftOut = counts.leftOut.length > 0 && `Left out: ${counts.leftOut.join("; ")}.`;
+  return [done, leftOut, counts.skipped > 0 && "Skipped what was already brought across earlier.", run.error].filter(Boolean).join(" ");
 }
 
 /**
@@ -266,13 +283,14 @@ export function importBrief(run: ImportView) {
   const at = progress.find(({ state }) => state === "now" || state === "stopped");
   const label = at && IMPORT_PARTS[at.part].label;
   if (run.state === "running") {
-    return at ? `${importAt(run)}: ${label}, ${at.brought ? `${at.brought} so far` : at.leftOut ? "nothing new so far" : "starting"}.` : "Starting…";
+    const brought = at && broughtWords(at.brought);
+    return at ? `${importAt(run)}: ${label}, ${brought ? `${brought} so far` : at.leftOut.length > 0 || at.skipped > 0 ? "nothing new so far" : "starting"}.` : "Starting…";
   }
   if (run.state === "failed") {
     return [at && `Stopped at ${label}.`, run.error].filter(Boolean).join(" ");
   }
   // Only the parts that brought something: one that only left things out (all of them already here, on importing again) didn't.
-  const brought = progress.filter((part) => part.brought).map(({ part }) => IMPORT_PARTS[part].label);
+  const brought = progress.filter((part) => part.brought.length > 0).map(({ part }) => IMPORT_PARTS[part].label);
   return brought.length > 0 ? `${new Intl.ListFormat("en").format(brought)} brought across.` : "Nothing new brought across.";
 }
 
