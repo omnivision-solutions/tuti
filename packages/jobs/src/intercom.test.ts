@@ -32,3 +32,20 @@ test("a token is tried at each region's address till one takes it, which is then
   expect(error).toMatchObject({ status: 401, message: "Access Token Invalid" });
   expect(nowhere).toEqual(["https://api.intercom.io", "https://api.eu.intercom.io", "https://api.au.intercom.io"]);
 });
+
+test("a request rate limited or failing for a while is tried again, waiting as Intercom says; none starts past the deadline", async () => {
+  const answers = [
+    Response.json({ errors: [{ message: "Too many requests" }] }, { status: 429, headers: { "retry-after": "2" } }),
+    new Response("oops", { status: 502 }),
+    Response.json({ type: "admin.list", admins: [] }),
+  ];
+  vi.stubGlobal("fetch", vi.fn(async () => answers.shift()!));
+  const waits: number[] = [];
+  await expect(intercom("token", { wait: async (ms) => void waits.push(ms) }).get("/admins")).resolves.toEqual({ type: "admin.list", admins: [] });
+  // Retry-After's two seconds, then the first backoff.
+  expect(waits).toEqual([2000, 1000]);
+
+  // A wait past the deadline isn't waited: the error comes at once.
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ errors: [{ message: "Too many requests" }] }, { status: 429, headers: { "retry-after": "60" } })));
+  await expect(intercom("token", { wait: async () => undefined, deadline: Date.now() + 10_000 }).get("/admins")).rejects.toMatchObject({ status: 429, message: "Too many requests" });
+});

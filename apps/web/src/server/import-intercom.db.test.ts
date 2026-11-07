@@ -58,6 +58,8 @@ test("a token Intercom refuses is refused, nothing started; Intercom has no Feed
 
 test("Contacts come across as users, page after page: their app's id or intercom:<id>, details, custom attributes and company; again, nothing twice", async () => {
   fake.pageSize = 2;
+  // A company Intercom deleted since (404) is left out, never failing the page.
+  fake.fixtures.contacts[2]!.companies = { data: [{ type: "company", id: "c-gone" }] };
   const done = await run(["contacts"]);
   expect(done).toMatchObject({ source: "intercom", state: "done", counts: { contacts: { imported: 3, leftOut: {} } } });
   expect(importSummary(done)).toBe("3 contacts brought across.");
@@ -67,7 +69,7 @@ test("Contacts come across as users, page after page: their app's id or intercom
     { externalId: "intercom:6650000000000000000000a3", email: "e2e-tobias-intercom@example.com", properties: { team: "Design" }, user: { name: "Tobias Weber", image: null } },
   ]);
   // The company read once, by its id; the token at each region's address isn't tried (INTERCOM_API_URL).
-  expect(fake.requests.filter((r) => r.startsWith("GET /companies/"))).toEqual(["GET /companies/c-1"]);
+  expect(fake.requests.filter((r) => r.startsWith("GET /companies/"))).toEqual(["GET /companies/c-1", "GET /companies/c-gone"]);
 
   const again = await run(["contacts"]);
   expect(again).toMatchObject({ state: "done", counts: { contacts: { imported: 0, leftOut: { "already brought across earlier": 3 } } } });
