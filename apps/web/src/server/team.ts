@@ -35,7 +35,8 @@ async function isLastOwner(projectId: string, role: TeamRole): Promise<boolean> 
   return (await prisma.teamMember.count({ where: { projectId, role: "OWNER" } })) <= 1;
 }
 
-export async function changeTeamRole(projectSlug: string, memberId: string, role: string): Promise<Result> {
+/** `cancelledInvites`: how many of the invites they sent went with the role (only when some did), for the toast to say so. */
+export async function changeTeamRole(projectSlug: string, memberId: string, role: string): Promise<Result & { cancelledInvites?: number }> {
   const parsedRole = roleSchema.safeParse(role);
   const pair = await loadPair(projectSlug, memberId);
   if (!parsedRole.success || !pair) {
@@ -50,12 +51,12 @@ export async function changeTeamRole(projectSlug: string, memberId: string, role
   }
   // The invites they sent for roles they can't give any more go: nobody joins on the strength of a role they've lost.
   const cantGive = (["OWNER", "ADMIN", "MEMBER"] as const).filter((r) => !canAssignRole(parsedRole.data, r));
-  await prisma.$transaction([
+  const [, cancelled] = await prisma.$transaction([
     prisma.teamMember.update({ where: { id: target.id }, data: { role: parsedRole.data } }),
     prisma.invitation.updateMany({ where: { ...sentPending(actor.project.id, target.userId), role: { in: cantGive } }, data: { revokedAt: new Date() } }),
   ]);
   refresh();
-  return {};
+  return cancelled.count > 0 ? { cancelledInvites: cancelled.count } : {};
 }
 
 /**
