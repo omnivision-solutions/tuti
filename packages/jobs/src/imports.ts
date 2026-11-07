@@ -170,6 +170,21 @@ function failure(source: ImportSource, error: unknown): string {
   return status === 0 ? `${error.message} ${AGAIN}` : `${name} answered ${status} (${error.message}). ${AGAIN}`;
 }
 
+/** Why an import stopped, in words, for the team: whoever started it is no longer an owner or admin of the project. */
+class StarterGone extends Error {
+  constructor() {
+    super(`Whoever started it is no longer an owner or admin of this project. ${AGAIN}`);
+  }
+}
+
+/** Stops the import (StarterGone) unless whoever started it is still an owner or admin of its project: checked as a page starts and again in its save. */
+async function assertStarterAdmin(db: Tx, row: Pick<DataImport, "projectId" | "startedById">): Promise<void> {
+  const admin = row.startedById && (await db.teamMember.findFirst({ where: { projectId: row.projectId, userId: row.startedById, role: { in: ["OWNER", "ADMIN"] } }, select: { id: true } }));
+  if (!admin) {
+    throw new StarterGone();
+  }
+}
+
 /** Runs a page's transaction under the project's lock; one that lost a race to someone's first sight (a sign-in) runs again. */
 async function locked<T>(projectId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
   const run = () =>
@@ -242,6 +257,7 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
     if (!step) {
       throw new Error(`no step “${row.step}”`);
     }
+    await assertStarterAdmin(prisma, row);
     const page = await step.page(job, row.cursor);
     after = page.after;
     next = page.next ? step.name : nextStep(row.parts, step.name);
@@ -258,6 +274,7 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
       if (!held) {
         return false;
       }
+      await assertStarterAdmin(tx, row);
       await page.save(tx);
       const data = next ? { step: next, cursor: page.next, counts: job.counts } : { state: "DONE" as const, apiKey: null, step: "", cursor: null, counts: job.counts, finishedAt: new Date() };
       await tx.dataImport.update({ where: { id: row.id }, data });
@@ -265,7 +282,7 @@ export async function importStep({ importId }: JobInput<"importStep">, log: JobL
     });
   } catch (error) {
     log.warn(`Import ${importId}: ${row.step} failed (${String(error)})`);
-    await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: failure(row.source, error), finishedAt: new Date() } });
+    await prisma.dataImport.updateMany({ where: claim, data: { state: "FAILED", apiKey: null, error: error instanceof StarterGone ? error.message : failure(row.source, error), finishedAt: new Date() } });
     return { failed: true };
   }
   if (saved) {

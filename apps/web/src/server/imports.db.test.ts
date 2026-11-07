@@ -12,7 +12,7 @@ import { generateInvitationToken, hashInvitationToken } from "@tuti/jobs";
 import { updateConversation } from "@/server/operations/conversations";
 import { getImport, startImport } from "@/server/operations/imports";
 import { call } from "@/server/operations/run";
-import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
@@ -185,6 +185,36 @@ test("a page Featurebase refuses fails the import, saying so, and clears its key
     error: "Featurebase stopped accepting the API key (Invalid API key). Start it again to go on: what came across already is skipped.",
     finishedAt: expect.any(Date),
   });
+  expect(await usersOf()).toEqual([]);
+});
+
+test.each([
+  ["removed from the team", (admin: { memberId: string }) => prisma.teamMember.delete({ where: { id: admin.memberId } })],
+  ["made a member", (admin: { memberId: string }) => prisma.teamMember.update({ where: { id: admin.memberId }, data: { role: "MEMBER" } })],
+])("an import whose starter is %s while a page reads stops, saving nothing more, its key cleared", async (_, change) => {
+  const admin = await addMember(project.id, "ADMIN");
+  const row = await running();
+  await prisma.dataImport.update({ where: { id: row.id }, data: { startedById: admin.id } });
+  const transaction = prisma.$transaction.bind(prisma) as (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) => Promise<unknown>;
+  // The change lands after the page is read, just before its save.
+  vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options?: unknown) =>
+    change(admin).then(() => transaction(fn, options))) as never);
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ failed: true });
+  const stopped = {
+    state: "FAILED",
+    apiKey: null,
+    error: "Whoever started it is no longer an owner or admin of this project. Start it again to go on: what came across already is skipped.",
+    finishedAt: expect.any(Date),
+  };
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject(stopped);
+  expect(await usersOf()).toEqual([]);
+
+  // A page that starts after the change reads nothing from the source.
+  await prisma.dataImport.update({ where: { id: row.id }, data: { state: "RUNNING", apiKey: sealedKey(), error: "", finishedAt: null } });
+  fake.requests.length = 0;
+  expect(await handlers.importStep({ importId: row.id }, log)).toEqual({ failed: true });
+  expect(fake.requests).toEqual([]);
+  expect(await prisma.dataImport.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject(stopped);
   expect(await usersOf()).toEqual([]);
 });
 
