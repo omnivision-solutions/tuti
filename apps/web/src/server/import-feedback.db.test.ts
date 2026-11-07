@@ -107,7 +107,7 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   expect(importSummary(done!)).toContain("1 vote by guests;");
 
   // The new project's board is Featurebase's of the same name, with its words; the other is made; hidden ones aren't.
-  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { name: true, slug: true, description: true, postButton: true, detailsPlaceholder: true } })).toEqual([
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { name: true, slug: true, description: true, postButton: true, detailsPlaceholder: true } })).toEqual([
     { name: "Feature requests", slug: "feature-requests", description: "Ideas for the product", postButton: "Share an idea", detailsPlaceholder: "What would help you most?" },
     { name: "Bugs", slug: "bugs", description: null, postButton: null, detailsPlaceholder: null },
   ]);
@@ -252,7 +252,7 @@ test("past the plan's board limit, a board comes as its own, turned off, its pos
   fake.fixtures.boards.push(ideas);
   fake.fixtures.posts.push({ ...structuredClone(fake.fixtures.posts[0]!), id: "65f0000000000000000000pa", boardId: ideas.id, title: "Offline mode", createdAt: "2024-04-01T10:00:00.000Z" });
   await importFeedback();
-  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { name: true, off: true, postVisibility: true } })).toEqual([
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { name: true, off: true, postVisibility: true } })).toEqual([
     { name: "Feature requests", off: false, postVisibility: "PUBLIC" },
     { name: "Bugs", off: false, postVisibility: "PRIVATE" },
     { name: "Ideas", off: true, postVisibility: "PUBLIC" },
@@ -585,7 +585,7 @@ test("a new project's untouched board becomes the first of Featurebase's, costin
   Object.assign(ideas, { name: "Ideas", localization: { ...(ideas.localization as object), name: { en: "Ideas" } } });
   await importFeedback();
   expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 2, leftOut: { "only some people see": 3 } });
-  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, slug: true, postButton: true } })).toEqual([
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, name: true, slug: true, postButton: true } })).toEqual([
     { id: project.boards[0]!.id, name: "Ideas", slug: "ideas", postButton: "Share an idea" },
     { id: expect.any(String), name: "Bugs", slug: "bugs", postButton: null },
   ]);
@@ -602,7 +602,7 @@ test("sample content added during setup (on the new project's board) doesn't sto
   Object.assign(ideas, { name: "Ideas", localization: { ...(ideas.localization as object), name: { en: "Ideas" } } });
   await importFeedback();
   expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 2, leftOut: { "only some people see": 3 } });
-  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } })).toEqual([
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, name: true } })).toEqual([
     { id: project.boards[0]!.id, name: "Ideas" },
     { id: expect.any(String), name: "Bugs" },
   ]);
@@ -617,7 +617,7 @@ test("on the free plan, a board matching the new project's by name keeps it wher
   fake.fixtures.boards = [ideas, bugs!, requests!];
   await importFeedback();
   expect((await call(getImport, asOwner(), {})).import!.counts.boards).toEqual({ imported: 3, leftOut: {} });
-  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, off: true } })).toEqual([
+  expect(await prisma.board.findMany({ where: { projectId: project.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, name: true, off: true } })).toEqual([
     { id: project.boards[0]!.id, name: "Feature requests", off: false },
     { id: expect.any(String), name: "Ideas", off: false },
     { id: expect.any(String), name: "Bugs", off: true },
