@@ -64,7 +64,7 @@ describe("when a post ships", () => {
       expect(email!.subject).toBe("Done: Dark mode");
       expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
       expect(email!.headers["list-unsubscribe"]).toMatch(
-        new RegExp(`^<http://${project.slug}\\.localhost:3100/unsubscribe/confirm\\?token=[0-9a-f-]+>$`),
+        new RegExp(`^<http://${project.slug}\\.localhost:3100/unsubscribe/confirm\\?token=[^.>]+\\.[\\w-]+>$`),
       );
       expect(email!.headers["list-unsubscribe-post"]).toBe("List-Unsubscribe=One-Click");
     }
@@ -384,9 +384,10 @@ describe("when a post ships", () => {
     const post = await call(createPost, as(voter.id), { board: "feature-requests", title: "Dark mode" });
     await setStatus(post.number, "completed");
     const [email] = emailsTo(voter.email);
-    // Still the person's one token for now (the previous release's web reads only that).
-    const legacy = new URL(email!.headers["list-unsubscribe"]!.slice(1, -1)).searchParams.get("token")!;
-    expect(legacy).toBe((await prisma.user.findUniqueOrThrow({ where: { id: voter.id } })).unsubscribeToken);
+    // The link carries the person's token for this project.
+    expect(new URL(email!.headers["list-unsubscribe"]!.slice(1, -1)).searchParams.get("token")).toBe(await tokenOf(voter.id));
+    // Links sent before per-project tokens carry the person's one token, still read for now.
+    const legacy = (await prisma.user.findUniqueOrThrow({ where: { id: voter.id } })).unsubscribeToken;
 
     const oneClick = (slug: string, token: string) =>
       unsubscribe(
