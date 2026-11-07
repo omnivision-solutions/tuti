@@ -103,8 +103,8 @@ export type ReceiverOptions = {
   sessionLifetimeMs?: number;
   /** DNS for the checks (tests give a fake one). */
   resolver?: Resolver;
-  /** Told of each chunk of a message as it arrives (tests wait on it). */
-  onReceived?: (bytes: number) => void;
+  /** Told the bytes of mail held, each time they change (tests wait on it). */
+  onBuffered?: (bytes: number) => void;
   post?: Post;
 };
 
@@ -330,11 +330,14 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       let held = 0;
       let overBudget = false;
       let settled = false;
-      const release = () => {
-        buffered -= held;
-        adjust(bufferedPerSource, source, -held);
-        held = 0;
+      /** Counts `bytes` more of it (fewer, if negative) as held. */
+      const hold = (bytes: number) => {
+        held += bytes;
+        buffered += bytes;
+        adjust(bufferedPerSource, source, bytes);
+        options.onBuffered?.(buffered);
       };
+      const release = () => hold(-held);
       const done: typeof callback = (...args) => {
         arriving.delete(session.id);
         if (!settled) {
@@ -351,7 +354,6 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
         if (window) {
           window.bytes += chunk.length;
         }
-        options.onReceived?.(chunk.length);
         if ((stream as { sizeExceeded?: boolean }).sizeExceeded || overBudget) {
           return;
         }
@@ -362,9 +364,7 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
           return;
         }
         chunks.push(chunk);
-        held += chunk.length;
-        buffered += chunk.length;
-        adjust(bufferedPerSource, source, chunk.length);
+        hold(chunk.length);
       });
       stream.on("error", (error) => done(error));
       stream.on("end", () => {

@@ -81,7 +81,7 @@ type Limits = {
   maxBufferedBytesPerSource?: number;
   sessionLifetimeMs?: number;
   resolver?: (name: string, type: string) => Promise<unknown>;
-  onReceived?: (bytes: number) => void;
+  onBuffered?: (bytes: number) => void;
 };
 
 async function receiver(
@@ -90,6 +90,8 @@ async function receiver(
   post?: (url: string, request: { body: Buffer; headers: Record<string, string> }) => Promise<{ status: number; outcome?: string }>,
 ) {
   const posts: { url: string; body: Buffer; headers: Record<string, string> }[] = [];
+  /** The bytes of mail the receiver holds, as it last said. */
+  let buffered = 0;
   server = await startSmtpReceiver({
     domain: "support.test",
     appUrl: "https://app.example.com",
@@ -98,6 +100,7 @@ async function receiver(
     host: "127.0.0.1",
     serverName: "mx.support.test",
     resolver,
+    onBuffered: (bytes) => (buffered = bytes),
     ...limits,
     post: async (url, request) => {
       posts.push({ url, ...request });
@@ -136,7 +139,7 @@ async function receiver(
   /** Sends from another address (another network for 127.0.1.x). */
   const sendFrom = (localAddress: string, from: string, to: string[]) =>
     nodemailer.createTransport({ host: "127.0.0.1", port, localAddress, secure: false, ignoreTLS: true }).sendMail({ envelope: { from, to }, from, to, subject: "Help", text: "Hello" });
-  return { posts, send, sendRaw, sendFrom, open };
+  return { posts, send, sendRaw, sendFrom, open, buffered: () => buffered };
 }
 
 type Session = Awaited<ReturnType<Awaited<ReturnType<typeof receiver>>["open"]>>;
@@ -251,15 +254,16 @@ test("messages still being delivered count, even after their sender hangs up: pa
 });
 
 test("messages still arriving share a budget of bytes: one that would go past it is refused (451), and a sender hanging up halfway frees its share", async () => {
-  const { open, send, posts } = await receiver([], { maxBufferedBytes: 2_000 });
+  const { open, send, posts, buffered } = await receiver([], { maxBufferedBytes: 2_000 });
   const quitter = await open();
   await startMessage(quitter);
   quitter.write(`X-Big: ${"x".repeat(1_900)}`);
   // Its bytes are held: another message, a few hundred bytes, would go past the budget; alone, it fits.
-  await vi.waitFor(() => expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 }));
+  await vi.waitFor(() => expect(buffered()).toBeGreaterThanOrEqual(1_900));
+  await expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 });
   quitter.end();
-  await quitter.closed;
-  await vi.waitFor(() => expect(send("sam@example.org", ["support@b.support.test"])).resolves.toBeDefined());
+  await vi.waitFor(() => expect(buffered()).toBe(0));
+  await send("sam@example.org", ["support@b.support.test"]);
   expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
 });
 
@@ -559,18 +563,17 @@ const headerLines = (bytes: number) => Array.from({ length: Math.ceil(bytes / 1_
 
 test("a message arriving at the minimum rate is still cut off at the arrival deadline", async () => {
   fakeSessionClock();
-  let received = 0;
-  const { open } = await receiver([], { onReceived: (bytes) => (received += bytes) });
+  const { open, buffered } = await receiver();
   const session = await open();
   await startMessage(session);
   let closed = false;
   void session.closed.then(() => (closed = true));
   /** A window's worth of bytes, past the minimum; then the window. */
   const keepUp = async () => {
-    const before = received;
+    const before = buffered();
     session.write(headerLines(MIN_ARRIVAL_BYTES + 10_000));
     // The bytes have reached the receiver (past the minimum) before its clock moves on.
-    await vi.waitFor(() => expect(received - before).toBeGreaterThanOrEqual(MIN_ARRIVAL_BYTES));
+    await vi.waitFor(() => expect(buffered() - before).toBeGreaterThanOrEqual(MIN_ARRIVAL_BYTES));
     vi.advanceTimersByTime(ARRIVAL_WINDOW_MS);
   };
   for (let passed = ARRIVAL_WINDOW_MS; passed < ARRIVAL_TIMEOUT_MS; passed += ARRIVAL_WINDOW_MS) {
@@ -586,27 +589,31 @@ test("a message arriving at the minimum rate is still cut off at the arrival dea
 test("a message that arrives fast and then stalls is cut off within the minimum rate's window, and its bytes freed", async () => {
   fakeSessionClock();
   // Room for the stalled message, not for another beside it.
-  const { open, send } = await receiver([], { maxBufferedBytes: 100_100 });
+  const { open, send, buffered } = await receiver([], { maxBufferedBytes: 100_100 });
   const staller = await open();
   await startMessage(staller);
   staller.write(headerLines(100_000));
-  await vi.waitFor(() => expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 }));
+  // All of it held, but for the few bytes the receiver keeps back while it looks for the message's end.
+  await vi.waitFor(() => expect(buffered()).toBeGreaterThanOrEqual(99_900));
+  await expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 });
   // Its first window had plenty; the next has nothing (windows checked every 30 s): closed, long
   // before the arrival deadline.
   vi.advanceTimersByTime(3 * ARRIVAL_WINDOW_MS);
   expect(3 * ARRIVAL_WINDOW_MS).toBeLessThan(ARRIVAL_TIMEOUT_MS);
   await staller.closed;
+  await vi.waitFor(() => expect(buffered()).toBe(0));
   await send("sam@example.org", ["support@b.support.test"]);
 });
 
 // 127.0.0.3 is in 127.0.0.1's /24, 127.0.1.1 isn't (Linux only, as above).
 test.skipIf(process.platform === "darwin")("one network can't hold more than its share of the bytes: past it, try again later (451), while another network's mail is taken", async () => {
   fakeSessionClock();
-  const { open, sendFrom, posts } = await receiver([], { maxBufferedBytesPerSource: 2_000 });
+  const { open, sendFrom, posts, buffered } = await receiver([], { maxBufferedBytesPerSource: 2_000 });
   const holder = await open("127.0.0.1");
   await startMessage(holder);
   holder.write(`X-Big: ${"x".repeat(1_900)}`);
-  await vi.waitFor(() => expect(sendFrom("127.0.0.3", "sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 }));
+  await vi.waitFor(() => expect(buffered()).toBeGreaterThanOrEqual(1_900));
+  await expect(sendFrom("127.0.0.3", "sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 });
   await sendFrom("127.0.1.1", "sam@example.org", ["support@b.support.test"]);
   expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
   holder.end();
