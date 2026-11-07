@@ -42,8 +42,8 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await invitee.waitForURL("**/invite/**");
   await invitee.getByRole("button", { name: "Accept invite" }).click();
   await invitee.waitForURL(`**/app/${slug}`);
-  // Accepting proved the inbox, so there's nothing left to verify.
-  await expect(invitee.getByText("Verify your email")).toHaveCount(0);
+  // Accepting doesn't verify the address (whoever invited them has the link too): their sign-up email's link does.
+  await expect(invitee.getByText("Verify your email.")).toBeVisible();
   await checkpoint(invitee, "invitee-joined");
 
   // Team is in Settings now, as Team & roles; its old address still lands there.

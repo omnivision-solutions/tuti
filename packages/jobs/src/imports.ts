@@ -455,9 +455,12 @@ export async function adminMember(tx: Tx, job: ImportJob, adminId: string, seen:
   const admin = job.admins.get(adminId) ?? { id: adminId, ...seen };
   const email = admin.email?.trim().toLowerCase() || null;
   if (email) {
+    // Theirs by a verified address, or by joining with this project's invite to it (handOverPlaceholders).
     const [member] = await tx.$queryRaw<{ userId: string }[]>`
       SELECT m."userId" FROM team_member m JOIN "user" u ON u.id = m."userId"
-      WHERE m."projectId" = ${job.projectId} AND lower(u.email) = ${email} AND u."emailVerified" LIMIT 1`;
+      WHERE m."projectId" = ${job.projectId} AND lower(u.email) = ${email}
+        AND (u."emailVerified" OR EXISTS (SELECT 1 FROM invitation i WHERE i."projectId" = m."projectId" AND i."acceptedById" = u.id AND i.email = ${email}))
+      LIMIT 1`;
     if (member) {
       return { userId: member.userId, member: true };
     }
@@ -487,12 +490,13 @@ export async function adminMember(tx: Tx, job: ImportJob, adminId: string, seen:
  * joining or on verifying their address later: what the placeholder wrote (posts, votes, comments, notes, uploads,
  * articles and their versions, messages), the conversations it still holds (heldById, still unassigned), and the record
  * map's row; then it's deleted, once nothing points at it. Under the project's lock (as import pages write). Nothing for
- * someone not on the team, or whose address isn't verified.
+ * someone not on the team, or whose address isn't verified, unless `invited`: they joined by this project's invite to
+ * their address, which its team chose to trust (it doesn't verify the address: see acceptInvitation).
  */
-export async function handOverPlaceholders(tx: Tx, projectId: string, userId: string) {
+export async function handOverPlaceholders(tx: Tx, projectId: string, userId: string, invited = false) {
   await lockProject(tx, projectId);
   const user = await tx.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true, teamMemberships: { where: { projectId }, select: { id: true } } } });
-  if (!user?.emailVerified || user.teamMemberships.length === 0) {
+  if (!user || !(user.emailVerified || invited) || user.teamMemberships.length === 0) {
     return;
   }
   const email = user.email;

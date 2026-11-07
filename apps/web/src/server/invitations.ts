@@ -2,7 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { emailConfigured, inviteEmail, sendEmail } from "@tuti/email";
-import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverOnVerified, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -236,8 +236,8 @@ export async function acceptInvitation(token: string): Promise<Result> {
   if (invitation.email && invitation.email !== session.user.email.toLowerCase()) {
     return { error: `This invite is for ${invitation.email}. Sign in with that email to accept it.` };
   }
-  // The invite went to this address, so opening its link proves the inbox is theirs.
-  return join(invitation, session.user.id, { verifyEmail: Boolean(invitation.email) });
+  // Accepting doesn't verify the address: whoever invited them has the link too (it's shown to copy), so it isn't proof of the inbox.
+  return join(invitation, session.user.id);
 }
 
 /**
@@ -263,7 +263,7 @@ export async function acceptInvitationById(invitationId: string): Promise<Result
   if (!mine) {
     return { error: "Invite not found" };
   }
-  return join(mine.invitation, mine.userId, { verifyEmail: false });
+  return join(mine.invitation, mine.userId);
 }
 
 /** "Decline" on the dashboard: the invite can't be used any more. */
@@ -291,13 +291,12 @@ const invitationForJoining = {
 type InvitationForJoining = { id: string; email: string | null; role: TeamRole; projectId: string; project: { slug: string } };
 
 /** Claims the invite (once) and adds the user to the team, then opens the project. */
-async function join(invitation: InvitationForJoining, userId: string, { verifyEmail }: { verifyEmail: boolean }) {
+async function join(invitation: InvitationForJoining, userId: string) {
   const existing = await prisma.teamMember.findUnique({
     where: { projectId_userId: { projectId: invitation.projectId, userId } },
     select: { id: true },
   });
   if (!existing) {
-    let verified = false;
     try {
       await prisma.$transaction(async (tx) => {
         // The project's lock first, as inviting takes it before the invites, so the two can't deadlock:
@@ -316,14 +315,11 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
           throw new TeamFullError();
         }
         await tx.teamMember.create({ data: { projectId: invitation.projectId, userId, role: invitation.role } });
-        if (verifyEmail) {
-          await tx.user.update({ where: { id: userId }, data: { emailVerified: true } });
-        }
-        // Placeholders an import made for them (a teammate in the other tool) hand over to them, if their address is verified.
-        await handOverPlaceholders(tx, invitation.projectId, userId);
+        // Placeholders an import made for them (a teammate in the other tool) hand over to them: invited to their address,
+        // or with their address verified.
+        await handOverPlaceholders(tx, invitation.projectId, userId, Boolean(invitation.email));
         // Waits for an import page's save (the project lock) and moves what the placeholder wrote: as long as the other handover path.
       }, { timeout: 60_000 });
-      verified = verifyEmail;
     } catch (error) {
       if (error instanceof InvitationUnavailableError) {
         return { error: "This invite has expired, was revoked, or was already used" };
@@ -335,11 +331,6 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
       if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
         throw error;
       }
-    }
-    // Verified by this invite's email: placeholders for their address in the other projects they're on hand over too
-    // (as any other way an address gets verified). Never failing the join: a failure is logged.
-    if (verified) {
-      await handOverOnVerified(userId).catch((error: unknown) => log.error("Handing an import's placeholders over failed", { error, userId }));
     }
   }
   // The /app layout lists your projects; refresh it before navigating.

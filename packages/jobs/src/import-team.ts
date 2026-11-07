@@ -43,7 +43,13 @@ async function inviteAdmins(tx: Tx, job: ImportJob, admins: FeaturebaseAdmin[]) 
     (job.startedById && (await tx.user.findUnique({ where: { id: job.startedById }, select: { id: true, email: true } }))) ||
     (await tx.teamMember.findFirst({ where: { projectId, role: "OWNER" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { user: { select: { id: true, email: true } } } }))?.user;
   const members = new Set(
-    (await tx.teamMember.findMany({ where: { projectId, user: { emailVerified: true } }, select: { user: { select: { email: true } } } })).map((member) => member.user.email.toLowerCase()),
+    (
+      await tx.teamMember.findMany({
+        // By a verified address, or one they joined by this project's invite to (adminMember).
+        where: { projectId, user: { OR: [{ emailVerified: true }, { invitationsAccepted: { some: { projectId, email: { not: null } } } }] } },
+        select: { user: { select: { email: true } } },
+      })
+    ).map((member) => member.user.email.toLowerCase()),
   );
   // Pending invites, sent or not, as Team & roles lists them; addresses the same email twice in Featurebase join them.
   const invited = new Set(
