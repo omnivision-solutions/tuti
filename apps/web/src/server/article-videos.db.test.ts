@@ -1,12 +1,14 @@
 import { originalKey, videoKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
+import { SIGNED_WINDOW_SECONDS } from "@tuti/shared/storage";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { articleMarkdown } from "@/server/docs-queries";
 import { createUpload, finishUpload } from "@/server/media";
-import { mediaUrls } from "@/server/media-urls";
+import { GET } from "@/app/media/[id]/[file]/route";
+import { lastingMediaUrl, mediaUrls } from "@/server/media-urls";
 import { createArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -85,7 +87,7 @@ describe("uploads", () => {
 });
 
 describe("in articles", () => {
-  test("a saved video is kept by the sweep, plays as a video from its signed URL, and Markdown links it", async () => {
+  test("a saved video is kept by the sweep, plays from its lasting link (still, hours after the page), and Markdown links it", async () => {
     const { mediaId } = (await upload("Tour.mp4", MP4)) as { mediaId: string };
     await call(createArticle, asOwner(), { title: "Tour", content: doc(videoNode(mediaId)) });
     const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id }, select: { content: true } });
@@ -96,12 +98,27 @@ describe("in articles", () => {
     await handlers.releaseMedia({}, { info: () => {}, warn: () => {} });
     expect((await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).attachedAt).not.toBeNull();
 
-    // Shown in place, as its video type, not a download.
+    // The player loads its lasting link, not a URL signed for this page view: it asks for more as it's played or sought.
     const url = (await mediaUrls(article.content as object))![videoKey(mediaId)]!;
-    const response = await fetch(url);
-    expect(response.headers.get("content-type")).toBe("video/mp4");
-    expect(response.headers.get("content-disposition")).toBeNull();
-    expect(Buffer.from(await response.arrayBuffer())).toEqual(MP4);
+    expect(url).toBe(lastingMediaUrl(videoKey(mediaId)));
+    // Three hours on, past any URL signed as the page was shown, each request still goes on to one signed now, and plays
+    // in place, as its video type, not a download.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 3 * 60 * 60 * 1000);
+      const link = new URL(url);
+      const redirect = await GET(new Request(link), { params: Promise.resolve({ id: mediaId, file: "video" }) });
+      expect(redirect.status).toBe(302);
+      const location = new URL(redirect.headers.get("location")!);
+      const windowStart = Date.now() - (Date.now() % (SIGNED_WINDOW_SECONDS * 1000));
+      expect(location.searchParams.get("X-Amz-Date")).toBe(new Date(windowStart).toISOString().replace(/[:-]|\.\d{3}/g, ""));
+      const response = await fetch(location);
+      expect(response.headers.get("content-type")).toBe("video/mp4");
+      expect(response.headers.get("content-disposition")).toBeNull();
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(MP4);
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(await articleMarkdown({ title: "Tour", doc: article.content as never })).toBe(`# Tour\n\nWatch:\n\n[Video](${url})\n`);
   });

@@ -19,7 +19,9 @@ type Docs = (JSONContent | null | undefined)[];
 
 /**
  * Signed URLs for the images and file attachments in these documents, for a reader who may see them.
- * Files are signed as downloads (saved under their name, with no type to render as).
+ * Files are signed as downloads (saved under their name, with no type to render as). Uploaded videos get their lasting
+ * link instead: a player asks for more of the video whenever it's played or sought, long after the page was rendered,
+ * and each of those requests is sent on to a freshly signed URL.
  */
 export async function mediaUrls(...docs: Docs): Promise<MediaUrls | null> {
   const storage = mediaStorage();
@@ -30,7 +32,7 @@ export async function mediaUrls(...docs: Docs): Promise<MediaUrls | null> {
   const files = new Map(docs.flatMap((doc) => (doc ? filesIn(doc) : [])).map((file) => [file.key, file.name]));
   return Object.fromEntries(
     await Promise.all([
-      ...[...keys].map(async (key) => [key, await storage.signedUrl(key)] as const),
+      ...[...keys].map(async (key) => [key, key.endsWith("/video") ? lastingMediaUrl(key) : await storage.signedUrl(key)] as const),
       ...[...files].map(async ([key, name]) => [key, await storage.signedUrl(key, undefined, name)] as const),
     ]),
   );

@@ -58,6 +58,8 @@ test("the team uploads a video into an article from the / menu, publishes it, an
   const video = visitor.getByRole("article", { name: "Product tour" }).locator("video");
   await expect(video).toHaveAttribute("controls", "");
   await expect(video).toHaveAttribute("preload", "metadata");
+  // Its lasting link, sent on to a freshly signed URL each time the player asks (however long after the page loaded).
+  await expect(video).toHaveAttribute("src", /\/media\/\w+\/video\?s=/);
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(1);
   await checkpoint(visitor, "portal-article-video");
 

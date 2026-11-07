@@ -134,7 +134,10 @@ export async function createUpload(
   return { mediaId: result.id, uploadUrl, contentType, ...(filename !== null && { name: filename }) };
 }
 
-/** The browser finished uploading: check what arrived, then process it. A video's `src` is where the editor plays it from. */
+/**
+ * The browser finished uploading: check what arrived, then process it. A video's `src` is where the editor plays it from
+ * until it's saved: signed now (its lasting link only works once content uses it); once saved, pages load the lasting link.
+ */
 export async function finishUpload(mediaId: string): Promise<{ error?: string; src?: string }> {
   const session = await getSession();
   const storage = mediaStorage();
