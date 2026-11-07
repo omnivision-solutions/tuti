@@ -1,5 +1,6 @@
 import type { FeaturebaseAdmin, FeaturebaseArticle, FeaturebaseCollection, FeaturebaseContact, Page } from "../featurebase";
 import { intercom, type IntercomAdmin, type IntercomArticle, type IntercomCollection, type IntercomContact, IntercomError, type IntercomPages } from "../intercom";
+import { idLink } from "./featurebase";
 import type { ImportSourceDefinition } from "./index";
 
 /** Unix seconds as an ISO date. */
@@ -88,6 +89,7 @@ export const intercomSource: ImportSourceDefinition = {
   name: "Intercom",
   credential: "key",
   status: (error) => (error instanceof IntercomError ? error.status : null),
+  docsLink: idLink,
   connect: (token, { deadline }) => {
     const api = intercom(token, { deadline });
     /** Companies' names by id (null: deleted since), for a page of contacts: each read once, a few at a time. */

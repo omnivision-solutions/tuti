@@ -2519,6 +2519,7 @@ model VerifyAll {
 enum ImportSource {
   FEATUREBASE
   INTERCOM
+  FERNDESK
 }
 
 enum ImportState {
@@ -2541,6 +2542,9 @@ model DataImport {
   apiKey      String?
   /// The parts picked (contacts; feedback, docs and inbox later).
   parts       String[]     @default([])
+  /// Whether the help center's articles published in the source come published, else as drafts: a source that can't
+  /// say who may read each one asks (apps/web lib/import-parts.ts `askPublish`); the others bring them as they were.
+  publishArticles Boolean  @default(true)
   state       ImportState  @default(RUNNING)
   /// The step under way (packages/jobs/src/imports.ts STEPS) and where it got to in it (the source's cursor; null: its first page).
   step        String       @default("")

@@ -3,14 +3,14 @@
 import { CircleCheckIcon, CircleDashedIcon, CircleXIcon, ExternalLinkIcon, LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useRef, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { IMPORT_PARTS, IMPORT_SOURCES, type ImportPart, type ImportSourceInfo, type ImportSourceKey, importNote, importProgress, importSummary, importTitle, pickPart } from "@/lib/import-parts";
+import { IMPORT_PARTS, IMPORT_SOURCES, type ImportPart, type ImportSourceInfo, type ImportSourceKey, importNote, importProgress, importSummary, importTitle, partDescription, pickPart } from "@/lib/import-parts";
 import { cn } from "@/lib/utils";
 import { startImport } from "@/server/imports";
 import type { ImportView } from "@/server/operations/imports";
@@ -189,6 +189,11 @@ export function SetupImport({
   // The parts the source has, and those of them picked.
   const parts = (Object.entries(IMPORT_PARTS) as [ImportPart, (typeof IMPORT_PARTS)[ImportPart]][]).filter(([key]) => source?.parts.includes(key));
   const chosen = picked.filter((part) => source?.parts.includes(part));
+  // A source that can't say who may read each article asks how its published ones come: drafts to begin with, so nothing
+  // internal goes live.
+  const [publishArticles, setPublishArticles] = useState(false);
+  const asksPublish = Boolean(source?.askPublish && chosen.includes("docs"));
+  const publishId = useId();
   const running = latest?.state === "running";
   // The import shown: the one running (only one can at a time), else the latest only when it was from the source picked.
   const shown = running || latest?.source === from ? latest : null;
@@ -218,7 +223,7 @@ export function SetupImport({
         const field = event.currentTarget.elements.namedItem("key") as HTMLInputElement;
         const key = field.value;
         startTransition(async () => {
-          const result = await startImport(projectSlug, from, key, chosen);
+          const result = await startImport(projectSlug, from, key, chosen, asksPublish ? publishArticles : undefined);
           setError(result.error ?? null);
           if (result.import) {
             // Kept on the server while it runs, not in the page.
@@ -305,11 +310,37 @@ export function SetupImport({
                   />
                   <span className="flex flex-col gap-0.5">
                     <span className="text-sm font-medium">{part.label}</span>
-                    <span className="text-sm text-muted-foreground">{part.description}</span>
+                    <span className="text-sm text-muted-foreground">{source ? partDescription(source, key) : part.description}</span>
                   </span>
                 </label>
               ))}
             </div>
+            {asksPublish && source && (
+              <div role="radiogroup" aria-labelledby={`${publishId}-label`} aria-describedby={`${publishId}-why`} className="mt-2 flex flex-col gap-2">
+                <p id={`${publishId}-label`} className="text-sm font-medium">
+                  Articles published in {source.name}
+                </p>
+                <p id={`${publishId}-why`} className="text-sm text-muted-foreground">
+                  {source.name} doesn&apos;t tell Tuti which articles only some people could read, so bringing them as published could put internal ones live.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(
+                    [
+                      [false, "As drafts", "You check them, then publish them here."],
+                      [true, "As published", "Published here as they are there, up to your plan's article limit."],
+                    ] as const
+                  ).map(([value, label, description]) => (
+                    <label key={label} className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/50 has-checked:border-primary has-checked:bg-soft">
+                      <input type="radio" name="publishArticles" checked={publishArticles === value} onChange={() => setPublishArticles(value)} className="mt-0.5 size-4 accent-primary" />
+                      <span className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium">{label}</span>
+                        <span className="text-sm text-muted-foreground">{description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             {shown && <p className="text-sm text-muted-foreground">Importing again brings only what&apos;s new since: nothing comes twice.</p>}
             {boardsNote && chosen.includes("feedback") && <p className="text-sm text-muted-foreground">{boardsNote}</p>}
             {noMedia && <p className="text-sm text-muted-foreground">This server has no media storage, so images and files can&apos;t come across: they&apos;re left out and counted.</p>}

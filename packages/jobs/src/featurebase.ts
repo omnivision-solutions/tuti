@@ -207,6 +207,8 @@ export type FeaturebaseCollection = {
   description?: string | null;
   /** `<id>-<name>`. */
   slug?: string | null;
+  /** What its public address calls it, when that isn't its id (another source's short id): links to it are found by it. */
+  ref?: string | null;
   order?: number | null;
   /** An emoji, one of Featurebase's predefined icons (Heroicons' names: "CreditCardIcon"), or an image's address. */
   icon?: { type: string; value: string } | null;
@@ -224,6 +226,8 @@ export type FeaturebaseArticle = {
   body?: string | null;
   /** `<id>-<title>`. */
   slug?: string | null;
+  /** As FeaturebaseCollection's. */
+  ref?: string | null;
   order?: number | null;
   state?: "live" | "draft";
   isPublished?: boolean;

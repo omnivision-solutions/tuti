@@ -23,12 +23,22 @@ const unlessGone = <T>(read: Promise<T>): Promise<T | null> =>
     throw error;
   });
 
+/**
+ * A help center page by its id in its path: /en/articles/1234567-setup (or /articles/…, /en/help/articles/…, Intercom's
+ * /<workspace>/en/articles/…, /collections/…), on any host. Featurebase's and Intercom's docsLink.
+ */
+export function idLink(path: string): { kind: "article" | "collection"; ref: string } | null {
+  const [, kind, ref] = /^\/(?:[\w-]+\/){0,2}(articles|collections)\/(\d+)(?:-|\/|$)/.exec(path) ?? [];
+  return ref ? { kind: kind === "articles" ? "article" : "collection", ref } : null;
+}
+
 const article = (id: string) => `/help_center/articles/${encodeURIComponent(id)}`;
 
 export const featurebaseSource: ImportSourceDefinition = {
   name: "Featurebase",
   credential: "key",
   status: (error) => (error instanceof FeaturebaseError ? error.status : null),
+  docsLink: idLink,
   connect: (key, { deadline }) => {
     const api = featurebase(key, { deadline });
     return {

@@ -2,7 +2,7 @@ import type { ImportSource } from "@tuti/db";
 import { IMPORT_SOURCES as JOB_SOURCES } from "@tuti/jobs";
 import { expect, test } from "vitest";
 
-import { homeInvitationsToSend, importAt, importBrief, IMPORT_PARTS, IMPORT_SOURCES, importProgress, importSummary, kindCount, missingNeed, onHome, pickPart } from "./import-parts";
+import { homeInvitationsToSend, importAt, importBrief, IMPORT_PARTS, IMPORT_SOURCES, importProgress, importSummary, kindCount, missingNeed, onHome, partDescription, pickPart } from "./import-parts";
 
 // The parts as the plan has them, Feedback and Inbox needing Contacts (only Contacts is built so far).
 const parts = { contacts: { needs: [] }, feedback: { needs: ["contacts"] }, docs: { needs: [] }, inbox: { needs: ["contacts"] } };
@@ -144,4 +144,11 @@ test("the sources the app offers are the ones the jobs read, each with a check f
     expect(job.credential).toBe(source.credential.kind);
     expect(Object.keys(job.connect("key", { deadline: 0 }).checks).sort()).toEqual([...source.parts].sort());
   }
+});
+
+test("a source says what a part brings from it where that isn't what it brings from every source", () => {
+  expect(partDescription(IMPORT_SOURCES.ferndesk, "contacts")).toBe("Your help center's users, with their attributes, as Users.");
+  expect(partDescription(IMPORT_SOURCES.ferndesk, "inbox")).toBe("Your AI assistant's conversations with readers, closed, as the Inbox.");
+  expect(partDescription(IMPORT_SOURCES.ferndesk, "docs")).toBe(IMPORT_PARTS.docs.description);
+  expect(partDescription(IMPORT_SOURCES.featurebase, "contacts")).toBe(IMPORT_PARTS.contacts.description);
 });
