@@ -9,6 +9,7 @@ import { mailbox } from "@/test/mailbox";
 
 import { pendingInvitationsFor } from "./invitation-lookup";
 import { acceptInvitation, acceptInvitationById, createInvitation, declineInvitation } from "./invitations";
+import { changeTeamRole, leaveProject, removeMember } from "./team";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -77,7 +78,7 @@ describe("inviting by email", () => {
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({
       error: `You can send up to ${DAILY_INVITE_LIMIT} invites a day. Try again tomorrow.`,
     });
-  });
+  }, 20_000);
 
   test("admins can't invite owners", async () => {
     const admin = await addMember(project.id, "ADMIN");
@@ -85,6 +86,98 @@ describe("inviting by email", () => {
     expect(await createInvitation(project.slug, newEmail(), "OWNER")).toEqual({
       error: "You can't invite people with that role",
     });
+  });
+
+  test("admins can't replace an owner's pending owner invite by inviting the address again", async () => {
+    const email = newEmail();
+    const ownerInvite = await createInvitation(project.slug, email, "OWNER");
+    const admin = await addMember(project.id, "ADMIN");
+    actAs(admin);
+    expect(await createInvitation(project.slug, email, "MEMBER")).toEqual({
+      error: `${email} has a pending owner invite. Only owners can change it.`,
+    });
+
+    actAs(await signUp("Ivy", email));
+    expect(await redirectTarget(acceptInvitation(tokenOf(ownerInvite.url!)))).toBe(`/app/${project.slug}`);
+  });
+
+  test("once an owner's owner invite has expired, admins can invite that address again", async () => {
+    const email = newEmail();
+    await createInvitation(project.slug, email, "OWNER");
+    await prisma.invitation.updateMany({ where: { projectId: project.id, email }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    actAs(await addMember(project.id, "ADMIN"));
+    expect(await createInvitation(project.slug, email, "MEMBER")).toMatchObject({ emailSent: true });
+  });
+});
+
+describe("invites someone sent go when they can't give that role any more", () => {
+  const sendAs = async (role: "OWNER" | "ADMIN") => {
+    if (role === "OWNER") {
+      await addMember(project.id, "OWNER"); // so the sender isn't the only owner
+    }
+    const sender = await addMember(project.id, role);
+    actAs(sender);
+    const email = newEmail();
+    const { url } = await createInvitation(project.slug, email, role);
+    actAs(owner);
+    const accept = async () => {
+      const invitee = await signUp("Ivy", email);
+      actAs(invitee);
+      return acceptInvitation(tokenOf(url!)).catch((error: unknown) => error);
+    };
+    return { sender, accept };
+  };
+  const gone = { error: "This invite has expired, was revoked, or was already used" };
+
+  test("removed from the team", async () => {
+    const { sender, accept } = await sendAs("ADMIN");
+    expect(await removeMember(project.slug, sender.memberId)).toEqual({});
+    expect(await prisma.invitation.count({ where: { createdById: sender.id, revokedAt: null } })).toBe(0);
+    expect(await accept()).toEqual(gone);
+  });
+
+  test("an owner removed", async () => {
+    const { sender, accept } = await sendAs("OWNER");
+    expect(await removeMember(project.slug, sender.memberId)).toEqual({});
+    expect(await accept()).toEqual(gone);
+  });
+
+  test("left the project", async () => {
+    const { sender, accept } = await sendAs("ADMIN");
+    actAs(sender);
+    expect(await redirectTarget(leaveProject(project.slug))).toBe("/app");
+    expect(await accept()).toEqual(gone);
+  });
+
+  test("an admin made a member", async () => {
+    const { sender, accept } = await sendAs("ADMIN");
+    // One they sent has expired already: nobody can use it, so it isn't counted as cancelled.
+    actAs(sender);
+    const expired = newEmail();
+    await createInvitation(project.slug, expired, "MEMBER");
+    await prisma.invitation.updateMany({ where: { projectId: project.id, email: expired }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    actAs(owner);
+    expect(await changeTeamRole(project.slug, sender.memberId, "MEMBER")).toEqual({ cancelledInvites: 1 });
+    expect(await prisma.invitation.count({ where: { createdById: sender.id, revokedAt: null, expiresAt: { gt: new Date() } } })).toBe(0);
+    expect(await accept()).toEqual(gone);
+  });
+
+  test("an owner made an admin: their owner invites go, their admin and member invites stay", async () => {
+    const { sender, accept } = await sendAs("OWNER");
+    actAs(sender);
+    const memberInvite = await createInvitation(project.slug, newEmail(), "MEMBER");
+    actAs(owner);
+    expect(await changeTeamRole(project.slug, sender.memberId, "ADMIN")).toEqual({ cancelledInvites: 1 });
+    expect(await prisma.invitation.count({ where: { createdById: sender.id, role: "OWNER", revokedAt: null } })).toBe(0);
+    expect(await prisma.invitation.findUnique({ where: { tokenHash: hashInvitationToken(tokenOf(memberInvite.url!)) }, select: { revokedAt: true } })).toEqual({ revokedAt: null });
+    expect(await accept()).toEqual(gone);
+  });
+
+  test("checked again when it's accepted, whatever revoked it or not", async () => {
+    const { sender, accept } = await sendAs("ADMIN");
+    // Demoted some other way than Team & roles: the invite is still pending, but can't be used.
+    await prisma.teamMember.update({ where: { id: sender.memberId }, data: { role: "MEMBER" } });
+    expect(await accept()).toEqual(gone);
   });
 });
 

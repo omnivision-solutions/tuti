@@ -2,7 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { emailConfigured, inviteEmail, sendEmail } from "@tuti/email";
-import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
+import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, pendingInvitation, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
 import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -71,6 +71,11 @@ export async function createInvitation(
     if (limit !== null && (await teamPlacesTaken(tx, projectId, parsed.data.email)) >= limit) {
       return limit;
     }
+    // Replacing a pending invite revokes it, so it takes what revoking it would: an owner's owner invite is for owners to change.
+    const pending = await tx.invitation.findMany({ where: { projectId, email: parsed.data.email, ...pendingInvitation() }, select: { role: true } });
+    if (pending.some(({ role }) => !canAssignRole(membership.role, role))) {
+      return "owners" as const;
+    }
     await tx.invitation.updateMany({
       where: { projectId, email: parsed.data.email, acceptedAt: null, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -89,6 +94,9 @@ export async function createInvitation(
   });
   if (full === "daily") {
     return { error: DAILY_LIMIT };
+  }
+  if (full === "owners") {
+    return { error: `${parsed.data.email} has a pending owner invite. Only owners can change it.` };
   }
   if (full !== null) {
     return { error: teamFull(full) };
@@ -285,10 +293,11 @@ const invitationForJoining = {
   email: true,
   role: true,
   projectId: true,
+  createdById: true,
   project: { select: { slug: true } },
 } as const;
 
-type InvitationForJoining = { id: string; email: string | null; role: TeamRole; projectId: string; project: { slug: string } };
+type InvitationForJoining = { id: string; email: string | null; role: TeamRole; projectId: string; createdById: string; project: { slug: string } };
 
 /** Claims the invite (once) and adds the user to the team, then opens the project. */
 async function join(invitation: InvitationForJoining, userId: string) {
@@ -307,7 +316,9 @@ async function join(invitation: InvitationForJoining, userId: string) {
           where: { id: invitation.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, sentAt: { not: null } },
           data: { acceptedAt: new Date(), acceptedById: userId },
         });
-        if (claimed.count !== 1) {
+        // Whoever sent it must still be able to give that role: an invite is no way back in after they're removed or demoted.
+        const inviter = await tx.teamMember.findUnique({ where: { projectId_userId: { projectId: invitation.projectId, userId: invitation.createdById } }, select: { role: true } });
+        if (claimed.count !== 1 || !inviter || !canAssignRole(inviter.role, invitation.role)) {
           throw new InvitationUnavailableError();
         }
         const limit = project ? teamLimit(project.plan) : null;

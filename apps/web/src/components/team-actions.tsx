@@ -67,7 +67,14 @@ export function MemberActions({
                     if (result.error) {
                       toast.error(result.error);
                     } else {
-                      toast.success(`Role changed to ${ROLE_LABELS[value as TeamRole]}`);
+                      const n = result.cancelledInvites ?? 0;
+                      const cancelled =
+                        n === 1
+                          ? ". The invite they sent for a role they can't give any more was cancelled."
+                          : n > 1
+                            ? `. The ${n} invites they sent for roles they can't give any more were cancelled.`
+                            : "";
+                      toast.success(`Role changed to ${ROLE_LABELS[value as TeamRole]}${cancelled}`);
                     }
                   })
                 }
@@ -90,7 +97,7 @@ export function MemberActions({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
-            <AlertDialogDescription>They lose access to this project right away, and the API keys they created stop working. You can invite them again later.</AlertDialogDescription>
+            <AlertDialogDescription>They lose access to this project right away, the API keys they created stop working, and the invites they sent are cancelled. You can invite them again later.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -125,7 +132,7 @@ export function LeaveProjectButton({ projectSlug, projectName }: { projectSlug: 
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Leave {projectName}?</AlertDialogTitle>
-          <AlertDialogDescription>The API keys you created for it stop working, and you&apos;ll need a new invite to come back.</AlertDialogDescription>
+          <AlertDialogDescription>The API keys you created for it stop working, the invites you sent are cancelled, and you&apos;ll need a new invite to come back.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
