@@ -162,8 +162,9 @@ export function ReplyForm({
       const sending = kind;
       const text = drafts[sending];
       const attached = files.ids;
-      // Answered (waiting on them now) or closed, it may leave the view: the next one opens.
-      const moved = actOn(number);
+      // Closed with it, it's done with: out of the view, the next one opens. Only answered (waiting on them now), it stays
+      // open, the reply there to read, though it's left the view (Needs reply), as Featurebase and Intercom do.
+      const moved = close && sending === "reply" ? actOn(number) : () => {};
       const result = await replyInConversation(projectSlug, number, text, sending === "note", attached, close && sending === "reply", replySeen);
       setError(result.error);
       setNotice(result.notice);
@@ -171,8 +172,8 @@ export function ReplyForm({
         // Only what was sent: anything added meanwhile stays. (Still here: a row opened meanwhile waits for the reply.)
         setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
         files.sent(attached);
-        // Said as it goes: out of the view, the next conversation opens in its place (with why it isn't emailed yet,
-        // which its message says too).
+        // Said as it goes: closed, the next conversation opens in its place (with why it isn't emailed yet, which its
+        // message says too).
         if (sending === "reply") {
           toast.success("Sent", { description: emailWaits });
         }
