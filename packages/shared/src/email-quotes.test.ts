@@ -58,3 +58,12 @@ test("reply prefixes come off subjects", () => {
   expect("Re: AW: Fwd:  Export broken".replace(REPLY_PREFIXES, "")).toBe("Export broken");
   expect("Re[2]: Export".replace(REPLY_PREFIXES, "")).toBe("Export");
 });
+
+test("a long message is read in time that grows with its length, not its square", () => {
+  const text = `Hello\n${">\n".repeat(40_000)}Not quoted`;
+  const start = performance.now();
+  const result = stripQuotes(text);
+  expect(performance.now() - start).toBeLessThan(200);
+  // Quoted lines with their own words after them aren't a trailing quote: kept.
+  expect(result).toEqual({ text: text.trim(), stripped: false });
+});

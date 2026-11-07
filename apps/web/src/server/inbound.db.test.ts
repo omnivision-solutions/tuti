@@ -88,6 +88,32 @@ test("an email with only an HTML body (an image in it, no plain-text part) arriv
   expect(conversation!.messages[0]!.original).toContain("> Can you try again?");
 });
 
+test("an email whose HTML nests quotes very deep is read in a moment, its reply kept", async () => {
+  const { project, address } = await setup();
+  const deep = `<p>Earlier</p>${"<blockquote>quoted words on this line, a few of them".repeat(990)}`;
+  const raw = [
+    "From: Kim Lee <e2e-kim@example.com>",
+    `To: ${address}`,
+    "Subject: Export",
+    `Message-ID: <${crypto.randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="mixed"',
+    "",
+    "--mixed",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "The export fails.",
+    ...Array.from({ length: 4 }, () => ["--mixed", "Content-Type: text/html; charset=utf-8", "", deep]).flat(),
+    "--mixed--",
+    "",
+  ].join("\r\n");
+  const start = performance.now();
+  expect(await postEmail(raw, { recipient: address })).toEqual({ status: 200, body: { outcome: "added" } });
+  expect(performance.now() - start).toBeLessThan(1000);
+  const [conversation] = await conversations(project.id);
+  expect(conversation!.messages[0]!.body).toBe("The export fails.");
+});
+
 test("the subdomain is the project's for good: taken names get a number, and a renamed project keeps its own", async () => {
   const first = await setup();
   await prisma.project.update({ where: { id: first.project.id }, data: { slug: `${first.project.slug}-renamed` } });

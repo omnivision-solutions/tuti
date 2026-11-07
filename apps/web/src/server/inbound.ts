@@ -30,6 +30,8 @@ import { storeAttachments } from "./attachments";
 export const MAX_RECEIVED_BYTES = 25 * 1024 * 1024;
 /** More than this an hour, and a project's mail is refused (kept as a row, without its body). */
 export const RECEIVED_PER_HOUR = 500;
+/** How much of an email's HTML is turned into text. */
+const MAX_HTML_LENGTH = 1_000_000;
 /** Raw bodies not yet read or failed, per project and per server: past either, mail is refused. */
 const PENDING_BYTES_PER_PROJECT = 1024 ** 3;
 const PENDING_BYTES_PER_SERVER = 20 * 1024 ** 3;
@@ -103,7 +105,9 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
     return { status: 404, outcome: "no such address" };
   }
   const projectId = owner.projectId;
-  const mail = await simpleParser(raw);
+  // Its HTML is turned into text in readEmail, within limits; nothing here needs the parser's own
+  // conversions (text from HTML, HTML from text, inline images in the HTML).
+  const mail = await simpleParser(raw, { skipHtmlToText: true, skipTextToHtml: true, skipImageLinks: true });
   const sender = mail.from?.value[0]?.address?.toLowerCase() ?? "";
   const messageId = mail.messageId ?? null;
   const dedupeKey = sha256(messageId ? `${messageId}\n${sender}` : raw);
@@ -287,7 +291,13 @@ async function readEmail(id: string, projectId: string, token: string | null, au
   }
 
   // Its plain text, or, for mail sent as HTML only, the HTML as text (links kept, quotes as "> ").
-  const plain = mail.text ?? (typeof mail.html === "string" ? htmlToText(mail.html, { wordwrap: false, selectors: [{ selector: "img", format: "skip" }] }) : "");
+  // Only so much of it, and so deep: the reply is at the top, and quoting each level of a deep nest
+  // costs more than the last.
+  const plain =
+    mail.text ||
+    (typeof mail.html === "string"
+      ? htmlToText(mail.html.slice(0, MAX_HTML_LENGTH), { wordwrap: false, selectors: [{ selector: "img", format: "skip" }], limits: { maxDepth: 200 } })
+      : "");
   const { text, stripped } = stripQuotes(plain, subject);
   const body = (text || "(No text)").slice(0, MAX_MESSAGE_LENGTH);
   // What came with it (not the images its HTML shows inline: logos, signatures), kept before its
