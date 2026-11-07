@@ -317,6 +317,13 @@ test("DMARC passed counts for who sent it only with one From holding one address
     { userId: null, email: "e2e-verified-kim@example.com", emailVerified: false, bodies: ["Hello"] },
     { userId: null, email: "e2e-verified-kim@example.com", emailVerified: false, bodies: ["Joined?"] },
   ]);
+  // Stored as it counted, so a later reply's lookup of this address's earlier proven mail never finds these.
+  expect(Object.fromEntries((await inbound(project.id)).map((e) => [e.subject, e.dmarc]))).toEqual({
+    Mine: "pass",
+    List: "none",
+    Two: "none",
+    "Re: Mine": "none",
+  });
 });
 
 test("an email's From name is who the conversation is with, trimmed and cut short; none when it's an address, its own or another", async () => {
