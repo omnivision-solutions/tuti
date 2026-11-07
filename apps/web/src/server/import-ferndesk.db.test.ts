@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { importsSettled, portalAddress } from "@tuti/jobs";
+import { CHANGELOG_PAGE, importsSettled, portalAddress } from "@tuti/jobs";
 import { FAKE_FERNDESK_KEY, type FerndeskFake, ferndeskFixtures, type S3Fake, startFerndeskFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -10,7 +10,7 @@ import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-/** Imports from Ferndesk (docs/plan.md, Import from Ferndesk): its help center, users and AI conversations, against its fake. */
+/** Imports from Ferndesk (docs/plan.md, Import from Ferndesk): its help center, changelog, users and AI conversations, against its fake. */
 
 let fake: FerndeskFake;
 let s3: S3Fake;
@@ -21,7 +21,11 @@ beforeAll(async () => {
   [fake, s3] = await Promise.all([startFerndeskFake(), startS3Fake()]);
 });
 afterAll(() => Promise.all([fake.close(), s3.close()]));
-afterEach(() => vi.unstubAllEnvs());
+const limits = { ...CHANGELOG_PAGE };
+afterEach(() => {
+  vi.unstubAllEnvs();
+  Object.assign(CHANGELOG_PAGE, limits);
+});
 beforeEach(async () => {
   vi.stubEnv("FERNDESK_API_URL", fake.url);
   for (const [name, value] of Object.entries(s3.env)) {
@@ -54,6 +58,8 @@ const article = (title: string) =>
 type Node = { type: string; attrs?: Record<string, unknown>; marks?: { type: string; attrs?: Record<string, unknown> }[]; content?: Node[]; text?: string };
 const nodesOf = (node: Node): Node[] => [node, ...(node.content ?? []).flatMap(nodesOf)];
 const linksIn = (doc: unknown) => nodesOf(doc as Node).flatMap((node) => (node.marks ?? []).filter((mark) => mark.type === "link").map((mark) => ({ text: node.text, href: mark.attrs?.href })));
+const entries = () =>
+  prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, body: true, tags: true, publishedAt: true, subscribersEmailedAt: true } });
 const conversations = () =>
   prisma.conversation.findMany({
     where: { projectId: project.id },
@@ -69,6 +75,10 @@ test("a start is refused, nothing made, for a key Ferndesk refuses or one that c
   fake.forbidden.clear();
   fake.forbidden.add("/v1/users");
   expect(await refusal(start(["contacts"]))).toEqual({ status: 400, code: "cant_read", message: "This key can't read Contacts in Ferndesk. Use a key that can, or leave Contacts out." });
+  // A read-only key can't list a changelog's drafts.
+  fake.forbidden.clear();
+  fake.forbidden.add("/v1/changelogs/col_changelog/entries");
+  expect(await refusal(start(["changelog"]))).toEqual({ status: 400, code: "cant_read", message: "This key can't read Changelog in Ferndesk. Use a key that can, or leave Changelog out." });
   // Ferndesk has no team or feedback.
   expect(await refusal(start(["feedback"]))).toMatchObject({ status: 400, code: "invalid_input" });
   // Only a source that can't say who may read each article is asked how its published ones come.
@@ -167,6 +177,45 @@ test("a help center of one section is its collections themselves", async () => {
     ["Getting started", null],
     ["Invoices", "Billing"],
   ]);
+});
+
+test("a help center whose other section is its changelog is its own section's collections, the changelog and its entries left out", async () => {
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_api");
+  fake.fixtures.articles = fake.fixtures.articles.filter((a) => a.id !== "art_keys");
+  const done = await importParts(["docs"], { publishArticles: true });
+  expect(done.counts).toMatchObject({ collections: { imported: 3, leftOut: {} }, articles: { imported: 3, leftOut: {} } });
+  expect((await collections()).map((c) => [c.name, c.parent?.name ?? null])).toEqual([
+    ["Billing", null],
+    ["Getting started", null],
+    ["Invoices", "Billing"],
+  ]);
+  expect((await prisma.article.findMany({ where: { projectId: project.id }, orderBy: { title: "asc" }, select: { title: true } })).map((a) => a.title)).toEqual(["Paying by card", "Roadmap notes", "Welcome to Acme"]);
+  expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("the changelog comes across: entries oldest first, a page at a time, published at their dates and drafts as drafts with their draft's text, tags as tags, images; nothing emailed; again, nothing twice", async () => {
+  const emailed = mailbox.emails.length;
+  // One to a list page and two to an import page, so both are read past their first.
+  fake.pageSize = 1;
+  CHANGELOG_PAGE.entries = 2;
+  const done = await importParts(["changelog"]);
+  expect(done).toMatchObject({ state: "done", counts: { changelogEntries: { imported: 3, leftOut: {} }, changelogImages: { imported: 1, leftOut: {} } } });
+  expect(importSummary(done)).toBe("3 changelog entries, 1 image in the changelog brought across.");
+  expect(await entries()).toEqual([
+    // Shown on the day before it went live: that day.
+    { title: "Exports", body: "Exports take half the time.", tags: ["IMPROVED", "FIXED"], publishedAt: new Date("2024-04-02T00:00:00.000Z"), subscribersEmailedAt: null },
+    { title: "Faster search", body: "Search results load twice as fast.\nSearch", tags: ["NEW"], publishedAt: new Date("2024-04-10T15:00:00.000Z"), subscribersEmailedAt: null },
+    { title: "Single sign-on (beta)", body: "Coming soon.", tags: [], publishedAt: null, subscribersEmailedAt: null },
+  ]);
+  expect(await prisma.media.findMany({ where: { projectId: project.id }, select: { status: true, width: true } })).toEqual([{ status: "READY", width: 96 }]);
+  // Nothing in the help center.
+  expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(0);
+  expect(mailbox.emails.length).toBe(emailed);
+
+  const again = await importParts(["changelog"]);
+  expect(again.counts).toMatchObject({ changelogEntries: { imported: 0, leftOut: { "already brought across earlier": 3 } } });
+  expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(3);
+  expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(1);
 });
 
 test("one who never verified their address in Ferndesk isn't matched to the user here who has it: anyone can type any address", async () => {

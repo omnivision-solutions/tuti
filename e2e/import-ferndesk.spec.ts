@@ -7,7 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { moreView, newPerson, signUp } from "./helpers";
 
-test("in the first run the team comes from Ferndesk: a bad key is refused, a good one brings its help center to the portal, its users as Users and its AI conversations to the Inbox", async ({ browser }, testInfo) => {
+test("in the first run the team comes from Ferndesk: a bad key is refused, a good one brings its help center and changelog to the portal, its users as Users and its AI conversations to the Inbox", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -21,7 +21,7 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
 
   // Ferndesk: its key, made in its dashboard, and only the parts it has.
   await owner.getByRole("radio", { name: /^Ferndesk/ }).check();
-  await expect(owner.getByText("Bring your help center, its users and your AI assistant's conversations across with an API key.")).toBeVisible();
+  await expect(owner.getByText("Bring your help center, its changelog, its users and your AI assistant's conversations across with an API key.")).toBeVisible();
   await expect(owner.getByRole("link", { name: /^Get your API key.*opens in a new tab/ })).toHaveAttribute("href", "https://ferndesk.com/app/settings/developers");
   await expect(owner.getByText("In Ferndesk, Developers → API → New API key, with Full access (it reads drafts and AI conversations). It's kept only while the import runs.")).toBeVisible();
   await expect(owner.getByRole("checkbox", { name: /^Team/ })).toHaveCount(0);
@@ -35,6 +35,7 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await expect(publishAs).toHaveCount(0);
   await owner.getByRole("checkbox", { name: /^Help center/ }).check();
   await owner.getByRole("checkbox", { name: /^Inbox/ }).check();
+  await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
   await expect(publishAs.getByText("Ferndesk doesn't tell Tuti which articles only some people could read, so bringing them as published could put internal ones live.")).toBeVisible();
   await expect(publishAs.getByRole("radio", { name: /^As drafts/ })).toBeChecked();
   await checkpoint(owner, "setup-ferndesk");
@@ -50,7 +51,7 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await key.fill(FAKE_FERNDESK_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Ferndesk" });
-  await expect(status).toHaveText("Imported from Ferndesk. 2 contacts, 5 collections, 4 articles, 2 conversations brought across.", { timeout: 15_000 });
+  await expect(status).toHaveText("Imported from Ferndesk. 2 contacts, 3 changelog entries, 1 image in the changelog, 5 collections, 4 articles, 2 conversations brought across.", { timeout: 15_000 });
   await checkpoint(owner, "setup-ferndesk-imported");
 
   // On the portal: its sections as collections, an article with its image and its link to another, which goes there.
@@ -59,6 +60,8 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   const cards = visitor.getByRole("list", { name: "Collections" });
   await expect(cards.getByRole("link", { name: /^Guides/ })).toBeVisible();
   await expect(cards.getByRole("link", { name: /^API/ })).toBeVisible();
+  // Its changelog isn't a section of the help center: it's the changelog.
+  await expect(cards.getByRole("link", { name: /^Changelog/ })).toHaveCount(0);
   await visitor.goto("/docs/welcome-to-acme");
   const welcome = visitor.getByRole("article", { name: "Welcome to Acme" });
   await expect(welcome.getByRole("heading", { name: "Start here", level: 2 })).toBeVisible();
@@ -69,6 +72,13 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await link.click();
   await visitor.waitForURL(`${portalUrl(slug)}/docs/paying-by-card`);
   await expect(visitor.getByRole("article", { name: "Paying by card" })).toContainText("Cards are charged on the 1st.");
+
+  // The changelog: published entries, the draft not on the portal.
+  await visitor.goto("/changelog");
+  await expect(visitor.getByRole("heading", { name: "Faster search" })).toBeVisible();
+  await expect(visitor.getByRole("heading", { name: "Exports" })).toBeVisible();
+  await expect(visitor.getByText("Single sign-on (beta)")).toHaveCount(0);
+  await checkpoint(visitor, "portal-ferndesk-changelog");
 
   // The AI assistant's conversations: history, closed, the user's question and the AI's answer.
   await owner.goto(`/app/${slug}/inbox`);

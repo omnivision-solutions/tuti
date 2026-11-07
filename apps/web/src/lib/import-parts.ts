@@ -131,11 +131,12 @@ export const IMPORT_SOURCES = {
   },
   ferndesk: {
     name: "Ferndesk",
-    description: "Bring your help center, its users and your AI assistant's conversations across with an API key.",
-    parts: ["contacts", "docs", "inbox"],
-    // Its users have no company, and its conversations are the AI's, text only.
+    description: "Bring your help center, its changelog, its users and your AI assistant's conversations across with an API key.",
+    parts: ["contacts", "changelog", "docs", "inbox"],
+    // Its users have no company, its changelog has tags (not categories) and may be several, and its conversations are the AI's, text only.
     partDescriptions: {
       contacts: "Your help center's users, with their attributes, as Users.",
+      changelog: "Your changelog entries (from every changelog, into one), published at their dates (drafts stay drafts), with their images; tags like New, Improved and Fixed become Tuti's. Nothing is emailed.",
       inbox: "Your AI assistant's conversations with readers, closed, as the Inbox.",
     },
     askPublish: true,
