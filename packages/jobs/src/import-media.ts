@@ -11,8 +11,8 @@ const publicOnly = new Agent({ connect: { lookup: publicOnlyLookup } });
 const MAX_REDIRECTS = 3;
 /** Older than the last hour createUpload counts against an uploader. */
 const OUTSIDE_UPLOAD_LIMIT_MS = 2 * 60 * 60 * 1000;
-/** For one download, body and all. */
-const TIMEOUT_MS = 30_000;
+/** For one download, body and all: 30 seconds, or longer for a bigger limit (videos), at 1 MB a second. */
+const timeoutFor = (maxBytes: number) => Math.max(30_000, Math.round(maxBytes / 1024));
 
 type Copied = ImportedMedia | { leftOut: LeftOutReason };
 
@@ -133,7 +133,7 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
 
 /** The file at `url`, or why not: refused, unreachable, or more than `maxBytes`. */
 export async function download(url: string, maxBytes: number): Promise<Uint8Array | LeftOutReason> {
-  const signal = AbortSignal.timeout(TIMEOUT_MS);
+  const signal = AbortSignal.timeout(timeoutFor(maxBytes));
   try {
     for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
       await checkWebhookUrl(url);

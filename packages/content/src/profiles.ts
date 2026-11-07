@@ -210,10 +210,11 @@ export const VideoEmbed = Node.create<{ mediaUrl?: (key: string) => string | und
   },
   addCommands() {
     return {
+      // After a picked block (an upload finishing while another is selected), as images and files are, not in its place.
       setVideo:
         (video) =>
-        ({ commands }) =>
-          commands.insertContent({ type: this.name, attrs: video }),
+        ({ commands, state }) =>
+          commands.insertContentAt(state.selection instanceof NodeSelection ? state.selection.to : state.selection, { type: this.name, attrs: video }),
     };
   },
 });
@@ -409,7 +410,7 @@ export const Steps = Node.create({
 
 export const Step = Node.create({
   name: "step",
-  content: "stepTitle (paragraph | bulletList | orderedList | codeBlock | codeTabs | image | file)*",
+  content: "stepTitle (paragraph | bulletList | orderedList | codeBlock | codeTabs | image | video | file)*",
   defining: true,
   priority: 101,
   parseHTML() {

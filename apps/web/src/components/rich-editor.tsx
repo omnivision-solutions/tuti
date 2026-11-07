@@ -499,7 +499,7 @@ const SLASH_HINTS: Record<Profile, string> = {
 const STEP_HINT = "Type / for lists, code and images";
 /** Without uploads (no media storage set up), there's no Image in the menu. */
 const STEP_HINT_NO_IMAGES = "Type / for lists and code";
-const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Code tabs", "Image", "Upload video", "File"]);
+const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Code tabs", "Image", "Video", "Upload video", "File"]);
 
 type Block = { label: string; icon: LucideIcon; run: () => void };
 

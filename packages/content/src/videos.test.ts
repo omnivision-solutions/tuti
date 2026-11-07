@@ -1,3 +1,4 @@
+import { Editor } from "@tiptap/core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
@@ -5,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import { imageKeysIn, mediaIdsIn, parseDoc, toPlainText } from "./document";
 import { toMarkdown } from "./markdown";
 import { isFileContent, isVideoFile, mediaKeys, videoFormat, videoKey } from "./media";
+import { extensions } from "./profiles";
 import { RichText } from "./react";
 
 const MEDIA_ID = "clx0abcdefghijklmnopqrstu";
@@ -58,4 +60,18 @@ describe("uploaded videos", () => {
     expect(isFileContent("mp4", bytes("<!doctype html><script>alert(1)</script>"))).toBe(false);
     expect(isFileContent("webm", bytes('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBe(false);
   });
+});
+
+test("a video goes in a step's body", () => {
+  const steps = { type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [{ type: "text", text: "Watch" }] }, video()] }] };
+  expect(parseDoc("article", doc(steps))).toMatchObject({ ok: true });
+});
+
+test("a video added while a block is picked (an upload finishing) goes after it, not in its place", () => {
+  const image = { type: "image", attrs: { mediaId: "clx0imageimageimageimage1", width: "100", align: "center", alt: "", w: 10, h: 10 } };
+  const editor = new Editor({ extensions: extensions("article"), content: doc(image, { type: "paragraph" }) });
+  editor.commands.setNodeSelection(0);
+  editor.commands.setVideo({ provider: "upload", id: MEDIA_ID });
+  expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["image", "video", "paragraph"]);
+  editor.destroy();
 });
