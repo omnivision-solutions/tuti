@@ -264,7 +264,7 @@ async function authorOf(tx: Tx, job: ImportJob, author: FeaturebaseAuthor, conta
   if (contact) {
     return contact;
   }
-  const externalId = sourceUserId(job.source, author?.id ?? `guest:${of}`);
+  const externalId = sourceUserId(job.source, author?.id || `guest:${of}`);
   // Made once: their name isn't changed by what a later post says.
   const known = await guestUser(tx, job, externalId);
   if (known) {
