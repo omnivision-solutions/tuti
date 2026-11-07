@@ -1449,9 +1449,12 @@ test("answered with Send, a conversation stays open though it's left Needs reply
   const row = (number: number) => list.getByRole("link", { name: new RegExp(`\\(#${number}\\)$`) });
   const send = async (text: string) => {
     await reply.fill(text);
-    await owner.getByRole("button", { name: "Send", exact: true }).click();
+    await owner.getByRole("button", { name: "Send", exact: true }).focus();
+    await owner.keyboard.press("Enter");
     await expect(row(2)).toHaveCount(0);
     await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+    // The keyboard's focus stays on Send (nothing else opens to take it), not back at the top of the page.
+    await expect(owner.getByRole("button", { name: "Send", exact: true })).toBeFocused();
   };
   // Needs reply, the latest first: #3, #2, #1.
   await owner.goto(`/app/${slug}/inbox/2`);
@@ -1474,6 +1477,11 @@ test("answered with Send, a conversation stays open though it's left Needs reply
   await owner.getByRole("button", { name: "Close", exact: true }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await expect(row(1)).toBeFocused();
+  // The last one in the list, answered and closed at once: with none below it, the first opens.
+  await reply.fill("All sorted.");
+  await owner.getByRole("button", { name: "Send and close" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
+  await expect(row(4)).toBeFocused();
 });
 
 test("after a Send that kept it open, Snooze and Mark as spam are done with it too: the next one down opens", async ({ browser }) => {

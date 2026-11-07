@@ -264,13 +264,14 @@ export function ReplyForm({
           )}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {/* Answered, and done with: closed with the reply (not left waiting on them). */}
+          {/* Answered, and done with: closed with the reply (not left waiting on them). Both keep the keyboard's focus while it
+              sends: a plain Send leaves the conversation open, with nothing else to take it. */}
           {!note && (
-            <Button type="button" variant="outline" disabled={pending || drafting || files.uploading} onClick={() => send(true)}>
+            <Button type="button" variant="outline" disabled={pending || drafting || files.uploading} focusableWhenDisabled onClick={() => send(true)}>
               Send and close
             </Button>
           )}
-          <Button type="submit" disabled={pending || drafting || files.uploading}>
+          <Button type="submit" disabled={pending || drafting || files.uploading} focusableWhenDisabled>
             {pending ? "Sending…" : note ? "Add note" : "Send"}
           </Button>
         </div>
