@@ -125,8 +125,11 @@ export function widgetLoader(portalTemplate: string): string {
   function css(el, styles) {
     for (var key in styles) el.style[key] = styles[key];
   }
+  // Once the page is parsed, not just begun: elements added to a body still loading land among the page's own, before the
+  // rest of it, where a page that hydrates (React) takes them for its own (a div for its div), fails, and removes them. An
+  // async tag runs that early when the browser has it already, and React puts its async scripts in the head.
   function whenBody(fn) {
-    if (document.body) fn(); else document.addEventListener("DOMContentLoaded", fn);
+    if (document.readyState !== "loading") fn(); else document.addEventListener("DOMContentLoaded", fn);
   }
 
   // The launcher: a round button with an icon; its name is for screen readers and its tooltip.

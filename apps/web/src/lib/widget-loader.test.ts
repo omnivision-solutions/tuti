@@ -386,6 +386,18 @@ test("data-hide-launcher or TutiSettings.hideLauncher leaves the button out; Tut
   }
 });
 
+test("on a page still loading, its panel and button go in once the page is parsed, after the page's own elements", async () => {
+  const page = loadWidget({ before: (page) => Object.assign(page.document, { readyState: "loading" }) });
+  const own = page.body.appendChild(new FakeElement("div", page));
+  await settled();
+  page.Tuti.open();
+  expect(page.body.children).toEqual([own]);
+  page.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
+  expect(page.body.children[0]).toBe(own);
+  expect(page.panel.style.display).toBe("block");
+  expect(page.button).toBeDefined();
+});
+
 test("the portal's own tag (data-on-portal): the panel is the page's own address, and it says so when it asks for the settings", async () => {
   const page = loadWidget({ attributes: { "data-on-portal": "" }, before: (page) => Object.assign(page.window, { location: { origin: "https://help.acme.example" } }) });
   await settled();
