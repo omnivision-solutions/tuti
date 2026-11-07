@@ -187,6 +187,15 @@ test("a large image counts against the quota no more than the app's per-image li
   expect(await importer()({ kind: "image", url: `${origin}/big.png`, key: "big" })).toMatchObject({ mediaId: expect.any(String) });
 });
 
+test("a self-hoster's lower upload limit doesn't shrink what an imported image reserves while it's processed", async () => {
+  vi.stubEnv("MEDIA_MAX_IMPORT_IMAGE_MB", "");
+  vi.stubEnv("MEDIA_MAX_IMAGE_MB_TEAM", "1");
+  vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "6");
+  // Room for 5 MB: the image reserves the fixed 10 MB bound, not the 1 MB editor limit, so it doesn't fit.
+  await prisma.media.create({ data: { projectId, uploaderId, size: 1024 * 1024, status: "READY" } });
+  expect(await importer()({ kind: "image", url: `${origin}/big.png`, key: "big" })).toEqual({ leftOut: "quota" });
+});
+
 test("a full project's quota leaves the image out", async () => {
   vi.stubEnv("MEDIA_PROJECT_QUOTA_MB", "1");
   await prisma.media.create({ data: { projectId, uploaderId, size: 1024 * 1024 - 100, status: "READY" } });
