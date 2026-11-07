@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { lockProject } from "@tuti/jobs";
 import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
@@ -68,6 +69,26 @@ describe("a project keeps at least one owner", () => {
     expect(results.filter((result) => result.error)).toHaveLength(1);
     expect(await owners()).toBe(1);
   });
+
+  test("while something else holds the project past the wait, nothing changes and they're told to try again", async () => {
+    const second = await addMember(project.id, "OWNER");
+    const real = prisma.$transaction.bind(prisma);
+    // Something else (an import's page, say) holds the project's lock for 2 s.
+    const { promise: locked, resolve } = Promise.withResolvers<void>();
+    const holding = real(async (tx) => {
+      await lockProject(tx, project.id);
+      resolve();
+      await new Promise((done) => setTimeout(done, 2000));
+    }, { timeout: 10_000 });
+    await locked;
+    // The wait cut to half a second (it's a minute).
+    const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((fn: never, options?: object) => real(fn, { ...options, timeout: 500 })) as never);
+    onTestFinished(() => spy.mockRestore());
+    actAs(owner);
+    expect(await changeTeamRole(project.slug, second.memberId, "ADMIN")).toEqual({ error: "Something else is changing this project right now. Try again in a minute." });
+    await holding;
+    expect(await roleOf(second.memberId)).toBe("OWNER");
+  }, 20_000);
 
   test("one owner removed while the other steps down: one is refused, an owner is left", async () => {
     const second = await addMember(project.id, "OWNER");
