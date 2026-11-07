@@ -297,6 +297,35 @@ test("with DMARC passed, a known user's address is theirs; otherwise the address
   expect(posing).toMatchObject({ userId: null, email: "e2e-sam@example.com", emailVerified: false, spam: false });
 });
 
+test("DMARC passed counts for who sent it only with one From holding one address: a list or a second From could be the passing domain's", async () => {
+  const { project, address, subdomain } = await setup();
+  const kim = await signUp("Kim", "e2e-verified-kim@example.com");
+  await prisma.user.update({ where: { id: kim.id }, data: { emailVerified: true } });
+  await postEmail(rawEmail({ from: "e2e-verified-kim@example.com", to: address, subject: "Mine" }), { recipient: address });
+  await postEmail(rawEmail({ from: "e2e-verified-kim@example.com, e2e-list-other@example.com", to: address, subject: "List" }), { recipient: address });
+  await postEmail(rawEmail({ from: "e2e-verified-kim@example.com\r\nFrom: e2e-list-other@example.com", to: address, subject: "Two" }), { recipient: address });
+  const [mine] = await conversations(project.id);
+  const replyAddress = supportAddress(subdomain, DOMAIN, mine!.replyToken!);
+  await postEmail(rawEmail({ from: "e2e-verified-kim@example.com, e2e-list-other@example.com", to: replyAddress, subject: "Re: Mine", body: "Joined?" }), {
+    recipient: replyAddress,
+  });
+
+  const all = await conversations(project.id);
+  expect(all.map((c) => ({ userId: c.userId, email: c.email, emailVerified: c.emailVerified, bodies: c.messages.map((m) => m.body) }))).toEqual([
+    { userId: kim.id, email: null, emailVerified: false, bodies: ["Hello"] },
+    { userId: null, email: "e2e-verified-kim@example.com", emailVerified: false, bodies: ["Hello"] },
+    { userId: null, email: "e2e-verified-kim@example.com", emailVerified: false, bodies: ["Hello"] },
+    { userId: null, email: "e2e-verified-kim@example.com", emailVerified: false, bodies: ["Joined?"] },
+  ]);
+  // Stored as it counted, so a later reply's lookup of this address's earlier proven mail never finds these.
+  expect(Object.fromEntries((await inbound(project.id)).map((e) => [e.subject, e.dmarc]))).toEqual({
+    Mine: "pass",
+    List: "none",
+    Two: "none",
+    "Re: Mine": "none",
+  });
+});
+
 test("an email's From name is who the conversation is with, trimmed and cut short; none when it's an address, its own or another", async () => {
   const { project, address } = await setup();
   const from = [
