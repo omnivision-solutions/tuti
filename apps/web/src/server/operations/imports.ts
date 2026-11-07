@@ -74,14 +74,19 @@ export async function latestImport(projectId: string): Promise<ImportView | null
   return importView(await prisma.dataImport.findUniqueOrThrow({ where: { id: latest.id }, select: importSelect }));
 }
 
-/** What a Featurebase import does past the plan's board limit (its boards come turned off), and the plan that has room (null: no limit). */
-export function boardsNote(plan: "FREE" | "PRO" | "BUSINESS"): string | null {
+/**
+ * What an import does past the plan's board limit (the source's boards come turned off), and the plan that has room,
+ * by source (null: no limit).
+ */
+export function boardsNotes(plan: "FREE" | "PRO" | "BUSINESS"): Record<ImportSourceKey, string> | null {
   const limit = boardLimit(plan);
   if (limit === null) {
     return null;
   }
   const more = plan === "FREE" ? `Pro has up to ${boardLimit("PRO")}, and Business any number.` : "Business has any number.";
-  return `Projects on the ${plan === "FREE" ? "free" : "Pro"} plan have up to ${limit} feedback boards: Featurebase's boards past that come across turned off, seen only by your team in the app until an upgrade lets you turn them on. ${more}`;
+  const note = (name: string) =>
+    `Projects on the ${plan === "FREE" ? "free" : "Pro"} plan have up to ${limit} feedback boards: ${name}'s boards past that come across turned off, seen only by your team in the app until an upgrade lets you turn them on. ${more}`;
+  return Object.fromEntries(Object.entries(IMPORT_SOURCES).map(([key, { name }]) => [key, note(name)])) as Record<ImportSourceKey, string>;
 }
 
 const label = (part: ImportPart) => IMPORT_PARTS[part].label;
@@ -104,7 +109,7 @@ function refusal(source: ImportSourceDefinition, error: unknown, cant: { code: s
 export const startImport = defineOperation({
   name: "imports.start",
   summary:
-    "Start an import from another tool (`source`: featurebase, with an API key of its own; intercom, with an app's access token; ferndesk, with an API key with Full access) and the parts to bring, of those the source has (Featurebase: all of them; Intercom: contacts, docs and avatars; Ferndesk: contacts, docs and inbox, its AI assistant's conversations, closed; any other is 400) (contacts: as the project's users, by their id in your app; feedback: boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates; docs: the help center's collections and articles, with their media and the links between them, published as they were; changelog: its entries, published at their dates or as drafts, with their images, quietly; avatars: contacts' uploaded profile pictures, copied last). For a source whose API doesn't say who may read each article (Ferndesk), `publishArticles` says whether its published articles come published; without it they come as drafts, to publish once checked (400 for another source). Feedback and avatars need Contacts (400 without). The key is checked, then each part's list read once: a key the source refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Started again later, it brings only what's new since (contacts, posts, votes, comments, changelog entries, articles, conversations and their new messages), nothing twice. Only people can start it, in the app (its first run, or Settings → Import): API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
+    "Start an import from another tool (`source`: featurebase, with an API key of its own; intercom, with an app's access token; ferndesk, with an API key with Full access; canny, with an API key) and the parts to bring, of those the source has (Featurebase: all of them; Intercom: contacts, docs and avatars; Ferndesk: contacts, docs and inbox, its AI assistant's conversations, closed; Canny: contacts, feedback, changelog and avatars, a changelog entry linked to the posts it shipped, a published one only to those already completed, when feedback comes in with it or before; any other is 400) (contacts: as the project's users, by their id in your app; feedback: boards, posts, votes, comments and the team's private comments as notes, quietly, with their dates; docs: the help center's collections and articles, with their media and the links between them, published as they were; changelog: its entries, published at their dates or as drafts, with their images, quietly; avatars: contacts' uploaded profile pictures, copied last). For a source whose API doesn't say who may read each article (Ferndesk), `publishArticles` says whether its published articles come published; without it they come as drafts, to publish once checked (400 for another source). Feedback and avatars need Contacts (400 without). The key is checked, then each part's list read once: a key the source refuses, or one that can't read a part, is refused (400, saying which). It runs in the background, a page at a time (imports.get shows its progress); the key is kept only while it runs. Started again later, it brings only what's new since (contacts, posts, votes, comments, changelog entries, articles, conversations and their new messages), nothing twice. Only people can start it, in the app (its first run, or Settings → Import): API keys and MCP get 403. One runs per project at a time: starting it again returns the one running",
   method: "POST",
   path: "/imports",
   scope: "write",

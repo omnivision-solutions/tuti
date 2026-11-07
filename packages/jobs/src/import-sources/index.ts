@@ -13,6 +13,7 @@ import type {
   FeaturebaseVoter,
   Page,
 } from "../featurebase";
+import { cannySource } from "./canny";
 import { featurebaseSource } from "./featurebase";
 import { intercomSource } from "./intercom";
 import { ferndeskSource } from "./ferndesk";
@@ -81,4 +82,5 @@ export const IMPORT_SOURCES: Record<ImportSource, ImportSourceDefinition> = {
   FEATUREBASE: featurebaseSource,
   INTERCOM: intercomSource,
   FERNDESK: ferndeskSource,
+  CANNY: cannySource,
 };

@@ -11,7 +11,7 @@ import type { ImportView } from "@/server/operations/imports";
 export const IMPORT_PARTS = {
   team: {
     label: "Team",
-    description: "Your Featurebase team, as invitations you review and send. They join as members; owners can change roles in Team & roles.",
+    description: "Your {source} team, as invitations you review and send. They join as members; owners can change roles in Team & roles.",
     brings: "Your team, as invitations to send",
     needs: [],
     media: false,
@@ -84,7 +84,7 @@ export const IMPORT_PARTS = {
 } as const satisfies Record<string, ImportPartInfo>;
 
 /**
- * `brings`: what it brings, in a few words, while it waits its turn. `see`: where what it brought is in the app, once the
+ * `description`: as the setup step offers it, `{source}` the tool's name. `brings`: what it brings, in a few words, while it waits its turn. `see`: where what it brought is in the app, once the
  * import ends (null: another part's link goes there). `steps`: its steps (@tuti/jobs IMPORT_PARTS) and what each is called; `kinds`: what it counts (imports'
  * counts), in the order it brings them.
  */
@@ -146,6 +146,20 @@ export const IMPORT_SOURCES = {
       help: "In Ferndesk, Developers → API → New API key, with Full access (it reads drafts and AI conversations). It's kept only while the import runs.",
     },
   },
+  canny: {
+    name: "Canny",
+    description: "Bring your users, feedback and changelog across with an API key.",
+    parts: ["contacts", "feedback", "changelog", "avatars"],
+    // Its changelog has types, not categories; scheduled entries come as drafts.
+    partDescriptions: {
+      changelog: "Your updates, published at their dates (drafts and scheduled ones as drafts), with their images; their types (New, Improved, Fixed) become tags, and each is linked to the posts it shipped (a published one only to those already completed) when Feedback comes in with it or before. Nothing is emailed.",
+    },
+    credential: {
+      kind: "key",
+      keysUrl: "https://canny.io/admin/settings/api",
+      help: "In Canny, Settings → API. It's kept only while the import runs.",
+    },
+  },
 } as const satisfies Record<Lowercase<ImportSource>, ImportSourceInfo>;
 
 export type ImportSourceInfo = {
@@ -161,7 +175,7 @@ export type ImportSourceInfo = {
 export type ImportSourceKey = keyof typeof IMPORT_SOURCES;
 
 /** What a part brings from a source, as the setup step and Settings → Import offer it. */
-export const partDescription = (source: ImportSourceInfo, part: ImportPart): string => source.partDescriptions?.[part] ?? IMPORT_PARTS[part].description;
+export const partDescription = (source: ImportSourceInfo, part: ImportPart): string => (source.partDescriptions?.[part] ?? IMPORT_PARTS[part].description).replace("{source}", source.name);
 
 /**
  * The picked parts after ticking (`on`) or unticking one: ticking one ticks what it needs, unticking one unticks what
