@@ -307,6 +307,16 @@ test("publishing a changelog entry imported as a draft keeps its Ferndesk date, 
   expect(mailbox.emails.filter((email) => email.to.includes("e2e-ferndesk-reader@example.com"))).toHaveLength(1);
 });
 
+test("an imported draft published by a release that didn't know its date, then unpublished, is published again as news", async () => {
+  await importParts(["changelog"]);
+  // The previous release's publish, during a deploy: today's date, the imported one left.
+  await prisma.changelogEntry.updateMany({ where: { projectId: project.id, number: 1 }, data: { publishedAt: new Date() } });
+  await call(unpublishChangelogEntry, asOwner(), { number: 1 });
+  const again = await call(publishChangelogEntry, asOwner(), { number: 1, announce: true });
+  expect(again).toMatchObject({ announced: true });
+  expect(Date.parse(again.publishedAt!)).toBeGreaterThan(Date.parse("2025-01-01"));
+});
+
 test("one who never verified their address in Ferndesk isn't matched to the user here who has it: anyone can type any address", async () => {
   await call(syncUsersOperation, asOwner(), { users: [{ id: "app-tobias", name: "The real Tobias", email: "e2e-ferndesk-tobias@example.com" }] });
   await importParts(["contacts", "inbox"]);

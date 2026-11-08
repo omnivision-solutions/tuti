@@ -750,7 +750,8 @@ export const unpublishChangelogEntry = defineOperation({
     const entry = await teamEntry(projectId, number);
     // Only a published one: its notes were written, so it doesn't wait on the list again, even if the release that
     // published it (an older one, during a deploy) left `releasedAt` set. A draft (say, one a release closed) keeps it.
-    await prisma.changelogEntry.updateMany({ where: { id: entry.id, publishedAt: { not: null } }, data: { publishedAt: null, releasedAt: null } });
+    // Published once (by a release that didn't know an imported date, say), it's no longer old news: that date goes too.
+    await prisma.changelogEntry.updateMany({ where: { id: entry.id, publishedAt: { not: null } }, data: { publishedAt: null, releasedAt: null, importedPublishedAt: null } });
     return entryView(await teamEntry(projectId, number), portal);
   },
 });
