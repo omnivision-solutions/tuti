@@ -393,11 +393,26 @@ test("on a page still loading, its panel and button go in once the page is parse
   // Opened meanwhile, it opens once it's in the page: focus goes into it.
   page.Tuti.open();
   expect(page.body.children).toEqual([own]);
+  Object.assign(page.document, { readyState: "interactive" });
   page.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
   expect(page.body.children[0]).toBe(own);
   expect(page.panel.style.display).toBe("block");
   expect(page.document.activeElement).toBe(page.frame);
   expect(page.button).toBeDefined();
+
+  // So does a help link clicked meanwhile; Escape then closes it, focus back on the link.
+  const reloaded = loadWidget({ motion: "reduced", before: (page) => Object.assign(page.document, { readyState: "loading" }) });
+  const help = reloaded.body.appendChild(new FakeElement("a", reloaded));
+  help.setAttribute("data-tuti-article", "exporting-your-data");
+  await settled();
+  expect(help.click()).toBe(true);
+  Object.assign(reloaded.document, { readyState: "interactive" });
+  reloaded.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
+  expect(reloaded.panel.style.display).toBe("block");
+  expect(reloaded.document.activeElement).toBe(reloaded.frame);
+  reloaded.press("Escape");
+  expect(reloaded.panel.style.display).toBe("none");
+  expect(reloaded.document.activeElement).toBe(help);
 });
 
 test("the portal's own tag (data-on-portal): the panel is the page's own address, and it says so when it asks for the settings", async () => {

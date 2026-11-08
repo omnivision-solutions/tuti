@@ -750,10 +750,11 @@ export function widgetLoader(portalTemplate: string): string {
     var element = target && target.closest ? target.closest("[data-tuti-article]") : null;
     if (!element) return;
     event.preventDefault();
-    open({ article: element.getAttribute("data-tuti-article") }, element);
+    // On a page still loading, once its panel is in it, as Tuti.open.
+    whenBody(function () { open({ article: element.getAttribute("data-tuti-article") }, element); });
   });
   document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") close();
+    if (event.key === "Escape") whenBody(function () { close(); });
   });
 
   // Inline: the panel in each of the page's data-tuti-inline elements, at the tab it names, also in
