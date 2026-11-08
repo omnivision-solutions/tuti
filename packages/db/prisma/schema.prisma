@@ -1589,6 +1589,9 @@ model ChangelogEntry {
   publishedAt           DateTime?
   /// Published with an announcement (the widget shows it as new), or quietly.
   announced             Boolean        @default(false)
+  /// Imported as a draft though it was published in the other tool: its date there. Publishing it first uses this date,
+  /// quietly (not announced or emailed: it's old news), and clears it.
+  importedPublishedAt   DateTime?
   /// The running draft: merged pull requests are added to it until a release (or
   /// publishing it) closes it. At most one per project (a partial unique index).
   collecting            Boolean        @default(false)

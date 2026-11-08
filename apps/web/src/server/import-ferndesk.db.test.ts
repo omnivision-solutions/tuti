@@ -1,16 +1,17 @@
 import { prisma } from "@tuti/db";
-import { importsSettled, portalAddress } from "@tuti/jobs";
+import { CHANGELOG_PAGE, importsSettled, portalAddress } from "@tuti/jobs";
 import { FAKE_FERNDESK_KEY, type FerndeskFake, ferndeskFixtures, type S3Fake, startFerndeskFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
+import { publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
 import { getImport, startImport } from "@/server/operations/imports";
 import { syncUsersOperation } from "@/server/operations/users";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-/** Imports from Ferndesk (docs/plan.md, Import from Ferndesk): its help center, users and AI conversations, against its fake. */
+/** Imports from Ferndesk (docs/plan.md, Import from Ferndesk): its help center, changelog, users and AI conversations, against its fake. */
 
 let fake: FerndeskFake;
 let s3: S3Fake;
@@ -21,7 +22,11 @@ beforeAll(async () => {
   [fake, s3] = await Promise.all([startFerndeskFake(), startS3Fake()]);
 });
 afterAll(() => Promise.all([fake.close(), s3.close()]));
-afterEach(() => vi.unstubAllEnvs());
+const limits = { ...CHANGELOG_PAGE };
+afterEach(() => {
+  vi.unstubAllEnvs();
+  Object.assign(CHANGELOG_PAGE, limits);
+});
 beforeEach(async () => {
   vi.stubEnv("FERNDESK_API_URL", fake.url);
   for (const [name, value] of Object.entries(s3.env)) {
@@ -54,6 +59,8 @@ const article = (title: string) =>
 type Node = { type: string; attrs?: Record<string, unknown>; marks?: { type: string; attrs?: Record<string, unknown> }[]; content?: Node[]; text?: string };
 const nodesOf = (node: Node): Node[] => [node, ...(node.content ?? []).flatMap(nodesOf)];
 const linksIn = (doc: unknown) => nodesOf(doc as Node).flatMap((node) => (node.marks ?? []).filter((mark) => mark.type === "link").map((mark) => ({ text: node.text, href: mark.attrs?.href })));
+const entries = () =>
+  prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, body: true, tags: true, publishedAt: true, subscribersEmailedAt: true } });
 const conversations = () =>
   prisma.conversation.findMany({
     where: { projectId: project.id },
@@ -69,6 +76,10 @@ test("a start is refused, nothing made, for a key Ferndesk refuses or one that c
   fake.forbidden.clear();
   fake.forbidden.add("/v1/users");
   expect(await refusal(start(["contacts"]))).toEqual({ status: 400, code: "cant_read", message: "This key can't read Contacts in Ferndesk. Use a key that can, or leave Contacts out." });
+  // A read-only key can't list a changelog's drafts.
+  fake.forbidden.clear();
+  fake.forbidden.add("/v1/changelogs/col_changelog/entries");
+  expect(await refusal(start(["changelog"]))).toEqual({ status: 400, code: "cant_read", message: "This key can't read Changelog in Ferndesk. Use a key that can, or leave Changelog out." });
   // Ferndesk has no team or feedback.
   expect(await refusal(start(["feedback"]))).toMatchObject({ status: 400, code: "invalid_input" });
   // Only a source that can't say who may read each article is asked how its published ones come.
@@ -167,6 +178,143 @@ test("a help center of one section is its collections themselves", async () => {
     ["Getting started", null],
     ["Invoices", "Billing"],
   ]);
+});
+
+test("a help center whose other section is its changelog is its own section's collections, the changelog and its entries left out", async () => {
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_api");
+  fake.fixtures.articles = fake.fixtures.articles.filter((a) => a.id !== "art_keys");
+  const done = await importParts(["docs"], { publishArticles: true });
+  expect(done.counts).toMatchObject({ collections: { imported: 3, leftOut: {} }, articles: { imported: 3, leftOut: {} } });
+  expect((await collections()).map((c) => [c.name, c.parent?.name ?? null])).toEqual([
+    ["Billing", null],
+    ["Getting started", null],
+    ["Invoices", "Billing"],
+  ]);
+  expect((await prisma.article.findMany({ where: { projectId: project.id }, orderBy: { title: "asc" }, select: { title: true } })).map((a) => a.title)).toEqual(["Paying by card", "Roadmap notes", "Welcome to Acme"]);
+  expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("a section a changelog shares with an article in no collection stays the help center's", async () => {
+  fake.fixtures.changelogs[0]!.sectionId = "sect_api";
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_changelog");
+  await importParts(["docs"], { publishArticles: true });
+  expect((await collections()).filter((c) => !c.parent).map((c) => c.name)).toEqual(["Guides", "API"]);
+  expect(await article("API keys")).toMatchObject({ collection: { name: "API" } });
+  expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(4);
+});
+
+test("a section a changelog shares with other collections stays the help center's, with them in it", async () => {
+  fake.fixtures.changelogs[0]!.sectionId = "sect_guides";
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_changelog");
+  await importParts(["docs"], { publishArticles: true });
+  expect((await collections()).map((c) => [c.name, c.parent?.name ?? null])).toEqual([
+    ["Guides", null],
+    ["API", null],
+    ["Billing", "Guides"],
+    ["Getting started", "Guides"],
+    ["Invoices", "Billing"],
+  ]);
+});
+
+test("collections in no section are the default section's: one holding them beside a changelog stays, with them in it", async () => {
+  fake.fixtures.changelogs[0]!.sectionId = "sect_guides";
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_changelog");
+  for (const collection of fake.fixtures.collections) {
+    collection.sectionId = null;
+  }
+  await importParts(["docs"], { publishArticles: true });
+  expect((await collections()).map((c) => [c.name, c.parent?.name ?? null])).toEqual([
+    ["Guides", null],
+    ["API", null],
+    ["Billing", "Guides"],
+    ["Getting started", "Guides"],
+    ["Invoices", "Billing"],
+  ]);
+});
+
+test("a help center imported before its changelog section was left out keeps its section as the collection it made: what's new goes in there", async () => {
+  // Guides and the changelog's own section: before, two sections, so Guides came as a collection, recorded as one.
+  fake.fixtures.sections = fake.fixtures.sections.filter((s) => s.id !== "sect_api");
+  fake.fixtures.articles = fake.fixtures.articles.filter((a) => a.id !== "art_keys");
+  const guides = await prisma.collection.create({ data: { projectId: project.id, name: "Guides", slug: "guides" }, select: { id: true } });
+  await prisma.importedRecord.create({ data: { projectId: project.id, source: "FERNDESK", kind: "collection", externalId: "sect_guides", localId: guides.id } });
+  await importParts(["docs"], { publishArticles: true });
+
+  // A collection added in Ferndesk since, and an import again.
+  fake.fixtures.collections.unshift({ id: "col_security", sectionId: "sect_guides", parentCollectionId: null, title: "Security", subtitle: null, shortId: "sec01", createdAt: "2024-05-01T09:00:00.000Z", updatedAt: "2024-05-01T09:00:00.000Z" });
+  const again = await importParts(["docs"], { publishArticles: true });
+  expect(again.counts).toMatchObject({ collections: { imported: 1 } });
+  expect((await collections()).map((c) => [c.name, c.parent?.name ?? null])).toEqual([
+    ["Guides", null],
+    ["Billing", "Guides"],
+    ["Getting started", "Guides"],
+    ["Security", "Guides"],
+    ["Invoices", "Billing"],
+  ]);
+});
+
+test("the changelog comes across: entries oldest first, a page at a time, published at their dates and drafts as drafts with their draft's text, tags as tags, images; nothing emailed; again, nothing twice", async () => {
+  const emailed = mailbox.emails.length;
+  // One to a list page and two to an import page, so both are read past their first.
+  fake.pageSize = 1;
+  CHANGELOG_PAGE.entries = 2;
+  const done = await importParts(["changelog"], { publishArticles: true });
+  expect(done).toMatchObject({ state: "done", counts: { changelogEntries: { imported: 3, leftOut: {} }, changelogImages: { imported: 1, leftOut: {} } } });
+  expect(importSummary(done)).toBe("3 changelog entries, 1 image in the changelog brought across.");
+  expect(await entries()).toEqual([
+    // Shown on the day before it went live: that day.
+    { title: "Exports", body: "Exports take half the time.", tags: ["IMPROVED", "FIXED"], publishedAt: new Date("2024-04-02T00:00:00.000Z"), subscribersEmailedAt: null },
+    { title: "Faster search", body: "Search results load twice as fast.\nSearch", tags: ["NEW"], publishedAt: new Date("2024-04-10T15:00:00.000Z"), subscribersEmailedAt: null },
+    { title: "Single sign-on (beta)", body: "Coming soon.", tags: [], publishedAt: null, subscribersEmailedAt: null },
+  ]);
+  expect(await prisma.media.findMany({ where: { projectId: project.id }, select: { status: true, width: true } })).toEqual([{ status: "READY", width: 96 }]);
+  // Nothing in the help center.
+  expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(0);
+  expect(mailbox.emails.length).toBe(emailed);
+
+  const again = await importParts(["changelog"], { publishArticles: true });
+  expect(again.counts).toMatchObject({ changelogEntries: { imported: 0, leftOut: { "already brought across earlier": 3 } } });
+  expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(3);
+  expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("by default, changelog entries published in Ferndesk come as drafts for the team to check and publish, with their dates: Ferndesk doesn't say who could read them", async () => {
+  const done = await importParts(["changelog"]);
+  expect(done.counts).toMatchObject({ changelogEntries: { imported: 1, leftOut: {} }, heldEntries: { imported: 2, leftOut: {} } });
+  expect(importSummary(done)).toBe("1 changelog entry, 2 changelog entries as drafts (published there; publish them once you've checked them), 1 image in the changelog brought across.");
+  expect(
+    await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, publishedAt: true, createdAt: true } }),
+  ).toEqual([
+    { title: "Exports", publishedAt: null, createdAt: new Date("2024-04-03T09:00:00.000Z") },
+    { title: "Faster search", publishedAt: null, createdAt: new Date("2024-04-10T15:00:00.000Z") },
+    { title: "Single sign-on (beta)", publishedAt: null, createdAt: new Date("2024-04-12T09:00:00.000Z") },
+  ]);
+});
+
+test("publishing a changelog entry imported as a draft keeps its Ferndesk date, quietly: not announced, not emailed; published again later, it's like any other", async () => {
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: "e2e-ferndesk-reader@example.com", token: "t", confirmedAt: new Date() } });
+  await importParts(["changelog"]);
+  const published = await call(publishChangelogEntry, asOwner(), { number: 1, announce: true, emailSubscribers: true });
+  expect(published).toMatchObject({ publishedAt: "2024-04-02T00:00:00.000Z", announced: false });
+  expect(await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: 1 }, select: { importedPublishedAt: true, subscribersEmailedAt: true } })).toEqual({ importedPublishedAt: null, subscribersEmailedAt: null });
+  // Unpublished and published again: news now, announced and emailed as asked.
+  await call(unpublishChangelogEntry, asOwner(), { number: 1 });
+  const again = await call(publishChangelogEntry, asOwner(), { number: 1, announce: true, emailSubscribers: true });
+  expect(again).toMatchObject({ announced: true });
+  expect(Date.parse(again.publishedAt!)).toBeGreaterThan(Date.parse("2025-01-01"));
+  expect((await mailbox.latestTo("e2e-ferndesk-reader@example.com")).subject).toContain("Exports");
+  // Only that one: the quiet publish emailed nobody.
+  expect(mailbox.emails.filter((email) => email.to.includes("e2e-ferndesk-reader@example.com"))).toHaveLength(1);
+});
+
+test("an imported draft published by a release that didn't know its date, then unpublished, is published again as news", async () => {
+  await importParts(["changelog"]);
+  // The previous release's publish, during a deploy: today's date, the imported one left.
+  await prisma.changelogEntry.updateMany({ where: { projectId: project.id, number: 1 }, data: { publishedAt: new Date() } });
+  await call(unpublishChangelogEntry, asOwner(), { number: 1 });
+  const again = await call(publishChangelogEntry, asOwner(), { number: 1, announce: true });
+  expect(again).toMatchObject({ announced: true });
+  expect(Date.parse(again.publishedAt!)).toBeGreaterThan(Date.parse("2025-01-01"));
 });
 
 test("one who never verified their address in Ferndesk isn't matched to the user here who has it: anyone can type any address", async () => {

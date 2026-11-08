@@ -37,7 +37,7 @@ export type ImportJob = {
   startedById: string | null;
   read: ImportReaders;
   counts: ImportCounts;
-  /** Whether articles published in the source come published (DataImport.publishArticles), else as drafts. */
+  /** Whether articles and changelog entries published in the source come published (DataImport.publishArticles), else as drafts. */
   publishArticles: boolean;
   /** Whether posts come as they were (DataImport.publicPosts), else onto Private boards, each post Private. */
   publicPosts: boolean;
@@ -154,7 +154,7 @@ export function importJob(row: DataImport): ImportJob | null {
     return null;
   }
   const counts = structuredClone(row.counts ?? {}) as ImportCounts;
-  const { read } = IMPORT_SOURCES[row.source].connect(openValue(IMPORT_KEY, row.apiKey), { deadline: Date.now() + PAGE_READ_MS, state: row.sourceState ?? undefined });
+  const { read } = IMPORT_SOURCES[row.source].connect(openValue(IMPORT_KEY, row.apiKey), { deadline: Date.now() + PAGE_READ_MS, state: row.sourceState ?? undefined, projectId: row.projectId });
   return { id: row.id, projectId: row.projectId, source: row.source, startedById: row.startedById, read, counts, publishArticles: row.publishArticles, publicPosts: row.publicPosts };
 }
 

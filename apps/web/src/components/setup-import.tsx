@@ -192,10 +192,10 @@ export function SetupImport({
   // A source with one part brings it: nothing to pick.
   const chosen = source?.parts.length === 1 ? [...source.parts] : picked.filter((part) => source?.parts.includes(part));
   const byAddress = source?.credential.kind === "url";
-  // A source that can't say who may read each article asks how its published ones come: drafts to begin with, so nothing
-  // internal goes live.
+  // A source that can't say who may read each article or changelog entry asks how its published ones come: drafts to
+  // begin with, so nothing internal goes live.
   const [publishArticles, setPublishArticles] = useState(false);
-  const asksPublish = Boolean(source?.askPublish && chosen.includes("docs"));
+  const asksPublish = Boolean(source?.askPublish && (chosen.includes("docs") || chosen.includes("changelog")));
   const publishId = useId();
   // A source that can't say who saw each post asks where its posts come: a Private board to begin with, so nothing only
   // some people saw goes public.
@@ -360,10 +360,10 @@ export function SetupImport({
             {asksPublish && source && (
               <div role="radiogroup" aria-labelledby={`${publishId}-label`} aria-describedby={`${publishId}-why`} className="mt-2 flex flex-col gap-2">
                 <p id={`${publishId}-label`} className="text-sm font-medium">
-                  Articles published in {source.name}
+                  Articles and changelog entries published in {source.name}
                 </p>
                 <p id={`${publishId}-why`} className="text-sm text-muted-foreground">
-                  {source.name} doesn&apos;t tell Tuti which articles only some people could read, so bringing them as published could put internal ones live.
+                  {source.name} doesn&apos;t tell Tuti which articles and changelog entries only some people could read, so bringing them as published could put internal ones live.
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {(

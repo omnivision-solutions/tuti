@@ -25,10 +25,11 @@ test("a list is read a page at a time, from cursor to cursor, to its end", async
   const first = await api.page<{ id: string }>("/collections", null);
   expect(first.items).toHaveLength(2);
   const second = await api.page<{ id: string }>("/collections", first.next);
-  expect(second).toMatchObject({ items: [{ id: "col_start" }], next: null });
+  // The changelog is listed as a collection too.
+  expect(second).toMatchObject({ items: [{ id: "col_start" }, { id: "col_changelog" }], next: null });
   expect(fake.requests[0]).toBe("GET /v1/collections?page_size=100");
   expect(fake.requests[1]).toContain("start_cursor=");
-  expect((await api.all<{ id: string }>("/articles")).map((a) => a.id)).toEqual(["art_keys", "art_card", "art_welcome"]);
+  expect((await api.all<{ id: string }>("/articles")).map((a) => a.id)).toEqual(["art_keys", "art_card", "art_welcome", "art_search", "art_exports"]);
 });
 
 const real = globalThis.fetch;
@@ -42,7 +43,7 @@ function failNext(status: number, times: number, headers: Record<string, string>
 
 test("rate limits and server errors are tried again, waiting as Ferndesk says or longer each time; then it gives up, saying so", async () => {
   failNext(429, 2);
-  expect(await client().get("/sections")).toMatchObject({ results: [{ name: "Guides" }, { name: "API" }] });
+  expect(await client().get("/sections")).toMatchObject({ results: [{ name: "Guides" }, { name: "API" }, { name: "Changelog" }] });
   expect(waits).toEqual([500, 1000]);
 
   waits.length = 0;

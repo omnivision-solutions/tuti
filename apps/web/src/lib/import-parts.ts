@@ -47,7 +47,7 @@ export const IMPORT_PARTS = {
     media: true,
     see: { label: "See changelog", page: "changelog" },
     steps: { changelog: "Changelog" },
-    kinds: ["changelogEntries", "changelogImages", "changelogFiles", "changelogVideos", "changelogComments"],
+    kinds: ["changelogEntries", "heldEntries", "changelogImages", "changelogFiles", "changelogVideos", "changelogComments"],
   },
   docs: {
     label: "Help center",
@@ -131,11 +131,12 @@ export const IMPORT_SOURCES = {
   },
   ferndesk: {
     name: "Ferndesk",
-    description: "Bring your help center, its users and your AI assistant's conversations across with an API key.",
-    parts: ["contacts", "docs", "inbox"],
-    // Its users have no company, and its conversations are the AI's, text only.
+    description: "Bring your help center, its changelog, its users and your AI assistant's conversations across with an API key.",
+    parts: ["contacts", "changelog", "docs", "inbox"],
+    // Its users have no company, its changelog has tags (not categories) and may be several, and its conversations are the AI's, text only.
     partDescriptions: {
       contacts: "Your help center's users, with their attributes, as Users.",
+      changelog: "Your changelog entries (from every changelog, into one) with their images and dates; published ones come as drafts or published, as you pick, and drafts stay drafts. Tags like New, Improved and Fixed become Tuti's. Nothing is emailed.",
       inbox: "Your AI assistant's conversations with readers, closed, as the Inbox.",
     },
     askPublish: true,
@@ -291,6 +292,7 @@ const KINDS: Record<string, [string, string]> = {
   oldAddresses: ["old address redirected", "old addresses redirected"],
   notRedirected: ["old address", "old addresses"],
   changelogEntries: ["changelog entry", "changelog entries"],
+  heldEntries: ["changelog entry as a draft (published there; publish it once you've checked it)", "changelog entries as drafts (published there; publish them once you've checked them)"],
   // The changelog's, counted apart from feedback's and the help center's.
   changelogImages: ["image in the changelog", "images in the changelog"],
   changelogFiles: ["file in the changelog", "files in the changelog"],

@@ -17,6 +17,10 @@ export type FerndeskFixtures = {
   users: Row[];
   /** With their transcripts, newest first. */
   conversations: Row[];
+  /** Changelogs: /collections lists them too, as Ferndesk does. */
+  changelogs: Row[];
+  /** Their entries, newest first, with `changelogId`: /articles lists them too. */
+  entries: Row[];
 };
 
 /** Where the fixtures' images are: written into what the fake sends as its own `<url>/files/`. */
@@ -48,13 +52,16 @@ const article = (id: string, title: string, slug: string, shortId: string, rest:
 /**
  * Made-up fixtures: two sections (Guides, with Getting started and Billing › Invoices; API, with an article in no
  * collection), articles published and draft, one with an open draft and one with a stale one, linking to each other by
- * their public addresses; two help center users; an AI conversation with a user and one with an anonymous visitor.
+ * their public addresses; two help center users; an AI conversation with a user and one with an anonymous visitor; a
+ * changelog in a section of its own (Changelog) with entries published (one with an image, one dated before it went
+ * live) and a draft, which Ferndesk lists as a collection and articles too.
  */
 export function ferndeskFixtures(): FerndeskFixtures {
   return {
     sections: [
       { id: "sect_guides", name: "Guides", position: 0, isDefault: true, iconData: null, ...at("2024-01-01T09:00:00.000Z") },
       { id: "sect_api", name: "API", position: 1, isDefault: false, iconData: null, ...at("2024-01-02T09:00:00.000Z") },
+      { id: "sect_changelog", name: "Changelog", position: 2, isDefault: false, iconData: null, ...at("2024-01-02T10:00:00.000Z") },
     ],
     collections: [
       { id: "col_invoices", sectionId: "sect_guides", parentCollectionId: "col_billing", title: "Invoices", subtitle: "Finding and paying them.", shortId: "inv01", ...at("2024-01-05T09:00:00.000Z") },
@@ -138,6 +145,53 @@ export function ferndeskFixtures(): FerndeskFixtures {
         references: [],
       },
     ],
+    changelogs: [{ id: "col_changelog", title: "Changelog", subtitle: "What's new in Acme", slug: "changelog", sectionId: "sect_changelog", url: `${FAKE_FERNDESK_SITE}/changelog-chg01`, ...at("2024-01-06T09:00:00.000Z") }],
+    entries: [
+      // Only a draft yet: its live title and body are empty until it's first published.
+      {
+        id: "art_sso",
+        changelogId: "col_changelog",
+        title: "Single sign-on",
+        slug: "single-sign-on",
+        contentHtml: "",
+        status: "draft",
+        date: null,
+        tags: [],
+        announce: false,
+        publishedAt: null,
+        draft: { id: "drft_sso", title: "Single sign-on (beta)", contentHtml: "<p>Coming soon.</p>", source: "editor", updatedAt: "2024-04-12T09:00:00.000Z" },
+        ...at("2024-04-12T09:00:00.000Z"),
+      },
+      {
+        id: "art_search",
+        changelogId: "col_changelog",
+        title: "Faster search",
+        slug: "faster-search",
+        contentHtml: `<p>Search results load twice as fast.</p><p><img src="${FAKE_FERNDESK_FILES}user-images/search.png" alt="Search"></p>`,
+        status: "published",
+        date: "2024-04-10",
+        tags: ["new"],
+        announce: true,
+        publishedAt: "2024-04-10T15:00:00.000Z",
+        draft: null,
+        ...at("2024-04-10T15:00:00.000Z"),
+      },
+      // Shown on the day before it went live.
+      {
+        id: "art_exports",
+        changelogId: "col_changelog",
+        title: "Exports",
+        slug: "exports",
+        contentHtml: "<p>Exports take half the time.</p>",
+        status: "published",
+        date: "2024-04-02",
+        tags: ["improvement", "fix"],
+        announce: false,
+        publishedAt: "2024-04-03T09:00:00.000Z",
+        draft: null,
+        ...at("2024-04-03T09:00:00.000Z"),
+      },
+    ],
   };
 }
 
@@ -161,6 +215,7 @@ const LISTS: Record<string, keyof FerndeskFixtures> = {
   "/v1/articles": "articles",
   "/v1/users": "users",
   "/v1/assistant/conversations": "conversations",
+  "/v1/changelogs": "changelogs",
 };
 
 /** A local stand-in for Ferndesk's public API (v1): it checks the key and serves fixtures, paged with opaque cursors. */
@@ -182,12 +237,31 @@ export async function startFerndeskFake(): Promise<FerndeskFake> {
       return send(405, { error: "the fake is read-only" });
     }
     const { fixtures } = fake;
+    const byStatus = (rows: Row[]) => rows.filter((row) => [row.status, "all"].includes(url.searchParams.get("status") ?? "published"));
+    const entriesOf = /^\/v1\/changelogs\/([^/]+)\/entries$/.exec(url.pathname)?.[1];
     const list = LISTS[url.pathname];
-    if (list) {
-      let rows = fixtures[list] as Row[];
+    if (list || entriesOf) {
+      let rows = list ? (fixtures[list] as Row[]) : byStatus(fixtures.entries.filter((row) => row.changelogId === decodeURIComponent(entriesOf!)));
+      // Changelogs are collections, their entries articles: listed with them.
+      if (list === "collections") {
+        rows = [...rows, ...fixtures.changelogs.map(({ id, sectionId, title, subtitle, createdAt, updatedAt }) => ({ id, sectionId, parentCollectionId: null, title, subtitle, shortId: "chg01", createdAt, updatedAt }))];
+      }
       if (list === "articles") {
-        const status = url.searchParams.get("status") ?? "published";
-        rows = rows.filter((row) => status === "all" || row.status === status);
+        const entries = fixtures.entries.map(({ id, changelogId, title, slug, contentHtml, status, publishedAt, createdAt, updatedAt }) => ({
+          id,
+          title,
+          slug,
+          url: `${FAKE_FERNDESK_SITE}/${slug}`,
+          sectionId: fixtures.changelogs.find((log) => log.id === changelogId)?.sectionId ?? null,
+          collectionId: changelogId,
+          status,
+          layout: "default",
+          contentHtml,
+          publishedAt,
+          createdAt,
+          updatedAt,
+        }));
+        rows = byStatus([...rows, ...entries]);
       }
       // The list leaves out transcripts.
       if (list === "conversations") {

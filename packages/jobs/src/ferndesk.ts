@@ -83,11 +83,11 @@ export function ferndesk(key: string, { wait = pause, deadline = Infinity }: { w
   }
 
   /** Every page of a list. */
-  async function all<T>(path: string): Promise<T[]> {
+  async function all<T>(path: string, query: Record<string, string | number> = {}): Promise<T[]> {
     const items: T[] = [];
     let cursor: string | null = null;
     do {
-      const next: Page<T> = await page<T>(path, cursor);
+      const next: Page<T> = await page<T>(path, cursor, query);
       items.push(...next.items);
       cursor = next.next;
     } while (cursor);
@@ -140,4 +140,25 @@ export type FerndeskConversation = {
   updatedAt: string;
   user: { id: string; name: string | null } | null;
   transcript?: { role: "user" | "assistant"; text: string }[];
+};
+
+/** A changelog (GET /v1/changelogs): a collection of its own, in a section, that /collections lists too. */
+export type FerndeskChangelog = { id: string; sectionId: string | null };
+
+/**
+ * A changelog's entry (GET /v1/changelogs/{id}/entries?status=all&format=html): an article of its own, that /articles
+ * lists too. A draft's body is in `draft` (its live one is empty until it's first published).
+ */
+export type FerndeskEntry = {
+  id: string;
+  title: string;
+  contentHtml?: string | null;
+  status: string | null;
+  /** The day it shows, `YYYY-MM-DD`; null on a draft without one. */
+  date: string | null;
+  tags: string[] | null;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  draft: { title?: string | null; contentHtml?: string | null } | null;
 };
