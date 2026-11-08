@@ -135,8 +135,16 @@ export function widgetLoader(portalTemplate: string): string {
   if (!placed) {
     document.addEventListener("DOMContentLoaded", function () {
       placed = true;
-      for (var i = 0; i < queued.length; i++) queued[i]();
+      var waiting = queued;
       queued = [];
+      // Each on its own: one that throws (reported, not swallowed) doesn't keep the rest from running.
+      for (var i = 0; i < waiting.length; i++) {
+        try {
+          waiting[i]();
+        } catch (error) {
+          setTimeout(function () { throw error; });
+        }
+      }
     });
   }
   function whenBody(fn) {

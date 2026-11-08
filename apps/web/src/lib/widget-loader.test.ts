@@ -425,6 +425,44 @@ test("on a page still loading, its panel and button go in once the page is parse
   expect(parsed.document.activeElement).toBe(parsed.frame);
 });
 
+test("on a page still loading, one queued step that throws doesn't stop the rest: the panel still opens, and the error is reported", async () => {
+  const page = loadWidget({
+    motion: "reduced",
+    before: (page) => {
+      Object.assign(page.document, { readyState: "loading" });
+      // Watching the page for inline mounts (queued between the panel and the open below) fails.
+      page.window.MutationObserver = class {
+        observe() {
+          throw new Error("observe failed");
+        }
+      };
+    },
+  });
+  await settled();
+  page.Tuti.open();
+  // Timers set from here on are kept, not run: the rethrow among them would fail the run.
+  const later: (() => void)[] = [];
+  const timers = vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void) => later.push(callback)) as unknown as typeof setTimeout);
+  Object.assign(page.document, { readyState: "interactive" });
+  try {
+    page.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
+  } finally {
+    timers.mockRestore();
+  }
+  expect(page.panel.style.display).toBe("block");
+  expect(page.document.activeElement).toBe(page.frame);
+  // Thrown again on its own, for the page's error reporting.
+  const rethrow = later.find((callback) => {
+    try {
+      callback();
+    } catch (error) {
+      return (error as Error).message === "observe failed";
+    }
+    return false;
+  });
+  expect(rethrow).toBeDefined();
+});
+
 test("the portal's own tag (data-on-portal): the panel is the page's own address, and it says so when it asks for the settings", async () => {
   const page = loadWidget({ attributes: { "data-on-portal": "" }, before: (page) => Object.assign(page.window, { location: { origin: "https://help.acme.example" } }) });
   await settled();
