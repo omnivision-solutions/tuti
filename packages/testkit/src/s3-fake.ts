@@ -15,15 +15,20 @@ export type S3Fake = {
   failPuts: Set<string>;
   /** Runs before a GET is answered (and is waited for), with its Range header: to see it, or to change things between two requests (a race). */
   beforeGet?: (key: string, range: string | undefined) => void | Promise<void>;
+  /**
+   * Sees each PUT's headers as it's answered: how a file was sent (streamed with an unsigned payload, say). Returning a
+   * status answers the PUT with it, storing nothing (a storage hiccup).
+   */
+  onPut?: (key: string, headers: Record<string, string | string[] | undefined>) => number | void;
   close(): Promise<void>;
 };
 
 /**
- * A local stand-in for S3-compatible storage: PUT, GET, HEAD and DELETE on
+ * A local stand-in for S3-compatible storage: PUT (and copies), GET, HEAD and DELETE on
  * path-style URLs (reads honouring `response-content-type` and `response-content-disposition`), with
  * CORS so browsers can upload to it. Like the real (private)
- * bucket, it refuses requests that aren't signed, presigned or with a signed header;
- * signatures themselves aren't checked.
+ * bucket, it refuses requests that aren't signed, presigned or with a signed header, and presigned ones
+ * past their expiry (by the clock as it is in tests); signatures themselves aren't checked.
  */
 export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
   const objects = new Map<string, { body: Buffer; contentType: string }>();
@@ -46,6 +51,14 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
       res.writeHead(403).end();
       return;
     }
+    const signedAt = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(url.searchParams.get("X-Amz-Date") ?? "");
+    if (signedAt && url.searchParams.has("X-Amz-Expires")) {
+      const [, y, mo, d, h, mi, s] = signedAt.map(Number);
+      if (Date.now() > Date.UTC(y!, mo! - 1, d, h, mi, s) + Number(url.searchParams.get("X-Amz-Expires")) * 1000) {
+        res.writeHead(403).end();
+        return;
+      }
+    }
     const path = decodeURIComponent(url.pathname);
     const prefix = `/${bucket}/`;
     if (!path.startsWith(prefix)) {
@@ -63,11 +76,23 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
       const object = objects.get(key);
       switch (req.method) {
         case "PUT":
+          const status = fake.onPut?.(key, req.headers);
+          if (status) {
+            res.writeHead(status).end();
+            return;
+          }
           if (failPuts.has(key)) {
             res.writeHead(500).end();
             return;
           }
-          objects.set(key, { body: Buffer.concat(chunks), contentType: req.headers["content-type"] ?? "" });
+          // A copy (CopyObject) takes the source's bytes, as the type given.
+          const source = req.headers["x-amz-copy-source"];
+          const copied = typeof source === "string" ? objects.get(decodeURIComponent(source).slice(prefix.length)) : undefined;
+          if (typeof source === "string" && !copied) {
+            res.writeHead(404).end();
+            return;
+          }
+          objects.set(key, { body: copied?.body ?? Buffer.concat(chunks), contentType: req.headers["content-type"] ?? "" });
           res.writeHead(200).end();
           return;
         case "GET":

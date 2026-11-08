@@ -8,16 +8,20 @@ import {
   imageKey,
   imageWidths,
   isFileContent,
+  isVideoFile,
   MAX_FILE_NAME_LENGTH,
   type MediaUrls,
   originalKey,
   UPLOAD_FILE_TYPES,
   UPLOAD_IMAGE_TYPES,
+  UPLOAD_VIDEO_TYPES,
+  videoKey,
+  videoType,
 } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
-import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
+import { mediaLimit, mediaStorage, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { canActIn } from "./membership";
@@ -31,7 +35,8 @@ import { actsIn, getAccountSession, getSession, onTeam } from "./session";
  * 3. The image job checks and re-encodes it (packages/jobs/src/images.ts).
  * 4. `uploadStatus` says when it's ready to show.
  * File attachments (articles; `name` given) are the team's only: checked by content as they finish, then
- * kept as they are, with no processing, and only ever served as downloads.
+ * kept as they are, with no processing, and only ever served as downloads. Videos (articles; a file named .mp4, .webm or
+ * .mov) go the same way, copied by the storage itself and checked there, and are played in place with their video type.
  */
 
 const MB = 1024 * 1024;
@@ -46,7 +51,7 @@ const fileSchema = z.object({
 const attachmentSchema = z.object({ type: z.string(), size });
 
 /** The file types an attachment may be, for errors. */
-const FILE_TYPES_TEXT = "PDF, text (TXT, CSV, Markdown), JSON, ZIP, and Office or OpenDocument files";
+const FILE_TYPES_TEXT = "PDF, text (TXT, CSV, Markdown), JSON, ZIP, Office or OpenDocument files, and MP4, WebM or MOV videos";
 
 /**
  * `file.name`: a file attachment (by its name's extension, from UPLOAD_FILE_TYPES), otherwise an image.
@@ -62,7 +67,8 @@ export async function createUpload(
     return { error: attachment ? "Sign in to attach files" : "Sign in to upload images" };
   }
   const filename = attachment ? attachmentName(String(file.name)).slice(-MAX_FILE_NAME_LENGTH) : null;
-  const fileType = filename !== null ? UPLOAD_FILE_TYPES[fileExtension(filename)] : undefined;
+  const video = isVideoFile(filename);
+  const fileType = filename !== null ? (UPLOAD_FILE_TYPES[fileExtension(filename)] ?? UPLOAD_VIDEO_TYPES[fileExtension(filename)]) : undefined;
   if (filename !== null && !fileType) {
     return { error: `Only ${FILE_TYPES_TEXT} can be attached` };
   }
@@ -86,13 +92,15 @@ export async function createUpload(
   if (attachment && !isTeam) {
     return { error: "Only the team can attach files" };
   }
-  const maxSize = attachment
+  const maxSize = video
+    ? mediaLimit("MEDIA_MAX_VIDEO_MB_TEAM")
+    : attachment
     ? mediaLimit("MEDIA_MAX_FILE_MB_TEAM")
     : isTeam
       ? mediaLimit("MEDIA_MAX_IMAGE_MB_TEAM")
       : mediaLimit("MEDIA_MAX_IMAGE_MB_USER");
   if (parsed.data.size > maxSize) {
-    return { error: `${attachment ? "Files" : "Images"} can be up to ${Math.round(maxSize / MB)} MB` };
+    return { error: `${video ? "Videos" : attachment ? "Files" : "Images"} can be up to ${Math.round(maxSize / MB)} MB` };
   }
 
   const result = await prisma.$transaction(async (tx) => {
@@ -127,8 +135,8 @@ export async function createUpload(
   return { mediaId: result.id, uploadUrl, contentType, ...(filename !== null && { name: filename }) };
 }
 
-/** The browser finished uploading: check what arrived, then process it. */
-export async function finishUpload(mediaId: string): Promise<{ error?: string }> {
+/** The browser finished uploading: check what arrived, then process it. A video's `src` is where the editor plays it from (for a day, VIDEO_URL_SECONDS). */
+export async function finishUpload(mediaId: string): Promise<{ error?: string; src?: string }> {
   const session = await getSession();
   const storage = mediaStorage();
   if (!session || !storage) {
@@ -156,6 +164,42 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
     await storage.delete(key);
     await settle({ status: "FAILED", size: 0 });
     return { error: "The upload didn't match the file. Try again." };
+  }
+
+  // A video is copied by the storage (too big to pass through here) to a key the browser can't write to, as the type
+  // its first bytes say (videoType), then the copy is checked: its size, and that its first bytes are a video's of that
+  // type. Claimed first, so of two finishes at once only one copies.
+  if (isVideoFile(media.filename)) {
+    if ((await settle({ status: "PROCESSING" })).count === 0) {
+      const now = await prisma.media.findUnique({ where: { id: media.id }, select: { status: true } });
+      return now?.status === "READY" ? { src: await storage.signedUrl(videoKey(media.id), undefined, undefined, VIDEO_URL_SECONDS) } : { error: "The upload didn't match the file. Try again." };
+    }
+    const fail = async (error: string) => {
+      await storage.delete(videoKey(media.id)).catch(() => {});
+      await storage.delete(key).catch(() => {});
+      await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "FAILED", size: 0 } });
+      return { error };
+    };
+    try {
+      const type = videoType(await storage.get(key, 16));
+      if (!type) {
+        return await fail(`${media.filename} isn't a video`);
+      }
+      await storage.copy(key, videoKey(media.id), type);
+      const copied = await storage.head(videoKey(media.id));
+      if (copied?.size !== media.size) {
+        return await fail("The upload didn't match the file. Try again.");
+      }
+      if (videoType(await storage.get(videoKey(media.id), 16)) !== type) {
+        return await fail(`${media.filename} isn't a video`);
+      }
+      await prisma.media.updateMany({ where: { id: media.id, status: "PROCESSING" }, data: { status: "READY" } });
+    } catch (error) {
+      log.error("Saving an uploaded video failed", { mediaId: media.id, error });
+      return await fail("The video couldn't be saved. Try again.");
+    }
+    await storage.delete(key).catch((error: unknown) => log.error("Deleting a video's upload failed", { mediaId: media.id, error }));
+    return { src: await storage.signedUrl(videoKey(media.id), undefined, undefined, VIDEO_URL_SECONDS) };
   }
 
   // A file attachment is kept as it is, once its content is what its name says: copied to a key the browser

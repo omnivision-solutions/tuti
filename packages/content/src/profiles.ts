@@ -9,7 +9,7 @@ import StarterKit from "@tiptap/starter-kit";
 
 import { Details, DetailsContent, DetailsSummary } from "./details";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
-import { fileExtension, fileSize, imageKey, imageWidths } from "./media";
+import { fileExtension, fileSize, imageKey, imageWidths, videoKey } from "./media";
 
 /**
  * What each kind of content may contain. The editor, the server-side validation
@@ -40,6 +40,10 @@ export const isCellSpan = (value: unknown): value is number => Number.isInteger(
 
 /** Uploaded media ids (cuid). */
 export const isMediaId = (value: unknown): value is string => typeof value === "string" && /^[a-z0-9]{20,32}$/.test(value);
+
+/** A video the team uploaded (articles): the `video` node's hosted form, its `id` the upload's media id (media.ts videoKey). */
+export const isHostedVideo = (value: { provider?: unknown; id?: unknown }): value is { provider: "upload"; id: string } =>
+  value.provider === "upload" && isMediaId(value.id);
 
 /** An image's stored width or height: a whole number of pixels, above zero. */
 export const isPixelSize = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0;
@@ -159,12 +163,18 @@ export const FileNode = Node.create({
   },
 });
 
-/** A video from an allowed provider, stored as provider + id and embedded from a known URL. */
-export const VideoEmbed = Node.create({
+/**
+ * A video from an allowed provider, stored as provider + id and embedded from a known URL; or one the team uploaded
+ * (articles), stored as provider "upload" and its media id (isHostedVideo), played from `mediaUrl`.
+ */
+export const VideoEmbed = Node.create<{ mediaUrl?: (key: string) => string | undefined }>({
   name: "video",
   group: "block",
   atom: true,
   draggable: true,
+  addOptions() {
+    return { mediaUrl: undefined };
+  },
   addAttributes() {
     return { provider: { default: null }, id: { default: null } };
   },
@@ -178,9 +188,14 @@ export const VideoEmbed = Node.create({
   },
   renderHTML({ node }) {
     const video = { provider: node.attrs.provider as unknown, id: node.attrs.id as unknown };
+    const attrs = { "data-video": "", "data-provider": String(video.provider), "data-id": String(video.id), class: "rich-video" };
+    if (isHostedVideo(video)) {
+      const src = this.options.mediaUrl?.(videoKey(video.id));
+      return ["div", attrs, ["video", { ...(src && { src }), controls: "", preload: "metadata", playsinline: "" }]];
+    }
     return [
       "div",
-      { "data-video": "", "data-provider": String(video.provider), "data-id": String(video.id), class: "rich-video" },
+      attrs,
       [
         "iframe",
         {
@@ -195,10 +210,11 @@ export const VideoEmbed = Node.create({
   },
   addCommands() {
     return {
+      // After a picked block (an upload finishing while another is selected), as images and files are, not in its place.
       setVideo:
         (video) =>
-        ({ commands }) =>
-          commands.insertContent({ type: this.name, attrs: video }),
+        ({ commands, state }) =>
+          commands.insertContentAt(state.selection instanceof NodeSelection ? state.selection.to : state.selection, { type: this.name, attrs: video }),
     };
   },
 });
@@ -394,7 +410,7 @@ export const Steps = Node.create({
 
 export const Step = Node.create({
   name: "step",
-  content: "stepTitle (paragraph | bulletList | orderedList | codeBlock | codeTabs | image | file)*",
+  content: "stepTitle (paragraph | bulletList | orderedList | codeBlock | codeTabs | image | video | file)*",
   defining: true,
   priority: 101,
   parseHTML() {
@@ -529,13 +545,13 @@ export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: st
         ImageNode.configure({ mediaUrl }),
       ];
     case "post":
-      return [StarterKit.configure(textOnly), VideoEmbed, ImageNode.configure({ mediaUrl })];
+      return [StarterKit.configure(textOnly), VideoEmbed.configure({ mediaUrl }), ImageNode.configure({ mediaUrl })];
     case "changelog":
     case "article":
       return [
         // Sections under the entry's own title: h2 and h3 only.
         StarterKit.configure({ ...textOnly, heading: { levels: [2, 3] }, blockquote: {}, horizontalRule: {}, ...(profile === "article" && { document: false }) }),
-        VideoEmbed,
+        VideoEmbed.configure({ mediaUrl }),
         ImageNode.configure({ mediaUrl }),
         // Plain tables: no column resizing (widths aren't stored or rendered).
         ...(profile === "article" ? [ArticleDocument, TableKit.configure({ table: { resizable: false } }), TableOfContents] : []),

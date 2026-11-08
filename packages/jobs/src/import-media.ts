@@ -1,5 +1,9 @@
+import { mkdtemp, open, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { ImportedMedia, LeftOutReason, MediaImporter, MediaSource } from "@tuti/content/html";
-import { attachmentName, fileExtension, fileKey, isFileContent, originalKey, UPLOAD_FILE_TYPES } from "@tuti/content/media";
+import { attachmentName, fileExtension, fileKey, isFileContent, originalKey, UPLOAD_FILE_TYPES, UPLOAD_VIDEO_TYPES, videoFormat, videoKey, videoType } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { mediaLimit, mediaStorage } from "@tuti/shared/storage";
 import { checkWebhookUrl, publicOnlyLookup } from "@tuti/shared/webhook-url";
@@ -11,8 +15,11 @@ const publicOnly = new Agent({ connect: { lookup: publicOnlyLookup } });
 const MAX_REDIRECTS = 3;
 /** Older than the last hour createUpload counts against an uploader. */
 const OUTSIDE_UPLOAD_LIMIT_MS = 2 * 60 * 60 * 1000;
-/** For one download, body and all. */
-const TIMEOUT_MS = 30_000;
+/** For one download, body and all: 30 seconds, or longer for a bigger limit (videos), at 1 MB a second. */
+const timeoutFor = (maxBytes: number) => Math.max(30_000, Math.round(maxBytes / 1024));
+
+/** What `download` keeps of a file it writes to disk. */
+const HEAD_BYTES = 64;
 
 type Copied = ImportedMedia | { leftOut: LeftOutReason };
 
@@ -35,14 +42,30 @@ type Copied = ImportedMedia | { leftOut: LeftOutReason };
  *
  * `cache`, by the source's key: kept by the caller for a whole import, the same file is copied once. Left-out ones are
  * remembered too, so a file that's gone isn't fetched again for every post that has it.
+ *
+ * `deadline` (a time, in ms): every copy is done by then or left out (`unreachable`), its download and upload cut off,
+ * so a step holding several large videos stays inside its job's time limit. `signal` cuts copies off too, when it's
+ * aborted (a caller's own stop; tests). One cut off isn't remembered: a later run, with time of its own, tries again.
  */
-export function mediaImporter({ projectId, uploaderId, cache = new Map() }: { projectId: string; uploaderId: string; cache?: Map<string, Copied> }): MediaImporter {
+export function mediaImporter({
+  projectId,
+  uploaderId,
+  cache = new Map(),
+  deadline,
+  signal,
+}: {
+  projectId: string;
+  uploaderId: string;
+  cache?: Map<string, Copied>;
+  deadline?: number;
+  signal?: AbortSignal;
+}): MediaImporter {
   return async (source) => {
     const cached = cache.get(source.key);
     if (cached) {
       return cached;
     }
-    const { passing, ...copied } = await copy(projectId, uploaderId, source);
+    const { passing, ...copied } = await copy(projectId, uploaderId, source, deadline, signal);
     // A failure of our own (storage, processing) may pass: the next document tries again.
     if (!passing) {
       cache.set(source.key, copied);
@@ -54,27 +77,66 @@ export function mediaImporter({ projectId, uploaderId, cache = new Map() }: { pr
 /** More than processing ever keeps for one image (a 2400px WebP set and the email JPEG): its quota while it's processed. */
 const PROCESSED_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
-async function copy(projectId: string, uploaderId: string, { kind, url, name }: MediaSource): Promise<Copied & { passing?: true }> {
+/** A video goes through a temporary file (never whole in memory: the worker is every project's), deleted however it ends. */
+async function copy(projectId: string, uploaderId: string, source: MediaSource, deadline?: number, signal?: AbortSignal): Promise<Copied & { passing?: true }> {
+  const stops = [...(deadline === undefined ? [] : [AbortSignal.timeout(Math.max(1, deadline - Date.now()))]), ...(signal ? [signal] : [])];
+  const late = stops.length > 0 ? AbortSignal.any(stops) : undefined;
+  const dir = source.kind === "video" ? await mkdtemp(join(tmpdir(), "tuti-video-")) : null;
+  try {
+    const copied = await copyThrough(projectId, uploaderId, source, dir && join(dir, "video"), late, deadline);
+    return late?.aborted && "leftOut" in copied ? { ...copied, passing: true } : copied;
+  } finally {
+    if (dir) {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+}
+
+async function copyThrough(
+  projectId: string,
+  uploaderId: string,
+  { kind, url, name }: MediaSource,
+  path: string | null,
+  late: AbortSignal | undefined,
+  deadline: number | undefined,
+): Promise<Copied & { passing?: true }> {
   const storage = mediaStorage();
   if (!storage) {
     return { leftOut: "unsupported" };
   }
-  const filename = kind === "file" ? attachmentName(name) : null;
-  const extension = filename ? fileExtension(filename) : "";
+  let filename = kind === "file" ? attachmentName(name) : null;
+  let extension = filename ? fileExtension(filename) : "";
   if (kind === "file" && !(extension in UPLOAD_FILE_TYPES)) {
     return { leftOut: "type" };
   }
-  const body = await download(url, mediaLimit(kind === "image" ? "MEDIA_MAX_IMPORT_IMAGE_MB" : "MEDIA_MAX_FILE_MB_TEAM"));
+  const limit = kind === "image" ? "MEDIA_MAX_IMPORT_IMAGE_MB" : kind === "video" ? "MEDIA_MAX_VIDEO_MB_TEAM" : "MEDIA_MAX_FILE_MB_TEAM";
+  // With `path`, the body is only its first bytes; the whole of it is in the file.
+  const body = await download(url, mediaLimit(limit), path ?? undefined, late);
   if (typeof body === "string") {
     return { leftOut: body };
+  }
+  // Fetched, but too late to keep: nothing is stored, and it's not remembered (the deadline's timer may not have fired yet).
+  if (deadline !== undefined && Date.now() > deadline) {
+    return { leftOut: "unreachable", passing: true };
   }
   if (kind === "file" && !isFileContent(extension, body)) {
     return { leftOut: "type" };
   }
+  // A video by its content, whatever its address says; named so it's a video upload (isVideoFile).
+  if (kind === "video") {
+    const format = videoFormat(body);
+    if (!format) {
+      return { leftOut: "type" };
+    }
+    const named = attachmentName(name);
+    filename = fileExtension(named) in UPLOAD_VIDEO_TYPES ? named : `${named.slice(0, 190)}.${format}`;
+    extension = fileExtension(filename);
+  }
 
   // An image counts at most PROCESSED_IMAGE_MAX_BYTES until it's re-encoded: what's kept (WebP sizes and the email
   // JPEG, set by processing) is always well under it, so a large original doesn't use up quota it won't keep.
-  const size = kind === "image" ? Math.min(body.byteLength, PROCESSED_IMAGE_MAX_BYTES) : body.byteLength;
+  // A video's whole size is its file's (the body is only its first bytes).
+  const size = path ? (await stat(path)).size : kind === "image" ? Math.min(body.byteLength, PROCESSED_IMAGE_MAX_BYTES) : body.byteLength;
   const media = await prisma.$transaction(async (tx) => {
     // As createUpload (apps/web server/media.ts): one at a time per project, so nothing overruns the quota together.
     await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
@@ -104,6 +166,8 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
       if (!processed.ready) {
         return await leaveOut("type");
       }
+    } else if (path) {
+      await storage.putFile(videoKey(media.id), path, videoType(body)!, late);
     } else {
       await storage.put(fileKey(media.id), body, UPLOAD_FILE_TYPES[extension]!);
     }
@@ -118,9 +182,12 @@ async function copy(projectId: string, uploaderId: string, { kind, url, name }: 
   return { mediaId: id, ...ready };
 }
 
-/** The file at `url`, or why not: refused, unreachable, or more than `maxBytes`. */
-export async function download(url: string, maxBytes: number): Promise<Uint8Array | LeftOutReason> {
-  const signal = AbortSignal.timeout(TIMEOUT_MS);
+/**
+ * The file at `url`, or why not: refused, unreachable, or more than `maxBytes`. With `to`, it's written to that file as it
+ * arrives, and only its first bytes are returned (enough to tell what it is). `late` cuts it off (a caller's deadline).
+ */
+export async function download(url: string, maxBytes: number, to?: string, late?: AbortSignal): Promise<Uint8Array | LeftOutReason> {
+  const signal = AbortSignal.any([AbortSignal.timeout(timeoutFor(maxBytes)), ...(late ? [late] : [])]);
   try {
     for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
       await checkWebhookUrl(url);
@@ -146,14 +213,24 @@ export async function download(url: string, maxBytes: number): Promise<Uint8Arra
       }
       const chunks: Uint8Array[] = [];
       let size = 0;
-      for await (const chunk of response.body) {
-        size += chunk.byteLength;
-        if (size > maxBytes) {
-          return "size";
+      const file = to ? await open(to, "w") : null;
+      try {
+        for await (const chunk of response.body) {
+          size += chunk.byteLength;
+          if (size > maxBytes) {
+            return "size";
+          }
+          if (file) {
+            await file.write(chunk);
+          }
+          if (!file || size - chunk.byteLength < HEAD_BYTES) {
+            chunks.push(chunk);
+          }
         }
-        chunks.push(chunk);
+      } finally {
+        await file?.close();
       }
-      return Buffer.concat(chunks);
+      return file ? Buffer.concat(chunks).subarray(0, HEAD_BYTES) : Buffer.concat(chunks);
     }
   } catch {
     // Refused (a private address, not https), not found, too slow.

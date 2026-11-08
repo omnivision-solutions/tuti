@@ -387,7 +387,7 @@
   .rich-text :where(.rich-video) {
     @apply aspect-video w-full overflow-hidden rounded-lg bg-muted;
   }
-  .rich-text :where(.rich-video iframe) {
+  .rich-text :where(.rich-video iframe, .rich-video video) {
     @apply size-full border-0;
   }
   .rich-text :where(.rich-image) {

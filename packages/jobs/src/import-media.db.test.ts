@@ -1,7 +1,10 @@
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { fileKey, imageKey } from "@tuti/content";
+import { fileKey, imageKey, videoKey } from "@tuti/content";
 import { htmlToContent } from "@tuti/content/html";
 import { prisma } from "@tuti/db";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
@@ -18,9 +21,13 @@ let served: string[];
 let png: Buffer;
 /** Just over the app's 10 MB per image: uncompressed, as other tools often keep screenshots. */
 let bigPng: Buffer;
+/** Runs once /stalled.mp4 has sent its first bytes (and will send no more). */
+let stalled: (() => void) | undefined;
 /** Runs as each file is asked for, before it's answered. */
 let whileServing: (() => Promise<void>) | undefined;
 const PDF = Buffer.from("%PDF-1.4\n%invented test file\n");
+/** The start of an MP4 (an ISO media file's `ftyp` box), then made-up frames. */
+const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom\0\0\0\0isommp41"), Buffer.alloc(64, 7)]);
 
 beforeAll(async () => {
   s3 = await startS3Fake();
@@ -33,12 +40,23 @@ beforeAll(async () => {
     "/huge.png": { type: "image/png", body: Buffer.alloc(2 * 1024 * 1024 + 1) },
     "/guide.pdf": { type: "application/pdf", body: PDF },
     "/fake.pdf": { type: "application/pdf", body: Buffer.from("<html>not a pdf</html>") },
+    "/demo.mp4": { type: "video/mp4", body: MP4 },
+    "/stream": { type: "video/mp4", body: MP4 },
+    "/fake.mp4": { type: "video/mp4", body: Buffer.from("<!doctype html><p>Not a video</p>") },
+    "/huge.mp4": { type: "video/mp4", body: Buffer.concat([MP4, Buffer.alloc(1024 * 1024)]) },
   };
   server = createServer(async (req, res) => {
     served.push(req.url!);
     await whileServing?.();
     if (req.url === "/moved.png" || req.url === "/loop.png") {
       res.writeHead(302, { location: req.url === "/loop.png" ? "/loop.png" : "/a.png" }).end();
+      return;
+    }
+    if (req.url === "/stalled.mp4") {
+      // A video's first bytes, then nothing more: as slow as a copy can be.
+      res.writeHead(200, { "content-type": "video/mp4" });
+      res.write(MP4.subarray(0, 32));
+      stalled?.();
       return;
     }
     if (req.url === "/streamed.png") {
@@ -70,6 +88,7 @@ let uploaderId: string;
 beforeEach(async () => {
   served = [];
   whileServing = undefined;
+  s3.onPut = undefined;
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
   }
@@ -137,6 +156,84 @@ test("an attached document in an article is copied as a file, checked by its con
   expect(result.leftOut).toEqual([{ kind: "file", url: `${origin}/fake.pdf`, reason: "type" }]);
   expect(s3.objects.get(fileKey(mediaId!))?.body).toEqual(PDF);
   expect(await prisma.media.findUniqueOrThrow({ where: { id: mediaId } })).toMatchObject({ status: "READY", filename: "Setup guide.pdf" });
+});
+
+test("an uploaded video in an article is copied, checked by its content, and plays from the copy", async () => {
+  vi.stubEnv("MEDIA_MAX_VIDEO_MB_TEAM", "1");
+  // Streamed from a temporary file (in a directory of this test's own), never whole in the worker's memory, and the file
+  // gone after. The first PUT meets a storage hiccup: it's sent again, from the file.
+  const temporary = await mkdtemp(join(tmpdir(), "import-media-test-"));
+  vi.stubEnv("TMPDIR", temporary);
+  const puts: Record<string, string | string[] | undefined>[] = [];
+  s3.onPut = (_key, headers) => (puts.push(headers) === 1 ? 503 : undefined);
+  const result = await htmlToContent(
+    "article",
+    `<video src="${origin}/demo.mp4" controls></video><video><source src="${origin}/stream" type="video/mp4"></video>` +
+      `<video src="${origin}/fake.mp4"></video><video src="${origin}/huge.mp4"></video>`,
+    { media: importer() },
+  );
+  if ("error" in result) {
+    throw new Error(result.error);
+  }
+  const [demo, stream] = result.mediaIds;
+  expect(result.doc.content).toEqual([
+    { type: "video", attrs: { provider: "upload", id: demo } },
+    { type: "video", attrs: { provider: "upload", id: stream } },
+  ]);
+  expect(result.leftOut).toEqual([
+    { kind: "video", url: `${origin}/fake.mp4`, reason: "type" },
+    { kind: "video", url: `${origin}/huge.mp4`, reason: "size" },
+  ]);
+  expect(s3.objects.get(videoKey(demo!))).toEqual({ body: MP4, contentType: "video/mp4" });
+  // Named so it's a video upload: as its address has it, or by its content when the address has no name for it.
+  expect(await prisma.media.findMany({ where: { id: { in: [demo!, stream!] } }, select: { filename: true, status: true, size: true }, orderBy: { filename: "asc" } })).toEqual([
+    { filename: "demo.mp4", status: "READY", size: MP4.length },
+    { filename: "stream.mp4", status: "READY", size: MP4.length },
+  ]);
+  s3.onPut = undefined;
+  expect(puts).toEqual(Array(3).fill(expect.objectContaining({ "x-amz-content-sha256": "UNSIGNED-PAYLOAD", "content-length": String(MP4.length) })));
+  expect(await readdir(temporary)).toEqual([]);
+  await rm(temporary, { recursive: true });
+});
+
+test("a copy that can't finish by the deadline is cut off and left out, its temporary file gone; a later run tries again", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "import-media-test-"));
+  vi.stubEnv("TMPDIR", temporary);
+  const cache = new Map();
+  const source = { kind: "video" as const, url: `${origin}/stalled.mp4`, key: "stalled", name: "stalled.mp4" };
+  // Cut off as the download hangs: the caller's stop, as the deadline's own timer would.
+  const cutOff = () => {
+    const stop = new AbortController();
+    stalled = () => stop.abort();
+    return mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 60_000, signal: stop.signal })(source);
+  };
+  try {
+    expect(await cutOff()).toEqual({ leftOut: "unreachable" });
+    expect(await readdir(temporary)).toEqual([]);
+    expect(await prisma.media.count({ where: { projectId } })).toBe(0);
+    // Not remembered as left out: the next page, with its own time, asks for it again.
+    expect(await cutOff()).toEqual({ leftOut: "unreachable" });
+    expect(served.filter((path) => path === "/stalled.mp4")).toHaveLength(2);
+  } finally {
+    stalled = undefined;
+    await rm(temporary, { recursive: true });
+  }
+});
+
+test("a copy fetched after the deadline, before its timer cuts it off, isn't kept or remembered: a later run tries again", async () => {
+  const cache = new Map();
+  const source = { kind: "video" as const, url: `${origin}/demo.mp4`, key: "demo", name: "demo.mp4" };
+  // The clock passes the deadline as the video is served; the deadline's own timer (a minute off) hasn't fired.
+  const now = Date.now.bind(Date);
+  let late = false;
+  whileServing = async () => void (late = true);
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => now() + (late ? 2 * 60_000 : 0));
+  const copied = await mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 60_000 })(source).finally(() => clock.mockRestore());
+  expect(copied).toEqual({ leftOut: "unreachable" });
+  expect(await prisma.media.count({ where: { projectId } })).toBe(0);
+  whileServing = undefined;
+  expect(await mediaImporter({ projectId, uploaderId, cache, deadline: Date.now() + 60_000 })(source)).toMatchObject({ mediaId: expect.any(String) });
+  expect(served.filter((path) => path === "/demo.mp4")).toHaveLength(2);
 });
 
 test("what can't be copied is left out with its reason, keeping its alt text, and nothing is kept for it", async () => {

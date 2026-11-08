@@ -3,8 +3,8 @@ import { Fragment, type ReactNode, useId } from "react";
 
 import { docHeadings, type Heading, listStart, tocEntries } from "./document";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
-import { fileExtension, fileKey, fileSize, imageKey, imageWidths, type MediaUrls } from "./media";
-import { isCellSpan, isCodeFilename, isMediaId, isPixelSize } from "./profiles";
+import { fileExtension, fileKey, fileSize, imageKey, imageWidths, type MediaUrls, videoKey } from "./media";
+import { isCellSpan, isCodeFilename, isHostedVideo, isMediaId, isPixelSize } from "./profiles";
 
 /** Widest the text column gets (Tailwind max-w-3xl), for picking image sizes. */
 const COLUMN_WIDTH = 768;
@@ -193,6 +193,15 @@ function renderNode(node: JSONContent, key: number, options: Options, id?: strin
       );
     case "video": {
       const video = node.attrs ?? {};
+      // An uploaded one plays from its signed URL, in the browser's own player; nothing loads until it's played.
+      if (isHostedVideo(video)) {
+        const src = media?.[videoKey(video.id)];
+        return src ? (
+          <div key={key} className="rich-video">
+            <video src={src} controls preload="metadata" playsInline />
+          </div>
+        ) : null;
+      }
       return isVideo(video) ? (
         <div key={key} className="rich-video">
           <iframe

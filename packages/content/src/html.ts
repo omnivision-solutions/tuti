@@ -17,8 +17,9 @@ import { extensions, IMAGE_ALIGNMENTS, IMAGE_SIZES, isCodeFilename, MAX_ALT_LENG
  * - callouts become quotes, accordions collapsible details, multi-language code code tabs (articles), columns their
  *   content in order; YouTube, Vimeo and Loom iframes video embeds, other iframes links
  * - images are copied with `media` and point at the copy; in articles, attached documents (Featurebase's file blocks,
- *   and links to its attachment host) become file attachments. One that can't be copied, or that the profile has no
- *   place for (files outside articles, uploaded videos), is left out with its alt text kept, and
+ *   and links to its attachment host) become file attachments, and uploaded videos (`<video>`) videos the team
+ *   uploaded. One that can't be copied, or that the profile has no place for (files and videos outside articles),
+ *   is left out with its alt text kept, and
  *   listed in `leftOut` with its URL (an inbox import can take those as attachments)
  * - every link goes through `link` (another page's new address, or null to keep it) and is kept only if it's safe
  * - anything else (scripts, styles, attributes, Tuti's own data attributes) is dropped, its text kept
@@ -38,13 +39,13 @@ export type LeftOutReason =
 export type LeftOut = { kind: "image" | "file" | "video"; url: string; reason: LeftOutReason };
 
 /** What to copy: `key` is the same for the same file (its URL without a presigned URL's signature, which is new each time). */
-export type MediaSource = { kind: "image" | "file"; url: string; key: string; name?: string };
+export type MediaSource = { kind: "image" | "file" | "video"; url: string; key: string; name?: string };
 /** The copy, READY: an image's size, a file's name (as kept) and size. */
 export type ImportedMedia = { mediaId: string; width: number | null; height: number | null; filename: string | null; size: number };
 export type MediaImporter = (source: MediaSource) => Promise<ImportedMedia | { leftOut: LeftOutReason }>;
 
 export type HtmlOptions = {
-  /** Copies an image or file into the project's media (packages/jobs import-media.ts: network I/O, never under the project lock). Without it, they're left out. */
+  /** Copies an image, file or video into the project's media (packages/jobs import-media.ts: network I/O, never under the project lock). Without it, they're left out. */
   media?: MediaImporter;
   /** A link's new address, or null to keep it. */
   link?: (href: string) => string | null;
@@ -196,10 +197,20 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
         iframe.remove();
       }
     }
+    // An uploaded video: copied below (articles), its first source if it has several. Only the placeholders made here
+    // are videos to copy: one written into the HTML itself is only its content.
+    all("tuti-video").forEach((element) => element.replaceWith(...element.childNodes));
+    const videos = new Set<Element>();
     for (const video of all("video")) {
       const src = video.getAttribute("src") ?? video.querySelector("source")?.getAttribute("src") ?? "";
-      leftOut.push({ kind: "video", url: src, reason: "unsupported" });
-      video.remove();
+      if (article && src) {
+        const placeholder = make("tuti-video", { src });
+        videos.add(placeholder);
+        video.replaceWith(placeholder);
+      } else {
+        leftOut.push({ kind: "video", url: src, reason: "unsupported" });
+        video.remove();
+      }
     }
 
     for (const anchor of all("a[href]")) {
@@ -244,20 +255,21 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
 
     // Media, one at a time: the same file (its key) is copied once (the importer keeps them).
     const sizes = new Map<string, ImportedMedia>();
-    for (const element of all("img, file-preview-component")) {
+    for (const element of all("img, file-preview-component, tuti-video")) {
       const url = element.getAttribute("src") ?? "";
       const key = sameFile(url);
       const type = element.getAttribute("data-featurebase-content-filetype");
-      const kind = element.tagName === "IMG" || type?.startsWith("image/") ? "image" : "file";
-      const name = kind === "file" ? (element.getAttribute("data-featurebase-content-filename") ?? fileName(url)) : undefined;
+      const kind = videos.has(element) ? "video" : element.tagName === "IMG" || type?.startsWith("image/") ? "image" : "file";
+      const name = kind !== "image" ? (element.getAttribute("data-featurebase-content-filename") ?? fileName(url)) : undefined;
       const alt = (element.getAttribute("alt") ?? "").trim().slice(0, MAX_ALT_LENGTH);
       const leaveOut = (reason: LeftOutReason) => {
         leftOut.push({ kind, url, reason });
         // Its words on a line of their own, where it was.
-        const words = kind === "image" ? alt : (name ?? "");
+        const words = kind === "image" ? alt : kind === "file" ? (name ?? "") : "";
         element.replaceWith(...(words ? [make("p", {}, words)] : []));
       };
-      if (kind === "file" && !article) {
+      // Files and videos go in articles only.
+      if (kind !== "image" && !article) {
         leaveOut("unsupported");
         continue;
       }
@@ -283,6 +295,8 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
             make("img", { alt }),
           ),
         );
+      } else if (kind === "video") {
+        element.replaceWith(make("div", { "data-video": "", "data-provider": "upload", "data-id": copy.mediaId }));
       } else {
         element.replaceWith(make("div", { "data-file": "", "data-media-id": copy.mediaId, "data-name": copy.filename ?? name ?? "", "data-size": String(copy.size) }));
       }

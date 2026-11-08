@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason } from "@tuti/content/html";
+import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason, type MediaImporter } from "@tuti/content/html";
 import { Prisma, prisma } from "@tuti/db";
 import { articleLimit, MAX_ARTICLE_LENGTH } from "@tuti/shared";
 import { destinationKey, MAX_REDIRECTS, portalPage, redirectFrom, redirectKey } from "@tuti/shared/portal-redirects";
@@ -33,7 +33,13 @@ const CONTENT_PAGE = 20;
  * page again for the rest: import-step's time limit is 5 minutes, and a page reads Featurebase for up to 3. At least
  * one article a page, so it always gets on. Changeable for tests.
  */
-export const contentBudget = { ms: 90_000 };
+/**
+ * `mediaMs`: from the page's start, when every media copy is done or left out (mediaImporter's `deadline`), well inside
+ * import-step's 5 minutes: a video may take minutes to copy, and an article may hold several.
+ */
+export const contentBudget = { ms: 90_000, mediaMs: 240_000 };
+/** An article's media past the page's media deadline (contentBudget.mediaMs): the article is left to the next run. */
+class Later extends Error {}
 /** A content page's cursor that reads the list's page at the cursor after it again (none: the first): `again:<cursor>`. */
 const AGAIN = "again:";
 
@@ -403,8 +409,25 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
   [...mediaCaches.keys()].filter((id) => !running.some((row) => row.id === id)).forEach((id) => mediaCaches.delete(id));
   const cache = mediaCaches.get(job.id) ?? new Map();
   mediaCaches.set(job.id, cache);
-  // Copies are the import's starter's uploads (someone who left since: none copied).
-  const media = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById, cache }) : undefined;
+  // Copies are the import's starter's uploads (someone who left since: none copied), each done by the media deadline or
+  // left out. Past it, an article that isn't the run's first is left whole to the next run (Later), which reads it first
+  // and copies its media with time of its own; the first leaves out what didn't make it, so a run always gets on.
+  const deadline = started + contentBudget.mediaMs;
+  const copies = job.startedById ? mediaImporter({ projectId: job.projectId, uploaderId: job.startedById, cache, deadline }) : undefined;
+  const late = () => texts.length > 0 && Date.now() >= deadline;
+  const media: MediaImporter | undefined =
+    copies &&
+    (async (source) => {
+      if (late()) {
+        throw new Later();
+      }
+      const copied = await copies(source);
+      // Cut off (not remembered), or copied (remembered: the next run has it at once).
+      if (late()) {
+        throw new Later();
+      }
+      return copied;
+    });
   // `draftLost`: why its unpublished changes didn't come (the published version did), said in the summary.
   // `drafted`: it has a draft that differs, not converted (the team asked for drafts: only its published text is kept).
   const texts: { article: FeaturebaseArticle; live: Text | { error: string }; draft: Text | null; draftLost: string | null; drafted: boolean }[] = [];
@@ -464,9 +487,20 @@ async function contentPage(job: ImportJob, cursor: string | null): Promise<StepP
       }
       return { title: titleOf(version), content };
     };
-    const live = await convert(article);
-    // Brought as a draft of its published text, its draft isn't converted: its media would be copied for nothing, using up the quota.
-    const draft = draftVersion && job.publishArticles && !("error" in live) ? await convert(draftVersion) : null;
+    let live: Text | { error: string };
+    let draft: Text | { error: string } | null;
+    try {
+      live = await convert(article);
+      // Brought as a draft of its published text, its draft isn't converted: its media would be copied for nothing, using up the quota.
+      draft = draftVersion && job.publishArticles && !("error" in live) ? await convert(draftVersion) : null;
+    } catch (error) {
+      // Past the media deadline: this article is the next run's first (not reached in this one).
+      if (error instanceof Later) {
+        reached--;
+        break;
+      }
+      throw error;
+    }
     const differs = draft && !("error" in draft) && !("error" in live) && !isDeepStrictEqual([draft.title, draft.content.doc], [live.title, live.content.doc]);
     texts.push({ article: item, live, draft: differs ? (draft as Text) : null, draftLost: draft && "error" in draft ? draft.error : null, drafted: Boolean(draftVersion) && !job.publishArticles && (draftVersion!.title !== article.title || draftVersion!.body !== article.body) });
   }

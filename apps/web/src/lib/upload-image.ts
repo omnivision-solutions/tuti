@@ -37,8 +37,8 @@ export async function uploadImage(
   return { error: "The image is taking too long. Try again." };
 }
 
-/** Uploads a file attachment (articles) straight to media storage; it's ready once the server has checked it. */
-export async function uploadFile(projectSlug: string, file: File): Promise<{ mediaId: string; name: string; size: number } | { error: string }> {
+/** Uploads a file attachment or a video (articles) straight to media storage; it's ready once the server has checked it. A video has its `src`. */
+export async function uploadFile(projectSlug: string, file: File): Promise<{ mediaId: string; name: string; size: number; src?: string } | { error: string }> {
   const created = await createUpload(projectSlug, { name: file.name, type: file.type, size: file.size });
   if ("error" in created) {
     return created;
@@ -50,5 +50,5 @@ export async function uploadFile(projectSlug: string, file: File): Promise<{ med
     return { error: "The upload failed. Try again." };
   }
   const finished = await finishUpload(created.mediaId);
-  return finished.error ? { error: finished.error } : { mediaId: created.mediaId, name: created.name ?? file.name, size: file.size };
+  return finished.error ? { error: finished.error } : { mediaId: created.mediaId, name: created.name ?? file.name, size: file.size, src: finished.src };
 }

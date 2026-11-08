@@ -1,12 +1,13 @@
 import type { JSONContent } from "@tiptap/core";
 
 import { isSafeLink, isVideo, videoPageUrl } from "./links";
-import { emailImageKey, fileKey, imageKey, imageWidths } from "./media";
+import { emailImageKey, fileKey, imageKey, imageWidths, videoKey } from "./media";
 import {
   IMAGE_ALIGNMENTS,
   IMAGE_SIZES,
   isCellSpan,
   isCodeFilename,
+  isHostedVideo,
   isMediaId,
   isPixelSize,
   MAX_ALT_LENGTH,
@@ -58,7 +59,8 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
 
   let error: string | undefined;
   visit(doc, (node) => {
-    if (node.type === "video" && !isVideo(node.attrs ?? {})) {
+    // Uploaded videos go in articles (the team's): only they have uploads to play.
+    if (node.type === "video" && !isVideo(node.attrs ?? {}) && !(profile === "article" && isHostedVideo(node.attrs ?? {}))) {
       error = "Only YouTube, Vimeo and Loom videos can be embedded.";
     }
     if (node.type === "image" && !isImageAttrs(node.attrs ?? {})) {
@@ -123,18 +125,21 @@ function isFileAttrs(attrs: Record<string, unknown>): boolean {
   );
 }
 
-/** Ids of the uploads (images and file attachments) in a document, for checking and attaching them. */
+/** Ids of the uploads (images, file attachments and uploaded videos) in a document, for checking and attaching them. */
 export function mediaIdsIn(doc: JSONContent): string[] {
   const ids = new Set<string>();
   visit(doc, (node) => {
     if ((node.type === "image" || node.type === "file") && isMediaId(node.attrs?.mediaId)) {
       ids.add(node.attrs.mediaId);
     }
+    if (node.type === "video" && isHostedVideo(node.attrs ?? {})) {
+      ids.add(node.attrs!.id as string);
+    }
   });
   return [...ids];
 }
 
-/** The stored files the images in a document show (every size, and the email JPEG), to sign their URLs. */
+/** The stored files a document shows in place: its images' (every size, and the email JPEG) and uploaded videos', to sign their URLs. */
 export function imageKeysIn(doc: JSONContent): string[] {
   const keys = new Set<string>();
   visit(doc, (node) => {
@@ -143,8 +148,22 @@ export function imageKeysIn(doc: JSONContent): string[] {
       imageWidths(w).forEach((width) => keys.add(imageKey(mediaId, width)));
       keys.add(emailImageKey(mediaId));
     }
+    if (node.type === "video" && isHostedVideo(node.attrs ?? {})) {
+      keys.add(videoKey(node.attrs!.id as string));
+    }
   });
   return [...keys];
+}
+
+/** The ids of a document's uploaded videos. */
+export function hostedVideoIdsIn(doc: JSONContent): string[] {
+  const ids: string[] = [];
+  visit(doc, (node) => {
+    if (node.type === "video" && isHostedVideo(node.attrs ?? {})) {
+      ids.push(node.attrs!.id as string);
+    }
+  });
+  return ids;
 }
 
 /** Sets attributes of every image node, e.g. its real size from the upload. */

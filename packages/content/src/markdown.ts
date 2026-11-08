@@ -2,8 +2,8 @@ import type { JSONContent } from "@tiptap/core";
 
 import { docHeadings, type Heading, tocEntries } from "./document";
 import { isSafeLink, isVideo, type Video, videoPageUrl } from "./links";
-import { fileKey, imageKey, imageWidths, type MediaUrls } from "./media";
-import { isCellSpan, isCodeFilename, isMediaId, isPixelSize } from "./profiles";
+import { fileKey, imageKey, imageWidths, type MediaUrls, videoKey } from "./media";
+import { isCellSpan, isCodeFilename, isHostedVideo, isMediaId, isPixelSize } from "./profiles";
 
 /**
  * `media`: where to load images from (by key); `flat`: one line (table cells), so hard breaks become spaces;
@@ -134,8 +134,12 @@ function block(node: JSONContent, ctx: Context): string {
       return tocEntries(ctx.headings ?? [])
         .flatMap((entry) => [entry, ...entry.children].map((h, i) => `${i ? "  " : ""}- [${escape(h.text.replace(/\s+/g, " "))}](#${h.id})`))
         .join("\n");
-    case "video":
-      return isVideo(node.attrs ?? {}) ? `[Video](${videoPageUrl(node.attrs as Video)})` : "";
+    case "video": {
+      const video = node.attrs ?? {};
+      // An uploaded one links to its file, where it has one (uploads set up).
+      const url = isHostedVideo(video) ? ctx.media?.[videoKey(video.id)] : isVideo(video) && videoPageUrl(video as Video);
+      return url ? `[Video](${linkTarget(url)})` : "";
+    }
     default:
       return "";
   }

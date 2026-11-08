@@ -26,6 +26,8 @@ import {
   type Profile,
   TableOfContents,
   UPLOAD_FILE_TYPES,
+  UPLOAD_VIDEO_TYPES,
+  videoKey,
 } from "@tuti/content";
 import { cn } from "cn";
 import {
@@ -63,8 +65,8 @@ import { Input } from "@/components/ui/input";
 import { EditorTableOfContents } from "@/components/rich-editor-toc";
 import { uploadFile, uploadImage } from "@/lib/upload-image";
 
-/** What the file picker offers for attachments (the server checks each file too). */
-const FILE_ACCEPT = Object.keys(UPLOAD_FILE_TYPES)
+/** What the file picker offers for attachments and videos (the server checks each file too). */
+const FILE_ACCEPT = [...Object.keys(UPLOAD_FILE_TYPES), ...Object.keys(UPLOAD_VIDEO_TYPES)]
   .map((extension) => `.${extension}`)
   .join(",");
 
@@ -183,6 +185,10 @@ export function RichEditor({
       setAttaching((n) => n - 1);
       if ("error" in result) {
         setUploadError(result.error);
+      } else if (result.src) {
+        // A video: played where it's added.
+        mediaUrls.set(videoKey(result.mediaId), result.src);
+        editor.chain().focus().setVideo({ provider: "upload", id: result.mediaId }).run();
       } else {
         editor.chain().focus().setFile(result).run();
       }
@@ -493,7 +499,7 @@ const SLASH_HINTS: Record<Profile, string> = {
 const STEP_HINT = "Type / for lists, code and images";
 /** Without uploads (no media storage set up), there's no Image in the menu. */
 const STEP_HINT_NO_IMAGES = "Type / for lists and code";
-const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Code tabs", "Image", "File"]);
+const STEP_BLOCKS = new Set(["Bulleted list", "Numbered list", "Code block", "Code tabs", "Image", "Video", "Upload video", "File"]);
 
 type Block = { label: string; icon: LucideIcon; run: () => void };
 
@@ -533,6 +539,8 @@ function blocks(editor: Editor, profile: Profile, onPrompt: (kind: Prompt) => vo
     ...(long ? [{ label: "Divider", icon: MinusIcon, run: () => chain().setHorizontalRule().run() }] : []),
     ...(onImage ? [{ label: "Image", icon: ImageIcon, run: onImage }] : []),
     { label: "Video", icon: VideoIcon, run: () => onPrompt("video") },
+    // The file picker, which takes videos too (MP4, WebM, MOV): they're played in place.
+    ...(onFile ? [{ label: "Upload video", icon: VideoIcon, run: onFile }] : []),
     ...(onFile ? [{ label: "File", icon: PaperclipIcon, run: onFile }] : []),
   ];
   return editor.isActive("step") ? all.filter((block) => STEP_BLOCKS.has(block.label)) : all;
