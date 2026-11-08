@@ -413,6 +413,16 @@ test("on a page still loading, its panel and button go in once the page is parse
   reloaded.press("Escape");
   expect(reloaded.panel.style.display).toBe("none");
   expect(reloaded.document.activeElement).toBe(help);
+
+  // Parsed but before DOMContentLoaded (the page's defer and module scripts running), its panel isn't in yet either.
+  const parsed = loadWidget({ motion: "reduced", before: (page) => Object.assign(page.document, { readyState: "loading" }) });
+  await settled();
+  Object.assign(parsed.document, { readyState: "interactive" });
+  parsed.Tuti.open();
+  expect(parsed.panel).toBeUndefined();
+  parsed.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
+  expect(parsed.panel.style.display).toBe("block");
+  expect(parsed.document.activeElement).toBe(parsed.frame);
 });
 
 test("the portal's own tag (data-on-portal): the panel is the page's own address, and it says so when it asks for the settings", async () => {

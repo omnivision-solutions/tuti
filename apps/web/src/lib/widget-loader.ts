@@ -128,8 +128,19 @@ export function widgetLoader(portalTemplate: string): string {
   // Once the page is parsed, not just begun: elements added to a body still loading land among the page's own, before the
   // rest of it, where a page that hydrates (React) takes them for its own (a div for its div), fails, and removes them. An
   // async tag runs that early when the browser has it already, and React puts its async scripts in the head.
+  // Queued on the loader's own state, not readyState: that's "interactive" before DOMContentLoaded (while the page's
+  // defer and module scripts run, which may open the panel), when the panel isn't in the page yet.
+  var placed = document.readyState !== "loading";
+  var queued = [];
+  if (!placed) {
+    document.addEventListener("DOMContentLoaded", function () {
+      placed = true;
+      for (var i = 0; i < queued.length; i++) queued[i]();
+      queued = [];
+    });
+  }
   function whenBody(fn) {
-    if (document.readyState !== "loading") fn(); else document.addEventListener("DOMContentLoaded", fn);
+    if (placed) fn(); else queued.push(fn);
   }
 
   // The launcher: a round button with an icon; its name is for screen readers and its tooltip.
