@@ -197,11 +197,16 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
         iframe.remove();
       }
     }
-    // An uploaded video: copied below (articles), its first source if it has several.
+    // An uploaded video: copied below (articles), its first source if it has several. Only the placeholders made here
+    // are videos to copy: one written into the HTML itself is only its content.
+    all("tuti-video").forEach((element) => element.replaceWith(...element.childNodes));
+    const videos = new Set<Element>();
     for (const video of all("video")) {
       const src = video.getAttribute("src") ?? video.querySelector("source")?.getAttribute("src") ?? "";
       if (article && src) {
-        video.replaceWith(make("tuti-video", { src }));
+        const placeholder = make("tuti-video", { src });
+        videos.add(placeholder);
+        video.replaceWith(placeholder);
       } else {
         leftOut.push({ kind: "video", url: src, reason: "unsupported" });
         video.remove();
@@ -254,7 +259,7 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
       const url = element.getAttribute("src") ?? "";
       const key = sameFile(url);
       const type = element.getAttribute("data-featurebase-content-filetype");
-      const kind = element.tagName === "TUTI-VIDEO" ? "video" : element.tagName === "IMG" || type?.startsWith("image/") ? "image" : "file";
+      const kind = videos.has(element) ? "video" : element.tagName === "IMG" || type?.startsWith("image/") ? "image" : "file";
       const name = kind !== "image" ? (element.getAttribute("data-featurebase-content-filename") ?? fileName(url)) : undefined;
       const alt = (element.getAttribute("alt") ?? "").trim().slice(0, MAX_ALT_LENGTH);
       const leaveOut = (reason: LeftOutReason) => {
@@ -263,7 +268,8 @@ export async function htmlToContent(profile: Profile, html: string, { media, lin
         const words = kind === "image" ? alt : kind === "file" ? (name ?? "") : "";
         element.replaceWith(...(words ? [make("p", {}, words)] : []));
       };
-      if (kind === "file" && !article) {
+      // Files and videos go in articles only.
+      if (kind !== "image" && !article) {
         leaveOut("unsupported");
         continue;
       }

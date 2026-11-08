@@ -148,6 +148,18 @@ describe("Featurebase's blocks", () => {
     expect(result.leftOut).toEqual([]);
   });
 
+  test("a <tuti-video> written into the HTML is only its content: nothing is copied, in any profile", async () => {
+    const html = '<p>Hi</p><tuti-video src="https://files.example.com/huge.mp4">words</tuti-video>';
+    for (const profile of ["comment", "post", "changelog", "article"] as const) {
+      const { media, copied } = fakeMedia();
+      const result = await convert(profile, html, { media });
+      expect(copied).toEqual([]);
+      expect(result.mediaIds).toEqual([]);
+      expect(result.leftOut).toEqual([]);
+      expect(result.text).toBe("Hi\nwords");
+    }
+  });
+
   test("an uploaded video that can't be copied, or outside an article, is left out and counted", async () => {
     const html = '<p>Watch</p><video src="https://files.example.com/demo.mp4"></video>';
     const tooBig = await convert("article", html, { media: async () => ({ leftOut: "size" }) });
