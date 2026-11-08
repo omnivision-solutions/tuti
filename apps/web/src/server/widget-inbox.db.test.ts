@@ -10,7 +10,7 @@ import { mailSubdomain, supportAddress } from "./inbound";
 import { replyToConversation, startConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
-import { notifyInboxNow, subscribeInbox } from "./live";
+import { listening, notifyInboxNow, subscribeInbox } from "./live";
 import { widgetConversation, widgetConversations, widgetHere, widgetSendMessage, widgetStartConversation } from "./widget-inbox";
 import { hears, widgetPerson } from "./widget-person";
 
@@ -272,8 +272,8 @@ test("the total unseen count includes conversations older than the latest 50 the
 
 test("the shown panel saying they're here makes them online, and tells the team's pages once", async () => {
   const { project, auth } = await setup();
-  // Markers of our own: one heard means the listener's connected; and since NOTIFYs arrive in the
-  // order they're sent, once the last one's heard, so is everything before it.
+  // Subscribed once the listener is listening, so they hear only real changes. A marker of our own:
+  // NOTIFYs arrive in the order they're sent, so once the last one's heard, so is everything before it.
   const marker = (conversationId: string) => notifyInboxNow({ projectId: project.id, conversationId, userId: null, visitorHash: null });
   const heardOf = (wants: (conversationId: string) => boolean) => {
     const heard: number[] = [];
@@ -281,14 +281,10 @@ test("the shown panel saying they're here makes them online, and tells the team'
     return heard;
   };
   const stops: (() => void)[] = [];
-  const connected = heardOf((id) => id === "connected");
+  await listening();
   const last = heardOf((id) => id === "last");
-  const heard = heardOf((id) => id !== "connected" && id !== "last");
+  const heard = heardOf((id) => id !== "last");
   try {
-    await vi.waitFor(async () => {
-      await marker("connected");
-      expect(connected.length).toBeGreaterThan(0);
-    });
     expect(await widgetHere(project.slug, auth)).toEqual({});
     expect(await widgetHere(project.slug, auth)).toEqual({});
     await marker("last");

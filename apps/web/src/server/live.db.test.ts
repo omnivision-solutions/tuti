@@ -1,9 +1,9 @@
-import { prisma } from "@tuti/db";
+import { listen, prisma } from "@tuti/db";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
 
-import { type InboxChange, notifyInbox, subscribeInbox } from "./live";
+import { type InboxChange, listening, notifyInbox, subscribeInbox } from "./live";
 import { createConversation, replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
@@ -13,8 +13,9 @@ import { upsertProjectUser } from "./project-users";
 const subscriptions: (() => void)[] = [];
 afterEach(() => subscriptions.splice(0).forEach((stop) => stop()));
 
-/** What a subscriber with `wants` hears, as a list that fills as changes arrive. */
-function hear(wants: (change: InboxChange) => boolean) {
+/** What a subscriber with `wants` hears, as a list that fills as changes arrive: from once the listener is listening, so only real changes. */
+async function hear(wants: (change: InboxChange) => boolean) {
+  await listening();
   const heard: number[] = [];
   subscriptions.push(subscribeInbox(wants, () => heard.push(Date.now())));
   return heard;
@@ -29,21 +30,28 @@ async function setup() {
   return { project, key };
 }
 
-// First in the file: the instance's listener starts with this test's stream.
-test("a stream opened before the instance is listening hears of a change once it is: what changed till then went unheard", async () => {
-  const { project } = await setup();
-  const team = hear((change) => change.projectId === project.id);
-  await vi.waitFor(() => expect(team).toHaveLength(1), { timeout: 4_000 });
+test("a listener says when it's listening, the first time too, so streams opened before then catch up: a NOTIFY sent then arrives", async () => {
+  // Its own connection and channel, whatever else this process listens to.
+  const channel = `e2e_listen_${Date.now()}`;
+  const payloads: string[] = [];
+  let stop = async () => {};
+  await new Promise<void>((listening) => {
+    stop = listen(channel, { onPayload: (payload) => payloads.push(payload), onListening: listening });
+  });
+  try {
+    await prisma.$executeRaw`SELECT pg_notify(${channel}, 'sent')`;
+    await vi.waitFor(() => expect(payloads).toEqual(["sent"]));
+  } finally {
+    await stop();
+  }
 });
 
 test("the team hears of its own project's changes only, and a user of their own conversations only", async () => {
   const first = await setup();
   const second = await setup();
   const sam = await upsertProjectUser(first.project.id, "user-42", { name: "Sam" });
-  const team = hear((change) => change.projectId === first.project.id);
-  const samsWidget = hear((change) => change.projectId === first.project.id && change.userId === sam);
-  // Let the listener connect before anything changes.
-  await settle();
+  const team = await hear((change) => change.projectId === first.project.id);
+  const samsWidget = await hear((change) => change.projectId === first.project.id && change.userId === sam);
 
   await call(createConversation, first.key, { user: { id: "user-42" }, body: "Help" });
   await call(createConversation, first.key, { email: "e2e-other@example.com", body: "Me too" });
@@ -59,8 +67,7 @@ test("the team hears of its own project's changes only, and a user of their own 
 
 test("a change that rolls back tells nobody", async () => {
   const { project } = await setup();
-  const team = hear((change) => change.projectId === project.id);
-  await settle();
+  const team = await hear((change) => change.projectId === project.id);
   await expect(
     prisma.$transaction(async (tx) => {
       await notifyInbox(tx, { projectId: project.id, conversationId: "none", userId: null, visitorHash: null });

@@ -3,7 +3,8 @@ import pg from "pg";
 /**
  * Listens on a Postgres NOTIFY channel with its own connection (Prisma's pool can't hold one open).
  * `onListening` runs each time the connection starts listening, the first time too: notifications
- * before then (since the caller last read, or during a drop) were lost, so listeners should catch up. Returns a function that stops listening.
+ * before then (since the caller last read, or during a drop) were lost, so listeners should catch up.
+ * It mustn't throw: the caller keeps its own errors. Returns a function that stops listening.
  */
 export function listen(
   channel: string,
@@ -34,10 +35,12 @@ export function listen(
       await next.connect();
       // The channel is ours, a constant: quoted as an identifier.
       await next.query(`LISTEN "${channel.replace(/"/g, '""')}"`);
-      onListening();
     } catch {
       retry();
+      return;
     }
+    // Outside the try: the connection is healthy, whatever the listeners do.
+    onListening();
   };
   void connect();
 
