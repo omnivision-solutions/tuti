@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
 
-import { type InboxChange, listening, notifyInbox, subscribeInbox } from "./live";
+import { type InboxChange, listening, notifyInbox, notifyInboxNow, subscribeInbox } from "./live";
 import { createConversation, replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
@@ -76,4 +76,24 @@ test("a change that rolls back tells nobody", async () => {
   ).rejects.toThrow("Rolled back");
   await settle();
   expect(team).toEqual([]);
+});
+
+test("a stream that throws as it's told (closing) doesn't stop the others hearing, then or later", async () => {
+  const { project } = await setup();
+  const change = { projectId: project.id, conversationId: "any", userId: null, visitorHash: null };
+  await listening();
+  // Told first: subscribers are told in the order they came.
+  subscriptions.push(
+    subscribeInbox(
+      (c) => c.projectId === project.id,
+      () => {
+        throw new Error("Closing");
+      },
+    ),
+  );
+  const team = await hear((c) => c.projectId === project.id);
+  await notifyInboxNow(change);
+  await vi.waitFor(() => expect(team).toHaveLength(1));
+  await notifyInboxNow(change);
+  await vi.waitFor(() => expect(team).toHaveLength(2));
 });
