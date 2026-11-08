@@ -125,8 +125,30 @@ export function widgetLoader(portalTemplate: string): string {
   function css(el, styles) {
     for (var key in styles) el.style[key] = styles[key];
   }
+  // Once the page is parsed, not just begun: elements added to a body still loading land among the page's own, before the
+  // rest of it, where a page that hydrates (React) takes them for its own (a div for its div), fails, and removes them. An
+  // async tag runs that early when the browser has it already, and React puts its async scripts in the head.
+  // Queued on the loader's own state, not readyState: that's "interactive" before DOMContentLoaded (while the page's
+  // defer and module scripts run, which may open the panel), when the panel isn't in the page yet.
+  var placed = document.readyState !== "loading";
+  var queued = [];
+  if (!placed) {
+    document.addEventListener("DOMContentLoaded", function () {
+      placed = true;
+      var waiting = queued;
+      queued = [];
+      // Each on its own: one that throws (reported, not swallowed) doesn't keep the rest from running.
+      for (var i = 0; i < waiting.length; i++) {
+        try {
+          waiting[i]();
+        } catch (error) {
+          setTimeout(function () { throw error; });
+        }
+      }
+    });
+  }
   function whenBody(fn) {
-    if (document.body) fn(); else document.addEventListener("DOMContentLoaded", fn);
+    if (placed) fn(); else queued.push(fn);
   }
 
   // The launcher: a round button with an icon; its name is for screen readers and its tooltip.
@@ -747,10 +769,11 @@ export function widgetLoader(portalTemplate: string): string {
     var element = target && target.closest ? target.closest("[data-tuti-article]") : null;
     if (!element) return;
     event.preventDefault();
-    open({ article: element.getAttribute("data-tuti-article") }, element);
+    // On a page still loading, once its panel is in it, as Tuti.open.
+    whenBody(function () { open({ article: element.getAttribute("data-tuti-article") }, element); });
   });
   document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") close();
+    if (event.key === "Escape") whenBody(function () { close(); });
   });
 
   // Inline: the panel in each of the page's data-tuti-inline elements, at the tab it names, also in
@@ -819,11 +842,13 @@ export function widgetLoader(portalTemplate: string): string {
       }
     },
     // \`returnFocus\` (the portal's own): where focus goes back to on closing, for a panel opened from a dialog of the page's.
+    // On a page still loading, once its panel is in it (whenBody runs them in order), so focus and covering the page work.
     open: function (options) {
       var back = options && options.returnFocus;
-      open(options, back && back.nodeType === 1 && document.contains(back) ? back : document.activeElement);
+      var from = back && back.nodeType === 1 && document.contains(back) ? back : document.activeElement;
+      whenBody(function () { open(options, from); });
     },
-    close: function () { close(); },
+    close: function () { whenBody(function () { close(); }); },
     // Light, dark or auto (the project's colour scheme), for sites that switch theirs without a reload.
     setTheme: function (value) {
       if (!isTheme(value)) return;

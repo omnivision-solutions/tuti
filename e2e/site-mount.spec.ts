@@ -90,7 +90,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   // links keeping the path: the journey below).
   await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("data-on-portal", "/portal");
   // At an address of its own there, so no browser's copy of an older loader (which didn't read the path) runs it.
-  await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("src", /\/widget\.js\?v=2$/);
+  await expect(visitor.locator("script[data-on-portal]")).toHaveAttribute("src", /\/widget\.js\?v=3$/);
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${siteUrl()}/portal/widget`);
   const panel = visitor.frameLocator('iframe[title="Feedback"]').getByRole("navigation", { name: "Widget" });

@@ -149,6 +149,8 @@ test("the team writes install steps as code tabs and a config file as named code
   await expect(naming.getByRole("textbox")).toHaveValue("npm");
   await naming.getByRole("button", { name: "Save" }).click();
   await expect(naming).toBeHidden();
+  // Back in the text (a frame later, putting its cursor back): a click before then would be undone.
+  await expect(editor).toBeFocused();
   await expect
     .poll(() => editor.locator("[data-code-tabs] pre").evaluateAll((tabs) => tabs.map((tab) => tab.dataset.filename)))
     .toEqual(["npm", "pnpm", "yarn"]);

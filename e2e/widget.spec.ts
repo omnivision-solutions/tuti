@@ -1947,14 +1947,16 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await visitor.addInitScript(() => {
     new MutationObserver((_, observer) => {
       if (document.querySelector("[data-widget-scroll]")) {
-        (window as unknown as { firstClass: string }).firstClass = document.documentElement.className;
+        document.documentElement.setAttribute("data-first-class", document.documentElement.className);
         observer.disconnect();
       }
     }).observe(document, { childList: true, subtree: true });
   });
   const inlineFrame = visitor.frames().find((frame) => frame.name() === "tuti-inline:dark")!;
   await inlineFrame.evaluate(() => location.reload());
-  await expect.poll(() => inlineFrame.evaluate(() => (window as unknown as { firstClass?: string }).firstClass ?? "")).toMatch(/\bdark\b/);
+  // On the page, not read with evaluate: one that runs while the old page goes throws (the panel's page navigates
+  // in place as well), and a poll doesn't retry a throw. Only a page loaded after the script was added has it.
+  await expect(html).toHaveAttribute("data-first-class", /\bdark\b/);
   await expect(html).toHaveClass(/\bdark\b/);
   await checkpoint(visitor, "widget-inline-dark");
   await visitor.getByRole("button", { name: "Feedback" }).click();
@@ -1994,9 +1996,8 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await visitor.goto(`${site}?inline=`);
   await expect(themed.getByText("How can we help?")).toBeVisible();
   await expect(html).toHaveClass(/\bdark\b/);
-  // From its first paint, before React runs (firstClass, from the init script above).
-  const projectFrame = visitor.frames().find((frame) => frame.name() === "tuti-inline")!;
-  await expect.poll(() => projectFrame.evaluate(() => (window as unknown as { firstClass?: string }).firstClass ?? "")).toMatch(/\bdark\b/);
+  // From its first paint, before React runs (data-first-class, from the init script above).
+  await expect(html).toHaveAttribute("data-first-class", /\bdark\b/);
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await expect(floating.getByText("How can we help?")).toBeVisible();
   await expect(floating.locator("html")).toHaveClass(/\bdark\b/);

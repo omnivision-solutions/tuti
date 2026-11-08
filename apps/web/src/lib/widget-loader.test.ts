@@ -60,8 +60,8 @@ class FakeElement {
     (this.listeners[type] ??= []).push(listener);
   }
   focus() {
-    // Nothing hidden takes focus.
-    if (this.ancestors().some((element) => element.style.visibility === "hidden")) return;
+    // Nothing hidden, or not in the page, takes focus.
+    if (this.ancestors().some((element) => element.style.visibility === "hidden") || !this.page.document.contains(this)) return;
     this.page.document.activeElement = this;
   }
   closest(selector: string) {
@@ -384,6 +384,83 @@ test("data-hide-launcher or TutiSettings.hideLauncher leaves the button out; Tut
     // Focus goes back to the page's own button.
     expect(page.document.activeElement).toBe(own);
   }
+});
+
+test("on a page still loading, its panel and button go in once the page is parsed, after the page's own elements", async () => {
+  const page = loadWidget({ motion: "reduced", before: (page) => Object.assign(page.document, { readyState: "loading" }) });
+  const own = page.body.appendChild(new FakeElement("div", page));
+  await settled();
+  // Opened meanwhile, it opens once it's in the page: focus goes into it.
+  page.Tuti.open();
+  expect(page.body.children).toEqual([own]);
+  Object.assign(page.document, { readyState: "interactive" });
+  page.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
+  expect(page.body.children[0]).toBe(own);
+  expect(page.panel.style.display).toBe("block");
+  expect(page.document.activeElement).toBe(page.frame);
+  expect(page.button).toBeDefined();
+
+  // So does a help link clicked meanwhile; Escape then closes it, focus back on the link.
+  const reloaded = loadWidget({ motion: "reduced", before: (page) => Object.assign(page.document, { readyState: "loading" }) });
+  const help = reloaded.body.appendChild(new FakeElement("a", reloaded));
+  help.setAttribute("data-tuti-article", "exporting-your-data");
+  await settled();
+  expect(help.click()).toBe(true);
+  Object.assign(reloaded.document, { readyState: "interactive" });
+  reloaded.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
+  expect(reloaded.panel.style.display).toBe("block");
+  expect(reloaded.document.activeElement).toBe(reloaded.frame);
+  reloaded.press("Escape");
+  expect(reloaded.panel.style.display).toBe("none");
+  expect(reloaded.document.activeElement).toBe(help);
+
+  // Parsed but before DOMContentLoaded (the page's defer and module scripts running), its panel isn't in yet either.
+  const parsed = loadWidget({ motion: "reduced", before: (page) => Object.assign(page.document, { readyState: "loading" }) });
+  await settled();
+  Object.assign(parsed.document, { readyState: "interactive" });
+  parsed.Tuti.open();
+  expect(parsed.panel).toBeUndefined();
+  parsed.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
+  expect(parsed.panel.style.display).toBe("block");
+  expect(parsed.document.activeElement).toBe(parsed.frame);
+});
+
+test("on a page still loading, one queued step that throws doesn't stop the rest: the panel still opens, and the error is reported", async () => {
+  const page = loadWidget({
+    motion: "reduced",
+    before: (page) => {
+      Object.assign(page.document, { readyState: "loading" });
+      // Watching the page for inline mounts (queued between the panel and the open below) fails.
+      page.window.MutationObserver = class {
+        observe() {
+          throw new Error("observe failed");
+        }
+      };
+    },
+  });
+  await settled();
+  page.Tuti.open();
+  // Timers set from here on are kept, not run: the rethrow among them would fail the run.
+  const later: (() => void)[] = [];
+  const timers = vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void) => later.push(callback)) as unknown as typeof setTimeout);
+  Object.assign(page.document, { readyState: "interactive" });
+  try {
+    page.documentListeners.DOMContentLoaded?.forEach((listener) => listener({}));
+  } finally {
+    timers.mockRestore();
+  }
+  expect(page.panel.style.display).toBe("block");
+  expect(page.document.activeElement).toBe(page.frame);
+  // Thrown again on its own, for the page's error reporting.
+  const rethrow = later.find((callback) => {
+    try {
+      callback();
+    } catch (error) {
+      return (error as Error).message === "observe failed";
+    }
+    return false;
+  });
+  expect(rethrow).toBeDefined();
 });
 
 test("the portal's own tag (data-on-portal): the panel is the page's own address, and it says so when it asks for the settings", async () => {
