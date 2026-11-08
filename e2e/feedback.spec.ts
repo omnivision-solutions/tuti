@@ -1453,6 +1453,8 @@ test("Feedback's picked rows: one that can't be done (merged meanwhile) is said,
   }
   // Dark theme (#3) has a vote: it's the one kept.
   await api("/posts/3/vote", { voted: true, author: { id: "user-1" } });
+  // The live stream never opens: opening, it refreshes the page, which could land after the merge below.
+  await team.route("**/api/live?*", () => {});
   await team.goto(`/app/${slug}/feedback?status=all`);
   for (const title of ["Dark mode", "Night theme", "Dark theme"]) {
     await team.getByRole("checkbox", { name: `Select ${title}` }).check();
