@@ -30,16 +30,21 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   // What each part brings from Ferndesk: its users have no company; its conversations are the AI's.
   await expect(owner.getByText("Your help center's users, with their attributes, as Users.")).toBeVisible();
   await expect(owner.getByText("Your AI assistant's conversations with readers, closed, as the Inbox.")).toBeVisible();
-  // Picking the help center asks how its published articles come: Ferndesk doesn't say which were private, so drafts to begin with.
-  const publishAs = owner.getByRole("radiogroup", { name: "Articles published in Ferndesk" });
+  // Picking the help center or the changelog asks how their published articles and entries come: Ferndesk doesn't say
+  // which were private, so drafts to begin with.
+  const publishAs = owner.getByRole("radiogroup", { name: "Articles and changelog entries published in Ferndesk" });
+  await owner.getByRole("checkbox", { name: /^Changelog/ }).uncheck();
   await expect(publishAs).toHaveCount(0);
+  await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
+  await expect(publishAs).toBeVisible();
   await owner.getByRole("checkbox", { name: /^Help center/ }).check();
   await owner.getByRole("checkbox", { name: /^Inbox/ }).check();
-  await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
-  await expect(publishAs.getByText("Ferndesk doesn't tell Tuti which articles only some people could read, so bringing them as published could put internal ones live.")).toBeVisible();
+  await expect(
+    publishAs.getByText("Ferndesk doesn't tell Tuti which articles and changelog entries only some people could read, so bringing them as published could put internal ones live."),
+  ).toBeVisible();
   await expect(publishAs.getByRole("radio", { name: /^As drafts/ })).toBeChecked();
   await checkpoint(owner, "setup-ferndesk");
-  // This team's help center is all public.
+  // This team's help center and changelog are all public.
   await publishAs.getByRole("radio", { name: /^As published/ }).check();
 
   // A key Ferndesk refuses: said under the field, nothing started.

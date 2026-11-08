@@ -257,7 +257,7 @@ test("the changelog comes across: entries oldest first, a page at a time, publis
   // One to a list page and two to an import page, so both are read past their first.
   fake.pageSize = 1;
   CHANGELOG_PAGE.entries = 2;
-  const done = await importParts(["changelog"]);
+  const done = await importParts(["changelog"], { publishArticles: true });
   expect(done).toMatchObject({ state: "done", counts: { changelogEntries: { imported: 3, leftOut: {} }, changelogImages: { imported: 1, leftOut: {} } } });
   expect(importSummary(done)).toBe("3 changelog entries, 1 image in the changelog brought across.");
   expect(await entries()).toEqual([
@@ -271,10 +271,23 @@ test("the changelog comes across: entries oldest first, a page at a time, publis
   expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(0);
   expect(mailbox.emails.length).toBe(emailed);
 
-  const again = await importParts(["changelog"]);
+  const again = await importParts(["changelog"], { publishArticles: true });
   expect(again.counts).toMatchObject({ changelogEntries: { imported: 0, leftOut: { "already brought across earlier": 3 } } });
   expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(3);
   expect(await prisma.media.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("by default, changelog entries published in Ferndesk come as drafts for the team to check and publish, with their dates: Ferndesk doesn't say who could read them", async () => {
+  const done = await importParts(["changelog"]);
+  expect(done.counts).toMatchObject({ changelogEntries: { imported: 1, leftOut: {} }, heldEntries: { imported: 2, leftOut: {} } });
+  expect(importSummary(done)).toBe("1 changelog entry, 2 changelog entries as drafts (published there; publish them once you've checked them), 1 image in the changelog brought across.");
+  expect(
+    await prisma.changelogEntry.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { title: true, publishedAt: true, createdAt: true } }),
+  ).toEqual([
+    { title: "Exports", publishedAt: null, createdAt: new Date("2024-04-03T09:00:00.000Z") },
+    { title: "Faster search", publishedAt: null, createdAt: new Date("2024-04-10T15:00:00.000Z") },
+    { title: "Single sign-on (beta)", publishedAt: null, createdAt: new Date("2024-04-12T09:00:00.000Z") },
+  ]);
 });
 
 test("one who never verified their address in Ferndesk isn't matched to the user here who has it: anyone can type any address", async () => {

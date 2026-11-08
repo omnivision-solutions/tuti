@@ -47,7 +47,7 @@ export const IMPORT_PARTS = {
     media: true,
     see: { label: "See changelog", page: "changelog" },
     steps: { changelog: "Changelog" },
-    kinds: ["changelogEntries", "changelogImages", "changelogFiles", "changelogVideos", "changelogComments"],
+    kinds: ["changelogEntries", "heldEntries", "changelogImages", "changelogFiles", "changelogVideos", "changelogComments"],
   },
   docs: {
     label: "Help center",
@@ -292,6 +292,7 @@ const KINDS: Record<string, [string, string]> = {
   oldAddresses: ["old address redirected", "old addresses redirected"],
   notRedirected: ["old address", "old addresses"],
   changelogEntries: ["changelog entry", "changelog entries"],
+  heldEntries: ["changelog entry as a draft (published there; publish it once you've checked it)", "changelog entries as drafts (published there; publish them once you've checked them)"],
   // The changelog's, counted apart from feedback's and the help center's.
   changelogImages: ["image in the changelog", "images in the changelog"],
   changelogFiles: ["file in the changelog", "files in the changelog"],

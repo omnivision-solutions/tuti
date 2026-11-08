@@ -153,7 +153,9 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
         }
         const { changelogCount: number } = await tx.project.update({ where: { id: job.projectId }, data: { changelogCount: { increment: 1 } }, select: { changelogCount: true } });
         const date = dateOf(entry.date) ?? dateOf(entry.createdAt) ?? new Date();
-        const publishedAt = entry.state === "live" ? date : null;
+        // Published there, from a source that can't say who could read it, with drafts asked for: a draft to check and publish.
+        const held = entry.state === "live" && !job.publishArticles;
+        const publishedAt = entry.state === "live" && !held ? date : null;
         const created = await tx.changelogEntry.create({
           data: {
             projectId: job.projectId,
@@ -178,7 +180,7 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
         if (entry.emailSentToSubscribers) {
           await tx.importedRecord.create({ data: { projectId: job.projectId, source: job.source, kind: "changelog-emailed", externalId: entry.id, localId: created.id } });
         }
-        tally(job.counts, "changelogEntries", null);
+        tally(job.counts, held ? "heldEntries" : "changelogEntries", null);
         // Images only (the changelog takes no files), each once: a cover that's also in the text too.
         const copies = new Set([...content.mediaIds, ...(cover && "mediaId" in cover ? [cover.mediaId] : [])]);
         if (copies.size > 0) {

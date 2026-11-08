@@ -37,7 +37,7 @@ export type ImportJob = {
   startedById: string | null;
   read: ImportReaders;
   counts: ImportCounts;
-  /** Whether articles published in the source come published (DataImport.publishArticles), else as drafts. */
+  /** Whether articles and changelog entries published in the source come published (DataImport.publishArticles), else as drafts. */
   publishArticles: boolean;
   /** Whether posts come as they were (DataImport.publicPosts), else onto Private boards, each post Private. */
   publicPosts: boolean;
