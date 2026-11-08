@@ -8,13 +8,13 @@ const POLL_MS = 10_000;
 
 /**
  * Keeps the project's pages current with its support inbox (/api/live): a change refreshes the page's
- * server components (lists, counts, the conversation), and so does reconnecting, since changes
- * meanwhile were missed. Where the stream keeps failing, it refreshes every 10 seconds instead.
+ * server components (lists, counts, the conversation), and so does the stream opening or reopening,
+ * since changes from the page's render (or the drop) until then were missed. Where the stream keeps
+ * failing, it refreshes every 10 seconds instead.
  */
 export function LiveRefresh({ projectSlug }: { projectSlug: string }) {
   const router = useRouter();
   useEffect(() => {
-    let opened = false;
     let soon: ReturnType<typeof setTimeout> | undefined;
     let polling: ReturnType<typeof setInterval> | undefined;
     // Several changes at once make one refresh.
@@ -26,11 +26,7 @@ export function LiveRefresh({ projectSlug }: { projectSlug: string }) {
     source.addEventListener("ready", () => {
       clearInterval(polling);
       polling = undefined;
-      // The page is fresh the first time; after a reconnect, it may have missed something.
-      if (opened) {
-        refresh();
-      }
-      opened = true;
+      refresh();
     });
     source.addEventListener("change", refresh);
     source.addEventListener("error", () => {

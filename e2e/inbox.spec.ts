@@ -1279,10 +1279,18 @@ test("a conversation opened beside the list is at its newest message when it's f
 
 test("Needs reply lists the latest message first, as every view does: a new message takes its conversation to the top", async ({ browser }) => {
   const { slug, owner, api, list } = await twoConversations(browser);
+  // The live stream opens only once Sam has written again, after the page rendered: opening, it refreshes the list.
+  let open!: () => void;
+  const opened = new Promise<void>((done) => (open = done));
+  await owner.route(/\/api\/live\?/, async (route) => {
+    await opened;
+    await route.fallback();
+  });
   await owner.goto(`/app/${slug}/inbox`);
   await expect(list.getByRole("link")).toHaveText([/e2e-asker/, /Sam Smith/]);
   // Sam, who wrote first, writes again: the list's live refresh puts Sam at the top.
   await api("/conversations/1/messages", { body: "Any news on the export?", author: { id: "user-42" } });
+  open();
   await expect(list.getByRole("link")).toHaveText([/Sam Smith/, /e2e-asker/]);
 });
 

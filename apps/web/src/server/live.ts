@@ -1,4 +1,5 @@
 import { INBOX_CHANNEL as CHANNEL, listen, type Prisma, prisma } from "@tuti/db";
+import { log } from "@tuti/shared";
 
 /**
  * Live updates for the support inbox (docs/plan.md, Support inbox, "Live"): a change commits with a
@@ -31,8 +32,19 @@ export async function notifyInboxNow(change: InboxChange) {
 type Subscriber = { wants: (change: InboxChange) => boolean; changed: () => void };
 
 // One listener and one set of streams per instance (kept across hot reloads in dev).
-const state = globalThis as unknown as { tutiInbox?: { subscribers: Set<Subscriber>; stop: (() => Promise<void>) | null } };
-const inbox = (state.tutiInbox ??= { subscribers: new Set(), stop: null });
+const state = globalThis as unknown as {
+  tutiInbox?: { subscribers: Set<Subscriber>; stop: (() => Promise<void>) | null; listening: Promise<void> | null };
+};
+const inbox = (state.tutiInbox ??= { subscribers: new Set(), stop: null, listening: null });
+
+/** Tells one subscriber; its error (a stream closing as it's told) stays its own, so the others still hear. */
+function tell(subscriber: Subscriber) {
+  try {
+    subscriber.changed();
+  } catch (error) {
+    log.warn("A live stream couldn't take a change", { error });
+  }
+}
 
 function received(payload: string) {
   let change: InboxChange;
@@ -43,26 +55,39 @@ function received(payload: string) {
   }
   for (const subscriber of inbox.subscribers) {
     if (subscriber.wants(change)) {
-      subscriber.changed();
+      tell(subscriber);
     }
   }
 }
 
 /**
  * Calls `changed` for every change `wants` lets through, until the returned function is called.
- * After the listener's connection drops and comes back, every stream hears of "a change", since
- * what changed meanwhile is unknown.
+ * Each time the listener starts listening (the instance's first stream, or after its connection
+ * dropped), every stream hears of "a change", since what changed before then is unknown.
  */
 export function subscribeInbox(wants: Subscriber["wants"], changed: Subscriber["changed"]): () => void {
   const subscriber = { wants, changed };
   inbox.subscribers.add(subscriber);
-  inbox.stop ??= listen(CHANNEL, {
-    onPayload: received,
-    onReconnect: () => inbox.subscribers.forEach((s) => s.changed()),
-  });
+  void listening();
   return () => {
     inbox.subscribers.delete(subscriber);
   };
+}
+
+/** Starts the instance's listener if it hasn't started; resolves once it's first listening, with every stream told. */
+export function listening(): Promise<void> {
+  if (!inbox.listening) {
+    inbox.listening = new Promise((resolve) => {
+      inbox.stop = listen(CHANNEL, {
+        onPayload: received,
+        onListening: () => {
+          inbox.subscribers.forEach(tell);
+          resolve();
+        },
+      });
+    });
+  }
+  return inbox.listening;
 }
 
 /** Comments that keep proxies (Cloudflare closes idle connections after 100 seconds) from dropping a stream. */

@@ -8,7 +8,7 @@ import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
-import { type InboxChange, notifyInboxNow, subscribeInbox } from "./live";
+import { type InboxChange, listening, notifyInboxNow, subscribeInbox } from "./live";
 import { replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { widgetConversation, widgetStartConversation } from "./widget-inbox";
@@ -149,16 +149,12 @@ test("the team's pages hear when a reply is emailed, or fails for good", async (
     return heard;
   };
   const marker = (conversationId: string) => notifyInboxNow({ projectId: project.id, conversationId, userId: null, visitorHash: null });
-  const connected = heardOf(({ conversationId }) => conversationId === "connected");
+  // Once the listener is listening, so they hear only real changes; NOTIFYs arrive in order, so once the last one's heard, so is the job's.
+  await listening();
   const last = heardOf(({ conversationId }) => conversationId === "last");
   // With its address: the widget of whoever's signed in with it hears too (widget-person.ts, hears).
-  const heard = heardOf(({ conversationId, email }) => conversationId !== "connected" && conversationId !== "last" && email === kim);
+  const heard = heardOf(({ conversationId, email }) => conversationId !== "last" && email === kim);
   try {
-    // Listening once a marker's heard; and NOTIFYs arrive in order, so once the last one's heard, so is the job's.
-    await vi.waitFor(async () => {
-      await marker("connected");
-      expect(connected.length).toBeGreaterThan(0);
-    });
     await run();
     await marker("last");
     await vi.waitFor(() => expect(last).toHaveLength(1));
