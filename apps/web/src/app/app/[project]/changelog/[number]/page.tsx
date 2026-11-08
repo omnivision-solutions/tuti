@@ -40,6 +40,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       subscribersEmailedAt: true,
       collecting: true,
       sample: true,
+      importedPublishedAt: true,
       cover: { select: { id: true, status: true, width: true, height: true } },
       posts: { select: { post: { select: { number: true } } } },
       pullRequests: { select: { repo: true, number: true, title: true } },
@@ -74,6 +75,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   // In the text's column it's shown as wide as the column, so not at the sidebar thumbnail's size: the largest stored
   // up to 1600px.
   const cover = lastingImage(entry.cover);
+  // Imported as a draft though published there: publishing keeps that date, quietly (changelog.publish).
+  const importedOn = entry.importedPublishedAt && formatDate(entry.importedPublishedAt);
   const wideCoverUrl = cover && lastingMediaUrl(imageKey(cover.id, imageWidths(cover.width).filter((w) => w <= 1600).at(-1)!));
 
   return (
@@ -106,6 +109,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             subscribersLeft={left}
             emails={emails}
             sample={entry.sample}
+            importedOn={importedOn}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
             unwritten={unwritten}
@@ -150,6 +154,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           subscribersSent: sent,
           emailedFrom: imported ? IMPORT_SOURCES[imported.source.toLowerCase() as ImportSourceKey].name : null,
           sample: entry.sample,
+          importedOn,
           emailPaused: await projectEmailWaits(membership.project.id),
         }}
         subscribers={subscribers}

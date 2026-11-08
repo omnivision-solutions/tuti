@@ -631,7 +631,7 @@ export const updateChangelogStyle = defineOperation({
 export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
   summary:
-    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly. With `emailSubscribers` it's emailed to the changelog's confirmed subscribers (a public portal's), the first time it's published that way only. Sample entries (Home's sample content) are always published quietly, and never emailed",
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly. With `emailSubscribers` it's emailed to the changelog's confirmed subscribers (a public portal's), the first time it's published that way only. Sample entries (Home's sample content) are always published quietly, and never emailed; so is an entry imported as a draft though it was published in the other tool, the first time, and it keeps its date there",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",
@@ -648,22 +648,24 @@ export const publishChangelogEntry = defineOperation({
       // After any merge being added to this (running) draft, and before the next (see lockProject).
       await lockProject(tx, projectId);
       // Sample content (server/sample-content.ts) is never announced, and reaches no webhooks; nor do sample posts it completes.
-      const { sample } = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { sample: true } });
+      const { sample, importedPublishedAt } = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: { sample: true, importedPublishedAt: true } });
+      // Published in the tool it was imported from: old news, so it keeps that date and isn't announced or emailed.
+      const quiet = sample || importedPublishedAt !== null;
       // Only the first publish counts (a repeated call changes nothing).
       const { count } = await tx.changelogEntry.updateMany({
         where: { id: entry.id, publishedAt: null },
         // Published by hand, it stops collecting: the next merge starts a new draft.
         // Its release's notes are written: it no longer waits on the list ("Next release is ready to write").
-        data: { publishedAt: new Date(), collecting: false, releasedAt: null, announced: announce && !sample },
+        data: { publishedAt: importedPublishedAt ?? new Date(), importedPublishedAt: null, collecting: false, releasedAt: null, announced: announce && !quiet },
       });
       if (count === 0) {
         return null;
       }
       // Emailed to subscribers once per entry: never again when it's unpublished and published again. Only from a
       // public portal (a private one's subscribers may not be its readers: changelogEmailed sends nothing there), and
-      // never a sample entry (Home's sample content is for the team to try things with).
+      // never a sample entry (Home's sample content is for the team to try things with) or a quiet imported one.
       const { portalAccess } = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
-      if (emailSubscribers && portalAccess === "PUBLIC" && !sample) {
+      if (emailSubscribers && portalAccess === "PUBLIC" && !quiet) {
         await tx.changelogEntry.updateMany({ where: { id: entry.id, subscribersEmailedAt: null }, data: { subscribersEmailedAt: new Date(), subscribersEmailDueAt: new Date() } });
       }
       // Due now, or still from a publish before (unpublished before they all went): they go now, due from now, so the

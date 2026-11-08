@@ -4,6 +4,7 @@ import { FAKE_FERNDESK_KEY, type FerndeskFake, ferndeskFixtures, type S3Fake, st
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
+import { publishChangelogEntry, unpublishChangelogEntry } from "@/server/operations/changelog";
 import { getImport, startImport } from "@/server/operations/imports";
 import { syncUsersOperation } from "@/server/operations/users";
 import { call } from "@/server/operations/run";
@@ -288,6 +289,22 @@ test("by default, changelog entries published in Ferndesk come as drafts for the
     { title: "Faster search", publishedAt: null, createdAt: new Date("2024-04-10T15:00:00.000Z") },
     { title: "Single sign-on (beta)", publishedAt: null, createdAt: new Date("2024-04-12T09:00:00.000Z") },
   ]);
+});
+
+test("publishing a changelog entry imported as a draft keeps its Ferndesk date, quietly: not announced, not emailed; published again later, it's like any other", async () => {
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email: "e2e-ferndesk-reader@example.com", token: "t", confirmedAt: new Date() } });
+  await importParts(["changelog"]);
+  const published = await call(publishChangelogEntry, asOwner(), { number: 1, announce: true, emailSubscribers: true });
+  expect(published).toMatchObject({ publishedAt: "2024-04-02T00:00:00.000Z", announced: false });
+  expect(await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number: 1 }, select: { importedPublishedAt: true, subscribersEmailedAt: true } })).toEqual({ importedPublishedAt: null, subscribersEmailedAt: null });
+  // Unpublished and published again: news now, announced and emailed as asked.
+  await call(unpublishChangelogEntry, asOwner(), { number: 1 });
+  const again = await call(publishChangelogEntry, asOwner(), { number: 1, announce: true, emailSubscribers: true });
+  expect(again).toMatchObject({ announced: true });
+  expect(Date.parse(again.publishedAt!)).toBeGreaterThan(Date.parse("2025-01-01"));
+  expect((await mailbox.latestTo("e2e-ferndesk-reader@example.com")).subject).toContain("Exports");
+  // Only that one: the quiet publish emailed nobody.
+  expect(mailbox.emails.filter((email) => email.to.includes("e2e-ferndesk-reader@example.com"))).toHaveLength(1);
 });
 
 test("one who never verified their address in Ferndesk isn't matched to the user here who has it: anyone can type any address", async () => {

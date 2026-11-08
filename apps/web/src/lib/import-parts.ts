@@ -136,7 +136,7 @@ export const IMPORT_SOURCES = {
     // Its users have no company, its changelog has tags (not categories) and may be several, and its conversations are the AI's, text only.
     partDescriptions: {
       contacts: "Your help center's users, with their attributes, as Users.",
-      changelog: "Your changelog entries (from every changelog, into one), published at their dates (drafts stay drafts), with their images; tags like New, Improved and Fixed become Tuti's. Nothing is emailed.",
+      changelog: "Your changelog entries (from every changelog, into one) with their images and dates; published ones come as drafts or published, as you pick, and drafts stay drafts. Tags like New, Improved and Fixed become Tuti's. Nothing is emailed.",
       inbox: "Your AI assistant's conversations with readers, closed, as the Inbox.",
     },
     askPublish: true,

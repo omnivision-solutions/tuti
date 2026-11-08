@@ -98,3 +98,34 @@ test("in the first run the team comes from Ferndesk: a bad key is refused, a goo
   await expect(messages.nth(1)).toContainText("Yes: Settings → Export.");
   await checkpoint(owner, "conversation-ferndesk");
 });
+
+test("changelog entries published in Ferndesk come as drafts by default; publishing one keeps its Ferndesk date and doesn't announce it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.goto("/app/new");
+  await owner.getByLabel("Name").fill("Acme");
+  await owner.getByLabel("URL").fill(slug);
+  await owner.getByRole("button", { name: "Create project" }).click();
+  await owner.waitForURL(`**/app/${slug}/setup`);
+  await owner.getByRole("radio", { name: /^Ferndesk/ }).check();
+  await owner.getByRole("checkbox", { name: /^Contacts/ }).uncheck();
+  await owner.getByRole("checkbox", { name: /^Changelog/ }).check();
+  await expect(
+    owner.getByText("Your changelog entries (from every changelog, into one) with their images and dates; published ones come as drafts or published, as you pick, and drafts stay drafts. Tags like New, Improved and Fixed become Tuti's. Nothing is emailed."),
+  ).toBeVisible();
+  await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FERNDESK_KEY);
+  await owner.getByRole("button", { name: "Check the key and start" }).click();
+  await expect(owner.getByRole("status").filter({ hasText: "Ferndesk" })).toContainText("2 changelog entries as drafts", { timeout: 15_000 });
+
+  // Published in Ferndesk on 2 April 2024: old news, so it keeps that date and goes out quietly.
+  await owner.goto(`/app/${slug}/changelog/1`);
+  await expect(owner.getByText("Published before you imported it, so it's published with that date (2 April 2024) without announcing: not emailed to subscribers, not marked new.")).toBeVisible();
+  await owner.getByRole("button", { name: "Publish", exact: true }).click();
+  const dialog = owner.getByRole("alertdialog");
+  await expect(dialog).toContainText("It appears on your portal's changelog. Published before you imported it, it keeps that date (2 April 2024) and isn't announced.");
+  await checkpoint(owner, "publish-imported-entry");
+  await dialog.getByRole("button", { name: "Publish" }).click();
+  await expect(owner.getByText("Published without announcing")).toBeVisible();
+  await expect(owner.getByText("Published 2 April 2024")).toBeVisible();
+});

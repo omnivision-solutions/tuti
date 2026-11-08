@@ -86,6 +86,8 @@ type Entry = {
   emailedFrom?: string | null;
   /** Sample content (server/sample-content.ts): it completes sample posts only. */
   sample?: boolean;
+  /** A draft imported though it was published in the other tool: that date, which publishing keeps, quietly (changelog.publish). */
+  importedOn?: string | null;
   /** The project's email is paused (its bounces or complaints): nobody's emailed, and the resume doesn't send it later. */
   emailPaused?: boolean;
 };
@@ -433,6 +435,9 @@ export function HowAnnounced({ entry, subscribers }: { entry: Entry; subscribers
       ) : entry.sample ? (
         // changelog.publish: a sample entry is never announced or emailed.
         <p>Sample updates are published without announcing: not emailed to subscribers, not marked new.</p>
+      ) : entry.importedOn ? (
+        // changelog.publish: nor is an imported one, the first time.
+        <p>Published before you imported it, so it&apos;s published with that date ({entry.importedOn}) without announcing: not emailed to subscribers, not marked new.</p>
       ) : (
         <>
           {entry.emailedSubscribers ? (
@@ -866,6 +871,7 @@ export function ChangelogEntryActions({
   subscribersLeft = 0,
   emails,
   sample = false,
+  importedOn = null,
   canDraftWithAi,
   aiPaused = false,
   unwritten,
@@ -886,6 +892,8 @@ export function ChangelogEntryActions({
   emails: number;
   /** Sample content (server/sample-content.ts): published, never announced. */
   sample?: boolean;
+  /** Imported as a draft though it was published there: that date, kept by publishing, which doesn't announce it. */
+  importedOn?: string | null;
   /** AI is set up on this server and the entry is a draft: Draft with AI's dialog (its button here only while `unwritten`, in Edit with AI's menu otherwise). */
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
@@ -995,22 +1003,23 @@ export function ChangelogEntryActions({
             {unwritten === "titles" && `“${title}” still lists what the pull requests were called, not what changed for your users. `}
             {unwritten === "empty" && `“${title}” has no text yet, only its pull requests. `}
             {aiFirst && "Draft with AI writes release notes from them. "}
-            {sample
+            {sample || importedOn
               ? publishSummary({ markNew: false, email: false, subscribers: 0, emailedSubscribers: false, subscribersLeft: 0 })
               : publishSummary({ markNew: announce.markNew, email: announce.email, subscribers, emailedSubscribers, subscribersLeft })}
             {postCount > 0 &&
               ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed${emails > 0 ? ", and the people who asked get an email" : ""}.`}
             {sample && " Sample updates are published without announcing."}
+            {importedOn && ` Published before you imported it, it keeps that date (${importedOn}) and isn't announced.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          {/* A sample entry is never announced or emailed (changelog.publish); a real one goes as the sidebar has it. */}
+          {/* A sample entry is never announced or emailed (changelog.publish), nor an imported one the first time; a real one goes as the sidebar has it. */}
           <AlertDialogAction
             variant={aiFirst ? "outline" : "default"}
             disabled={busy}
             onClick={() =>
-              sample
+              sample || importedOn
                 ? run((slug, n) => publishChangelogEntry(slug, n, false, false), "Published without announcing")
                 : run((slug, n) => publishChangelogEntry(slug, n, announce.markNew, emailing), "Published")
             }

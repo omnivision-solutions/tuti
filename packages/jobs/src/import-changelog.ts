@@ -165,6 +165,8 @@ export async function changelogPage(job: ImportJob, cursor: string | null): Prom
             content: content.doc,
             tags: tagsOf(entry),
             publishedAt,
+            // Its date there: publishing it keeps it, quietly (changelog.publish).
+            importedPublishedAt: held ? date : null,
             coverId: cover && "mediaId" in cover ? cover.mediaId : null,
             // Moved back to a draft since, too: publishing it here mustn't email it again.
             subscribersEmailedAt: entry.emailSentToSubscribers ? date : null,
