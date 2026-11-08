@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
 
@@ -28,6 +28,13 @@ async function setup() {
   const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
   return { project, key };
 }
+
+// First in the file: the instance's listener starts with this test's stream.
+test("a stream opened before the instance is listening hears of a change once it is: what changed till then went unheard", async () => {
+  const { project } = await setup();
+  const team = hear((change) => change.projectId === project.id);
+  await vi.waitFor(() => expect(team).toHaveLength(1), { timeout: 4_000 });
+});
 
 test("the team hears of its own project's changes only, and a user of their own conversations only", async () => {
   const first = await setup();

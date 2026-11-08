@@ -50,15 +50,15 @@ function received(payload: string) {
 
 /**
  * Calls `changed` for every change `wants` lets through, until the returned function is called.
- * After the listener's connection drops and comes back, every stream hears of "a change", since
- * what changed meanwhile is unknown.
+ * Each time the listener starts listening (the instance's first stream, or after its connection
+ * dropped), every stream hears of "a change", since what changed before then is unknown.
  */
 export function subscribeInbox(wants: Subscriber["wants"], changed: Subscriber["changed"]): () => void {
   const subscriber = { wants, changed };
   inbox.subscribers.add(subscriber);
   inbox.stop ??= listen(CHANNEL, {
     onPayload: received,
-    onReconnect: () => inbox.subscribers.forEach((s) => s.changed()),
+    onListening: () => inbox.subscribers.forEach((s) => s.changed()),
   });
   return () => {
     inbox.subscribers.delete(subscriber);
