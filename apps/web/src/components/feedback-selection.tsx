@@ -81,8 +81,9 @@ export function SelectPost({ post }: { post: Picked }) {
       checked={picked.some((p) => p.id === post.id)}
       onChange={(event) => toggle(post, event.currentTarget.checked)}
       className={cn(
-        "size-4 shrink-0 accent-primary sm:opacity-0 sm:transition-opacity sm:group-hover/row:opacity-100 sm:focus-visible:opacity-100",
-        picked.length > 0 && "sm:opacity-100",
+        // Hidden until hover only where there's hover (not on a touch tablet).
+        "size-4 shrink-0 accent-primary [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity [@media(hover:hover)]:group-hover/row:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100",
+        picked.length > 0 && "[@media(hover:hover)]:opacity-100",
       )}
     />
   );

@@ -115,6 +115,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   expect((await visitor.goto("/feedback/bugs"))?.status()).toBe(404);
   await row("Bug reports").getByRole("button", { name: "Turn on" }).click();
   await expect(owner.getByText("Bug reports is on the portal")).toBeVisible();
+  // Its Turn on button gone, the focus is on the board's menu (not lost to the page).
+  await expect(row("Bug reports").getByRole("button", { name: "More for Bug reports" })).toBeFocused();
   expect((await visitor.goto("/feedback/bugs"))?.status()).toBe(200);
 
   // A merged duplicate doesn't keep a board: deleting it moves the duplicate to the board of the post it was merged into.

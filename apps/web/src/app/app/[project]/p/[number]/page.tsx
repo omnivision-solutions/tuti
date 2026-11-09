@@ -145,9 +145,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       {/* The post (its header, then it) beside its sidebar, both from the top. On phones one column: the header, the
           properties, the post, the rest of the sidebar (each placed by its order, the columns' boxes dropped). */}
       {/* The whole width (data-wide): the post's column up to a reading width, the sidebar beside it. */}
-      <div data-wide className="grid gap-6 lg:grid-cols-[minmax(0,48rem)_18rem] lg:items-start lg:justify-center lg:gap-12">
-        <div className="flex min-w-0 flex-col gap-6 max-lg:contents">
-          <div className="flex min-w-0 flex-col gap-6 max-lg:order-1">
+      <div data-wide className="grid gap-6 lg:grid-cols-[minmax(0,48rem)_18rem] lg:grid-rows-[auto_1fr] lg:items-start lg:justify-center lg:gap-12">
+          <div className="flex min-w-0 flex-col gap-6 max-lg:order-1 lg:col-start-1 lg:row-start-1">
         {/* Back to the list, and the newer and older post at the other end of the same row (away from the title, so they
           don't read as votes). */}
       <div className="flex items-center justify-between gap-2 -mb-3">
@@ -199,66 +198,15 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           </Alert>
         ) : null}
           </div>
-          <div className="flex min-w-0 flex-col gap-6 max-lg:order-3">
-          {isEmptyDoc(displayDoc(post)) ? (
-            <p className="text-sm text-muted-foreground italic">No description.</p>
-          ) : (
-            <RichText doc={displayDoc(post)} mediaUrls={await mediaUrls(displayDoc(post))} className="rich-text max-w-[65ch] break-words" />
-          )}
-
-          {!post.duplicateOf && post.links.length > 0 && <PostLinks projectSlug={slug} postId={post.id} links={post.links} />}
-
-          {suggestions.length > 0 && (
-            <DuplicateSuggestions
-              projectSlug={slug}
-              postId={post.id}
-              suggestions={suggestions.map(({ post: duplicate, ...s }) => ({ ...s, duplicate }))}
-            />
-          )}
-
-          {/* A merged post's comments and notes moved with it; its status history stays. */}
-          {(!post.duplicateOf || post.events.length > 0) && (
-            <section className="flex flex-col gap-4" aria-label={post.duplicateOf ? "Status history" : "Comments"}>
-              {!post.duplicateOf && (
-                <h2 className="text-sm font-semibold">
-                  {post.comments.length === 0 ? (
-                    <span className="font-normal text-muted-foreground">No comments yet. Reply to tell its voters what&apos;s next.</span>
-                  ) : (
-                    `${post.comments.length} ${post.comments.length === 1 ? "comment" : "comments"}`
-                  )}
-                  {post.notes.length > 0 && (
-                    <span className="font-normal text-muted-foreground">
-                      {" "}
-                      · {post.notes.length} internal {post.notes.length === 1 ? "note" : "notes"}
-                    </span>
-                  )}
-                </h2>
-              )}
-              <CommentList
-                comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
-                teamUserIds={new Set(team.map((m) => m.userId))}
-                events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
-                mediaUrls={await mediaUrls(...post.comments.map(displayDoc), ...post.notes.map(displayDoc))}
-              />
-              {!post.duplicateOf && <CommentForm
-                  postId={post.id}
-                  placeholder="Reply as the team…"
-                  notes
-                  voters={toEmail}
-                  uploads={mediaStorage() ? { projectSlug: slug, mediaUrls: {} } : undefined}
-                />}
-            </section>
-          )}
-          </div>
-        </div>
-
+        {/* In the page's order on phones (the header, the properties, the post), so the keyboard and screen readers
+            meet them in the order they're seen; beside the post from laptop width up, from the top. */}
         {/* Its properties, beside it (after it, narrower than a laptop): held in view as the page scrolls, scrolling on their own when taller than the screen. */}
         {!post.duplicateOf && (
           // Beside the post, held in view as it scrolls. On phones its parts go apart: the properties above the post
           // (what triage changes, in reach), the rest (voters, what shipped it, …) after its comments.
           <aside
             aria-label="Properties"
-            className="text-sm max-lg:contents lg:sticky lg:top-18 lg:flex lg:max-h-[calc(100dvh-5.5rem)] lg:flex-col lg:gap-6 lg:overflow-y-auto lg:border-l lg:pl-6"
+            className="text-sm max-lg:contents lg:sticky lg:top-18 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:flex lg:max-h-[calc(100dvh-5.5rem)] lg:flex-col lg:gap-6 lg:overflow-y-auto lg:border-l lg:pl-6"
           >
             {/* A card on phones, folded to a line (status, owner, ETA); beside the post, open rows under a heading. */}
             <div className="flex flex-col rounded-xl bg-card px-4 py-3 shadow-xs ring-1 ring-border max-lg:order-2 lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none lg:ring-0">
@@ -333,6 +281,57 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </div>
           </aside>
         )}
+          <div className="flex min-w-0 flex-col gap-6 max-lg:order-3 lg:col-start-1 lg:row-start-2">
+          {isEmptyDoc(displayDoc(post)) ? (
+            <p className="text-sm text-muted-foreground italic">No description.</p>
+          ) : (
+            <RichText doc={displayDoc(post)} mediaUrls={await mediaUrls(displayDoc(post))} className="rich-text max-w-[65ch] break-words" />
+          )}
+
+          {!post.duplicateOf && post.links.length > 0 && <PostLinks projectSlug={slug} postId={post.id} links={post.links} />}
+
+          {suggestions.length > 0 && (
+            <DuplicateSuggestions
+              projectSlug={slug}
+              postId={post.id}
+              suggestions={suggestions.map(({ post: duplicate, ...s }) => ({ ...s, duplicate }))}
+            />
+          )}
+
+          {/* A merged post's comments and notes moved with it; its status history stays. */}
+          {(!post.duplicateOf || post.events.length > 0) && (
+            <section className="flex flex-col gap-4" aria-label={post.duplicateOf ? "Status history" : "Comments"}>
+              {!post.duplicateOf && (
+                <h2 className="text-sm font-semibold">
+                  {post.comments.length === 0 ? (
+                    <span className="font-normal text-muted-foreground">No comments yet. Reply to tell its voters what&apos;s next.</span>
+                  ) : (
+                    `${post.comments.length} ${post.comments.length === 1 ? "comment" : "comments"}`
+                  )}
+                  {post.notes.length > 0 && (
+                    <span className="font-normal text-muted-foreground">
+                      {" "}
+                      · {post.notes.length} internal {post.notes.length === 1 ? "note" : "notes"}
+                    </span>
+                  )}
+                </h2>
+              )}
+              <CommentList
+                comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
+                teamUserIds={new Set(team.map((m) => m.userId))}
+                events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
+                mediaUrls={await mediaUrls(...post.comments.map(displayDoc), ...post.notes.map(displayDoc))}
+              />
+              {!post.duplicateOf && <CommentForm
+                  postId={post.id}
+                  placeholder="Reply as the team…"
+                  notes
+                  voters={toEmail}
+                  uploads={mediaStorage() ? { projectSlug: slug, mediaUrls: {} } : undefined}
+                />}
+            </section>
+          )}
+          </div>
       </div>
     </>
   );

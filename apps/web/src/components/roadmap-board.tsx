@@ -126,6 +126,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
       } else {
         toast.success(`${card.title}: ${STATUS_LABELS[status]}`);
         setMoved({ id: card.id, status, presses: from });
+        // On a phone the column it went to is the one shown, so it (and the focus) can follow it.
+        setShown(status);
       }
       router.refresh();
     });
@@ -233,7 +235,10 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                         badge={false}
                         // Completed from the menu (the keyboard's and a phone's way) asks first too.
                         onComplete={() => setCompleting(card)}
-                        onChanged={(status) => setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 })}
+                        onChanged={(status) => {
+                          setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 });
+                          setShown(status);
+                        }}
                       />
                     </span>
                   </div>

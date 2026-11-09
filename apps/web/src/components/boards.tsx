@@ -321,6 +321,8 @@ function useBoardOff({ projectSlug, boardId, name, off, teamOnly, stuck }: Board
         toast.error(result.error);
       } else {
         toast.success(teamOnly ? `${name} is turned ${off ? "on" : "off"}` : off ? `${name} is on the portal` : `${name} is off the portal`);
+        // Its Turn on button comes and goes, and Turn off's question closes: the focus to the board's menu, which stays.
+        document.querySelector<HTMLElement>(`[data-board-menu="${boardId}"]`)?.focus();
       }
     });
   const dialog = (
@@ -373,24 +375,24 @@ export function BoardOnButton(props: BoardOffProps) {
 }
 
 /**
- * A board's less used actions, behind "⋯": Turn off (asking first) while it's on, and Delete (asking first) when it has
+ * A board's less used actions, behind "⋯": Turn off (asking first) while it's on, Turn on while it's off, and Delete (asking first) when it has
  * no posts and isn't the only board.
  */
 export function BoardMenu({ deletable, ...props }: BoardOffProps & { deletable: boolean }) {
   const off = useBoardOff(props);
   const [deleting, setDeleting] = useState(false);
   const [pending, startTransition] = useTransition();
-  if (props.off && !deletable) {
-    return null;
-  }
+  // Always there (a board that's off has Turn on in it too), so the focus has somewhere to stay as Turn on comes and goes.
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`More for ${props.name}`} disabled={off.pending || pending} />}>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="icon-sm" aria-label={`More for ${props.name}`} data-board-menu={props.boardId} disabled={off.pending || pending} focusableWhenDisabled />}
+        >
           <EllipsisIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-36">
-          {!props.off && <DropdownMenuItem onClick={off.ask}>Turn off</DropdownMenuItem>}
+          {props.off ? <DropdownMenuItem onClick={off.turn}>Turn on</DropdownMenuItem> : <DropdownMenuItem onClick={off.ask}>Turn off</DropdownMenuItem>}
           {deletable && (
             <DropdownMenuItem variant="destructive" onClick={() => setDeleting(true)}>
               Delete

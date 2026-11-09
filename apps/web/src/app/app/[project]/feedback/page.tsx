@@ -83,10 +83,11 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   // What completing it now emails: nobody, if it's completed already (picked with others, say).
   const emailing = (post: (typeof posts)[number]) => (post.status === "COMPLETED" ? 0 : (emails.get(post.id) ?? 0));
 
-  // All, when it mixes statuses: the posts grouped by status in the tabs' order, each group most voted first (as listed).
+  // All, when it mixes statuses: the posts grouped by status in the tabs' order, each group most voted first (as listed);
+  // only once it's all loaded, so each group's count is all of them and Load more doesn't add rows to groups above it.
   const statuses = [...new Set(posts.map((post) => post.status))];
   const groups =
-    tab === "all" && statuses.length > 1
+    tab === "all" && statuses.length > 1 && !more
       ? STATUS_ORDER.filter((status) => statuses.includes(status)).map((status) => ({ status, posts: posts.filter((post) => post.status === status) }))
       : [{ status: null, posts }];
   const listed = groups.flatMap((group) => group.posts);
