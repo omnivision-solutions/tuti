@@ -130,9 +130,9 @@ export function CommentList({
           <li key={item.id} className="flex flex-col gap-2">
             <ReplyThread>
               {row(item.comment!)}
-              {/* Under the comment, indented to its words. */}
+              {/* Under the comment, indented to its words (on phones less: room for theirs). */}
               {(replies.length > 0 || ability) && (
-                <div className={cn("flex flex-col gap-2 empty:hidden", portal ? "pl-12" : "pl-14")}>
+                <div className={cn("flex flex-col gap-2 empty:hidden", portal ? "pl-6 sm:pl-12" : "pl-14")}>
                   {replies.length > 0 && (
                     <ol aria-label={`Replies to ${item.comment!.author.name}`} className="flex flex-col gap-2">
                       {replies.map((reply) => (
