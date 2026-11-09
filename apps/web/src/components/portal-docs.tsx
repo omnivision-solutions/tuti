@@ -157,7 +157,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
                 className="group flex h-full items-start gap-3.5 rounded-xl bg-card p-4 shadow-xs ring-1 ring-border transition-shadow hover:shadow-md hover:ring-primary/40 sm:p-5"
               >
                 {collection.icon && (
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-lg text-primary">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-soft text-lg text-soft-foreground">
                     <CollectionIcon name={collection.icon} />
                   </span>
                 )}
@@ -455,7 +455,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
       title={title}
       aria-current={slug === current ? "page" : undefined}
       className={cn(
-        "flex items-center rounded-md px-2 py-1 text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-primary/10 aria-[current=page]:font-medium aria-[current=page]:text-primary",
+        "flex items-center rounded-lg px-2 py-1 text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-sidebar-active aria-[current=page]:font-medium aria-[current=page]:text-sidebar-active-foreground",
         className,
       )}
     >

@@ -69,13 +69,16 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
             className={cn(
               // Underlined on the header's bottom edge at every width (the board's and docs' rows the same).
               "shrink-0 scroll-mx-12 border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:inline-flex sm:items-center sm:py-0 sm:text-sm",
-              active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              active
+                ? // Before the page's script runs on a page not found (data-portal-not-found), its part isn't drawn as the one open.
+                  "border-primary font-medium text-foreground [:root:has([data-portal-not-found])_&]:border-transparent [:root:has([data-portal-not-found])_&]:font-normal"
+                : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {label}
             {/* Not on the changelog itself: being there is seeing it (recorded a moment later). */}
             {key === "changelog" && newChangelog && !active && (
-              <span className="ml-1.5 inline-block size-2 rounded-full bg-highlight-foreground align-middle">
+              <span className="ml-1.5 inline-block size-2 rounded-full bg-unread align-middle">
                 <span className="sr-only">New</span>
               </span>
             )}
@@ -175,7 +178,7 @@ export function PartRow({
     return null;
   }
   return (
-    <div className={cn("border-b", className)}>
+    <div className={cn("border-b [:root:has([data-portal-not-found])_&]:hidden", className)}>
       <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-6xl gap-1 px-6", SCROLLING_ROW)} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link

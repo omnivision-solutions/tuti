@@ -119,6 +119,8 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   // The month the team expects it, as their ETA says it, while it's still to come.
   const eta = post.eta && etaOnPortal(post.eta, post.status) ? post.eta : null;
 
+  // A public post on a Team only board, read by someone not on the team: the board stays unnamed.
+  const onTeamBoard = post.board.postVisibility === "TEAM" && !viewer.team;
   const subscribe = subscribable && (!voter || hears.length > 0) && (
     <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} following={following} signedIn={!!voter} />
   );
@@ -132,7 +134,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start lg:gap-x-10">
       {/* A public post on a Team only board: back to the portal's feedback (its home, when it has no board of its own), not
           to a board only the team may open. */}
-      {post.board.postVisibility === "TEAM" && !viewer.team ? (
+      {onTeamBoard ? (
         (await firstBoardPath(projectSlug)) ? (
           <BackLink href={at("/feedback")}>Feedback</BackLink>
         ) : (
@@ -172,7 +174,17 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             <VoterFaces
               voters={voters.map((vote) => vote.user)}
               count={post.voteCount}
-              label={post.voteCount > voters.length ? `+${post.voteCount - voters.length} more` : `${post.voteCount === 1 ? "wants" : "want"} this`}
+              // Short beside the faces; the whole sentence for screen readers (the faces are hidden from them).
+              label={
+                <>
+                  <span aria-hidden>
+                    {post.voteCount > voters.length ? `+${post.voteCount - voters.length} more` : `${post.voteCount === 1 ? "wants" : "want"} this`}
+                  </span>
+                  <span className="sr-only">
+                    {post.voteCount} {post.voteCount === 1 ? "person wants this" : "people want this"}
+                  </span>
+                </>
+              }
             />
           )}
         </div>
@@ -186,8 +198,13 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         {subscribe}
         <CopyButton value={`${await portalAddress(projectSlug)}${postPath(post)}`} label="link" wide />
         <dl className="grid max-lg:hidden grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-3 rounded-xl bg-card p-4 text-sm shadow-xs ring-1 ring-border">
-          <dt className="text-muted-foreground">Board</dt>
-          <dd className="justify-self-end truncate font-medium">{post.board.name}</dd>
+          {/* A Team only board isn't named to readers (as the way back above doesn't). */}
+          {!onTeamBoard && (
+            <>
+              <dt className="text-muted-foreground">Board</dt>
+              <dd className="justify-self-end truncate font-medium">{post.board.name}</dd>
+            </>
+          )}
           <dt className="text-muted-foreground">Posted</dt>
           <dd className="justify-self-end font-medium">{formatDate(post.createdAt)}</dd>
         </dl>

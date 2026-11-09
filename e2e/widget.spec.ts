@@ -343,6 +343,15 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   const changelogTab = ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ });
   await expect(changelogTab).toContainText("New");
   await checkpoint(ada, "portal-changelog-new");
+  // On a phone the parts are in the header's menu: its Changelog says so too.
+  const laptop = ada.viewportSize()!;
+  await ada.setViewportSize({ width: 390, height: 844 });
+  await ada.getByRole("banner").getByRole("button", { name: "Menu" }).click();
+  const menu = ada.getByRole("dialog", { name: "Menu" });
+  await expect(menu.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ })).toContainText("New");
+  await ada.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await ada.setViewportSize(laptop);
   // On the changelog itself it isn't new any more, even before her visit is recorded (held here).
   let releaseSeen = () => {};
   let seenHeld = () => {};

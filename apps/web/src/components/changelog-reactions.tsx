@@ -39,7 +39,7 @@ export function ChangelogReactions({
             size="sm"
             variant="outline"
             // Signed out the counts still read at full strength: a disabled button's fade made them look broken.
-            className={cn("rounded-full px-3 disabled:opacity-100", on && "border-primary bg-primary/10 hover:bg-primary/15")}
+            className={cn("rounded-full px-3 disabled:opacity-100", on && "border-primary bg-soft hover:bg-soft/80")}
             disabled={!signedIn || pending}
             title={signedIn ? undefined : "Sign in to react"}
             aria-pressed={on}

@@ -148,12 +148,12 @@ export function PortalMenu({
                     aria-current={active ? "page" : undefined}
                     className={cn(
                       "rounded-lg px-3 py-2.5 font-heading text-lg font-semibold",
-                      active ? "bg-primary/10 text-primary" : "text-foreground hover:bg-accent",
+                      active ? "bg-sidebar-active text-sidebar-active-foreground" : "text-foreground hover:bg-accent",
                     )}
                   >
                     {label}
                     {key === "changelog" && newChangelog && !active && (
-                      <span className="ml-2 inline-block size-2 rounded-full bg-highlight-foreground align-middle">
+                      <span className="ml-2 inline-block size-2 rounded-full bg-unread align-middle">
                         <span className="sr-only">New</span>
                       </span>
                     )}

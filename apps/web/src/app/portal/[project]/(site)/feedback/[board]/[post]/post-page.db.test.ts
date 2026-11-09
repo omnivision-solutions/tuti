@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
-import { isValidElement, type ReactNode } from "react";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { expect, onTestFinished, test, vi } from "vitest";
 
 import { CommentList } from "@/components/comments";
@@ -91,6 +92,10 @@ test("a portal post's history has its status changes and when, not who made them
   const voters = propsOf(page, VoterFaces)!;
   // All six counted; five faces, the latest first.
   expect(voters.count).toBe(6);
+  // Beside the faces "+1 more" (the count is on the vote pill); for screen readers, which skip the faces, the whole sentence.
+  const label = renderToStaticMarkup(voters.label as ReactElement);
+  expect(label).toContain('<span aria-hidden="true">+1 more</span>');
+  expect(label).toContain('<span class="sr-only">6 people want this</span>');
   expect(voters.voters.map((voter) => voter.name)).toEqual(["Voter 6", "Voter 5", "Voter 4", "Voter 3", "Voter 2"]);
 });
 
@@ -213,4 +218,23 @@ test("Subscribe and \"You'll hear when it ships.\" follow the Account's switches
   expect(await subscribe()).toBeUndefined();
   await choose(cy.id, true, true);
   expect(await subscribe()).toMatchObject({ signedIn: true, following: false });
+});
+
+test("a public post on a Team only board doesn't name the board to readers: not in its way back, nor in its details", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const board = await prisma.board.create({ data: { projectId: project.id, slug: "escalations", name: "Enterprise escalations", postVisibility: "TEAM" } });
+  await prisma.post.create({
+    data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: 1, title: "Dark mode", body: "", visibility: "PUBLIC" },
+  });
+  const shown = async () =>
+    textOf(await PostPage({ params: Promise.resolve({ project: project.slug, board: "escalations", post: "dark-mode-1" }), searchParams: Promise.resolve({}) } as never));
+
+  actAs(null);
+  const read = await shown();
+  expect(read).toContain("Dark mode");
+  expect(read).not.toContain("Enterprise escalations");
+  // The team sees where it is.
+  actAs(owner);
+  expect(await shown()).toContain("Enterprise escalations");
 });

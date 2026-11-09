@@ -84,7 +84,7 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   // A comment with a link typed without https://.
   await comment.click();
   await ada.keyboard.type("Like ");
-  await ada.getByRole("button", { name: "Link" }).click();
+  await ada.getByRole("button", { name: "Link", exact: true }).click();
   const linkDialog = ada.getByRole("dialog", { name: "Add a link" });
   await linkDialog.getByLabel("Link").fill("example.com/dark");
   await linkDialog.getByRole("button", { name: "Add link" }).click();

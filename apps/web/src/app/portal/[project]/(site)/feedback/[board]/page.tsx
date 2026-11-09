@@ -31,6 +31,7 @@ import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { boardPosts, boardsWithCounts, emailReach, recentlyShipped } from "@/server/post-lists";
 import { VisibilityBadge } from "@/components/visibility-badge";
+import { Card } from "@/components/ui/card";
 
 /** A board's tabs, its orders: Trending (the most votes in the last 7 days, then the most votes) first. */
 const TABS = [
@@ -126,11 +127,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     </section>
   );
   // Get updates: in the sidebar on wide screens, under the list below them (named by its heading once, by a label there: ids are once).
-  const getUpdates = async (inSidebar: boolean) => (
-    <section
-      {...(inSidebar ? { "aria-labelledby": "get-updates" } : { "aria-label": "Get updates" })}
-      className="flex flex-col gap-3 rounded-xl bg-card p-4 text-sm shadow-xs ring-1 ring-border"
-    >
+  // The changelog by email, read once for both copies of Get updates.
+  const byEmail = await changelogByEmail(board.project, session, true);
+  const getUpdates = (inSidebar: boolean) => (
+    <Card role="region" {...(inSidebar ? { "aria-labelledby": "get-updates" } : { "aria-label": "Get updates" })} className="gap-3 px-5">
       <h2 id={inSidebar ? "get-updates" : undefined} className="font-semibold">
         Get updates
       </h2>
@@ -157,7 +157,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           </Link>
         </p>
       ) : null}
-      {await changelogByEmail(board.project, session, true)}
+      {byEmail}
       <p className="flex items-center gap-3 text-muted-foreground">
         <Link href={at("/changelog")} className="hover:text-foreground hover:underline">
           Changelog
@@ -167,7 +167,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           <RssIcon aria-hidden className="size-3.5" /> RSS
         </a>
       </p>
-    </section>
+    </Card>
   );
   return (
     // On wide screens a sidebar beside the list: the boards (when there are two or more, as the header's row), Recently shipped and
@@ -237,9 +237,13 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                           <span aria-hidden>·</span>
                           <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
                           {post.commentCount > 0 && (
-                            <span className="ml-1 inline-flex items-center gap-1" aria-label={`${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}>
+                            // The icon and the number for the eye, "3 comments" for screen readers (a label on a plain span isn't read).
+                            <span className="ml-1 inline-flex items-center gap-1">
                               <MessageSquareIcon aria-hidden className="size-3.5" />
-                              {post.commentCount}
+                              <span aria-hidden>{post.commentCount}</span>
+                              <span className="sr-only">
+                                {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
+                              </span>
                             </span>
                           )}
                         </span>
@@ -288,7 +292,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
 
         {/* On wide screens they're in the sidebar. */}
         {shippedCard && <div className="lg:hidden">{shippedCard}</div>}
-        <div className="lg:hidden">{await getUpdates(false)}</div>
+        <div className="lg:hidden">{getUpdates(false)}</div>
       </div>
 
       <aside aria-label="About this board" className="hidden flex-col gap-8 lg:flex">
@@ -317,7 +321,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           </nav>
         )}
         {shippedCard}
-        {await getUpdates(true)}
+        {getUpdates(true)}
       </aside>
     </div>
   );

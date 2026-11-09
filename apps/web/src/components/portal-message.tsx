@@ -1,21 +1,19 @@
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
 
 /** A page of the portal that only says one thing (an email link's page, unsubscribing, a failed sign-on): a card as the sign-in page's. */
 export function PortalMessage({ children, className, icon: Icon, ...props }: React.ComponentProps<"div"> & { icon?: LucideIcon }) {
   return (
-    <div
-      {...props}
-      className={cn("mx-auto flex w-full max-w-sm flex-col items-start gap-4 rounded-xl bg-card p-5 shadow-sm ring-1 ring-border my-auto sm:p-6 [&_form]:w-full [&_form>button]:w-full", className)}
-    >
+    <Card {...props} className={cn("mx-auto my-auto w-full max-w-sm items-start gap-4 px-5 [&_form]:w-full [&_form>button]:w-full", className)}>
       {Icon && (
-        <span aria-hidden className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <span aria-hidden className="flex size-10 items-center justify-center rounded-full bg-soft text-soft-foreground">
           <Icon className="size-5" />
         </span>
       )}
       {children}
-    </div>
+    </Card>
   );
 }
 

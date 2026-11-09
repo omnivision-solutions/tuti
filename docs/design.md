@@ -303,7 +303,8 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   menu. Under it the current part's row (boards, docs tabs) when it has two or more (none on a
   post's page, which has its way back). Content max-w-3xl; a board, a post and the changelog's list
   max-w-6xl on wide screens for their rails; the Roadmap max-w-6xl; "Powered by tuti" footer.
-  The changelog's "New" for a signed-in reader is a dot in the deeper highlight colour.
+  The changelog's "New" for a signed-in reader is a dot in the `unread` colour (the widget's What's new dot), in the header
+  and, on phones, in the menu.
   - **A board**: its name and a line under it (the team's description, else "Vote for the ideas you
     want most, or share your own."), then "Share an idea" (a card: the heading with a lightbulb, a
     one-line bordered title field and its button, opening to title + details once typed in; signed

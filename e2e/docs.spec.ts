@@ -1236,6 +1236,10 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(main.getByRole("region", { name: "More articles" }).getByRole("link")).toHaveText(["Contact us"]);
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
   await expect(main.getByRole("search")).toHaveCount(1);
+  // The big box searches as the header's does.
+  const heroResults = await foundAsTyped(visitor, "invoi", main);
+  await expect(heroResults.getByRole("option").nth(1)).toContainText("Invoices");
+  await visitor.keyboard.press("Escape");
   // The team's sidebar links are still beside them.
   await expect(main.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" })).toBeVisible();
   const headerSearch = visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" });

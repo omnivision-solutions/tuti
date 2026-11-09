@@ -18,7 +18,7 @@ const shortDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMont
 
 /** Each tag tinted on the portal, so a list can be scanned for what's new (Breaking keeps its destructive look). */
 const TAG_TINTS: Record<ChangelogTag, string | undefined> = {
-  NEW: "border-transparent bg-primary/14 text-foreground",
+  NEW: "border-transparent bg-soft text-soft-foreground",
   IMPROVED: "border-transparent bg-status-in-progress/16 text-foreground",
   FIXED: "border-transparent bg-status-under-review/20 text-foreground",
   BREAKING: undefined,
@@ -90,13 +90,13 @@ export function ChangelogEntryView({
         <div
           className={cn(
             "flex flex-wrap items-center gap-2 text-sm text-muted-foreground",
-            // In the margin, the date leaves the row: the row goes too when it has no tags.
+            // In the margin, the date and the tags leave the row (they're beside the entry): the row goes too, unless it's a sample.
             dateMargin && !entry.sample && "lg:hidden",
           )}
         >
           <span className={cn("font-medium", dateMargin && "lg:hidden")}>{date}</span>
           {entry.tags.map((tag) => (
-            <TagBadge key={tag} tag={tag} className={onPage ? TAG_TINTS[tag] : undefined} />
+            <TagBadge key={tag} tag={tag} className={cn(onPage && TAG_TINTS[tag], dateMargin && "lg:hidden")} />
           ))}
           {entry.sample && <SampleBadge />}
         </div>

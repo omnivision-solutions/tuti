@@ -34,7 +34,7 @@ export default async function SsoErrorPage(props: PageProps<"/portal/[project]/s
         {known && (
           <>
             {" "}
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{known}</code>
+            <code className="rounded-lg bg-muted px-1.5 py-0.5 font-mono text-xs">{known}</code>
           </>
         )}
       </p>

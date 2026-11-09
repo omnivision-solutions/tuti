@@ -11,6 +11,7 @@ import { keepingFields } from "@/lib/forms";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { BOARD_TEXT_DEFAULTS } from "@/lib/board-texts";
 import { boardPath, postPath } from "@/lib/post-urls";
@@ -18,6 +19,7 @@ import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
 import { findSimilarPosts, type SimilarPost } from "@/server/similar-posts";
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
+import { Card } from "@/components/ui/card";
 
 const SUGGEST_DELAY_MS = 300;
 
@@ -30,14 +32,14 @@ type Placeholders = { titlePlaceholder?: string; detailsPlaceholder?: string };
  */
 export function ShareIdeaBox({ signedIn, ...form }: { signedIn: boolean } & Omit<React.ComponentProps<typeof NewPostForm>, "collapsible" | "signedOut">) {
   return (
-    <section aria-labelledby="share-idea" className="group/share flex flex-col gap-2 rounded-xl bg-card p-4 shadow-xs ring-1 ring-border has-[[data-expanded]]:p-5">
+    <Card role="region" aria-labelledby="share-idea" className="gap-2 px-5">
       {/* What the box is for, then the box: its title first, the details once it's opened. */}
       <h2 id="share-idea" className="flex items-center gap-2 font-semibold">
-        <LightbulbIcon aria-hidden className="size-4 text-primary" />
+        <LightbulbIcon aria-hidden className="size-4 text-soft-foreground" />
         Share an idea
       </h2>
       <NewPostForm {...form} collapsible signedOut={!signedIn} />
-    </section>
+    </Card>
   );
 }
 
@@ -202,7 +204,9 @@ export function NewPostForm({
       <FieldGroup className={cn(oneLine && "flex-row flex-wrap items-center gap-2")}>
         {/* No boxes: a title and the details, as they're published. */}
         <Field data-invalid={state.error ? true : undefined} className={cn(oneLine && "w-auto min-w-0 flex-1 basis-24")}>
-          <input
+          {/* One element throughout (swapping it as the box opens would lose the focus and what's typed): the design
+              system's field on one line; opened (and the widget's), a title with no box, set as it's published. */}
+          <Input
             key={submitted}
             id="post-title"
             name="title"
@@ -216,8 +220,12 @@ export function NewPostForm({
             aria-invalid={state.error ? true : undefined}
             className={
               oneLine
-                ? "h-10 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-                : cn(BARE_TITLE, collapsible ? "text-lg" : "text-xl")
+                ? "h-10 text-base md:text-base"
+                : cn(
+                    "h-auto rounded-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0 dark:bg-transparent",
+                    BARE_TITLE,
+                    collapsible ? "text-lg md:text-lg" : "text-xl md:text-xl",
+                  )
             }
           />
           {state.error && <FieldError>{state.error}</FieldError>}

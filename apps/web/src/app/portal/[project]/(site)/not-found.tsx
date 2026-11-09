@@ -11,7 +11,9 @@ import { cn } from "@/lib/utils";
 export default async function PortalNotFound() {
   const at = await portalLinks();
   return (
-    <PortalMessage icon={CompassIcon}>
+    // data-portal-not-found: from the first paint (before the page's script runs) the header underlines no part and no
+    // part's row shows; once it runs, PortalNotFoundMark takes the marks themselves off (aria-current too).
+    <PortalMessage data-portal-not-found icon={CompassIcon}>
       {/* The header and its menu mark no part as this page's, and no part's row shows. */}
       <PortalNotFoundMark />
       <p className="-mb-2 font-heading text-sm font-semibold text-primary">404</p>

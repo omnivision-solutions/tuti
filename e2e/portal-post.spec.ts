@@ -65,7 +65,10 @@ test("a portal post: the team's reply stands out, its status history and voters;
       await expect(faces.locator('[data-slot="avatar-fallback"]').first()).toHaveClass(/bg-avatar-/);
       const [front, behind] = [(await faces.nth(0).boundingBox())!, (await faces.nth(1).boundingBox())!];
       expect(behind.x - front.x).toBeGreaterThanOrEqual(front.width - 2);
+      // "want this" beside the faces; the whole sentence for screen readers.
       await expect(voters.getByText("want this", { exact: true })).toBeVisible();
+      await expect(voters.getByText("2 people want this", { exact: true })).toHaveClass(/sr-only/);
+      await expect(voters).toContainText("2 people want this");
       // The comment box is there.
       await expect(visitor.getByRole("textbox", { name: "Comment" })).toBeVisible();
       await expect(visitor.getByText("You'll sign in to post it.", { exact: true })).toBeVisible();
@@ -197,6 +200,11 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await ada.goto(darkPath);
   await expect(ada.getByText("You'll hear when it ships.", { exact: true })).toBeVisible();
   await expect(ada.getByRole("button", { name: "Subscribe" })).toHaveCount(0);
+  // Copy link copies the post's address on the portal.
+  await ada.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await ada.getByRole("button", { name: "Copy link" }).click();
+  await expect(ada.getByText("Copied")).toBeVisible();
+  expect(await ada.evaluate(() => navigator.clipboard.readText())).toBe(`${portalUrl(slug)}${darkPath}`);
 
   // Cy (email verified) follows it without voting.
   const cy = await signUp(browser, portalUrl(slug), "Cy");

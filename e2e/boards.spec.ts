@@ -129,6 +129,10 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(visitor.locator('[aria-current="page"]')).toHaveCount(0);
   await expect(visitor.getByRole("navigation", { name: "Boards" })).toHaveCount(0);
   await checkpoint(visitor, "portal-not-found");
+  // A mistyped address too: the same page, in the portal's header.
+  expect((await visitor.goto("/fedback"))?.status()).toBe(404);
+  await expect(visitor.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  await expect(visitor.getByRole("banner")).toBeVisible();
   // With one board there's no row of them.
   await visitor.setViewportSize({ width: 1280, height: 800 });
   await visitor.goto("/feedback/feature-requests");

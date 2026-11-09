@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { subscribeToChangelog } from "@/server/changelog-subscribe";
+import { Card } from "@/components/ui/card";
 
 /**
  * "Get updates by email" on the portal's changelog: a link to confirm is emailed first (subscribeToChangelog). `inCard`:
@@ -23,7 +24,9 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
   const form = (
     // The form stays (and its button keeps focus), with what was typed if it's refused; the answer is read out from here.
     <form {...keepingFields(action)} className="flex flex-col gap-2">
-      {!inCard && <p className="text-sm text-muted-foreground">New entries in your inbox, each with a link to unsubscribe.</p>}
+      <p className="text-sm text-muted-foreground">
+        {inCard ? "The changelog by email:" : "New entries in your inbox, each with a link to unsubscribe."}
+      </p>
       <div className="flex flex-wrap gap-2">
         <Input
           name="email"
@@ -51,11 +54,11 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
   return inCard ? (
     form
   ) : (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3 rounded-xl bg-card p-4 shadow-xs ring-1 ring-border">
+    <Card role="region" aria-labelledby={headingId} className="gap-3 px-5">
       <h2 id={headingId} className="font-semibold">
         Get updates by email
       </h2>
       {form}
-    </section>
+    </Card>
   );
 }
