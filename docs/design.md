@@ -10,9 +10,11 @@ Check new UI there and at phone width (390px) before shipping it.
 cute at the expense of clarity.
 
 - **Colour:** leafy green primary, a beak-orange highlight, warm paper
-  neutrals. Dark mode uses a brighter green with dark text on it.
+  neutrals. Dark mode uses a brighter green with dark text on it (the public portal's dark is neutral, see Layout →
+  Portals).
 - **Type:** Figtree for text, Bricolage Grotesque for headings (`h1`–`h3` and
-  `font-heading` pick it up automatically). Every font, these and the portals'
+  `font-heading` pick it up automatically) in the app; Inter for both on the public portal, unless the project picks
+  its own (Customize → Branding; see Layout → Portals). Every font, these and the portals'
   16, is a file in `apps/web/src/fonts` (`node scripts/fetch-fonts.mjs` fetches
   them, with their licences), loaded with `next/font/local`: builds never
   download fonts. A symbol none of them has, nor their fallback (the device's Arial, which
@@ -52,7 +54,8 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
 | `series-1`, `series-2` | Reporting's charts (`DailyChart`): the first series (what went well) the brand's green, the second (what needs the team) orange, a lightness step (≥0.15) apart so colour-blind readers tell them apart (`colours.test.ts`), checked against the card in light and dark; a period still under way (today, the month so far) a dashed outline in its colour around a light fill of it, said "so far". Never a status's colour |
 
-Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look): one
+Post statuses in the app (`PostStatusBadge`, `STATUS_STYLES` the one map of their look; the public portal's own hues and
+`StatusLabel`/`StatusPill` are under Layout → Portals): one
 tinted pill, sentence case, its colour dot inside it, the text the foreground's, the
 fill a light tint of the status's colour (`status-*` tokens, `StatusDot`), a colour of
 its own so a list of mixed statuses can be scanned: Open grey, Under review amber,
@@ -66,12 +69,12 @@ the badge.
 Changelog tags (`TagBadge`, `TAG_VARIANTS` the one map): Breaking in the
 destructive colour (its text `destructive-foreground`), the rest neutral, the same in the widget and
 in the team's list; a tag picked in the editor takes its badge's colours. On the portal's own changelog pages
-(`ChangelogEntryView`'s `TAG_TINTS`) New, Improved and Fixed are tinted by kind (green, blue, amber) so a list can be
-scanned; Breaking keeps its destructive look.
+(`ChangelogEntryView`'s `TAG_TINTS`) New, Improved and Fixed are tinted by kind (soft green, `tag-improved` blue, the
+orange `highlight`) so a list can be scanned; Breaking keeps its destructive look.
 States that aren't a status (the running draft's "Collecting pull requests")
 are neutral (outline), never a status's colour.
 
-People (`Avatar`): their photo, or else their initials in white on one of the
+People (`Avatar`; on the public portal one neutral style, `PortalAvatar`): their photo, or else their initials in white on one of the
 muted `avatar-*` colours (low chroma, so a list of faces isn't a rainbow beside the green), picked by the first letter (`AvatarFallback`), so a person has
 the same colour everywhere; never grey initials. Faces in a row (voters) sit in a
 ring of the page's colour and overlap by no more than the ring, so no letter is
@@ -307,44 +310,59 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   a change (enabled once something changed), and `toDraft` shows a change in the frame as it's made
   (the portal's `PortalLookProvider` takes it); leaving with changes not saved
   asks first.
-- **Portals**: a header with the project name and the four parts (Feedback,
-  Roadmap, Changelog, Docs; `components/portal-nav.tsx`), the open one underlined on the header's
-  bottom edge; its contents in the pages' container (max-w-6xl, centred, on every page, Docs too).
-  On phones the header is one line (name, Sign in or the account, the menu): the parts are in the
-  menu. Under it the current part's row (boards, docs tabs) when it has two or more (none on a
-  post's page, which has its way back). Content max-w-3xl; a board, a post and the changelog's list
-  max-w-6xl on wide screens for their rails; the Roadmap max-w-6xl; "Powered by tuti" footer.
-  The changelog's "New" for a signed-in reader is a dot in the `unread` colour (the widget's What's new dot), in the header
-  and, on phones, in the menu.
-  - **A board**: its name and a line under it (the team's description, else "Vote for the ideas you
-    want most, or share your own."), then "Share an idea" (a card: the heading with a lightbulb, a
-    one-line bordered title field and its button, opening to title + details once typed in; signed
-    out, the button is "Sign in to post", and what's typed comes back after signing in). The list is
-    open on the page (no card): Trending, Top, New (and Mine) tabs and the search on one bar with one
-    rule under both, then rows: an 18px semibold title, two lines of excerpt, a byline (avatar, name,
-    when, comments, then the status pill, none for Open), the vote pill on the right. Votes are a
-    horizontal pill (chevron and count, 72px wide, 40px tall, `VoteButton pill`); a completed idea's,
-    a green-tinted pill with a check, the count and "votes", no button. On wide screens a rail beside
-    the list: Boards and Recently shipped as group-labelled lists, Get updates the one card (one line,
-    the changelog by email, Changelog · RSS as text links); below wide screens Recently shipped and
-    Get updates are under the list.
-  - **A post**: back link, a 32px title, its status pill and "Expected <month>" under it, the byline,
-    the body, the vote pill and the voters' faces ("+N more"). On wide screens a rail: Subscribe (the
-    rail's filled button; Unsubscribe an outline), Copy link, a card with Board and Posted, "Shipped in";
-    on phones Subscribe and Copy link under the post. Then the comments.
-  - **The roadmap**: "Share an idea" beside the title, the board filter and "Sign in to vote" under it,
-    three columns headed by their status's icon (calendar, hammer, check), name, plain count and meaning;
-    a card per idea (board, title, two lines, the poster; "In the changelog" on a shipped one). On phones
-    one column at a time, picked from tabs over them (`?column=`).
-  - **The changelog**: a 48px title (36px on phones) with RSS and Subscribe (an outline, to the form)
-    beside it (under it on phones), the tags as chips under it (links, `?tag=`, only the tags its
-    entries have). On wide screens a timeline: each entry's short date ("7 Nov 2026") and tags in a
-    margin, its dot on a line down the list; the entry's 28px title and 17px text beside them (date and
-    tags above the title on phones, entries split by lines). Tags tinted on the portal (New green,
-    Improved blue, Fixed amber, Breaking destructive). Reactions on an entry's own page only. A rail:
-    past eight entries the month index (each month with its count, opening the page its newest entry
-    is on), then Get updates by email; on phones the header's menu lists the entries and Get updates
-    is after the list. An entry's page: a 40px title and, after it, Get updates by email.
+- **Portals** (the public portal's own look: a header card per list, a rail led by its one primary action, a calm shell):
+  - **Look.** Inter for headings and text by default (headings 650, tracked −0.022em; body 15–17px); a project's own
+    fonts (Customize → Branding: `headingFont`, `bodyFont`) still win, and the portal's dialogs and menus take them too.
+    Portal-only tokens in `globals.css` (`:root:has([data-portal-top])`, so the app keeps its own): stronger lines on the
+    paper (`border` 0.87 L, `input` 0.81 L), secondary text at 0.48 L, a neutral dark mode (background 0.165, cards
+    0.205, lines 0.32/0.40, chroma ≈0.005; green stays the accent), 14px cards and 10px controls (`--radius` 0.625rem),
+    a soft card shadow (`shadow-card`), `sunken` for inline code, `info` for callouts and `tag-improved` for the changelog.
+    Statuses there are one hue each in both themes: Under review violet, Planned blue, In progress orange, Completed
+    green, Open grey (`status-*` overridden), shown as `StatusLabel` (its icon and name in its colour: eye, calendar, a
+    half-filled circle, a circled check) or `StatusPill` (the same on a light tint of it). People's initials are one
+    neutral style (`PortalAvatar`; the `avatar-*` tokens are all `secondary` there), the team's soft green.
+  - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
+    the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
+    underlined on the header's bottom edge; Sign in an outline at the end; 64px tall (56px on phones). Its contents in
+    the pages' container (max-w-6xl). On phones the header is one line (mark and name, Sign in or the account, the
+    menu): the parts are in the menu. Under it the current part's row (boards, docs tabs) when it has two or more
+    (none on a post's page, nor beside a board's rail). A "Powered by tuti" footer under a line.
+  - **A board**: a card with its name (34px), its line (the team's description, else "Vote for the ideas you want
+    most, or share your own."), then under a line the sort tabs with icons (Trending flame, Top trending, New clock,
+    Mine) and the search with its icon. Then the rows, open on the page and inset to the card's text: the status label
+    above the title (none for Open), a 17px title, two lines of excerpt, a byline (initial, name, when, comments), a
+    boxed vote on the right (`VoteButton shape="box"`: chevron over the count, 52×58; voted, soft green with a green
+    edge; a completed idea's a green-tinted box with a check). Under the default list "That's all N ideas still to come in <board>. Share
+    yours". The rail: **New idea** (the page's one filled button; it opens the board's form in a dialog, `NewIdea`, open
+    as the page loads with `?title=` or `?new`; signed out its title and "Sign in to post", which comes back with the
+    title; without JavaScript the old box is in the page), Boards in a card (the open one soft green), Recently shipped
+    (a check, the title, "11 votes · shipped 6 Oct"), and under a line Get updates (a bell, an RSS icon button, one line
+    for where the reader stands, the changelog by email on one row, "Read the changelog"). Phones: New idea beside the
+    title, no card, the search an icon that widens as it's used.
+  - **A post**: back link, a 38px title (28px on phones), the byline, then the status pill and "Expected <month>" with a
+    calendar, the body at 17px. The rail is one card: **Upvote** filled with the count after a rule (`shape="upvote"`;
+    voted, "Upvoted" in soft green), Subscribe an outline (Unsubscribe quiet), the voters' faces, Board and Posted as
+    rows, Copy link and Share (the device's share sheet, where it has one), "Have another idea? Post it". On phones the
+    same actions in a row under the body (Copy link and Share as icon buttons), the voters under them. Signed out, one
+    "Join the conversation" bar (Sign in) above the thread instead of a comment box. In the thread, the team's replies
+    on a soft green fade with a green rule and the Team badge, status changes as rows with the status's icon and pill.
+  - **The roadmap**: a 48px title, its line with "Sign in to vote." after it, New idea at the right (to a board's
+    dialog, or a pick of boards), the boards as chips (All boards first), a line, then three open columns headed by
+    the status's icon, name and count, its meaning and a line; a card per idea (the board, the title, two lines,
+    "Expected <month>", the poster, the comment count and a vote chip, `shape="chip"`; "In the changelog →" on a
+    shipped one). On phones one column at a time, picked from a segmented control over them (`?column=`).
+  - **The changelog**: a 48px title and "What's new, improved and fixed in <project>.", then one row: the tags as text
+    tabs (links, `?tag=`, only the tags its entries have) and RSS (outline) and **Subscribe** (filled; a popover with
+    the email form) at its end (above the tabs on phones). On wide screens a timeline: each entry's short date and a dot
+    on a line in a 110px margin; beside it the tag (New soft green, Improved blue, Fixed the orange highlight, Breaking
+    destructive) above a 28px title, the cover framed as a card, the text, "Built from an idea · N votes →" for each idea
+    it shipped, and its reactions, small and grey until picked; a line between entries. A "Jump to month" index beside
+    the list past eight entries (the page's month marked). An entry's page: a 40px title, the reactions, then Get
+    updates by email.
+  - **Sign-in**: one card (26.5rem) under the portal's mark (its logo, or the letter square), "Sign in to <project>",
+    "Vote, comment and follow ideas. We'll email you when they ship.", the email with a mail icon, **Email me a sign-in
+    link**, "Use a password instead · Forgot your password?", then under a line "New here? Create an account" and
+    "Team member? Sign in with Tuti".
   - **One-message pages** (the changelog's email links, unsubscribe, the SSO error, a page not found):
     one card (`PortalMessage`, max-w-sm) with a tinted icon, a 20px heading-font title, 15px text and
     full-width buttons, centred in the page. The 404 is the portal's (`not-found.tsx`), in its header
@@ -352,42 +370,31 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
     forgot password, the link's page, the SSO error) are the same width at one fixed offset under the
     header, which has no Sign in there; the SSO error says it in plain words first, the technical
     detail as a small footnote, "Try again" its primary.
-  Docs has one box for searching and asking, the header's ("Search or ask AI" with AI
-  answers on; below tablet width a line of its own, the whole width; no
-  separate AI button beside it); the docs home repeats it, big, under its heading (from tablet width:
-  below it the header's is right above). Searching the docs never happens in the box itself:
-  it opens the search dialog (`DocsSearchBox`), where "Ask AI" hands the
-  question to the assistant, and before anything's typed "Open the assistant"
-  goes back to the conversation as it was. The assistant is the widget's, the one
-  conversation with AI answers: the portal opens its own widget with it
-  (`Tuti.open({ ask })`), and has no panel of its own. Its results page says what it's
-  for ("Results for “invoice”"), the first tab marked, as the tree beside it is
-  that tab's. Popular articles on a tab's overview are that tab's, and only
-  with three or more. On phones and
-  tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
-  the parts (phones), the current part's navigation (the docs' tree, the boards) and the team's
-  links, which the header shows only from tablet width. The header and the part's row stay at the top as
-  the page scrolls, phones included (`PortalTop`; their height is `--portal-header-height`).
-  Docs pages are in the header's container (`DocsLayout`): the tab's tree on the left
-  (not beside a tab's overview, whose cards are its collections: there the
-  team's sidebar links alone, if it has some)
-  with a line beside it running the page's height (on a short page too), scrolling on its own, each name on one line, cut
-  short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl
-  with the footer under it (not under the tree, which it would push up), and an article's "On this page" on the right on wide screens
-  (the section being read marked), with "Was this helpful?" under it (under the
-  article where it's not shown, phones included). Above an article's or a
-  collection's title, the level above in the accent colour: its collection,
-  else its tab (with two or more) or "All collections". An article's title 40px (32px on phones). Articles use `article-text` on top of
-  `rich-text`: bigger headings, softer body text, room between steps (on the portal a step brighter
-  and closer); Previous and Next are cards with the title in the foreground colour (left-aligned on
-  phones). A tab's overview shows its collections once: on the docs home a heading over a soft green
-  glow and the big box, then a card per collection (an icon tile beside the name, the description in
-  two lines, how many articles the reader may open; two per row from tablet width, one on phones),
-  then its own Popular articles (three or more) and the articles in no collection, as rows with a file
-  icon and a chevron (one column; Related articles the same). The current article in the tree is
-  tinted green. A collection's page: its icon and name, a card of its
-  articles (rows with a chevron), then a card per collection in it (its name,
-  its articles, and the collections in that as folders opening their pages).
+  - **Docs** has one box for searching and asking, the header's ("Search or ask AI" with AI answers on, ⌘K; below
+    tablet width a line of its own, the whole width). Searching never happens in the box itself: it opens the search
+    dialog (`DocsSearchBox`), where "Ask AI" hands the question to the assistant, and before anything's typed "Open the
+    assistant" goes back to the conversation as it was. The assistant is the widget's, the one conversation with AI
+    answers: the portal opens its own widget with it (`Tuti.open({ ask })`), and has no panel of its own. Its results
+    page says what it's for ("Results for “invoice”"), the first tab marked. On phones and tablets the header's menu
+    button (`PortalMenu`) opens a full-screen menu with the parts (phones), the current part's navigation (the docs'
+    tree, the boards) and the team's links. The header and the part's row stay at the top as the page scrolls, phones
+    included (`PortalTop`; their height is `--portal-header-height`).
+  - **The docs home** (a tab's overview): centred, over a soft green glow, the team's title (default "How can we
+    help?") and subtitle, the big box (from tablet width, where the header's is hidden: the same box) with ⌘K and
+    **Ask AI** at its end, and the three most-read articles as chips; then a card per collection (its icon and name on
+    one row, the description, how many articles the reader may open at the bottom; two per row), Popular articles as a
+    card in two columns (three or more, a tab's own), the articles in no collection, and "Can't find it?" (Contact us)
+    where the project answers messages. The overview takes the container's width.
+  - **An article**: the tab's tree on the left (`DocsLayout`, 16rem, a line beside it the page's height): each
+    collection a row with its icon that opens (`<details>`), the page's own open with a line down its articles and the
+    current one soft green; the articles in no collection under a line. Then "Docs › <collection>" with Copy page at
+    the row's end, a 42px title, "Updated <date> · N min read" (about 200 words a minute), and the text at 17px
+    (`article-text` on top of `rich-text`): 26px section headings, steps numbered in soft green circles, inline code on
+    a sunken chip, code blocks as cards (a labelled one with its label in a strip, and Copy: `CodeCopyButtons`), quotes
+    as callouts (an info-blue rule and icon on the card's surface). At its end: "Was this helpful?" (Yes and No with
+    thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, outlines). "On this
+    page" on the right on wide screens (the section being read marked). A collection's page: its icon and name, a card
+    of its articles (rows with a chevron), then a card per collection in it.
 - **Widget panel** (`/widget` on the portal, framed on customers' sites): a
   header in the project's colour (a gradient shading it away from the text
   on it, black or white, so that reads everywhere) with the tab's name and Close, the tab scrolling under

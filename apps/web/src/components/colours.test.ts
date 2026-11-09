@@ -12,7 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 
 import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS, TagBadge } from "./changelog-tag";
-import { STATUS_STYLES } from "./post-status-badge";
+import { STATUS_STYLES, STATUS_TEXT } from "./post-status-badge";
 import { TargetBadge } from "./target-badge";
 
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -226,6 +226,27 @@ test.each(themes)("Autopilot's badges read at 4.5:1 (%s): on their tint, on the 
     for (const under of ["background", "card", "muted"]) {
       const tint = blend(srgb(token(theme, fillToken!)), srgb(token(theme, under)), Number(percent) / 100);
       expect(contrast(srgb(token(theme, tokenIn(classes!, "text-"))), tint), `${badge} on ${under}`).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+});
+
+/** A token on the public portal (globals.css's `:has([data-portal-top])` blocks), else the app's. */
+function portalToken(theme: (typeof themes)[number], name: string): Oklch {
+  const block = theme === ":root" ? ":root:has([data-portal-top]) {" : ":root.dark:has([data-portal-top]) {";
+  const start = css.indexOf(block);
+  const match = css.slice(start, css.indexOf("}", start)).match(new RegExp(`--${name}: oklch\\(([\\d.]+) ([\\d.]+) ([\\d.]+)\\)`));
+  return match ? (match.slice(1).map(Number) as Oklch) : token(theme, name);
+}
+
+test.each(themes)("on the portal a status's label reads at 4.5:1 (%s): its colour on the page, on a card and on its pill's tint", (theme) => {
+  for (const status of statuses) {
+    const name = STATUS_TEXT[status].replace("text-", "");
+    const text = srgb(portalToken(theme, name));
+    for (const page of ["background", "card"]) {
+      const ground = srgb(portalToken(theme, page));
+      expect(contrast(text, ground), `${status} on ${page}`).toBeGreaterThanOrEqual(4.5);
+      // StatusPill: the colour at 8% over the page.
+      expect(contrast(text, blend(text, ground, 0.08)), `${status}'s pill on ${page}`).toBeGreaterThanOrEqual(4.5);
     }
   }
 });

@@ -2,7 +2,8 @@ import { RichText } from "@tuti/content/react";
 import type { PostStatus } from "@tuti/db";
 import type { MediaUrls } from "@tuti/content/media";
 
-import { PostStatusBadge, StatusDot } from "@/components/post-status-badge";
+import { PortalAvatar } from "@/components/portal-avatar";
+import { PostStatusBadge, StatusDot, StatusIcon, StatusPill } from "@/components/post-status-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
@@ -33,11 +34,14 @@ export function CommentList({
   teamUserIds,
   events = [],
   mediaUrls,
+  portal = false,
 }: {
   comments: CommentView[];
   teamUserIds: Set<string>;
   events?: StatusChangeView[];
   mediaUrls?: MediaUrls | null;
+  /** The portal's look: bigger text, neutral faces (the team's green), a status change as its pill with its icon. */
+  portal?: boolean;
 }) {
   const byTeam = (comment: CommentView) => teamUserIds.has(comment.author.id) && !comment.asReader;
   if (comments.length === 0 && events.length === 0) {
@@ -48,19 +52,22 @@ export function CommentList({
   );
 
   return (
-    <ol className="flex flex-col gap-5">
+    <ol className={cn("flex flex-col", portal ? "gap-4" : "gap-5")}>
       {items.map((item) =>
         "event" in item ? (
           // On the avatars' line: the dot centred under them, the words where a comment's start.
-          <li key={item.event.id} className="flex items-center gap-3 border-l-[3px] border-transparent pl-3 text-xs text-muted-foreground">
-            <span className="flex w-8 shrink-0 justify-center">
-              <StatusDot status={item.event.to} />
+          <li
+            key={item.event.id}
+            className={cn("flex items-center gap-3 text-muted-foreground", portal ? "gap-3.5 py-1 text-sm" : "border-l-[3px] border-transparent pl-3 text-xs")}
+          >
+            <span className={cn("flex shrink-0 justify-center", portal ? "w-[2.125rem]" : "w-8")}>
+              {portal ? <StatusIcon status={item.event.to} /> : <StatusDot status={item.event.to} />}
             </span>
             <span>
               {/* A sentence: who moved it where (its status's pill), how many were emailed, when. */}
-              <span className="text-foreground">{item.event.by ?? "Moved"}</span>
+              <span className={cn("text-foreground", portal && "font-semibold")}>{item.event.by ?? "Moved"}</span>
               {item.event.by ? " moved it to " : " to "}
-              <PostStatusBadge status={item.event.to} />
+              {portal ? <StatusPill status={item.event.to} /> : <PostStatusBadge status={item.event.to} />}
               {!!item.event.emailed && ` · ${item.event.emailed} ${item.event.emailed === 1 ? "person" : "people"} emailed`}
               {" · "}
               <time dateTime={item.event.createdAt.toISOString()}>{timeAgo(item.event.createdAt)}</time>
@@ -72,27 +79,35 @@ export function CommentList({
             className={cn(
               // Every one inset by a line's room, so the team's and a note's line down the left (and light tint) keep the
               // avatars in one column: the team's green, a note the highlight's.
-              "flex gap-3 border-l-[3px] border-transparent pl-3",
+              // The portal's: the faces on the page's edge; the team's on their tint, inset by its rule.
+              portal ? "flex gap-3.5 py-2" : "flex gap-3 border-l-[3px] border-transparent pl-3",
               item.comment.internal
                 ? "rounded-r-lg border-highlight-foreground/60 bg-highlight/35 py-2.5 pr-3"
-                : byTeam(item.comment) && "rounded-r-lg border-primary/70 bg-primary/8 py-2.5 pr-3",
+                : byTeam(item.comment) &&
+                    (portal
+                      ? "rounded-r-xl border-l-[3px] border-primary bg-linear-to-r from-soft to-soft/30 py-3.5 pr-4 pl-3"
+                      : "rounded-r-lg border-primary/70 bg-primary/8 py-2.5 pr-3"),
             )}
           >
-            <Avatar className="size-8">
-              {item.comment.author.image && <AvatarImage src={item.comment.author.image} alt="" />}
-              <AvatarFallback>{item.comment.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-            </Avatar>
+            {portal ? (
+              <PortalAvatar person={item.comment.author} team={byTeam(item.comment)} className="size-[2.125rem] text-[0.8125rem]" />
+            ) : (
+              <Avatar className="size-8">
+                {item.comment.author.image && <AvatarImage src={item.comment.author.image} alt="" />}
+                <AvatarFallback>{item.comment.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+              </Avatar>
+            )}
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-medium">{item.comment.author.name}</span>
+                <span className={portal ? "font-semibold" : "font-medium"}>{item.comment.author.name}</span>
                 {/* A note is always the team's: its own badge says enough. */}
                 {byTeam(item.comment) && !item.comment.internal && <Badge>Team</Badge>}
                 {item.comment.internal && <Badge variant="highlight">Internal note</Badge>}
-                <time dateTime={item.comment.createdAt.toISOString()} className="text-xs text-muted-foreground">
+                <time dateTime={item.comment.createdAt.toISOString()} className={cn("text-muted-foreground", portal ? "text-sm" : "text-xs")}>
                   {timeAgo(item.comment.createdAt)}
                 </time>
               </div>
-              <RichText doc={displayDoc(item.comment)} mediaUrls={mediaUrls} className="rich-text text-sm break-words" />
+              <RichText doc={displayDoc(item.comment)} mediaUrls={mediaUrls} className={cn("rich-text break-words", portal ? "text-[0.96875rem] leading-relaxed" : "text-sm")} />
             </div>
           </li>
         ),

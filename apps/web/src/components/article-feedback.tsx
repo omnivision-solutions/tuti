@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "cn";
+import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import { useEffect, useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -19,11 +20,8 @@ export function ArticleViewCount({ projectSlug, slug }: { projectSlug: string; s
   return null;
 }
 
-/**
- * "Was this helpful?" under a help article, or (`beside`) under its "On this page"; after a "No",
- * what was missing.
- */
-export function ArticleFeedback({ projectSlug, slug, beside = false, className }: { projectSlug: string; slug: string; beside?: boolean; className?: string }) {
+/** "Was this helpful?" at the end of a help article; after a "No", what was missing. */
+export function ArticleFeedback({ projectSlug, slug, className }: { projectSlug: string; slug: string; className?: string }) {
   const [step, setStep] = useState<"ask" | "comment" | "thanks">("ask");
   const [comment, setComment] = useState("");
   const [pending, startTransition] = useTransition();
@@ -40,15 +38,17 @@ export function ArticleFeedback({ projectSlug, slug, beside = false, className }
     });
 
   return (
-    <section aria-label="Was this helpful?" className={cn("flex flex-col gap-3 border-t", beside ? "pt-4 text-sm" : "pt-6", className)}>
+    <section aria-label="Was this helpful?" className={cn("flex flex-col gap-3 border-t pt-6", className)}>
       {step === "ask" && (
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className={cn("font-semibold", beside && "font-heading")}>Was this helpful?</h2>
+          <h2 className="font-sans text-[0.9375rem] font-semibold">Was this helpful?</h2>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={pending} onClick={() => send(true)}>
+            <Button variant="outline" size="sm" disabled={pending} onClick={() => send(true)} className="font-semibold">
+              <ThumbsUpIcon aria-hidden />
               Yes
             </Button>
-            <Button variant="outline" size="sm" disabled={pending} onClick={() => send(false)}>
+            <Button variant="outline" size="sm" disabled={pending} onClick={() => send(false)} className="font-semibold">
+              <ThumbsDownIcon aria-hidden />
               No
             </Button>
           </div>

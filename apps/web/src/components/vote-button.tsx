@@ -11,8 +11,43 @@ import { cn } from "@/lib/utils";
 import { toggleVote } from "@/server/posts";
 
 const SHAPE = "h-auto w-12 flex-col gap-0 py-1.5";
-/** The portal's: chevron and count side by side, a pill as wide as its count. */
-const PILL = "h-10 w-[4.5rem] shrink-0 gap-1.5 rounded-full px-3 text-[0.9375rem] tabular-nums";
+/**
+ * The portal's shapes: `box` (a board's row: the chevron over the count), `chip` (a roadmap card's footer: side by side,
+ * small) and `upvote` (a post's rail: "Upvote", then the count, the whole width).
+ */
+const SHAPES = {
+  box: "h-[3.625rem] w-[3.25rem] shrink-0 flex-col gap-0 rounded-xl text-[0.9375rem] font-bold tabular-nums shadow-xs [&_svg]:size-[1.125rem]",
+  chip: "h-9 shrink-0 gap-1 rounded-lg px-2.5 text-[0.9375rem] font-bold tabular-nums",
+  upvote: "h-12 gap-2.5 rounded-xl px-5 text-base font-semibold tabular-nums",
+} as const;
+export type VoteShape = keyof typeof SHAPES;
+/** A portal shape's look: outline, or once voted, the soft green (the primary is the post's Upvote, before voting). */
+const portalLook = (shape: VoteShape, voted: boolean) =>
+  voted
+    ? "border-primary/55 bg-soft text-soft-foreground hover:bg-soft [&_svg]:text-primary"
+    : shape === "upvote"
+      ? ""
+      : "border-input bg-card [&_svg]:text-muted-foreground";
+
+/** The words and count inside a portal shape (`upvote` says what it does; the others are the chevron and count). */
+function Contents({ shape, count, voted }: { shape?: VoteShape; count: number; voted: boolean }) {
+  if (shape === "upvote") {
+    return (
+      <>
+        {voted ? <CheckIcon /> : <ChevronUpIcon />}
+        {voted ? "Upvoted" : "Upvote"}
+        <span aria-hidden className="h-5 w-px bg-current opacity-30" />
+        <span className="font-bold">{count}</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <ChevronUpIcon />
+      <span className="font-semibold tabular-nums">{count}</span>
+    </>
+  );
+}
 
 export function VoteButton({
   postId,
@@ -22,7 +57,7 @@ export function VoteButton({
   vote,
   signInHref,
   signedOut,
-  pill = false,
+  shape,
 }: {
   postId: string;
   count: number;
@@ -34,10 +69,9 @@ export function VoteButton({
   signInHref?: string;
   /** On a portal, signed out: a link to its sign-in page that comes back here (signed in but unable to vote, `disabled`). */
   signedOut?: boolean;
-  /** Chevron and count side by side (the portal's). */
-  pill?: boolean;
+  /** The portal's (see SHAPES); without one, the app's and the widget's. */
+  shape?: VoteShape;
 }) {
-  const shape = pill ? PILL : SHAPE;
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic({ count, voted });
   const votes = `${optimistic.count} ${optimistic.count === 1 ? "vote" : "votes"}`;
@@ -47,20 +81,20 @@ export function VoteButton({
   }
   if (signInHref) {
     return (
-      <a href={signInHref} target="_blank" rel="noreferrer" aria-label={`Sign in to vote (${votes})`} className={cn(buttonVariants({ variant: "outline" }), shape)}>
-        <ChevronUpIcon />
-        <span className="font-semibold tabular-nums">{optimistic.count}</span>
+      <a href={signInHref} target="_blank" rel="noreferrer" aria-label={`Sign in to vote (${votes})`} className={cn(buttonVariants({ variant: "outline" }), SHAPE)}>
+        <Contents count={optimistic.count} voted={false} />
       </a>
     );
   }
   return (
     <Button
-      variant={optimistic.voted ? "default" : "outline"}
+      variant={shape ? (shape === "upvote" && !optimistic.voted ? "default" : "outline") : optimistic.voted ? "default" : "outline"}
       disabled={disabled || pending}
       title={disabled ? "Sign in to vote" : undefined}
       aria-pressed={optimistic.voted}
       // The count too: the label replaces the button's text for screen readers.
-      aria-label={`${optimistic.voted ? "Remove vote" : "Upvote"} (${votes})`}
+      // Its words first (the post's says "Upvoted" once voted, for voice control), then the count; aria-pressed says it's on.
+      aria-label={`${optimistic.voted ? (shape === "upvote" ? "Upvoted" : "Remove vote") : "Upvote"} (${votes})`}
       onClick={() =>
         startTransition(async () => {
           const next = !optimistic.voted;
@@ -71,32 +105,43 @@ export function VoteButton({
           }
         })
       }
-      className={shape}
+      className={shape ? cn(SHAPES[shape], portalLook(shape, optimistic.voted)) : SHAPE}
     >
-      <ChevronUpIcon />
-      <span className="font-semibold tabular-nums">{optimistic.count}</span>
+      <Contents shape={shape} count={optimistic.count} voted={optimistic.voted} />
     </Button>
   );
 }
 
-function PortalSignInToVote({ count, votes, shape }: { count: number; votes: string; shape: string }) {
+function PortalSignInToVote({ count, votes, shape }: { count: number; votes: string; shape?: VoteShape }) {
   return (
-    <Link href={useSignInHref()} aria-label={`Sign in to vote (${votes})`} className={cn(buttonVariants({ variant: "outline" }), shape)}>
-      <ChevronUpIcon />
-      <span className="font-semibold tabular-nums">{count}</span>
+    <Link
+      href={useSignInHref()}
+      aria-label={`Sign in to vote (${votes})`}
+      className={cn(buttonVariants({ variant: shape === "upvote" ? "default" : "outline" }), shape ? cn(SHAPES[shape], portalLook(shape, false)) : SHAPE)}
+    >
+      <Contents shape={shape} count={count} voted={false} />
     </Link>
   );
 }
 
 /** A completed idea's votes, as text: it's shipped, so there's nothing left to vote for. */
-export function VoteCount({ count, pill = false }: { count: number; pill?: boolean }) {
-  if (pill) {
+export function VoteCount({ count, shape }: { count: number; shape?: VoteShape }) {
+  if (shape) {
     return (
-      // At least as wide as the vote pill: a check for done, then the count.
-      <p className="inline-flex h-10 min-w-[4.5rem] shrink-0 items-center justify-center gap-1 rounded-full bg-status-completed/12 px-3 text-sm text-muted-foreground tabular-nums">
+      // As big as the vote button it stands for: a check for done, then the count.
+      <p
+        className={cn(
+          "inline-flex shrink-0 items-center justify-center gap-1 rounded-xl border border-status-completed/30 bg-status-completed/10 text-muted-foreground tabular-nums",
+          shape === "box" ? "h-[3.625rem] w-[3.25rem] flex-col gap-0" : "h-9 rounded-lg px-2.5",
+        )}
+      >
         <CheckIcon aria-hidden className="size-4 text-status-completed" />
-        <span className="font-semibold text-foreground">{count}</span>
-        <span>{count === 1 ? "vote" : "votes"}</span>
+        <span aria-hidden className="font-bold text-foreground">
+          {count}
+        </span>
+        <span className="sr-only">
+          {count} {count === 1 ? "vote" : "votes"}
+        </span>
       </p>
     );
   }

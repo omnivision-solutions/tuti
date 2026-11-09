@@ -18,7 +18,7 @@ test("someone writes a formatted post with a video, and a comment with a link", 
     route.fulfill({ contentType: "text/html", body: "<body style='background:#222;color:#fff'>Video</body>" }),
   );
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByRole("button", { name: "New idea" }).click();
   await ada.getByLabel("Title").fill("Dark mode");
 
   // Bold from the bar over selected text, a link with its shortcut, and a list and a video from the / menu.
@@ -106,7 +106,7 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByRole("button", { name: "New idea" }).click();
   await ada.getByLabel("Title").fill("Make the hero smaller");
   await ada.getByRole("textbox", { name: "Details" }).click();
   await ada.keyboard.type("It takes the whole screen:");
@@ -166,7 +166,7 @@ test("someone comments with a screenshot, and the team replies with one", async 
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByRole("button", { name: "New idea" }).click();
   await ada.getByLabel("Title").fill("Export is broken");
   await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByRole("link", { name: "Export is broken" }).click();

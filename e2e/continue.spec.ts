@@ -16,7 +16,7 @@ test("someone with a Tuti account continues on a portal with it", async ({ brows
   const ivy = await signUp(browser, APP_URL, "Ivy");
   await ivy.goto(`${portalUrl(slug)}/sign-in`);
   await checkpoint(ivy, "portal-sign-in");
-  await ivy.getByRole("link", { name: "Continue with your Tuti account" }).click();
+  await ivy.getByRole("link", { name: "Sign in with Tuti" }).click();
   await expect(ivy.getByText("Continue to Acme")).toBeVisible();
   await expect(ivy.getByText(`Signed in as ${ivy.email}`)).toBeVisible();
   await checkpoint(ivy, "continue-as");
@@ -27,19 +27,19 @@ test("someone with a Tuti account continues on a portal with it", async ({ brows
   await ivy.goBack();
   await ivy.getByRole("button", { name: "Continue as Ivy" }).click();
   await ivy.waitForURL(`${portalUrl(slug)}/feedback/feature-requests`);
-  await expect(ivy.getByRole("button", { name: "Submit post" })).toBeVisible();
+  await expect(ivy.getByRole("button", { name: "New idea" })).toBeVisible();
   await expect(ivy.getByRole("link", { name: "Sign in" })).toHaveCount(0);
   await checkpoint(ivy, "portal-signed-in-as-account");
 
   // Signed out on tuti.so, the same button asks to sign in first, then comes back.
   const bo = await newPerson(browser, portalUrl(slug));
   await bo.goto("/sign-in");
-  await bo.getByRole("link", { name: "Continue with your Tuti account" }).click();
+  await bo.getByRole("link", { name: "Sign in with Tuti" }).click();
   await bo.waitForURL(`${APP_URL}/sign-in?**`);
   await bo.getByLabel("Email").fill(owner.email);
   await bo.getByLabel("Password").fill("correct horse battery staple");
   await bo.getByRole("button", { name: "Sign in" }).click();
   await bo.getByRole("button", { name: "Continue as Olive Owner" }).click();
   await bo.waitForURL(`${portalUrl(slug)}/feedback/feature-requests`);
-  await expect(bo.getByRole("button", { name: "Submit post" })).toBeVisible();
+  await expect(bo.getByRole("button", { name: "New idea" })).toBeVisible();
 });

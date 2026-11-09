@@ -100,7 +100,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await checkpoint(visitor, "portal-on-site-widget");
   const direct = await newPerson(browser, portalUrl(slug));
   await direct.goto("/portal/docs");
-  await expect(direct.getByRole("heading", { name: "Docs" }).first()).toBeVisible();
+  await expect(direct.getByRole("heading", { name: "How can we help?" }).first()).toBeVisible();
   await expect(direct.locator("#team-html")).toHaveCount(0);
   await expect(direct.locator("body")).not.toHaveAttribute("data-team-script", "ran");
   // Customize → Widget says the same as for any portal beside its switch: nothing about a path.
@@ -108,7 +108,8 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(owner.getByText("The launcher on every page of your portal too, opening the same panel as on your site.")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/domain`);
 
-  // Signing up, posting and signing out there, all under the path.
+  // Signing up, posting and signing out there, all under the path (the panel closed: it's over the header's corner).
+  await visitor.reload();
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/sign-in?next=%2Fdocs`);
   // The account is made on the app (a password is never typed on the team's site), and back under the path.
@@ -121,7 +122,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/docs`);
   await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
   await visitor.goto("/portal/feedback/feature-requests");
-  await visitor.getByRole("button", { name: "Submit post" }).click();
+  await visitor.getByRole("button", { name: "New idea" }).click();
   await visitor.getByLabel("Title").fill("Dark mode on our site");
   await visitor.getByRole("button", { name: "Submit post" }).click();
   await visitor.getByRole("link", { name: "Dark mode on our site" }).click();

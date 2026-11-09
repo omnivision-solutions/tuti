@@ -8,7 +8,7 @@ import { apiFor, backToPortal, createProject, fillSignUp, postFeedback, signInWi
 import { latestEmailTo, linkIn } from "./mail";
 import { similar } from "./openai";
 
-test("a portal post: the team's reply stands out, its status history and voters; signed out, the comment box asks to sign in and keeps what was written", async ({ browser }, testInfo) => {
+test("a portal post: the team's reply stands out, its status history and voters; signed out, a bar to sign in; signed in, the comment box keeps what was written", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -23,7 +23,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
   const bo = await signUp(browser, portalUrl(slug), "Bo");
   await bo.goto("/feedback/feature-requests/dark-mode-1");
   await bo.getByRole("button", { name: "Upvote" }).click();
-  await expect(bo.getByRole("button", { name: "Remove vote" })).toHaveText("2");
+  await expect(bo.getByRole("button", { name: "Upvoted" })).toHaveText("Upvoted2");
 
   // The team answers and plans it.
   await team.goto(`/app/${slug}/p/1`);
@@ -52,7 +52,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
       // The team's reply: "Team" by the name, on a tint.
       const reply = activity.getByRole("listitem").filter({ hasText: "Thanks! We're on it." });
       await expect(reply.getByText("Team", { exact: true })).toBeVisible();
-      await expect(reply).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(reply).not.toHaveCSS("background-image", "none");
       // Its status history, after the reply: the change and when, not who made it.
       await expect(activity.getByRole("listitem").last()).toHaveText(/^Moved to Planned · /);
       // When the team expects it, beside its status.
@@ -60,7 +60,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
       // Who wants it: their faces (Bo's, the latest, first) and how many.
       const voters = visitor.getByRole("group", { name: "Voters" });
       await expect(voters.locator('[data-slot="avatar"]')).toHaveText(["B", "A"]);
-      // Legible: coloured initials, overlapping by no more than their 2px ring, so no letter is cut.
+      // Legible: initials (the portal's one neutral style), overlapping by no more than their 2px ring, so no letter is cut.
       const faces = voters.locator('[data-slot="avatar"]');
       await expect(faces.locator('[data-slot="avatar-fallback"]').first()).toHaveClass(/bg-avatar-/);
       const [front, behind] = [(await faces.nth(0).boundingBox())!, (await faces.nth(1).boundingBox())!];
@@ -69,9 +69,9 @@ test("a portal post: the team's reply stands out, its status history and voters;
       await expect(voters.getByText("want this", { exact: true })).toBeVisible();
       await expect(voters.getByText("2 people want this", { exact: true })).toHaveClass(/sr-only/);
       await expect(voters).toContainText("2 people want this");
-      // The comment box is there.
-      await expect(visitor.getByRole("textbox", { name: "Comment" })).toBeVisible();
-      await expect(visitor.getByText("You'll sign in to post it.", { exact: true })).toBeVisible();
+      // No comment box: one bar to sign in, above the thread.
+      await expect(visitor.getByRole("textbox", { name: "Comment" })).toHaveCount(0);
+      await expect(visitor.getByRole("heading", { name: "Join the conversation" })).toBeVisible();
       // Nothing wider than the screen.
       expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
       await checkpoint(visitor, `portal-post-signed-out-${name}-${colorScheme}`);
@@ -79,42 +79,30 @@ test("a portal post: the team's reply stands out, its status history and voters;
     }
   }
 
-  // What's written is kept in this tab only: a tab opened afterwards starts with an empty box.
-  const other = await (await browser.newContext({ baseURL: portalUrl(slug) })).newPage();
-  await other.goto("/feedback/feature-requests/dark-mode-1");
-  await expect(async () => {
-    await other.getByRole("textbox", { name: "Comment" }).fill("Never mind");
-    await expect(other.getByRole("textbox", { name: "Comment" })).toHaveText("Never mind", { timeout: 1000 });
-  }).toPass();
-  await other.getByRole("button", { name: "Comment", exact: true }).click();
-  await other.waitForURL((url) => url.pathname === "/sign-in");
-  const newTab = await other.context().newPage();
-  await other.close();
-  await newTab.goto("/feedback/feature-requests/dark-mode-1");
-  await expect(newTab.getByRole("textbox", { name: "Comment" })).toBeVisible();
-  await expect(newTab.getByRole("textbox", { name: "Comment" })).toHaveText("");
-  await newTab.context().close();
-
-  // Sending asks them to sign in, and what they wrote is back in the box after.
+  // The bar's Sign in comes back to the post: an account is made on the app, and back.
   const visitor = await (await browser.newContext({ baseURL: portalUrl(slug) })).newPage();
   await visitor.goto("/feedback/feature-requests/dark-mode-1");
-  const box = visitor.getByRole("textbox", { name: "Comment" });
-  // Typed once the page is ready for it (before then, the editor isn't there to take it).
-  await expect(async () => {
-    await box.fill("Me too, please!");
-    await expect(box).toHaveText("Me too, please!", { timeout: 1000 });
-  }).toPass();
-  await visitor.getByRole("button", { name: "Comment", exact: true }).click();
+  await visitor.getByRole("main").getByRole("link", { name: "Sign in", exact: true }).click();
   await visitor.waitForURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === "/feedback/feature-requests/dark-mode-1");
-  // An account is made on the app, and back.
   await visitor.getByRole("link", { name: "Create an account" }).click();
   await fillSignUp(visitor, "Cy", `e2e-${randomUUID()}@example.com`);
   await visitor.waitForURL((url) => url.pathname === "/continue");
   await backToPortal(visitor);
   await visitor.waitForURL("**/feedback/feature-requests/dark-mode-1");
+  const box = visitor.getByRole("textbox", { name: "Comment" });
+  await expect(box).toHaveText("");
+  await expect(visitor.getByRole("heading", { name: "Join the conversation" })).toHaveCount(0);
+
+  // What's written is kept in this tab, through a reload, only in that post's box.
+  await expect(async () => {
+    await box.fill("Me too, please!");
+    await expect(box).toHaveText("Me too, please!", { timeout: 1000 });
+  }).toPass();
+  await expect
+    .poll(() => visitor.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("tuti:comment-draft:")).length))
+    .toBe(1);
+  await visitor.reload();
   await expect(box).toHaveText("Me too, please!");
-  await expect(visitor.getByText("You'll sign in to post it.")).toHaveCount(0);
-  // Only in that post's box: not on another post's.
   await visitor.goto("/feedback/feature-requests/offline-mode-2");
   await expect(box).toBeVisible();
   await expect(box).toHaveText("");
@@ -151,7 +139,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
   const mine = visitor.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Me too, please!" });
   await expect(mine).toBeVisible();
   // Not the team's: no tint, no badge.
-  await expect(mine).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(mine).toHaveCSS("background-image", "none");
   await expect(mine.getByText("Team", { exact: true })).toHaveCount(0);
   await expect(box).toHaveText("");
   await visitor.reload();
@@ -193,7 +181,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await expect(visitor).toHaveURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === darkPath);
   await signInWithPassword(visitor, ada.email);
   await visitor.waitForURL((url) => url.pathname === darkPath);
-  await expect(visitor.getByRole("button", { name: "Remove vote (1 vote)" })).toBeVisible();
+  await expect(visitor.getByRole("button", { name: "Upvoted (1 vote)" })).toBeVisible();
   await visitor.context().close();
 
   // Ada (email verified) posted it: she hears anyway, so she gets no button.
@@ -205,6 +193,9 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await ada.getByRole("button", { name: "Copy link" }).click();
   await expect(ada.getByText("Copied")).toBeVisible();
   expect(await ada.evaluate(() => navigator.clipboard.readText())).toBe(`${portalUrl(slug)}${darkPath}`);
+  // Another idea: its board, New idea's dialog open.
+  await ada.getByRole("link", { name: "Post it" }).click();
+  await expect(ada.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
 
   // Cy (email verified) follows it without voting.
   const cy = await signUp(browser, portalUrl(slug), "Cy");
@@ -252,12 +243,12 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   const hears = di.getByText("You'll hear when it ships.", { exact: true });
   await di.getByRole("button", { name: "Upvote" }).click();
   // Saved once it's enabled again (the count changes at once).
-  await expect(di.getByRole("button", { name: "Remove vote" })).toBeEnabled();
+  await expect(di.getByRole("button", { name: "Upvoted" })).toBeEnabled();
   await di.reload();
   await expect(hears).toBeVisible();
   // The line from the start (a fresh page), and still the vote taken back brings Subscribe.
-  await di.getByRole("button", { name: "Remove vote" }).click();
-  await expect(di.getByRole("button", { name: "Upvote" })).toHaveText("1");
+  await di.getByRole("button", { name: "Upvoted" }).click();
+  await expect(di.getByRole("button", { name: "Upvote" })).toHaveText("Upvote1");
   await expect(di.getByRole("button", { name: "Subscribe" })).toBeVisible();
   await expect(hears).toHaveCount(0);
   // Subscribing from the keyboard keeps its focus.
@@ -268,11 +259,11 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   // Voting too, she hears anyway: the line, not an Unsubscribe that would change nothing, after a reload and right away.
   await di.getByRole("button", { name: "Upvote" }).click();
   // Saved once it's enabled again (the count changes at once).
-  await expect(di.getByRole("button", { name: "Remove vote" })).toBeEnabled();
+  await expect(di.getByRole("button", { name: "Upvoted" })).toBeEnabled();
   await di.reload();
   await expect(hears).toBeVisible();
   await expect(di.getByRole("button", { name: /subscribe/i })).toHaveCount(0);
-  await di.getByRole("button", { name: "Remove vote" }).click();
+  await di.getByRole("button", { name: "Upvoted" }).click();
   await expect(di.getByRole("button", { name: "Unsubscribe" })).toBeVisible();
   await di.getByRole("button", { name: "Upvote" }).click();
   await expect(hears).toBeVisible();

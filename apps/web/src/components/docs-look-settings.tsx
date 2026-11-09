@@ -7,6 +7,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { DOCS_HEADING } from "@/components/docs-home";
 import { type ContentActions, DOCS_SUBTITLE_MAX, DOCS_TITLE_MAX, type DocsHome } from "@/lib/portal-look";
 
 /** A setting that's on or off: its name, what it does, and a switch, in a row. */
@@ -77,12 +78,12 @@ export function DocsHomeSettings({ projectSlug, home }: { projectSlug: string; h
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="docs-title">Title</FieldLabel>
-          <Input id="docs-title" name="title" defaultValue={home.title} maxLength={DOCS_TITLE_MAX} placeholder="Docs" autoComplete="off" />
-          <FieldDescription>At the top of your docs&apos; home. Empty for &ldquo;Docs&rdquo;.</FieldDescription>
+          <Input id="docs-title" name="title" defaultValue={home.title} maxLength={DOCS_TITLE_MAX} placeholder={DOCS_HEADING.title} autoComplete="off" />
+          <FieldDescription>At the top of your docs&apos; home. Empty for &ldquo;{DOCS_HEADING.title}&rdquo;.</FieldDescription>
         </Field>
         <Field>
           <FieldLabel htmlFor="docs-subtitle">Subtitle</FieldLabel>
-          <Textarea id="docs-subtitle" name="subtitle" defaultValue={home.subtitle} maxLength={DOCS_SUBTITLE_MAX} rows={3} placeholder="Guides and answers to common questions." />
+          <Textarea id="docs-subtitle" name="subtitle" defaultValue={home.subtitle} maxLength={DOCS_SUBTITLE_MAX} rows={3} placeholder={DOCS_HEADING.subtitle} />
         </Field>
         <SwitchRow
           name="popular"

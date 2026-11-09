@@ -190,22 +190,23 @@ test("a board's own words for posting: the team sees them in a preview as they t
   await expect(preview).not.toContainText("Not saved");
   await owner.keyboard.press("Escape");
 
-  // On the portal: the description under the name, and the board's words in its "Share an idea" box.
+  // On the portal: the description under the name, and the board's words in its New idea dialog.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
   await expect(ada.getByText("What should we build next?")).toBeVisible();
-  const form = ada.getByRole("main").locator("form");
+  await ada.getByRole("button", { name: "New idea" }).click();
+  const form = ada.getByRole("dialog", { name: "Share an idea" }).locator("form");
   await expect(form.getByLabel("Title")).toHaveAttribute("placeholder", "What should it do?");
-  // The details once the title is clicked.
-  await expect(form.getByRole("textbox", { name: "Details" })).toHaveCount(0);
-  await form.getByLabel("Title").click();
   await expect(form.getByRole("textbox", { name: "Details" }).locator("p")).toHaveAttribute("data-placeholder", "How would it help you?");
   await checkpoint(ada, "portal-board-share-idea");
   await form.getByLabel("Title").fill("Dark mode");
   await form.getByRole("button", { name: "Request a feature" }).click();
-  // Posted (saving runs its jobs first, see postFeedback): the post is on the board; the box starts empty again.
+  // Posted (saving runs its jobs first, see postFeedback): the post is on the board, the dialog closed; it opens empty again.
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible({ timeout: 15_000 });
+  await expect(ada.getByRole("dialog")).toHaveCount(0);
+  await ada.getByRole("button", { name: "New idea" }).click();
   await expect(form.getByLabel("Title")).toHaveValue("");
+  await ada.keyboard.press("Escape");
   // The widget's Feedback tab uses the same words (signed in on the portal, it posts as them).
   await ada.goto("/widget?tab=feedback");
   await expect(ada.getByLabel("Title")).toHaveAttribute("placeholder", "What should it do?");

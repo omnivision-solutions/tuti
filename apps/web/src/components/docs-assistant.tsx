@@ -1,6 +1,6 @@
 "use client";
 
-import { SendHorizontalIcon, SparklesIcon, ThumbsDownIcon, ThumbsUpIcon, Trash2Icon, XIcon } from "lucide-react";
+import { SendHorizontalIcon, SparklesIcon, ThumbsDownIcon, ThumbsUpIcon, Trash2Icon, XIcon, MessageCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -538,24 +538,38 @@ export type SupportContact = { messages: boolean; email: string | null };
  * team's own code may add it), else an email to the support address (or the widget's Messages on a
  * page of their own). Only what's set up; nothing without any of them.
  */
-export function StillStuck({ support }: { support: SupportContact | null }) {
+export function StillStuck({ support, home = false }: { support: SupportContact | null; home?: boolean }) {
   const assistant = useDocsAssistant();
   const at = usePortalHref();
-  if (!assistant && !support) {
+  // The docs' home has Ask AI in its search: there, "Can't find it?" is the way to the team.
+  const ask = !home && assistant;
+  if (!ask && !support) {
     return null;
   }
   return (
-    <section aria-labelledby="still-stuck" className="flex flex-wrap items-center gap-3 rounded-xl bg-muted/60 p-4">
-      <h2 id="still-stuck" className="mr-auto font-semibold">
-        Still stuck?
-      </h2>
-      {assistant && (
-        <Button variant="outline" size="sm" onClick={assistant.open}>
-          <SparklesIcon />
-          Ask AI
-        </Button>
-      )}
-      {support && (
+    <section
+      aria-labelledby="still-stuck"
+      className="flex flex-wrap items-center gap-4 rounded-[0.875rem] bg-card p-5 shadow-card ring-1 ring-border sm:flex-nowrap sm:px-6"
+    >
+      <span aria-hidden className="grid size-11 shrink-0 place-items-center rounded-lg bg-soft text-soft-foreground">
+        <MessageCircleIcon className="size-5" />
+      </span>
+      <div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
+        <h2 id="still-stuck" className="font-sans text-[1.0625rem] font-semibold">
+          {home ? "Can't find it?" : "Still stuck?"}
+        </h2>
+        <p className="text-[0.9375rem] text-muted-foreground">
+          {ask && support ? "Ask AI for a quick answer, or write to the team." : ask ? "Ask AI for a quick answer." : "Write to the team and we'll help."}
+        </p>
+      </div>
+      <div className="flex shrink-0 gap-2">
+        {ask && (
+          <Button variant="outline" onClick={assistant.open} className="font-semibold">
+            <SparklesIcon />
+            Ask AI
+          </Button>
+        )}
+        {support && (
           <a
             href={support.email ? `mailto:${support.email}` : at("/widget?tab=messages")}
             {...(!support.email && { target: "_blank", rel: "noopener" })}
@@ -566,11 +580,12 @@ export function StillStuck({ support }: { support: SupportContact | null }) {
                 widget.open({ tab: "messages" });
               }
             }}
-            className={buttonVariants({ size: "sm" })}
+            className={buttonVariants({ variant: "outline", className: "font-semibold" })}
           >
             Contact us
           </a>
-      )}
+        )}
+      </div>
     </section>
   );
 }

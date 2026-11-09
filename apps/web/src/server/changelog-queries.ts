@@ -144,7 +144,7 @@ export async function publishedEntries(
       // Public posts only, whoever reads it (post-visibility.ts): an announcement is for everyone.
       posts: {
         where: { post: { duplicateOfId: null, visibility: "PUBLIC", board: { off: false } } },
-        select: { post: { select: { number: true, title: true, sample: true, board: { select: { slug: true } } } } },
+        select: { post: { select: { number: true, title: true, voteCount: true, sample: true, board: { select: { slug: true } } } } },
       },
     },
   });
@@ -166,7 +166,7 @@ export async function publishedEntries(
           ? { type: "doc", content: [{ type: "image", attrs: { mediaId: e.cover.id, w: e.cover.width, h: e.cover.height, alt: e.title } }] }
           : null,
       // A real entry's real posts only (and a sample entry's sample ones): sample content never mixes with the team's.
-      posts: e.posts.filter(({ post }) => post.sample === e.sample).map(({ post }) => ({ number: post.number, title: post.title, board: post.board })),
+      posts: e.posts.filter(({ post }) => post.sample === e.sample).map(({ post }) => ({ number: post.number, title: post.title, voteCount: post.voteCount, board: post.board })),
       reactions: counts(e.id),
       reacted: mine.filter((r) => r.entryId === e.id).map((r) => r.kind.toLowerCase() as Reaction),
       sample: e.sample,

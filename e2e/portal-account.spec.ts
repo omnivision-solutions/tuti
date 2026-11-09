@@ -28,7 +28,7 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   for (const path of ["dark-mode-1", "offline-mode-2"]) {
     await bo.goto(`/feedback/feature-requests/${path}`);
     await bo.getByRole("button", { name: "Upvote" }).click();
-    await expect(bo.getByRole("button", { name: "Remove vote" })).toBeEnabled();
+    await expect(bo.getByRole("button", { name: "Upvoted" })).toBeEnabled();
   }
 
   // From the account menu: Bo's posts and votes, each linking to it.

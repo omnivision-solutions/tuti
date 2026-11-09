@@ -63,8 +63,12 @@ async function changelog(page?: string, tag?: string) {
       }
       if (node.props.href && node.props["aria-label"]) {
         months[node.props["aria-label"]] = node.props.href;
-      } else if (node.props.href && typeof node.props.children === "string") {
-        links[node.props.children] = node.props.href;
+      } else if (node.props.href && node.type !== "a") {
+        // A link between its pages (not the RSS feed's plain <a>): its words, beside any icon ("Older entries →").
+        const children = [node.props.children].flat();
+        if (children.some((child) => typeof child === "string")) {
+          links[children.filter((child) => typeof child === "string").join("").trim()] = node.props.href;
+        }
       }
       walk(node.props.children);
       // An empty state's button.

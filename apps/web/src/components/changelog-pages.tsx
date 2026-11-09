@@ -1,6 +1,6 @@
 import { prisma, type ChangelogTag } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
-import { BellIcon, RssIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, BellIcon, ChevronDownIcon, RssIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -10,10 +10,9 @@ import { TAG_LABELS } from "@/components/changelog-tag";
 import { ChangelogSeen } from "@/components/changelog-seen";
 import { ChangelogSubscribe } from "@/components/changelog-subscribe";
 import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { portalAddress } from "@/server/custom-domains";
-import { Separator } from "@/components/ui/separator";
 import { PortalMenuPart } from "@/components/portal-menu";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -29,6 +28,9 @@ const PAGE_SIZE = 20;
 
 /** More entries than a screen shows: the list gets a month index beside it to jump through them. */
 const MONTH_INDEX_FROM = 9;
+
+/** The month index's months shown at first; older ones under "Earlier months". */
+const RECENT_MONTHS = 6;
 
 /** A changelog page's path: /changelog, then /changelog/page/2 and on; `?tag=new` with a tag's chip picked. */
 export const changelogPath = (page: number, tag?: ChangelogTag) =>
@@ -98,6 +100,7 @@ export async function changelogByEmail(
   project: { id: string; name: string; slug: string; portalAccess: string },
   session: Awaited<ReturnType<typeof getSession>>,
   inCard = false,
+  bare = false,
 ) {
   if (project.portalAccess !== "PUBLIC" || !emailConfigured()) {
     return null;
@@ -117,7 +120,7 @@ export async function changelogByEmail(
     );
   }
   // Their address filled in, unless it's a stand-in (".invalid": an account without one).
-  return <ChangelogSubscribe projectSlug={project.slug} email={session?.user.email.endsWith(".invalid") ? undefined : session?.user.email} inCard={inCard} />;
+  return <ChangelogSubscribe projectSlug={project.slug} email={session?.user.email.endsWith(".invalid") ? undefined : session?.user.email} inCard={inCard} bare={bare} />;
 }
 
 /**
@@ -157,139 +160,162 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
     month.count++;
   });
   // The anchors: each month's first entry on this page.
-  const subscribe = project && (await changelogByEmail({ ...project, slug }, session));
-  // Its form (not where a reader who gets it stands), for the header's way to it.
+  const subscribe = project && (await changelogByEmail({ ...project, slug }, session, false, true));
+  // Its form (not where a reader who gets it stands): in a popover from the header's Subscribe.
   const subscribable = !!subscribe && subscribe.type === ChangelogSubscribe;
   const anchors = new Map(entries.map((entry) => [monthOf(entry.publishedAt).key, entry.number] as const).reverse());
+  // The month this page opens on (its first entry's), marked in the index.
+  const currentMonth = entries[0] && monthOf(entries[0].publishedAt).key;
+  const monthLink = (key: string, month: { label: string; count: number; page: number }) => (
+    <Link
+      key={key}
+      href={`${at(changelogPath(month.page, tag))}#${key}`}
+      // Read out as "October 2026, 3 entries", not "October 20263".
+      aria-label={`${month.label}, ${month.count} ${month.count === 1 ? "entry" : "entries"}`}
+      className={cn(
+        "-ml-px flex items-center gap-2 border-l-2 py-1.5 pl-3 text-sm transition-colors",
+        key === currentMonth ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <span className="min-w-0 flex-1">{month.label}</span>
+      <span className="text-xs tabular-nums">{month.count}</span>
+    </Link>
+  );
   return (
-    // On wide screens the month index is in a column beside the header and the list (empty with a short history, so entries keep their width).
-    <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_15rem] lg:items-start lg:gap-x-12">
+    // On wide screens the month index is in a column beside the list (empty with a short history, so entries keep their width).
+    <div className="flex flex-col gap-2 lg:gap-8">
       <ChangelogMenu slug={slug} />
       {seen && <ChangelogSeen projectSlug={slug} at={seen.toISOString()} signedIn />}
-      {/* The tags' chips go with the header, closer to it than the list. */}
-      <div className="flex min-w-0 flex-col gap-4 lg:col-start-1">
-        {/* RSS beside the title at every width (a header's actions go under it on phones). */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <PageHeader
-            title="Changelog"
-            description="What's new, improved and fixed."
-            // Clearly over its entries' titles.
-            className="min-w-0 [&_h1]:text-[2.25rem] sm:[&_h1]:text-5xl [&_p]:text-base"
-          />
-          <div className="flex shrink-0 items-center gap-1">
-            <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+      <div className="flex min-w-0 flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <h1 className="font-heading text-[2rem] leading-tight font-[650] tracking-[-0.025em] sm:text-5xl">Changelog</h1>
+          <p className="text-base text-muted-foreground">What&apos;s new, improved and fixed{project ? ` in ${project.name}` : ""}.</p>
+        </div>
+        {/* The tags as text tabs, RSS and Subscribe at the row's end (under the tabs on phones). */}
+        <div className="flex flex-col gap-3 border-b sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:pb-3 max-sm:border-b-0">
+          {tags.length > 0 ? (
+            // Server-rendered links, so a picked tag is an address to share; picking one starts from the first page.
+            <nav aria-label="Tags" className="flex gap-1 overflow-x-auto [scrollbar-width:none] max-sm:border-b sm:-mb-3">
+              {[undefined, ...tags].map((t) => (
+                <Link
+                  key={t ?? "all"}
+                  href={at(changelogPath(1, t))}
+                  aria-current={t === tag ? "page" : undefined}
+                  className={cn(
+                    "shrink-0 border-b-2 px-2.5 pt-1 pb-3 text-[0.9375rem] font-medium transition-colors first:pl-0",
+                    t === tag ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t ? TAG_LABELS[t] : "All"}
+                </Link>
+              ))}
+            </nav>
+          ) : (
+            <span />
+          )}
+          <div className="flex shrink-0 items-center gap-2 max-sm:order-first">
+            <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "outline", className: "font-semibold max-sm:order-last" })}>
               <RssIcon aria-hidden /> RSS
             </a>
-            {/* To the form: beside the list on wide screens, after it below them. */}
             {subscribable && (
-              <>
-                <a href="#changelog-subscribe" className={buttonVariants({ variant: "outline", size: "sm", className: "max-lg:hidden" })}>
-                  <BellIcon aria-hidden /> Subscribe
-                </a>
-                <a href="#changelog-subscribe-below" className={buttonVariants({ variant: "outline", size: "sm", className: "lg:hidden" })}>
-                  <BellIcon aria-hidden /> Subscribe
-                </a>
-              </>
+              <Popover>
+                <PopoverTrigger render={<Button className="font-semibold max-sm:flex-1" aria-label="Subscribe" />}>
+                  <BellIcon aria-hidden /> Subscribe<span className="sm:hidden"> by email</span>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 p-4">
+                  {subscribe}
+                </PopoverContent>
+              </Popover>
             )}
           </div>
         </div>
-        {tags.length > 0 && (
-          // Server-rendered links, so a picked tag is an address to share; picking one starts from the first page.
-          <nav aria-label="Tags" className="flex flex-wrap gap-2">
-            {[undefined, ...tags].map((t) => (
-              <Link
-                key={t ?? "all"}
-                href={at(changelogPath(1, t))}
-                aria-current={t === tag ? "page" : undefined}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-sm transition-colors",
-                  t === tag ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                )}
-              >
-                {t ? TAG_LABELS[t] : "All"}
-              </Link>
-            ))}
-          </nav>
-        )}
       </div>
-      {/* Beside the header and the list on wide screens, staying in view: the month index (right after the chips for the keyboard),
-          then getting it by email. Below wide screens neither: getting it by email comes after the list, in reading order too
-          (the header's menu lists the entries by date: ChangelogMenu). */}
-      <aside
-        aria-label="Follow the changelog"
-        className="hidden flex-col gap-6 lg:sticky lg:top-[calc(var(--portal-header-height,0px)+2.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:flex lg:max-h-[calc(100dvh-var(--portal-header-height,0px)-5rem)]"
-      >
-        {listed.length >= MONTH_INDEX_FROM && (
-          <nav aria-label="Months" className="hidden min-h-0 flex-col overflow-y-auto lg:flex">
-            <h2 className="group-label mb-2 px-2">Months</h2>
-            {[...months].map(([key, month]) => (
-              <Link
-                key={key}
-                href={`${at(changelogPath(month.page, tag))}#${key}`}
-                // Read out as "October 2026, 3 entries", not "October 20263".
-                aria-label={`${month.label}, ${month.count} ${month.count === 1 ? "entry" : "entries"}`}
-                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <span className="min-w-0 flex-1">{month.label}</span>
-                <span className="text-xs tabular-nums">{month.count}</span>
-              </Link>
-            ))}
-          </nav>
+      <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_13rem] lg:items-start lg:gap-x-16">
+        {/* Beside the list on wide screens, staying in view: the month index; and where a reader who gets it stands. */}
+        {(listed.length >= MONTH_INDEX_FROM || (subscribe && !subscribable)) && (
+          <aside
+            aria-label="Follow the changelog"
+            className="hidden flex-col gap-6 lg:sticky lg:top-[calc(var(--portal-header-height,0px)+2rem)] lg:col-start-2 lg:row-start-1 lg:flex lg:max-h-[calc(100dvh-var(--portal-header-height,0px)-4rem)]"
+          >
+            {listed.length >= MONTH_INDEX_FROM && (
+              <nav aria-label="Months" className="flex min-h-0 flex-col overflow-y-auto">
+                <h2 className="group-label mb-3">Jump to month</h2>
+                <div className="flex flex-col border-l">
+                  {[...months].slice(0, RECENT_MONTHS).map(([key, month]) => monthLink(key, month))}
+                </div>
+                {/* The rest folded away, so the index stays short. */}
+                {months.size > RECENT_MONTHS && (
+                  <details className="group/months">
+                    <summary className="flex cursor-pointer list-none items-center gap-1.5 border-l py-1.5 pl-3 text-sm font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                      Earlier months
+                      <ChevronDownIcon aria-hidden className="size-3.5 transition-transform group-open/months:rotate-180" />
+                    </summary>
+                    <div className="flex flex-col border-l">{[...months].slice(RECENT_MONTHS).map(([key, month]) => monthLink(key, month))}</div>
+                  </details>
+                )}
+              </nav>
+            )}
+            {subscribe && !subscribable && subscribe}
+          </aside>
         )}
-        {subscribe && <div id="changelog-subscribe">{subscribe}</div>}
-      </aside>
-      <div className="flex min-w-0 flex-col gap-8 lg:col-start-1">
-        {entries.length === 0 ? (
-          tag ? (
-            <EmptyState
-              title={`No ${TAG_LABELS[tag]} entries yet`}
-              description="Entries with this tag show up here as they ship."
-              action={
-                <Link href={at(changelogPath(1))} className={buttonVariants({ variant: "outline" })}>
-                  Show all entries
-                </Link>
-              }
-            />
-          ) : (
-            <EmptyState title="Nothing here yet" description="New features and fixes show up here as they ship." />
-          )
-        ) : (
-          // On wide screens a timeline: the dates' dots on a line down the margin (lines between entries on phones).
-          <div className="relative flex flex-col gap-8 lg:gap-14 lg:before:absolute lg:before:top-3 lg:before:bottom-0 lg:before:left-[calc(7rem+0.75rem)] lg:before:w-px lg:before:bg-border">
-            {entries.map((entry, i) => (
-              <div
-                key={entry.number}
-                id={anchors.get(monthOf(entry.publishedAt).key) === entry.number ? monthOf(entry.publishedAt).key : undefined}
-                className="flex flex-col gap-8"
-              >
-                {i > 0 && <Separator className="lg:hidden" />}
-                {/* Reactions on the entry's own page, not under each one here. */}
-                <ChangelogEntryView entry={entry} mediaUrls={media} base={base} dateMargin />
-              </div>
-            ))}
-          </div>
-        )}
-        {(older || page > 1) && (
-          <nav aria-label="Changelog pages" className="flex justify-between gap-4">
-            {page > 1 ? (
-              <Link href={at(changelogPath(page - 1, tag))} className={buttonVariants({ variant: "outline" })}>
-                Newer entries
-              </Link>
+        <div className="flex min-w-0 flex-col gap-8 lg:col-start-1 lg:row-start-1">
+          {entries.length === 0 ? (
+            tag ? (
+              <EmptyState
+                title={`No ${TAG_LABELS[tag]} entries yet`}
+                description="Entries with this tag show up here as they ship."
+                action={
+                  <Link href={at(changelogPath(1))} className={buttonVariants({ variant: "outline" })}>
+                    Show all entries
+                  </Link>
+                }
+              />
             ) : (
-              <span />
-            )}
-            {older && (
-              <Link href={at(changelogPath(page + 1, tag))} className={buttonVariants({ variant: "outline" })}>
-                Older entries
-              </Link>
-            )}
-          </nav>
-        )}
-        {subscribe && (
-          <div id="changelog-subscribe-below" className="lg:hidden">
-            {subscribe}
-          </div>
-        )}
+              <EmptyState title="Nothing here yet" description="New features and fixes show up here as they ship." />
+            )
+          ) : (
+            // On wide screens a timeline: the dates' dots on a line down the margin; a line between entries.
+            <div className="relative flex flex-col lg:before:absolute lg:before:top-12 lg:before:bottom-0 lg:before:left-0 lg:before:w-px lg:before:bg-border">
+              {entries.map((entry, i) => (
+                <div
+                  key={entry.number}
+                  id={anchors.get(monthOf(entry.publishedAt).key) === entry.number ? monthOf(entry.publishedAt).key : undefined}
+                  className="flex flex-col"
+                >
+                  {/* Between entries, a line under the text (not across the dates' margin). */}
+                  {i > 0 && <div aria-hidden className="h-px bg-border lg:ml-[8.375rem]" />}
+                  <div className="py-8">
+                    <ChangelogEntryView
+                      entry={entry}
+                      mediaUrls={media}
+                      base={base}
+                      dateMargin
+                      react={{ projectSlug: slug, signedIn: !!session }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {(older || page > 1) && (
+            <nav aria-label="Changelog pages" className="flex justify-between gap-4 border-t pt-8 lg:ml-[8.375rem]">
+              {page > 1 ? (
+                <Link href={at(changelogPath(page - 1, tag))} className={buttonVariants({ variant: "outline", className: "font-semibold" })}>
+                  <ArrowLeftIcon aria-hidden /> Newer entries
+                </Link>
+              ) : (
+                <span />
+              )}
+              {older && (
+                <Link href={at(changelogPath(page + 1, tag))} className={buttonVariants({ variant: "outline", className: "font-semibold" })}>
+                  Older entries <ArrowRightIcon aria-hidden />
+                </Link>
+              )}
+            </nav>
+          )}
+          {/* Below wide screens, where a reader who gets it stands (the form is in Subscribe's popover). */}
+          {subscribe && !subscribable && <div className="lg:hidden">{subscribe}</div>}
+        </div>
       </div>
     </div>
   );

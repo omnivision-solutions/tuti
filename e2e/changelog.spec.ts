@@ -248,6 +248,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(readerTada).toHaveAccessibleName("React with 🎉 (1)");
   await expect(readerTada).toBeDisabled();
   await expect(readerTada).toHaveAttribute("title", "Sign in to react");
+  // On the list too, under the entry.
+  await ada.goto("/changelog");
+  await expect(ada.getByRole("article", { name: "Dark mode is here" }).getByRole("button", { name: /^React with 🎉/ })).toHaveAccessibleName("React with 🎉 (1)");
+  await ada.goBack();
   // Taken back.
   await tada.click();
   await expect(tada).toHaveAccessibleName("React with 🎉");
@@ -261,7 +265,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(ada.locator('link[rel="alternate"][type="application/rss+xml"]')).toHaveAttribute("href", `${portalUrl(slug)}/changelog/rss.xml`);
   const feed = await (await ada.request.get(`${portalUrl(slug)}/changelog/rss.xml`)).text();
   expect(feed).toContain("<title>Dark mode is here</title>");
-  await entry.getByRole("link", { name: "Dark mode", exact: true }).click();
+  // The idea it shipped, with how many asked for it.
+  await entry.getByRole("link", { name: /^Built from an idea: Dark mode, \d+ votes?$/ }).click();
   await ada.waitForURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   await expect(ada.getByText("Completed").first()).toBeVisible();
   await expect(ada.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("href", "/changelog/1");
@@ -653,8 +658,12 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await expect(months.getByRole("link")).toHaveCount(3);
   await expect(months.getByRole("link", { name: "October 2026, 10 entries" })).toBeVisible();
   expect((await months.boundingBox())!.x).toBeGreaterThan(title.x + title.width);
-  // The keyboard reaches it right after the chips, before the entries.
+  // The keyboard reaches it right after the tags' row (its RSS and Subscribe), before the entries.
   await tags.getByRole("link", { name: "Fixed" }).focus();
+  await reader.keyboard.press("Tab");
+  await expect(main.getByRole("link", { name: "RSS" })).toBeFocused();
+  await reader.keyboard.press("Tab");
+  await expect(main.getByRole("button", { name: "Subscribe" })).toBeFocused();
   await reader.keyboard.press("Tab");
   await expect(months.getByRole("link", { name: "October 2026, 10 entries" })).toBeFocused();
   await checkpoint(reader, "portal-changelog");
@@ -729,6 +738,15 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await entries.getByRole("link", { name: /Release 20$/ }).click();
   await expect(reader).toHaveURL(/\/changelog\/20$/);
   await expect(reader.getByRole("dialog", { name: "Menu" })).toBeHidden();
+
+  // Over more than six months, the index shows the latest six; the rest open under "Earlier months".
+  await publishedOn(slug, `DATE '2025-01-15' + number * interval '1 month'`);
+  await reader.setViewportSize({ width: 1280, height: 720 });
+  await reader.goto("/changelog");
+  await expect(months.getByRole("link")).toHaveCount(6);
+  await expect(months.getByRole("link").first()).toHaveAccessibleName("October 2026, 1 entry");
+  await months.getByText("Earlier months").click();
+  await expect(months.getByRole("link")).toHaveCount(21);
 });
 
 test("the next release waits to be written; its entry gets a cover readers see, and says how many people it told", async ({ browser }, testInfo) => {
@@ -1020,6 +1038,8 @@ test("readers get the changelog by email: confirmed first, each entry published 
   // A long address with nowhere to break (no hyphens past "e2e-"), to check it wraps on a phone.
   const address = `e2e-${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}@example.com`;
   await reader.goto("/changelog");
+  // In a popover from the header's Subscribe.
+  await reader.getByRole("main").getByRole("button", { name: "Subscribe" }).click();
   const subscribe = reader.getByRole("region", { name: "Get updates by email" });
   // Refused (no top-level domain: the browser lets it through, the server doesn't), the address stays to fix.
   await subscribe.getByRole("textbox", { name: "Email" }).fill("e2e-ada@example");
@@ -1043,8 +1063,10 @@ test("readers get the changelog by email: confirmed first, each entry published 
     }
     await reader.setViewportSize({ width: 1280, height: 720 });
   };
-  // On a phone the form is after the list (its own, in reading order): sent from there, its answer wraps too.
+  // On a phone the same popover from Subscribe: sent from there, its answer wraps too.
   await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.reload();
+  await reader.getByRole("main").getByRole("button", { name: "Subscribe" }).click();
   await subscribe.getByRole("textbox", { name: "Email" }).fill(address);
   await subscribe.getByRole("button", { name: "Subscribe" }).click();
   await expect(subscribe.getByRole("status")).toHaveText(`Check your inbox: we sent a link to ${address} to confirm.`);

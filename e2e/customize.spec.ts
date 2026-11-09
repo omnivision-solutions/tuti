@@ -84,23 +84,23 @@ test("the team sets what readers can do with an article and the docs' home, seei
   }
   await api("/branding", { docsHome: { popular: false } }, "PATCH");
   await rail.getByRole("link", { name: "Docs home" }).click();
-  await expect(preview.getByRole("heading", { name: "Docs", level: 1 })).toBeVisible();
+  await expect(preview.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
   await expect(preview.getByRole("region", { name: "Popular articles" })).toHaveCount(0);
   await owner.getByRole("switch", { name: "Show popular articles" }).check();
   await expect(preview.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveCount(3);
   await owner.getByRole("switch", { name: "Show popular articles" }).uncheck();
-  await owner.getByLabel("Title", { exact: true }).fill("  How can we help?  ");
+  await owner.getByLabel("Title", { exact: true }).fill("  Acme help  ");
   await owner.getByLabel("Subtitle").fill("Answers to everything about Acme.");
-  await expect(preview.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
+  await expect(preview.getByRole("heading", { name: "Acme help", level: 1 })).toBeVisible();
   await expect(preview.getByText("Answers to everything about Acme.")).toBeVisible();
   await checkpoint(owner, "customize-docs-home");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Docs home saved")).toBeVisible();
   // Saved as trimmed, and the form shows what's saved: nothing left to save.
-  await expect(owner.getByLabel("Title", { exact: true })).toHaveValue("How can we help?");
+  await expect(owner.getByLabel("Title", { exact: true })).toHaveValue("Acme help");
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await visitor.goto("/docs");
-  await expect(visitor.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
+  await expect(visitor.getByRole("heading", { name: "Acme help", level: 1 })).toBeVisible();
 });
 
 test("the team sets the portal's search listing, seeing it as a search result and a shared link", async ({ browser }, testInfo) => {

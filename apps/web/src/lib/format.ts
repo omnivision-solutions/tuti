@@ -27,6 +27,11 @@ export function formatDate(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+/** A day, short, like "6 Oct" (UTC, as formatDate). */
+export function formatDay(date: Date): string {
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
 /** A month, like "November 2026" (UTC, as formatDate): a post's ETA. */
 export function formatMonth(date: Date): string {
   return date.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });

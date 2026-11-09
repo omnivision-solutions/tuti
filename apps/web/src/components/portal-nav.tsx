@@ -68,10 +68,10 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
             data-active={active || undefined}
             className={cn(
               // Underlined on the header's bottom edge at every width (the board's and docs' rows the same).
-              "shrink-0 scroll-mx-12 border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:inline-flex sm:items-center sm:py-0 sm:text-sm",
+              "shrink-0 scroll-mx-12 border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] font-medium whitespace-nowrap transition-colors sm:inline-flex sm:items-center sm:py-0",
               active
                 ? // Before the page's script runs on a page not found (data-portal-not-found), its part isn't drawn as the one open.
-                  "border-primary font-medium text-foreground [:root:has([data-portal-not-found])_&]:border-transparent [:root:has([data-portal-not-found])_&]:font-normal"
+                  "border-primary text-foreground [:root:has([data-portal-not-found])_&]:border-transparent [:root:has([data-portal-not-found])_&]:text-muted-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
@@ -136,7 +136,7 @@ export function PortalMain({ children }: { children: React.ReactNode }) {
   return (
     <main
       className={cn(
-        "mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10",
+        "mx-auto flex w-full flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10",
         within(path, "/roadmap") ? "max-w-6xl" : !within(path, "/docs") && "max-w-3xl",
         (onBoard(path) || onPost(path) || onChangelogList(path)) && "lg:max-w-6xl",
       )}
@@ -148,7 +148,8 @@ export function PortalMain({ children }: { children: React.ReactNode }) {
 
 /**
  * The header's one box on Docs for searching and asking AI (see DocsSearchBox), with ⌘K (it starts from the search on the
- * page, if any). Below tablet width it's a line of its own under the logo (above the parts on phones), the whole width;
+ * page, if any); not on the docs' home, whose own big box is the same. On phones an icon in the header's line, on tablets a
+ * line of its own. Below tablet width it's a line of its own under the logo (above the parts on phones), the whole width;
  * from tablet width, beside the links on the right.
  */
 export function DocsSearch({ askAI }: { askAI: boolean }) {
@@ -157,7 +158,7 @@ export function DocsSearch({ askAI }: { askAI: boolean }) {
   if (!within(path, "/docs")) {
     return null;
   }
-  return <DocsSearchBox askAI={askAI} shortcut query={query} inHeader className="max-md:order-1 max-md:basis-full md:-mr-3" />;
+  return <DocsSearchBox askAI={askAI} shortcut query={query} inHeader className="sm:max-md:order-1 sm:max-md:basis-full md:-mr-3 [:root:has([data-docs-hero])_&]:hidden" />;
 }
 
 /**
@@ -179,7 +180,7 @@ export function PartRow({
   }
   return (
     <div className={cn("border-b [:root:has([data-portal-not-found])_&]:hidden", className)}>
-      <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-6xl gap-1 px-6", SCROLLING_ROW)} aria-label={label}>
+      <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-6xl gap-1 px-4 sm:px-6", SCROLLING_ROW)} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link
             key={href}

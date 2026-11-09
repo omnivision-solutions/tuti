@@ -23,7 +23,7 @@ export function SubscribeButton({ postId, subscribed, following, signedIn }: { p
 
   if (!signedIn) {
     return (
-      <Link href={signInHref} className={buttonVariants()}>
+      <Link href={signInHref} className={buttonVariants({ variant: "outline", size: "lg", className: "font-semibold" })}>
         <BellIcon />
         Subscribe
       </Link>
@@ -34,8 +34,10 @@ export function SubscribeButton({ postId, subscribed, following, signedIn }: { p
   }
   return (
     <Button
-      // Following it is the page's ask; once followed, stopping is the quiet way back.
-      variant={optimistic ? "outline" : "default"}
+      // Beside Upvote, the post's primary: an outline, and once subscribed, a quiet way back.
+      variant={optimistic ? "ghost" : "outline"}
+      size="lg"
+      className="font-semibold"
       disabled={pending}
       // Keeps the keyboard's focus while it saves.
       focusableWhenDisabled

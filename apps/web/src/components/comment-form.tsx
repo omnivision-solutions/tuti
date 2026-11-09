@@ -1,13 +1,11 @@
 "use client";
 
 import { type Doc, isEmptyDoc, readableBy } from "@tuti/content";
-import { useRouter } from "next/navigation";
 import { useActionState, useId, useRef, useState } from "react";
 
 import { votersNote } from "@/lib/format";
 import { keepingFields } from "@/lib/forms";
 import { type EditorUploads, RichEditor } from "@/components/rich-editor";
-import { useSignInHref } from "@/components/sign-in-link";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
@@ -40,9 +38,8 @@ const drafts = {
  * `notes`: the team's form, which can write an internal note (only the team sees it) instead, or email the
  * reply to the post's `voters` (how many it would email; "paused" while the project's email is).
  *
- * `signedIn`: the portal's public box (the team's forms leave it out). What's written in it is kept in
- * this tab till it's sent or emptied, and is back in the box when it opens again in this tab: signed out,
- * sending goes to sign in instead, coming back here to send it.
+ * `signedIn`: the portal's box (the team's forms leave it out; signed out, the portal shows a bar to sign in instead).
+ * What's written in it is kept in this tab till it's sent or emptied, and is back in the box when it opens again in this tab.
  *
  * `uploads`: images can be added (pasted, dropped or picked), as in a post; without it (signed out, or no media
  * storage), text only.
@@ -62,8 +59,6 @@ export function CommentForm({
   signedIn?: boolean;
   uploads?: EditorUploads;
 }) {
-  const router = useRouter();
-  const signInHref = useSignInHref();
   const portal = signedIn !== undefined;
   const draftKey = `tuti:comment-draft:${postId}`;
   // The draft in storage couldn't be read here (onCreate below): it isn't saved over while this page is open.
@@ -82,10 +77,6 @@ export function CommentForm({
     setEmailVoters(false);
   }
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    if (signedIn === false) {
-      router.push(signInHref);
-      return prev;
-    }
     const result = await addComment(prev, formData);
     if (!result.error) {
       if (portal) {
@@ -166,7 +157,6 @@ export function CommentForm({
         )}
       </Field>
       <div className="flex flex-wrap items-center justify-end gap-3">
-        {signedIn === false && <p className="mr-auto text-sm text-muted-foreground">You&apos;ll sign in to post it.</p>}
         {notes &&
           (internal ? (
             <p className="mr-auto text-sm text-muted-foreground">Only your team sees it.</p>

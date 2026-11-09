@@ -183,7 +183,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(visitor).toHaveURL(`${domainUrl}/feedback/feature-requests`);
   await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
   await visitor.goto("/feedback/feature-requests");
-  await visitor.getByRole("button", { name: "Submit post" }).click();
+  await visitor.getByRole("button", { name: "New idea" }).click();
   await visitor.getByLabel("Title").fill("Dark mode on our own domain");
   await visitor.getByRole("button", { name: "Submit post" }).click();
   await visitor.getByRole("link", { name: "Dark mode on our own domain" }).click();

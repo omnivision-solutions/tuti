@@ -102,13 +102,32 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
 
   const look = { ...saved, ...draft };
   const css = brandCss(look.color);
-  // The team's fonts (Customize → Branding → Typography) in place of the page's: a wrapper that adds
+  // The team's fonts (Customize → Branding → Typography), else Inter, in place of the app's: a wrapper that adds
   // nothing to the layout (display: contents) but passes them down, the symbols fallback after them (app/layout.tsx).
-  const { heading, body } = look.fonts;
+  const heading = look.fonts.heading ?? "inter";
+  const body = look.fonts.body ?? "inter";
   const fonts = {
-    ...(body && { "--font-sans": `var(${fontVariable(body)})`, fontFamily: `var(${fontVariable(body)}), var(--font-symbols)` }),
-    ...(heading && { "--font-heading": `var(${fontVariable(heading)})` }),
+    "--font-sans": `var(${fontVariable(body)})`,
+    fontFamily: `var(${fontVariable(body)}), var(--font-symbols)`,
+    "--font-heading": `var(${fontVariable(heading)})`,
   } as CSSProperties;
+  // What opens over the page (dialogs, menus, toasts) is put at the end of <body>, outside the wrapper: the fonts there too.
+  const fontStyle = JSON.stringify(fonts);
+  useEffect(() => {
+    const body = document.body;
+    const classes = PORTAL_FONT_CLASSES.split(" ");
+    const style = JSON.parse(fontStyle) as Record<string, string>;
+    body.classList.add(...classes);
+    for (const [key, value] of Object.entries(style)) {
+      body.style.setProperty(key === "fontFamily" ? "font-family" : key, value);
+    }
+    return () => {
+      body.classList.remove(...classes);
+      for (const key of Object.keys(style)) {
+        body.style.removeProperty(key === "fontFamily" ? "font-family" : key);
+      }
+    };
+  }, [fontStyle]);
   return (
     <LookContext value={look}>
       {css && <style>{css}</style>}
@@ -139,10 +158,14 @@ export function PortalLogo({ name, href }: { name: string; href: string }) {
       {logoText && <span className="truncate">{logoText}</span>}
     </>
   ) : (
-    <span className="truncate">{logoText || name}</span>
+    <>
+      {/* Without a logo, a mark of the name's first letter, so the header has the brand's square as every portal's does. */}
+      <LetterMark name={logoText || name} className="size-8 rounded-[0.5625rem] text-[0.9375rem]" />
+      <span className="truncate">{logoText || name}</span>
+    </>
   );
   // It gives way (a long name is cut short with "…") rather than the header's buttons.
-  const className = "flex min-w-0 items-center gap-2 font-heading text-lg font-bold tracking-tight";
+  const className = "flex min-w-0 items-center gap-2.5 font-heading text-lg font-bold tracking-[-0.02em]";
   return logoLink ? (
     <a href={logoLink} className={className}>
       {contents}
@@ -151,6 +174,31 @@ export function PortalLogo({ name, href }: { name: string; href: string }) {
     <Link href={href} className={className}>
       {contents}
     </Link>
+  );
+}
+
+/** A square in the brand's colour with the name's first letter: the portal's mark where it has no logo. */
+function LetterMark({ name, className }: { name: string; className?: string }) {
+  return (
+    <span aria-hidden className={cn("grid shrink-0 place-items-center bg-primary font-bold text-primary-foreground", className)}>
+      {name.trim().slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+/** The portal's mark over its sign-in: its logo (and dark one), or the letter mark. */
+export function PortalMark({ name }: { name: string }) {
+  const { logo, logoDark, logoText } = usePortalLook();
+  if (!logo) {
+    return <LetterMark name={logoText || name} className="mb-2 size-12 rounded-xl text-xl" />;
+  }
+  // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
+  const image = (image: LookImage, className?: string) => <img src={image.url} alt="" className={cn("mb-2 h-12 w-auto max-w-48 object-contain", className)} />;
+  return (
+    <>
+      {image(logo, logoDark ? "dark:hidden" : undefined)}
+      {logoDark && image(logoDark, "hidden dark:block")}
+    </>
   );
 }
 
@@ -229,7 +277,7 @@ export function PortalFooter({ docs = false }: { docs?: boolean }) {
   }
   return (
     // Inside <main> on Docs, where a footer isn't the page's footer landmark unless it says so.
-    <footer role={docs ? "contentinfo" : undefined} className={cn("portal-footer flex flex-col items-center gap-3", docs ? "mt-auto pt-10" : "px-6 pb-6")}>
+    <footer role={docs ? "contentinfo" : undefined} className={cn("portal-footer flex flex-col items-center gap-3", docs ? "mt-auto pt-10" : "border-t px-6 py-6")}>
       {footerLinks.length > 0 && (
         <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
           {footerLinks.map((link, i) => (
