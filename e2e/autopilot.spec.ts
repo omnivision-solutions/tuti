@@ -265,7 +265,6 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   // (Through its History panel and back, the way back stays.)
-  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("link", { name: "History" }).click();
   await expect(owner.getByRole("dialog", { name: "History" })).toBeVisible();
   await owner.keyboard.press("Escape");
@@ -1009,7 +1008,6 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await expect(confirm).toBeHidden();
   // Then an earlier version restored, on the same page: the one the second edit left, before the save. It keeps the
   // second edit and takes out the first (the second rewrote its part), said first.
-  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("link", { name: "History" }).click();
   const history = owner.getByRole("dialog", { name: "History" });
   await history.getByRole("link", { name: /^Saved / }).nth(1).click();
@@ -1071,7 +1069,6 @@ test("an editor open as Autopilot's edit lands: saving the same paragraph is ref
 
   // The page shows the article as now saved (opening its History re-renders it): their unsaved text stays, and the
   // editor says it was saved since.
-  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("link", { name: "History" }).click();
   await expect(owner.getByRole("dialog", { name: "History" })).toBeVisible();
   await owner.keyboard.press("Escape");

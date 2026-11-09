@@ -5,10 +5,12 @@ import { editedSections } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { cn } from "cn";
 import { PlusIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createContext, type ReactNode, useActionState, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { CollectionSelect } from "@/components/collection-select";
 import { IconField } from "@/components/icon-field";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import {
@@ -22,8 +24,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -113,6 +115,24 @@ export function PlaceFields({ place, loaded }: { place: ArticlePlace; loaded?: A
   );
 }
 
+/** A new article's collection, picked where it's shown (Settings has the same, and the rest of its place). */
+export function ArticlePlaceLine() {
+  const { place, setPlace, collections } = useArticleEditor();
+  const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span id="new-article-place">In</span>
+      <CollectionSelect
+        items={items}
+        value={place.collection}
+        onChange={(collection) => setPlace({ ...place, collection })}
+        labelledBy="new-article-place"
+        className="h-7 w-auto gap-1.5 px-2 text-xs"
+      />
+    </span>
+  );
+}
+
 /** The ArticleEditor around it. */
 export function useArticleEditor() {
   const editor = useContext(ArticleEditorContext);
@@ -122,12 +142,17 @@ export function useArticleEditor() {
   return editor;
 }
 
-/** The article's Save in the top bar, from tablet width up: it submits the ArticleForm below. */
-export function ArticleSaveButton() {
-  const { pending } = useArticleEditor();
+/**
+ * The article's Save in the top bar (on phones the bar at the bottom): it submits the ArticleForm below. `label`: a new
+ * article's "Save draft" (`filled`: its main action). `outline` beside a Publish, the screen's one filled button.
+ */
+export function ArticleSaveButton({ label = "Save", outline = false, filled = false }: { label?: string; outline?: boolean; filled?: boolean }) {
+  // Filled once there's something to save (an outline beside a Publish): an article as saved has no call to act.
+  const { pending, unsaved } = useArticleEditor();
   return (
-    <Button type="submit" form={ARTICLE_FORM} disabled={pending} className="phonebar:hidden">
-      {pending ? "Saving…" : "Save"}
+    // Quiet (an outline) while there's nothing to save; still a button (on an article it can't edit it points to why).
+    <Button type="submit" form={ARTICLE_FORM} disabled={pending} variant={outline || (!filled && !unsaved) ? "outline" : "default"}>
+      {pending ? "Saving…" : label}
     </Button>
   );
 }
@@ -241,20 +266,27 @@ export function ArticleForm({
           {/* A saved article's title is sent only once changed here (since it opened or last saved): one left alone keeps
               whatever it's renamed to meanwhile, and a change back to how it opened still counts. */}
           {(!opened || titleChanged) && <input type="hidden" name="title" value={title} />}
-          <input
+          {/* A line that wraps (a long title stays in sight on a phone), Enter doesn't add a line. */}
+          <textarea
             aria-label="Title"
+            rows={1}
             value={title}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+              }
+            }}
             onChange={(event) => {
               setTitle(event.currentTarget.value);
               setTitleChanged(true);
               titleChanges.current++;
             }}
-            placeholder="What it helps with, e.g. Inviting your team"
+            placeholder="Article title"
             required
             autoComplete="off"
             aria-invalid={state.error ? true : undefined}
             aria-describedby={state.error ? "article-error" : undefined}
-            className={`${BARE_TITLE} text-3xl`}
+            className={cn(BARE_TITLE, "resize-none text-3xl leading-tight font-semibold [field-sizing:content] placeholder:text-muted-foreground/70 sm:text-[2.25rem]")}
           />
           {state.error && <FieldError id="article-error">{state.error}</FieldError>}
           {newer && dirty && !state.newest && !seenSaved && (
@@ -267,21 +299,12 @@ export function ArticleForm({
           profile="article"
           name="content"
           label="Article"
-          placeholder="Explain it step by step. Type / for headings, lists and more"
+          placeholder="Write it here. Type / for headings, lists and more"
           initial={opened?.content}
           // Every change counts, pasted or formatted too (they fire no input event).
           onChange={changed}
           uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
         />
-        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
-          {article?.published && (
-            <p className="text-sm text-muted-foreground">Changes to the title, collection and text go live when you publish them.</p>
-          )}
-          {/* An article's page has Save in the top bar from tablet width up (ArticleSaveButton); a new one keeps it here. */}
-          <Button type="submit" disabled={pending} className={cn(article && "topbar:hidden")}>
-            {pending ? "Saving…" : article ? "Save" : "Save draft"}
-          </Button>
-        </div>
       </FieldGroup>
     </form>
   );
@@ -318,6 +341,12 @@ function NewestVersion({ newest, merged = false }: { newest: NewestVersionData; 
   );
 }
 
+/**
+ * Unpublish is in the top bar's menu and Publish in the bar: once unpublishing is done, the bar's Publish (rendered
+ * anew) takes the keyboard's focus, which the menu's button had.
+ */
+let focusPublishNext = false;
+
 /** Publish, unpublish and delete an article; each asks first. */
 export function ArticleActions({
   projectSlug,
@@ -332,7 +361,7 @@ export function ArticleActions({
   slug: string;
   title: string;
   published: boolean;
-  /** Delete (behind the top bar's "More actions"), or Publish / Unpublish (in the bar). */
+  /** Delete and Unpublish (behind the top bar's "More actions"), or Publish (in the bar). */
   part: "delete" | "publish";
   /** Publish's sentence on who can read it once it's published (publishReaders). */
   readers?: string;
@@ -353,9 +382,12 @@ export function ArticleActions({
   const [unpublishing, setUnpublishing] = useState(published);
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
+      // Set before it runs: the page it refreshes to may render the bar's Publish before this goes on.
+      focusPublishNext = action === unpublishArticle;
       // The edits shown: one landing since refuses it.
       const result = await action(projectSlug, slug, shown);
       if (result.error) {
+        focusPublishNext = false;
         toast.error(result.error);
         // Changed since (an edit landed): shown as it is now.
         router.refresh();
@@ -364,6 +396,17 @@ export function ArticleActions({
         toast.success(done);
       }
     });
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (part === "publish" && !published && focusPublishNext) {
+      // After the dialog has closed and given its focus back (to its button, gone with the menu).
+      const timer = setTimeout(() => {
+        focusPublishNext = false;
+        trigger.current?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [part, published]);
 
   if (part === "delete") {
     return (
@@ -398,7 +441,8 @@ export function ArticleActions({
       }}
     >
       <AlertDialogTrigger
-        render={<Button variant={published ? "outline" : "default"} disabled={pending} focusableWhenDisabled />}
+        // Unpublish is behind "More actions" with Delete; Publish is the bar's main button.
+        render={<Button ref={trigger} variant={published ? "ghost" : "default"} disabled={pending} focusableWhenDisabled />}
         onClick={(event) => {
           if (!published && unsaved) {
             event.preventBaseUIHandler();
@@ -480,12 +524,20 @@ export function ArticleChanges({
   );
 
   return (
-    <Card role="region" aria-labelledby="article-changes-title">
-      <CardHeader>
-        <CardTitle id="article-changes-title">Unpublished changes</CardTitle>
-        <CardDescription>Saved {saved}. Readers see the published version until you publish them.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-wrap justify-end gap-2">
+    // A strip in the state's colour (Unpublished changes, amber: ArticleStateBadge), its actions on the right.
+    <section
+      role="region"
+      aria-labelledby="article-changes-title"
+      className="flex flex-col gap-3 rounded-xl bg-status-under-review/12 px-4 py-3 ring-1 ring-status-under-review/30 sm:flex-row sm:items-center"
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <h2 id="article-changes-title" className="flex items-center gap-2 text-sm font-semibold">
+          <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-under-review" />
+          Unpublished changes
+        </h2>
+        <p className="text-sm text-muted-foreground">Saved {saved}. Readers see the published version until you publish them.</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
         <AlertDialog>
           <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>
           <AlertDialogContent closeDisabled={pending}>
@@ -522,8 +574,8 @@ export function ArticleChanges({
           </DialogContent>
         </Dialog>
         {publish}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -641,19 +693,22 @@ type CollectionSettings = {
 function CollectionFields({ id, collection, error, onIconChange }: { id: string; collection?: CollectionSettings; error?: string; onIconChange?: () => void }) {
   return (
     <>
+      {/* Its icon beside its name, as the tree shows them. */}
       <Field data-invalid={error ? true : undefined}>
-        <FieldLabel htmlFor={`collection-name-${id}`}>Name</FieldLabel>
-        <Input
-          id={`collection-name-${id}`}
-          name="name"
-          defaultValue={collection?.name}
-          placeholder="Getting started"
-          required
-          aria-invalid={error ? true : undefined}
-        />
+        <FieldLabel htmlFor={`collection-name-${id}`}>Name and icon</FieldLabel>
+        <div className="flex items-center gap-2">
+          <IconField compact defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
+          <Input
+            id={`collection-name-${id}`}
+            name="name"
+            defaultValue={collection?.name}
+            placeholder="Getting started"
+            required
+            aria-invalid={error ? true : undefined}
+          />
+        </div>
         {error && <FieldError>{error}</FieldError>}
       </Field>
-      <IconField defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
       <Field>
         <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
         <Textarea
@@ -723,6 +778,8 @@ export function CollectionSettingsForm({
   access,
   path,
   tab,
+  tabName,
+  backHref,
   level,
 }: {
   projectSlug: string;
@@ -731,9 +788,15 @@ export function CollectionSettingsForm({
   access: AccessChoices;
   path: string;
   tab: string | null;
+  /** Its tab's name, for "Inherit from …" at the top level. */
+  tabName: string | null;
+  /** The collection's page, Cancel's. */
+  backHref: string;
   level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
   const [parent, setParent] = useState(collection.parent);
+  // "Inherit" says from where: the parent picked, else its tab, else the docs.
+  const inheritsFrom = (parent ? parents.find((c) => c.slug === parent)?.name : null) ?? tabName ?? "your docs";
   const above = parent ?? tab ?? "";
   // The fields the person changed here since the form opened or last saved: a save sends only those (one set back
   // as it was too), never one left alone, so it doesn't undo a change made elsewhere; a refresh keeps what's typed.
@@ -799,7 +862,7 @@ export function CollectionSettingsForm({
             id={`collection-access-${collection.slug}`}
             projectSlug={projectSlug}
             groups={access.groups}
-            inherit={{ label: "Inherit", description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}
+            inherit={{ label: `Inherit from ${inheritsFrom}`, description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}
             defaultAccess={level.access}
             defaultGroups={level.groups}
             defaultNoAccess={level.noAccess}
@@ -807,7 +870,15 @@ export function CollectionSettingsForm({
           />
         </CardContent>
       </Card>
-      <SaveButton pending={pending} />
+      {/* In reach as the form scrolls: a bar at the bottom of the window. */}
+      <div className="sticky bottom-0 z-10 -mx-4 flex justify-end gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur-sm">
+        <Link href={backHref} className={buttonVariants({ variant: "ghost" })}>
+          Cancel
+        </Link>
+        <Button type="submit" disabled={pending}>
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </div>
     </form>
   );
 }
@@ -1179,7 +1250,7 @@ export function TabDialog({ projectSlug, first = false }: { projectSlug: string;
   }, {});
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="sm" className="justify-start font-normal" />}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" className="justify-start text-sm font-normal" />}>
         <PlusIcon aria-hidden className="text-muted-foreground" />
         New tab
       </DialogTrigger>

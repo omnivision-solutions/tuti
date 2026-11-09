@@ -1,5 +1,6 @@
 "use client";
 
+import { SettingsIcon } from "lucide-react";
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
@@ -106,7 +107,11 @@ export function ArticleSettings({ saved }: { saved?: Saved }) {
   return (
     // A panel from the right, beside the article (which stays as it was underneath).
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={<Button variant="ghost" />}>Settings</SheetTrigger>
+      <SheetTrigger render={<Button variant="ghost" />}>
+        <SettingsIcon aria-hidden />
+        {/* On a phone's bottom bar, the gear alone (named to the ear), so Save has room. */}
+        <span className="phonebar:sr-only">Settings</span>
+      </SheetTrigger>
       <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md">
         {saved ? (
           <SavedSettings {...saved} onSaved={() => setOpen(false)} />

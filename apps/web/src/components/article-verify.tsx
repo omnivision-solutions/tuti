@@ -1,15 +1,20 @@
+import { cn } from "cn";
+import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { VerifyButton } from "@/components/verify-button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { plural } from "@/lib/autopilot-words";
 import { timeAgo } from "@/lib/format";
 import { articleVerifications, type VerificationView } from "@/server/operations/verify";
 
+/** Each verdict's words and colours: still true green, out of date amber (it needs the team), can't tell grey. */
 const VERDICTS = {
-  current: { label: "Still true", className: "text-soft-foreground" },
-  outdated: { label: "Out of date", className: "text-highlight-foreground" },
-  unclear: { label: "Can't tell", className: "text-muted-foreground" },
+  current: { label: "Still true", dot: "bg-status-completed", pill: "bg-status-completed/16" },
+  outdated: { label: "Out of date", dot: "bg-status-under-review", pill: "bg-status-under-review/16" },
+  unclear: { label: "Can't tell", dot: "bg-status-open", pill: "bg-status-open/12" },
 } as const;
 
 const STATES: Record<VerificationView["state"], string> = {
@@ -59,22 +64,26 @@ export async function ArticleVerify({
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Check it against your code</CardTitle>
-          <CardDescription>
-            {unavailable ??
-              `Verify reads your repository's default branch at its latest commit and finds what's still true, what's out of date and what it can't tell. It sends the files it reads to ${provider}, with files that hold secrets left out and secret-looking strings masked. What's out of date is fixed as an edit for you to review.`}
-          </CardDescription>
+          <CardTitle>Check against your code</CardTitle>
+          <CardDescription>{unavailable ?? "Verify reads your repository and flags what's out of date, with a fix for you to review."}</CardDescription>
         </CardHeader>
         {!unavailable && (
-          <CardContent>
+          <CardContent className="flex flex-col items-start gap-4">
             <VerifyButton projectSlug={projectSlug} slug={article.slug} />
+            <Folded summary="How it works">
+              <p className="text-sm text-muted-foreground">
+                It reads your repository&apos;s default branch at its latest commit and finds what&apos;s still true, what&apos;s out of date and what it
+                can&apos;t tell. It sends the files it reads to {provider}, with files that hold secrets left out and secret-looking strings masked. What&apos;s
+                out of date is fixed as an edit for you to review.
+              </p>
+            </Folded>
           </CardContent>
         )}
       </Card>
       {runs.map((run) => (
         <Card key={run.id} role="region" aria-label={`${stateLabel(run)} ${timeAgo(new Date(run.createdAt))}`}>
           <CardHeader>
-            <CardTitle className="text-sm">
+            <CardTitle className="text-base">
               {stateLabel(run)}{" "}
               <time dateTime={run.createdAt} title={run.createdAt} className="font-normal text-muted-foreground" suppressHydrationWarning>
                 {timeAgo(new Date(run.createdAt))}
@@ -82,49 +91,80 @@ export async function ArticleVerify({
             </CardTitle>
             <CardDescription className="flex flex-col gap-1">
               <span className="break-words">
-                {[run.startedBy, run.commit && `${run.repo}@${run.commit.slice(0, 7)}`].filter(Boolean).join(" · ")}
+                {run.startedBy}
+                {run.startedBy && run.commit && " · "}
+                {run.commit && <span className="font-mono text-xs">{`${run.repo}@${run.commit.slice(0, 7)}`}</span>}
               </span>
-              {(run.state === "done" || run.state === "changed") && run.statements.length > 0 && (
-                <span>
-                  {plural(run.counts.current, "statement")} still true · {run.counts.outdated} out of date · {run.counts.unclear} it can&apos;t tell
-                </span>
-              )}
               {run.startedReason && <span>{run.startedReason}</span>}
               {run.reason && <span>{run.reason}</span>}
-              {run.fix && (
-                <span>
-                  {fixStatus(run.fix)}
-                  {run.fix.status === "waiting" && (
-                    <>
-                      {" · "}
-                      <Link href={`/app/${projectSlug}/autopilot/articles/${article.id}`} className="font-medium text-foreground underline underline-offset-4">
-                        Review it
-                      </Link>
-                    </>
-                  )}
-                </span>
-              )}
             </CardDescription>
           </CardHeader>
-          {run.statements.length > 0 && (
-            <CardContent>
-              <details>
-                <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">What it found</summary>
-                <ul className="mt-3 flex flex-col divide-y text-sm">
-                  {run.statements.map((statement, i) => (
-                    <li key={i} className="flex flex-col gap-0.5 py-2">
-                      <span className={`text-xs font-medium tracking-wide uppercase ${VERDICTS[statement.verdict].className}`}>{VERDICTS[statement.verdict].label}</span>
-                      <span className="break-words">{statement.statement}</span>
-                      {statement.note && <span className="break-words text-muted-foreground">{statement.note}</span>}
-                      {statement.evidence.length > 0 && <span className="font-mono text-xs break-all text-muted-foreground">{statement.evidence.join(", ")}</span>}
-                    </li>
+          {((run.state === "done" || run.state === "changed") && run.statements.length > 0) || run.fix ? (
+            <CardContent className="flex flex-col gap-4">
+              {(run.state === "done" || run.state === "changed") && run.statements.length > 0 && (
+                // The counts, each in its verdict's colour; said as one sentence to the ear.
+                <p className="flex flex-wrap gap-2">
+                  <span className="sr-only">
+                    {plural(run.counts.current, "statement")} still true · {run.counts.outdated} out of date · {run.counts.unclear} it can&apos;t tell
+                  </span>
+                  {(["current", "outdated", "unclear"] as const).map((verdict) => (
+                    <span key={verdict} aria-hidden className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium",
+                        VERDICTS[verdict].pill,
+                        // What needs the team reads first.
+                        verdict === "outdated" && run.counts.outdated > 0 && "font-semibold ring-1 ring-status-under-review/50",
+                      )}>
+                      <span className={cn("size-1.5 rounded-full", VERDICTS[verdict].dot)} />
+                      {run.counts[verdict]} {VERDICTS[verdict].label.toLowerCase()}
+                    </span>
                   ))}
-                </ul>
-              </details>
+                </p>
+              )}
+              {run.fix && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2.5">
+                  <span className="text-sm">{fixStatus(run.fix)}</span>
+                  {run.fix.status === "waiting" && (
+                    <Link href={`/app/${projectSlug}/autopilot/articles/${article.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                      Review it
+                    </Link>
+                  )}
+                </div>
+              )}
+              {run.statements.length > 0 && (
+                <Folded summary="What it found" open>
+                  <ul className="flex flex-col divide-y text-sm">
+                    {run.statements.map((statement, i) => (
+                      <li key={i} className="flex flex-col items-start gap-1.5 py-4 first:pt-1">
+                        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium", VERDICTS[statement.verdict].pill)}>
+                          <span aria-hidden className={cn("size-1.5 rounded-full", VERDICTS[statement.verdict].dot)} />
+                          {VERDICTS[statement.verdict].label}
+                        </span>
+                        {/* Each claim as a sentence, whatever case it was written down in. */}
+                        <span className="font-medium break-words first-letter:uppercase">{statement.statement}</span>
+                        {statement.note && <span className="break-words text-muted-foreground">{statement.note}</span>}
+                        {statement.evidence.length > 0 && <span className="font-mono text-xs break-all text-muted-foreground">{statement.evidence.join(", ")}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </Folded>
+              )}
             </CardContent>
-          )}
+          ) : null}
         </Card>
       ))}
     </>
+  );
+}
+
+/** Folded away until asked for: a chevron (as the docs' tree has) that turns as it opens. */
+function Folded({ summary, open = false, children }: { summary: string; open?: boolean; children: ReactNode }) {
+  return (
+    <details open={open} className="group w-full">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <ChevronRightIcon aria-hidden className="size-4 transition-transform group-open:rotate-90" />
+        {summary}
+      </summary>
+      <div className="mt-2">{children}</div>
+    </details>
   );
 }

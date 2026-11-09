@@ -229,10 +229,15 @@ the list picks none to approve at once.
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
-  An article's editor has Verify beside History in "More actions": a panel from the
-  right (`?verify`, as History is `?history`) with Verify and what it sends where, then
-  each run, newest first (its commit, what's still true, out of date and can't tell, its
-  fix and what became of it, what it found per statement folded away). Docs' home has Verify all
+  An article's editor has Settings, History and Verify in its top bar (ghost, icon and label; icons alone in a
+  phone's bottom bar), View on portal an icon, then Save (filled once there's something to save, else an outline) and a
+  draft's Publish; Unpublish and Delete are under "More actions". Its header is the way back (its collection), the
+  state as a pill (`ArticleStateBadge`: Draft grey, Unpublished changes amber, Published green) and the date; a new
+  article's collection is picked beside its Draft pill. Its text sits in the Docs column (max-w-3xl) at the reading size
+  in the full text colour; the title field wraps. Verify is a panel from the
+  right (`?verify`, as History is `?history`) with Verify and, folded, how it works and what it sends where, then
+  each run, newest first (its commit, what's still true, out of date and can't tell as tinted chips, its
+  fix and what became of it with Review it, what it found per statement open). Docs' home has Verify all
   in its "More actions": a dialog saying what it will cost first (credits, or how many AI
   runs), then, started or opened again while it runs, how far it's got ("Checked 3 of 12
   articles", a bar) and at the end what it found, with Review in Autopilot. Its fix is a part of
@@ -251,9 +256,10 @@ the list picks none to approve at once.
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
-  statuses, Changelog, Users, the Inbox's views, Reporting's AI conversations) is
+  statuses, Changelog, Users, the Inbox's views, Reporting's AI conversations, a docs tab's Content, Access and
+  Settings, a collection's Content and Settings) is
   underline tabs, `SubNav`; switching a control's mode (the reply
-  box's Reply and Note, a docs tab's Content, Access and Settings) is a segmented
+  box's Reply and Note) is a segmented
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
 redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   never wraps (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
@@ -269,13 +275,18 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   points, `timeTrend`), a chart (`DailyChart`: a bar a day up to a month, a week up to a
   quarter, else a month; a bar's numbers on hover) and the lists behind them. Its
   heading (`ReportHeading`), as Ferndesk's: the part as a Group label, the title as a Page title,
-  and the date range picker on the right (`?range=`, kept by the menu's links); never a sentence under it. The Docs home shows every tab
-  with its collections as cards (each with its articles, then the collections
-  in it). Every Docs page (the home too) has the docs as a tree
-  in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
-  above it on phones); ⌘K finds articles and collections by name; a tab's page has Content, Access and
-  Settings tabs; a collection's page lists what's in it, and its Settings
-  button opens one page with its details and who can read it, saved by one Save.
+  and the date range picker on the right (`?range=`, kept by the menu's links); never a sentence under it. The Docs home starts
+  with one strip of numbers (published, views and helpful votes in Reporting's 30 days, waiting to publish), then
+  Waiting to publish (each draft and article with unpublished changes, newest first), then each tab as one card of
+  columns (`TabContents`: Article, Status, Views, Helpful headed once; each collection a band that folds, the first
+  open, with its count and how many are unpublished; its articles under it in reading order, the tree's; a state only
+  where work waits, as a pill in the Status column). Every Docs page (the home too) has the docs as a tree
+  in a column of its own beside it (`DocsWorkspace`: Overview, then the tabs under a "Tabs" label, each a row, its
+  collections with their counts, articles in no collection under their own label, New article under it; a "Browse
+  docs" menu above it on phones), and the page in one centred column (max-w-3xl); ⌘K finds articles and collections
+  by name; a tab's page has Content, Access and Settings tabs; a collection's page (`CollectionHeader`) has Content
+  and Settings tabs, its settings one form with its details (its icon a square beside its name) and who can read it,
+  saved by one Save in a bar at the bottom of the window.
 - **Sidebar** (`AppSidebar`): its groups one under the other with a line between them (no gap
   pushing the last to the bottom); the page open is a raised neutral pill (the card's colour with a ring, semibold; green is for a page's own menu); a count
   is a small round pill, in the highlight colour where people wait on the team (the Inbox's open

@@ -292,7 +292,8 @@ export function RichEditor({
         ...aria.current,
         class: cn(
           "rich-text outline-none",
-          bare ? cn("min-h-32 text-base", profile === "article" && "article-text") : "min-h-20 px-2.5 py-2 text-base md:text-sm",
+          // An article is written as it reads (article-text: 18px), in the text's full colour while it's being written.
+          bare ? cn("min-h-32", profile === "article" ? "article-text text-foreground" : "text-base") : "min-h-20 px-2.5 py-2 text-base md:text-sm",
         ),
       }),
       handleKeyDown: (_view, event) => {

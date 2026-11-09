@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { notFound, redirect } from "next/navigation";
 
 import { CollectionSettingsForm } from "@/components/docs";
-import { PageHeader } from "@/components/page-header";
+import { CollectionHeader } from "@/components/docs-article-rows";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { fromNoAccess, fromReadAccess } from "@/lib/read-access";
 import { claimsOf } from "@/lib/reader-groups";
@@ -33,7 +33,12 @@ export default async function CollectionSettingsPage(props: PageProps<"/app/[pro
 
   return (
     <>
-      <PageHeader back={{ href: `/app/${slug}/docs/collections/${collection.slug}`, label: collection.name }} title="Collection settings" />
+      <CollectionHeader
+        projectSlug={slug}
+        collection={{ slug: collection.slug, name: collection.name, description: collection.description, icon: collection.icon, knownIcon: collection.knownIcon }}
+        hasChildren={docs.collections.some((c) => c.parentId === collection.id)}
+        settings
+      />
       <CollectionSettingsForm
         projectSlug={slug}
         collection={{
@@ -48,6 +53,8 @@ export default async function CollectionSettingsPage(props: PageProps<"/app/[pro
         access={access}
         path={`/docs/${collection.slug}`}
         tab={collection.tab}
+        tabName={docs.tabs.find((t) => t.slug === collection.tab)?.name ?? null}
+        backHref={`/app/${slug}/docs/collections/${collection.slug}`}
         level={{ access: fromReadAccess(collection.access), groups: claimsOf(collection), noAccess: fromNoAccess(collection.noAccess) }}
       />
     </>

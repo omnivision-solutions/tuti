@@ -3,6 +3,7 @@ import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { editsInChanges } from "@tuti/jobs";
 import { aiProvider, articleVersionsNote, planIncludes } from "@tuti/shared";
+import { ExternalLinkIcon, HistoryIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -10,6 +11,7 @@ import { ArticleSettings } from "@/components/article-settings";
 import { previewUrl } from "@/lib/portal-base";
 import { ArticleActions, ArticleChanges, ArticleEditor, ArticleForm, ArticleSaveButton } from "@/components/docs";
 import { ArticleDiff } from "@/components/article-diff";
+import { ArticleStateBadge } from "@/components/docs-article-rows";
 import { ArticleHistory } from "@/components/article-history";
 import { ArticleVerify } from "@/components/article-verify";
 import { HistorySheet } from "@/components/history-sheet";
@@ -58,6 +60,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
       body: true,
       content: true,
       publishedAt: true,
+      updatedAt: true,
       showUpdatedDate: true,
       listing: true,
       ...levelSelect,
@@ -95,31 +98,27 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
     <ArticleEditor collections={collections}>
       <PageHeader
         // Opened from its review in Autopilot (Edit before publishing): the way back there.
-        back={fromReview ? { href: `/app/${slug}/autopilot/articles/${article.id}`, label: "Review" } : { href: `/app/${slug}/docs`, label: "Docs" }}
+        // Opened from its review in Autopilot (Edit before publishing): the way back there. Else its collection's page.
+        back={
+          fromReview
+            ? { href: `/app/${slug}/autopilot/articles/${article.id}`, label: "Review" }
+            : edited.collection
+              ? { href: `/app/${slug}/docs/collections/${edited.collection.slug}`, label: edited.collection.name }
+              : { href: `/app/${slug}/docs`, label: "Docs" }
+        }
         // The form's title field shows it, right under this.
         title={<span className="sr-only">{article.title}</span>}
         meta={
-          article.publishedAt ? (
-            <>
-              Published {formatDate(article.publishedAt)} ·{" "}
-              {listing === "hidden" || listing === "ai_only" ? (
-                // No page to link to.
-                LISTING_LABELS[listing]
-              ) : (
-                <>
-                  {listing === "unlisted" && "Unlisted · "}
-                  <Link href={url} target="_blank" className="break-all underline underline-offset-4">
-                    {url}
-                  </Link>
-                </>
-              )}
-            </>
-          ) : (
-            "Draft"
-          )
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <ArticleStateBadge state={!article.publishedAt ? "draft" : article.changes ? "changes" : "published"} />
+            <span>
+              {article.publishedAt ? formatDate(article.publishedAt) : `Edited ${timeAgo(article.updatedAt)}`}
+              {article.publishedAt && listing !== "everywhere" && ` · ${LISTING_LABELS[listing]}`}
+            </span>
+          </span>
         }
-        // An editor: Settings, Save and Publish stay in the top bar as the text scrolls.
-        barActions
+        // An editor: Settings, Save and Publish stay in the top bar as the text scrolls (on phones, a bar at the bottom).
+        pinActions
         actions={
           <>
             <ArticleSettings
@@ -148,26 +147,39 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
                 preview: article.publishedAt ? previewUrl(access, `/docs/${article.slug}`) : undefined,
               }}
             />
-            <ArticleSaveButton />
-            <ArticleActions
-              projectSlug={slug}
-              slug={article.slug}
-              title={article.title}
-              published={article.publishedAt !== null}
-              part="publish"
-              readers={readers}
-              autopilotEdits={autopilotEdits}
-            />
+            {/* Settings, its panels and its page on the portal: one quiet look (labelled; icons alone on a phone's bar), Save the one fill. */}
+            <Link href={`?history${keep}`} scroll={false} aria-label="History" title="History" className={buttonVariants({ variant: "ghost" })}>
+              <HistoryIcon aria-hidden />
+              <span className="phonebar:hidden">History</span>
+            </Link>
+            <Link href={`?verify${keep}`} scroll={false} aria-label="Verify" title="Verify against your code" className={buttonVariants({ variant: "ghost" })}>
+              <ShieldCheckIcon aria-hidden />
+              <span className="phonebar:hidden">Verify</span>
+            </Link>
+            {article.publishedAt && listing !== "hidden" && listing !== "ai_only" && (
+              <Link href={url} target="_blank" aria-label="View on portal" title={url} className={buttonVariants({ variant: "ghost", size: "icon" })}>
+                <ExternalLinkIcon aria-hidden />
+              </Link>
+            )}
+            <ArticleSaveButton outline={article.publishedAt === null} />
+            {article.publishedAt === null && (
+              <ArticleActions
+                projectSlug={slug}
+                slug={article.slug}
+                title={article.title}
+                published={false}
+                part="publish"
+                readers={readers}
+                autopilotEdits={autopilotEdits}
+              />
+            )}
           </>
         }
         more={
           <>
-            <Link href={`?history${keep}`} scroll={false} className={buttonVariants({ variant: "ghost" })}>
-              History
-            </Link>
-            <Link href={`?verify${keep}`} scroll={false} className={buttonVariants({ variant: "ghost" })}>
-              Verify
-            </Link>
+            {article.publishedAt !== null && (
+              <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published part="publish" readers={readers} autopilotEdits={autopilotEdits} />
+            )}
             <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="delete" />
           </>
         }
@@ -195,7 +207,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
       />
       <HistorySheet
         open={showsHistory}
-        description={`Every save that changed “${article.title}”, newest first. ${articleVersionsNote(plan)}`}
+        description={`Newest first. ${articleVersionsNote(plan)}`}
       >
         {showsHistory && (
           <ArticleHistory
@@ -207,7 +219,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           />
         )}
       </HistorySheet>
-      <HistorySheet open={showsVerify} title="Verify" description={`Each check of “${article.title}” against your repository, newest first.`}>
+      <HistorySheet open={showsVerify} title="Verify" description={`“${article.title}” against your repository`}>
         {showsVerify && (
           <ArticleVerify projectSlug={slug} article={article} unavailable={await verifyUnavailable(membership.project.id, article.publishedAt !== null)} provider={aiProvider()} />
         )}

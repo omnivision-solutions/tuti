@@ -1,12 +1,22 @@
+import { HistoryIcon } from "lucide-react";
 import Link from "next/link";
 
 import { ArticleDiff } from "@/components/article-diff";
 import { RestoreVersionButton } from "@/components/docs";
-import { ItemList, ItemRow } from "@/components/item-list";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { timeAgo } from "@/lib/format";
+import { formatDate, timeAgo } from "@/lib/format";
 import { articleRevisions } from "@/server/operations/docs";
+
+/** A person's initials, as the sidebar shows them ("OO"). */
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
 type Version = { title: string; body: string; content: unknown; collection: { name: string } | null };
 
@@ -51,31 +61,43 @@ export async function ArticleHistory({
           </CardContent>
         </Card>
       )}
-      <Card>
-        <CardContent>
-          <ItemList>
-            {revisions.map((revision, index) => (
-              <ItemRow
-                key={revision.id}
-                title={
-                  <Link
-                    href={`?history&revision=${revision.id}${keep}`}
-                    scroll={false}
-                    aria-current={revision === selected ? "true" : undefined}
-                    className="hover:underline aria-[current]:underline"
-                  >
-                    <time dateTime={revision.createdAt.toISOString()} title={revision.createdAt.toISOString()}>
-                      Saved {timeAgo(revision.createdAt)}
-                    </time>
-                  </Link>
-                }
-                badges={index === 0 && <Badge variant="secondary">Current</Badge>}
-                meta={[revision.author?.name ?? "Someone whose account is gone", revision.title, revision.collection?.name].filter(Boolean).join(" · ")}
-              />
-            ))}
-          </ItemList>
-        </CardContent>
-      </Card>
+      {/* Each save: who, when, and what it was called then; the open one marked, the newest the current. */}
+      <ol aria-label="Versions" className="flex flex-col gap-1">
+        {revisions.map((revision, index) => (
+          <li key={revision.id}>
+            <Link
+              href={`?history&revision=${revision.id}${keep}`}
+              scroll={false}
+              aria-current={revision === selected ? "true" : undefined}
+              className="flex items-center gap-3 rounded-lg px-3 py-2.5 outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring aria-[current]:bg-accent"
+            >
+              <Avatar aria-hidden className="size-8">
+                <AvatarFallback>{initials(revision.author?.name ?? "?")}</AvatarFallback>
+              </Avatar>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                  <time dateTime={revision.createdAt.toISOString()} title={formatDate(revision.createdAt)}>
+                    Saved {timeAgo(revision.createdAt)}
+                  </time>
+                  {index === 0 && <Badge>Current</Badge>}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {[revision.author?.name ?? "Someone whose account is gone", revision.title !== current.title && `Titled “${revision.title}”`]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+      {revisions.length === 1 && (
+        <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
+          <HistoryIcon aria-hidden className="size-6 text-muted-foreground" />
+          <p className="text-sm font-medium">No earlier versions yet</p>
+          <p className="max-w-xs text-sm text-muted-foreground">Each time you save a change, the version before it is kept here, to compare and restore.</p>
+        </div>
+      )}
     </>
   );
 }

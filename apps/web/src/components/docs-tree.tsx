@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronRightIcon, FileTextIcon, GripVerticalIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { ChevronRightIcon, FileTextIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 import { CollectionDialog, TabDialog } from "@/components/docs";
 import { LucideIcon } from "@/components/icon-field";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,12 +71,14 @@ export function AddContentMenu({
   parent,
   tab,
   article,
+  className,
 }: {
   /** The tree's "+" button's name ("Add to Billing"); without one, the page's "Add content" button. */
   label?: string;
   parent: string | null;
   tab?: string;
   article: string | null | false;
+  className?: string;
 }) {
   const workspace = useContext(DocsWorkspaceContext)!;
   const nests = parent === null || workspace.depthOf(parent) < MAX_COLLECTION_DEPTH;
@@ -88,7 +90,7 @@ export function AddContentMenu({
           <PlusIcon aria-hidden />
         </DropdownMenuTrigger>
       ) : (
-        <DropdownMenuTrigger render={<Button />}>
+        <DropdownMenuTrigger render={<Button className={className} />}>
           <PlusIcon aria-hidden />
           Add content
         </DropdownMenuTrigger>
@@ -165,6 +167,7 @@ function Row({
   handlers,
   children,
   actions,
+  count,
   className,
 }: {
   draggable: boolean;
@@ -172,6 +175,8 @@ function Row({
   handlers: object;
   children: ReactNode;
   actions?: ReactNode;
+  /** How many it holds, at its end (from laptop width up, its buttons take its place on hover). */
+  count?: number;
   className?: string;
 }) {
   return (
@@ -180,24 +185,29 @@ function Row({
       draggable={draggable}
       data-drop={drop}
       className={cn(
-        "group/row flex min-h-8 items-center gap-0.5 rounded-md pr-1 text-sm hover:bg-accent/60 has-[a[aria-current=page]]:bg-accent",
+        // The page open: the menus' pale green pill (sidebar-active), its label and icons green.
+        "group/row relative flex min-h-8 items-center gap-0.5 rounded-lg pr-1 text-sm hover:bg-accent/60 has-[a[aria-current=page]]:bg-sidebar-active has-[a[aria-current=page]]:text-sidebar-active-foreground has-[a[aria-current=page]]:[&_svg]:text-sidebar-active-foreground",
         "data-[drop=after]:shadow-[inset_0_-2px_0_0_var(--color-primary)] data-[drop=before]:shadow-[inset_0_2px_0_0_var(--color-primary)]",
         "data-[drop=into]:bg-accent data-[drop=into]:ring-2 data-[drop=into]:ring-primary",
         className,
       )}
     >
       {children}
+      {count !== undefined && (
+        // From laptop width up its buttons show on hover or focus, in the room they keep: its count sits there till then.
+        <span className="hidden px-1.5 text-xs text-muted-foreground tabular-nums lg:absolute lg:top-1/2 lg:right-2 lg:block lg:-translate-y-1/2 lg:group-focus-within/row:hidden lg:group-hover/row:hidden lg:group-has-data-popup-open/row:hidden">
+          {count}
+        </span>
+      )}
       {actions && (
-        <div className="flex shrink-0 items-center opacity-100 group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 lg:opacity-0">
-          {actions}
-        </div>
+        <div className="flex shrink-0 items-center opacity-100 group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 lg:opacity-0">{actions}</div>
       )}
     </div>
   );
 }
 
 const rowLink =
-  "flex min-w-0 flex-1 items-center gap-2 py-1.5 break-words rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:font-medium";
+  "flex min-w-0 flex-1 items-center gap-2 py-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:font-semibold";
 
 /**
  * The team's docs beside a tab's, a collection's and an article's page in the app: each tab with its collections
@@ -454,8 +464,10 @@ export function DocsWorkspace({
               className={rowLink}
             >
               <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className={cn("min-w-0", !article.published && "text-muted-foreground")}>{article.title}</span>
-              {!article.published && <span className="shrink-0 rounded-sm border px-1 text-xs leading-4 text-muted-foreground">Draft</span>}
+              <span title={article.title} className={cn("min-w-0 truncate", !article.published && "text-muted-foreground")}>
+                {article.title}
+              </span>
+              {!article.published && <span className="shrink-0 rounded-full bg-status-open/12 px-1.5 text-xs leading-5 text-muted-foreground">Draft</span>}
             </Link>
           </Row>
         </li>
@@ -494,6 +506,7 @@ export function DocsWorkspace({
                   draggable={!pending}
                   drop={dropAt(over)}
                   handlers={handlers(over)}
+                  count={collection.articles.length}
                   actions={
                     <>
                       <AddContentMenu label={`Add to ${collection.name}`} parent={collection.slug} article={collection.slug} />
@@ -524,7 +537,9 @@ export function DocsWorkspace({
                     className={rowLink}
                   >
                     {collection.icon && <LucideIcon name={collection.icon} className="text-muted-foreground" />}
-                    <span className="min-w-0">{collection.name}</span>
+                    <span title={collection.name} className="min-w-0 truncate">
+                      {collection.name}
+                    </span>
                   </Link>
                 </Row>
                 {expanded && !empty && (
@@ -546,7 +561,12 @@ export function DocsWorkspace({
     const over: Over = { kind: "uncollected", slug: "" };
     return (
       <>
-        {uncollected.length > 0 && <ul aria-label="Articles in no collection">{articleRows(uncollected, null)}</ul>}
+        {uncollected.length > 0 && (
+          <>
+            <p aria-hidden className="mt-2 px-2 py-1 group-label">Not in a collection</p>
+            <ul aria-label="Articles in no collection">{articleRows(uncollected, null)}</ul>
+          </>
+        )}
         {dragging?.kind === "article" && (
           <Row draggable={false} drop={dropAt(over)} handlers={handlers(over)} className="pl-6">
             <span className="py-1.5 text-muted-foreground">Not in a collection</span>
@@ -556,7 +576,7 @@ export function DocsWorkspace({
     );
   };
 
-  const sectionHeader = "flex min-w-0 flex-1 items-center py-1.5 pl-2 text-xs font-semibold tracking-wide uppercase text-muted-foreground";
+  const sectionHeader = "flex min-w-0 flex-1 items-center py-1.5 pl-2 group-label";
   const tabSections = tabs
     .map((tab, index) => {
       const top = childrenOf(null).filter((c) => c.tab === tab.slug);
@@ -593,9 +613,11 @@ export function DocsWorkspace({
             <Link
               href={`${base}/tabs/${tab.slug}`}
               aria-current={current?.kind === "tab" && current.slug === tab.slug ? "page" : undefined}
-              className={cn(rowLink, sectionHeader, "aria-[current=page]:text-foreground")}
+              className={cn(rowLink, "pl-2 font-semibold")}
+              data-tab-label
             >
-              {tab.name}
+              <PanelsTopLeftIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 truncate">{tab.name}</span>
             </Link>
           </Row>
           {collectionRows(top, `Collections in ${tab.name}`)}
@@ -610,7 +632,7 @@ export function DocsWorkspace({
     <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
       <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:flex-row">
         {/* Beside every Docs page, to go between them. */}
-        <aside className="border-b lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0">
+        <aside className="border-b lg:w-64 lg:shrink-0 lg:border-r lg:border-b-0">
           <button
             type="button"
             aria-expanded={browsing}
@@ -622,17 +644,24 @@ export function DocsWorkspace({
             Browse docs
           </button>
           <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", browsing ? "flex" : "hidden")}>
-            {/* Back to the docs' home, which shows them all. */}
-            <h2 className="px-2 pt-1 font-heading font-semibold">
-              <Link href={base} className="hover:underline">
-                Docs
+            {/* Back to the docs' home, which shows them all at a glance. */}
+            <Row draggable={false} drop={undefined} handlers={{}} className="pl-2">
+              <Link href={base} aria-current={pathname === base ? "page" : undefined} className={rowLink}>
+                <LayoutGridIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                Overview
               </Link>
-            </h2>
+            </Row>
             <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
               {tabs.length > 0 ? (
-                <ul aria-label="Tabs" className="flex flex-col gap-3">
-                  {tabSections}
-                </ul>
+                <>
+                  {/* Named, so a first-time reader knows these are the help center's tabs (and that there can be more). */}
+                  <p aria-hidden className="px-2 pb-1 group-label">
+                    Tabs
+                  </p>
+                  <ul aria-label="Tabs" className="flex flex-col gap-3">
+                    {tabSections}
+                  </ul>
+                </>
               ) : (
                 <div className="flex flex-col gap-0.5">
                   <Row draggable={false} drop={undefined} handlers={{}} actions={<AddContentMenu label="Add to your docs" parent={null} article={null} />}>
@@ -643,7 +672,12 @@ export function DocsWorkspace({
                 </div>
               )}
             </nav>
-            <div className="flex flex-col gap-0.5 border-t pt-2">
+            <div className="flex flex-col gap-0.5 border-t pt-3">
+              {/* The tree's main action, always in reach under it. */}
+              <Link href={`${base}/new`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mb-1.5 w-full")}>
+                <PlusIcon aria-hidden />
+                New article
+              </Link>
               <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} />
               {deleted > 0 && (
                 <Link href={`${base}#recently-deleted`} className={footerLink}>
@@ -654,7 +688,8 @@ export function DocsWorkspace({
             </div>
           </div>
         </aside>
-        <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8">{children}</div>
+        {/* One column for every Docs page (lists, forms, the editor): one left edge, a reading width, centred. */}
+        <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8">{children}</div>
       </div>
       {adding && (
         <CollectionDialog

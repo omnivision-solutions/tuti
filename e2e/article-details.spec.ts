@@ -69,7 +69,10 @@ test("the team adds a collapsible block to an article; readers open it on the po
   await team.waitForURL(`**/app/${slug}/docs/exporting-your-data`);
   await team.getByRole("button", { name: "Publish" }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish" }).click();
+  // Unpublish is behind "More actions", with Delete.
+  await team.getByRole("button", { name: "More actions" }).click();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
+  await team.keyboard.press("Escape");
 
   // On the portal it's closed: its summary opens it.
   const visitor = await newPerson(browser, portalUrl(slug));

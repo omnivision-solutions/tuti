@@ -59,7 +59,10 @@ test("the team puts a table of contents in an article; readers jump to its headi
   await team.waitForURL(`**/app/${slug}/docs/installing-acme`);
   await team.getByRole("button", { name: "Publish" }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish" }).click();
+  // Unpublish is behind "More actions", with Delete.
+  await team.getByRole("button", { name: "More actions" }).click();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
+  await team.keyboard.press("Escape");
 
   // On the portal, its links jump to the headings, an h3 under its h2.
   const visitor = await newPerson(browser, portalUrl(slug));

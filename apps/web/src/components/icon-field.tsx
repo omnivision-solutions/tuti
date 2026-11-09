@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "cn";
+import { SmilePlusIcon } from "lucide-react";
 import type { IconName } from "lucide-react/dynamic";
 import dynamic from "next/dynamic";
 import { useState } from "react";
@@ -26,7 +27,18 @@ export function LucideIcon({ name, className }: { name: string; className?: stri
  * A stored icon Lucide no longer has (`known` false) shows as none, but is sent unchanged until another is picked
  * or it's removed.
  */
-export function IconField({ defaultValue, known = true, onChange }: { defaultValue: string | null; known?: boolean; onChange?: () => void }) {
+export function IconField({
+  defaultValue,
+  known = true,
+  onChange,
+  compact = false,
+}: {
+  defaultValue: string | null;
+  known?: boolean;
+  onChange?: () => void;
+  /** A 36px square beside a name field (the icon, or a placeholder); Remove icon is in its picker. */
+  compact?: boolean;
+}) {
   const [value, setValue] = useState(defaultValue);
   // `onChange`: picked or removed (its hidden field changes without an event of its own).
   const setIcon = (icon: string | null) => {
@@ -35,6 +47,53 @@ export function IconField({ defaultValue, known = true, onChange }: { defaultVal
   };
   const [open, setOpen] = useState(false);
   const icon = value === defaultValue && !known ? null : value;
+  if (compact) {
+    return (
+      <div className="relative shrink-0">
+        <input type="hidden" name="icon" value={value ?? ""} />
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                title={icon ? "Change icon" : "Add icon"}
+                aria-label={icon ? `Change icon (${icon.replaceAll("-", " ")})` : "Add icon"}
+                className={cn(!icon && "border-dashed text-muted-foreground")}
+              />
+            }
+          >
+            {icon ? <LucideIcon name={icon} /> : <SmilePlusIcon aria-hidden />}
+          </PopoverTrigger>
+          <PopoverContent aria-label="Pick an icon" initialFocus={false}>
+            <IconPicker
+              value={icon}
+              onPick={(name) => {
+                setIcon(name);
+                setOpen(false);
+              }}
+            />
+            {/* Taking it off is part of picking. */}
+            {value && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-1 w-full"
+                onClick={() => {
+                  setIcon(null);
+                  setOpen(false);
+                }}
+              >
+                Remove icon
+              </Button>
+            )}
+          </PopoverContent>
+        </Popover>
+      </div>
+    );
+  }
   return (
     <Field>
       <input type="hidden" name="icon" value={value ?? ""} />
