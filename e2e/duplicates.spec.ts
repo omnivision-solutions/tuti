@@ -40,6 +40,8 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   const flagged = owner.getByRole("listitem").filter({ hasText: "Possible duplicate" });
   await expect(flagged).toHaveCount(1);
   await expect(flagged).toContainText(duplicate);
+  // No tab says their status here: each row shows it as its pill (one post, so one status: still shown).
+  await expect(flagged.getByRole("button", { name: /^Status: / })).toHaveText(/Open/);
   await checkpoint(owner, "team-possible-duplicates");
 
   // The post (opened beside the list, then its full page) shows what it may duplicate; "Not a duplicate" settles it for good.
