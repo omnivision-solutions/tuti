@@ -140,7 +140,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
               </SignInLink>
             )}
             {/* For everyone: on a private portal's sign-in page it has the team's links (no parts). */}
-            <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={canRead ? project.boards : []} parts={canRead} />
+            <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={canRead ? project.boards : []} parts={canRead} newChangelog={newChangelog} />
           </div>
         </div>
         </header>

@@ -123,6 +123,12 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(row("Bug reports")).toHaveCount(0);
   const response = await visitor.goto("/feedback/bugs");
   expect(response?.status()).toBe(404);
+  // The portal's own page not found, in its header and footer: the way home, and no part marked as this page's.
+  await expect(visitor.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Go to the home page" })).toHaveAttribute("href", "/");
+  await expect(visitor.locator('[aria-current="page"]')).toHaveCount(0);
+  await expect(visitor.getByRole("navigation", { name: "Boards" })).toHaveCount(0);
+  await checkpoint(visitor, "portal-not-found");
   // With one board there's no row of them.
   await visitor.setViewportSize({ width: 1280, height: 800 });
   await visitor.goto("/feedback/feature-requests");

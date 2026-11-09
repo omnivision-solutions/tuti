@@ -180,11 +180,16 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
             <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
               <RssIcon aria-hidden /> RSS
             </a>
-            {/* To the form (beside the list on wide screens, after it below them). */}
+            {/* To the form: beside the list on wide screens, after it below them. */}
             {subscribable && (
-              <a href="#changelog-subscribe" className={buttonVariants({ variant: "outline", size: "sm" })}>
-                <BellIcon aria-hidden /> Subscribe
-              </a>
+              <>
+                <a href="#changelog-subscribe" className={buttonVariants({ variant: "outline", size: "sm", className: "max-lg:hidden" })}>
+                  <BellIcon aria-hidden /> Subscribe
+                </a>
+                <a href="#changelog-subscribe-below" className={buttonVariants({ variant: "outline", size: "sm", className: "lg:hidden" })}>
+                  <BellIcon aria-hidden /> Subscribe
+                </a>
+              </>
             )}
           </div>
         </div>
@@ -208,10 +213,11 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
         )}
       </div>
       {/* Beside the header and the list on wide screens, staying in view: the month index (right after the chips for the keyboard),
-          then getting it by email. On phones after the list (the header's menu lists the entries by date: ChangelogMenu). */}
+          then getting it by email. Below wide screens neither: getting it by email comes after the list, in reading order too
+          (the header's menu lists the entries by date: ChangelogMenu). */}
       <aside
         aria-label="Follow the changelog"
-        className="order-last flex flex-col gap-6 lg:sticky lg:top-[calc(var(--portal-header-height,0px)+2.5rem)] lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--portal-header-height,0px)-5rem)]"
+        className="hidden flex-col gap-6 lg:sticky lg:top-[calc(var(--portal-header-height,0px)+2.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:flex lg:max-h-[calc(100dvh-var(--portal-header-height,0px)-5rem)]"
       >
         {listed.length >= MONTH_INDEX_FROM && (
           <nav aria-label="Months" className="hidden min-h-0 flex-col overflow-y-auto lg:flex">
@@ -230,7 +236,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
             ))}
           </nav>
         )}
-        {subscribe}
+        {subscribe && <div id="changelog-subscribe">{subscribe}</div>}
       </aside>
       <div className="flex min-w-0 flex-col gap-8 lg:col-start-1">
         {entries.length === 0 ? (
@@ -278,6 +284,11 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
               </Link>
             )}
           </nav>
+        )}
+        {subscribe && (
+          <div id="changelog-subscribe-below" className="lg:hidden">
+            {subscribe}
+          </div>
         )}
       </div>
     </div>

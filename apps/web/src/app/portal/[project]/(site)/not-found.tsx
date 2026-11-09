@@ -1,6 +1,7 @@
 import { CompassIcon } from "lucide-react";
 import Link from "next/link";
 
+import { PortalNotFoundMark } from "@/components/portal-menu";
 import { MESSAGE_TEXT, MESSAGE_TITLE, PortalMessage } from "@/components/portal-message";
 import { buttonVariants } from "@/components/ui/button";
 import { portalLinks } from "@/server/portal-base";
@@ -10,8 +11,9 @@ import { cn } from "@/lib/utils";
 export default async function PortalNotFound() {
   const at = await portalLinks();
   return (
-    // data-portal-not-found: the header marks no part as this page's, and no part's row shows (PortalParts, PartRows).
-    <PortalMessage data-portal-not-found icon={CompassIcon}>
+    <PortalMessage icon={CompassIcon}>
+      {/* The header and its menu mark no part as this page's, and no part's row shows. */}
+      <PortalNotFoundMark />
       <p className="-mb-2 font-heading text-sm font-semibold text-primary">404</p>
       <h1 className={cn(MESSAGE_TITLE, "text-[1.75rem]")}>Page not found</h1>
       <p className={MESSAGE_TEXT}>It may have moved, or the link may be mistyped.</p>

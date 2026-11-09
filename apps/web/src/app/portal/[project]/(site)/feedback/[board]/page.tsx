@@ -231,7 +231,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                         <span className="flex max-w-full min-w-0 items-center gap-2 whitespace-nowrap">
                           <Avatar size="sm" aria-hidden className="size-5">
                             {post.author.image && <AvatarImage src={post.author.image} alt="" />}
-                            <AvatarFallback className="text-[0.625rem]">{post.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                            <AvatarFallback className="text-xs">{post.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>
                           </Avatar>
                           <span className="min-w-0 truncate text-foreground/80">{post.author.name}</span>
                           <span aria-hidden>·</span>

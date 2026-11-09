@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 
 import { DocsSearchBox } from "@/components/docs-search-box";
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
+import { usePortalNotFound } from "@/components/portal-menu";
 import { SCROLLING_ROW, useScrollingRow } from "@/components/sub-nav";
 import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,7 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
   const path = usePortalPath();
   const at = usePortalHref();
   const nav = useScrollingRow(path, newChangelog);
+  const notFound = usePortalNotFound();
   return (
     <nav
       ref={nav}
@@ -57,7 +59,7 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
         if (key === "feedback" && boards.length === 0) {
           return null;
         }
-        const active = within(path, href);
+        const active = !notFound && within(path, href);
         return (
           <Link
             key={key}
@@ -67,9 +69,7 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
             className={cn(
               // Underlined on the header's bottom edge at every width (the board's and docs' rows the same).
               "shrink-0 scroll-mx-12 border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:inline-flex sm:items-center sm:py-0 sm:text-sm",
-              active
-                ? "border-primary font-medium text-foreground [:root:has([data-portal-not-found])_&]:border-transparent [:root:has([data-portal-not-found])_&]:font-normal"
-                : "border-transparent text-muted-foreground hover:text-foreground",
+              active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {label}
@@ -175,7 +175,7 @@ export function PartRow({
     return null;
   }
   return (
-    <div className={cn("border-b [:root:has([data-portal-not-found])_&]:hidden", className)}>
+    <div className={cn("border-b", className)}>
       <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-6xl gap-1 px-6", SCROLLING_ROW)} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link
@@ -210,6 +210,9 @@ export function PartRow({
 export function PartRows({ boards, docsTabs }: { boards: Board[]; docsTabs: React.ReactNode }) {
   const path = usePortalPath();
   const at = usePortalHref();
+  if (usePortalNotFound()) {
+    return null;
+  }
   if (within(path, "/docs")) {
     return docsTabs;
   }

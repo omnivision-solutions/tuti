@@ -64,6 +64,9 @@ export function ChangelogEntryView({
   dateMargin?: boolean;
 }) {
   const Title = heading;
+  // The portal's own pages (its list, or an entry's page, which has the reactions): a reading size and tinted tags; the
+  // widget's panel (an h1 too) keeps the base.
+  const onPage = dateMargin || !!react;
   const at = (path: string) => withBase(base, path);
   const date = <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt)}</time>;
   return (
@@ -93,7 +96,7 @@ export function ChangelogEntryView({
         >
           <span className={cn("font-medium", dateMargin && "lg:hidden")}>{date}</span>
           {entry.tags.map((tag) => (
-            <TagBadge key={tag} tag={tag} className={TAG_TINTS[tag]} />
+            <TagBadge key={tag} tag={tag} className={onPage ? TAG_TINTS[tag] : undefined} />
           ))}
           {entry.sample && <SampleBadge />}
         </div>
@@ -101,8 +104,7 @@ export function ChangelogEntryView({
           id={`entry-${entry.number}`}
           className={cn(
             "font-heading font-semibold tracking-tight break-words",
-            // The portal's own pages: a title as big as the entry deserves; the widget's panel keeps it small.
-            heading === "h1" ? "text-[2rem] leading-tight sm:text-[2.5rem]" : dateMargin ? "text-2xl leading-tight sm:text-[1.75rem]" : "text-xl",
+            !onPage ? "text-xl" : heading === "h1" ? "text-[2rem] leading-tight sm:text-[2.5rem]" : "text-2xl leading-tight sm:text-[1.75rem]",
           )}
         >
           {heading === "h2" ? (
@@ -114,8 +116,7 @@ export function ChangelogEntryView({
           )}
         </Title>
         {entry.cover && <RichText doc={entry.cover} mediaUrls={mediaUrls} className="rich-text" />}
-        {/* On the portal's own pages a reading size; the widget's panel keeps the base. */}
-        <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", (dateMargin || heading === "h1") && "text-[1.0625rem] leading-7 text-foreground/85")} />
+        <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-[1.0625rem] leading-7 text-foreground/85")} />
         {entry.posts.length > 0 && (
           <p className="text-sm text-muted-foreground">
             Completes{" "}

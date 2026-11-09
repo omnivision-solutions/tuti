@@ -13,13 +13,32 @@ import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 
 /** What the page puts in the menu for its part (the docs' tree, from DocsLayout): set by PortalMenuPart. */
-const PartContext = createContext<{ part: ReactNode; setPart: (part: ReactNode) => void } | null>(null);
+const PartContext = createContext<{
+  part: ReactNode;
+  setPart: (part: ReactNode) => void;
+  notFound: boolean;
+  setNotFound: (notFound: boolean) => void;
+} | null>(null);
 
-/** Around the header and the page, so a page can give the header's menu its part's navigation. */
+/** Around the header and the page, so a page can give the header's menu its part's navigation (and say it's not found). */
 export function PortalMenuProvider({ children }: { children: ReactNode }) {
   const [part, setPart] = useState<ReactNode>(null);
-  return <PartContext.Provider value={{ part, setPart }}>{children}</PartContext.Provider>;
+  const [notFound, setNotFound] = useState(false);
+  return <PartContext.Provider value={{ part, setPart, notFound, setNotFound }}>{children}</PartContext.Provider>;
 }
+
+/** On a page not found: no part of the header or its menu is marked as this page's, and no part's row shows. */
+export function PortalNotFoundMark() {
+  const setNotFound = useContext(PartContext)?.setNotFound;
+  useEffect(() => {
+    setNotFound?.(true);
+    return () => setNotFound?.(false);
+  }, [setNotFound]);
+  return null;
+}
+
+/** Whether the page is a page not found (PortalNotFoundMark). */
+export const usePortalNotFound = () => useContext(PartContext)?.notFound ?? false;
 
 /** On a page: `children` go in the header's menu (on phones and tablets) while the page is shown. Nothing shows here. */
 export function PortalMenuPart({ children }: { children: ReactNode }) {
@@ -45,18 +64,22 @@ export function PortalMenu({
   homeHref,
   boards,
   parts = false,
+  newChangelog = false,
 }: {
   name: string;
   homeHref: string;
   boards: { slug: string; name: string }[];
   /** The portal's parts too (Feedback, Roadmap, Changelog, Docs): on phones the header leaves them out for this menu. */
   parts?: boolean;
+  /** The changelog has an announcement this reader hasn't seen (the header's dot, in the menu on phones). */
+  newChangelog?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const path = usePortalPath();
   const at = usePortalHref();
   const { headerLinks } = usePortalLook();
   const page = useContext(PartContext)?.part ?? null;
+  const notFound = usePortalNotFound();
 
   // What the page gave it (the docs' tree, the changelog's entries), or the boards on Feedback.
   const part = page ? (
@@ -117,7 +140,7 @@ export function PortalMenu({
                 if (key === "feedback" && boards.length === 0) {
                   return null;
                 }
-                const active = within(path, href);
+                const active = !notFound && within(path, href);
                 return (
                   <Link
                     key={key}
@@ -129,6 +152,11 @@ export function PortalMenu({
                     )}
                   >
                     {label}
+                    {key === "changelog" && newChangelog && !active && (
+                      <span className="ml-2 inline-block size-2 rounded-full bg-highlight-foreground align-middle">
+                        <span className="sr-only">New</span>
+                      </span>
+                    )}
                   </Link>
                 );
               })}

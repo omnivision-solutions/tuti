@@ -72,6 +72,20 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await expect(csvCard.getByRole("button")).toHaveCount(0);
   await expect(csvCard.getByText("vote", { exact: true })).toBeVisible();
 
+  // On a phone, one column at a time: Planned first, the others from the tabs over it.
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  const columns = visitor.getByRole("navigation", { name: "Columns" });
+  await expect(columns.getByRole("link")).toHaveText(["Planned 2", "In progress 1", "Completed 2"]);
+  await expect(column("Planned")).toBeVisible();
+  await expect(column("Completed")).toBeHidden();
+  await columns.getByRole("link", { name: "Completed 2" }).click();
+  await visitor.waitForURL("**/roadmap?column=completed");
+  await expect(column("Completed")).toBeVisible();
+  await expect(column("Planned")).toBeHidden();
+  await checkpoint(visitor, "roadmap-phone-completed", { fullPage: false });
+  await visitor.goto("/roadmap");
+  await visitor.setViewportSize({ width: 1440, height: 900 });
+
   // With every board shown, "Share an idea" asks which.
   await visitor.getByRole("button", { name: "Share an idea" }).click();
   await expect(visitor.getByRole("menuitem")).toHaveText(["Feature requests", "Bug reports"]);

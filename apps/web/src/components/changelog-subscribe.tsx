@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useId } from "react";
 
 import { keepingFields } from "@/lib/forms";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,9 @@ import { subscribeToChangelog } from "@/server/changelog-subscribe";
  * just the form, in a card with its own heading (a board's Get updates).
  */
 export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { projectSlug: string; email?: string; inCard?: boolean }) {
+  // Its own ids: the changelog shows it in its rail on wide screens and after the list below them.
+  const headingId = useId();
+  const errorId = useId();
   const [state, action, pending] = useActionState(
     (_prev: { error?: string; sentTo?: string }, form: FormData) => subscribeToChangelog(projectSlug, form),
     {},
@@ -31,7 +34,7 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
           defaultValue={email}
           required
           aria-invalid={state.error ? true : undefined}
-          aria-describedby={state.error ? "changelog-subscribe-error" : undefined}
+          aria-describedby={state.error ? errorId : undefined}
           className="min-w-0 flex-1 basis-56"
         />
         {/* Disabled while it sends, but keeping its focus. */}
@@ -39,7 +42,7 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
           {pending ? "Sending…" : "Subscribe"}
         </Button>
       </div>
-      {state.error && <FieldError id="changelog-subscribe-error">{state.error}</FieldError>}
+      {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
       <p role="status" className="text-sm break-words text-muted-foreground">
         {state.sentTo && !state.error ? `Check your inbox: we sent a link to ${state.sentTo} to confirm.` : ""}
       </p>
@@ -48,8 +51,8 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
   return inCard ? (
     form
   ) : (
-    <section aria-labelledby="changelog-subscribe" className="flex flex-col gap-3 rounded-xl bg-card p-4 shadow-xs ring-1 ring-border">
-      <h2 id="changelog-subscribe" className="font-semibold">
+    <section aria-labelledby={headingId} className="flex flex-col gap-3 rounded-xl bg-card p-4 shadow-xs ring-1 ring-border">
+      <h2 id={headingId} className="font-semibold">
         Get updates by email
       </h2>
       {form}

@@ -1036,13 +1036,18 @@ test("readers get the changelog by email: confirmed first, each entry published 
   // On a phone, the address wraps rather than running out of its paragraph (and off the screen).
   const fitsPhone = async () => {
     await reader.setViewportSize({ width: 390, height: 844 });
-    const showing = reader.locator("p", { hasText: address });
+    const showing = reader.locator("p:visible", { hasText: address });
     await expect(showing.first()).toBeVisible();
     for (const [scroll, width] of await showing.evaluateAll((ps) => ps.map((p) => [p.scrollWidth, p.clientWidth]))) {
       expect(scroll).toBeLessThanOrEqual(width!);
     }
     await reader.setViewportSize({ width: 1280, height: 720 });
   };
+  // On a phone the form is after the list (its own, in reading order): sent from there, its answer wraps too.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await subscribe.getByRole("textbox", { name: "Email" }).fill(address);
+  await subscribe.getByRole("button", { name: "Subscribe" }).click();
+  await expect(subscribe.getByRole("status")).toHaveText(`Check your inbox: we sent a link to ${address} to confirm.`);
   await fitsPhone();
 
   // Nothing until they confirm, from the email.

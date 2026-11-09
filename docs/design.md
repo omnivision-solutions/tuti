@@ -64,8 +64,10 @@ says the status (a roadmap column, "Recently shipped"), its cards don't repeat
 the badge.
 
 Changelog tags (`TagBadge`, `TAG_VARIANTS` the one map): Breaking in the
-destructive colour (its text `destructive-foreground`), the rest neutral, the same on the portal, in the widget and
-in the team's list; a tag picked in the editor takes its badge's colours.
+destructive colour (its text `destructive-foreground`), the rest neutral, the same in the widget and
+in the team's list; a tag picked in the editor takes its badge's colours. On the portal's own changelog pages
+(`ChangelogEntryView`'s `TAG_TINTS`) New, Improved and Fixed are tinted by kind (green, blue, amber) so a list can be
+scanned; Breaking keeps its destructive look.
 States that aren't a status (the running draft's "Collecting pull requests")
 are neutral (outline), never a status's colour.
 

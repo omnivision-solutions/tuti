@@ -187,7 +187,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                         <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                           <Avatar size="sm" aria-hidden className="size-5">
                             {post.author.image && <AvatarImage src={post.author.image} alt="" />}
-                            <AvatarFallback className="text-[0.625rem]">{post.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                            <AvatarFallback className="text-xs">{post.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>
                           </Avatar>
                           {post.author.name}
                           {entry && (
