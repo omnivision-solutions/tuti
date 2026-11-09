@@ -141,7 +141,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   const heading = team.getByRole("heading", { name: "Dark mode", level: 1 });
   await expect(heading).toHaveCSS("font-size", "32px");
   // The post is Feedback's: the sidebar keeps Feedback marked on its page.
-  await expect(team.locator('[data-slot="sidebar"]').getByRole("link", { name: /^Feedback/ })).toHaveAttribute("data-active");
+  await expect(team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: /^Feedback/ })).toHaveAttribute("data-active");
   expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(48);
   await expect(properties.getByRole("list", { name: "Merged posts" }).getByRole("link")).toHaveText(["#2 Night theme for the editor"]);
   await checkpoint(team, "team-planned");
