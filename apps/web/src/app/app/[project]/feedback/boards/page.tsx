@@ -14,7 +14,6 @@ import { ACTIVE_STATUSES } from "@/lib/post-filters";
 import { isAdminRole } from "@/lib/roles";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
-import { cn } from "@/lib/utils";
 
 /** Feedback → Boards: the portal's boards, each with its settings; "New board" in a dialog (owners and admins). */
 export default async function BoardsPage(props: PageProps<"/app/[project]/feedback/boards">) {
@@ -125,10 +124,8 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
                 </dl>
                 {/* Where it is on one line, its actions on the next (the same on every card, whatever the URL's length). */}
                 <div className="relative mt-auto flex flex-col gap-2 border-t pt-3">
-                  {/* Whether it's on the portal (a dot), and where. */}
+                  {/* Where it is on the portal (whether it's on it, its badge says). */}
                   <span className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-                    <span aria-hidden className={cn("size-2 shrink-0 rounded-full", board.off ? "bg-status-closed" : "bg-status-completed")} />
-                    <span className="sr-only">{board.off ? "Off" : "On the portal"}: </span>
                     <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 hover:text-foreground hover:underline">
                       <span className="truncate">/feedback/{board.slug}</span>
                       <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0" />

@@ -506,7 +506,8 @@ Use these instead of hand-rolling layout:
   sort it (a link each, `aria-sort` on the one in use, the most first; a rate whose low end is what needs the team,
   Reporting's Articles' Found it helpful, the least first and marked ascending), and on
   phones it keeps who and the column that matters most (Last seen), the rest
-  from tablet width up. Which properties it shows is the team's pick
+  from tablet width up (Users' phone row: name, email, then "company · seen …", with no header row, so no sort links
+  sit unseen in the tab order). Which properties it shows is the team's pick
   (Columns), kept for everyone.
 - **`EmptyState`**: what a list shows when it's empty. Say what's missing and
   what to do next; add an `action` when there's an obvious one.

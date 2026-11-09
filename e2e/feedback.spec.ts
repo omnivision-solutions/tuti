@@ -152,11 +152,13 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   const fold = (await team.getByRole("button", { name: "Show properties" }).boundingBox())!;
   expect(fold.y + fold.height).toBeLessThanOrEqual(comments.y);
   await expect(properties.getByRole("combobox", { name: "Owner" })).toBeHidden();
-  expect((await properties.getByRole("group", { name: "Voters" }).boundingBox())!.y).toBeGreaterThanOrEqual(comments.y + comments.height);
-  await expect(properties.getByRole("group", { name: "Voters" })).toContainText("2 voters");
+  // (After the post in the page's order too, so the keyboard meets them where they're seen.)
+  const phoneVoters = team.getByRole("main").getByRole("group", { name: "Voters" });
+  expect((await phoneVoters.boundingBox())!.y).toBeGreaterThanOrEqual(comments.y + comments.height);
+  await expect(phoneVoters).toContainText("2 voters");
   // The toasts gone, for the screenshot.
   await expect(team.getByText(`ETA: ${next}`)).toBeHidden({ timeout: 10_000 });
-  await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText([/Bo$/, /Ada$/]);
+  await expect(team.getByRole("main").getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText([/Bo$/, /Ada$/]);
   // From the top: scrolled, the full-page shot draws the top bar where the window was.
   await team.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(team, "team-post-phone");
@@ -419,6 +421,14 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
   await portal.waitForURL(/\?sort=top$/);
   await expect(portal.getByRole("link", { name: "Load more" })).toBeVisible();
   await expect.poll(() => portal.evaluate(() => window.scrollY)).toBe(scrolled);
+  // All, with more to load and statuses mixed, isn't grouped yet: each row's status shows as its pill.
+  // (#2: on page one; #1, the oldest, is on page two.)
+  await api("/posts/2", { status: "planned" }, "PATCH");
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await expect(team.getByRole("link", { name: "Load more" })).toBeVisible();
+  const planned = team.getByRole("main").getByRole("listitem").getByRole("button", { name: "Status: Planned" });
+  await expect(planned).toHaveText(/Planned/);
+  await expect(team.getByRole("region", { name: "Planned" })).toHaveCount(0);
 });
 
 test("a board opens on the ideas not done yet, with completed ones in Recently shipped, and its box finds similar ideas", async ({ browser }, testInfo) => {
@@ -1664,6 +1674,13 @@ test("Completed's question fits a phone, whatever the post's title (a long link)
   await expect(heading).toContainText("oauth-callback");
   const roadmapBox = (await heading.boundingBox())!;
   expect(roadmapBox.x + roadmapBox.width).toBeLessThanOrEqual(390);
+  await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  // Moved off the roadmap (back to Open) from a phone, where one column shows at a time: that column still shows.
+  await team.getByRole("region", { name: "Planned" }).getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "Open" }).click();
+  await expect(team.getByText("Status: Open")).toBeVisible();
+  await expect(team.getByRole("region", { name: "Planned" })).toBeVisible();
+  await expect(team.getByRole("tab", { name: /^Planned/ })).toHaveAttribute("aria-selected", "true");
 });
 
 test("Completed for picked rows counts only who it emails: one completed already emails nobody again", async ({ browser }) => {

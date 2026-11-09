@@ -146,7 +146,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           properties, the post, the rest of the sidebar (each placed by its order, the columns' boxes dropped). */}
       {/* The whole width (data-wide): the post's column up to a reading width, the sidebar beside it. */}
       <div data-wide className="grid gap-6 lg:grid-cols-[minmax(0,48rem)_18rem] lg:grid-rows-[auto_1fr] lg:items-start lg:justify-center lg:gap-12">
-          <div className="flex min-w-0 flex-col gap-6 max-lg:order-1 lg:col-start-1 lg:row-start-1">
+          <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-1">
         {/* Back to the list, and the newer and older post at the other end of the same row (away from the title, so they
           don't read as votes). */}
       <div className="flex items-center justify-between gap-2 -mb-3">
@@ -206,10 +206,10 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           // (what triage changes, in reach), the rest (voters, what shipped it, …) after its comments.
           <aside
             aria-label="Properties"
-            className="text-sm max-lg:contents lg:sticky lg:top-18 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:flex lg:max-h-[calc(100dvh-5.5rem)] lg:flex-col lg:gap-6 lg:overflow-y-auto lg:border-l lg:pl-6"
+            className="text-sm lg:sticky lg:top-18 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:flex lg:max-h-[calc(100dvh-5.5rem)] lg:flex-col lg:gap-6 lg:overflow-y-auto lg:border-l lg:pl-6"
           >
             {/* A card on phones, folded to a line (status, owner, ETA); beside the post, open rows under a heading. */}
-            <div className="flex flex-col rounded-xl bg-card px-4 py-3 shadow-xs ring-1 ring-border max-lg:order-2 lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none lg:ring-0">
+            <div className="flex flex-col rounded-xl bg-card px-4 py-3 shadow-xs ring-1 ring-border lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none lg:ring-0">
               <h2 className="group-label mb-1 lg:mb-2">Properties</h2>
               <PhoneFold
                 summary={
@@ -252,7 +252,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               )}
               </PhoneFold>
             </div>
-            <div className="flex flex-col gap-6 empty:hidden max-lg:order-4 lg:border-t lg:pt-5">
+            <div className="flex flex-col gap-6 empty:hidden max-lg:hidden lg:border-t lg:pt-5">
             <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} formats={formats} total={total} />
             <PostConversations
               projectSlug={slug}
@@ -281,7 +281,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </div>
           </aside>
         )}
-          <div className="flex min-w-0 flex-col gap-6 max-lg:order-3 lg:col-start-1 lg:row-start-2">
+          <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-2">
           {isEmptyDoc(displayDoc(post)) ? (
             <p className="text-sm text-muted-foreground italic">No description.</p>
           ) : (
@@ -332,6 +332,37 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </section>
           )}
           </div>
+          {/* On phones the rest of the sidebar (voters, what shipped it, …) after the post, here in the page's order
+              too (beside it, from laptop width up, it's the aside's). */}
+          {!post.duplicateOf && (
+            <div className="flex flex-col gap-6 text-sm empty:hidden lg:hidden">
+              <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} formats={formats} total={total} />
+              <PostConversations
+                projectSlug={slug}
+                count={post._count.conversations}
+                conversations={post.conversations.map(({ conversation }) => {
+                  const person = conversationPerson(conversation);
+                  return { ...conversation, person: person.name ?? person.email ?? "Unknown" };
+                })}
+              />
+              {post.duplicates.length > 0 && (
+                <Property label="Merged into it">
+                  <ul aria-label="Merged posts" className="flex flex-col gap-1">
+                    {post.duplicates.map((duplicate) => (
+                      <li key={duplicate.number}>
+                        <Link href={`/app/${slug}/p/${duplicate.number}`} className="break-words hover:underline">
+                          #{duplicate.number} {duplicate.title}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </Property>
+              )}
+              {/* The pull request that shipped it is in its links already (a chip over the comments) when it's linked. */}
+              <PostShipped projectSlug={slug} {...shipped} change={shipped.change && !post.links.some((link) => link.codeChangeId === shipped.change!.id) ? shipped.change : null} />
+              <PostsLike projectSlug={slug} posts={like} />
+            </div>
+          )}
       </div>
     </>
   );

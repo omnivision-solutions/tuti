@@ -76,7 +76,8 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
             // "Dec 2026", in UTC as months are kept.
             eta: plan.get(post.id)?.eta?.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }) ?? null,
             owner: plan.get(post.id)?.owner ?? null,
-            excerpt: plan.get(post.id)?.body.trim() || null,
+            // Two lines of it on the card: no more than that goes into the page.
+            excerpt: plan.get(post.id)?.body.trim().slice(0, 300) || null,
           })),
         }))}
       />

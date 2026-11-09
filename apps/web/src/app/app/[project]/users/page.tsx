@@ -196,7 +196,9 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
             <CardContent className="overflow-x-auto">
               {/* On phones, who they are (no id) and when they were last seen; the rest from tablet width up. */}
               <table className="w-full text-sm">
-                <thead className="text-left text-xs text-muted-foreground max-md:sr-only">
+                {/* Phones: no header row (a row is who they are, their company and when they were seen), so no sort links in
+                    the tab order that can't be seen. */}
+                <thead className="text-left text-xs text-muted-foreground max-md:hidden">
                   <tr className="[&>th]:px-3 [&>th]:pb-2.5 [&>th]:text-xs [&>th]:font-semibold [&>th]:tracking-[0.04em] [&>th]:uppercase">
                     {sortHeading({ by: "name", label: "User" })}
                     {columns.map((name) => (
@@ -247,7 +249,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                       ))}
                       {groups.length > 0 && (
                         <td className="hidden md:table-cell">
-                          {/* The first group, and how many more (all of them on hover). */}
+                          {/* The first group, and how many more (all of them on hover, and on their page). */}
                           <span className="flex flex-wrap items-center gap-1" title={user.groups.map((key) => names.get(key) ?? key).join(", ")}>
                             {user.groups.slice(0, 1).map((key) => (
                               <Badge key={key} variant="secondary" className="h-auto max-w-full font-normal whitespace-normal break-words">
@@ -255,10 +257,16 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                               </Badge>
                             ))}
                             {user.groups.length > 1 && (
-                              <span className="text-xs text-muted-foreground">
+                              // The rest on hover, and on their page (where every group is listed) for touch and the keyboard:
+                              // out of the tab order, as their name's link goes there too.
+                              <Link
+                                href={`/app/${slug}/users/${encodeURIComponent(user.id)}`}
+                                tabIndex={-1}
+                                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                              >
                                 +{user.groups.length - 1}
                                 <span className="sr-only"> more: {user.groups.slice(1).map((key) => names.get(key) ?? key).join(", ")}</span>
-                              </span>
+                              </Link>
                             )}
                           </span>
                         </td>

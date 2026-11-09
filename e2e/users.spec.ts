@@ -211,8 +211,9 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.goto(`/app/${slug}/users?q=cipher`);
   await expect(rows).toHaveCount(1);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
-  // Ids only from tablet width up, so emails don't wrap under them.
+  // Ids only from tablet width up, so emails don't wrap under them; no header row (its sort links would be unseen).
   await expect(rows.getByText("id user-3")).toBeHidden();
+  await expect(table.locator("thead")).toBeHidden();
   await checkpoint(owner, "team-users-phone");
   // There too the search is above the table, with what it searched for.
   await expect(owner.getByRole("searchbox", { name: "Search users" })).toBeInViewport();

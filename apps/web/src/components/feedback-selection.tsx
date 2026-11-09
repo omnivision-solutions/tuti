@@ -207,7 +207,8 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   const barHeld = useRef(false);
   useEffect(() => {
     if (hadBar.current && picked.length === 0 && barHeld.current && document.activeElement === document.body) {
-      filtersRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+      // The first one shown (on phones the Filters button; the inline filters are hidden there).
+      [...(filtersRef.current?.querySelectorAll<HTMLElement>("button") ?? [])].find((button) => button.checkVisibility())?.focus({ preventScroll: true });
     }
     hadBar.current = picked.length > 0;
     if (picked.length === 0) {

@@ -137,7 +137,7 @@ export function PostShipped({
                 <Link href={`/app/${projectSlug}/changelog/${entry.number}`} className="min-w-0 break-words hover:underline">
                   {entry.title}
                 </Link>
-                <Badge variant={entry.publishedAt ? "default" : "outline"} className="shrink-0">
+                <Badge variant={entry.publishedAt ? "secondary" : "outline"} className="shrink-0">
                   {entry.publishedAt ? "Published" : "Draft"}
                 </Badge>
               </li>

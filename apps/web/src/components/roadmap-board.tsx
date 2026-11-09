@@ -127,7 +127,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
         toast.success(`${card.title}: ${STATUS_LABELS[status]}`);
         setMoved({ id: card.id, status, presses: from });
         // On a phone the column it went to is the one shown, so it (and the focus) can follow it.
-        setShown(status);
+        if (columns.some((column) => column.status === status)) setShown(status);
       }
       router.refresh();
     });
@@ -226,7 +226,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                       {card.votes}
                       <span className="sr-only">{card.votes === 1 ? " vote" : " votes"}</span>
                     </span>
-                    <span className="-my-1 lg:opacity-0 lg:group-focus-within/card:opacity-100 lg:group-hover/card:opacity-100">
+                    {/* Shown on hover only where there's hover (a touch tablet at laptop width always shows it). */}
+                    <span className="-my-1 [@media(hover:hover)]:lg:opacity-0 [@media(hover:hover)]:lg:group-focus-within/card:opacity-100 [@media(hover:hover)]:lg:group-hover/card:opacity-100">
                       <PostStatusMenu
                         projectSlug={projectSlug}
                         postId={card.id}
@@ -237,7 +238,8 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                         onComplete={() => setCompleting(card)}
                         onChanged={(status) => {
                           setMoved({ id: card.id, status, presses: pickedAt.current.get(card.id) ?? -1 });
-                          setShown(status);
+                          // Off the roadmap (Open, Closed…): the column shown stays.
+                          if (columns.some((column) => column.status === status)) setShown(status);
                         }}
                       />
                     </span>

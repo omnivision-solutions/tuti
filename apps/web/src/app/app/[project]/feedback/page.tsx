@@ -91,6 +91,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       ? STATUS_ORDER.filter((status) => statuses.includes(status)).map((status) => ({ status, posts: posts.filter((post) => post.status === status) }))
       : [{ status: null, posts }];
   const listed = groups.flatMap((group) => group.posts);
+  const mixedUngrouped = (tab === "all" || tab === "duplicates") && groups[0]?.status == null && statuses.length > 1;
 
   // The post open in the pane (`?post=<number>`), and the list's links with another one open, or none.
   const opened = Number(first(searchParams.post));
@@ -166,7 +167,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       {/* The list (its whole column until a post opens) and, beside it, the post a row opened; on a phone, one or the other. */}
       <div data-slot="pane-layout" className={cn("flex flex-col gap-6", open !== null && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start")}>
         {/* Rows picked for Set status, Move to board and Merge, the bar in the filters' place once some are. */}
-        <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
+        <FeedbackSelection key={listKey.toString()} listed={listed.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
           <div className={cn("@container flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
             <SubNav
               label="Statuses"
@@ -312,7 +313,8 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                               {post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>}
                             </>
                           }
-                          excerpt={post.body.trim() || undefined}
+                          // A line of it is shown: no more than that goes into the page.
+                          excerpt={post.body.trim().slice(0, 200) || undefined}
                           meta={
                             <>
                               <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -354,14 +356,14 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                             )
                           }
                           // The group or the tab says the status: its menu a quiet button (the pill where they're mixed
-                          // and ungrouped: Possible duplicates).
+                          // and ungrouped: Possible duplicates, and All while more of it is to load).
                           status={
                             <PostStatusMenu
                               projectSlug={slug}
                               postId={post.id}
                               status={post.status}
                               completing={{ title: post.title, emails: emails.get(post.id) ?? 0 }}
-                              badge={tab === "duplicates"}
+                              badge={mixedUngrouped}
                             />
                           }
                         />

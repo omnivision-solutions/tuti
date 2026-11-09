@@ -69,7 +69,7 @@ test("in the first run the team comes from Canny: a bad key is refused, a good o
   // In the app: the admin's internal comment as the team's note.
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByText("Planning it for June.")).toBeVisible();
-  await expect(owner.getByText("Internal note", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Comments" }).getByRole("listitem").getByText("Internal note", { exact: true })).toBeVisible();
 });
 
 test("on a plan with a board limit, the setup step names Canny in what happens to boards past it", async ({ browser }) => {

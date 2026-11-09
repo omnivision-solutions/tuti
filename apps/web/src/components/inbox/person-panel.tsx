@@ -280,12 +280,17 @@ export async function PersonPanel({
   );
 
   // Their own page: what they did in numbers, then who they are beside it in full.
+  // Their page's card beside what they did, when it has something (their properties, groups, a note); else what they
+  // did takes the width.
+  const hasProfile = !user || !!blocked || !!lookalike || (!!view && (view.groups.length > 0 || Object.keys(view.properties).length > 0));
   return page ? (
     <div className="flex flex-col gap-6">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:items-start">
-        <Card size="sm">
-          <CardContent className="flex flex-col gap-5">{profile}</CardContent>
-        </Card>
+      <div className={cn("grid gap-6 lg:items-start", hasProfile && "lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]")}>
+        {hasProfile && (
+          <Card size="sm">
+            <CardContent className="flex flex-col gap-5">{profile}</CardContent>
+          </Card>
+        )}
         <div className="flex flex-col gap-4">{activity}</div>
       </div>
     </div>
