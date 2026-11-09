@@ -156,6 +156,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // The page's heading is its title, for screen readers: the form's title field shows it, once.
   await expect(team.getByRole("heading", { level: 1, name: "Inviting your team" })).toHaveCount(1);
   await expect(team.getByRole("textbox", { name: "Title" })).toHaveValue("Inviting your team");
+  // The article is the Docs': the sidebar keeps Docs marked on its page.
+  await expect(team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: "Docs", exact: true })).toHaveAttribute("data-active");
 
   // Visitors don't see it yet.
   const visitor = await newPerson(browser, portalUrl(slug));

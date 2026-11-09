@@ -259,7 +259,7 @@ export function AutopilotPanes({
         : toReview.length > 0 && "Pick a post or an article to review";
   return (
     <Decided value={() => setDecided(selected)}>
-    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
+    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:flex-row">
       <aside
         ref={aside}
         aria-label="Changes"

@@ -33,7 +33,7 @@ export default async function ReportingLayout({ children, params }: LayoutProps<
   ];
   // As Settings' layout: the menu a column of its own the page's height, the page beside it.
   return (
-    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t md:flex-row">
+    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t md:flex-row">
       <div className="px-6 pt-6 md:hidden">
         <PageHeader title="Reporting" />
       </div>

@@ -64,6 +64,10 @@ test("Home: what needs the team by kind, customers waiting first, three of each;
   await expect(triage.getByRole("listitem").first().getByRole("link", { name: "Triage" })).toHaveAttribute("href", `/app/${slug}/p/1`);
   await expect(triage.getByRole("link", { name: "See all: New posts to triage" })).toHaveAttribute("href", `/app/${slug}/feedback`);
   await expect(owner.getByRole("region", { name: "Need a reply" }).getByRole("link", { name: "See all: Need a reply" })).toHaveAttribute("href", `/app/${slug}/inbox`);
+  // People wait in the Inbox: its count in the sidebar is in the highlight colour; Feedback's (the team's own queue) is not.
+  const counts = owner.locator('[data-slot="sidebar"][data-state] [data-sidebar="menu-badge"]');
+  await expect(counts.filter({ hasText: /^\d+ open$/ })).toHaveClass(/\bbg-highlight\b/);
+  await expect(counts.filter({ hasText: /to triage$/ })).not.toHaveClass(/\bbg-highlight\b/);
   // Autopilot's rows are To review's: a post or article each (here the two drafts, from one pull request), counted
   // as the tile above and the sidebar count them, each opening its review.
   const changes = owner.getByRole("region", { name: "To review in Autopilot" });

@@ -54,7 +54,8 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     // layout) has the other hidden, which takes no room and so never goes up under the bar.
     const pick = () => {
       const headings = [...document.querySelectorAll<HTMLElement>('main [data-slot="page-header"] h1')];
-      return headings.find((h) => h.checkVisibility()) ?? headings[0];
+      // Shown (laid out at all): getClientRects where checkVisibility is missing (Safari before 17.4).
+      return headings.find((h) => h.checkVisibility?.() ?? h.getClientRects().length > 0) ?? headings[0];
     };
     let heading = pick();
     if (!heading) {

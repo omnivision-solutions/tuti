@@ -19,7 +19,7 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
   }
   // Three panes, as Docs: the menu a column of its own the page's height, the page beside it.
   return (
-    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t md:flex-row">
+    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t md:flex-row">
       {/* On phones the page's heading comes first, above the menu (from tablet width up it's beside it, over the page). */}
       <div className="px-6 pt-6 md:hidden">
         <PageHeader title="Settings" description="Your project, its team and the tools it connects to." />

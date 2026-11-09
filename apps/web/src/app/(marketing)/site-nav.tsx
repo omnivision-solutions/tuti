@@ -213,6 +213,8 @@ export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: 
               Open app
             </Link>
           ) : (
+            // Not on the sign-in pages themselves (as the header's SignedOutLinks): the form is the way in there.
+            !AUTH_PAGES.has(pathname.split("/")[1] ?? "") && (
             <>
               <Link href="/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg" })}>
                 Sign in
@@ -221,6 +223,7 @@ export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: 
                 Start free
               </Link>
             </>
+            )
           )}
         </div>
       </nav>

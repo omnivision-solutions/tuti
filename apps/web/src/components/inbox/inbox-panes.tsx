@@ -195,7 +195,7 @@ export async function InboxPanes({
     <div
       data-slot="pane-layout"
       data-fills-window
-      className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_auto_minmax(0,1fr)]"
+      className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_auto_minmax(0,1fr)]"
     >
       {member ? (
         <PageHeader title="Inbox" className={LIST_TITLE} more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />
@@ -303,7 +303,7 @@ export async function InboxPanes({
                           <span className="block truncate">
                             {/* Waiting for the team, where the view doesn't already say so: small, so it stays one line. */}
                             {needsReply && view !== "open" && (
-                              <Badge variant="highlight" className="mr-1.5 h-4 px-1.5 align-[1px] text-[0.625rem]">
+                              <Badge variant="highlight" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
                                 Needs reply
                               </Badge>
                             )}

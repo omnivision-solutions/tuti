@@ -102,6 +102,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(completes.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await expect(team.getByText("Draft", { exact: true })).toBeVisible();
   await team.setViewportSize({ width: 1280, height: 720 });
+  // The entry is the Changelog's: the sidebar keeps Changelog marked on its page.
+  await expect(team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: "Changelog", exact: true })).toHaveAttribute("data-active");
 
   // Submitted before the page's JavaScript runs (here: none at all), the form doesn't fall
   // back to a GET that puts what was typed in the URL.

@@ -190,6 +190,11 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   // Settings opens on General.
   await owner.waitForURL(`**/app/${slug}/settings/general`);
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  // Its panes run edge to edge beside the sidebar: the menu's column from the sidebar's edge, the page to the window's.
+  const inset = (await owner.locator('[data-slot="sidebar-inset"]').boundingBox())!;
+  const panes = (await owner.locator('[data-slot="pane-layout"]').boundingBox())!;
+  expect(panes.x).toBe(inset.x);
+  expect(panes.x + panes.width).toBe(inset.x + inset.width);
   // Settings' menu is a column of its own beside the page, the page's height; the users' settings in a group of their own.
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await expect(menu).toBeVisible();
