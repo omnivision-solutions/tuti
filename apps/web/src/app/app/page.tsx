@@ -24,7 +24,7 @@ export default async function AppHome() {
   return (
     <>
       <PageHeader title="Welcome to Tuti" />
-      <Card className="max-w-xl">
+      <Card data-narrow>
         <CardHeader>
           <CardTitle>Create your first project</CardTitle>
           <CardDescription>A project is your team&apos;s home for feedback, docs, the changelog and the inbox, with a portal to share them.</CardDescription>

@@ -267,10 +267,10 @@ test("Home groups what needs the team, customers waiting first, five of each wit
   // A new article's draft each (no article yet): 104 to review, as To review counts them.
   expect(home.numbers.toReview).toBe(104);
   // Conversations, then Autopilot's posts and articles to review (To review's rows), then posts to triage (no
-  // duplicates: the one suggested is settled); at most five each.
+  // duplicates: the one suggested is settled); at most three each.
   expect(home.attention.map((group) => [group.key, group.title, group.total, group.items.length])).toEqual([
-    ["replies", "Need a reply", 21, 5],
-    ["autopilot", "To review in Autopilot", 104, 5],
+    ["replies", "Need a reply", 21, 3],
+    ["autopilot", "To review in Autopilot", 104, 3],
     ["triage", "New posts to triage", 2, 2],
   ]);
   // The oldest first: the one reopened by hand a week ago, then the day-old ones.

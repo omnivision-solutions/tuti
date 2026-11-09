@@ -11,7 +11,7 @@ import { rawEmail, receive } from "./inbound";
 /** The kinds "Needs your attention" lists, in order. */
 const groups = (page: Page) => page.getByRole("main").locator("section[aria-label]").evaluateAll((sections) => sections.map((s) => s.getAttribute("aria-label")));
 
-test("Home: what needs the team by kind, customers waiting first, five of each; the numbers open their lists; on a phone each row reads in two lines", async ({ browser }, testInfo) => {
+test("Home: what needs the team by kind, customers waiting first, three of each; the numbers open their lists; on a phone each row reads in two lines", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -57,10 +57,10 @@ test("Home: what needs the team by kind, customers waiting first, five of each; 
   await owner.goto(`/app/${slug}`);
   // Conversations, then Autopilot, then posts to triage.
   expect(await groups(owner)).toEqual(["Need a reply", "To review in Autopilot", "New posts to triage"]);
-  // Five of the seven posts, oldest first, each with its action; See all opens Feedback's Needs triage.
+  // Three of the seven posts, oldest first, each with its action; See all opens Feedback's Needs triage.
   const triage = owner.getByRole("region", { name: "New posts to triage" });
   await expect(triage.getByRole("heading")).toHaveText("New posts to triage 7");
-  await expect(triage.getByRole("listitem")).toHaveCount(5);
+  await expect(triage.getByRole("listitem")).toHaveCount(3);
   await expect(triage.getByRole("listitem").first().getByRole("link", { name: "Triage" })).toHaveAttribute("href", `/app/${slug}/p/1`);
   await expect(triage.getByRole("link", { name: "See all: New posts to triage" })).toHaveAttribute("href", `/app/${slug}/feedback`);
   await expect(owner.getByRole("region", { name: "Need a reply" }).getByRole("link", { name: "See all: Need a reply" })).toHaveAttribute("href", `/app/${slug}/inbox`);

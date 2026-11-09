@@ -9,31 +9,31 @@ export const TONES: Record<string, string> = {
   neutral: "bg-muted text-muted-foreground",
 };
 
-/** What Autopilot's updates do to a post or article, and their colour (as their updates' chips). */
-const BADGES: Record<string, { label: string; className: string }> = {
-  completing: { label: "Completing", className: "text-kind-closes" },
-  in_progress: { label: "In progress", className: "text-kind-progress" },
-  updated: { label: "Updated", className: "text-kind-edit" },
-  new: { label: "New", className: "text-kind-new" },
+/** What Autopilot's updates do to a post or article, and their tone (as their updates' chips). */
+const BADGES: Record<string, { label: string; tone: keyof typeof TONES }> = {
+  completing: { label: "Completing", tone: "closes" },
+  in_progress: { label: "In progress", tone: "progress" },
+  updated: { label: "Updated", tone: "edit" },
+  new: { label: "New", tone: "new" },
   // Reviewed: what became of it, in the past tense.
-  completed: { label: "Completed", className: "text-kind-closes" },
-  published: { label: "Published", className: "text-kind-edit" },
-  approved: { label: "Approved", className: "text-kind-edit" },
-  drafted: { label: "Drafted", className: "text-kind-new" },
-  linked: { label: "Linked", className: "text-muted-foreground" },
-  dismissed: { label: "Dismissed", className: "text-muted-foreground" },
-  undone: { label: "Undone", className: "text-muted-foreground" },
+  completed: { label: "Completed", tone: "closes" },
+  published: { label: "Published", tone: "edit" },
+  approved: { label: "Approved", tone: "edit" },
+  drafted: { label: "Drafted", tone: "new" },
+  linked: { label: "Linked", tone: "neutral" },
+  dismissed: { label: "Dismissed", tone: "neutral" },
+  undone: { label: "Undone", tone: "neutral" },
 };
 
 /**
  * A post's or article's badge in Autopilot (Completing, In progress, Updated, New; once reviewed, what became of it:
- * Completed, In progress, Published, Drafted, Linked, Dismissed, Undone): its word in small monospaced
- * capitals, spaced wide, in its colour, a little dimmer in dark mode (still 4.5:1); none without one.
+ * Completed, In progress, Published, Drafted, Linked, Dismissed, Undone): a pill in sentence case, its text in its
+ * colour on a light tint of it, as every status pill (docs/design.md); none without one.
  */
 export function TargetBadge({ badge, className }: { badge: string | null; className?: string }) {
   if (!badge) {
     return null;
   }
-  const { label, className: colour } = BADGES[badge] ?? BADGES.updated!;
-  return <span className={cn("shrink-0 font-mono text-[0.625rem] font-normal tracking-[0.14em] uppercase dark:opacity-85", colour, className)}>{label}</span>;
+  const { label, tone } = BADGES[badge] ?? BADGES.updated!;
+  return <span className={cn("inline-flex h-5.5 shrink-0 items-center rounded-full px-2 text-xs font-medium whitespace-nowrap", TONES[tone], className)}>{label}</span>;
 }

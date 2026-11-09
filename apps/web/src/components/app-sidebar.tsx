@@ -128,7 +128,7 @@ export function AppSidebar({
                       <span>{item.title}</span>
                     </SidebarMenuButton>
                     {!!item.badge && (
-                      <SidebarMenuBadge id={countId(item.title)}>
+                      <SidebarMenuBadge id={countId(item.title)} className={cn(item.badge.urgent && "bg-highlight text-highlight-foreground")}>
                         {item.badge.count}
                         <span className="sr-only"> {item.badge.label}</span>
                       </SidebarMenuBadge>
@@ -209,18 +209,19 @@ const portalLabel = (url: string) => {
 
 const countId = (title: string) => `nav-count-${title.toLowerCase().replace(/\W+/g, "-")}`;
 
-type NavItem = { title: string; href: string; icon: LucideIcon; section?: boolean; badge?: { count: number; label: string } | false };
+type NavItem = { title: string; href: string; icon: LucideIcon; section?: boolean; badge?: { count: number; label: string; urgent?: boolean } | false };
 
 /** The project's pages, in groups by how often each is used: the daily ones, then Users, then Customize and Settings. */
 function projectNav(project: ProjectSummary): NavItem[][] {
   const base = `/app/${project.slug}`;
   const admin = project.role === "OWNER" || project.role === "ADMIN";
   // Counts where work waits.
-  const waits = (count: number, label: string) => count > 0 && { count, label };
+  // `urgent`: people are waiting on the team (the Inbox), its count filled in the highlight colour.
+  const waits = (count: number, label: string, urgent = false) => count > 0 && { count, label, urgent };
   return [
     [
       { title: "Home", href: base, icon: HouseIcon },
-      { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: waits(project.openConversations, "open") },
+      { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: waits(project.openConversations, "open", true) },
       // Its Boards (/feedback/boards) too.
       { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon, section: true, badge: waits(project.toTriage, "to triage") },
       { title: "Roadmap", href: `${base}/feedback/roadmap`, icon: MapIcon },

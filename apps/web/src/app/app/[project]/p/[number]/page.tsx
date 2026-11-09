@@ -142,7 +142,6 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       <PageHeader
         back={{ href: `/app/${slug}/feedback`, label: "Feedback" }}
         title={post.title}
-        titleOnPage
         meta={
           <>
             {post.sample && <SampleBadge />} <VisibilityBadge visibility={seenAs(post)} /> #{post.number} · {post.author.name} · {timeAgo(post.createdAt)}

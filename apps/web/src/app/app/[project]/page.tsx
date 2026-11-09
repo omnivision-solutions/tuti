@@ -1,7 +1,8 @@
 import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
-import { AppWindowIcon, BookOpenIcon, CheckCircle2Icon, GitMergeIcon, InboxIcon, KeyRoundIcon, type LucideIcon, MegaphoneIcon, UserPlusIcon } from "lucide-react";
+import { AppWindowIcon, BookOpenIcon, CheckCircle2Icon, ChevronRightIcon, GitMergeIcon, InboxIcon, KeyRoundIcon, type LucideIcon, MegaphoneIcon, UserPlusIcon } from "lucide-react";
 import Link from "next/link";
+import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 
 import { ResumeAllButton, ScheduledButtons } from "@/components/code-changes";
@@ -79,7 +80,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               ["Searches that found nothing", overview.numbers.searchesFailed, `/app/${slug}/reporting/searches`],
             ] as const
           ).map(([label, value, href]) => (
-            <StatTile key={label} value={value} label={label} href={href} />
+            <StatTile key={label} value={value} label={label} href={href} attention={label === "Need a reply" && value > 0} />
           ))}
         </div>
       )}
@@ -133,37 +134,52 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             </CardAction>
           </CardHeader>
           <CardContent>
-            {/* A card per step, two to a row: what it's for under its title, its own button. Done ones last; the first left to do stands out (its border and icon in green, its button an outline: the page's one primary is elsewhere). */}
-            <ul className="grid gap-3 sm:grid-cols-2" aria-label="Get set up">
+            {/* A card per step left to do, two to a row: what it's for under its title, its own button; the first stands out
+                (its border and icon in green, its button an outline: the page's one primary is elsewhere). The done ones
+                under them, a line of them together. */}
+            <ul className="flex flex-wrap gap-3" aria-label="Get set up">
               {overview.setup.map((step, i) => {
-                const Icon = step.done ? CheckCircle2Icon : SETUP_ICONS[step.key]!;
-                const next = i === 0 && !step.done;
-                return (
-                  <li key={step.key} className={`flex min-w-0 flex-col gap-3 rounded-xl border p-4 ${next ? "border-primary/50" : ""}`}>
-                    <div className="flex items-center gap-3">
-                      <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${step.done ? "text-primary" : next ? "bg-soft text-soft-foreground" : "bg-muted text-muted-foreground"}`}>
-                        <Icon aria-hidden className="size-[18px]" />
-                      </span>
-                      <span id={`setup-${step.key}`} className={`text-sm font-medium ${step.done ? "text-muted-foreground" : ""}`}>
+                if (step.done) {
+                  return (
+                    <Fragment key={step.key}>
+                      {/* The done ones on a line of their own, under the cards. */}
+                      {i > 0 && !overview.setup![i - 1]!.done && <li role="none" className="h-0 basis-full" />}
+                      <li className="flex min-w-0 items-center gap-2 px-1 pr-3 text-sm text-muted-foreground">
+                      <CheckCircle2Icon aria-hidden className="size-4 shrink-0 text-primary" />
+                      <span id={`setup-${step.key}`} className="truncate">
                         {step.title}
                       </span>
-                      <span className="sr-only">{step.done ? "(done)" : "(to do)"}</span>
+                      <span className="sr-only">(done)</span>
+                      </li>
+                    </Fragment>
+                  );
+                }
+                const Icon = SETUP_ICONS[step.key]!;
+                const next = i === 0;
+                return (
+                  <li key={step.key} className={`flex w-full min-w-0 flex-col gap-3 rounded-lg p-4 sm:w-[calc(50%-0.375rem)] ${next ? "bg-soft/60 ring-1 ring-primary/30" : "bg-muted/60"}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg bg-card ${next ? "text-soft-foreground" : "text-muted-foreground"}`}>
+                        <Icon aria-hidden className="size-[18px]" />
+                      </span>
+                      <span id={`setup-${step.key}`} className="text-sm font-medium">
+                        {step.title}
+                      </span>
+                      <span className="sr-only">(to do)</span>
                     </div>
                     {/* The project's name is in some: a long one wraps rather than running out of the card. */}
                     <p className="text-sm wrap-anywhere text-muted-foreground">{step.description}</p>
                     {/* Started, and waiting on something outside the app (the support inbox's first email). */}
                     {step.waiting && <WaitingNotice>{step.waiting}</WaitingNotice>}
-                    {/* Each step left to do with its own action, a button rather than a link in the text. */}
-                    {!step.done && (
-                      // Described by its step, which screen readers then read with it ("Connect", Connect GitHub).
-                      <Link
-                        href={step.href}
-                        aria-describedby={`setup-${step.key}`}
-                        className={buttonVariants({ variant: "outline", size: "sm", className: "mt-auto self-start" })}
-                      >
-                        {step.action}
-                      </Link>
-                    )}
+                    {/* Its own action, a button rather than a link in the text; described by its step, which screen
+                        readers then read with it ("Connect", Connect GitHub). */}
+                    <Link
+                      href={step.href}
+                      aria-describedby={`setup-${step.key}`}
+                      className={buttonVariants({ variant: "outline", size: "sm", className: "mt-auto self-start" })}
+                    >
+                      {step.action}
+                    </Link>
                   </li>
                 );
               })}
@@ -188,8 +204,11 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               {overview.attention.map((group) => (
                 <section key={group.key} aria-label={group.title} className="flex flex-col gap-2">
                   <div className="flex items-baseline justify-between gap-3">
-                    <h3 className="text-sm font-medium">
-                      {group.title} <span className="text-muted-foreground tabular-nums">{group.total}</span>
+                    <h3 className="group-label flex items-center gap-2">
+                      {group.title}{" "}
+                      <Badge variant="secondary" className="tabular-nums">
+                        {group.total}
+                      </Badge>
                     </h3>
                     <Link href={group.href} aria-label={`${group.link ?? "See all"}: ${group.title}`} className="shrink-0 text-sm text-muted-foreground hover:text-foreground hover:underline">
                       {group.link ?? "See all"}
@@ -223,8 +242,9 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                             {item.scheduled && (
                               <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} posts={item.scheduled.posts} className="contents" />
                             )}
-                            <Link href={item.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                            <Link href={item.href} className={buttonVariants({ variant: "ghost", size: "sm", className: "text-muted-foreground" })}>
                               {item.action}
+                              <ChevronRightIcon aria-hidden data-icon="inline-end" />
                             </Link>
                           </>
                         }

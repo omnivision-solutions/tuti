@@ -21,7 +21,12 @@ cute at the expense of clarity.
 - **Mark:** the parrot (`TutiMark`, `TutiLogo` in `components/tuti-logo.tsx`;
   favicon `app/icon.svg`). The current drawing is a placeholder until we have
   a proper illustration.
-- **Corners:** `--radius` 0.625rem → cards 14px (`rounded-xl`), controls 10px.
+- **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
+  ~11px (`rounded-xl`), pills fully round. Nothing else.
+- **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`). The primary
+  button is flat: one fill, its border the same colour, a soft shadow; no bevel or edge.
+- **Surfaces:** the page (`background`), cards on it (`card`: white in light, a step lighter than the page in dark)
+  with a `border` ring and a soft shadow (`Card`, `StatTile`), never a card without its edge.
 
 ## Tokens
 
@@ -35,19 +40,22 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `soft` / `soft-foreground` | Quiet green emphasis |
 | `highlight` / `highlight-foreground` | Things that need the team's attention ("Possible duplicate") |
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
-| `github` / `github-hover` / `github-foreground` | Continue with GitHub, in GitHub's dark grey with white text (Continue with Google is an outline button with Google's own G) |
-| `muted-foreground` | Secondary text, meta lines, placeholders |
+| `muted-foreground` | Secondary text, meta lines, placeholders: 4.5:1 or more on the page, a card, the sidebar and a muted fill, in light and dark (`colours.test.ts`) |
+| `border`, `input` | A card's or divider's edge (1.25:1 on the page), an input's (1.5:1) |
+| `sidebar-active` | The page open in a menu (the sidebar, `SettingsMenu`): a raised pill, the card's colour with a `border` ring and a soft shadow |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
 | `series-1`, `series-2` | Reporting's charts (`DailyChart`): the first series (what went well) blue, the second (what needs the team) orange, a pair colour-blind readers tell apart, checked against the card in light and dark; a period still under way (today, the month so far) a dashed outline in its colour around a light fill of it, said "so far". Never a status's colour |
 
-Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look):
-Open = outline, Under review / Planned / In progress / Closed = secondary,
-Completed = solid primary, the only green badge. Beside each badge, its colour
-dot (`status-*` tokens, `StatusDot`), a colour of its own so a list of mixed
-statuses can be scanned: Open grey, Under review amber, Planned blue, In
-progress orange, Completed green, Closed light grey. Where the place already
+Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look): one
+tinted pill, sentence case, its colour dot inside it, the text the foreground's, the
+fill a light tint of the status's colour (`status-*` tokens, `StatusDot`), a colour of
+its own so a list of mixed statuses can be scanned: Open grey, Under review amber,
+Planned violet, In progress blue, Completed green, Closed light grey. Orange (the
+highlight) is kept for what needs the team; no status uses it. Any other
+state shown as a pill (a conversation's, a check's) follows the same shape: a tint, a
+dot, sentence case; never solid fills, never spaced capitals. Where the place already
 says the status (a roadmap column, "Recently shipped"), its cards don't repeat
 the badge.
 
@@ -64,11 +72,11 @@ ring of the page's colour and overlap by no more than the ring, so no letter is
 cut. A team member uploads their photo on Account → Profile.
 
 Autopilot's posts and articles: a badge for what their updates do (`TargetBadge`,
-`kind-*` tokens), small monospaced capitals spaced wide, normal weight, in its colour
-(a little dimmer in dark mode, still 4.5:1) at the end of the row, no pill, so a list
-can be skimmed: Completing green and In progress orange (the statuses they
+`kind-*` tokens), a status pill (sentence case, its text in its colour on a light tint
+of it, 4.5:1) at the end of the row, so a list
+can be skimmed: Completing green and In progress blue (the statuses they
 move a post to), Updated amber, New green. Under Reviewed the badge says what became of it, in the past
-tense: Completed green, In progress orange, Published amber, Drafted green, Linked, Dismissed and Undone grey; under
+tense: Completed green, In progress blue, Published amber, Drafted green, Linked, Dismissed and Undone grey; under
 the title, who decided it and when ("Approved by Olive · 2h", "Published by Autopilot · 3h"). Its page opens on the
 same (`Outcome`, "What happened"): the outcome, who and when, what went out (how many people completing it emailed,
 the team's comment) or why it was dismissed, then Undo while it can be put back and Open the post or article; a
@@ -110,28 +118,35 @@ the list picks none to approve at once.
 
 | Role | Classes |
 | --- | --- |
-| Page title | `PageHeader` (2xl, bold, heading font) |
-| Section / card title | `CardTitle` or `h2` (base, semibold) |
+| Page title | `PageHeader`'s `h1` (heading font, semibold, tracked -0.01em, 28px from tablet width up, 24px on phones), on the page at every width |
+| Section / card title | `CardTitle` or `h2` (base, semibold, Figtree: the heading font is for page titles and big numbers) |
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground`, parts joined with ` · ` |
-| Group label | `text-xs font-medium tracking-wide text-muted-foreground uppercase`: the heading of a group inside a list or card (a pull request's activity page's Help center and Feedback); in `text-primary` as a menu's group (Settings', Reporting's) and above a Reporting page's title, so a menu's groups and the page's part read as one |
+| Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback), a menu's group (Settings', Reporting's) and the part above a Reporting page's title. Quieter than the items under it, never in a colour |
+
+`text-xs` is 13px here (`globals.css` raises Tailwind's 12px): the smallest text anywhere. No `text-[11px]`,
+`text-[0.625rem]` or other sizes below it for words a person reads.
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
 ## Layout
 
 - **Admin app** (`/app`): every page lives in the sidebar shell
-  (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl
-  (the team's Roadmap the whole width, for its columns: `data-wide`).
-  The top bar stays at the top as the page scrolls; from tablet width up it
-  holds the page's title and actions (`PageHeader` puts them there), its
-  meta line staying on the page, and it's fixed to the window as they are (so
-  the page bouncing at its top can't pull them apart).
+  (`app/app/layout.tsx`, `components/app-shell.tsx`), in one of three
+  columns, each starting 32px past the sidebar (left-aligned, so a page's title is in the same place on every page): max-w-4xl (lists, Home, a post), max-w-2xl for a form
+  by itself (`data-narrow` on it: New project, Setup, Account), or the whole width (`data-wide`: the
+  team's Roadmap, Users' tables; and pages of panes).
+  The top bar stays at the top as the page scrolls; it holds the sidebar's
+  button and the project's name (the page's title once its heading has scrolled up
+  under it), and from tablet width up the page's actions (`PageHeader` puts them
+  there), fixed to the window as they are (so the page bouncing at its top can't
+  pull them apart). The page's title is on the page, its heading.
   A page of three panes (the sidebar, a column of its own, the page: Settings,
-  Reporting, every Docs page with the docs' tree, Autopilot, Customize's sections) takes the whole
-  width and folds the sidebar away; every other page has it open. Its column is
+  Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
+  width, the sidebar open as on every other page: one shell everywhere. Only Customize
+  folds it away (its own rail and the portal's preview need the room). A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
-  The Inbox folds the sidebar away too: its views (with their counts), the list
+  The Inbox: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
   its own under the header (the page itself doesn't; `InboxPanes`); the views always
   the row of tabs above the list, in the same place whether or not a conversation is open
@@ -251,7 +266,14 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
   above it on phones); ⌘K finds articles and collections by name; a tab's page has Content, Access and
   Settings tabs; a collection's page lists what's in it, and its Settings
-  button opens one page with its details and who can read it, saved by one Save. Beside the tree the sidebar is folded away.
+  button opens one page with its details and who can read it, saved by one Save.
+- **Sidebar** (`AppSidebar`): the page open is a raised pill (`sidebar-active`, semibold); a count
+  is a small round pill, in the highlight colour where people wait on the team (the Inbox's open
+  conversations), quiet otherwise (Feedback's to triage, Autopilot's to review).
+- **Sign-in pages** (sign-in, sign-up, forgot and reset password, invitations): in the visitor's own
+  light or dark, as the app is; the rest of the marketing site is light only (`forcedThemeFor`).
+  Continue with Google and Continue with GitHub are both outline buttons with their marks, under
+  nothing louder than the form's own primary.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
   the far left (a menu above the panel on smaller screens; no index page, no
@@ -346,16 +368,17 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
 
 Use these instead of hand-rolling layout:
 
-- **`PageHeader`** (`title`, `meta`, `actions`, `more`): the top of every page;
-  no sentence under the title in the app: what a page is for goes in its
+- **`PageHeader`** (`title`, `back`, `meta`, `actions`, `more`): the top of every page,
+  its title the page's heading at every width (the Page title style), `back` above it, `meta`
+  under it; no sentence under the title in the app: what a page is for goes in its
   empty state, or a tooltip. `meta` is facts about the thing shown ("#12 ·
   Ada · 3 votes"); `description` is for portals, where it's the team's own words.
   `more` is the actions used less often, behind the top bar's "More actions".
-  `titleOnPage` is for a page about one thing (a post): its title stays on
-  the page as its heading at every width, the top bar showing it too.
+  An editor whose title field shows the title (an article, a changelog entry) keeps the
+  heading for screen readers only (`sr-only`).
   Actions sit right on wide screens and under the title on phones; in the
-  app from tablet width up, title and actions go in the top bar, and on phones
-  the actions are a "More actions" menu from it (`PageActions`). A page whose
+  app from tablet width up they go in the top bar, and on phones
+  they are a "More actions" menu from it (`PageActions`). A page whose
   every visit needs them (a conversation's Assign, Snooze and Close) shows them
   in a row under its header on phones as well, still in the menu (in reach once
   the row has scrolled away). An editor whose
@@ -370,7 +393,7 @@ Use these instead of hand-rolling layout:
   It assumes the launcher at the bottom right, where Tuti's help project keeps it:
   moved to the left (Customize → Widget), `launcher:` would need its side too.
 - **`BackLink`**: "← Feedback" above a detail page's header; in the app it's
-  `PageHeader`'s `back`, before the title in the top bar.
+  `PageHeader`'s `back`.
 - **`ItemList` + `ItemRow`** (`leading`, `title`, `badges`, `meta`, `actions`):
   every list of things (posts, boards, team, invites, suggestions), usually in
   a `Card`. Titles wrap, never get cut off.

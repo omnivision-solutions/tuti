@@ -96,8 +96,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
       <PageHeader
         // Opened from its review in Autopilot (Edit before publishing): the way back there.
         back={fromReview ? { href: `/app/${slug}/autopilot/articles/${article.id}`, label: "Review" } : { href: `/app/${slug}/docs`, label: "Docs" }}
-        // On phones the form's title field shows it, right under this; from tablet width up it's in the top bar too, after "← Docs".
-        title={<span className="sr-only topbar:not-sr-only">{article.title}</span>}
+        // The form's title field shows it, right under this.
+        title={<span className="sr-only">{article.title}</span>}
         meta={
           article.publishedAt ? (
             <>

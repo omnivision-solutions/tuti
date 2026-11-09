@@ -77,7 +77,7 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
           <p>Body · Figtree 15px. Tell us what you want — we&apos;ll repeat it back.</p>
           <p className="text-sm text-muted-foreground">Secondary · sm muted</p>
           <p className="text-xs text-muted-foreground">Meta · xs muted · #12 · Alexandra · 3 comments</p>
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Group label · xs uppercase muted</p>
+          <p className="group-label">Group label · group-label</p>
         </Section>
 
         <Section title="Buttons">

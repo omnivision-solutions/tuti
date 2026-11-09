@@ -51,7 +51,8 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
           </div>
         </div>
       </header>
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10 has-data-wide:max-w-5xl has-data-full:max-w-none has-data-full:p-0">{children}</main>
+      {/* Centred down the window: a short page (sign-in, forgot password) sits in the middle, not under the header. */}
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-10 has-data-wide:max-w-5xl has-data-full:max-w-none has-data-full:p-0">{children}</main>
       <footer className="border-t">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-7 text-sm text-muted-foreground">
           <span className="flex items-center gap-2">

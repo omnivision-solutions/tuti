@@ -37,7 +37,8 @@ function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
   const [error, setError] = useState<string>();
 
   return (
-    <Card>
+    // One form by itself: the app's narrow column (AppShell).
+    <Card data-narrow>
       <CardHeader>
         <CardTitle>Profile</CardTitle>
         <CardDescription>Shown on your posts and comments.</CardDescription>

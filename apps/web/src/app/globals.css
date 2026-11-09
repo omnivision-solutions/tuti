@@ -24,6 +24,12 @@
   }
 }
 
+/* The small sizes, a step up from Tailwind's: meta lines, captions and badges at 13px, never smaller (docs/design.md). */
+@theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -35,16 +41,11 @@
   --color-soft-foreground: var(--soft-foreground);
   --color-highlight: var(--highlight);
   --color-highlight-foreground: var(--highlight-foreground);
-  /* A button's shading (components/ui/button.tsx): shades of the primary colour, mixed where they're used so a
-     portal's own brand colour gets them too, and a thin light line along its top. Hover moves toward the button's
-     text colour, which always contrasts with the fill, so a near-black brand colour lightens visibly too. */
-  --color-primary-edge: color-mix(in oklch, var(--primary) 82%, black);
+  /* A primary button's hover (components/ui/button.tsx), mixed where it's used so a portal's own brand colour gets it
+     too: toward the button's text colour, which always contrasts with the fill, so a near-black brand colour lightens
+     visibly too. */
   --color-primary-hover: color-mix(in oklch, var(--primary) 88%, var(--primary-foreground));
-  --color-sheen: oklch(1 0 0 / 25%);
   --color-unread: var(--unread);
-  --color-github: var(--github);
-  --color-github-hover: var(--github-hover);
-  --color-github-foreground: var(--github-foreground);
   --color-status-open: var(--status-open);
   --color-status-under-review: var(--status-under-review);
   --color-status-planned: var(--status-planned);
@@ -70,6 +71,7 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-active: var(--sidebar-active);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -122,14 +124,14 @@
   --secondary: oklch(0.956 0.009 84.6);
   --secondary-foreground: oklch(0.216 0.006 56);
   --muted: oklch(0.956 0.009 84.6);
-  --muted-foreground: oklch(0.553 0.012 58.1);
+  --muted-foreground: oklch(0.49 0.014 58.1);
   --accent: oklch(0.941 0.012 84.6);
   --accent-foreground: oklch(0.216 0.006 56);
   --destructive: oklch(0.577 0.245 27.325);
   /* Text on the destructive tint (a destructive badge, the picked Breaking tag): darker, to read at small sizes. */
   --destructive-foreground: oklch(0.51 0.2 27.3);
-  --border: oklch(0.929 0.014 84.6);
-  --input: oklch(0.896 0.019 86.2);
+  --border: oklch(0.9 0.014 84.6);
+  --input: oklch(0.855 0.018 86.2);
   --ring: oklch(0.529 0.125 155);
   --soft: oklch(0.958 0.018 155.8);
   --soft-foreground: oklch(0.426 0.097 155.7);
@@ -137,22 +139,18 @@
   --highlight-foreground: oklch(0.479 0.139 42.7);
   /* Something new to the reader (the widget's unread dots, like its launcher's); the same in dark mode. */
   --unread: oklch(0.705 0.187 47.6);
-  /* Continue with GitHub: GitHub's own dark grey (#24292f) under its white mark; the same in dark mode. */
-  --github: oklch(0.279 0.013 253);
-  --github-hover: oklch(0.338 0.015 252.3);
-  --github-foreground: oklch(1 0 0);
   /* A post status's dot (PostStatusBadge), so a list of mixed statuses can be scanned. */
   --status-open: oklch(0.66 0.012 58);
   --status-under-review: oklch(0.77 0.16 76);
-  --status-planned: oklch(0.55 0.17 260);
-  --status-in-progress: oklch(0.68 0.185 45);
+  --status-planned: oklch(0.55 0.17 300);
+  --status-in-progress: oklch(0.6 0.16 250);
   --status-completed: oklch(0.64 0.17 150);
   --status-closed: oklch(0.85 0.01 70);
-  /* An Autopilot update's kind (a post's or article's badge, and a chip's text and faint fill), so a list can be skimmed: Completing and New green, In progress orange (the statuses' colours), Updated amber. */
-  --kind-closes: oklch(0.5 0.13 150);
-  --kind-progress: oklch(0.5 0.15 45);
-  --kind-edit: oklch(0.5 0.11 72);
-  --kind-new: oklch(0.5 0.13 150);
+  /* An Autopilot update's kind (a post's or article's badge, and a chip's text and faint fill), so a list can be skimmed: Completing and New green, In progress blue (the statuses' colours), Updated amber. */
+  --kind-closes: oklch(0.47 0.12 150);
+  --kind-progress: oklch(0.47 0.14 255);
+  --kind-edit: oklch(0.47 0.1 72);
+  --kind-new: oklch(0.47 0.12 150);
   /* Initials for someone without a photo (AvatarFallback picks one by their name), white text at 4.5:1 or more; the same in dark mode. */
   --avatar-1: oklch(0.55 0.15 25);
   --avatar-2: oklch(0.55 0.13 55);
@@ -169,36 +167,38 @@
   /* Reporting's two series (what went well, then what needs the team): blue and orange, apart for colour-blind readers too. */
   --series-1: oklch(0.55 0.17 260);
   --series-2: oklch(0.684 0.185 44.9);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.974 0.011 84.6);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.962 0.012 84.6);
   --sidebar-foreground: oklch(0.216 0.006 56);
   --sidebar-primary: oklch(0.529 0.125 155);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.941 0.014 84.6);
+  --sidebar-accent: oklch(0.93 0.015 84.6);
   --sidebar-accent-foreground: oklch(0.216 0.006 56);
-  --sidebar-border: oklch(0.929 0.014 84.6);
+  --sidebar-border: oklch(0.9 0.014 84.6);
+  /* The page open in the sidebar: a raised pill, the card's colour with the border round it. */
+  --sidebar-active: oklch(1 0 0);
   --sidebar-ring: oklch(0.529 0.125 155);
 }
 
 .dark {
   --background: oklch(0.185 0.01 158.9);
   --foreground: oklch(0.966 0.006 153.8);
-  --card: oklch(0.218 0.013 160.1);
+  --card: oklch(0.238 0.014 160.1);
   --card-foreground: oklch(0.966 0.006 153.8);
-  --popover: oklch(0.218 0.013 160.1);
+  --popover: oklch(0.238 0.014 160.1);
   --popover-foreground: oklch(0.966 0.006 153.8);
   --primary: oklch(0.759 0.168 154.6);
   --primary-foreground: oklch(0.221 0.048 151.7);
-  --secondary: oklch(0.257 0.017 163.3);
+  --secondary: oklch(0.275 0.017 163.3);
   --secondary-foreground: oklch(0.966 0.006 153.8);
-  --muted: oklch(0.257 0.017 163.3);
-  --muted-foreground: oklch(0.718 0.019 160.9);
-  --accent: oklch(0.272 0.019 161);
+  --muted: oklch(0.275 0.017 163.3);
+  --muted-foreground: oklch(0.77 0.017 160.9);
+  --accent: oklch(0.295 0.019 161);
   --accent-foreground: oklch(0.966 0.006 153.8);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.76 0.16 22.2);
-  --border: oklch(0.296 0.02 163.3);
-  --input: oklch(0.341 0.022 163.3);
+  --border: oklch(0.35 0.02 163.3);
+  --input: oklch(0.4 0.022 163.3);
   --ring: oklch(0.759 0.168 154.6);
   --soft: oklch(0.294 0.045 157);
   --soft-foreground: oklch(0.856 0.111 157.3);
@@ -206,12 +206,12 @@
   --highlight-foreground: oklch(0.825 0.115 56.4);
   --status-open: oklch(0.66 0.015 160);
   --status-under-review: oklch(0.8 0.15 80);
-  --status-planned: oklch(0.7 0.14 260);
-  --status-in-progress: oklch(0.75 0.165 50);
+  --status-planned: oklch(0.72 0.13 300);
+  --status-in-progress: oklch(0.72 0.13 250);
   --status-completed: oklch(0.79 0.17 152);
   --status-closed: oklch(0.44 0.015 160);
   --kind-closes: oklch(0.8 0.14 152);
-  --kind-progress: oklch(0.78 0.14 50);
+  --kind-progress: oklch(0.78 0.11 255);
   --kind-edit: oklch(0.82 0.13 80);
   --kind-new: oklch(0.8 0.14 152);
   --chart-1: oklch(0.759 0.168 154.6);
@@ -225,10 +225,16 @@
   --sidebar-foreground: oklch(0.966 0.006 153.8);
   --sidebar-primary: oklch(0.759 0.168 154.6);
   --sidebar-primary-foreground: oklch(0.221 0.048 151.7);
-  --sidebar-accent: oklch(0.257 0.017 163.3);
+  --sidebar-accent: oklch(0.265 0.017 163.3);
   --sidebar-accent-foreground: oklch(0.966 0.006 153.8);
-  --sidebar-border: oklch(0.296 0.02 163.3);
+  --sidebar-border: oklch(0.35 0.02 163.3);
+  --sidebar-active: oklch(0.3 0.024 160);
   --sidebar-ring: oklch(0.759 0.168 154.6);
+}
+
+/* A group's label: the heading of a group inside a list, card or menu (docs/design.md, Group label). */
+@utility group-label {
+  @apply text-[0.75rem] leading-4 font-semibold tracking-[0.06em] text-muted-foreground uppercase;
 }
 
 @layer base {

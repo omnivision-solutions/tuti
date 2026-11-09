@@ -215,7 +215,7 @@ export async function AutopilotTargetPage({
       {/* While its update waits: what the post's users asked, who, and where else they said it. */}
       {review.asked && postUpdate && (
         <section aria-labelledby="they-asked" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm">
-          <h2 id="they-asked" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          <h2 id="they-asked" className="group-label">
             What they asked
           </h2>
           {review.asked.excerpt && <blockquote className="border-l-2 pl-3 break-words whitespace-pre-line">{review.asked.excerpt}</blockquote>}

@@ -13,7 +13,7 @@ export default async function NewProjectPage() {
   return (
     <>
       <PageHeader title="New project" />
-      <Card className="max-w-xl">
+      <Card data-narrow>
         <CardContent>
           <CreateProjectForm portalTemplate={portalTemplate()} />
         </CardContent>

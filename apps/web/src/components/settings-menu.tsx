@@ -25,7 +25,7 @@ export function SettingsMenu({ groups, label = "Settings", carry }: { groups: Se
     <div className="flex flex-col gap-4">
       {groups.map((group) => (
         <div key={group.title} className="flex flex-col gap-0.5">
-          <h2 className="px-2.5 pb-1 text-xs font-medium tracking-wide text-primary uppercase">{group.title}</h2>
+          <h2 className="group-label px-2.5 pb-1">{group.title}</h2>
           {group.pages.map((page) => (
             <Link
               key={page.href}
@@ -33,7 +33,7 @@ export function SettingsMenu({ groups, label = "Settings", carry }: { groups: Se
               aria-current={page.href === current ? "page" : undefined}
               className={cn(
                 "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-muted [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
-                page.href === current ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+                page.href === current ? "bg-card font-semibold text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {page.icon}

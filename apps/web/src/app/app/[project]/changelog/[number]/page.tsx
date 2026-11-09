@@ -85,7 +85,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     <ChangelogSaving>
       <PageHeader
         title={entry.title}
-        className="phonebar:[&_h1]:sr-only"
+        className="[&_h1]:sr-only"
         pinActions
         meta={
           <>

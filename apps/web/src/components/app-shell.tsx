@@ -11,25 +11,21 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
  */
 const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
 /**
- * The other pages of panes (the sidebar, a column of their own, the page): Settings (its menu), every Docs
- * page (the docs' tree), Autopilot (its list of changes) and the Inbox (its views and list beside the conversation).
- */
-const PANES = /^\/app\/[^/]+\/(settings|reporting|autopilot|inbox|docs)(\/|$)/;
-
-/**
- * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl;
- * Customize's sections and pages of three panes (PANES: their own column, data-slot="pane-layout") take the
- * whole width instead. While one of those is open the sidebar is folded away for room (it opens again on its
- * own trigger, and is as it was on the way back). Pages that need the room (`data-wide`: Users' tables, the
- * team's Roadmap columns) take the whole width too, their sidebar open.
+ * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl, its left edge 32px past the sidebar on every page (not centred: the title stays put from page to page) (one
+ * form by itself, `data-narrow`: New project, Setup, Account, max-w-2xl);
+ * Customize's sections and pages of three panes (their own column, data-slot="pane-layout") take the
+ * whole width instead, as do pages that need the room (`data-wide`: Users' tables, the team's Roadmap columns).
+ * The sidebar stays open on all of them, one shell everywhere, but Customize (its own rail of sections and the
+ * portal's preview need the room): there it's folded away (it opens again on its own trigger, and is as it was on
+ * the way back).
  */
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
   const pathname = usePathname();
   const customizing = CUSTOMIZE.test(pathname);
-  const folds = customizing ? "customize" : (PANES.exec(pathname)?.[1]?.split("/")[0] ?? null);
+  const folds = customizing ? "customize" : null;
   const folded = folds !== null;
   const [open, setOpen] = useState(true);
-  // While folded: the sidebar's own state, folded again each time Customize, Settings, Docs' panes, Autopilot or the Inbox open (one from another too).
+  // While folded: the sidebar's own state, folded again each time Customize opens.
   const [peek, setPeek] = useState(false);
   const [wasFolds, setWasFolds] = useState(folds);
   if (wasFolds !== folds) {
@@ -60,7 +56,7 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
           // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up. On
           // phones, room at the bottom for actions pinned there (PageActions), and for Tuti's own chat launcher (AppWidget; not in the Inbox or on Customize).
-          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24">
+          <div className="flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24">
             {banners}
             {children}
           </div>

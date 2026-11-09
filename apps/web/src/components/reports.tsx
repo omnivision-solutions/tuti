@@ -43,7 +43,7 @@ export function ReportHeading({ section, title, range, locked }: { section: stri
     // Wraps where the title and the picker don't fit side by side (a phone): the picker under the title, as wide actions go.
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div className="flex min-w-0 flex-col gap-1">
-        <p className="text-xs font-medium tracking-wide text-primary uppercase">{section}</p>
+        <p className="group-label">{section}</p>
         <h2 className="font-heading text-2xl font-bold">{title}</h2>
       </div>
       {/* Each range's days as of the page's range's day (its numbers' day): one clock reading for the page, even across midnight. */}

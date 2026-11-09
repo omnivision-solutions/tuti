@@ -21,14 +21,10 @@ function GoogleG({ className }: { className?: string }) {
   );
 }
 
-// Each in its own colours: Google's G on a light button, GitHub's mark on GitHub's dark grey.
+// Both outline, each with its own mark (Google's G, GitHub's), so neither outweighs the form's own button.
 const LOOK: Record<SocialProvider, { icon: React.ReactNode; variant: "outline" | "default"; className?: string }> = {
   google: { icon: <GoogleG className="size-4" />, variant: "outline" },
-  github: {
-    icon: <GithubMark className="size-4" />,
-    variant: "default",
-    className: "border-github bg-github text-github-foreground inset-shadow-none hover:bg-github-hover",
-  },
+  github: { icon: <GithubMark className="size-4" />, variant: "outline" },
 };
 
 /** "Continue with Google / GitHub" above the email form; a failure comes back to this page with `?error=` and `via`. */

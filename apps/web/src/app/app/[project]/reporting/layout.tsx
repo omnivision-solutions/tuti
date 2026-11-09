@@ -41,7 +41,8 @@ export default async function ReportingLayout({ children, params }: LayoutProps<
         <SettingsMenu label="Reporting" groups={groups} carry="range" />
       </aside>
       <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-1 flex-col gap-6 p-6">
-        <div className="max-md:hidden md:contents">
+        {/* Beside the menu, the report's own heading (ReportHeading) is the page's title: this one for screen readers. */}
+        <div className="max-md:hidden md:sr-only">
           <PageHeader title="Reporting" />
         </div>
         {children}

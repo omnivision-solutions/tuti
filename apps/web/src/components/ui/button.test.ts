@@ -4,7 +4,7 @@ import { buttonVariants } from "./button";
 
 describe("buttonVariants", () => {
   it("lets a variant's border replace the base's transparent one, so link buttons show it", () => {
-    expect(buttonVariants()).toContain("border-primary-edge");
+    expect(buttonVariants()).toContain("border-primary");
     expect(buttonVariants({ variant: "outline" })).toContain("border-input");
     expect(buttonVariants()).not.toContain("border-transparent");
     expect(buttonVariants({ variant: "outline" })).not.toContain("border-transparent");

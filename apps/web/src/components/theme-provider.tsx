@@ -6,11 +6,15 @@ import { useSyncExternalStore } from "react";
 
 import { widgetFrame } from "@/lib/widget-messages";
 
+/** The team's way into the app (sign-in, sign-up and their steps): in the visitor's own mode, as the app is. */
+const AUTH_PAGES = new Set(["sign-in", "sign-up", "forgot-password", "reset-password", "invite", "resume-email", "continue"]);
+
 /**
- * The marketing site (landing, pricing, sign-in…) is designed for light mode only, whatever the
- * visitor's own pick. Told apart by its route, not its path: a portal's home page is `/` on its own host too.
+ * The rest of the marketing site (landing, pricing, legal) is designed for light mode only, whatever the visitor's own
+ * pick. Told apart by its route, not its path: a portal's home page is `/` on its own host too.
  */
-export const forcedThemeFor = (segments: string[]) => (segments[0] === "(marketing)" ? "light" : undefined);
+export const forcedThemeFor = (segments: string[]) =>
+  segments[0] === "(marketing)" && !AUTH_PAGES.has(segments[1] ?? "") ? "light" : undefined;
 
 /**
  * In a widget's panel, its theme: the site's pick (`data-theme`, from its frame's name) from the start, then what
