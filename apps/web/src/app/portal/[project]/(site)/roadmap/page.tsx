@@ -73,7 +73,11 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
   };
   // New idea: on the board shown (or the only one), or a pick of them.
   const ideaBoard = board ?? (project.boards.length === 1 ? project.boards[0] : undefined);
-  const boardHref = (slug?: string) => (slug ? `${at("/roadmap")}?${new URLSearchParams({ board: slug })}` : at("/roadmap"));
+  // A board's chip keeps the column open on phones (`?column=`).
+  const boardHref = (slug?: string) => {
+    const params = new URLSearchParams({ ...(slug && { board: slug }), ...(column !== "planned" && { column }) });
+    return params.size > 0 ? `${at("/roadmap")}?${params}` : at("/roadmap");
+  };
   const now = new Date();
 
   return (
@@ -187,14 +191,14 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                 </p>
               </div>
               {posts.length === 0 ? (
-                <p className="rounded-[0.875rem] border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">Nothing here yet.</p>
+                <p className="rounded-xl border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">Nothing here yet.</p>
               ) : (
                 <ul className="flex flex-col gap-2.5">
                   {posts.map((post) => {
                     const entry = entries.get(post.id);
                     const eta = post.eta && etaOnPortal(post.eta, post.status, now) ? post.eta : null;
                     return (
-                      <li key={post.number} className="flex flex-col rounded-[0.875rem] bg-card p-4 shadow-card ring-1 ring-border sm:px-5">
+                      <li key={post.number} className="flex flex-col rounded-xl bg-card p-4 shadow-card ring-1 ring-border sm:px-5">
                         <p className="flex flex-wrap items-center gap-1.5 text-[0.8125rem] font-medium text-muted-foreground">
                           <LayoutListIcon aria-hidden className="size-3.5" />
                           {post.board.name} <VisibilityBadge visibility={post.visibility} />
@@ -210,7 +214,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                           </p>
                         )}
                         <div className="mt-3 flex items-center gap-2.5 text-sm text-muted-foreground">
-                          <PortalAvatar person={post.author} className="size-5 text-[0.625rem]" />
+                          <PortalAvatar person={post.author} className="size-6 text-xs" />
                           <span className="min-w-0 flex-1 truncate font-medium text-foreground/80">{post.author.name}</span>
                           {post.commentCount > 0 && (
                             <span className="inline-flex items-center gap-1">

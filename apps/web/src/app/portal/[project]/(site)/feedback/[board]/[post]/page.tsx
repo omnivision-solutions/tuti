@@ -205,7 +205,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           and tablets the actions in a row under the post, the voters under them (the details and the way to a new idea aren't). */}
       <aside
         aria-label="About this idea"
-        className="flex flex-wrap items-center gap-x-2 gap-y-4 text-sm lg:sticky lg:top-[calc(var(--portal-header-height,4rem)+1.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-12 lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-4 lg:rounded-[0.875rem] lg:bg-card lg:p-5 lg:shadow-card lg:ring-1 lg:ring-border lg:[&>a]:w-full lg:[&>button]:w-full"
+        className="flex flex-wrap items-center gap-x-2 gap-y-4 text-sm lg:sticky lg:top-[calc(var(--portal-header-height,4rem)+1.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-12 lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-4 lg:rounded-xl lg:bg-card lg:p-5 lg:shadow-card lg:ring-1 lg:ring-border lg:[&>a]:w-full lg:[&>button]:w-full"
       >
         {vote("upvote")}
         {subscribe}
@@ -258,7 +258,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       <div className="flex min-w-0 flex-col gap-6 lg:col-start-1">
         {/* Signed out: one bar to sign in (commenting and voting both need it), above the thread. */}
         {!session && (
-          <div className="flex flex-col gap-4 rounded-[0.875rem] bg-card p-5 shadow-card ring-1 ring-border sm:flex-row sm:items-center sm:gap-4 sm:py-4">
+          <div className="flex flex-col gap-4 rounded-xl bg-card p-5 shadow-card ring-1 ring-border sm:flex-row sm:items-center sm:gap-4 sm:py-4">
             <span aria-hidden className="hidden size-10 shrink-0 place-items-center rounded-lg bg-soft text-soft-foreground sm:grid">
               <MessageCircleIcon className="size-[1.125rem]" />
             </span>

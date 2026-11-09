@@ -85,6 +85,13 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await columns.getByRole("link", { name: "Completed 2" }).click();
   await visitor.waitForURL("**/roadmap?column=completed");
   await expect(column("Completed")).toBeVisible();
+  // A board's chip keeps the column open, and so does All boards.
+  const boardChips = visitor.getByRole("navigation", { name: "Board" });
+  await boardChips.getByRole("link", { name: "Bug reports" }).click();
+  await visitor.waitForURL("**/roadmap?board=all&column=completed");
+  await expect(column("Completed")).toBeVisible();
+  await expect(boardChips.getByRole("link", { name: "All boards" })).toHaveAttribute("href", "/roadmap?column=completed");
+  await visitor.goto("/roadmap?column=completed");
   await expect(column("Planned")).toBeHidden();
   await checkpoint(visitor, "roadmap-phone-completed", { fullPage: false });
   await visitor.goto("/roadmap");

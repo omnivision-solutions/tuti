@@ -266,7 +266,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const feed = await (await ada.request.get(`${portalUrl(slug)}/changelog/rss.xml`)).text();
   expect(feed).toContain("<title>Dark mode is here</title>");
   // The idea it shipped, with how many asked for it.
-  await entry.getByRole("link", { name: /^Built from an idea: Dark mode, \d+ votes?$/ }).click();
+  await entry.getByRole("link", { name: /^Built from an idea · \d+ votes?\s*: Dark mode$/ }).click();
   await ada.waitForURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   await expect(ada.getByText("Completed").first()).toBeVisible();
   await expect(ada.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("href", "/changelog/1");

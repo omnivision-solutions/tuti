@@ -121,9 +121,9 @@ export function DocsSearchBox({
           "flex items-center gap-2 rounded-lg text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
           "w-full border border-input px-2.5 text-sm dark:bg-input/30",
           inHeader
-            ? "h-9 max-sm:w-9 max-sm:justify-center max-sm:border-transparent max-sm:px-0 max-sm:dark:bg-transparent md:w-64 md:rounded-[0.625rem]"
+            ? "h-9 max-sm:w-9 max-sm:justify-center max-sm:border-transparent max-sm:px-0 max-sm:dark:bg-transparent md:w-64 md:rounded-lg"
             : hero
-              ? cn("h-[3.75rem] gap-3 rounded-[0.875rem] bg-card px-5 text-[1.0625rem] shadow-card dark:bg-card", assistant && askAI && "pr-32")
+              ? cn("h-[3.75rem] gap-3 rounded-xl bg-card px-5 text-[1.0625rem] shadow-card dark:bg-card", assistant && askAI && "pr-32")
               : "h-8",
         )}
       >

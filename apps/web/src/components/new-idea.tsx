@@ -26,9 +26,11 @@ export function NewIdea({
   return (
     <OpenContext value={() => setOpen(true)}>
       {children}
-      <Dialog open={open} onOpenChange={setOpen}>
-        {/* Kept while closed: a half-written idea is still there when it opens again. */}
-        <DialogContent keepMounted className="gap-3 p-5 sm:max-w-xl">
+      {/* Focus kept inside, the page not made inert: modal, the editor's selection bar (Bold, Link) never showed in it. */}
+      <Dialog open={open} onOpenChange={setOpen} modal="trap-focus">
+        {/* Kept while closed: a half-written idea is still there when it opens again. Near the top, not centred by a transform:
+            a transform would be the editor's floating toolbar's frame (it's fixed), putting it out of place. */}
+        <DialogContent keepMounted className="top-[8vh] right-0 left-0 mx-auto translate-none gap-3 p-5 sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-lg">Share an idea</DialogTitle>
           </DialogHeader>

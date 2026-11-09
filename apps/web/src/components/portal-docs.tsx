@@ -158,7 +158,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
             <li key={collection.slug}>
               <Link
                 href={at(`/docs/${collection.slug}`)}
-                className="group flex h-full flex-col gap-2 rounded-[0.875rem] bg-card p-5 shadow-card ring-1 ring-border transition-shadow hover:ring-primary/40 sm:p-6"
+                className="group flex h-full flex-col gap-2 rounded-xl bg-card p-5 shadow-card ring-1 ring-border transition-shadow hover:ring-primary/40 sm:p-6"
               >
                 <h2 className="flex items-center gap-3 font-sans text-[1.0625rem] font-semibold break-words group-hover:text-primary">
                   {collection.icon && (

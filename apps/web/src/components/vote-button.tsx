@@ -116,7 +116,8 @@ function PortalSignInToVote({ count, votes, shape }: { count: number; votes: str
   return (
     <Link
       href={useSignInHref()}
-      aria-label={`Sign in to vote (${votes})`}
+      // The post's says "Upvote": its words first (voice control), then what it does.
+      aria-label={shape === "upvote" ? `Upvote (${votes}), sign in to vote` : `Sign in to vote (${votes})`}
       className={cn(buttonVariants({ variant: shape === "upvote" ? "default" : "outline" }), shape ? cn(SHAPES[shape], portalLook(shape, false)) : SHAPE)}
     >
       <Contents shape={shape} count={count} voted={false} />

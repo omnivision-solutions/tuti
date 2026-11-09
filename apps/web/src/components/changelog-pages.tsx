@@ -219,7 +219,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
             </a>
             {subscribable && (
               <Popover>
-                <PopoverTrigger render={<Button className="font-semibold max-sm:flex-1" aria-label="Subscribe" />}>
+                <PopoverTrigger render={<Button className="font-semibold max-sm:flex-1" />}>
                   <BellIcon aria-hidden /> Subscribe<span className="sm:hidden"> by email</span>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-80 p-4">
@@ -230,6 +230,12 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
           </div>
         </div>
       </div>
+      {/* Without JavaScript the popover can't open: its form in the page instead. */}
+      {subscribable && (
+        <noscript>
+          <div className="max-w-sm">{subscribe}</div>
+        </noscript>
+      )}
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_13rem] lg:items-start lg:gap-x-16">
         {/* Beside the list on wide screens, staying in view: the month index; and where a reader who gets it stands. */}
         {(listed.length >= MONTH_INDEX_FROM || (subscribe && !subscribable)) && (

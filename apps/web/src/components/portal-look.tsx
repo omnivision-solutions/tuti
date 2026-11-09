@@ -160,7 +160,7 @@ export function PortalLogo({ name, href }: { name: string; href: string }) {
   ) : (
     <>
       {/* Without a logo, a mark of the name's first letter, so the header has the brand's square as every portal's does. */}
-      <LetterMark name={logoText || name} className="size-8 rounded-[0.5625rem] text-[0.9375rem]" />
+      <LetterMark name={logoText || name} className="size-8 rounded-lg text-[0.9375rem]" />
       <span className="truncate">{logoText || name}</span>
     </>
   );

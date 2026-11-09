@@ -198,7 +198,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
               sort tabs and search on one row. `?status=` (no control of its own any more), the search and `?title=` go with each
               tab; the sort, `?status=` and `?title=` with a search. Phones: no card, the title beside New idea. */}
           <section aria-label="Ideas" className="flex flex-col">
-            <div className="flex flex-col sm:rounded-[0.875rem] sm:bg-card sm:shadow-card sm:ring-1 sm:ring-border">
+            <div className="flex flex-col sm:rounded-xl sm:bg-card sm:shadow-card sm:ring-1 sm:ring-border">
               <div className="flex items-start gap-3 sm:px-7 sm:pt-7">
                 <div className="flex min-w-0 flex-1 flex-col gap-2">
                   <h1 className="font-heading text-[1.625rem] leading-tight font-[650] tracking-[-0.022em] break-words sm:text-[2.125rem]">{board.name}</h1>
@@ -266,7 +266,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                       {/* Who posted it and when, then how many comments. */}
                       <div className="mt-2.5 flex max-w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-[0.84375rem] text-muted-foreground">
                         <span className="flex max-w-full min-w-0 items-center gap-2 whitespace-nowrap">
-                          <PortalAvatar person={post.author} className="size-5 text-[0.625rem]" />
+                          <PortalAvatar person={post.author} className="size-6 text-xs" />
                           <span className="min-w-0 truncate font-semibold text-foreground/80">{post.author.name}</span>
                           <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
                           {post.commentCount > 0 && (
@@ -338,7 +338,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         <aside aria-label="About this board" className="hidden flex-col gap-6 lg:flex">
           <NewIdeaButton size="lg" className="h-12 w-full rounded-xl text-[0.9375rem]" />
           {boards.length > 1 && (
-            <nav aria-label="Boards" className="flex flex-col gap-1 rounded-[0.875rem] bg-card p-2.5 shadow-card ring-1 ring-border">
+            <nav aria-label="Boards" className="flex flex-col gap-1 rounded-xl bg-card p-2.5 shadow-card ring-1 ring-border">
               <h2 className="group-label px-2.5 pt-2 pb-1.5">Boards</h2>
               <ul className="flex flex-col gap-0.5">
                 {boards.map((other) => (

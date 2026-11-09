@@ -177,7 +177,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await expect(visitor).toHaveURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === darkPath);
   // So does the vote button, and signing in comes back to the post.
   await visitor.goBack();
-  await visitor.getByRole("link", { name: "Sign in to vote (1 vote)" }).click();
+  await visitor.getByRole("link", { name: "Upvote (1 vote), sign in to vote" }).click();
   await expect(visitor).toHaveURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === darkPath);
   await signInWithPassword(visitor, ada.email);
   await visitor.waitForURL((url) => url.pathname === darkPath);

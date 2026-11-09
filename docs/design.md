@@ -24,7 +24,8 @@ cute at the expense of clarity.
   favicon `app/icon.svg`). The current drawing is a placeholder until we have
   a proper illustration.
 - **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
-  ~11px (`rounded-xl`), pills fully round. Nothing else.
+  ~11px (`rounded-xl`), pills fully round. Nothing else. On the public portal `--radius` is 0.625rem: controls 10px,
+  cards 14px, through the same `rounded-lg` and `rounded-xl`.
 - **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`).
   Fields (`Input`, `Textarea`, `SelectTrigger`) sit on the card's colour in light (white) and on the
   page's in dark (a step below the card), with the `input` border, their placeholder lighter than a value; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
@@ -311,7 +312,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   (the portal's `PortalLookProvider` takes it); leaving with changes not saved
   asks first.
 - **Portals** (the public portal's own look: a header card per list, a rail led by its one primary action, a calm shell):
-  - **Look.** Inter for headings and text by default (headings 650, tracked −0.022em; body 15–17px); a project's own
+  - **Look.** Inter for headings and text by default (preloaded; headings 650, tracked −0.022em; body 15–17px); a project's own
     fonts (Customize → Branding: `headingFont`, `bodyFont`) still win, and the portal's dialogs and menus take them too.
     Portal-only tokens in `globals.css` (`:root:has([data-portal-top])`, so the app keeps its own): stronger lines on the
     paper (`border` 0.87 L, `input` 0.81 L), secondary text at 0.48 L, a neutral dark mode (background 0.165, cards
@@ -355,7 +356,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
     tabs (links, `?tag=`, only the tags its entries have) and RSS (outline) and **Subscribe** (filled; a popover with
     the email form) at its end (above the tabs on phones). On wide screens a timeline: each entry's short date and a dot
     on a line in a 110px margin; beside it the tag (New soft green, Improved blue, Fixed the orange highlight, Breaking
-    destructive) above a 28px title, the cover framed as a card, the text, "Built from an idea · N votes →" for each idea
+    destructive) above a 28px title, the cover framed as a card, the text, "Built from an idea · N votes →" (with more than one idea, each pill shows its title; with one, the title is read out after the pill's words)
     it shipped, and its reactions, small and grey until picked; a line between entries. A "Jump to month" index beside
     the list past eight entries (the page's month marked). An entry's page: a 40px title, the reactions, then Get
     updates by email.

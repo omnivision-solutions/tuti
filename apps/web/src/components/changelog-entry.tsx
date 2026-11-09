@@ -108,25 +108,27 @@ export function ChangelogEntryView({
           <RichText
             doc={entry.cover}
             mediaUrls={mediaUrls}
-            className={cn("rich-text", onPage && "[&_img]:rounded-[0.875rem] [&_img]:border-0 [&_img]:shadow-card [&_img]:ring-1 [&_img]:ring-border")}
+            className={cn("rich-text", onPage && "[&_img]:rounded-xl [&_img]:border-0 [&_img]:shadow-card [&_img]:ring-1 [&_img]:ring-border")}
           />
         )}
         <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
         {onPage && entry.posts.length > 0 ? (
-          // The ideas it shipped, with how many asked: a pill each (its title in its name, the entry's title says the rest).
+          // The ideas it shipped, with how many asked: a pill each. One idea: the entry's title says which (its title is read
+          // out after the pill's words); more than one: each pill shows its idea's title.
           <ul className="flex flex-wrap gap-2">
             {entry.posts.map((post) => (
-              <li key={post.number}>
+              <li key={post.number} className="min-w-0 max-w-full">
                 <Link
                   href={at(postPath(post))}
                   target={linkTarget}
-                  title={post.title}
-                  aria-label={`Built from an idea: ${post.title}, ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-full bg-soft px-3 text-[0.8125rem] font-semibold text-soft-foreground hover:underline"
+                  className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-soft px-3 text-[0.8125rem] font-semibold text-soft-foreground hover:underline"
                 >
-                  <LightbulbIcon aria-hidden className="size-3.5" />
-                  Built from an idea · {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-                  <ArrowRightIcon aria-hidden className="size-3.5" />
+                  <LightbulbIcon aria-hidden className="size-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {entry.posts.length > 1 ? post.title : "Built from an idea"} · {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+                    {entry.posts.length === 1 && <span className="sr-only">: {post.title}</span>}
+                  </span>
+                  <ArrowRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </Link>
               </li>
             ))}

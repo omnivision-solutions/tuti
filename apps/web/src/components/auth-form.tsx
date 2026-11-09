@@ -177,7 +177,7 @@ export function AuthForm({
                   required
                   placeholder={portal ? "you@example.com" : undefined}
                   aria-invalid={linkError ? true : undefined}
-                  className={cn(portal && "h-11 rounded-[0.625rem] pl-10 text-[0.9375rem]")}
+                  className={cn(portal && "h-11 rounded-lg pl-10 text-[0.9375rem]")}
                 />
               </div>
               {linkError && <FieldError>{linkError}</FieldError>}
@@ -207,7 +207,7 @@ export function AuthForm({
           </FieldGroup>
         </CardContent>
         <CardFooter className={cn("mt-6 flex flex-col gap-3", portal && "mt-4 border-t-0 bg-transparent px-6 pt-0 pb-8 sm:px-10 sm:pb-10")}>
-          <Button type="submit" disabled={pending} className={cn("w-full", portal && "h-11 rounded-[0.625rem] text-[0.9375rem] font-semibold")}>
+          <Button type="submit" disabled={pending} className={cn("w-full", portal && "h-11 rounded-lg text-[0.9375rem] font-semibold")}>
             {pending ? "…" : isSignUp ? "Sign up" : usePassword ? "Sign in" : "Email me a sign-in link"}
           </Button>
           {/* A portal's (sign-in links): the password way and resetting it, then a line: new here, or on the team. */}

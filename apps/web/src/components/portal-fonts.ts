@@ -10,7 +10,8 @@ import type { PortalFont } from "@/lib/portal-fonts";
  * next/font/google did. Each family is named after its constant (`playfairDisplay`): next/font/local
  * names it so, and a family named otherwise wouldn't be the one its class and variable ask for.
  */
-const inter = localFont({ src: "../fonts/inter.woff2", weight: "100 900", variable: "--portal-font-inter", preload: false });
+// Preloaded: the portal's default (lib/portal-look's fonts), on every portal page that hasn't a font of its own.
+const inter = localFont({ src: "../fonts/inter.woff2", weight: "100 900", variable: "--portal-font-inter", preload: true });
 const roboto = localFont({ src: "../fonts/roboto.woff2", weight: "100 900", variable: "--portal-font-roboto", preload: false });
 const openSans = localFont({ src: "../fonts/open-sans.woff2", weight: "300 800", variable: "--portal-font-open-sans", preload: false });
 const lato = localFont({
