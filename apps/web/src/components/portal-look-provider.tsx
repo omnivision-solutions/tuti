@@ -8,7 +8,7 @@ import { PORTAL_FONT_CLASSES } from "@/components/portal-fonts";
 import { inPreview, LookContext } from "@/components/portal-look";
 import { brandCss } from "@/lib/colors";
 import { CUSTOMIZE } from "@/lib/portal-base";
-import { fontVariable } from "@/lib/portal-fonts";
+import { portalFontStyle } from "@/lib/portal-fonts";
 import { type FromPortal, isToPortal, type PortalLook, styleText, webOnly } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
@@ -96,15 +96,9 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
 
   const look = { ...saved, ...draft };
   const css = brandCss(look.color);
-  // The team's fonts (Customize → Branding → Typography), else Inter, in place of the app's: a wrapper that adds
-  // nothing to the layout (display: contents) but passes them down, the symbols fallback after them (app/layout.tsx).
-  const heading = look.fonts.heading ?? "inter";
-  const body = look.fonts.body ?? "inter";
-  const fonts = {
-    "--font-sans": `var(${fontVariable(body)})`,
-    fontFamily: `var(${fontVariable(body)}), var(--font-symbols)`,
-    "--font-heading": `var(${fontVariable(heading)})`,
-  } as CSSProperties;
+  // The team's fonts, else Inter (portalFontStyle): a wrapper that adds nothing to the layout (display: contents) but
+  // passes them down.
+  const fonts = portalFontStyle(look.fonts) as CSSProperties;
   // What opens over the page (dialogs, menus, toasts) is put at the end of <body>, outside the wrapper: the fonts there too.
   const fontStyle = JSON.stringify(fonts);
   useEffect(() => {

@@ -28,3 +28,19 @@ export const isPortalFont = (value: unknown): value is PortalFont => PORTAL_FONT
 
 /** The CSS variable a font's family is in (components/portal-fonts.ts sets it). */
 export const fontVariable = (font: PortalFont) => `--portal-font-${font}`;
+
+/**
+ * The portal's fonts as the style of its pages' wrapper (and its <body>, for what opens over the page): the team's
+ * (Customize → Branding → Typography), else Inter, in place of the app's; the text's stack ends with the bundled symbols
+ * font (app/layout.tsx), so a symbol none of them has never shows as an empty box. `--font-sans` and `--font-heading`
+ * get it from globals.css's theme.
+ */
+export function portalFontStyle(fonts: { heading: PortalFont | null; body: PortalFont | null }) {
+  const heading = fonts.heading ?? "inter";
+  const body = fonts.body ?? "inter";
+  return {
+    "--font-sans": `var(${fontVariable(body)})`,
+    fontFamily: `var(${fontVariable(body)}), var(--font-symbols)`,
+    "--font-heading": `var(${fontVariable(heading)})`,
+  };
+}

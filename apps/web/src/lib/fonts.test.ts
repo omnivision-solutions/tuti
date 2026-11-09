@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "vitest";
 
+import { portalFontStyle } from "./portal-fonts";
+
 const src = fileURLToPath(new URL("..", import.meta.url));
 const sources = (dir: string): string[] =>
   readdirSync(dir).flatMap((name) => {
@@ -39,6 +41,12 @@ test("a symbol none of the fonts has (an AI-written \"⋯\") falls back to the b
   for (const font of ["sans", "mono", "heading"]) {
     expect(css).toMatch(new RegExp(`--font-${font}: var\\([^)]+\\), var\\(--font-symbols\\);`));
   }
-  // The portals' own fonts (Customize → Branding) too.
-  expect(readFileSync(join(src, "components/portal-look.tsx"), "utf8")).toContain("fontFamily: `var(${fontVariable(body)}), var(--font-symbols)`");
+  // The portals' own fonts too: the default Inter and a team's pick (Customize → Branding), heading and text.
+  expect(portalFontStyle({ heading: null, body: null })).toEqual({
+    "--font-sans": "var(--portal-font-inter)",
+    fontFamily: "var(--portal-font-inter), var(--font-symbols)",
+    "--font-heading": "var(--portal-font-inter)",
+  });
+  expect(portalFontStyle({ heading: "lora", body: "dm-sans" }).fontFamily).toBe("var(--portal-font-dm-sans), var(--font-symbols)");
+  expect(portalFontStyle({ heading: "lora", body: "dm-sans" })["--font-heading"]).toBe("var(--portal-font-lora)");
 });

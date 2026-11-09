@@ -95,6 +95,9 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     voter ? emailReach(board.projectId, voter) : undefined,
   ]);
   const texts = boardTexts(board);
+  // The board's own links built from its address (Load more) leave out `new` and `title`: New idea's, taken out of the
+  // address as it opens (NewIdea), never to open it again.
+  const ownParams = Object.fromEntries(Object.entries(searchParams).filter(([name]) => name !== "new" && name !== "title"));
   // A tab: the board in that order, with the search and status it has (from the first page); not `?title=`, which New idea
   // took from the address as it opened.
   const tabHref = (sort: string) => {
@@ -309,7 +312,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           )}
           {more ? (
             <Link
-              href={nextPageHref(searchParams, filters)}
+              href={nextPageHref(ownParams, filters)}
               scroll={false}
               className={buttonVariants({ variant: "outline", className: "self-center" })}
             >

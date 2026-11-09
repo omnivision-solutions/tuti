@@ -421,6 +421,15 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
   await portal.waitForURL(/\?sort=top$/);
   await expect(portal.getByRole("link", { name: "Load more" })).toBeVisible();
   await expect.poll(() => portal.evaluate(() => window.scrollY)).toBe(scrolled);
+  // Opened by the address (`?new`) and closed, New idea stays shut on the next page: Load more doesn't carry `new` (nor `title`).
+  await portal.goto("/feedback/feature-requests?new");
+  await expect(portal.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
+  await portal.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+  await expect(portal.getByRole("dialog")).toHaveCount(0);
+  await portal.getByRole("link", { name: "Load more" }).click();
+  await portal.waitForURL(/\/feedback\/feature-requests\?page=2$/);
+  await expect(portal.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
+  await expect(portal.getByRole("dialog")).toHaveCount(0);
   // All, with more to load and statuses mixed, isn't grouped yet: each row's status shows as its pill.
   // (#2: on page one; #1, the oldest, is on page two.)
   await api("/posts/2", { status: "planned" }, "PATCH");
