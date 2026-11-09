@@ -119,3 +119,22 @@ test("an article's History shows each save's author with their photo, or else th
   expect(html).toContain(">OO<");
   expect(html).toContain("Someone whose account is gone");
 });
+
+test("a folded collection's band counts what waits in the collections inside it too", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  // First a collection that opens with the page; then Billing (folded) with nothing of its own waiting, and a draft in
+  // Invoices, inside it.
+  await prisma.collection.create({ data: { projectId: project.id, slug: "start", name: "Start", order: 0 } });
+  const billing = await prisma.collection.create({ data: { projectId: project.id, slug: "billing", name: "Billing", order: 1 } });
+  const invoices = await prisma.collection.create({ data: { projectId: project.id, slug: "invoices", name: "Invoices", order: 0, parentId: billing.id } });
+  await prisma.article.create({ data: { projectId: project.id, slug: "plans", title: "Plans", body: "Words.", publishedAt: new Date(), collectionId: billing.id } });
+  await prisma.article.create({ data: { projectId: project.id, slug: "refunds", title: "Refunds", body: "Words.", collectionId: invoices.id } });
+
+  const params = Promise.resolve({ project: project.slug });
+  at.pathname = `/app/${project.slug}/docs`;
+  const html = renderToStaticMarkup(await TeamDocsLayout({ params, children: await TeamDocsPage({ params } as never) } as never));
+  const band = html.slice(html.indexOf('role="region" aria-label="Billing"'), html.indexOf("</summary>", html.indexOf('role="region" aria-label="Billing"'))).replace(/<[^>]+>/g, "|");
+  expect(band).toContain("1 unpublished");
+});

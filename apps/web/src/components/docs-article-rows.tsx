@@ -273,6 +273,15 @@ export function TabContents({
     return null;
   }
   const { badge } = details;
+  /** How many wait to be published in collection `id`, the collections inside it (at any depth) included. */
+  const waitingIn = (id: string): number => {
+    const collection = docs.collections.find((c) => c.id === id);
+    const own = (collection?.articles ?? []).filter((a) => {
+      const d = details.detailsOf.get(a.slug);
+      return d && (!d.publishedAt || d.changes);
+    }).length;
+    return own + docs.collections.filter((c) => c.parentId === id).reduce((sum, c) => sum + waitingIn(c.id), 0);
+  };
   return (
     <Card className="gap-0 py-0">
       <ArticleColumns />
@@ -281,10 +290,7 @@ export function TabContents({
           key={c.slug}
           // The first open; the rest fold to their band, its count and what waits in it.
           defaultOpen={i === 0}
-          waiting={c.articles.filter((a) => {
-            const d = details.detailsOf.get(a.slug);
-            return d && (!d.publishedAt || d.changes);
-          }).length}
+          waiting={waitingIn(c.id)}
           name={c.name}
           href={`/app/${projectSlug}/docs/collections/${c.slug}`}
           icon={c.knownIcon ? c.icon : null}
