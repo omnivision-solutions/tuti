@@ -149,8 +149,9 @@ the list picks none to approve at once.
   A page of three panes (the sidebar, a column of its own, the page: Settings,
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
   width, the sidebar open as on every other page: one shell everywhere. Only Customize
-  (its own rail and the portal's preview) and the Inbox (its panes fill the window, the
-  person beside the conversation) fold it away. A pane's column is
+  (its own rail and the portal's preview), the Inbox (its panes fill the window, the
+  person beside the conversation) and a page of panes under 1280px wide (its own column
+  takes the room) fold it away. A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
