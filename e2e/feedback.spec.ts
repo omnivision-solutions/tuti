@@ -242,8 +242,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("link", { name: /Dark mode/ })).toBeVisible();
   // The portal's address isn't in the header (the project switcher has it).
   await expect(team.locator('[data-slot="page-header"]').getByRole("link", { name: new URL(portalUrl(slug)).host })).toHaveCount(0);
-  // No sentence under the page's title (what it's for is in its empty state).
-  await expect(team.locator('[data-slot="page-header"] p')).toHaveCount(0);
+  // One short line under the page's title says what it's for.
+  await expect(team.locator('[data-slot="page-header"] p')).toHaveText(["Ideas and problems your users posted, by status."]);
   // A row shows values, no form controls: its board as text, its status as a badge that opens a menu.
   const row = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
   await expect(row).toContainText("#1 · Feature requests · Ada");
