@@ -37,6 +37,8 @@ export const articleRowDetails = cache(async (projectId: string) => {
         sample: true,
         ...levelSelect,
         changes: { select: { articleId: true, updatedAt: true } },
+        // When it was last saved (its newest version): `updatedAt` moves on writes that aren't saves (a move, a tab's access).
+        revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { createdAt: true } },
       },
     }),
     articleStats(projectId),
@@ -50,11 +52,11 @@ export type ArticleRowDetails = Awaited<ReturnType<typeof articleRowDetails>>;
 /** An article's state, where it isn't simply out as written: a draft, or published with changes saved but not published. */
 export type ArticleState = "draft" | "changes" | "published";
 
-/** The one look of an article's state: a dot in its colour (Draft grey, Unpublished changes amber, Published green), and its words. */
+/** The one look of an article's state: a dot in its colour (Draft neutral, Unpublished changes the highlight: it needs the team, Published soft green; never a post status's colour), and its words. */
 export const ARTICLE_STATES: Record<ArticleState, { label: string; dot: string; tint: string }> = {
-  draft: { label: "Draft", dot: "bg-status-open", tint: "bg-status-open/12" },
-  changes: { label: "Unpublished changes", dot: "bg-status-under-review", tint: "bg-status-under-review/16" },
-  published: { label: "Published", dot: "bg-status-completed", tint: "bg-status-completed/16" },
+  draft: { label: "Draft", dot: "bg-muted-foreground", tint: "bg-muted" },
+  changes: { label: "Unpublished changes", dot: "bg-highlight-foreground", tint: "bg-highlight" },
+  published: { label: "Published", dot: "bg-primary", tint: "bg-soft" },
 };
 
 /** An article's state as a tinted pill with its dot (the editor's header). */
@@ -75,11 +77,16 @@ const STATUS = "hidden w-44 shrink-0 sm:block";
 /** A list of articles' column headings: what the numbers under them count. */
 export function ArticleColumns({ first = "Article" }: { first?: string }) {
   return (
-    <div className="flex items-center gap-3 border-b px-5 py-2.5 group-label" title={`In the last ${INSIGHTS_DAYS} days`}>
+    <div className="flex items-center gap-3 border-b px-5 py-2.5 group-label">
       <span className="flex-1">{first}</span>
       <span className={STATUS}>Status</span>
-      <span className={NUMBER}>Views</span>
-      <span className={NUMBER}>Helpful</span>
+      {/* The window the numbers count, said under them (not only on hover). */}
+      <span className={NUMBER}>
+        Views<span className="block text-xs font-normal tracking-normal normal-case">{INSIGHTS_DAYS} days</span>
+      </span>
+      <span className={NUMBER}>
+        Helpful<span className="block text-xs font-normal tracking-normal normal-case">{INSIGHTS_DAYS} days</span>
+      </span>
     </div>
   );
 }
@@ -103,7 +110,7 @@ export function ArticleGroup({
   icon?: string | null;
   count?: string;
   badges?: ReactNode;
-  /** How many in it wait to be published: an amber dot and the number on its band. */
+  /** How many in it wait to be published: "N unpublished" on its band. */
   waiting?: number;
   /** Open as the page loads; the band opens or folds it. */
   defaultOpen?: boolean;
@@ -326,7 +333,8 @@ export function CollectionHeader({
             {collection.name}
           </span>
         }
-        description={collection.description || "A collection in your docs."}
+        // A page about one thing: its own description (if it has one) as the line under it, no filler.
+        meta={collection.description || undefined}
         actions={settings ? undefined : <AddContentMenu parent={collection.slug} article={collection.slug} />}
         more={<DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={hasChildren} />}
       />
@@ -351,7 +359,7 @@ export function CollectionHeader({
 export function WaitingToPublish({ projectSlug, docs, details }: { projectSlug: string; docs: TeamDocs; details: ArticleRowDetails }) {
   const waiting = [...details.detailsOf.values()]
     .filter((a) => !a.publishedAt || a.changes)
-    .map((a) => ({ ...a, saved: a.changes?.updatedAt ?? a.updatedAt }))
+    .map((a) => ({ ...a, saved: a.revisions[0]?.createdAt ?? a.changes?.updatedAt ?? a.updatedAt }))
     .toSorted((a, b) => b.saved.getTime() - a.saved.getTime());
   if (waiting.length === 0) {
     return null;

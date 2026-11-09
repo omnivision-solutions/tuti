@@ -102,7 +102,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
             <>
               <span className="flex items-center gap-2 font-heading text-2xl font-semibold tabular-nums">
                 {stat.value.toLocaleString("en")}
-                {stat.waits && <span aria-hidden className="size-2 rounded-full bg-status-under-review" />}
+                {stat.waits && <span aria-hidden className="size-2 rounded-full bg-highlight-foreground" />}
               </span>
               <span className="text-xs text-muted-foreground">
                 {stat.label}

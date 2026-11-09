@@ -10,11 +10,11 @@ import { plural } from "@/lib/autopilot-words";
 import { timeAgo } from "@/lib/format";
 import { articleVerifications, type VerificationView } from "@/server/operations/verify";
 
-/** Each verdict's words and colours: still true green, out of date amber (it needs the team), can't tell grey. */
+/** Each verdict's words and colours: still true green (soft), out of date in the highlight (it needs the team), can't tell neutral. */
 const VERDICTS = {
-  current: { label: "Still true", dot: "bg-status-completed", pill: "bg-status-completed/16" },
-  outdated: { label: "Out of date", dot: "bg-status-under-review", pill: "bg-status-under-review/16" },
-  unclear: { label: "Can't tell", dot: "bg-status-open", pill: "bg-status-open/12" },
+  current: { label: "Still true", dot: "bg-primary", pill: "bg-soft" },
+  outdated: { label: "Out of date", dot: "bg-highlight-foreground", pill: "bg-highlight" },
+  unclear: { label: "Can't tell", dot: "bg-muted-foreground", pill: "bg-muted" },
 } as const;
 
 const STATES: Record<VerificationView["state"], string> = {
@@ -112,7 +112,7 @@ export async function ArticleVerify({
                         "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium",
                         VERDICTS[verdict].pill,
                         // What needs the team reads first.
-                        verdict === "outdated" && run.counts.outdated > 0 && "font-semibold ring-1 ring-status-under-review/50",
+                        verdict === "outdated" && run.counts.outdated > 0 && "font-semibold ring-1 ring-highlight-foreground/40",
                       )}>
                       <span className={cn("size-1.5 rounded-full", VERDICTS[verdict].dot)} />
                       {run.counts[verdict]} {VERDICTS[verdict].label.toLowerCase()}

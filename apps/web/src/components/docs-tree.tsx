@@ -467,7 +467,7 @@ export function DocsWorkspace({
               <span title={article.title} className={cn("min-w-0 truncate", !article.published && "text-muted-foreground")}>
                 {article.title}
               </span>
-              {!article.published && <span className="shrink-0 rounded-full bg-status-open/12 px-1.5 text-xs leading-5 text-muted-foreground">Draft</span>}
+              {!article.published && <span className="shrink-0 rounded-full bg-muted px-1.5 text-xs leading-5 text-muted-foreground">Draft</span>}
             </Link>
           </Row>
         </li>

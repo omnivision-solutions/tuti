@@ -1,9 +1,10 @@
+import { prisma } from "@tuti/db";
 import { HistoryIcon } from "lucide-react";
 import Link from "next/link";
 
 import { ArticleDiff } from "@/components/article-diff";
 import { RestoreVersionButton } from "@/components/docs";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
@@ -17,6 +18,13 @@ const initials = (name: string) =>
     .join("")
     .slice(0, 2)
     .toUpperCase();
+
+/** Each version's author's photo, by version id (null: none, or their account is gone): people are shown with their
+ * photo everywhere, and the API's revisions (`articleRevisions`) say only their name. */
+export async function authorPhotos(revisionIds: string[]) {
+  const rows = await prisma.articleRevision.findMany({ where: { id: { in: revisionIds } }, select: { id: true, author: { select: { image: true } } } });
+  return new Map(rows.map((r) => [r.id, r.author?.image ?? null]));
+}
 
 type Version = { title: string; body: string; content: unknown; collection: { name: string } | null };
 
@@ -39,6 +47,7 @@ export async function ArticleHistory({
   selectedId: string | undefined;
 }) {
   const revisions = await articleRevisions(article.id);
+  const photos = await authorPhotos(revisions.map((r) => r.id));
   const selected = revisions.find((revision) => revision.id === selectedId);
   return (
     <>
@@ -72,6 +81,7 @@ export async function ArticleHistory({
               className="flex items-center gap-3 rounded-lg px-3 py-2.5 outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring aria-[current]:bg-accent"
             >
               <Avatar aria-hidden className="size-8">
+                {photos.get(revision.id) && <AvatarImage src={photos.get(revision.id)!} alt="" />}
                 <AvatarFallback>{initials(revision.author?.name ?? "?")}</AvatarFallback>
               </Avatar>
               <span className="flex min-w-0 flex-1 flex-col">

@@ -1104,6 +1104,13 @@ test("the team splits the docs into tabs: the first takes the collections, other
   const apiSection = team.getByRole("region", { name: "API reference" });
   await expect(apiSection.getByRole("region")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/]);
   await checkpoint(team, "team-docs-home");
+  // "Tab settings" opens the tab on its Settings.
+  await apiSection.getByRole("link", { name: "Tab settings" }).click();
+  await team.waitForURL(`**/app/${slug}/docs/tabs/api-reference?view=settings`);
+  await expect(team.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true");
+  await expect(team.getByRole("tabpanel", { name: "Settings" }).getByLabel("Name")).toHaveValue("API reference");
+  await team.goBack();
+  await team.waitForURL(`**/app/${slug}/docs`);
   // On a phone the tree is a "Browse docs" menu above it, as above every Docs page.
   await team.setViewportSize({ width: 390, height: 844 });
   await expect(team.getByRole("button", { name: "Browse docs" })).toBeVisible();

@@ -39,7 +39,6 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
     <>
       <PageHeader
         title={tab.name}
-        description={first ? "Your help center's first tab: where readers land." : "A tab of your help center, with collections of its own."}
         // An article in no collection is on the first tab; on another, a new one starts in its first collection.
         actions={<AddContentMenu parent={null} tab={tab.slug} article={first ? null : (top[0]?.slug ?? false)} />}
         more={

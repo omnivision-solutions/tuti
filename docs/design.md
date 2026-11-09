@@ -229,10 +229,10 @@ the list picks none to approve at once.
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
-  An article's editor has Settings, History and Verify in its top bar (ghost, icon and label; icons alone in a
-  phone's bottom bar), View on portal an icon, then Save (filled once there's something to save, else an outline) and a
+  An article's editor has Settings, History, Verify and View on portal in its top bar (ghost, icon and label; icons
+  alone in a phone's bottom bar), then Save (filled once there's something to save, else an outline) and a
   draft's Publish; Unpublish and Delete are under "More actions". Its header is the way back (its collection), the
-  state as a pill (`ArticleStateBadge`: Draft grey, Unpublished changes amber, Published green) and the date; a new
+  state as a pill (`ArticleStateBadge`: Draft neutral, Unpublished changes in the highlight, as it needs the team, Published soft green; never a post status's colour) and the date; a new
   article's collection is picked beside its Draft pill. Its text sits in the Docs column (max-w-3xl) at the reading size
   in the full text colour; the title field wraps. Verify is a panel from the
   right (`?verify`, as History is `?history`) with Verify and, folded, how it works and what it sends where, then
@@ -437,7 +437,7 @@ Use these instead of hand-rolling layout:
   the row has scrolled away). An editor whose
   main action must stay in reach (Save and Publish) pins `actions` (`pinActions`): to a
   bar at the bottom of the screen on phones, the menu keeping `more`, and to the top bar
-  from tablet width up (`barActions`: the top bar alone, the docs article editor's);
+  from tablet width up (`barActions`: the top bar alone);
   the bar steps aside while text is being typed (the keyboard is up then).
   Where Tuti's own chat launcher shows in the app (its cloud), what's held at the
   bottom of the screen keeps its buttons clear of the launcher's corner
@@ -543,7 +543,8 @@ Use these instead of hand-rolling layout:
 - One primary button per screen or dialog, on the right; Cancel to its left.
   A section's create button in its header is that primary ("New entry", "Add
   content", "New post") unless an open item beside it has its own: then it's
-  outline. "View on portal" beside it is an outline button in words, not a bare icon.
+  outline. "View on portal" beside it is an outline button in words, not a bare icon (in an editor's top bar, one of
+  its quiet icon-and-label buttons, the icon alone in a phone's bottom bar).
 - A settings page saves one way: a switch or a select saves as it's changed;
   fields share one primary Save; adding to a list beside its fields (Send
   invite, Create key, Add webhook, Add redirect, Add readers) is an outline

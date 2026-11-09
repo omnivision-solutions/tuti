@@ -157,8 +157,9 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
               <span className="phonebar:hidden">Verify</span>
             </Link>
             {article.publishedAt && listing !== "hidden" && listing !== "ai_only" && (
-              <Link href={url} target="_blank" aria-label="View on portal" title={url} className={buttonVariants({ variant: "ghost", size: "icon" })}>
+              <Link href={url} target="_blank" aria-label="View on portal" title={url} className={buttonVariants({ variant: "ghost" })}>
                 <ExternalLinkIcon aria-hidden />
+                <span className="phonebar:hidden">View on portal</span>
               </Link>
             )}
             <ArticleSaveButton outline={article.publishedAt === null} />

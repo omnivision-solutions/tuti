@@ -7,7 +7,7 @@ import { cn } from "cn";
 import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, useActionState, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { createContext, type ReactNode, useActionState, useContext, useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { CollectionSelect } from "@/components/collection-select";
@@ -185,6 +185,21 @@ export function ArticleForm({
   const [had, setHad] = useState<Doc | null>(article?.content ?? null);
   // The title as typed, and whether its user changed it since it opened or last saved.
   const [title, setTitle] = useState(article?.title ?? defaultTitle ?? "");
+  // The title field grows with its lines (`field-sizing`); where a browser lacks that (Firefox), by its scroll height.
+  const titleField = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const field = titleField.current;
+    if (!field || CSS.supports("field-sizing", "content")) {
+      return;
+    }
+    const fit = () => {
+      field.style.height = "auto";
+      field.style.height = `${field.scrollHeight}px`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [title]);
   const [titleChanged, setTitleChanged] = useState(false);
   // Title changes counted: one made while a save runs keeps it changed after it.
   const titleChanges = useRef(0);
@@ -270,6 +285,7 @@ export function ArticleForm({
           {(!opened || titleChanged) && <input type="hidden" name="title" value={title} />}
           {/* A line that wraps (a long title stays in sight on a phone), Enter doesn't add a line. */}
           <textarea
+            ref={titleField}
             aria-label="Title"
             rows={1}
             value={title}
@@ -527,15 +543,15 @@ export function ArticleChanges({
   );
 
   return (
-    // A strip in the state's colour (Unpublished changes, amber: ArticleStateBadge), its actions on the right.
+    // A strip in the state's colour (Unpublished changes: the highlight, as ArticleStateBadge), its actions on the right.
     <section
       role="region"
       aria-labelledby="article-changes-title"
-      className="flex flex-col gap-3 rounded-xl bg-status-under-review/12 px-4 py-3 ring-1 ring-status-under-review/30 sm:flex-row sm:items-center"
+      className="flex flex-col gap-3 rounded-xl bg-highlight px-4 py-3 ring-1 ring-highlight-foreground/25 sm:flex-row sm:items-center"
     >
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <h2 id="article-changes-title" className="flex items-center gap-2 text-sm font-semibold">
-          <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-under-review" />
+          <span aria-hidden className="size-2 shrink-0 rounded-full bg-highlight-foreground" />
           Unpublished changes
         </h2>
         <p className="text-sm text-muted-foreground">Saved {saved}. Readers see the published version until you publish them.</p>
@@ -874,7 +890,8 @@ export function CollectionSettingsForm({
         </CardContent>
       </Card>
       {/* In reach as the form scrolls: a bar at the bottom of the window. */}
-      <div className="sticky bottom-0 z-10 -mx-4 flex justify-end gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur-sm">
+      {/* Clear of Tuti's chat launcher's corner where it shows (launcher:), as the app's other bottom bars. */}
+      <div className="sticky bottom-0 z-10 -mx-4 flex justify-end gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur-sm launcher:pr-24">
         <Link href={backHref} className={buttonVariants({ variant: "ghost" })}>
           Cancel
         </Link>
