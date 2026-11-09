@@ -331,7 +331,7 @@ export function CollectionHeader({
         more={<DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={hasChildren} />}
       />
       {/* On a phone the header's actions are its top bar's menu: the main one stays in sight here too. */}
-      {!settings && <AddContentMenu parent={collection.slug} article={collection.slug} className="self-start sm:hidden" />}
+      {!settings && <AddContentMenu parent={collection.slug} article={collection.slug} className="self-start topbar:hidden" />}
       <SubNav
         label="Collection"
         items={[
@@ -363,7 +363,7 @@ export function WaitingToPublish({ projectSlug, docs, details }: { projectSlug: 
         <h2 id="waiting-title" className="text-base font-semibold">
           Waiting to publish
         </h2>
-        <span className="text-xs text-muted-foreground">Readers see the published version until you publish</span>
+        <span className="text-xs text-muted-foreground">Readers don&apos;t see these until you publish</span>
       </div>
       <ul className="flex flex-col divide-y px-5">
         {waiting.map((article) => {

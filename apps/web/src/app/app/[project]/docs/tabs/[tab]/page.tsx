@@ -14,7 +14,7 @@ import { teamDocs, treeArticle } from "@/server/team-docs";
 
 /** A tab's page in the app: what's in it (Content), who can read it (Access), and its name and landing page (Settings). */
 export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs/[tab]">) {
-  const { project: slug, tab: tabSlug } = await props.params;
+  const [{ project: slug, tab: tabSlug }, { view }] = await Promise.all([props.params, props.searchParams]);
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
@@ -47,7 +47,8 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
           (index > 0 || docs.tabs.length === 1) && <DeleteTabButton projectSlug={slug} tab={tab} movesTo={docs.tabs[index - 1]?.name ?? null} />
         }
       />
-      <Tabs defaultValue="content">
+      {/* `?view=settings` (the docs' home's "Tab settings") or `access` opens on that view. */}
+      <Tabs defaultValue={view === "settings" || view === "access" ? view : "content"}>
         {/* Underlined, as the app's other page-level views (SubNav). */}
         <TabsList className="-mt-2 w-full justify-start gap-0 rounded-none bg-transparent p-0 shadow-[inset_0_-1px_0_var(--color-border)]">
           {["Content", "Access", "Settings"].map((name) => (

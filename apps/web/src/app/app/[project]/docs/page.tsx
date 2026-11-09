@@ -61,8 +61,10 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
   const drafts = articles.length - published;
   const changed = articles.filter((a) => a.publishedAt && a.changes).length;
   const waiting = drafts + changed;
-  const views = [...rowDetails.stats.values()].reduce((sum, s) => sum + s.views, 0);
-  const helpful = [...rowDetails.stats.values()].reduce((sum, s) => sum + s.helpful, 0);
+  // As Reporting counts them: the articles there now, sample ones left out.
+  const counted = articles.filter((a) => !a.sample).map((a) => rowDetails.stats.get(a.id) ?? { views: 0, helpful: 0 });
+  const views = counted.reduce((sum, s) => sum + s.views, 0);
+  const helpful = counted.reduce((sum, s) => sum + s.helpful, 0);
   const base = `/app/${slug}/docs`;
 
 
@@ -83,7 +85,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         more={<VerifyAll projectSlug={slug} estimate={verifyAllEstimated} latest={latestVerify} unavailable={verifyUnavailable} />}
       />
       {/* On a phone the header's actions are its top bar's menu: the main one stays in sight here too. */}
-      <AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} className="self-start sm:hidden" />
+      <AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} className="self-start topbar:hidden" />
       {/* At a glance, in one strip: what's out, how it's read (Reporting's window), and what waits to be published. */}
       <section aria-label="At a glance" className="grid grid-cols-2 overflow-hidden rounded-xl bg-card shadow-xs ring-1 ring-border sm:grid-cols-4">
         {[
@@ -135,7 +137,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                   {tab.name}
                 </Link>
               </h2>
-              <Link href={`${base}/tabs/${tab.slug}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <Link href={`${base}/tabs/${tab.slug}?view=settings`} className={buttonVariants({ variant: "outline", size: "sm" })}>
                 <SettingsIcon aria-hidden />
                 Tab settings
               </Link>

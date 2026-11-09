@@ -121,7 +121,9 @@ export function ArticlePlaceLine() {
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
   return (
     <span className="inline-flex items-center gap-2">
-      <span id="new-article-place">In</span>
+      <span id="new-article-place">
+        In<span className="sr-only"> collection</span>
+      </span>
       <CollectionSelect
         items={items}
         value={place.collection}
@@ -277,7 +279,8 @@ export function ArticleForm({
               }
             }}
             onChange={(event) => {
-              setTitle(event.currentTarget.value);
+              // One line, pasted too (Enter adds none above).
+              setTitle(event.currentTarget.value.replace(/[\r\n]+/g, " "));
               setTitleChanged(true);
               titleChanges.current++;
             }}

@@ -101,8 +101,10 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByText("Title is too short")).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Hi");
   await team.getByLabel("Title").fill("Inviting your team");
-  // The article is its title and text; its collection is in Settings, a panel from the top bar, saved with them.
-  await expect(team.getByRole("combobox", { name: "Collection" })).toHaveCount(0);
+  // The article is its title and text; its collection is picked beside its Draft pill, and in Settings, a panel from
+  // the top bar (with the rest of its place), saved with them.
+  const placeLine = team.getByRole("combobox", { name: "In collection" });
+  await expect(placeLine).toContainText("No collection");
   await expect(team.getByRole("checkbox", { name: /^Show the updated date/ })).toHaveCount(0);
   await team.getByRole("button", { name: "Settings" }).click();
   const newSettings = team.getByRole("dialog", { name: "Article settings" });
@@ -114,6 +116,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await checkpoint(team, "team-docs-new-article-settings", { fullPage: false });
   await team.keyboard.press("Escape");
   await expect(newSettings).toBeHidden();
+  // One place: the line beside the Draft pill says the same.
+  await expect(placeLine).toContainText("Getting started");
   const editor = team.getByRole("textbox", { name: "Article" });
   // Set as it's published, with no box around it.
   await expect(editor).toHaveClass(/article-text/);
@@ -1888,6 +1892,8 @@ test("the team's docs lists (Content, a collection's page, a tab's page): in rea
   await api(`/articles/${board.slug}/publish`, {});
   await api("/articles/your-first-board", { body: "New words." }, "PATCH");
   await api("/collections", { name: "Workspaces", parent: "getting-started" });
+  // A second collection, after it: folded on the docs' home.
+  await api("/collections", { name: "Account" });
   // In no collection, in reading order: published, then a draft.
   const pricing = await api("/articles", { title: "Pricing", body: "Words." });
   await api(`/articles/${pricing.slug}/publish`, {});
@@ -1904,8 +1910,13 @@ test("the team's docs lists (Content, a collection's page, a tab's page): in rea
   await expect(visitor.getByText("Thanks for letting us know.")).toBeVisible();
 
   await team.goto(`/app/${slug}/docs`);
-  // How many wait to be published, at a glance.
+  // How many wait to be published, at a glance, and which: newest saved first, drafts and published ones with changes.
   await expect(team.getByRole("region", { name: "At a glance" })).toContainText("3Waiting to publish");
+  const waiting = team.getByRole("region", { name: "Waiting to publish" }).getByRole("listitem");
+  await expect(waiting).toHaveText([/^Refunds.*Draft$/, /^Your first board.*Unpublished changes$/, /^Billing basics.*Draft$/]);
+  // The first collection opens with the page; the rest fold to their band.
+  await expect(team.getByRole("region", { name: "Getting started" }).locator("details")).toHaveAttribute("open", "");
+  await expect(team.getByRole("region", { name: "Account" }).locator("details")).not.toHaveAttribute("open");
   const rows = team.getByRole("region", { name: "Getting started" }).getByRole("listitem");
   // In reading order, as the tree has them; a status where work waits.
   await expect(rows).toHaveText([/^Inviting your team/, /^Billing basics/, /^Your first board/, /^Workspaces/]);
