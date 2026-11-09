@@ -44,7 +44,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await expect.poll(async () => (await content.boundingBox())!.width).toBeGreaterThan(1050);
   expect((await content.boundingBox())!.width).toBeLessThan(1150);
 
-  // Each column says what it means, with its status's dot.
+  // Each column says what it means, with its status's icon.
   const column = (name: string) => visitor.getByRole("region", { name });
   for (const [name, meaning] of [
     ["Planned", "We've decided to build these."],
@@ -52,7 +52,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
     ["Completed", "Shipped and ready to use."],
   ]) {
     await expect(column(name)).toHaveAccessibleDescription(meaning!);
-    await expect(column(name).getByRole("heading", { name }).locator("[data-status-dot]")).toBeVisible();
+    await expect(column(name).getByRole("heading", { name }).locator("[data-status-icon]")).toBeVisible();
   }
 
   // Votes on the cards; signed out, they ask to sign in.
@@ -62,15 +62,29 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
 
   // A completed card links to the published entry that shipped it, not to a draft.
   const completed = column("Completed");
-  await expect(completed.getByRole("listitem").filter({ hasText: "CSV export" }).getByRole("link", { name: "CSV export is here" })).toHaveAttribute(
+  await expect(completed.getByRole("listitem").filter({ hasText: "CSV export" }).getByRole("link", { name: "In the changelog: CSV export is here" })).toHaveAttribute(
     "href",
     "/changelog/1",
   );
-  await expect(completed.getByRole("listitem").filter({ hasText: "Webhooks" })).not.toContainText("Shipped in");
+  await expect(completed.getByRole("listitem").filter({ hasText: "Webhooks" })).not.toContainText("In the changelog");
   // Shipped, there's nothing left to vote for: its votes as text, no button.
   const csvCard = completed.getByRole("listitem").filter({ hasText: "CSV export" });
   await expect(csvCard.getByRole("button")).toHaveCount(0);
   await expect(csvCard.getByText("vote", { exact: true })).toBeVisible();
+
+  // On a phone, one column at a time: Planned first, the others from the tabs over it.
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  const columns = visitor.getByRole("navigation", { name: "Columns" });
+  await expect(columns.getByRole("link")).toHaveText(["Planned 2", "In progress 1", "Completed 2"]);
+  await expect(column("Planned")).toBeVisible();
+  await expect(column("Completed")).toBeHidden();
+  await columns.getByRole("link", { name: "Completed 2" }).click();
+  await visitor.waitForURL("**/roadmap?column=completed");
+  await expect(column("Completed")).toBeVisible();
+  await expect(column("Planned")).toBeHidden();
+  await checkpoint(visitor, "roadmap-phone-completed", { fullPage: false });
+  await visitor.goto("/roadmap");
+  await visitor.setViewportSize({ width: 1440, height: 900 });
 
   // With every board shown, "Share an idea" asks which.
   await visitor.getByRole("button", { name: "Share an idea" }).click();

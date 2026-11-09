@@ -8,6 +8,7 @@ import { actAs, createProject, signUp } from "@/test/helpers";
 
 import ChangelogPage from "./page";
 import OlderChangelogPage from "./page/[page]/page";
+import ChangelogEntryPage from "./[number]/page";
 
 /** The changelog a page at a time: /changelog, then /changelog/page/2 and on. */
 
@@ -190,9 +191,15 @@ test("two announcements published together: a tag's page showing only the earlie
   expect(await changelog(undefined, "fixed")).toEqual(expect.objectContaining({ entries: "47–47", seen: publishedAt.toISOString() }));
 });
 
-/** The changelog's email box: "form" (Get updates by email), or the line said instead, its link as "[text](href)". */
-async function emailBox() {
-  const props = { params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never;
+/**
+ * The changelog's email box: "form" (Get updates by email), or the line said instead, its link as "[text](href)". On the
+ * list, or with `entry` on that entry's own page.
+ */
+async function emailBox(entry?: number) {
+  const props = {
+    params: Promise.resolve({ project: project.slug, ...(entry && { number: String(entry) }) }),
+    searchParams: Promise.resolve({}),
+  } as never;
   const text = (node: ReactNode): string =>
     Array.isArray(node)
       ? node.map(text).join("")
@@ -213,9 +220,19 @@ async function emailBox() {
       }
     }
   };
-  walk((await ChangelogPage(props)) as ReactNode);
+  walk((await (entry ? ChangelogEntryPage(props) : ChangelogPage(props))) as ReactNode);
   return box;
 }
+
+test("an entry's own page ends with getting the changelog by email: the form signed out, where a subscriber stands", async () => {
+  expect(await emailBox(1)).toBe("form");
+  const reader = await signUp("Reader");
+  await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+  const email = reader.email.toLowerCase();
+  await prisma.changelogSubscriber.create({ data: { projectId: project.id, email, confirmedAt: new Date() } });
+  actAs(reader);
+  expect(await emailBox(1)).toBe(`The changelog entries ${project.name} emails to subscribers go to ${email}. [Manage](/account)`);
+});
 
 test("the email box agrees with the reader's Account: the form signed out or not getting it; once they do, or turned emails off, where they stand", async () => {
   expect(await emailBox()).toBe("form");

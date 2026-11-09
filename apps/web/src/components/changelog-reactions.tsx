@@ -4,6 +4,7 @@ import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { reactToChangelogEntry } from "@/server/changelog";
 import { REACTION_EMOJI, REACTIONS, type Reaction, type ReactionCounts } from "@/lib/reactions";
 
@@ -36,7 +37,9 @@ export function ChangelogReactions({
           <Button
             key={reaction}
             size="sm"
-            variant={on ? "default" : "outline"}
+            variant="outline"
+            // Signed out the counts still read at full strength: a disabled button's fade made them look broken.
+            className={cn("rounded-full px-3 disabled:opacity-100", on && "border-primary bg-soft hover:bg-soft/80")}
             disabled={!signedIn || pending}
             title={signedIn ? undefined : "Sign in to react"}
             aria-pressed={on}
@@ -56,7 +59,7 @@ export function ChangelogReactions({
               })
             }
           >
-            <span aria-hidden>{REACTION_EMOJI[reaction]}</span>
+            <span aria-hidden className="text-base">{REACTION_EMOJI[reaction]}</span>
             {count > 0 && <span className="tabular-nums">{count}</span>}
           </Button>
         );

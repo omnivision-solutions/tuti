@@ -9,5 +9,9 @@ export default async function PortalForgotPasswordPage(props: PageProps<"/portal
     notFound();
   }
   const { link } = await props.searchParams;
-  return <ForgotPasswordForm failed={link === "failed"} />;
+  return (
+    <div data-auth-page className="mx-auto w-full max-w-sm sm:mt-12">
+      <ForgotPasswordForm failed={link === "failed"} />
+    </div>
+  );
 }

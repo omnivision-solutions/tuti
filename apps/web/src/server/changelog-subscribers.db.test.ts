@@ -93,7 +93,7 @@ const routeUrl = (action: string, query: string) =>
   `http://${project.slug}.localhost:3100/portal/${project.slug}/changelog/subscription/${action}?${query}`;
 const params = () => Promise.resolve({ project: project.slug });
 /** "Get updates by email" on a confirmation link's page. */
-/** The confirmation page's button: "Get updates by email", or (`emailsOn`) the opted-out page's "Turn Acme's emails back on". */
+/** The confirmation page's button: "Confirm subscription", or (`emailsOn`) the opted-out page's "Turn Acme's emails back on". */
 const confirm = (token: string, emailsOn = false) =>
   confirmRoute(
     new Request(routeUrl("confirm", `confirm=${encodeURIComponent(token)}`), {

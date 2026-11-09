@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { findOptOut } from "@/server/unsubscribe";
 import { portalLinks } from "@/server/portal-base";
+import { MESSAGE_TEXT, MESSAGE_TITLE, PortalMessage } from "@/components/portal-message";
+import { BellOffIcon } from "lucide-react";
 
 export default async function UnsubscribePage(props: PageProps<"/portal/[project]/unsubscribe">) {
   const [{ project: slug }, { token }] = await Promise.all([props.params, props.searchParams]);
@@ -8,28 +10,31 @@ export default async function UnsubscribePage(props: PageProps<"/portal/[project
   const found = await findOptOut(slug, value);
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-4 py-12">
+    <PortalMessage icon={BellOffIcon}>
       {!found ? (
         <>
-          <h1 className="font-heading text-2xl font-bold">This link doesn&apos;t work</h1>
-          <p className="text-muted-foreground">Use the unsubscribe link from the latest email you got.</p>
+          <h1 className={MESSAGE_TITLE}>This link doesn&apos;t work</h1>
+          <p className={MESSAGE_TEXT}>Use the unsubscribe link from the latest email you got.</p>
         </>
       ) : found.optedOut ? (
         <>
-          <h1 className="font-heading text-2xl font-bold">You&apos;re unsubscribed</h1>
-          <p className="text-muted-foreground">{found.project.name} won&apos;t email you anymore.</p>
+          <h1 className={MESSAGE_TITLE}>You&apos;re unsubscribed</h1>
+          <p className={MESSAGE_TEXT}>{found.project.name} won&apos;t email you anymore.</p>
         </>
       ) : (
         <>
-          <h1 className="font-heading text-2xl font-bold">Stop emails from {found.project.name}?</h1>
-          <p className="text-muted-foreground">
-            You won&apos;t get {found.project.name}&apos;s updates and replies on posts you wrote, voted on, commented on or follow, or its changelog emails.
+          <h1 className={MESSAGE_TITLE}>Stop emails from {found.project.name}?</h1>
+          <p className={MESSAGE_TEXT}>
+            You&apos;ll stop getting {found.project.name}&apos;s emails: news and replies on posts you follow, wrote, voted or commented
+            on, and its changelog.
           </p>
           <form method="post" action={(await portalLinks())(`/unsubscribe/confirm?token=${encodeURIComponent(value)}`)}>
-            <Button type="submit">Unsubscribe</Button>
+            <Button type="submit" variant="outline">
+              Unsubscribe
+            </Button>
           </form>
         </>
       )}
-    </div>
+    </PortalMessage>
   );
 }

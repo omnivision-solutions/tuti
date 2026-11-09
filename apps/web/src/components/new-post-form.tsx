@@ -1,6 +1,7 @@
 "use client";
 
 import type { MediaUrls } from "@tuti/content";
+import { LightbulbIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useActionState, useEffect, useEffectEvent, useRef, useState } from "react";
@@ -8,8 +9,9 @@ import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { BOARD_TEXT_DEFAULTS } from "@/lib/board-texts";
 import { boardPath, postPath } from "@/lib/post-urls";
@@ -17,27 +19,26 @@ import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
 import { findSimilarPosts, type SimilarPost } from "@/server/similar-posts";
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
+import { Card } from "@/components/ui/card";
 
 const SUGGEST_DELAY_MS = 300;
 
 type Placeholders = { titlePlaceholder?: string; detailsPlaceholder?: string };
 
 /**
- * "Share your idea" at the top of a board, for everyone: the title first, the details once it's
+ * "Share an idea" at the top of a board, for everyone: the title first, the details once it's
  * clicked or typed in. Signed out, the similar ideas show as they type, and "Sign in to post"
  * brings them back to the board with the title they typed.
  */
 export function ShareIdeaBox({ signedIn, ...form }: { signedIn: boolean } & Omit<React.ComponentProps<typeof NewPostForm>, "collapsible" | "signedOut">) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h2>Share your idea</h2>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <NewPostForm {...form} collapsible signedOut={!signedIn} />
-      </CardContent>
+    <Card role="region" aria-labelledby="share-idea" className="gap-2 px-5">
+      {/* What the box is for, then the box: its title first, the details once it's opened. */}
+      <h2 id="share-idea" className="flex items-center gap-2 font-semibold">
+        <LightbulbIcon aria-hidden className="size-4 text-soft-foreground" />
+        Share an idea
+      </h2>
+      <NewPostForm {...form} collapsible signedOut={!signedIn} />
     </Card>
   );
 }
@@ -169,9 +170,40 @@ export function NewPostForm({
     }, SUGGEST_DELAY_MS);
   };
 
+  // A board's box before it's opened (and always signed out): the title and its button on one line.
+  const oneLine = collapsible && (signedOut || !expanded);
+  // Ideas like the one typed. Opened, under the title; on one line, after its button (in the page's order too, so the
+  // keyboard goes from the title to the button).
+  const similarList = similar.length > 0 && (
+    <div className={cn("flex flex-col gap-1 rounded-lg border bg-muted/50 p-3", oneLine && "basis-full")} role="status">
+      <p className="text-sm font-medium">Already posted? Vote on it instead:</p>
+      <ul className="flex flex-col">
+        {similar.map((post) => (
+          <li key={post.id} className="flex items-center gap-2">
+            {similarVote?.(post)}
+            <Link
+              href={at(postPath({ ...post, board: { slug: post.boardSlug } }))}
+              target={linkTarget}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
+            >
+              {!similarVote && (
+                <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+                </span>
+              )}
+              <span className="min-w-0 flex-1 truncate">{post.title}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{post.boardName}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
   return (
     <form
       ref={formRef}
+      data-expanded={collapsible && !oneLine ? true : undefined}
       // Signed out, sending it (Enter, or "Sign in to post") signs in rather than posting; before the page's
       // script runs, as a plain GET to sign-in, which brings the title back to this board.
       {...(signedOut
@@ -197,10 +229,12 @@ export function NewPostForm({
           <input type="hidden" name="boardSlug" value={boardSlug} />
         </>
       )}
-      <FieldGroup>
+      <FieldGroup className={cn(oneLine && "flex-row flex-wrap items-center gap-2")}>
         {/* No boxes: a title and the details, as they're published. */}
-        <Field data-invalid={state.error ? true : undefined}>
-          <input
+        <Field data-invalid={state.error ? true : undefined} className={cn(oneLine && "w-auto min-w-0 flex-1 basis-24")}>
+          {/* One element throughout (swapping it as the box opens would lose the focus and what's typed): the design
+              system's field on one line; opened (and the widget's), a title with no box, set as it's published. */}
+          <Input
             key={submitted}
             id="post-title"
             name="title"
@@ -212,41 +246,25 @@ export function NewPostForm({
             onFocus={() => setExpanded(true)}
             onChange={(e) => suggest(e.target.value)}
             aria-invalid={state.error ? true : undefined}
-            className={`${BARE_TITLE} text-xl`}
+            className={
+              oneLine
+                ? "text-base md:text-base"
+                : cn(
+                    "h-auto rounded-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0 dark:bg-transparent",
+                    BARE_TITLE,
+                    collapsible ? "text-lg md:text-lg" : "text-xl md:text-xl",
+                  )
+            }
           />
           {state.error && <FieldError>{state.error}</FieldError>}
         </Field>
 
-        {similar.length > 0 && (
-          <div className="flex flex-col gap-1 rounded-lg border bg-muted/50 p-3" role="status">
-            <p className="text-sm font-medium">Already posted? Vote on it instead:</p>
-            <ul className="flex flex-col">
-              {similar.map((post) => (
-                <li key={post.id} className="flex items-center gap-2">
-                  {similarVote?.(post)}
-                  <Link
-                    href={at(postPath({ ...post, board: { slug: post.boardSlug } }))}
-                    target={linkTarget}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
-                  >
-                    {!similarVote && (
-                      <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-                      </span>
-                    )}
-                    <span className="min-w-0 flex-1 truncate">{post.title}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{post.boardName}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {!oneLine && similarList}
 
         {signedOut ? (
           // Submits the form (its sign-in GET, or the push above), so a title typed before the script ran goes too;
           // an empty title may sign in as well.
-          <Button type="submit" formNoValidate className="self-end">
+          <Button type="submit" formNoValidate className={cn(!oneLine && "self-end")}>
             Sign in to post
           </Button>
         ) : (
@@ -262,11 +280,12 @@ export function NewPostForm({
                 uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
               />
             )}
-            <Button type="submit" disabled={pending} className="self-end">
+            <Button type="submit" disabled={pending} className={cn(!oneLine && "self-end")}>
               {pending ? "Posting…" : postButton}
             </Button>
           </>
         )}
+        {oneLine && similarList}
       </FieldGroup>
     </form>
   );

@@ -11,7 +11,7 @@ export function VoterFaces({
 }: {
   voters: { id: string; name: string; image: string | null }[];
   count: number;
-  label?: string;
+  label?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground" role="group" aria-label="Voters">

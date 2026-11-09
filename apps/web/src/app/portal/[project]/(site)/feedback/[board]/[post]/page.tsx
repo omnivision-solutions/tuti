@@ -13,10 +13,10 @@ import { SubscribeButton } from "@/components/subscribe-button";
 import { VoterFaces } from "@/components/voter-faces";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { VoteButton } from "@/components/vote-button";
 import { SampleBadge } from "@/components/sample-badge";
-import { etaOnPortal, formatMonth, timeAgo } from "@/lib/format";
+import { etaOnPortal, formatDate, formatMonth, timeAgo } from "@/lib/format";
 import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
 import { currentPostViewer } from "@/server/portal-access";
@@ -30,6 +30,8 @@ import { displayDoc } from "@/server/content";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
 import { VisibilityBadge } from "@/components/visibility-badge";
+import { CopyButton } from "@/components/copy-button";
+import { portalAddress } from "@/server/custom-domains";
 
 /** Sample content (server/sample-content.ts) is kept from search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]/[post]">): Promise<Metadata> {
@@ -52,7 +54,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     where: { number, project: { slug: projectSlug } },
     include: {
       board: { select: { slug: true, name: true, postVisibility: true, off: true } },
-      author: { select: { id: true, name: true } },
+      author: { select: { id: true, name: true, image: true } },
       votes: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
       subscriptions: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
       // Told it shipped already (a completion before it was reopened): never emailed about it again.
@@ -117,11 +119,22 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   // The month the team expects it, as their ETA says it, while it's still to come.
   const eta = post.eta && etaOnPortal(post.eta, post.status) ? post.eta : null;
 
+  // A public post on a Team only board, read by someone not on the team: the board stays unnamed.
+  const onTeamBoard = post.board.postVisibility === "TEAM" && !viewer.team;
+  const subscribe = subscribable && (!voter || hears.length > 0) && (
+    <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} following={following} signedIn={!!voter} />
+  );
+  const shippedIn = post.changelogEntries[0] && (
+    <Link href={at(`/changelog/${post.changelogEntries[0].entry.number}`)} className="font-medium text-foreground hover:underline">
+      {post.changelogEntries[0].entry.title}
+    </Link>
+  );
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start lg:gap-x-10">
       {/* A public post on a Team only board: back to the portal's feedback (its home, when it has no board of its own), not
           to a board only the team may open. */}
-      {post.board.postVisibility === "TEAM" && !viewer.team ? (
+      {onTeamBoard ? (
         (await firstBoardPath(projectSlug)) ? (
           <BackLink href={at("/feedback")}>Feedback</BackLink>
         ) : (
@@ -131,48 +144,75 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
       )}
 
-      <article className="flex items-start gap-4">
-        <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <h1 className="text-2xl font-bold tracking-tight break-words">{post.title}</h1>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <article className="flex flex-col gap-4 lg:col-start-1">
+        <h1 className="font-heading text-[1.75rem] leading-tight font-semibold tracking-tight break-words sm:text-[2rem]">{post.title}</h1>
+        {/* Where it stands first, then who asked. */}
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
             <PostStatusBadge status={post.status} />
-            {eta && (
-              <>
-                <span>expected {formatMonth(eta)}</span>
-                <span>·</span>
-              </>
-            )}
+            {eta && <span className="font-medium">Expected {formatMonth(eta)}</span>}
             {post.sample && <SampleBadge />}
             <VisibilityBadge visibility={post.visibility} />
-            <span>{post.author.name}</span>
-            <span>·</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <Avatar size="sm" aria-hidden>
+              {post.author.image && <AvatarImage src={post.author.image} alt="" />}
+              <AvatarFallback>{post.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+            </Avatar>
+            <span className="font-medium text-foreground">{post.author.name}</span>
+            <span aria-hidden>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {post.voteCount > 0 && <VoterFaces voters={voters.map((vote) => vote.user)} count={post.voteCount} />}
-            {subscribable && (!voter || hears.length > 0) && (
-              <SubscribeButton postId={post.id} subscribed={post.subscriptions.length > 0} following={following} signedIn={!!voter} />
-            )}
-          </div>
-          {post.changelogEntries[0] && (
-            <p className="text-sm text-muted-foreground">
-              Shipped in{" "}
-              <Link href={at(`/changelog/${post.changelogEntries[0].entry.number}`)} className="text-foreground hover:underline">
-                {post.changelogEntries[0].entry.title}
-              </Link>
-            </p>
-          )}
-          {!isEmptyDoc(displayDoc(post)) && (
-            <RichText doc={displayDoc(post)} mediaUrls={await mediaUrls(displayDoc(post))} className="rich-text break-words" />
+        </div>
+        {!isEmptyDoc(displayDoc(post)) && (
+          <RichText doc={displayDoc(post)} mediaUrls={await mediaUrls(displayDoc(post))} className="rich-text text-base break-words" />
+        )}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <VoteButton pill postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
+          {post.voteCount > 0 && (
+            // The faces, then how many more (the pill beside them has the count).
+            <VoterFaces
+              voters={voters.map((vote) => vote.user)}
+              count={post.voteCount}
+              // Short beside the faces; the whole sentence for screen readers (the faces are hidden from them).
+              label={
+                <>
+                  <span aria-hidden>
+                    {post.voteCount > voters.length ? `+${post.voteCount - voters.length} more` : `${post.voteCount === 1 ? "wants" : "want"} this`}
+                  </span>
+                  <span className="sr-only">
+                    {post.voteCount} {post.voteCount === 1 ? "person wants this" : "people want this"}
+                  </span>
+                </>
+              }
+            />
           )}
         </div>
       </article>
 
-      <Separator />
+      {/* Beside the post on wide screens: following it, and what isn't said beside the title. Below them, only Subscribe, under the post. */}
+      <aside
+        aria-label="About this idea"
+        className="flex flex-wrap items-center gap-3 lg:col-start-2 lg:row-span-4 lg:row-start-2 lg:flex-col lg:flex-nowrap lg:items-stretch lg:[&>a]:w-full lg:[&>button]:w-full"
+      >
+        {subscribe}
+        <CopyButton value={`${await portalAddress(projectSlug)}${postPath(post)}`} label="link" wide />
+        <dl className="grid max-lg:hidden grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-3 rounded-xl bg-card p-4 text-sm shadow-xs ring-1 ring-border">
+          {/* A Team only board isn't named to readers (as the way back above doesn't). */}
+          {!onTeamBoard && (
+            <>
+              <dt className="text-muted-foreground">Board</dt>
+              <dd className="justify-self-end truncate font-medium">{post.board.name}</dd>
+            </>
+          )}
+          <dt className="text-muted-foreground">Posted</dt>
+          <dd className="justify-self-end font-medium">{formatDate(post.createdAt)}</dd>
+        </dl>
+        {shippedIn && <p className="text-sm text-muted-foreground max-lg:basis-full">Shipped in {shippedIn}</p>}
+      </aside>
 
-      <section className="flex flex-col gap-4" aria-label="Comments">
-        <h2 className="font-medium">
+      <section className="flex flex-col gap-4 border-t pt-6 lg:col-start-1" aria-label="Comments">
+        <h2 className="text-base font-semibold">
           {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
         </h2>
         <CommentList comments={post.comments} teamUserIds={teamUserIds} events={post.events} mediaUrls={await mediaUrls(...post.comments.map(displayDoc))} />
@@ -181,7 +221,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       </section>
 
       {similar.length > 0 && (
-        <Card role="region" aria-labelledby="similar-ideas">
+        <Card role="region" aria-labelledby="similar-ideas" className="lg:col-start-1">
           <CardHeader>
             <CardTitle>
               <h2 id="similar-ideas">Similar ideas</h2>

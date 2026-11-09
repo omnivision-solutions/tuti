@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRightIcon, FileTextIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/page-header";
@@ -23,15 +24,17 @@ export function PopularArticles({ articles }: { articles: { href: string; title:
     return null;
   }
   return (
-    <section aria-labelledby="popular-articles" className="flex flex-col gap-2">
-      <h2 id="popular-articles" className="font-heading text-lg font-bold tracking-tight">
+    <section aria-labelledby="popular-articles" className="flex flex-col gap-3">
+      <h2 id="popular-articles" className="group-label">
         Popular articles
       </h2>
-      <ul className="flex flex-col divide-y rounded-xl border">
+      <ul className="flex flex-col">
         {articles.map((article) => (
-          <li key={article.href}>
-            <Link href={article.href} className="block px-4 py-3 text-sm break-words transition-colors hover:bg-accent/50">
-              {article.title}
+          <li key={article.href} className="border-b">
+            <Link href={article.href} className="group flex items-center gap-3 py-3 text-[0.9375rem] break-words transition-colors hover:text-primary">
+              <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+              <span className="min-w-0 flex-1">{article.title}</span>
+              <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             </Link>
           </li>
         ))}

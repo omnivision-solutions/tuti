@@ -23,9 +23,9 @@ export default async function SignInLinkPage(props: PageProps<"/portal/[project]
   }
 
   return (
-    <Card className="mx-auto w-full max-w-sm">
+    <Card data-auth-page className="mx-auto w-full max-w-sm sm:mt-12">
       <CardHeader>
-        <CardTitle>Sign in to {link.projectName}</CardTitle>
+        <CardTitle className="font-heading text-xl font-bold">Sign in to {link.projectName}</CardTitle>
         <CardDescription className="break-all">as {link.email}</CardDescription>
       </CardHeader>
       <CardFooter>

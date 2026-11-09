@@ -64,8 +64,10 @@ says the status (a roadmap column, "Recently shipped"), its cards don't repeat
 the badge.
 
 Changelog tags (`TagBadge`, `TAG_VARIANTS` the one map): Breaking in the
-destructive colour (its text `destructive-foreground`), the rest neutral, the same on the portal, in the widget and
-in the team's list; a tag picked in the editor takes its badge's colours.
+destructive colour (its text `destructive-foreground`), the rest neutral, the same in the widget and
+in the team's list; a tag picked in the editor takes its badge's colours. On the portal's own changelog pages
+(`ChangelogEntryView`'s `TAG_TINTS`) New, Improved and Fixed are tinted by kind (green, blue, amber) so a list can be
+scanned; Breaking keeps its destructive look.
 States that aren't a status (the running draft's "Collecting pull requests")
 are neutral (outline), never a status's colour.
 
@@ -294,27 +296,55 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   a change (enabled once something changed), and `toDraft` shows a change in the frame as it's made
   (the portal's `PortalLookProvider` takes it); leaving with changes not saved
   asks first.
-- **Portals**: header with the project name and the four parts (Feedback,
-  Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
-  part's row (boards, docs tabs) when it has two or more, content max-w-3xl
-  (the Roadmap max-w-6xl, about 1100px, for its three columns, which stack on
-  phones), "Powered by tuti" footer. A board lists its posts as rows in one card (the
-  status above the title, the vote button on the right; a completed idea's votes
-  as text, with no button, here and on the roadmap), under Trending, Top
-  and New tabs with a search box beside them (it filters the board), and Mine
-  for a signed-in visitor who may post. On wide screens a board's page is
-  max-w-5xl with a sidebar beside the list: the boards with their counts (the
-  part's row is there instead), Recently shipped and Get updates (the shipped
-  emails, the changelog by email, its page and feed); on phones
-  there's no sidebar, and Recently shipped is under the list. The changelog's
-  list has its tags as chips under the header (links, `?tag=`, only the tags
-  its entries have); on wide screens it's max-w-5xl, each entry's date in a
-  margin left of it (above the title on phones) and, past eight entries, a
-  sticky month index beside it (each month with its count, opening the page
-  its newest entry is on); on phones the header's menu lists the entries instead. Docs has
-  one box for searching and asking, the header's ("Search or ask AI" with AI
+- **Portals**: a header with the project name and the four parts (Feedback,
+  Roadmap, Changelog, Docs; `components/portal-nav.tsx`), the open one underlined on the header's
+  bottom edge; its contents in the pages' container (max-w-6xl, centred, on every page, Docs too).
+  On phones the header is one line (name, Sign in or the account, the menu): the parts are in the
+  menu. Under it the current part's row (boards, docs tabs) when it has two or more (none on a
+  post's page, which has its way back). Content max-w-3xl; a board, a post and the changelog's list
+  max-w-6xl on wide screens for their rails; the Roadmap max-w-6xl; "Powered by tuti" footer.
+  The changelog's "New" for a signed-in reader is a dot in the `unread` colour (the widget's What's new dot), in the header
+  and, on phones, in the menu.
+  - **A board**: its name and a line under it (the team's description, else "Vote for the ideas you
+    want most, or share your own."), then "Share an idea" (a card: the heading with a lightbulb, a
+    one-line bordered title field and its button, opening to title + details once typed in; signed
+    out, the button is "Sign in to post", and what's typed comes back after signing in). The list is
+    open on the page (no card): Trending, Top, New (and Mine) tabs and the search on one bar with one
+    rule under both, then rows: an 18px semibold title, two lines of excerpt, a byline (avatar, name,
+    when, comments, then the status pill, none for Open), the vote pill on the right. Votes are a
+    horizontal pill (chevron and count, 72px wide, 40px tall, `VoteButton pill`); a completed idea's,
+    a green-tinted pill with a check, the count and "votes", no button. On wide screens a rail beside
+    the list: Boards and Recently shipped as group-labelled lists, Get updates the one card (one line,
+    the changelog by email, Changelog · RSS as text links); below wide screens Recently shipped and
+    Get updates are under the list.
+  - **A post**: back link, a 32px title, its status pill and "Expected <month>" under it, the byline,
+    the body, the vote pill and the voters' faces ("+N more"). On wide screens a rail: Subscribe (the
+    rail's filled button; Unsubscribe an outline), Copy link, a card with Board and Posted, "Shipped in";
+    on phones Subscribe and Copy link under the post. Then the comments.
+  - **The roadmap**: "Share an idea" beside the title, the board filter and "Sign in to vote" under it,
+    three columns headed by their status's icon (calendar, hammer, check), name, plain count and meaning;
+    a card per idea (board, title, two lines, the poster; "In the changelog" on a shipped one). On phones
+    one column at a time, picked from tabs over them (`?column=`).
+  - **The changelog**: a 48px title (36px on phones) with RSS and Subscribe (an outline, to the form)
+    beside it (under it on phones), the tags as chips under it (links, `?tag=`, only the tags its
+    entries have). On wide screens a timeline: each entry's short date ("7 Nov 2026") and tags in a
+    margin, its dot on a line down the list; the entry's 28px title and 17px text beside them (date and
+    tags above the title on phones, entries split by lines). Tags tinted on the portal (New green,
+    Improved blue, Fixed amber, Breaking destructive). Reactions on an entry's own page only. A rail:
+    past eight entries the month index (each month with its count, opening the page its newest entry
+    is on), then Get updates by email; on phones the header's menu lists the entries and Get updates
+    is after the list. An entry's page: a 40px title and, after it, Get updates by email.
+  - **One-message pages** (the changelog's email links, unsubscribe, the SSO error, a page not found):
+    one card (`PortalMessage`, max-w-sm) with a tinted icon, a 20px heading-font title, 15px text and
+    full-width buttons, centred in the page. The 404 is the portal's (`not-found.tsx`), in its header
+    and footer, no part marked, with links to Roadmap, Changelog and Docs. Sign-in pages (sign-in,
+    forgot password, the link's page, the SSO error) are the same width at one fixed offset under the
+    header, which has no Sign in there; the SSO error says it in plain words first, the technical
+    detail as a small footnote, "Try again" its primary.
+  Docs has one box for searching and asking, the header's ("Search or ask AI" with AI
   answers on; below tablet width a line of its own, the whole width; no
-  separate AI button beside it), and searching the docs never happens in the box itself:
+  separate AI button beside it); the docs home repeats it, big, under its heading (from tablet width:
+  below it the header's is right above). Searching the docs never happens in the box itself:
   it opens the search dialog (`DocsSearchBox`), where "Ask AI" hands the
   question to the assistant, and before anything's typed "Open the assistant"
   goes back to the conversation as it was. The assistant is the widget's, the one
@@ -324,10 +354,10 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   that tab's. Popular articles on a tab's overview are that tab's, and only
   with three or more. On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
-  the current part's navigation (the docs' tree, the boards) and the team's
+  the parts (phones), the current part's navigation (the docs' tree, the boards) and the team's
   links, which the header shows only from tablet width. The header and the part's row stay at the top as
   the page scrolls, phones included (`PortalTop`; their height is `--portal-header-height`).
-  Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
+  Docs pages are in the header's container (`DocsLayout`): the tab's tree on the left
   (not beside a tab's overview, whose cards are its collections: there the
   team's sidebar links alone, if it has some)
   with a line beside it running the page's height (on a short page too), scrolling on its own, each name on one line, cut
@@ -336,12 +366,15 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   (the section being read marked), with "Was this helpful?" under it (under the
   article where it's not shown, phones included). Above an article's or a
   collection's title, the level above in the accent colour: its collection,
-  else its tab (with two or more) or "All collections". Articles use `article-text` on top of
-  `rich-text`: bigger headings, softer body text, room between steps;
-  their search box is in the header. A tab's overview shows its collections
-  once: its own Popular articles first (three or more), then a card per collection
-  (icon, name, description, how many articles the reader may open; three per
-  row on wide screens, one on phones). A collection's page: its icon and name, a card of its
+  else its tab (with two or more) or "All collections". An article's title 40px (32px on phones). Articles use `article-text` on top of
+  `rich-text`: bigger headings, softer body text, room between steps (on the portal a step brighter
+  and closer); Previous and Next are cards with the title in the foreground colour (left-aligned on
+  phones). A tab's overview shows its collections once: on the docs home a heading over a soft green
+  glow and the big box, then a card per collection (an icon tile beside the name, the description in
+  two lines, how many articles the reader may open; two per row from tablet width, one on phones),
+  then its own Popular articles (three or more) and the articles in no collection, as rows with a file
+  icon and a chevron (one column; Related articles the same). The current article in the tree is
+  tinted green. A collection's page: its icon and name, a card of its
   articles (rows with a chevron), then a card per collection in it (its name,
   its articles, and the collections in that as folders opening their pages).
 - **Widget panel** (`/widget` on the portal, framed on customers' sites): a

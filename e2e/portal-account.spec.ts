@@ -116,7 +116,8 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await checkpoint(bo, "portal-account-changelog");
   // The changelog page agrees: no form asking him to subscribe, a line saying he gets it, and its link back here.
   await bo.goto("/changelog");
-  await expect(bo.getByText(`The changelog entries Acme emails to subscribers go to ${bo.email}.`)).toBeVisible();
+  // (In the rail on wide screens, after the list below them: the copy for the other width is hidden.)
+  await expect(bo.getByText(`The changelog entries Acme emails to subscribers go to ${bo.email}.`).filter({ visible: true })).toBeVisible();
   await expect(bo.getByRole("region", { name: "Get updates by email" })).toHaveCount(0);
   await checkpoint(bo, "portal-changelog-gets-it");
   const desktop = bo.viewportSize()!;
@@ -135,7 +136,7 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(changelog).toBeDisabled();
   // There too: Stop wins, said as the subscription pages say it.
   await bo.goto("/changelog");
-  await expect(bo.getByText(`You've turned off all of Acme's emails, so its changelog isn't emailed to ${bo.email} either.`)).toBeVisible();
+  await expect(bo.getByText(`You've turned off all of Acme's emails, so its changelog isn't emailed to ${bo.email} either.`).filter({ visible: true })).toBeVisible();
   await checkpoint(bo, "portal-changelog-emails-off");
   await bo.goto("/account");
   await stopBo.uncheck();

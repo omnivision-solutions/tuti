@@ -446,6 +446,10 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await main.getByLabel("Title").fill("Dark theme");
   await expect(main.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" })).toContainText("Dark mode");
   await checkpoint(visitor, "portal-board-share-idea");
+  // The similar ideas come after the box's button, for the keyboard too: Tab from the title reaches the button first.
+  await main.getByLabel("Title").focus();
+  await visitor.keyboard.press("Tab");
+  await expect(main.getByRole("button", { name: "Sign in to post" })).toBeFocused();
   // Signing in to post (Enter does it too) comes back to the board as it was: its sort, and the idea in the box.
   await visitor.goto("/feedback/feature-requests?sort=new");
   await main.getByLabel("Title").fill("Dark theme");
@@ -513,13 +517,14 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await expect(tabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
   await expect(titles).toHaveText(["Calendar sync", "Slack alerts", "Dark mode"]);
 
-  // A row: its status above the title, the vote button on the right.
+  // A row: the title, who posted it and when under it (Open, every new idea's status, isn't said), the vote button on the right.
   const row = main.getByRole("listitem").filter({ has: visitor.getByRole("link", { name: "Dark mode" }) });
+  await expect(row.getByText("Open", { exact: true })).toHaveCount(0);
   const rowLayout = async () => {
-    const status = (await row.getByText("Open", { exact: true }).boundingBox())!;
+    const posted = (await row.locator("time").boundingBox())!;
     const title = (await row.getByRole("link", { name: "Dark mode" }).boundingBox())!;
     const vote = (await row.getByRole("link", { name: /^Sign in to vote/ }).boundingBox())!;
-    expect(status.y + status.height).toBeLessThanOrEqual(title.y);
+    expect(title.y + title.height).toBeLessThanOrEqual(posted.y);
     expect(vote.x).toBeGreaterThanOrEqual(title.x + title.width);
   };
   await rowLayout();

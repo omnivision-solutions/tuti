@@ -12,6 +12,18 @@ import { postPath } from "@/lib/post-urls";
 import type { Reaction, ReactionCounts } from "@/lib/reactions";
 import { cn } from "@/lib/utils";
 
+/** "7 Nov 2026": the timeline's margin (every month three letters, as "Sep", not "Sept"). */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const shortDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+
+/** Each tag tinted on the portal, so a list can be scanned for what's new (Breaking keeps its destructive look). */
+const TAG_TINTS: Record<ChangelogTag, string | undefined> = {
+  NEW: "border-transparent bg-soft text-soft-foreground",
+  IMPROVED: "border-transparent bg-status-in-progress/16 text-foreground",
+  FIXED: "border-transparent bg-status-under-review/20 text-foreground",
+  BREAKING: undefined,
+};
+
 export type PublishedEntry = {
   id: string;
   number: number;
@@ -52,26 +64,49 @@ export function ChangelogEntryView({
   dateMargin?: boolean;
 }) {
   const Title = heading;
+  // The portal's own pages (its list, or an entry's page, which has the reactions): a reading size and tinted tags; the
+  // widget's panel (an h1 too) keeps the base.
+  const onPage = dateMargin || !!react;
   const at = (path: string) => withBase(base, path);
   const date = <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt)}</time>;
   return (
-    <article className="flex gap-8" aria-labelledby={`entry-${entry.number}`}>
-      {dateMargin && <p className="hidden w-32 shrink-0 pt-0.5 text-sm text-muted-foreground lg:block">{date}</p>}
+    <article className="flex gap-6" aria-labelledby={`entry-${entry.number}`}>
+      {/* On the list's timeline (wide screens): the date in a margin, a dot by it on the line down the list. */}
+      {dateMargin && (
+        <p className="relative hidden w-28 shrink-0 pt-1 text-sm font-medium text-muted-foreground lg:block">
+          <time dateTime={entry.publishedAt.toISOString()}>{shortDate(entry.publishedAt)}</time>
+          {/* Its tags under it, so the title starts the entry. */}
+          {entry.tags.length > 0 && (
+            <span className="mt-2 flex flex-wrap gap-1.5">
+              {entry.tags.map((tag) => (
+                <TagBadge key={tag} tag={tag} className={TAG_TINTS[tag]} />
+              ))}
+            </span>
+          )}
+          <span aria-hidden className="absolute top-3 -right-3 size-[0.6875rem] translate-x-1/2 rounded-full bg-primary ring-4 ring-background" />
+        </p>
+      )}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div
           className={cn(
             "flex flex-wrap items-center gap-2 text-sm text-muted-foreground",
-            // In the margin, the date leaves the row: the row goes too when it has no tags.
-            dateMargin && entry.tags.length === 0 && !entry.sample && "lg:hidden",
+            // In the margin, the date and the tags leave the row (they're beside the entry): the row goes too, unless it's a sample.
+            dateMargin && !entry.sample && "lg:hidden",
           )}
         >
-          {dateMargin ? <span className="lg:hidden">{date}</span> : date}
+          <span className={cn("font-medium", dateMargin && "lg:hidden")}>{date}</span>
           {entry.tags.map((tag) => (
-            <TagBadge key={tag} tag={tag} />
+            <TagBadge key={tag} tag={tag} className={cn(onPage && TAG_TINTS[tag], dateMargin && "lg:hidden")} />
           ))}
           {entry.sample && <SampleBadge />}
         </div>
-        <Title id={`entry-${entry.number}`} className="font-heading text-xl font-bold tracking-tight break-words">
+        <Title
+          id={`entry-${entry.number}`}
+          className={cn(
+            "font-heading font-semibold tracking-tight break-words",
+            !onPage ? "text-xl" : heading === "h1" ? "text-[2rem] leading-tight sm:text-[2.5rem]" : "text-2xl leading-tight sm:text-[1.75rem]",
+          )}
+        >
           {heading === "h2" ? (
             <Link href={at(`/changelog/${entry.number}`)} target={linkTarget} className="hover:underline">
               {entry.title}
@@ -81,7 +116,7 @@ export function ChangelogEntryView({
           )}
         </Title>
         {entry.cover && <RichText doc={entry.cover} mediaUrls={mediaUrls} className="rich-text" />}
-        <RichText doc={entry.doc} mediaUrls={mediaUrls} className="rich-text break-words" />
+        <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-[1.0625rem] leading-7 text-foreground/85")} />
         {entry.posts.length > 0 && (
           <p className="text-sm text-muted-foreground">
             Completes{" "}

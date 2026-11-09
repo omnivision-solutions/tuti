@@ -37,7 +37,7 @@ test("people hear when what they asked for ships, and can unsubscribe", async ({
   await ada.goto(linkIn(email, `${portalUrl(slug)}/unsubscribe`));
   await expect(ada.getByRole("heading", { name: "Stop emails from Acme?" })).toBeVisible();
   // It says all the emails it stops: post updates and replies, and the changelog.
-  await expect(ada.getByText("You won't get Acme's updates and replies on posts you wrote, voted on, commented on or follow, or its changelog emails.")).toBeVisible();
+  await expect(ada.getByText("You'll stop getting Acme's emails: news and replies on posts you follow, wrote, voted or commented on, and its changelog.")).toBeVisible();
   await checkpoint(ada, "unsubscribe");
   await ada.getByRole("button", { name: "Unsubscribe" }).click();
   await expect(ada.getByRole("heading", { name: "You're unsubscribed" })).toBeVisible();
