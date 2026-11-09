@@ -50,7 +50,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
-| `series-1`, `series-2` | Reporting's charts (`DailyChart`): the first series (what went well) blue, the second (what needs the team) orange, a pair colour-blind readers tell apart, checked against the card in light and dark; a period still under way (today, the month so far) a dashed outline in its colour around a light fill of it, said "so far". Never a status's colour |
+| `series-1`, `series-2` | Reporting's charts (`DailyChart`): the first series (what went well) the brand's green, the second (what needs the team) orange, a lightness step (≥0.15) apart so colour-blind readers tell them apart (`colours.test.ts`), checked against the card in light and dark; a period still under way (today, the month so far) a dashed outline in its colour around a light fill of it, said "so far". Never a status's colour |
 
 Post statuses (`PostStatusBadge`, `STATUS_STYLES` the one map of their look): one
 tinted pill, sentence case, its colour dot inside it, the text the foreground's, the
@@ -70,7 +70,7 @@ States that aren't a status (the running draft's "Collecting pull requests")
 are neutral (outline), never a status's colour.
 
 People (`Avatar`): their photo, or else their initials in white on one of the
-`avatar-*` colours, picked by the first letter (`AvatarFallback`), so a person has
+muted `avatar-*` colours (low chroma, so a list of faces isn't a rainbow beside the green), picked by the first letter (`AvatarFallback`), so a person has
 the same colour everywhere; never grey initials. Faces in a row (voters) sit in a
 ring of the page's colour and overlap by no more than the ring, so no letter is
 cut. A team member uploads their photo on Account → Profile.
@@ -123,7 +123,7 @@ the list picks none to approve at once.
 | Role | Classes |
 | --- | --- |
 | Page title | `PageHeader`'s `h1` (heading font, semibold, tracked -0.02em, 32px from 640px up, 24px under), on the page at every width |
-| Section / card title | `CardTitle` or `h2` (base, semibold, Figtree: the heading font is for page titles and big numbers) |
+| Section / card title | `CardTitle` (18px, semibold, Figtree: the heading font is for page titles and big numbers; 16px on a small card) or `h2` |
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground` in rows, parts joined with ` · `; under a page's title (`PageHeader`'s `meta`) `text-sm` |
@@ -143,15 +143,15 @@ the list picks none to approve at once.
   by itself (`data-narrow` on it: New project, Setup, Account), or the whole width (`data-wide`: the
   team's Roadmap, Users' tables; and pages of panes).
   The top bar stays at the top as the page scrolls; it holds the sidebar's
-  button and the project's name (the page's title once its heading has scrolled up
+  button and where the page is, the project then its part ("Acme Calendar / Feedback"; `sectionOf`; the page's title once its heading has scrolled up
   under it); an editor's Save and Publish (`pinActions`) sit in it from tablet width up,
   fixed to the window as it is. The page's title, its description and its actions are on
   the page (`PageHeader`).
   A page of three panes (the sidebar, a column of its own, the page: Settings,
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
-  width, and folds the sidebar to its rail: its own column is its navigation, so the page
-  keeps the room (Customize too, for its rail and the portal's preview); every other page
-  has the sidebar open. A pane's column is
+  width, the labelled sidebar open beside its own column from 1280px up; under 1280px it
+  folds to its rail, its column taking the room. The Inbox (its panes fill the window) and
+  Customize (its rail and the portal's preview) always fold it. Every other page has it open. A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on

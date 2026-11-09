@@ -31,7 +31,7 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
         ["Inbox", "/inbox", "inbox"],
         ["Feedback", "/feedback", "feedback"],
         ["Roadmap", "/feedback/roadmap", "roadmap"],
-        ["Boards", "/feedback/boards", "feedback"],
+        ["Boards", "/feedback/boards", "boards"],
         ["Changelog", "/changelog", "changelog"],
         ["Docs", "/docs", "docs"],
         ["Autopilot", "/autopilot", "autopilot"],

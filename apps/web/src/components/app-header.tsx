@@ -21,6 +21,25 @@ export function customizeTitle(pathname: string): string | null {
   return section ? `Customize · ${section.title}` : "Customize";
 }
 
+const SECTIONS: [RegExp, string][] = [
+  [/^inbox/, "Inbox"],
+  [/^feedback\/roadmap/, "Roadmap"],
+  [/^(feedback|p\/)/, "Feedback"],
+  [/^changelog/, "Changelog"],
+  [/^docs/, "Docs"],
+  [/^autopilot/, "Autopilot"],
+  [/^users/, "Users"],
+  [/^reporting/, "Reporting"],
+  [/^settings/, "Settings"],
+  [/^setup/, "Setup"],
+];
+
+/** The part of the project a page is in ("Feedback" on a post), for the top bar's path; none on Home. */
+export function sectionOf(pathname: string): string | null {
+  const rest = /^\/app\/[^/]+\/(.+)/.exec(pathname)?.[1];
+  return (rest && SECTIONS.find(([pattern]) => pattern.test(rest))?.[1]) ?? null;
+}
+
 export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary[]; fallbackSlug: string | null }) {
   const current = useCurrentProject(projects, fallbackSlug);
   const pathname = usePathname();
@@ -82,10 +101,17 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     <header ref={ref} className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-4 topbar:fixed topbar:right-0 topbar:left-(--app-sidebar) topbar:transition-[left] topbar:duration-200 topbar:ease-linear">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-center" />
-      {/* The project's name (Customize's section there), till the page's title scrolls up under the bar. */}
-      <span className={cn("text-sm font-medium text-muted-foreground", title && "sr-only")}>
+      {/* Where the page is: the project, then its part ("Acme / Feedback"; Customize's section there), till the page's
+          title scrolls up under the bar. */}
+      <span className={cn("flex min-w-0 items-center gap-1.5 text-sm font-medium text-muted-foreground", title && "sr-only")}>
         {/* Not on Account settings or New project, which aren't the project's. */}
-        {customizeTitle(pathname) ?? (/^\/app\/(account|new)(\/|$)/.test(pathname) ? "Tuti" : (current?.name ?? "Tuti"))}
+        <span className="truncate">{customizeTitle(pathname) ?? (/^\/app\/(account|new)(\/|$)/.test(pathname) ? "Tuti" : (current?.name ?? "Tuti"))}</span>
+        {!customizeTitle(pathname) && sectionOf(pathname) && (
+          <>
+            <span aria-hidden>/</span>
+            <span className="truncate text-foreground">{sectionOf(pathname)}</span>
+          </>
+        )}
       </span>
       {title && (
         // A copy of the page's heading, which screen readers have already. Clear of the page's "More actions" (PageActions),

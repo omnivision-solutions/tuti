@@ -76,6 +76,12 @@ test.each(themes)("a status's pill reads at 4.5:1 (%s): the text on its tint, on
   }
 });
 
+test.each(themes)("Reporting's two series are a lightness step apart (%s), so readers who can't tell green from orange tell them apart", (theme) => {
+  const [one, two] = [token(theme, "series-1"), token(theme, "series-2")];
+  expect(Math.abs(one[0] - two[0])).toBeGreaterThanOrEqual(0.15);
+  expect(contrast(srgb(one), srgb(two))).toBeGreaterThanOrEqual(1.5);
+});
+
 test.each(themes)("secondary text reads at 4.5:1 (%s): muted-foreground on the page, a card, the sidebar and a muted fill", (theme) => {
   for (const under of ["background", "card", "sidebar", "muted", "sidebar-accent"]) {
     expect(contrast(srgb(token(theme, "muted-foreground")), srgb(token(theme, under))), under).toBeGreaterThanOrEqual(4.5);
