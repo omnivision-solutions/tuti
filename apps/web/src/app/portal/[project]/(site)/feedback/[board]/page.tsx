@@ -95,13 +95,13 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     voter ? emailReach(board.projectId, voter) : undefined,
   ]);
   const texts = boardTexts(board);
-  // A tab: the board in that order, with the search, status and idea's title it has (from the first page).
+  // A tab: the board in that order, with the search and status it has (from the first page); not `?title=`, which New idea
+  // took from the address as it opened.
   const tabHref = (sort: string) => {
     const params = new URLSearchParams({
       ...(sort !== "trending" && { sort }),
       ...(q && { q }),
       ...(first(searchParams.status) && { status: first(searchParams.status)! }),
-      ...(title && { title }),
     });
     return params.size > 0 ? `${at(boardPath(board))}?${params}` : at(boardPath(board));
   };
@@ -193,11 +193,11 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
       {...texts}
     >
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_18.5rem] lg:items-start lg:gap-10">
-        <div className="flex min-w-0 flex-col">
+        <div className="flex min-w-0 flex-col gap-6">
           {/* The list's card: what it's for (the team's words, Feedback → Boards, or a line that says how it works), then its
-              sort tabs and search on one row. `?status=` (no control of its own any more), the search and `?title=` go with each
-              tab; the sort, `?status=` and `?title=` with a search. Phones: no card, the title beside New idea. */}
-          <section aria-label="Ideas" className="flex flex-col">
+              sort tabs and search on one row. `?status=` (no control of its own any more) and the search go with each
+              tab; the sort and `?status=` with a search. Phones: no card, the title beside New idea. */}
+          <section aria-label="Ideas" className="flex flex-col gap-2">
             <div className="flex flex-col sm:rounded-xl sm:bg-card sm:shadow-card sm:ring-1 sm:ring-border">
               <div className="flex items-start gap-3 sm:px-7 sm:pt-7">
                 <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -232,14 +232,13 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                 <BoardSearch action={at(boardPath(board))} q={q ?? ""}>
                   {tab !== "trending" && <input type="hidden" name="sort" value={tab} />}
                   {first(searchParams.status) && <input type="hidden" name="status" value={first(searchParams.status)} />}
-                  {title && <input type="hidden" name="title" value={title} />}
                 </BoardSearch>
               </div>
             </div>
             {/* Without JavaScript New idea can't open its dialog: the board's box in the page instead (signed out, it goes to sign in
               and back with the title; ShareIdeaBox). */}
           <noscript>
-            <div className="mt-4">
+            <div>
               <ShareIdeaBox signedIn={!!session} projectSlug={projectSlug} boardSlug={boardSlug} mediaUrls={null} defaultTitle={title} {...texts} />
             </div>
           </noscript>
@@ -251,7 +250,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                   : `${posts.length}${more ? "+" : ""} ${posts.length === 1 && !more ? "idea matches" : "ideas match"} "${q}"`)}
             </p>
             {posts.length > 0 && (
-              <ul className="mt-2 flex flex-col divide-y">
+              <ul className="flex flex-col divide-y">
                 {posts.map((post) => (
                   <li key={post.id} className="flex items-start gap-4 py-5 sm:gap-5 sm:px-7 sm:py-[1.375rem]">
                     <div className="flex min-w-0 flex-1 flex-col items-start">
@@ -296,7 +295,6 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           </section>
           {posts.length === 0 && (
             <EmptyState
-              className="mt-6"
               title={q ? "No ideas match" : mine ? "Nothing of yours yet" : statuses?.length === 1 ? "No posts with this status yet" : statuses ? "No ideas waiting" : "No feedback yet"}
               description={
                 q
@@ -313,7 +311,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             <Link
               href={nextPageHref(searchParams, filters)}
               scroll={false}
-              className={buttonVariants({ variant: "outline", className: "mt-4 self-center" })}
+              className={buttonVariants({ variant: "outline", className: "self-center" })}
             >
               Load more
             </Link>
@@ -324,15 +322,15 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             !q &&
             !mine &&
             !first(searchParams.status) && (
-              <p className="mt-2 border-t pt-8 text-center text-sm text-muted-foreground">
+              <p className="border-t pt-8 text-center text-sm text-muted-foreground">
                 That&apos;s all {posts.length} ideas still to come in {board.name}. <NewIdeaLink>Share yours</NewIdeaLink>
               </p>
             )
           )}
 
           {/* On wide screens they're in the rail. */}
-          {shippedCard && <div className="mt-10 lg:hidden">{shippedCard}</div>}
-          <div className="mt-8 lg:hidden">{getUpdates(false)}</div>
+          {shippedCard && <div className="lg:hidden">{shippedCard}</div>}
+          <div className="lg:hidden">{getUpdates(false)}</div>
         </div>
 
         <aside aria-label="About this board" className="hidden flex-col gap-6 lg:flex">

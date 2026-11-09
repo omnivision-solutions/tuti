@@ -12,6 +12,7 @@ import { ChangelogSubscribe } from "@/components/changelog-subscribe";
 import { EmptyState } from "@/components/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SubNav } from "@/components/sub-nav";
 import { portalAddress } from "@/server/custom-domains";
 import { PortalMenuPart } from "@/components/portal-menu";
 import { formatDate } from "@/lib/format";
@@ -195,21 +196,15 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
         <div className="flex flex-col gap-3 border-b sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:pb-3 max-sm:border-b-0">
           {tags.length > 0 ? (
             // Server-rendered links, so a picked tag is an address to share; picking one starts from the first page.
-            <nav aria-label="Tags" className="flex gap-1 overflow-x-auto [scrollbar-width:none] max-sm:border-b sm:-mb-3">
-              {[undefined, ...tags].map((t) => (
-                <Link
-                  key={t ?? "all"}
-                  href={at(changelogPath(1, t))}
-                  aria-current={t === tag ? "page" : undefined}
-                  className={cn(
-                    "shrink-0 border-b-2 px-2.5 pt-1 pb-3 text-[0.9375rem] font-medium transition-colors first:pl-0",
-                    t === tag ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {t ? TAG_LABELS[t] : "All"}
-                </Link>
-              ))}
-            </nav>
+            <div className="min-w-0 max-sm:border-b sm:-mb-3">
+              <SubNav
+                label="Tags"
+                current={at(changelogPath(1, tag))}
+                className="mt-0 shadow-none"
+                itemClassName="px-2.5 pt-1 pb-3 text-[0.9375rem] font-medium first:pl-0"
+                items={[undefined, ...tags].map((t) => ({ href: at(changelogPath(1, t)), title: t ? TAG_LABELS[t] : "All" }))}
+              />
+            </div>
           ) : (
             <span />
           )}

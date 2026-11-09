@@ -61,6 +61,12 @@ async function changelog(page?: string, tag?: string) {
       if (node.type === ChangelogSeen) {
         seen = (node.props as { at: string }).at;
       }
+      // A row of tabs (the tags': SubNav), its links given as items.
+      for (const item of (node.props as { items?: { title: ReactNode; href: string }[] }).items ?? []) {
+        if (typeof item.title === "string") {
+          links[item.title] = item.href;
+        }
+      }
       if (node.props.href && node.props["aria-label"]) {
         months[node.props["aria-label"]] = node.props.href;
       } else if (node.props.href && node.type !== "a") {

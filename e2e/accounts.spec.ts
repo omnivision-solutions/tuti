@@ -290,9 +290,10 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await expect(vera.getByText(`as ${email}`)).toBeVisible();
   await checkpoint(vera, "portal-sign-in-link-confirm");
   await vera.getByRole("main").getByRole("button", { name: "Sign in" }).click();
-  await vera.waitForURL(/\/feedback\/feature-requests\?title=/);
-  // The idea they started is in the box, ready to send.
+  await vera.waitForURL(/\/feedback\/feature-requests/);
+  // The idea they started is in the box, ready to send; the address has given it up (a reload doesn't bring it back).
   await expect(box.getByLabel("Title")).toHaveValue(title);
+  await expect(vera).toHaveURL(/\/feedback\/feature-requests$/);
   await checkpoint(vera, "portal-signed-in-with-link");
   await box.getByRole("button", { name: "Submit post" }).click();
   await expect(vera.getByRole("main").getByRole("link", { name: title })).toBeVisible();

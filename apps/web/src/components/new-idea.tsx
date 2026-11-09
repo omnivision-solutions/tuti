@@ -1,7 +1,7 @@
 "use client";
 
 import { PlusIcon } from "lucide-react";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 
 import { NewPostForm } from "@/components/new-post-form";
 import { Button } from "@/components/ui/button";
@@ -23,11 +23,20 @@ export function NewIdea({
   ...form
 }: { signedIn: boolean; opened?: boolean; children: React.ReactNode } & Omit<React.ComponentProps<typeof NewPostForm>, "collapsible" | "signedOut" | "onPosted">) {
   const [open, setOpen] = useState(opened || !!form.defaultTitle);
+  // Opened by the address: it asks once. Without `new` and `title` in it now (replaced, not a new entry), a reload or Back
+  // doesn't open it again, nor bring back a title already posted.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("new") || url.searchParams.has("title")) {
+      url.searchParams.delete("new");
+      url.searchParams.delete("title");
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }, []);
   return (
     <OpenContext value={() => setOpen(true)}>
       {children}
-      {/* Focus kept inside, the page not made inert: modal, the editor's selection bar (Bold, Link) never showed in it. */}
-      <Dialog open={open} onOpenChange={setOpen} modal="trap-focus">
+      <Dialog open={open} onOpenChange={setOpen}>
         {/* Kept while closed: a half-written idea is still there when it opens again. Near the top, not centred by a transform:
             a transform would be the editor's floating toolbar's frame (it's fixed), putting it out of place. */}
         <DialogContent keepMounted className="top-[8vh] right-0 left-0 mx-auto translate-none gap-3 p-5 sm:max-w-xl">

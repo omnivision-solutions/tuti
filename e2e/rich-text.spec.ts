@@ -27,7 +27,12 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   // The bar shows over selected text, and goes once the selection does.
   const formatting = ada.getByRole("toolbar", { name: "Formatting" });
   await ada.keyboard.type("Dark mode would help at night.");
-  await ada.keyboard.press("Shift+Home");
+  // Selected once the editor has caught up with the typing: on a loaded machine its render after the last key can land after
+  // Shift+Home and put the caret back at the end, so the selection is made again until it holds (the bar shows over it).
+  await expect(async () => {
+    await ada.keyboard.press("Shift+Home");
+    await expect(formatting.getByRole("button", { name: "Bold" })).toBeVisible({ timeout: 1000 });
+  }).toPass();
   await formatting.getByRole("button", { name: "Bold" }).click();
   await ada.keyboard.press("End");
   await expect(formatting).toBeHidden();

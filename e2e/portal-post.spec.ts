@@ -193,9 +193,14 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await ada.getByRole("button", { name: "Copy link" }).click();
   await expect(ada.getByText("Copied")).toBeVisible();
   expect(await ada.evaluate(() => navigator.clipboard.readText())).toBe(`${portalUrl(slug)}${darkPath}`);
-  // Another idea: its board, New idea's dialog open.
+  // Another idea: its board, New idea's dialog open. Closed, the address no longer asks for it: a reload or Back leaves it shut.
   await ada.getByRole("link", { name: "Post it" }).click();
   await expect(ada.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
+  await expect(ada).toHaveURL(/\/feedback\/feature-requests$/);
+  await ada.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+  await ada.reload();
+  await expect(ada.getByRole("button", { name: "New idea" })).toBeVisible();
+  await expect(ada.getByRole("dialog")).toHaveCount(0);
 
   // Cy (email verified) follows it without voting.
   const cy = await signUp(browser, portalUrl(slug), "Cy");

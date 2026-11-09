@@ -265,7 +265,10 @@ the list picks none to approve at once.
   underline tabs, `SubNav`; switching a control's mode (the reply
   box's Reply and Note) is a segmented
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
-redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
+redesign). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
+  portal changelog's tags (All, New, Improved, Fixed) are underline tabs (`SubNav`), as the board's sort tabs, so the
+  portal's lists read the same way. The portal roadmap's three columns, one at a time on phones, are a segmented control:
+  three fixed parts of one board that always fit, side by side on wider screens. A row of tabs
   never wraps (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
   into view, faded at the end that has more (`useScrollingRow`; the portal's
   parts and their rows too). Settings has one menu of its own on the left, in groups
