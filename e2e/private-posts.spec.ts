@@ -17,7 +17,7 @@ test("a board's posts are private to their author and the team; the team makes o
   await owner.getByRole("button", { name: "New board" }).click();
   const newBoard = owner.getByRole("dialog", { name: "New board" });
   await newBoard.getByLabel("Name").fill("Bug reports");
-  await newBoard.getByRole("combobox", { name: "New posts are" }).click();
+  await newBoard.getByRole("combobox", { name: "Who sees new posts" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(newBoard.getByText("Only the person who posted each one and your team see it.")).toBeVisible();
   await checkpoint(owner, "new-private-board", { fullPage: false });
@@ -71,7 +71,7 @@ test("a board's posts are private to their author and the team; the team makes o
   await owner.goto(`/app/${slug}/feedback/boards`);
   await owner.getByRole("listitem").filter({ hasText: "Bug reports" }).getByRole("button", { name: "Edit" }).click();
   const edit = owner.getByRole("dialog", { name: "Edit board" });
-  await edit.getByRole("combobox", { name: "New posts are" }).click();
+  await edit.getByRole("combobox", { name: "Who sees new posts" }).click();
   await owner.getByRole("option", { name: "Team only" }).click();
   await expect(edit.getByText("Only your team sees them and posts here; the board isn't on your portal. Posts already on it keep theirs.")).toBeVisible();
   await checkpoint(owner, "edit-board-team-only", { fullPage: false });

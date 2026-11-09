@@ -5,21 +5,32 @@ import type { ReactNode } from "react";
 
 import { inboxHref, inInboxView, type View } from "@/components/inbox/inbox-panes";
 import { PostStatusBadge } from "@/components/post-status-badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
-import { initial } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/property-formats";
 import { viewsOf } from "@/server/operations/users";
 
 /** Beside a conversation; their own page lists them all (up to 500). */
 const SHOWN = 5;
 
-function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
+/** A part of what they did. `card`: on their own page, a card of its own with a heading. */
+function Section({ title, count, card = false, big = false, children }: { title: string; count?: number; card?: boolean; big?: boolean; children: ReactNode }) {
+  if (card) {
+    return (
+      <Card size="sm" className="gap-3" aria-label={title} role="region">
+        <h2 className="flex items-center gap-2 px-(--card-spacing) text-[1rem] font-semibold">
+          {title}
+          {count !== undefined && <span className="rounded-full bg-muted px-2 text-xs font-medium text-muted-foreground tabular-nums">{count}</span>}
+        </h2>
+        <CardContent>{children}</CardContent>
+      </Card>
+    );
+  }
   return (
     <section className="flex flex-col gap-1.5" aria-label={title}>
-      <h2 className="text-xs font-medium text-muted-foreground">
+      <h2 className={big ? "mb-1 text-[1rem] font-semibold" : "text-xs font-medium text-muted-foreground"}>
         {title}
         {count !== undefined && count > 0 && <span className="tabular-nums"> · {count}</span>}
       </h2>
@@ -28,14 +39,15 @@ function Section({ title, count, children }: { title: string; count?: number; ch
   );
 }
 
-function Links({ items, empty }: { items: { href: string; title: string; meta: ReactNode }[]; empty: string }) {
+/** Links to what they did; `rows`: on their own page, rows with lines between them. */
+function Links({ items, empty, rows = false }: { items: { href: string; title: string; meta: ReactNode }[]; empty: string; rows?: boolean }) {
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">{empty}</p>;
   }
   return (
-    <ul className="flex flex-col gap-1">
+    <ul className={rows ? "-my-2 flex flex-col divide-y" : "flex flex-col gap-1"}>
       {items.map((item) => (
-        <li key={item.href} className="flex min-w-0 items-baseline justify-between gap-2 text-sm">
+        <li key={item.href} className={cn("flex min-w-0 items-baseline justify-between gap-2 text-sm", rows && "items-center py-2.5")}>
           <Link href={item.href} className="min-w-0 break-words hover:underline">
             {item.title}
           </Link>
@@ -183,20 +195,14 @@ export async function PersonPanel({
 
   const profile = (
     <>
-      <section className="flex flex-col gap-1" aria-label="Who">
+      <section className="flex flex-col gap-1 empty:hidden" aria-label="Who">
         {page && user ? (
-          <div className="mb-2 flex items-center gap-3">
-            <Avatar size="lg">
-              {user.image && <AvatarImage src={user.image} alt="" />}
-              <AvatarFallback>{initial(user.name)}</AvatarFallback>
-            </Avatar>
-            {/* On phones the page's own title (its h1) is right above it, so it isn't said twice. */}
-            <h2 className="min-w-0 text-base font-semibold break-words phonebar:hidden">{user.name}</h2>
-          </div>
+          // On their own page the header has their face, name, address and id.
+          null
         ) : (
           <p className="font-medium break-words">{user?.name ?? person.name ?? shownEmail ?? "Unknown"}</p>
         )}
-        {shownEmail && (
+        {shownEmail && !(page && user) && (
           // A long address breaks anywhere; "(not verified)" only between its words.
           <p className="text-sm break-words text-muted-foreground">
             <span className="break-all">{shownEmail}</span>
@@ -204,7 +210,7 @@ export async function PersonPanel({
           </p>
         )}
         {blocked && <p className="text-xs text-muted-foreground">Marked your email as spam, so replies aren&apos;t emailed to them any more.</p>}
-        {view && <p className="text-xs break-all text-muted-foreground">id {view.id}</p>}
+        {view && !page && <p className="text-xs break-all text-muted-foreground">id {view.id}</p>}
         {!user && <p className="text-xs text-muted-foreground">Known only by this address.</p>}
         {lookalike && (
           <p className="text-xs break-words text-muted-foreground">
@@ -223,7 +229,7 @@ export async function PersonPanel({
       </section>
 
       {view && Object.keys(view.properties).length > 0 && (
-        <Section title="Properties">
+        <Section title="Properties" big={page}>
           <dl className="grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
             {Object.entries(view.properties).map(([name, value]) => (
               <div key={name} className="contents">
@@ -240,17 +246,23 @@ export async function PersonPanel({
     <>
       {user && (
         <>
-          <Section title="Posts" count={postCount}>
-            <Links items={posts.map(postLink)} empty="No posts." />
-          </Section>
-          <Section title="Votes" count={voteCount}>
-            <Links items={votes.map((v) => postLink(v.post))} empty="No votes on others' posts." />
-          </Section>
+          {!(page && postCount === 0) && (
+            <Section title="Posts" count={postCount} card={page}>
+              <Links items={posts.map(postLink)} empty="No posts." rows={page} />
+            </Section>
+          )}
+          {/* On their own page, a part they have nothing in is left out (the others say it). */}
+          {!(page && voteCount === 0) && (
+            <Section title="Votes" count={voteCount} card={page}>
+              <Links items={votes.map((v) => postLink(v.post))} empty="No votes on others' posts." rows={page} />
+            </Section>
+          )}
         </>
       )}
 
-      <Section title={besides === undefined ? "Conversations" : "Other conversations"} count={otherCount}>
+      <Section title={besides === undefined ? "Conversations" : "Other conversations"} count={otherCount} card={page}>
         <Links
+          rows={page}
           items={others.map((c) => ({
             href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages) : `/app/${slug}/inbox/${c.number}`,
             title: c.subject,
@@ -267,14 +279,20 @@ export async function PersonPanel({
     </>
   );
 
+  // Their own page: what they did in numbers, then who they are beside it in full.
+  // Their page's card beside what they did, when it has something (their properties, groups, a note); else what they
+  // did takes the width.
+  const hasProfile = !user || !!blocked || !!lookalike || (!!view && (view.groups.length > 0 || Object.keys(view.properties).length > 0));
   return page ? (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
-      <Card size="sm">
-        <CardContent className="flex flex-col gap-5">{profile}</CardContent>
-      </Card>
-      <Card size="sm">
-        <CardContent className="flex flex-col gap-5">{activity}</CardContent>
-      </Card>
+    <div className="flex flex-col gap-6">
+      <div className={cn("grid gap-6 lg:items-start", hasProfile && "lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]")}>
+        {hasProfile && (
+          <Card size="sm">
+            <CardContent className="flex flex-col gap-5">{profile}</CardContent>
+          </Card>
+        )}
+        <div className="flex flex-col gap-4">{activity}</div>
+      </div>
     </div>
   ) : (
     <div className="flex flex-col gap-5">

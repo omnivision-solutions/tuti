@@ -33,22 +33,29 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
   const [totals, emails, plans] = await Promise.all([
     voterTotals(project.id, project.askingProperty, ids),
     emailedOnCompletion(project.id, ids),
-    prisma.post.findMany({ where: { id: { in: ids } }, select: { id: true, eta: true, owner: { select: { name: true, image: true } } } }),
+    prisma.post.findMany({ where: { id: { in: ids } }, select: { id: true, eta: true, body: true, owner: { select: { name: true, image: true } } } }),
   ]);
   const plan = new Map(plans.map(({ id, ...rest }) => [id, rest]));
 
   return (
     <>
-      <PageHeader title="Roadmap" description="What's planned, in progress and done. Drag a card to change its status." back={{ href: `/app/${slug}/feedback`, label: "Feedback" }} />
-      <ListFilters
-        filters={[
-          {
-            name: "board",
-            label: "Board",
-            value: board ?? "all",
-            options: [{ value: "all", label: "All boards" }, ...boards.map((b) => ({ value: b.slug, label: b.name }))],
-          },
-        ]}
+      <PageHeader
+        title="Roadmap"
+        description="What's planned, in progress and done. Drag a card to change its status."
+        back={{ href: `/app/${slug}/feedback`, label: "Feedback" }}
+        // The board picked beside the title.
+        actions={
+          <ListFilters
+            filters={[
+              {
+                name: "board",
+                label: "Board",
+                value: board ?? "all",
+                options: [{ value: "all", label: "All boards" }, ...boards.map((b) => ({ value: b.slug, label: b.name }))],
+              },
+            ]}
+          />
+        }
       />
       <RoadmapBoard
         projectSlug={slug}
@@ -69,6 +76,8 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
             // "Dec 2026", in UTC as months are kept.
             eta: plan.get(post.id)?.eta?.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }) ?? null,
             owner: plan.get(post.id)?.owner ?? null,
+            // Two lines of it on the card: no more than that goes into the page.
+            excerpt: plan.get(post.id)?.body.trim().slice(0, 300) || null,
           })),
         }))}
       />

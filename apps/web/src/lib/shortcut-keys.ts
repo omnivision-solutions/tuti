@@ -20,11 +20,19 @@ const somethingOpen = () =>
     (element) => element.getAttribute("aria-expanded") === "true" || element.checkVisibility(),
   );
 
-/** Whether a key press is someone typing (in a field, an editor, or a list of choices, whose letters pick one), not a shortcut. A checkbox or radio button takes no letters (a list's row pick), unless it's in a form being filled in (a reply's Internal note): leaving it would lose what's written. */
+/**
+ * Whether a key press is someone typing (in a field, an editor, or a list of choices, whose letters pick one), not a
+ * shortcut. A checkbox or radio button takes no letters (a list's row pick), unless it's in a form being filled in (a
+ * reply's Email voters); nor does a tab, unless it's a form's (a reply's Reply and Internal note): leaving it would lose
+ * what's written.
+ */
 const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   !(target instanceof HTMLInputElement && ["checkbox", "radio"].includes(target.type) && !target.closest("form")) &&
-  (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.getAttribute("role") === "combobox");
+  (target.isContentEditable ||
+    ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+    target.getAttribute("role") === "combobox" ||
+    (target.getAttribute("role") === "tab" && target.closest("form") !== null));
 
 /**
  * Whether a key press is free for a page's own one-key shortcut (J, K, Esc): no ⌘, Ctrl or Alt, not someone

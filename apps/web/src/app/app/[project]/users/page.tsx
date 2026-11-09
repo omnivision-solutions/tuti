@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { ArrowDownIcon, ArrowUpIcon, ArrowUpRightIcon, SearchIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -21,6 +22,7 @@ import { propertiesInUse, propertyNames } from "@/server/operations/groups";
 import { call } from "@/server/operations/run";
 import { listUsers, USER_SORTS } from "@/server/operations/users";
 import { getSession } from "@/server/session";
+import { cn } from "@/lib/utils";
 
 const PER_PAGE = 50;
 
@@ -48,11 +50,22 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   const context = { actor: { kind: "user" as const, userId: session.user.id }, projectId: project.id };
   const formats = storedPropertyFormats(project.propertyFormats);
   const page = Math.max(1, Number.parseInt(String(searchParams.page ?? "1"), 10) || 1);
-  const views = (
+  /** People and Companies; People with how many there are once it's known (the list unfiltered). */
+  const tabs = (people?: number) => (
     <SubNav
       label="Users views"
       items={[
-        { title: "People", href: `/app/${slug}/users` },
+        {
+          title:
+            people === undefined ? (
+              "People"
+            ) : (
+              <>
+                People <span className="text-muted-foreground tabular-nums">{people.toLocaleString("en-GB")}</span>
+              </>
+            ),
+          href: `/app/${slug}/users`,
+        },
         { title: "Companies", href: `/app/${slug}/users?view=companies` },
       ]}
       current={searchParams.view === "companies" ? `/app/${slug}/users?view=companies` : `/app/${slug}/users`}
@@ -61,8 +74,8 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   if (searchParams.view === "companies") {
     return (
       <>
-        <PageHeader title="Users" />
-        {views}
+        <PageHeader title="Users" description="The people who use your app, and what they asked for." />
+        {tabs()}
         <CompaniesTable context={context} page={page} sort={searchParams.sort} formats={formats} />
       </>
     );
@@ -101,8 +114,9 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   /** A column's heading: a link that sorts by it (from the first page), marked while it does. */
   const sortHeading = ({ by, label, className }: { by: Sort; label: string; className?: string }) => (
     <th key={by} scope="col" aria-sort={sort === by ? (by === "name" ? "ascending" : "descending") : undefined} className={className}>
-      <Link href={href({ to: 1, by })} className={sort === by ? "text-foreground underline underline-offset-4" : "hover:text-foreground"}>
+      <Link href={href({ to: 1, by })} className={cn("inline-flex items-center gap-1", sort === by ? "text-foreground" : "hover:text-foreground")}>
         {label}
+        {sort === by && (by === "name" ? <ArrowUpIcon aria-hidden className="size-3.5" /> : <ArrowDownIcon aria-hidden className="size-3.5" />)}
       </Link>
     </th>
   );
@@ -111,17 +125,33 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
     <>
       <PageHeader
         title="Users"
-        description="The people who use your app, and what they asked for."
-        // Beside the title from tablet width up, like other pages' controls.
+        description={
+          q || group || company
+            ? "The people who use your app, and what they asked for."
+            : `${count(total)} ${total === 1 ? "person uses" : "people use"} your app.`
+        }
+        // Users come from the app (single sign-on, or users.sync): how, in the docs.
         actions={
-          <>
-            <form role="search" className="flex w-full min-w-0 sm:w-56 lg:w-72">
+          <a href="/docs/api#users.sync" className={buttonVariants({ variant: "outline" })}>
+            Sync from your app
+            <ArrowUpRightIcon />
+          </a>
+        }
+      />
+
+      {/* The views, then (on the same line from laptop width up) finding someone, the columns and a group; above the
+          table at every width, on phones too. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-6 lg:shadow-[inset_0_-1px_0_var(--color-border)]">
+      <div className="min-w-0 lg:flex-1">{tabs()}</div>
+      <div className="flex items-center gap-2 lg:pb-1.5">
+            <form role="search" className="relative flex min-w-0 flex-1 sm:w-64 sm:flex-none">
               {group && <input type="hidden" name="group" value={group} />}
               {company && <input type="hidden" name="company" value={company} />}
               {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
-              <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8" />
+              <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8 pl-8" />
             </form>
-            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={columns} properties={properties.map((name) => ({ name, label: headings.get(name)! }))} />}
+            {isAdminRole(membership.role) && properties.length > 0 && <span className="max-md:hidden"><UserColumnsMenu projectSlug={slug} columns={columns} properties={properties.map((name) => ({ name, label: headings.get(name)! }))} /></span>}
             {groups.length > 0 && (
               <ListFilters
                 filters={[
@@ -135,11 +165,8 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                 ]}
               />
             )}
-          </>
-        }
-      />
-
-      {views}
+      </div>
+      </div>
       {company && (
         <p className="text-sm break-words text-muted-foreground">
           Users at <span className="font-medium text-foreground">{company}</span> ·{" "}
@@ -169,8 +196,10 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
             <CardContent className="overflow-x-auto">
               {/* On phones, who they are (no id) and when they were last seen; the rest from tablet width up. */}
               <table className="w-full text-sm">
-                <thead className="text-left text-xs font-medium text-muted-foreground">
-                  <tr className="[&>th]:px-2 [&>th]:pb-2 [&>th]:font-medium">
+                {/* Phones: no header row (a row is who they are, their company and when they were seen), so no sort links in
+                    the tab order that can't be seen. */}
+                <thead className="text-left text-xs text-muted-foreground max-md:hidden">
+                  <tr className="[&>th]:px-3 [&>th]:pb-2.5 [&>th]:text-xs [&>th]:font-semibold [&>th]:tracking-[0.04em] [&>th]:uppercase">
                     {sortHeading({ by: "name", label: "User" })}
                     {columns.map((name) => (
                       <th key={name} scope="col" className="hidden break-all md:table-cell">
@@ -183,27 +212,32 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                       </th>
                     )}
                     {COUNTS.map((count) => sortHeading({ by: count.sort, label: count.label, className: "hidden text-right md:table-cell" }))}
-                    {sortHeading({ by: "lastSeen", label: "Last seen", className: "text-right" })}
+                    {sortHeading({ by: "lastSeen", label: "Last seen", className: "hidden text-right md:table-cell" })}
                   </tr>
                 </thead>
                 <tbody>
                   {users.map((user) => (
-                    <tr key={user.id} className="border-t align-top [&>td]:px-2 [&>td]:py-2">
-                      <td className="min-w-48">
-                        <div className="flex items-start gap-2">
-                          <Avatar className="size-8">
+                    <tr key={user.id} className="border-t align-middle max-md:first:border-t-0 transition-colors hover:bg-muted/50 [&>td]:px-3 [&>td]:py-2">
+                      <td className="max-w-0 min-w-48 md:max-w-none">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="size-7">
                             {user.avatar && <AvatarImage src={user.avatar} alt="" />}
                             <AvatarFallback>{initial(user.name)}</AvatarFallback>
                           </Avatar>
                           <div className="flex min-w-0 flex-col gap-0.5">
-                            <Link href={`/app/${slug}/users/${encodeURIComponent(user.id)}`} className="font-medium break-words hover:underline">
+                            <Link href={`/app/${slug}/users/${encodeURIComponent(user.id)}`} className="truncate font-medium hover:underline">
                               {user.name}
                             </Link>
-                            <span className="text-xs break-all text-muted-foreground">
-                              {user.email}
-                              <span className="max-md:hidden">
-                                {user.email && " · "}id {user.id}
-                              </span>
+                            {/* Cut short, in full on hover; their id is on their page (and found by the search). */}
+                            <span className="truncate text-xs text-muted-foreground" title={user.email ?? undefined}>
+                              {/* No address: their id instead, from tablet width up (on phones the row keeps to one line each). */}
+                              {user.email ?? <span className="max-md:hidden">id {user.id}</span>}
+                            </span>
+                            {/* On phones, where the table is who they are, their company and when they were last seen too. */}
+                            <span className="truncate text-xs text-muted-foreground md:hidden">
+                              {[typeof user.properties.company === "string" ? user.properties.company : null, user.activity.lastSeenAt ? `seen ${timeAgo(user.activity.lastSeenAt)}` : "never seen"]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </span>
                           </div>
                         </div>
@@ -215,21 +249,40 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                       ))}
                       {groups.length > 0 && (
                         <td className="hidden md:table-cell">
-                          <span className="flex flex-wrap gap-1">
-                            {user.groups.map((key) => (
-                              <Badge key={key} variant="secondary" className="h-auto max-w-full whitespace-normal break-words">
+                          {/* The first group, and how many more (all of them on hover, and on their page). */}
+                          <span className="flex flex-wrap items-center gap-1" title={user.groups.map((key) => names.get(key) ?? key).join(", ")}>
+                            {user.groups.slice(0, 1).map((key) => (
+                              <Badge key={key} variant="secondary" className="h-auto max-w-full font-normal whitespace-normal break-words">
                                 {names.get(key) ?? key}
                               </Badge>
                             ))}
+                            {user.groups.length > 1 && (
+                              // The rest on hover, and on their page (where every group is listed) for touch and the keyboard:
+                              // out of the tab order, as their name's link goes there too.
+                              <Link
+                                href={`/app/${slug}/users/${encodeURIComponent(user.id)}`}
+                                tabIndex={-1}
+                                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                              >
+                                +{user.groups.length - 1}
+                                <span className="sr-only"> more: {user.groups.slice(1).map((key) => names.get(key) ?? key).join(", ")}</span>
+                              </Link>
+                            )}
                           </span>
                         </td>
                       )}
                       {COUNTS.map((count) => (
+                        // None yet a muted dash, so the numbers that are there stand out.
                         <td key={count.key} className="hidden text-right tabular-nums md:table-cell">
-                          {user.activity[count.key]}
+                          {user.activity[count.key] === 0 ? (
+                            // As a property they don't have.
+                            <span className="text-muted-foreground">–</span>
+                          ) : (
+                            user.activity[count.key]
+                          )}
                         </td>
                       ))}
-                      <td className="text-right whitespace-nowrap text-muted-foreground">{user.activity.lastSeenAt ? timeAgo(user.activity.lastSeenAt) : "Never"}</td>
+                      <td className="hidden text-right whitespace-nowrap text-muted-foreground md:table-cell">{user.activity.lastSeenAt ? timeAgo(user.activity.lastSeenAt) : "Never"}</td>
                     </tr>
                   ))}
                 </tbody>

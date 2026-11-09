@@ -10,7 +10,9 @@ import { type EditorUploads, RichEditor } from "@/components/rich-editor";
 import { useSignInHref } from "@/components/sign-in-link";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
+import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FormState } from "@/server/form-state";
 import { addComment } from "@/server/posts";
 
@@ -100,7 +102,19 @@ export function CommentForm({
   return (
     <form {...keepingFields(action)} className="flex flex-col gap-2">
       <input type="hidden" name="postId" value={postId} />
-      <Field data-invalid={state.error ? true : undefined}>
+      {/* The team's form: a reply (to everyone who sees the post) or an internal note, picked above the box. */}
+      {notes && (
+        <>
+          {internal && <input type="hidden" name="internal" value="on" />}
+          <Tabs value={internal ? "note" : "reply"} onValueChange={(value) => setInternal(value === "note")}>
+            <TabsList aria-label="Write">
+              <TabsTrigger value="reply">Reply</TabsTrigger>
+              <TabsTrigger value="note">Internal note</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </>
+      )}
+      <Field data-invalid={state.error ? true : undefined} className={cn(internal && "rounded-lg bg-highlight/25")}>
         <RichEditor
           key={submitted}
           // The portal box's draft, read once as it's made (in the browser, so the page renders the same on both sides).
@@ -153,26 +167,22 @@ export function CommentForm({
       </Field>
       <div className="flex flex-wrap items-center justify-end gap-3">
         {signedIn === false && <p className="mr-auto text-sm text-muted-foreground">You&apos;ll sign in to post it.</p>}
-        {notes && (
-          <div className="mr-auto flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-            <label className="flex items-center gap-2">
-              <Switch name="internal" checked={internal} onChange={(event) => setInternal(event.target.checked)} />
-              Internal note <span className="text-muted-foreground">(only your team sees it)</span>
+        {notes &&
+          (internal ? (
+            <p className="mr-auto text-sm text-muted-foreground">Only your team sees it.</p>
+          ) : (
+            // A note is never emailed.
+            // At the left under the box, the button at the right.
+            <label className="mr-auto flex items-center gap-2 text-sm">
+              <Switch
+                name="emailVoters"
+                checked={emailVoters}
+                disabled={voters === 0 || voters === "paused"}
+                onChange={(event) => setEmailVoters(event.target.checked)}
+              />
+              Email voters <span className="text-muted-foreground">({votersNote(voters)})</span>
             </label>
-            {/* A note is never emailed. */}
-            {!internal && (
-              <label className="flex items-center gap-2">
-                <Switch
-                  name="emailVoters"
-                  checked={emailVoters}
-                  disabled={voters === 0 || voters === "paused"}
-                  onChange={(event) => setEmailVoters(event.target.checked)}
-                />
-                Email voters <span className="text-muted-foreground">({votersNote(voters)})</span>
-              </label>
-            )}
-          </div>
-        )}
+          ))}
         <Button type="submit" disabled={pending}>
           {pending ? "Posting…" : internal ? "Add note" : emailVoters ? "Comment and email" : "Comment"}
         </Button>

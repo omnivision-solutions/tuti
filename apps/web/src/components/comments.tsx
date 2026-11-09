@@ -2,7 +2,7 @@ import { RichText } from "@tuti/content/react";
 import type { PostStatus } from "@tuti/db";
 import type { MediaUrls } from "@tuti/content/media";
 
-import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
+import { PostStatusBadge, StatusDot } from "@/components/post-status-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
@@ -48,17 +48,20 @@ export function CommentList({
   );
 
   return (
-    <ol className="flex flex-col gap-4">
+    <ol className="flex flex-col gap-5">
       {items.map((item) =>
         "event" in item ? (
-          <li key={item.event.id} className="flex items-center gap-2 pl-2 text-sm text-muted-foreground">
-            <StatusDot status={item.event.to} />
+          // On the avatars' line: the dot centred under them, the words where a comment's start.
+          <li key={item.event.id} className="flex items-center gap-3 border-l-[3px] border-transparent pl-3 text-xs text-muted-foreground">
+            <span className="flex w-8 shrink-0 justify-center">
+              <StatusDot status={item.event.to} />
+            </span>
             <span>
-              <span className="text-foreground">
-                {STATUS_LABELS[item.event.from]} → {STATUS_LABELS[item.event.to]}
-              </span>
-              {item.event.by ? `, by ${item.event.by}` : ""}
-              {!!item.event.emailed && `, ${item.event.emailed} ${item.event.emailed === 1 ? "person" : "people"} emailed`}
+              {/* A sentence: who moved it where (its status's pill), how many were emailed, when. */}
+              <span className="text-foreground">{item.event.by ?? "Moved"}</span>
+              {item.event.by ? " moved it to " : " to "}
+              <PostStatusBadge status={item.event.to} />
+              {!!item.event.emailed && ` · ${item.event.emailed} ${item.event.emailed === 1 ? "person" : "people"} emailed`}
               {" · "}
               <time dateTime={item.event.createdAt.toISOString()}>{timeAgo(item.event.createdAt)}</time>
             </span>
@@ -67,8 +70,12 @@ export function CommentList({
           <li
             key={item.comment.id}
             className={cn(
-              "flex gap-3",
-              item.comment.internal ? "-mx-2 rounded-lg bg-highlight/40 p-2" : byTeam(item.comment) && "-mx-2 rounded-lg bg-primary/8 p-2",
+              // Every one inset by a line's room, so the team's and a note's line down the left (and light tint) keep the
+              // avatars in one column: the team's green, a note the highlight's.
+              "flex gap-3 border-l-[3px] border-transparent pl-3",
+              item.comment.internal
+                ? "rounded-r-lg border-highlight-foreground/60 bg-highlight/35 py-2.5 pr-3"
+                : byTeam(item.comment) && "rounded-r-lg border-primary/70 bg-primary/8 py-2.5 pr-3",
             )}
           >
             <Avatar className="size-8">
@@ -78,8 +85,9 @@ export function CommentList({
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-medium">{item.comment.author.name}</span>
-                {byTeam(item.comment) && <Badge variant="secondary">Team</Badge>}
-                {item.comment.internal && <Badge variant="outline">Internal note</Badge>}
+                {/* A note is always the team's: its own badge says enough. */}
+                {byTeam(item.comment) && !item.comment.internal && <Badge>Team</Badge>}
+                {item.comment.internal && <Badge variant="highlight">Internal note</Badge>}
                 <time dateTime={item.comment.createdAt.toISOString()} className="text-xs text-muted-foreground">
                   {timeAgo(item.comment.createdAt)}
                 </time>

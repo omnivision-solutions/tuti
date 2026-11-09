@@ -78,5 +78,5 @@ test("in the first run the team comes from Frill: a bad key is refused, a good o
   // In the app: the team's note on the idea.
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByText("Planning it for June.")).toBeVisible();
-  await expect(owner.getByText("Internal note", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Comments" }).getByRole("listitem").getByText("Internal note", { exact: true })).toBeVisible();
 });

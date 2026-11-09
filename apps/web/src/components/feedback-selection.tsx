@@ -1,9 +1,9 @@
 "use client";
 
 import type { PostStatus, PostVisibility } from "@tuti/db";
-import { ChevronDownIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ComponentProps, createContext, type ReactNode, use, useEffect, useRef, useState, useTransition } from "react";
+import { createContext, type ReactNode, use, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
@@ -17,9 +17,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ItemRow } from "@/components/item-list";
 import { FADE_AT_MORE, focusClearOfFade, showMore, wheelSideways } from "@/components/sub-nav";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { eachPost } from "@/lib/each-post";
 import { cn } from "@/lib/utils";
@@ -66,7 +66,11 @@ export function FeedbackSelection({ listed, children }: { listed: Picked[]; chil
   return <Selection value={{ picked, toggle, clear: () => setChosen([]), pending, startTransition }}>{children}</Selection>;
 }
 
-/** A row's checkbox, to pick its post. */
+/**
+ * A row's checkbox, to pick its post, in the row's left padding. From tablet width up it shows on the row's hover or
+ * focus, and on every row once one is picked (so a list at rest is titles, not boxes). Phones, which can't hover,
+ * change posts one at a time.
+ */
 export function SelectPost({ post }: { post: Picked }) {
   const { picked, toggle, pending } = useSelection();
   return (
@@ -76,15 +80,107 @@ export function SelectPost({ post }: { post: Picked }) {
       aria-label={`Select ${post.title}`}
       checked={picked.some((p) => p.id === post.id)}
       onChange={(event) => toggle(post, event.currentTarget.checked)}
-      className="size-4 shrink-0 accent-primary"
+      className={cn(
+        // Hidden until hover only where there's hover (not on a touch tablet).
+        "size-4 shrink-0 accent-primary [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity [@media(hover:hover)]:group-hover/row:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100",
+        picked.length > 0 && "[@media(hover:hover)]:opacity-100",
+      )}
     />
   );
 }
 
-/** A post's row, tinted while it's picked. */
-export function PickedRow({ postId, ...row }: ComponentProps<typeof ItemRow> & { postId: string }) {
+/**
+ * A post's row in Feedback's list, the same at every width: its votes; its board (a small label), the title, a line of
+ * the post and the meta line (who, when, comments); at the right its owner's face (from tablet width up) and its status
+ * menu. The checkbox in the left padding. Filled while it's open beside the list (`selected`), tinted green while it's
+ * picked.
+ */
+export function PickedRow({
+  postId,
+  select,
+  votes,
+  board,
+  title,
+  badges,
+  excerpt,
+  meta,
+  owner,
+  status,
+  selected = false,
+}: {
+  postId: string;
+  select: ReactNode;
+  votes: ReactNode;
+  board: string;
+  title: ReactNode;
+  badges?: ReactNode;
+  excerpt?: string;
+  meta: ReactNode;
+  owner: ReactNode;
+  status: ReactNode;
+  selected?: boolean;
+}) {
   const { picked } = useSelection();
-  return <ItemRow {...row} picked={picked.some((p) => p.id === postId)} />;
+  const on = picked.some((p) => p.id === postId);
+  return (
+    <li
+      data-selected={selected || on || undefined}
+      className={cn(
+        "group/row relative flex items-start gap-3 px-4 py-3.5 sm:gap-4 sm:pr-4 sm:pl-9",
+        // Filled, it has no line under it (the list's line above it goes too).
+        on ? (selected ? "border-transparent bg-primary/15" : "border-transparent bg-primary/8") : selected ? "border-transparent bg-muted" : "hover:bg-muted/50",
+      )}
+    >
+      {/* On phones before the votes; from tablet width up in the row's left padding. */}
+      <div className="flex self-center sm:absolute sm:top-1/2 sm:left-2.5 sm:-translate-y-1/2">{select}</div>
+      <div className="shrink-0">{votes}</div>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-xs font-medium tracking-[0.04em] text-muted-foreground uppercase">{board}</span>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="min-w-0 text-[1.0625rem] leading-snug font-semibold break-words">{title}</span>
+          {badges}
+        </div>
+        {excerpt && <p className="line-clamp-1 text-sm text-muted-foreground">{excerpt}</p>}
+        <div className={cn("mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground", (selected || on) && "text-foreground/70")}>{meta}</div>
+      </div>
+      <div className="flex w-7 shrink-0 justify-center self-center max-sm:hidden">{owner}</div>
+      <div className="flex shrink-0 justify-end self-center sm:min-w-8 sm:opacity-60 sm:transition-opacity sm:group-hover/row:opacity-100 sm:focus-within:opacity-100">{status}</div>
+    </li>
+  );
+}
+
+/**
+ * The list's filters: in a row from tablet width up; on phones behind one "Filters" button (with how many are set),
+ * opening them in a popover, so the search has the width.
+ */
+export function FiltersFold({ set, extra, children }: { set: number; /** Under the filters in the popover (phones). */ extra?: ReactNode; children: ReactNode }) {
+  return (
+    <>
+      <div className="max-sm:hidden">{children}</div>
+      <Popover>
+        <PopoverTrigger render={<Button variant="outline" className="sm:hidden" />}>
+          <SlidersHorizontalIcon />
+          Filters
+          {set > 0 && <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">{set}</span>}
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64 [&_[data-slot=select-trigger]]:w-full [&>div>div]:flex-col [&>div>div]:items-stretch">
+          {children}
+          {extra}
+        </PopoverContent>
+      </Popover>
+    </>
+  );
+}
+
+/** A post's votes in the team's lists: the count in a small bordered box under the vote arrow, "votes" for screen readers. */
+export function VoteBox({ count }: { count: number }) {
+  return (
+    <span className="flex w-11 shrink-0 flex-col items-center rounded-lg border bg-card py-1 text-sm leading-tight font-semibold tabular-nums">
+      <ChevronUpIcon aria-hidden className="size-4 text-muted-foreground" />
+      {count}
+      <span className="sr-only">{count === 1 ? " vote" : " votes"}</span>
+    </span>
+  );
 }
 
 const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
@@ -111,7 +207,8 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   const barHeld = useRef(false);
   useEffect(() => {
     if (hadBar.current && picked.length === 0 && barHeld.current && document.activeElement === document.body) {
-      filtersRef.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+      // The first one shown (on phones the Filters button; the inline filters are hidden there).
+      [...(filtersRef.current?.querySelectorAll<HTMLElement>("button") ?? [])].find((button) => button.getClientRects().length > 0)?.focus({ preventScroll: true });
     }
     hadBar.current = picked.length > 0;
     if (picked.length === 0) {

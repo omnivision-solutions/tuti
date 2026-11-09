@@ -257,7 +257,7 @@ test("Feedback comes across with Contacts: the posts with their dates, votes and
   // In the app: the posts on their boards, and the team's private comment as an internal note.
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByText("Planning it for June.")).toBeVisible();
-  await expect(owner.getByText("Internal note", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Comments" }).getByRole("listitem").getByText("Internal note", { exact: true })).toBeVisible();
   await expect(owner.getByText("Yes please!")).toBeVisible();
   await checkpoint(owner, "app-post-imported");
   await owner.goto(`/app/${slug}/p/2`);
