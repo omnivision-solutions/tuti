@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import type { Metadata } from "next";
-import { RssIcon } from "lucide-react";
+import { CheckIcon, MessageSquareIcon, RssIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
@@ -12,12 +12,13 @@ import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { SampleBadge } from "@/components/sample-badge";
 import { SubNav } from "@/components/sub-nav";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { SignInLink } from "@/components/sign-in-link";
 import { ResendVerificationButton } from "@/components/verify-email-banner";
 import { VoteButton, VoteCount } from "@/components/vote-button";
 import { boardTexts } from "@/lib/board-texts";
+import { timeAgo } from "@/lib/format";
 import { boardStatuses, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
@@ -106,35 +107,75 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   };
   const shippedCard = shipped.length > 0 && (
     // Named by a label, not its heading's id: it's on the page twice (under the list for phones, in the sidebar), and ids are once.
-    <Card role="region" aria-label="Recently shipped" size="sm">
-      <CardHeader>
-        <CardTitle>
-          <h2>Recently shipped</h2>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ul className="flex flex-col gap-2">
-          {shipped.map((post) => (
-            // No status badge: the card says they shipped, and the title gets the room.
-            <li key={post.id} className="flex items-baseline gap-3 text-sm">
-              <Link href={at(postPath({ ...post, board }))} className="min-w-0 flex-1 break-words hover:underline">
-                {post.title}
-              </Link>
-              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+    <section role="region" aria-label="Recently shipped" className="flex flex-col gap-2">
+      <h2 className="group-label">Recently shipped</h2>
+      <ul className="flex flex-col gap-2.5">
+        {shipped.map((post) => (
+          // No status badge: the heading says they shipped, and the title gets the room.
+          <li key={post.id} className="flex items-baseline gap-2 text-sm">
+            <CheckIcon aria-hidden className="size-3.5 shrink-0 translate-y-0.5 text-status-completed" />
+            <Link href={at(postPath({ ...post, board }))} className="min-w-0 flex-1 break-words hover:underline">
+              {post.title}
+            </Link>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+  // Get updates: in the sidebar on wide screens, under the list below them (named by its heading once, by a label there: ids are once).
+  const getUpdates = async (inSidebar: boolean) => (
+    <section
+      {...(inSidebar ? { "aria-labelledby": "get-updates" } : { "aria-label": "Get updates" })}
+      className="flex flex-col gap-3 rounded-xl bg-card p-4 text-sm shadow-xs ring-1 ring-border"
+    >
+      <h2 id={inSidebar ? "get-updates" : undefined} className="font-semibold">
+        Get updates
+      </h2>
+      {/* Only what holds for them: the team, someone the project's sign-on gave no address, or not a reader of a private portal hears nothing. */}
+      {!session ? (
+        <p className="text-muted-foreground">Vote for an idea to hear when it ships.</p>
+      ) : !voter ? (
+        // Signed in through another project's single sign-on: as the vote buttons say.
+        <p className="text-muted-foreground">
+          <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to vote
+        </p>
+      ) : reach?.status === "emailed" ? (
+        <p className="text-muted-foreground">Vote for an idea to get an email when it ships.</p>
+      ) : reach?.status === "unconfirmed" ? (
+        <div className="flex flex-col items-start gap-1">
+          <p className="text-muted-foreground">Confirm your email to hear when ideas you vote on ship.</p>
+          <ResendVerificationButton email={session.user.email} callbackURL={at(boardPath(board))} />
+        </div>
+      ) : reach?.status === "optedOut" || reach?.status === "turnedOff" ? (
+        // All of the project's emails, or those about ideas they vote on: either way, their Account turns them back on.
+        <p className="text-muted-foreground">
+          <Link href={at("/account")} className="text-foreground underline underline-offset-4">
+            You&apos;ve unsubscribed from these emails.
+          </Link>
+        </p>
+      ) : null}
+      {await changelogByEmail(board.project, session, true)}
+      <p className="flex items-center gap-3 text-muted-foreground">
+        <Link href={at("/changelog")} className="hover:text-foreground hover:underline">
+          Changelog
+        </Link>
+        <span aria-hidden>·</span>
+        <a href={at("/changelog/rss.xml")} className="inline-flex items-center gap-1 hover:text-foreground hover:underline">
+          <RssIcon aria-hidden className="size-3.5" /> RSS
+        </a>
+      </p>
+    </section>
   );
   return (
     // On wide screens a sidebar beside the list: the boards (when there are two or more, as the header's row), Recently shipped and
     // Get updates (the shipped emails, the changelog by email, its page and its feed).
     <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start">
       <div className="flex min-w-0 flex-col gap-6">
-        <PageHeader title={board.name} description={board.description} />
+        {/* What it's for, in the team's words (Feedback → Boards), or a line that says how it works. */}
+        <PageHeader title={board.name} description={board.description || "Vote for the ideas you want most, or share your own."} />
 
         <ShareIdeaBox
           signedIn={!!session}
@@ -145,66 +186,79 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           {...texts}
         />
 
-        {/* `?status=` (no control of its own any more), the search and `?title=` go with each tab; the sort, `?status=` and `?title=` with a search. */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="min-w-0 flex-1 [&>nav]:mt-0">
-            <SubNav
-              label="Sort"
-              current={tabHref(tab)}
-              // A tab reorders the list under it: the page stays where it is.
-              scroll={false}
-              items={[...TABS, ...(voter ? [["mine", "Mine"] as const] : [])].map(([key, title]) => ({ href: tabHref(key), title }))}
-            />
-          </div>
-          <BoardSearch action={at(boardPath(board))} q={q ?? ""}>
-            {tab !== "trending" && <input type="hidden" name="sort" value={tab} />}
-            {first(searchParams.status) && <input type="hidden" name="status" value={first(searchParams.status)} />}
-            {title && <input type="hidden" name="title" value={title} />}
-          </BoardSearch>
-          {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
-          <p role="status" className="sr-only">
-            {q &&
-              (posts.length === 0
-                ? `No ideas match "${q}"`
-                : `${posts.length}${more ? "+" : ""} ${posts.length === 1 && !more ? "idea matches" : "ideas match"} "${q}"`)}
-          </p>
-        </div>
-
+        {/* The list's card: its sort tabs and search on one bar, the ideas under it. `?status=` (no control of its own any more),
+            the search and `?title=` go with each tab; the sort, `?status=` and `?title=` with a search. */}
         <div className="flex flex-col gap-3">
-          {posts.length > 0 && (
-            <Card size="sm">
-              <CardContent>
-                <ul className="flex flex-col divide-y">
-                  {posts.map((post) => (
-                    <li key={post.id} className="flex items-center gap-4 py-3 first:pt-0 last:pb-0">
-                      <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                        <div className="flex gap-1">
-                          <PostStatusBadge status={post.status} />
-                          {post.sample && <SampleBadge />}
-                          <VisibilityBadge visibility={post.visibility} />
-                        </div>
-                        <h2 className="font-medium break-words">
-                          <Link href={at(postPath({ ...post, board }))} className="hover:underline">
-                            {post.title}
-                          </Link>
-                        </h2>
-                        {post.body && <p className="line-clamp-1 text-sm text-muted-foreground">{post.body}</p>}
-                        <p className="text-xs text-muted-foreground">
-                          {post.author.name}
-                          {post.commentCount > 0 && ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
-                        </p>
+          <section aria-label="Ideas">
+            {/* One line under the tabs and the search together (the tabs' own line off). */}
+            <div className="flex flex-col gap-2 border-b max-sm:pb-3 sm:flex-row sm:items-end sm:[&_form]:mb-1.5">
+              <div className="min-w-0 flex-1 [&>nav]:mt-0 [&>nav]:shadow-none">
+                <SubNav
+                  label="Sort"
+                  current={tabHref(tab)}
+                  // A tab reorders the list under it: the page stays where it is.
+                  scroll={false}
+                  items={[...TABS, ...(voter ? [["mine", "Mine"] as const] : [])].map(([key, title]) => ({ href: tabHref(key), title }))}
+                />
+              </div>
+              <BoardSearch action={at(boardPath(board))} q={q ?? ""}>
+                {tab !== "trending" && <input type="hidden" name="sort" value={tab} />}
+                {first(searchParams.status) && <input type="hidden" name="status" value={first(searchParams.status)} />}
+                {title && <input type="hidden" name="title" value={title} />}
+              </BoardSearch>
+              {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
+              <p role="status" className="sr-only">
+                {q &&
+                  (posts.length === 0
+                    ? `No ideas match "${q}"`
+                    : `${posts.length}${more ? "+" : ""} ${posts.length === 1 && !more ? "idea matches" : "ideas match"} "${q}"`)}
+              </p>
+            </div>
+            {posts.length > 0 && (
+              <ul className="flex flex-col divide-y">
+                {posts.map((post) => (
+                  <li key={post.id} className="flex items-start gap-4 py-5">
+                    <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
+                      <h2 className="text-lg leading-snug font-semibold tracking-tight break-words">
+                        <Link href={at(postPath({ ...post, board }))} className="hover:underline">
+                          {post.title}
+                        </Link>
+                      </h2>
+                      {post.body && <p className="line-clamp-2 text-[0.9375rem] leading-relaxed text-foreground/75">{post.body}</p>}
+                      {/* Under the title (every title at the same height): who posted it and when, then its status. */}
+                      <div className="mt-1 flex max-w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-sm text-muted-foreground">
+                        {/* Who and when first, on one line (the name cut short first): every byline starts at the same edge. */}
+                        <span className="flex max-w-full min-w-0 items-center gap-2 whitespace-nowrap">
+                          <Avatar size="sm" aria-hidden className="size-5">
+                            {post.author.image && <AvatarImage src={post.author.image} alt="" />}
+                            <AvatarFallback className="text-[0.625rem]">{post.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <span className="min-w-0 truncate text-foreground/80">{post.author.name}</span>
+                          <span aria-hidden>·</span>
+                          <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
+                          {post.commentCount > 0 && (
+                            <span className="ml-1 inline-flex items-center gap-1" aria-label={`${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}>
+                              <MessageSquareIcon aria-hidden className="size-3.5" />
+                              {post.commentCount}
+                            </span>
+                          )}
+                        </span>
+                        {/* Then its status (not Open, every new idea's). */}
+                        {post.status !== "OPEN" && <PostStatusBadge status={post.status} />}
+                        {post.sample && <SampleBadge />}
+                        <VisibilityBadge visibility={post.visibility} />
                       </div>
-                      {post.status === "COMPLETED" ? (
-                        <VoteCount count={post.voteCount} />
-                      ) : (
-                        <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
+                    </div>
+                    {post.status === "COMPLETED" ? (
+                      <VoteCount count={post.voteCount} pill />
+                    ) : (
+                      <VoteButton pill postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
           {posts.length === 0 && (
             <EmptyState
               title={q ? "No ideas match" : mine ? "Nothing of yours yet" : statuses?.length === 1 ? "No posts with this status yet" : statuses ? "No ideas waiting" : "No feedback yet"}
@@ -232,81 +286,38 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           )}
         </div>
 
-        {/* On wide screens it's in the sidebar. */}
+        {/* On wide screens they're in the sidebar. */}
         {shippedCard && <div className="lg:hidden">{shippedCard}</div>}
+        <div className="lg:hidden">{await getUpdates(false)}</div>
       </div>
 
-      <aside aria-label="About this board" className="hidden flex-col gap-4 lg:flex">
+      <aside aria-label="About this board" className="hidden flex-col gap-8 lg:flex">
         {boards.length > 1 && (
-          <Card size="sm">
-            <CardContent>
-              <nav aria-label="Boards">
-                <h2 className="mb-2 text-sm font-medium">Boards</h2>
-                <ul className="-mx-2 flex flex-col">
-                  {boards.map((other) => (
-                    <li key={other.id}>
-                      <Link
-                        href={at(boardPath(other))}
-                        aria-current={other.id === board.id ? "page" : undefined}
-                        // Read out as "Bugs, 3 open ideas", not "Bugs3".
-                        aria-label={`${other.name}, ${other._count.posts} ${other._count.posts === 1 ? "open idea" : "open ideas"}`}
-                        className={cn(
-                          "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent",
-                          other.id === board.id ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        <span className="min-w-0 flex-1 break-words">{other.name}</span>
-                        <span className="text-xs text-muted-foreground tabular-nums">{other._count.posts}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            </CardContent>
-          </Card>
+          <nav aria-label="Boards" className="flex flex-col gap-2">
+            <h2 className="group-label">Boards</h2>
+            <ul className="flex flex-col">
+              {boards.map((other) => (
+                <li key={other.id}>
+                  <Link
+                    href={at(boardPath(other))}
+                    aria-current={other.id === board.id ? "page" : undefined}
+                    // Read out as "Bugs, 3 open ideas", not "Bugs3".
+                    aria-label={`${other.name}, ${other._count.posts} ${other._count.posts === 1 ? "open idea" : "open ideas"}`}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-2.5 py-2 text-[0.9375rem] transition-colors hover:bg-accent",
+                      other.id === board.id ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 break-words">{other.name}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{other._count.posts}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
         )}
         {shippedCard}
-        <Card role="region" aria-labelledby="get-updates" size="sm">
-          <CardHeader>
-            <CardTitle>
-              <h2 id="get-updates">Get updates</h2>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3 text-sm">
-            {/* Only what holds for them: the team, someone the project's sign-on gave no address, or not a reader of a private portal hears nothing. */}
-          {!session ? (
-            <p className="text-muted-foreground">Vote for an idea to hear when it ships.</p>
-          ) : !voter ? (
-            // Signed in through another project's single sign-on: as the vote buttons say.
-            <p className="text-muted-foreground">
-              <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to vote
-            </p>
-          ) : reach?.status === "emailed" ? (
-            <p className="text-muted-foreground">Vote for an idea to get an email when it ships.</p>
-          ) : reach?.status === "unconfirmed" ? (
-            <div className="flex flex-col items-start gap-1">
-              <p className="text-muted-foreground">Confirm your email to hear when ideas you vote on ship.</p>
-              <ResendVerificationButton email={session.user.email} callbackURL={at(boardPath(board))} />
-            </div>
-          ) : reach?.status === "optedOut" || reach?.status === "turnedOff" ? (
-            // All of the project's emails, or those about ideas they vote on: either way, their Account turns them back on.
-            <p className="text-muted-foreground">
-              <Link href={at("/account")} className="text-foreground underline underline-offset-4">
-                You&apos;ve unsubscribed from these emails.
-              </Link>
-            </p>
-          ) : null}
-          {await changelogByEmail(board.project, session, true)}
-          <div className="flex flex-wrap gap-2">
-              <Link href={at("/changelog")} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                Changelog
-              </Link>
-              <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
-                <RssIcon aria-hidden /> RSS
-              </a>
-            </div>
-          </CardContent>
-        </Card>
+        {await getUpdates(true)}
       </aside>
     </div>
   );

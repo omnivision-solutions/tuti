@@ -53,6 +53,7 @@ export function DocsSearchBox({
   shortcut = false,
   query = "",
   inHeader = false,
+  hero = false,
   className,
 }: {
   askAI: boolean;
@@ -61,6 +62,8 @@ export function DocsSearchBox({
   query?: string;
   /** The header's: taller below tablet width (where it's the whole width, see DocsSearch), narrower from there. */
   inHeader?: boolean;
+  /** The docs home's big box, under its heading. */
+  hero?: boolean;
   className?: string;
 }) {
   const at = usePortalHref();
@@ -90,7 +93,7 @@ export function DocsSearchBox({
   if (!enhanced) {
     return (
       <form role="search" action={at("/docs")} className={cn("relative", className)}>
-        <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <SearchIcon aria-hidden className={cn("pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground", hero && "left-4 size-5")} />
         <Input
           key={query}
           type="search"
@@ -99,7 +102,7 @@ export function DocsSearchBox({
           maxLength={200}
           placeholder="Search docs"
           aria-label="Search the docs"
-          className={cn("pl-8", inHeader && "h-9 md:h-8")}
+          className={cn("pl-8", inHeader && "h-9 md:h-8", hero && "h-14 rounded-xl bg-card pl-11 text-base shadow-sm")}
         />
       </form>
     );
@@ -116,10 +119,10 @@ export function DocsSearchBox({
         className={cn(
           "flex items-center gap-2 rounded-lg text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
           "w-full border border-input px-2.5 text-sm dark:bg-input/30",
-          inHeader ? "h-9 md:h-8 md:w-60" : "h-8",
+          inHeader ? "h-9 md:h-8 md:w-60" : hero ? "h-14 gap-3 rounded-xl bg-card px-4 text-base shadow-sm dark:bg-card" : "h-8",
         )}
       >
-        <SearchIcon aria-hidden className="size-4 shrink-0" />
+        <SearchIcon aria-hidden className={cn("shrink-0", hero ? "size-5" : "size-4")} />
         <span className={cn("flex-1 truncate", query && "text-foreground")}>{query || label}</span>
         {shortcut && (
           <kbd aria-hidden className="rounded border bg-muted px-1.5 font-sans text-xs max-md:hidden">

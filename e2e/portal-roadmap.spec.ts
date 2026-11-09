@@ -44,7 +44,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await expect.poll(async () => (await content.boundingBox())!.width).toBeGreaterThan(1050);
   expect((await content.boundingBox())!.width).toBeLessThan(1150);
 
-  // Each column says what it means, with its status's dot.
+  // Each column says what it means, with its status's icon.
   const column = (name: string) => visitor.getByRole("region", { name });
   for (const [name, meaning] of [
     ["Planned", "We've decided to build these."],
@@ -52,7 +52,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
     ["Completed", "Shipped and ready to use."],
   ]) {
     await expect(column(name)).toHaveAccessibleDescription(meaning!);
-    await expect(column(name).getByRole("heading", { name }).locator("[data-status-dot]")).toBeVisible();
+    await expect(column(name).getByRole("heading", { name }).locator("[data-status-icon]")).toBeVisible();
   }
 
   // Votes on the cards; signed out, they ask to sign in.
@@ -62,11 +62,11 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
 
   // A completed card links to the published entry that shipped it, not to a draft.
   const completed = column("Completed");
-  await expect(completed.getByRole("listitem").filter({ hasText: "CSV export" }).getByRole("link", { name: "CSV export is here" })).toHaveAttribute(
+  await expect(completed.getByRole("listitem").filter({ hasText: "CSV export" }).getByRole("link", { name: "In the changelog: CSV export is here" })).toHaveAttribute(
     "href",
     "/changelog/1",
   );
-  await expect(completed.getByRole("listitem").filter({ hasText: "Webhooks" })).not.toContainText("Shipped in");
+  await expect(completed.getByRole("listitem").filter({ hasText: "Webhooks" })).not.toContainText("In the changelog");
   // Shipped, there's nothing left to vote for: its votes as text, no button.
   const csvCard = completed.getByRole("listitem").filter({ hasText: "CSV export" });
   await expect(csvCard.getByRole("button")).toHaveCount(0);

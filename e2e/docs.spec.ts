@@ -1224,8 +1224,8 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   }
 
   // By default a tab shows its overview: its Popular articles, a card per collection with how many articles
-  // it has, then (on the first) the articles in none. The collections once: no tree beside them, and no search box on
-  // the page (the header's searches and asks).
+  // it has, then (on the first) the articles in none. The collections once: no tree beside them; the docs home's heading
+  // has the big box for searching and asking (the header's too).
   await visitor.goto("/docs");
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Docs");
   await expect(main.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveText(["Invoices", "Card payments", "Your first board"]);
@@ -1235,7 +1235,7 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(cards.first().locator("svg.lucide-rocket")).toBeVisible();
   await expect(main.getByRole("region", { name: "More articles" }).getByRole("link")).toHaveText(["Contact us"]);
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
-  await expect(main.getByRole("search")).toHaveCount(0);
+  await expect(main.getByRole("search")).toHaveCount(1);
   // The team's sidebar links are still beside them.
   await expect(main.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" })).toBeVisible();
   const headerSearch = visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" });

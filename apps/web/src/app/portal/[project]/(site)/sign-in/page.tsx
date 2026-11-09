@@ -16,7 +16,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   const at = await portalLinks();
   const [{ project }, { continue: handoff, link, next, title }] = await Promise.all([props.params, props.searchParams]);
   // Where they were (e.g. a board with a prefilled post), to go back to afterwards.
-  // A board's "Share your idea" posted here before its script ran: the title typed comes along, for the way back.
+  // A board's "Share an idea" posted here before its script ran: the title typed comes along, for the way back.
   const back = typeof next === "string" && typeof title === "string" && title.trim() ? withTitle(next, title.trim().slice(0, 200)) : next;
   const nextPath = typeof back === "string" ? safeRedirectPath(back, "") : "";
   const [portal, session] = await Promise.all([
@@ -33,7 +33,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   ssoUrl?.searchParams.set("redirect", nextPath || "/");
 
   return (
-    <div className="mx-auto flex w-full max-w-sm flex-col gap-4">
+    <div data-auth-page className="mx-auto flex w-full max-w-sm flex-col gap-4 sm:mt-12">
       {(handoff === "failed" || link === "failed") && (
         <Alert variant="destructive">
           <CircleAlertIcon />
@@ -86,7 +86,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
       {/* A plain link: /continue is a route that sets a cookie and leaves for the app host. */}
       <a
         href={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
-        className={buttonVariants({ variant: "ghost", className: "w-full" })}
+        className={buttonVariants({ variant: "outline", className: "w-full" })}
       >
         <TutiMark className="size-4" />
         Continue with your Tuti account

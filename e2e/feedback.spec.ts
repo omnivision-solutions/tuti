@@ -513,13 +513,14 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await expect(tabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
   await expect(titles).toHaveText(["Calendar sync", "Slack alerts", "Dark mode"]);
 
-  // A row: its status above the title, the vote button on the right.
+  // A row: the title, who posted it and when under it (Open, every new idea's status, isn't said), the vote button on the right.
   const row = main.getByRole("listitem").filter({ has: visitor.getByRole("link", { name: "Dark mode" }) });
+  await expect(row.getByText("Open", { exact: true })).toHaveCount(0);
   const rowLayout = async () => {
-    const status = (await row.getByText("Open", { exact: true }).boundingBox())!;
+    const posted = (await row.locator("time").boundingBox())!;
     const title = (await row.getByRole("link", { name: "Dark mode" }).boundingBox())!;
     const vote = (await row.getByRole("link", { name: /^Sign in to vote/ }).boundingBox())!;
-    expect(status.y + status.height).toBeLessThanOrEqual(title.y);
+    expect(title.y + title.height).toBeLessThanOrEqual(posted.y);
     expect(vote.x).toBeGreaterThanOrEqual(title.x + title.width);
   };
   await rowLayout();

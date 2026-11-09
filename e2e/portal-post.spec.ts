@@ -36,7 +36,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
   // And says when they expect it (the key's page is on the way: back to the post after).
   // A year from now: always still to come (a month that's passed isn't shown).
   const eta = new Date(Date.UTC(new Date().getUTCFullYear() + 1, new Date().getUTCMonth()));
-  const expected = `expected ${eta.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })}`;
+  const expected = `Expected ${eta.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })}`;
   await (await apiFor(team, slug))("/posts/1", { eta: eta.toISOString().slice(0, 7) }, "PATCH");
   await team.goto(`/app/${slug}/p/1`);
 
@@ -65,7 +65,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
       await expect(faces.locator('[data-slot="avatar-fallback"]').first()).toHaveClass(/bg-avatar-/);
       const [front, behind] = [(await faces.nth(0).boundingBox())!, (await faces.nth(1).boundingBox())!];
       expect(behind.x - front.x).toBeGreaterThanOrEqual(front.width - 2);
-      await expect(voters.getByText("2 people want this", { exact: true })).toBeVisible();
+      await expect(voters.getByText("want this", { exact: true })).toBeVisible();
       // The comment box is there.
       await expect(visitor.getByRole("textbox", { name: "Comment" })).toBeVisible();
       await expect(visitor.getByText("You'll sign in to post it.", { exact: true })).toBeVisible();

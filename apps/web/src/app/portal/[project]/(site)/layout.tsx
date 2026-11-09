@@ -12,7 +12,6 @@ import { PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLook
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { PortalAssistant } from "@/components/portal-assistant";
-import { cn } from "@/lib/utils";
 import { PortalMenu, PortalMenuProvider } from "@/components/portal-menu";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
@@ -117,7 +116,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalMenuProvider>
         <PortalTop>
         {/* On phones the parts' tabs sit on its bottom edge, under room for the first line. */}
-        <header className={cn("portal-header flex flex-wrap items-center gap-x-6 gap-y-2 border-b px-6 pt-3 sm:py-2.5", !canRead && "pb-3")}>
+        <header className="portal-header border-b">
+        {/* Its contents as wide as the pages under it, the same on every page. */}
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-2.5">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           {/* On phones it takes what the buttons leave (a long name is cut short), so they share its line. */}
           <div className="flex min-w-0 max-sm:grow max-sm:basis-0">
@@ -134,13 +135,14 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
               // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.
               <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? `${appUrl().origin}/app/account` : "/account"} />
             ) : (
-              <SignInLink className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              <SignInLink className={buttonVariants({ variant: "outline", size: "sm", className: "[:root:has([data-auth-page])_&]:hidden" })}>
                 Sign in
               </SignInLink>
             )}
             {/* For everyone: on a private portal's sign-in page it has the team's links (no parts). */}
-            <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={canRead ? project.boards : []} />
+            <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={canRead ? project.boards : []} parts={canRead} />
           </div>
+        </div>
         </header>
         {canRead && <PartRows boards={project.boards} docsTabs={docsTabs} />}
         </PortalTop>

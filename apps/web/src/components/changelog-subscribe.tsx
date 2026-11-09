@@ -20,7 +20,7 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
   const form = (
     // The form stays (and its button keeps focus), with what was typed if it's refused; the answer is read out from here.
     <form {...keepingFields(action)} className="flex flex-col gap-2">
-      <p className="text-sm text-muted-foreground">The changelog entries sent to subscribers come to your inbox, each with a link to unsubscribe.</p>
+      {!inCard && <p className="text-sm text-muted-foreground">New entries in your inbox, each with a link to unsubscribe.</p>}
       <div className="flex flex-wrap gap-2">
         <Input
           name="email"
@@ -35,7 +35,7 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
           className="min-w-0 flex-1 basis-56"
         />
         {/* Disabled while it sends, but keeping its focus. */}
-        <Button type="submit" disabled={pending} focusableWhenDisabled>
+        <Button type="submit" variant={inCard ? "outline" : "default"} disabled={pending} focusableWhenDisabled>
           {pending ? "Sending…" : "Subscribe"}
         </Button>
       </div>
@@ -48,8 +48,8 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
   return inCard ? (
     form
   ) : (
-    <section aria-labelledby="changelog-subscribe" className="flex flex-col gap-2 rounded-xl border p-4">
-      <h2 id="changelog-subscribe" className="font-heading font-semibold">
+    <section aria-labelledby="changelog-subscribe" className="flex flex-col gap-3 rounded-xl bg-card p-4 shadow-xs ring-1 ring-border">
+      <h2 id="changelog-subscribe" className="font-semibold">
         Get updates by email
       </h2>
       {form}

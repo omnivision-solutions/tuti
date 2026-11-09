@@ -306,7 +306,9 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   const someoneElse = await newPerson(browser, portalUrl(slug));
   await someoneElse.goto(link);
   await expect(someoneElse.getByText("That sign-in link has expired or was already used. Ask for a new one.")).toBeVisible();
-  await expect(someoneElse.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
+  // On the sign-in page, its form is the way in (the header has no Sign in there).
+  await expect(someoneElse.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible();
+  await expect(someoneElse.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeHidden();
 
   // From the portal's home page it comes back to the portal's home page (the app has a "/" too).
   const wes = await newPerson(browser, portalUrl(slug));

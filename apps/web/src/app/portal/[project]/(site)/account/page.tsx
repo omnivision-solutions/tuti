@@ -56,14 +56,13 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
     noAddress: <p>{project.name}&apos;s sign-in didn&apos;t give this account an email address, so it can&apos;t be emailed about posts.</p>,
   };
 
+  // Two sections of one card: what they posted, what they voted for.
   const list = (id: string, title: string, items: typeof posts, empty: string) => (
-    <Card role="region" aria-labelledby={id}>
-      <CardHeader>
-        <CardTitle>
-          <h2 id={id}>{title}</h2>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+    <section role="region" aria-labelledby={id} className="flex flex-col gap-2 py-4 first:pt-0 last:pb-0">
+      <h2 id={id} className="font-semibold">
+        {title}
+      </h2>
+      <div>
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (
@@ -87,8 +86,8 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
             ))}
           </ItemList>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 
   return (
@@ -148,8 +147,12 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
           <CardContent className="text-sm text-muted-foreground">{why[never]}</CardContent>
         </Card>
       )}
-      {list("my-posts", "My posts", posts, "You haven't posted here yet.")}
-      {list("my-votes", "My votes", votes, "You haven't voted on others' posts here yet.")}
+      <Card>
+        <CardContent className="flex flex-col divide-y">
+          {list("my-posts", "My posts", posts, "You haven't posted here yet.")}
+          {list("my-votes", "My votes", votes, "You haven't voted on others' posts here yet.")}
+        </CardContent>
+      </Card>
     </div>
   );
 }

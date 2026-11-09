@@ -55,17 +55,17 @@ test("a portal post says when the team expects it, from this month on; not a mon
   const shown = async () =>
     textOf(await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-1" }), searchParams: Promise.resolve({}) } as never));
 
-  expect(await shown()).toContain(`expected ${label(month(1))}`);
+  expect(await shown()).toContain(`Expected ${label(month(1))}`);
   // This month: still to come.
   await prisma.post.update({ where: { id: post.id }, data: { eta: month(0) } });
-  expect(await shown()).toContain(`expected ${label(month(0))}`);
+  expect(await shown()).toContain(`Expected ${label(month(0))}`);
   // Last month, and the post still Planned: a missed date isn't shown.
   await prisma.post.update({ where: { id: post.id }, data: { eta: month(-1) } });
-  expect(await shown()).not.toContain("expected");
+  expect(await shown()).not.toContain("Expected");
   // Shipped or closed: nothing left to expect, whatever the month.
   for (const status of ["COMPLETED", "CLOSED"] as const) {
     await prisma.post.update({ where: { id: post.id }, data: { eta: month(1), status } });
-    expect(await shown()).not.toContain("expected");
+    expect(await shown()).not.toContain("Expected");
   }
 });
 

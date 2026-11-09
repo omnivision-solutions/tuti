@@ -79,24 +79,17 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(parts.getByRole("link", { name: "Roadmap" })).toHaveAttribute("aria-current", "page");
   await expect(parts.getByRole("link", { name: "Feedback" })).not.toHaveAttribute("aria-current");
   await expect(boards).toHaveCount(0);
-  // On a phone the parts get a line of their own, scrolling sideways rather than widening the page.
+  // On a phone the header is one line: the parts are in its menu, with the boards.
   await visitor.setViewportSize({ width: 390, height: 844 });
   await visitor.goto("/feedback/bugs");
   await expect(boards).toBeVisible();
+  await expect(parts).toBeHidden();
   expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(visitor, "portal-header-phone");
-  // On a narrower phone the parts don't fit: the row fades at the end with more, and the fade moves as it scrolls.
-  await visitor.setViewportSize({ width: 360, height: 780 });
-  const fade = () => parts.evaluate((nav) => [nav.dataset.more, getComputedStyle(nav).maskImage !== "none"]);
-  await expect.poll(fade).toEqual(["end", true]);
-  await checkpoint(visitor, "portal-header-phone-narrow", { fullPage: false });
-  await parts.evaluate((nav) => (nav.scrollLeft = nav.scrollWidth));
-  await expect.poll(fade).toEqual(["start", true]);
-  await expect(parts.getByRole("link", { name: "Docs" })).toBeInViewport({ ratio: 1 });
-  await visitor.setViewportSize({ width: 390, height: 844 });
-  // The header's menu has the boards.
   await visitor.getByRole("banner").getByRole("button", { name: "Menu" }).click();
   const menu = visitor.getByRole("dialog", { name: "Menu" });
+  await expect(menu.getByRole("navigation", { name: "Portal" }).getByRole("link")).toHaveText(["Feedback", "Roadmap", "Changelog", "Docs"]);
+  await expect(menu.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
   await expect(menu.getByRole("navigation", { name: "Boards" }).getByRole("link", { name: "Bug reports" })).toHaveAttribute("aria-current", "page");
   await checkpoint(visitor, "portal-header-phone-menu", { fullPage: false });
   await menu.getByRole("link", { name: "Feature requests" }).click();
@@ -131,6 +124,7 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   const response = await visitor.goto("/feedback/bugs");
   expect(response?.status()).toBe(404);
   // With one board there's no row of them.
+  await visitor.setViewportSize({ width: 1280, height: 800 });
   await visitor.goto("/feedback/feature-requests");
   await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
   await expect(boards).toHaveCount(0);
@@ -172,7 +166,7 @@ test("a board's own words for posting: the team sees them in a preview as they t
   await expect(preview).not.toContainText("Not saved");
   await owner.keyboard.press("Escape");
 
-  // On the portal: the description under the name, and the board's words in its "Share your idea" box.
+  // On the portal: the description under the name, and the board's words in its "Share an idea" box.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
   await expect(ada.getByText("What should we build next?")).toBeVisible();

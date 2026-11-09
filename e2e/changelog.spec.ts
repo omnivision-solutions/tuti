@@ -223,10 +223,13 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const entry = ada.getByRole("article", { name: "Dark mode is here" });
   await expect(entry.getByRole("heading", { name: "A darker look", level: 2 })).toBeVisible();
   await expect(entry).toContainText("New");
-  await expect(entry.getByText("Breaking")).toHaveCSS("color", breaking);
+  // (On wide screens the tags are in the date's margin; a phone's copy, above the title, is hidden there.)
+  await expect(entry.getByText("Breaking").filter({ visible: true })).toHaveCSS("color", breaking);
   await expect(entry).toContainText("Switch to the dark theme from your profile menu.");
   await checkpoint(ada, "portal-changelog");
-  // Readers react, one of each, on and off; the team's list shows the counts.
+  // Readers react on the entry's own page, one of each, on and off; the team's list shows the counts.
+  await entry.getByRole("link", { name: "Dark mode is here" }).click();
+  await ada.waitForURL(/\/changelog\/1$/);
   const tada = entry.getByRole("button", { name: /^React with 🎉/ });
   // No count until there is one.
   await expect(tada).toHaveAccessibleName("React with 🎉");
@@ -253,7 +256,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await reader.reload();
   await expect(readerTada).toHaveAccessibleName("React with 🎉");
   await reader.context().close();
-  // Feed readers find it too.
+  // Feed readers find it too, from the list.
+  await ada.goto("/changelog");
   await expect(ada.locator('link[rel="alternate"][type="application/rss+xml"]')).toHaveAttribute("href", `${portalUrl(slug)}/changelog/rss.xml`);
   const feed = await (await ada.request.get(`${portalUrl(slug)}/changelog/rss.xml`)).text();
   expect(feed).toContain("<title>Dark mode is here</title>");
@@ -690,11 +694,10 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   expect((await fix.locator("time:visible").boundingBox())!.y).toBeLessThan((await fix.getByRole("heading").boundingBox())!.y);
   await expect(months).toBeHidden();
   expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  // RSS beside the title, not on a line of its own under it.
+  // RSS and Subscribe on a line of their own under the title and its line, which keep the width.
   const heading = (await main.getByRole("heading", { level: 1, name: "Changelog" }).boundingBox())!;
   const rss = (await main.getByRole("link", { name: "RSS" }).boundingBox())!;
-  expect(rss.y).toBeLessThan(heading.y + heading.height);
-  expect(rss.x).toBeGreaterThan(heading.x + heading.width);
+  expect(rss.y).toBeGreaterThan(heading.y + heading.height);
   await checkpoint(reader, "portal-changelog-fixed-phone");
   await reader.emulateMedia({ colorScheme: "dark" });
   await checkpoint(reader, "portal-changelog-fixed-phone-dark");
@@ -1049,7 +1052,7 @@ test("readers get the changelog by email: confirmed first, each entry published 
   // Not confirmed yet: it says what happens once they are.
   await expect(reader.getByText(`Once you confirm, the changelog entries Acme emails to subscribers will go to ${address}.`)).toBeVisible();
   await checkpoint(reader, "portal-changelog-subscribe-confirm");
-  await reader.getByRole("button", { name: "Get updates by email" }).click();
+  await reader.getByRole("button", { name: "Confirm subscription" }).click();
   await expect(reader.getByRole("heading", { name: "You get Acme's updates by email" })).toBeVisible();
   await checkpoint(reader, "portal-changelog-subscribed");
   await fitsPhone();

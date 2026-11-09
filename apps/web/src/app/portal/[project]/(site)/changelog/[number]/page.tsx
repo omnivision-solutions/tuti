@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
 import { ChangelogEntryView } from "@/components/changelog-entry";
-import { ChangelogMenu } from "@/components/changelog-pages";
+import { ChangelogMenu, changelogByEmail } from "@/components/changelog-pages";
 import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
@@ -24,7 +24,10 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
     notFound();
   }
   const session = await getSession();
-  const [entry] = await publishedEntries(slug, { number, take: 1, userId: session?.user.id });
+  const [[entry], project] = await Promise.all([
+    publishedEntries(slug, { number, take: 1, userId: session?.user.id }),
+    prisma.project.findUnique({ where: { slug }, select: { id: true, name: true, portalAccess: true } }),
+  ]);
   if (!entry) {
     notFound();
   }
@@ -39,6 +42,8 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
         react={{ projectSlug: slug, signedIn: !!session }}
         base={await portalBase()}
       />
+      {/* After reading: the way to hear about the next one. */}
+      {project && <div className="mt-4 border-t pt-8">{await changelogByEmail({ ...project, slug }, session)}</div>}
     </div>
   );
 }

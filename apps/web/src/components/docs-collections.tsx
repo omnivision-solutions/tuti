@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { ChevronRightIcon, FolderIcon, LockIcon } from "lucide-react";
+import { ChevronRightIcon, FileTextIcon, FolderIcon, LockIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -20,12 +20,16 @@ export function LockedMark({ className }: { className?: string }) {
 
 export function ArticleLinks({ articles, href }: { articles: Articles; href: (slug: string) => string }) {
   return (
-    <ul className="flex flex-col gap-1.5">
+    <ul className="flex flex-col">
       {articles.map((article) => (
-        <li key={article.slug}>
-          <Link href={href(article.slug)} className="break-words text-primary hover:underline">
-            {article.title}
-            {article.locked && <LockedMark />}
+        <li key={article.slug} className="border-b">
+          <Link href={href(article.slug)} className="group flex items-center gap-3 py-3 text-[0.9375rem] break-words transition-colors hover:text-primary">
+            <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+            <span className="min-w-0 flex-1">
+              {article.title}
+              {article.locked && <LockedMark />}
+            </span>
+            <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
           </Link>
         </li>
       ))}

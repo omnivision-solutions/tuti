@@ -25,6 +25,9 @@ const within = (path: string, href: string) => path === href || path.startsWith(
 /** A board's own page (not one of its posts): on wide screens it has a sidebar, with the boards. */
 const onBoard = (path: string) => /^\/feedback\/[^/]+$/.test(path);
 
+/** A post's page: on wide screens its properties beside it. */
+const onPost = (path: string) => /^\/feedback\/[^/]+\/[^/]+$/.test(path);
+
 /** The changelog's list (not an entry's page): on wide screens the dates in a margin and the month index beside it. */
 const onChangelogList = (path: string) => /^\/changelog(\/page\/\d+)?$/.test(path);
 
@@ -45,7 +48,8 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
       aria-label="Portal"
       className={cn(
         // Relative: the tabs' offsets (useScrollingRow) are measured from the row.
-        "relative order-last -mx-3 flex w-[calc(100%+1.5rem)] gap-2 sm:order-none sm:mx-0 sm:w-auto sm:min-w-0 sm:flex-1 sm:gap-1",
+        // On phones they're in the header's menu (PortalMenu): the header stays one line.
+        "relative -my-2.5 hidden min-w-0 flex-1 gap-1 self-stretch sm:flex",
         SCROLLING_ROW,
       )}
     >
@@ -60,16 +64,20 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
             href={at(key === "feedback" ? boardPath(boards[0]!) : href)}
             aria-current={active ? "page" : undefined}
             data-active={active || undefined}
-            // On phones a tab of its own row, underlined (on the header's edge) when it's this part; wider, a pill.
             className={cn(
-              "shrink-0 scroll-mx-12 border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:rounded-md sm:border-b-0 sm:py-1.5 sm:text-sm",
-              active ? "border-primary font-medium text-foreground sm:bg-accent" : "border-transparent text-muted-foreground hover:text-foreground",
+              // Underlined on the header's bottom edge at every width (the board's and docs' rows the same).
+              "shrink-0 scroll-mx-12 border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:inline-flex sm:items-center sm:py-0 sm:text-sm",
+              active
+                ? "border-primary font-medium text-foreground [:root:has([data-portal-not-found])_&]:border-transparent [:root:has([data-portal-not-found])_&]:font-normal"
+                : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {label}
             {/* Not on the changelog itself: being there is seeing it (recorded a moment later). */}
             {key === "changelog" && newChangelog && !active && (
-              <span className="ml-1.5 rounded-full bg-highlight px-1.5 py-0.5 text-xs font-medium text-highlight-foreground">New</span>
+              <span className="ml-1.5 inline-block size-2 rounded-full bg-highlight-foreground align-middle">
+                <span className="sr-only">New</span>
+              </span>
             )}
           </Link>
         );
@@ -127,7 +135,7 @@ export function PortalMain({ children }: { children: React.ReactNode }) {
       className={cn(
         "mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10",
         within(path, "/roadmap") ? "max-w-6xl" : !within(path, "/docs") && "max-w-3xl",
-        (onBoard(path) || onChangelogList(path)) && "lg:max-w-5xl",
+        (onBoard(path) || onPost(path) || onChangelogList(path)) && "lg:max-w-6xl",
       )}
     >
       {children}
@@ -151,17 +159,15 @@ export function DocsSearch({ askAI }: { askAI: boolean }) {
 
 /**
  * A part's row under the header (`label` names it): only with two or more entries, scrolling sideways as the parts do.
- * `wide` lines it up with Docs' page, the whole width. A `locked` entry (a docs tab this reader may not read) has a lock.
+ * In the header's container. A `locked` entry (a docs tab this reader may not read) has a lock.
  */
 export function PartRow({
   label,
   links,
-  wide = false,
   className,
 }: {
   label: string;
   links: { href: string; name: string; active: boolean; locked?: boolean }[];
-  wide?: boolean;
   className?: string;
 }) {
   const nav = useScrollingRow(links.find((link) => link.active)?.href, links);
@@ -169,8 +175,8 @@ export function PartRow({
     return null;
   }
   return (
-    <div className={cn("border-b", className)}>
-      <nav ref={nav} className={cn("relative mx-auto flex w-full gap-1 px-6", SCROLLING_ROW, !wide && "max-w-3xl")} aria-label={label}>
+    <div className={cn("border-b [:root:has([data-portal-not-found])_&]:hidden", className)}>
+      <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-6xl gap-1 px-6", SCROLLING_ROW)} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link
             key={href}
@@ -209,8 +215,8 @@ export function PartRows({ boards, docsTabs }: { boards: Board[]; docsTabs: Reac
   }
   if (within(path, "/feedback")) {
     const links = boards.map((board) => ({ href: at(boardPath(board)), name: board.name, active: within(path, boardPath(board)) }));
-    // On a board's page on wide screens, the boards are in its sidebar instead.
-    return <PartRow label="Boards" links={links} className={cn(onBoard(path) && "lg:hidden")} />;
+    // On a board's page on wide screens, the boards are in its sidebar instead; a post's page has its way back above its title.
+    return onPost(path) ? null : <PartRow label="Boards" links={links} className={cn(onBoard(path) && "lg:hidden")} />;
   }
   return null;
 }

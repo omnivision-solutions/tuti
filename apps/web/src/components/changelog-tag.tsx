@@ -18,6 +18,10 @@ export const PICKED_CHIP: Record<"secondary" | "destructive", string> = {
   destructive: "has-checked:border-transparent has-checked:bg-destructive/10 has-checked:text-destructive-foreground dark:has-checked:bg-destructive/20",
 };
 
-export function TagBadge({ tag }: { tag: ChangelogTag }) {
-  return <Badge variant={TAG_VARIANTS[tag]}>{TAG_LABELS[tag]}</Badge>;
+export function TagBadge({ tag, className }: { tag: ChangelogTag; className?: string }) {
+  return (
+    <Badge variant={TAG_VARIANTS[tag]} className={className}>
+      {TAG_LABELS[tag]}
+    </Badge>
+  );
 }

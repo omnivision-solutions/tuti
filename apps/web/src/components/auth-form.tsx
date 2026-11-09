@@ -191,38 +191,47 @@ export function AuthForm({
           <Button type="submit" disabled={pending} className="w-full">
             {pending ? "…" : isSignUp ? "Sign up" : usePassword ? "Sign in" : "Email me a sign-in link"}
           </Button>
+          {/* A portal's (sign-in links): the password way an outline under the link's button, then its other links in one style. */}
           {!usePassword && (
-            <a href={onApp()} className={buttonVariants({ variant: "ghost", className: "w-full" })}>
+            <a href={onApp()} className={buttonVariants({ variant: "outline", className: "w-full" })}>
               Use a password instead
             </a>
           )}
-          {!usePassword && forgotPassword && (
-            // Asked here, its link opens on the app and comes back (server/password-reset.ts).
-            <Link href={at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
-              Forgot your password?
-            </Link>
-          )}
-          {(isSignUp || signUp) && (
-          <p className="text-sm text-muted-foreground">
-            {isSignUp ? "Have an account? " : "New here? "}
-            {!usePassword ? (
-              <a href={onApp(true)} className="text-foreground underline underline-offset-4">
-                Create an account
-              </a>
-            ) : (
-            <Link
-              href={at(
-                `${isSignUp ? "/sign-in" : "/sign-up"}?${new URLSearchParams({
-                  ...(next && { next }),
-                  ...(defaultEmail && { email: defaultEmail }),
-                })}`,
+          {!usePassword && (forgotPassword || signUp) && (
+            <p className="flex flex-col items-center gap-x-2 gap-y-1 text-sm text-muted-foreground min-[400px]:flex-row min-[400px]:justify-center">
+              {forgotPassword && (
+                // Asked here, its link opens on the app and comes back (server/password-reset.ts).
+                <Link href={at("/forgot-password")} className="underline-offset-4 hover:text-foreground hover:underline">
+                  Forgot your password?
+                </Link>
               )}
-              className="text-foreground underline underline-offset-4"
-            >
-              {isSignUp ? "Sign in" : "Create an account"}
-            </Link>
-            )}
-          </p>
+              {forgotPassword && signUp && (
+                <span aria-hidden className="max-[399px]:hidden">
+                  ·
+                </span>
+              )}
+              {signUp && (
+                <a href={onApp(true)} className="underline-offset-4 hover:text-foreground hover:underline">
+                  Create an account
+                </a>
+              )}
+            </p>
+          )}
+          {usePassword && (isSignUp || signUp) && (
+            <p className="text-sm text-muted-foreground">
+              {isSignUp ? "Have an account? " : "New here? "}
+              <Link
+                href={at(
+                  `${isSignUp ? "/sign-in" : "/sign-up"}?${new URLSearchParams({
+                    ...(next && { next }),
+                    ...(defaultEmail && { email: defaultEmail }),
+                  })}`,
+                )}
+                className="text-foreground underline underline-offset-4"
+              >
+                {isSignUp ? "Sign in" : "Create an account"}
+              </Link>
+            </p>
           )}
         </CardFooter>
       </form>

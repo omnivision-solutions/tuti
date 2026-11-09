@@ -3,9 +3,11 @@ import { prisma } from "@tuti/db";
 import { Button } from "@/components/ui/button";
 import { CONFIRM_LINK_HOURS, findConfirmation, findSubscription, reachSentence } from "@/server/changelog-subscription";
 import { portalLinks } from "@/server/portal-base";
+import { MESSAGE_TEXT, MESSAGE_TITLE, PortalMessage } from "@/components/portal-message";
+import { BellIcon } from "lucide-react";
 
-const heading = "font-heading text-2xl font-bold";
-const text = "break-words text-muted-foreground";
+const heading = MESSAGE_TITLE;
+const text = MESSAGE_TEXT;
 
 /**
  * A changelog subscription's page, from its links: the confirmation email's (`confirm`) and every changelog email's
@@ -77,7 +79,7 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
           {request.reach === "paused" && <> when {name}&apos;s emails, paused for now, are resumed</>}.
         </p>
         <form method="post" action={action}>
-          <Button type="submit">Get updates by email</Button>
+          <Button type="submit">Confirm subscription</Button>
         </form>
       </Message>
     );
@@ -152,9 +154,8 @@ export default async function ChangelogSubscriptionPage(props: PageProps<"/porta
   }
 }
 
-function Message({ children }: { children: React.ReactNode }) {
-  return <div className="mx-auto flex w-full max-w-md flex-col gap-4 py-12">{children}</div>;
-}
+/** A subscription page's card, with the bell. */
+const Message = ({ children }: { children: React.ReactNode }) => <PortalMessage icon={BellIcon}>{children}</PortalMessage>;
 
 /** Nothing is emailed from a private portal (changelogReach): nothing to confirm, and Unsubscribe still works. */
 function PrivatePortal({ name, email, unsubscribe }: { name: string; email?: string; unsubscribe?: React.ReactNode }) {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { MediaUrls } from "@tuti/content";
+import { LightbulbIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useActionState, useEffect, useEffectEvent, useRef, useState } from "react";
@@ -8,8 +9,8 @@ import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { BOARD_TEXT_DEFAULTS } from "@/lib/board-texts";
 import { boardPath, postPath } from "@/lib/post-urls";
@@ -23,22 +24,20 @@ const SUGGEST_DELAY_MS = 300;
 type Placeholders = { titlePlaceholder?: string; detailsPlaceholder?: string };
 
 /**
- * "Share your idea" at the top of a board, for everyone: the title first, the details once it's
+ * "Share an idea" at the top of a board, for everyone: the title first, the details once it's
  * clicked or typed in. Signed out, the similar ideas show as they type, and "Sign in to post"
  * brings them back to the board with the title they typed.
  */
 export function ShareIdeaBox({ signedIn, ...form }: { signedIn: boolean } & Omit<React.ComponentProps<typeof NewPostForm>, "collapsible" | "signedOut">) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h2>Share your idea</h2>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <NewPostForm {...form} collapsible signedOut={!signedIn} />
-      </CardContent>
-    </Card>
+    <section aria-labelledby="share-idea" className="group/share flex flex-col gap-2 rounded-xl bg-card p-4 shadow-xs ring-1 ring-border has-[[data-expanded]]:p-5">
+      {/* What the box is for, then the box: its title first, the details once it's opened. */}
+      <h2 id="share-idea" className="flex items-center gap-2 font-semibold">
+        <LightbulbIcon aria-hidden className="size-4 text-primary" />
+        Share an idea
+      </h2>
+      <NewPostForm {...form} collapsible signedOut={!signedIn} />
+    </section>
   );
 }
 
@@ -169,9 +168,12 @@ export function NewPostForm({
     }, SUGGEST_DELAY_MS);
   };
 
+  // A board's box before it's opened (and always signed out): the title and its button on one line.
+  const oneLine = collapsible && (signedOut || !expanded);
   return (
     <form
       ref={formRef}
+      data-expanded={collapsible && !oneLine ? true : undefined}
       // Signed out, sending it (Enter, or "Sign in to post") signs in rather than posting; before the page's
       // script runs, as a plain GET to sign-in, which brings the title back to this board.
       {...(signedOut
@@ -197,9 +199,9 @@ export function NewPostForm({
           <input type="hidden" name="boardSlug" value={boardSlug} />
         </>
       )}
-      <FieldGroup>
+      <FieldGroup className={cn(oneLine && "flex-row flex-wrap items-center gap-2")}>
         {/* No boxes: a title and the details, as they're published. */}
-        <Field data-invalid={state.error ? true : undefined}>
+        <Field data-invalid={state.error ? true : undefined} className={cn(oneLine && "w-auto min-w-0 flex-1 basis-24")}>
           <input
             key={submitted}
             id="post-title"
@@ -212,13 +214,17 @@ export function NewPostForm({
             onFocus={() => setExpanded(true)}
             onChange={(e) => suggest(e.target.value)}
             aria-invalid={state.error ? true : undefined}
-            className={`${BARE_TITLE} text-xl`}
+            className={
+              oneLine
+                ? "h-10 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                : cn(BARE_TITLE, collapsible ? "text-lg" : "text-xl")
+            }
           />
           {state.error && <FieldError>{state.error}</FieldError>}
         </Field>
 
         {similar.length > 0 && (
-          <div className="flex flex-col gap-1 rounded-lg border bg-muted/50 p-3" role="status">
+          <div className={cn("flex flex-col gap-1 rounded-lg border bg-muted/50 p-3", oneLine && "order-last basis-full")} role="status">
             <p className="text-sm font-medium">Already posted? Vote on it instead:</p>
             <ul className="flex flex-col">
               {similar.map((post) => (
@@ -246,7 +252,7 @@ export function NewPostForm({
         {signedOut ? (
           // Submits the form (its sign-in GET, or the push above), so a title typed before the script ran goes too;
           // an empty title may sign in as well.
-          <Button type="submit" formNoValidate className="self-end">
+          <Button type="submit" formNoValidate className={cn(!oneLine && "self-end")}>
             Sign in to post
           </Button>
         ) : (
@@ -262,7 +268,7 @@ export function NewPostForm({
                 uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
               />
             )}
-            <Button type="submit" disabled={pending} className="self-end">
+            <Button type="submit" disabled={pending} className={cn(!oneLine && "self-end")}>
               {pending ? "Posting…" : postButton}
             </Button>
           </>

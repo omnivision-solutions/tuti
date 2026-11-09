@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
+import { PORTAL_PARTS } from "@/components/portal-nav";
 import { PortalLogo, usePortalLook } from "@/components/portal-look";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -39,7 +40,18 @@ const within = (path: string, href: string) => path === href || path.startsWith(
  * (Customize → Navigation), which the header leaves out at those widths. Opening a link
  * closes it. Left out when there's nothing to put in it.
  */
-export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref: string; boards: { slug: string; name: string }[] }) {
+export function PortalMenu({
+  name,
+  homeHref,
+  boards,
+  parts = false,
+}: {
+  name: string;
+  homeHref: string;
+  boards: { slug: string; name: string }[];
+  /** The portal's parts too (Feedback, Roadmap, Changelog, Docs): on phones the header leaves them out for this menu. */
+  parts?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const path = usePortalPath();
   const at = usePortalHref();
@@ -67,7 +79,7 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
       })}
     </nav>
   ) : null;
-  if (!part && headerLinks.length === 0) {
+  if (!part && headerLinks.length === 0 && !parts) {
     return null;
   }
 
@@ -79,7 +91,7 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
   };
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={<Button variant="ghost" size="icon" aria-label="Menu" className="md:hidden" />}>
+      <SheetTrigger render={<Button variant="ghost" size="icon" aria-label="Menu" className={cn("md:hidden", !part && headerLinks.length === 0 && "sm:hidden")} />}>
         <MenuIcon />
       </SheetTrigger>
       {/* The whole screen wherever it shows (below tablet width), whatever's selected in it closing it if it's a link. */}
@@ -98,6 +110,30 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
           </SheetClose>
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {/* On phones, where the header has no room for them: the parts first, big. */}
+          {parts && (
+            <nav aria-label="Portal" className="flex flex-col gap-0.5 border-b px-4 py-4 sm:hidden">
+              {PORTAL_PARTS.map(({ key, label, href }) => {
+                if (key === "feedback" && boards.length === 0) {
+                  return null;
+                }
+                const active = within(path, href);
+                return (
+                  <Link
+                    key={key}
+                    href={at(key === "feedback" ? boardPath(boards[0]!) : href)}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "rounded-lg px-3 py-2.5 font-heading text-lg font-semibold",
+                      active ? "bg-primary/10 text-primary" : "text-foreground hover:bg-accent",
+                    )}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
           {/* A size up from the sidebar: these are taps on a phone. */}
           {part && <div className="border-b px-4 py-5 [&_nav]:text-base [&_ul[aria-label=Links]]:text-base">{part}</div>}
           {headerLinks.length > 0 && (

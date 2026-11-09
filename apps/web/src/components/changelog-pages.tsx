@@ -1,6 +1,6 @@
 import { prisma, type ChangelogTag } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
-import { RssIcon } from "lucide-react";
+import { BellIcon, RssIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -157,20 +157,36 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
     month.count++;
   });
   // The anchors: each month's first entry on this page.
+  const subscribe = project && (await changelogByEmail({ ...project, slug }, session));
+  // Its form (not where a reader who gets it stands), for the header's way to it.
+  const subscribable = !!subscribe && subscribe.type === ChangelogSubscribe;
   const anchors = new Map(entries.map((entry) => [monthOf(entry.publishedAt).key, entry.number] as const).reverse());
   return (
     // On wide screens the month index is in a column beside the header and the list (empty with a short history, so entries keep their width).
-    <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_11rem] lg:items-start lg:gap-x-12">
+    <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_15rem] lg:items-start lg:gap-x-12">
       <ChangelogMenu slug={slug} />
       {seen && <ChangelogSeen projectSlug={slug} at={seen.toISOString()} signedIn />}
       {/* The tags' chips go with the header, closer to it than the list. */}
       <div className="flex min-w-0 flex-col gap-4 lg:col-start-1">
         {/* RSS beside the title at every width (a header's actions go under it on phones). */}
-        <div className="flex items-start justify-between gap-4">
-          <PageHeader title="Changelog" description="What's new, improved and fixed." className="min-w-0" />
-          <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm", className: "shrink-0" })}>
-            <RssIcon aria-hidden /> RSS
-          </a>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <PageHeader
+            title="Changelog"
+            description="What's new, improved and fixed."
+            // Clearly over its entries' titles.
+            className="min-w-0 [&_h1]:text-[2.25rem] sm:[&_h1]:text-5xl [&_p]:text-base"
+          />
+          <div className="flex shrink-0 items-center gap-1">
+            <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              <RssIcon aria-hidden /> RSS
+            </a>
+            {/* To the form (beside the list on wide screens, after it below them). */}
+            {subscribable && (
+              <a href="#changelog-subscribe" className={buttonVariants({ variant: "outline", size: "sm" })}>
+                <BellIcon aria-hidden /> Subscribe
+              </a>
+            )}
+          </div>
         </div>
         {tags.length > 0 && (
           // Server-rendered links, so a picked tag is an address to share; picking one starts from the first page.
@@ -191,32 +207,32 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
           </nav>
         )}
       </div>
-      {/* Before the list, so the keyboard and screen readers reach it first; nothing new on phones: the header's menu
-          lists the entries by date (ChangelogMenu). */}
-      {listed.length >= MONTH_INDEX_FROM && (
-        <nav
-          aria-label="Months"
-          className="hidden max-h-[calc(100dvh-var(--portal-header-height,0px)-5rem)] overflow-y-auto lg:sticky lg:top-[calc(var(--portal-header-height,0px)+2.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:flex lg:flex-col"
-        >
-          <h2 className="mb-2 px-2 text-sm font-medium">Months</h2>
-          {[...months].map(([key, month]) => (
-            <Link
-              key={key}
-              href={`${at(changelogPath(month.page, tag))}#${key}`}
-              // Read out as "October 2026, 3 entries", not "October 20263".
-              aria-label={`${month.label}, ${month.count} ${month.count === 1 ? "entry" : "entries"}`}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <span className="min-w-0 flex-1">{month.label}</span>
-              <span className="text-xs tabular-nums">{month.count}</span>
-            </Link>
-          ))}
-        </nav>
-      )}
+      {/* Beside the header and the list on wide screens, staying in view: the month index (right after the chips for the keyboard),
+          then getting it by email. On phones after the list (the header's menu lists the entries by date: ChangelogMenu). */}
+      <aside
+        aria-label="Follow the changelog"
+        className="order-last flex flex-col gap-6 lg:sticky lg:top-[calc(var(--portal-header-height,0px)+2.5rem)] lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100dvh-var(--portal-header-height,0px)-5rem)]"
+      >
+        {listed.length >= MONTH_INDEX_FROM && (
+          <nav aria-label="Months" className="hidden min-h-0 flex-col overflow-y-auto lg:flex">
+            <h2 className="group-label mb-2 px-2">Months</h2>
+            {[...months].map(([key, month]) => (
+              <Link
+                key={key}
+                href={`${at(changelogPath(month.page, tag))}#${key}`}
+                // Read out as "October 2026, 3 entries", not "October 20263".
+                aria-label={`${month.label}, ${month.count} ${month.count === 1 ? "entry" : "entries"}`}
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <span className="min-w-0 flex-1">{month.label}</span>
+                <span className="text-xs tabular-nums">{month.count}</span>
+              </Link>
+            ))}
+          </nav>
+        )}
+        {subscribe}
+      </aside>
       <div className="flex min-w-0 flex-col gap-8 lg:col-start-1">
-        {/* Above the list, after the month index in the page's order, so the keyboard still reaches the months right
-            after the chips. */}
-        {project && (await changelogByEmail({ ...project, slug }, session))}
         {entries.length === 0 ? (
           tag ? (
             <EmptyState
@@ -232,16 +248,20 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
             <EmptyState title="Nothing here yet" description="New features and fixes show up here as they ship." />
           )
         ) : (
-          entries.map((entry, i) => (
-            <div
-              key={entry.number}
-              id={anchors.get(monthOf(entry.publishedAt).key) === entry.number ? monthOf(entry.publishedAt).key : undefined}
-              className="flex flex-col gap-8"
-            >
-              {i > 0 && <Separator />}
-              <ChangelogEntryView entry={entry} mediaUrls={media} react={{ projectSlug: slug, signedIn: !!session }} base={base} dateMargin />
-            </div>
-          ))
+          // On wide screens a timeline: the dates' dots on a line down the margin (lines between entries on phones).
+          <div className="relative flex flex-col gap-8 lg:gap-14 lg:before:absolute lg:before:top-3 lg:before:bottom-0 lg:before:left-[calc(7rem+0.75rem)] lg:before:w-px lg:before:bg-border">
+            {entries.map((entry, i) => (
+              <div
+                key={entry.number}
+                id={anchors.get(monthOf(entry.publishedAt).key) === entry.number ? monthOf(entry.publishedAt).key : undefined}
+                className="flex flex-col gap-8"
+              >
+                {i > 0 && <Separator className="lg:hidden" />}
+                {/* Reactions on the entry's own page, not under each one here. */}
+                <ChangelogEntryView entry={entry} mediaUrls={media} base={base} dateMargin />
+              </div>
+            ))}
+          </div>
         )}
         {(older || page > 1) && (
           <nav aria-label="Changelog pages" className="flex justify-between gap-4">
