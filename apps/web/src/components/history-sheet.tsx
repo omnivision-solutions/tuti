@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -14,6 +14,8 @@ export function HistorySheet({ open, title = "History", description, children }:
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Opening it focuses its body, not its first link or button (which would show a focus ring on opening it from a link).
+  const body = useRef<HTMLDivElement>(null);
   // Closed: the article's own address, with what else it had (`from`), not the panel's.
   const close = () => {
     const kept = new URLSearchParams(searchParams);
@@ -22,13 +24,15 @@ export function HistorySheet({ open, title = "History", description, children }:
   };
   return (
     <Sheet open={open} onOpenChange={(next) => !next && close()}>
-      <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl">
+      <SheetContent initialFocus={body} className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-xl">
         <SheetHeader className="border-b pr-12">
-          <SheetTitle>{title}</SheetTitle>
-          <SheetDescription>{description}</SheetDescription>
+          <SheetTitle className="font-heading text-lg font-semibold">{title}</SheetTitle>
+          <SheetDescription className="text-xs">{description}</SheetDescription>
         </SheetHeader>
         {/* Its cards keep their height (a card clips what overflows it), so a long version's changes scroll in the panel. */}
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 *:shrink-0">{children}</div>
+        <div ref={body} tabIndex={-1} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 outline-none *:shrink-0">
+          {children}
+        </div>
       </SheetContent>
     </Sheet>
   );

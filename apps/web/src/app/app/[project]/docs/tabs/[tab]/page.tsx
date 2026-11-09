@@ -1,32 +1,26 @@
 import { prisma } from "@tuti/db";
-import { ChevronRightIcon } from "lucide-react";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { AccessForm, DeleteTabButton, TabSettingsForm } from "@/components/docs";
-import { articleRowDetails, DocsArticleRows } from "@/components/docs-article-rows";
+import { articleRowDetails, TabContents } from "@/components/docs-article-rows";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
-import { LucideIcon } from "@/components/icon-field";
-import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
-import { accessBadgeFor, contentsMeta, teamDocs, treeArticle } from "@/server/team-docs";
+import { teamDocs, treeArticle } from "@/server/team-docs";
 
 /** A tab's page in the app: what's in it (Content), who can read it (Access), and its name and landing page (Settings). */
 export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs/[tab]">) {
-  const { project: slug, tab: tabSlug } = await props.params;
+  const [{ project: slug, tab: tabSlug }, { view }] = await Promise.all([props.params, props.searchParams]);
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
   const projectId = membership.project.id;
   const [docs, access] = await Promise.all([teamDocs(projectId), accessChoices(projectId)]);
-  const badge = accessBadgeFor(access);
   const index = docs.tabs.findIndex((t) => t.slug === tabSlug);
   const tab = docs.tabs[index];
   if (!tab) {
@@ -38,70 +32,39 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
   const inTab = docs.collections.filter((c) => c.tab === tab.slug);
   const top = inTab.filter((c) => c.parent === null);
   const uncollected = first ? docs.uncollected : [];
-  const count = top.length;
-  // The article rows' details, only when there are articles to list.
-  const rowDetails = uncollected.length > 0 ? await articleRowDetails(projectId) : null;
+  // The rows' details, only when there's something to list.
+  const rowDetails = top.length > 0 || uncollected.length > 0 ? await articleRowDetails(projectId) : null;
 
   return (
     <>
       <PageHeader
         title={tab.name}
-        meta={`Tab · ${count} ${count === 1 ? "collection" : "collections"}`}
+        // An article in no collection is on the first tab; on another, a new one starts in its first collection.
+        actions={<AddContentMenu parent={null} tab={tab.slug} article={first ? null : (top[0]?.slug ?? false)} />}
         more={
           // The first is the docs' home: another goes first before it can go.
           (index > 0 || docs.tabs.length === 1) && <DeleteTabButton projectSlug={slug} tab={tab} movesTo={docs.tabs[index - 1]?.name ?? null} />
         }
       />
-      <Tabs defaultValue="content">
-        <TabsList>
-          <TabsTrigger value="content">Content</TabsTrigger>
-          <TabsTrigger value="access">Access</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+      {/* `?view=settings` (the docs' home's "Tab settings") or `access` opens on that view. */}
+      <Tabs defaultValue={view === "settings" || view === "access" ? view : "content"}>
+        {/* Underlined, as the app's other page-level views (SubNav). */}
+        <TabsList className="-mt-2 w-full justify-start gap-0 rounded-none bg-transparent p-0 shadow-[inset_0_-1px_0_var(--color-border)]">
+          {["Content", "Access", "Settings"].map((name) => (
+            <TabsTrigger
+              key={name}
+              value={name.toLowerCase()}
+              className="rounded-none border-b-2 border-transparent px-2 py-2 first:pl-0 text-[0.875rem] data-active:border-primary data-active:bg-transparent data-active:shadow-none"
+            >
+              {name}
+            </TabsTrigger>
+          ))}
         </TabsList>
         <TabsContent value="content">
-          <div className="flex justify-end">
-            {/* An article in no collection is on the first tab; on another, a new one starts in its first collection. */}
-            <AddContentMenu parent={null} tab={tab.slug} article={first ? null : (top[0]?.slug ?? false)} />
-          </div>
-          {top.length === 0 && uncollected.length === 0 ? (
-            <EmptyState title="Nothing in this tab yet" description="Add a collection to it, or move one here in the tree." />
+          {rowDetails ? (
+            <TabContents projectSlug={slug} docs={docs} details={rowDetails} tab={tab.slug} uncollected={uncollected} />
           ) : (
-            <>
-              {top.length > 0 && (
-                <Card>
-                  <CardContent>
-                    <ItemList>
-                      {top.map((c) => (
-                        <ItemRow
-                          key={c.slug}
-                          leading={c.knownIcon && c.icon ? <LucideIcon name={c.icon} className="text-muted-foreground" /> : undefined}
-                          title={
-                            <Link href={`/app/${slug}/docs/collections/${c.slug}`} className="hover:underline">
-                              {c.name}
-                            </Link>
-                          }
-                          badges={badge(c) && <Badge variant="outline">{badge(c)}</Badge>}
-                          meta={contentsMeta(c, docs)}
-                          actions={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
-                        />
-                      ))}
-                    </ItemList>
-                  </CardContent>
-                </Card>
-              )}
-              {rowDetails && (
-                <Card role="region" aria-label="Not in a collection">
-                  <CardHeader>
-                    <CardTitle>Not in a collection</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ItemList>
-                      <DocsArticleRows projectSlug={slug} details={rowDetails} articles={uncollected} />
-                    </ItemList>
-                  </CardContent>
-                </Card>
-              )}
-            </>
+            <EmptyState title="Nothing in this tab yet" description="Add a collection to it, or move one here in the tree." />
           )}
         </TabsContent>
         <TabsContent value="access">

@@ -190,7 +190,7 @@ test("a collection for one reader group: people the app signs in with that group
   await expect(owner.getByText("Collection added")).toBeVisible();
   // Its page's Access says so.
   await owner.getByRole("region", { name: "Enterprise" }).getByRole("link", { name: "Enterprise", exact: true }).click();
-  await owner.getByRole("link", { name: "Collection settings" }).click();
+  await owner.getByRole("navigation", { name: "Collection" }).getByRole("link", { name: "Settings" }).click();
   await expect(owner.getByRole("region", { name: "Access" }).getByRole("checkbox", { name: "Enterprise customers" })).toBeChecked();
   await checkpoint(owner, "team-docs-collection-groups");
   for (const [title, collection] of [
@@ -263,7 +263,8 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await checkpoint(owner, "team-docs-article-who-can-read", { fullPage: false });
   await articleSettings.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Settings saved")).toBeVisible();
-  // Unpublishing asks first; publishing again says who can read it.
+  // Unpublishing (behind "More actions") asks first; publishing again says who can read it.
+  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Unpublish" }).click();
   const unpublishing = owner.getByRole("alertdialog", { name: "Unpublish “Pricing”?" });
   await expect(unpublishing).toContainText("Until you publish it again, readers can't open it and AI answers don't use it.");
@@ -271,7 +272,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await unpublishing.getByRole("button", { name: "Unpublish" }).click();
   await expect(owner.getByText("Unpublished", { exact: true })).toBeVisible();
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
-  // Focus goes back to the button, now Publish.
+  // Focus goes to Publish, in the bar (Unpublish was in the menu).
   const publish = owner.getByRole("main").getByRole("button", { name: "Publish", exact: true });
   await expect(publish).toBeFocused();
   await publish.click();
@@ -311,7 +312,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   // A collection in it inherits that, and says so.
   await tree.getByRole("link", { name: "SAML", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs/collections/saml`);
-  await owner.getByRole("link", { name: "Collection settings" }).click();
+  await owner.getByRole("navigation", { name: "Collection" }).getByRole("link", { name: "Settings" }).click();
   const collectionAccess = owner.getByRole("region", { name: "Access" }).getByRole("group", { name: "Who can read" });
   await expect(collectionAccess.getByRole("radio", { name: "Inherit" })).toBeChecked();
   await expect(collectionAccess).toContainText("Readers in Enterprise customers");

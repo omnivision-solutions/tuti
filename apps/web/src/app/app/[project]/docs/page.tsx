@@ -1,29 +1,27 @@
 import { Fragment } from "react";
 import { prisma } from "@tuti/db";
 import { DELETED_ARTICLE_DAYS } from "@tuti/jobs";
-import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon, SettingsIcon } from "lucide-react";
+import { cn } from "cn";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { RestoreDeletedButton } from "@/components/docs";
-import { articleRowDetails, DocsArticleRows } from "@/components/docs-article-rows";
+import { articleRowDetails, TabContents, WaitingToPublish } from "@/components/docs-article-rows";
+import { INSIGHTS_DAYS } from "@/server/operations/docs-insights";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
-import { LucideIcon } from "@/components/icon-field";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { SampleBadge } from "@/components/sample-badge";
 import { VerifyAll } from "@/components/verify-all";
 import { timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
-import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
 import { latestVerifyAll, verifyAllEstimate, verifyAllUnavailable } from "@/server/operations/verify";
-import { accessBadgeFor, contentsMeta, type TeamDocs, teamDocs } from "@/server/team-docs";
+import { teamDocs } from "@/server/team-docs";
 
 /**
  * The team's docs at a glance (the tree beside it, as on every Docs page; "New tab" is under it): each tab, its collections (each a card with its articles, then the
@@ -37,7 +35,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [docs, deleted, access, portal, rowDetails, verifyAllEstimated, latestVerify, verifyUnavailable] = await Promise.all([
+  const [docs, deleted, portal, rowDetails, verifyAllEstimated, latestVerify, verifyUnavailable] = await Promise.all([
     teamDocs(projectId),
     prisma.article.findMany({
       where: { projectId, deletedAt: { gte: restorableSince() } },
@@ -51,75 +49,24 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
       },
     }),
-    accessChoices(projectId),
     portalAddress(slug),
     articleRowDetails(projectId),
     verifyAllEstimate(projectId),
     latestVerifyAll(projectId),
     verifyAllUnavailable(projectId),
   ]);
-  // Rows say who can read them when it isn't inherit ("Signed-in", "Enterprise, Pro").
-  const badge = accessBadgeFor(access);
+  // At a glance: how many are out, read and found helpful (Reporting's window), and how many wait to be published.
+  const articles = [...rowDetails.detailsOf.values()];
+  const published = articles.filter((a) => a.publishedAt).length;
+  const drafts = articles.length - published;
+  const changed = articles.filter((a) => a.publishedAt && a.changes).length;
+  const waiting = drafts + changed;
+  // As Reporting counts them: the articles there now, sample ones left out.
+  const counted = articles.filter((a) => !a.sample).map((a) => rowDetails.stats.get(a.id) ?? { views: 0, helpful: 0 });
+  const views = counted.reduce((sum, s) => sum + s.views, 0);
+  const helpful = counted.reduce((sum, s) => sum + s.helpful, 0);
   const base = `/app/${slug}/docs`;
 
-  /** A top-level collection's card: its articles, then the collections in it (each opens its page). */
-  const collectionCard = (c: TeamDocs["collections"][number]) => {
-    const inside = docs.collections.filter((other) => other.parentId === c.id);
-    return (
-      <Fragment key={c.slug}>
-        <Card role="region" aria-label={c.name}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              {c.knownIcon && c.icon && <LucideIcon name={c.icon} className="text-muted-foreground" />}
-              <Link href={`${base}/collections/${c.slug}`} className="hover:underline">
-                {c.name}
-              </Link>
-              {badge(c) && <Badge variant="outline">{badge(c)}</Badge>}
-              {c.sample && <SampleBadge />}
-            </CardTitle>
-            <CardDescription>{contentsMeta(c, docs)}</CardDescription>
-          </CardHeader>
-          {(c.articles.length > 0 || inside.length > 0) && (
-            <CardContent>
-              <ItemList>
-                <DocsArticleRows projectSlug={slug} details={rowDetails} articles={c.articles} />
-                {inside.map((child) => (
-                  <Fragment key={child.slug}>
-                    <ItemRow
-                      leading={child.knownIcon && child.icon ? <LucideIcon name={child.icon} className="text-muted-foreground" /> : undefined}
-                      title={
-                        <Link href={`${base}/collections/${child.slug}`} className="hover:underline">
-                          {child.name}
-                        </Link>
-                      }
-                      badges={badge(child) && <Badge variant="outline">{badge(child)}</Badge>}
-                      meta={contentsMeta(child, docs)}
-                      actions={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
-                    />
-                  </Fragment>
-                ))}
-              </ItemList>
-            </CardContent>
-          )}
-        </Card>
-      </Fragment>
-    );
-  };
-  const uncollectedCard = docs.uncollected.length > 0 && (
-    <>
-      <Card role="region" aria-label="Not in a collection">
-        <CardHeader>
-          <CardTitle>Not in a collection</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ItemList>
-            <DocsArticleRows projectSlug={slug} details={rowDetails} articles={docs.uncollected} />
-          </ItemList>
-        </CardContent>
-      </Card>
-    </>
-  );
-  const top = (tab: string | null) => docs.collections.filter((c) => c.parent === null && c.tab === tab);
 
   return (
     <>
@@ -137,28 +84,70 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         }
         more={<VerifyAll projectSlug={slug} estimate={verifyAllEstimated} latest={latestVerify} unavailable={verifyUnavailable} />}
       />
+      {/* On a phone the header's actions are its top bar's menu: the main one stays in sight here too. */}
+      <AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} className="self-start topbar:hidden" />
+      {/* At a glance, in one strip: what's out, how it's read (Reporting's window), and what waits to be published. */}
+      <section aria-label="At a glance" className="grid grid-cols-2 overflow-hidden rounded-xl bg-card shadow-xs ring-1 ring-border sm:grid-cols-4">
+        {[
+          { value: published, label: `Published, of ${articles.length} ${articles.length === 1 ? "article" : "articles"}` },
+          { value: views, label: `Views · ${INSIGHTS_DAYS} days`, href: `/app/${slug}/reporting/articles` },
+          { value: helpful, label: `Helpful votes · ${INSIGHTS_DAYS} days`, href: `/app/${slug}/reporting/articles` },
+          {
+            value: waiting,
+            label: "Waiting to publish",
+            waits: waiting > 0,
+          },
+        ].map((stat, i) => {
+          const body = (
+            <>
+              <span className="flex items-center gap-2 font-heading text-2xl font-semibold tabular-nums">
+                {stat.value.toLocaleString("en")}
+                {stat.waits && <span aria-hidden className="size-2 rounded-full bg-highlight-foreground" />}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {stat.label}
+              </span>
+            </>
+          );
+          const cell = cn("flex flex-col gap-0.5 px-4 py-3", i % 2 === 1 && "border-l", i >= 2 && "border-t sm:border-t-0", i === 2 && "sm:border-l");
+          return stat.href ? (
+            <Link key={stat.label} href={stat.href} className={cn(cell, "transition-colors hover:bg-muted/50")}>
+              {body}
+            </Link>
+          ) : (
+            <div key={stat.label} className={cell}>
+              {body}
+            </div>
+          );
+        })}
+      </section>
+      {/* What's waiting for the team: what the tree beside it doesn't show. */}
+      <WaitingToPublish projectSlug={slug} docs={docs} details={rowDetails} />
       {/* With tabs, each has a section (an empty one says so), so a new tab is there to open. */}
       {docs.tabs.length === 0 && docs.collections.length === 0 && docs.uncollected.length === 0 ? (
         <EmptyState title="No articles yet" description="Write the first one: how to get started is a good place to begin. Published articles show in your portal's docs." />
       ) : docs.tabs.length === 0 ? (
-        <>
-          {top(null).map(collectionCard)}
-          {uncollectedCard}
-        </>
+        <TabContents projectSlug={slug} docs={docs} details={rowDetails} tab={null} uncollected={docs.uncollected} />
       ) : (
         docs.tabs.map((tab, index) => (
-          <Fragment key={tab.slug}>
-            <section aria-labelledby={`tab-${tab.slug}`} className="flex flex-col gap-4">
-              <h2 id={`tab-${tab.slug}`} className="font-heading text-lg font-semibold">
+          <section key={tab.slug} aria-labelledby={`tab-${tab.slug}`} className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id={`tab-${tab.slug}`} className="font-heading text-xl font-semibold">
                 <Link href={`${base}/tabs/${tab.slug}`} className="hover:underline">
                   {tab.name}
                 </Link>
               </h2>
-              {top(tab.slug).map(collectionCard)}
-              {index === 0 && uncollectedCard}
-              {top(tab.slug).length === 0 && !(index === 0 && uncollectedCard) && <p className="text-sm text-muted-foreground">Nothing in this tab yet.</p>}
-            </section>
-          </Fragment>
+              <Link href={`${base}/tabs/${tab.slug}?view=settings`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                <SettingsIcon aria-hidden />
+                Tab settings
+              </Link>
+            </div>
+            {docs.collections.some((c) => c.parent === null && c.tab === tab.slug) || (index === 0 && docs.uncollected.length > 0) ? (
+              <TabContents projectSlug={slug} docs={docs} details={rowDetails} tab={tab.slug} uncollected={index === 0 ? docs.uncollected : []} />
+            ) : (
+              <p className="text-sm text-muted-foreground">Nothing in this tab yet.</p>
+            )}
+          </section>
         ))
       )}
       {deleted.length > 0 && (

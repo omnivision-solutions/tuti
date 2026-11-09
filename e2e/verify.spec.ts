@@ -40,10 +40,9 @@ test("Verify checks an article against the repository: its history, and its fix 
     article,
   );
 
-  // Verify is behind the editor's "More actions", beside History: a panel saying what it sends where.
+  // Verify is an icon in the editor's top bar, beside History: a panel saying what it sends where.
   await owner.goto(`/app/${slug}/docs/${articleSlug}`);
-  await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("link", { name: "Verify" }).click();
+  await owner.getByRole("link", { name: "Verify", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs/${articleSlug}?verify`);
   const panel = owner.getByRole("dialog", { name: "Verify" });
   await expect(panel).toContainText("It sends the files it reads to");
@@ -55,11 +54,13 @@ test("Verify checks an article against the repository: its history, and its fix 
   const toast = owner.getByText("Verified: 1 out of date, its fix waits for you");
   await expect(toast).toBeVisible();
 
-  // Its history: the commit, what it found (per statement, folded away), and its fix waiting.
+  // Its history: the commit, what it found (per statement, open; it folds away), and its fix waiting.
   const run = panel.getByRole("region", { name: /^Checked / });
   await expect(run).toContainText(`${repo}@c0ffee1`);
   await expect(run).toContainText("1 statement still true · 1 out of date · 0 it can't tell");
   await expect(run).toContainText("Its fix waits for you");
+  await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeVisible();
+  await run.getByText("What it found").click();
   await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeHidden();
   await run.getByText("What it found").click();
   await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeVisible();

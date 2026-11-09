@@ -1,5 +1,6 @@
 "use client";
 
+import { ShieldCheckIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
@@ -37,7 +38,9 @@ export function VerifyButton({ projectSlug, slug }: { projectSlug: string; slug:
       router.refresh();
     });
   return (
-    <Button disabled={pending} focusableWhenDisabled onClick={verify}>
+    // The panel's one call to act: large, its shield as in the editor's bar.
+    <Button size="lg" disabled={pending} focusableWhenDisabled onClick={verify}>
+      <ShieldCheckIcon aria-hidden />
       {pending ? "Verifying…" : "Verify"}
     </Button>
   );

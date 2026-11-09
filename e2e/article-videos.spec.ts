@@ -50,7 +50,10 @@ test("the team uploads a video into an article from the / menu, publishes it, an
   await team.waitForURL(`**/app/${slug}/docs/product-tour`);
   await team.getByRole("button", { name: "Publish" }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish" }).click();
+  // Unpublish is behind "More actions", with Delete.
+  await team.getByRole("button", { name: "More actions" }).click();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
+  await team.keyboard.press("Escape");
 
   // A visitor sees the browser's own player, which loads the video when asked to.
   const visitor = await newPerson(browser, portalUrl(slug));

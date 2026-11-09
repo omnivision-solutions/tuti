@@ -194,7 +194,10 @@ test("the team writes install steps as code tabs and a config file as named code
   await team.waitForURL(`**/app/${slug}/docs/installing-acme`);
   await team.getByRole("button", { name: "Publish" }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Publish" }).click();
+  // Unpublish is behind "More actions", with Delete.
+  await team.getByRole("button", { name: "More actions" }).click();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
+  await team.keyboard.press("Escape");
 
   // A reader sees the first tab's code, and switches with a click or the arrow keys.
   const visitor = await newPerson(browser, portalUrl(slug));
