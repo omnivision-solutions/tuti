@@ -3,7 +3,7 @@
 import { ChevronDownIcon, HeartIcon, ReplyIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createContext, useContext, useOptimistic, useState, useTransition } from "react";
+import { createContext, useContext, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { CommentForm } from "@/components/comment-form";
@@ -21,22 +21,56 @@ import { setCommentLike } from "@/server/posts";
  */
 export type CommentAbility = { can: "act" | "signIn" | "none"; postId: string; portal?: boolean; uploads?: EditorUploads };
 
-const Thread = createContext<{ open: boolean; setOpen: (open: boolean) => void }>({ open: false, setOpen: () => {} });
+type ThreadState = {
+  /** Which comment's Reply opened the box (null: it's closed). */
+  openedBy: string | null;
+  /** Bumped by every Reply, so a box already open takes the focus again. */
+  asked: number;
+  reply: (commentId: string, button: HTMLButtonElement) => void;
+  close: () => void;
+};
+const Thread = createContext<ThreadState>({ openedBy: null, asked: 0, reply: () => {}, close: () => {} });
 
-/** A top-level comment and its replies: Reply on any of them opens one box, under the last reply. */
+/**
+ * A top-level comment and its replies: Reply on any of them opens one box, under the last reply (focused, again on each
+ * Reply). Closed (posted or Cancel), the focus goes back to the Reply that opened it.
+ */
 export function ReplyThread({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return <Thread.Provider value={{ open, setOpen }}>{children}</Thread.Provider>;
+  const [openedBy, setOpenedBy] = useState<string | null>(null);
+  const [asked, setAsked] = useState(0);
+  const opener = useRef<HTMLButtonElement | null>(null);
+  const closing = useRef(false);
+  useEffect(() => {
+    if (openedBy === null && closing.current) {
+      closing.current = false;
+      opener.current?.focus();
+    }
+  }, [openedBy]);
+  const reply = (commentId: string, button: HTMLButtonElement) => {
+    opener.current = button;
+    setOpenedBy(commentId);
+    setAsked((n) => n + 1);
+  };
+  const close = () => {
+    closing.current = true;
+    setOpenedBy(null);
+  };
+  return <Thread.Provider value={{ openedBy, asked, reply, close }}>{children}</Thread.Provider>;
 }
 
 /** The thread's reply box, once Reply is pressed; it closes once the reply is posted. */
 export function ReplyBox({ ability, replyTo, author }: { ability: CommentAbility; replyTo: string; author: string }) {
-  const { open, setOpen } = useContext(Thread);
-  if (!open || ability.can !== "act") {
+  const { openedBy, asked, close } = useContext(Thread);
+  const box = useRef<HTMLDivElement>(null);
+  // Reply again while it's open: back into the box (as it's made, the editor focuses itself).
+  useEffect(() => {
+    box.current?.querySelector<HTMLElement>("[contenteditable=true]")?.focus();
+  }, [asked]);
+  if (openedBy === null || ability.can !== "act") {
     return null;
   }
   return (
-    <div className="flex flex-col gap-2">
+    <div ref={box} className="flex flex-col gap-2">
       <CommentForm
         postId={ability.postId}
         replyTo={replyTo}
@@ -44,8 +78,8 @@ export function ReplyBox({ ability, replyTo, author }: { ability: CommentAbility
         signedIn={ability.portal ? true : undefined}
         uploads={ability.uploads}
         autoFocus
-        onDone={() => setOpen(false)}
-        onCancel={() => setOpen(false)}
+        onDone={close}
+        onCancel={close}
       />
     </div>
   );
@@ -55,7 +89,7 @@ const ACTION = "inline-flex h-8 items-center gap-1.5 rounded-md px-1.5 -mx-1.5 t
 
 /** Reply and Like under a comment (`author`: whose, for their names: "Reply to Ada", "Like Ada's comment"). */
 export function CommentActions({ ability, commentId, author, likes, liked }: { ability: CommentAbility; commentId: string; author: string; likes: number; liked: boolean }) {
-  const { setOpen } = useContext(Thread);
+  const { openedBy, reply } = useContext(Thread);
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic({ likes, liked });
   // Only a portal's comments ask anyone to sign in.
@@ -72,7 +106,13 @@ export function CommentActions({ ability, commentId, author, likes, liked }: { a
   return (
     <div className="flex items-center gap-4">
       {ability.can === "act" && (
-        <button type="button" className={ACTION} aria-label={`Reply to ${author}`} onClick={() => setOpen(true)}>
+        <button
+          type="button"
+          className={ACTION}
+          aria-label={`Reply to ${author}`}
+          aria-expanded={openedBy === commentId}
+          onClick={(event) => reply(commentId, event.currentTarget)}
+        >
           <ReplyIcon aria-hidden />
           Reply
         </button>

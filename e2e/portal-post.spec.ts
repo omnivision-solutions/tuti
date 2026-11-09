@@ -337,15 +337,25 @@ test("a post's thread: replies under their comment, likes with counts, Oldest or
   await visitor.waitForURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === "/feedback/feature-requests/dark-mode-1");
   await visitor.context().close();
 
-  // Bo answers Ada: the reply sits under her comment, indented.
-  await bo.getByRole("button", { name: "Reply to Ada" }).click();
+  // Bo answers Ada: the box opens focused; Cancel puts the focus back on Reply.
+  const replyToAda = bo.getByRole("button", { name: "Reply to Ada" });
+  await replyToAda.click();
   const replyBox = bo.getByRole("textbox", { name: "Reply" });
+  await expect(replyBox).toBeFocused();
+  await expect(replyToAda).toHaveAttribute("aria-expanded", "true");
+  await bo.getByRole("button", { name: "Cancel" }).click();
+  await expect(replyBox).toHaveCount(0);
+  await expect(replyToAda).toBeFocused();
+  await expect(replyToAda).toHaveAttribute("aria-expanded", "false");
+  // The reply sits under her comment, indented, and the focus is back on Reply once it's posted.
+  await replyToAda.click();
   await expect(replyBox).toBeFocused();
   await replyBox.fill("Same here, my eyes thank you.");
   await bo.getByRole("button", { name: "Reply", exact: true }).click();
   const replies = bo.getByRole("list", { name: "Replies to Ada" });
   await expect(replies.getByRole("listitem")).toHaveText([/Same here, my eyes thank you\./]);
   await expect(replyBox).toHaveCount(0);
+  await expect(replyToAda).toBeFocused();
   const adas = bo.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Please, for late nights." }).first();
   expect((await replies.boundingBox())!.x).toBeGreaterThanOrEqual((await adas.boundingBox())!.x + 40);
   await expect(bo.getByRole("heading", { name: "3 comments" })).toBeVisible();
