@@ -123,7 +123,7 @@ test("a reply or a like whose comment is deleted as it's written (its foreign ke
               : Reflect.get(target, key),
         }) as typeof prisma,
       ),
-    )) as typeof prisma.$transaction);
+    )) as unknown as typeof prisma.$transaction);
   try {
     await expect(call(createComment, as(owner.id), { number: post.number, body: "Late", replyTo: answer.id })).rejects.toThrow(
       "There's no such comment on this post",
