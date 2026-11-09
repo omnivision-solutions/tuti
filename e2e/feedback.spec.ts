@@ -139,7 +139,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Open → Planned, by Tess Team");
   // Its title is the page's heading, under the top bar (which keeps a copy in view); the post merged into it is listed.
   const heading = team.getByRole("heading", { name: "Dark mode", level: 1 });
-  await expect(heading).toHaveCSS("font-size", "28px");
+  await expect(heading).toHaveCSS("font-size", "32px");
   expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(48);
   await expect(properties.getByRole("list", { name: "Merged posts" }).getByRole("link")).toHaveText(["#2 Night theme for the editor"]);
   await checkpoint(team, "team-planned");

@@ -9,7 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { getSession } from "@/server/session";
 
 import { docsUrl, githubStars, REPO_URL } from "./links";
-import { MobileNav, SiteNav } from "./site-nav";
+import { MobileNav, SignedOutLinks, SiteNav } from "./site-nav";
 
 /** Apex site: marketing and team sign-in/up, every page under one header and footer. */
 export default async function MarketingLayout({ children }: LayoutProps<"/">) {
@@ -38,14 +38,7 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
                 Open app
               </Link>
             ) : (
-              <>
-                <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
-                  Sign in
-                </Link>
-                <Link href="/sign-up" className={buttonVariants({ className: "max-md:hidden" })}>
-                  Start free
-                </Link>
-              </>
+              <SignedOutLinks />
             )}
             <MobileNav docs={docs} pricing={plansEnabled()} signedIn={!!session} />
           </div>

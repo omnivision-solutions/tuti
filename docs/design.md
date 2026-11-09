@@ -24,8 +24,8 @@ cute at the expense of clarity.
 - **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
   ~11px (`rounded-xl`), pills fully round. Nothing else.
 - **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`).
-  Fields (`Input`, `Textarea`, `SelectTrigger`) sit on the card's colour (white in light) with the `input`
-  border; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
+  Fields (`Input`, `Textarea`, `SelectTrigger`) sit on the card's colour in light (white) and on the
+  page's in dark (a step below the card), with the `input` border, their placeholder lighter than a value; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
   line above its buttons, never a grey band. The primary
   button is flat: one fill, its border the same colour, a soft shadow; no bevel or edge.
 - **Surfaces:** a ladder: the sidebar (a step darker than the page in light), the page (`background`, a soft
@@ -280,7 +280,8 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
 - **Sign-in pages** (sign-in, sign-up, forgot and reset password, invitations): in the visitor's own
   light or dark, as the app is; the card's title in the heading font at 20px; the rest of the marketing site is light only (`forcedThemeFor`).
   Continue with Google and Continue with GitHub are both outline buttons with their marks, under
-  nothing louder than the form's own primary.
+  nothing louder than the form's own primary. The header there has no Sign in or Start free
+  (`SignedOutLinks`): the form is the way in. On phones no keyboard hints (`Ctrl K`).
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
   the far left (a menu above the panel on smaller screens; no index page, no
@@ -391,7 +392,7 @@ Use these instead of hand-rolling layout:
   the row has scrolled away). An editor whose
   main action must stay in reach (Save and Publish) pins `actions` (`pinActions`): to a
   bar at the bottom of the screen on phones, the menu keeping `more`, and to the top bar
-  from tablet width up;
+  from tablet width up (`barActions`: the top bar alone, the docs article editor's);
   the bar steps aside while text is being typed (the keyboard is up then).
   Where Tuti's own chat launcher shows in the app (its cloud), what's held at the
   bottom of the screen keeps its buttons clear of the launcher's corner

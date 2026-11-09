@@ -7,7 +7,7 @@ import { useSyncExternalStore } from "react";
 import { widgetFrame } from "@/lib/widget-messages";
 
 /** The team's way into the app (sign-in, sign-up and their steps): in the visitor's own mode, as the app is. */
-const AUTH_PAGES = new Set(["sign-in", "sign-up", "forgot-password", "reset-password", "invite", "resume-email", "continue"]);
+export const AUTH_PAGES = new Set(["sign-in", "sign-up", "forgot-password", "reset-password", "invite", "resume-email", "continue"]);
 
 /**
  * The rest of the marketing site (landing, pricing, legal) is designed for light mode only, whatever the visitor's own

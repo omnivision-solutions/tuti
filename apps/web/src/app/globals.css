@@ -133,7 +133,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   /* Text on the destructive tint (a destructive badge, the picked Breaking tag): darker, to read at small sizes. */
   --destructive-foreground: oklch(0.51 0.2 27.3);
-  --border: oklch(0.9 0.014 84.6);
+  --border: oklch(0.885 0.015 84.6);
   --input: oklch(0.845 0.018 86.2);
   --ring: oklch(0.529 0.125 155);
   --soft: oklch(0.958 0.018 155.8);
@@ -171,13 +171,13 @@
   --series-1: oklch(0.55 0.17 260);
   --series-2: oklch(0.684 0.185 44.9);
   --radius: 0.5rem;
-  --sidebar: oklch(0.962 0.012 84.6);
+  --sidebar: oklch(0.955 0.013 84.6);
   --sidebar-foreground: oklch(0.216 0.006 56);
   --sidebar-primary: oklch(0.529 0.125 155);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.93 0.015 84.6);
   --sidebar-accent-foreground: oklch(0.216 0.006 56);
-  --sidebar-border: oklch(0.9 0.014 84.6);
+  --sidebar-border: oklch(0.885 0.015 84.6);
   /* The page open in the sidebar: a raised pill, the card's colour with the border round it. */
   --sidebar-active: oklch(1 0 0);
   --sidebar-ring: oklch(0.529 0.125 155);
@@ -186,22 +186,22 @@
 .dark {
   --background: oklch(0.185 0.01 158.9);
   --foreground: oklch(0.966 0.006 153.8);
-  --card: oklch(0.238 0.014 160.1);
+  --card: oklch(0.248 0.014 160.1);
   --card-foreground: oklch(0.966 0.006 153.8);
-  --popover: oklch(0.238 0.014 160.1);
+  --popover: oklch(0.248 0.014 160.1);
   --popover-foreground: oklch(0.966 0.006 153.8);
   --primary: oklch(0.759 0.168 154.6);
   --primary-foreground: oklch(0.221 0.048 151.7);
-  --secondary: oklch(0.275 0.017 163.3);
+  --secondary: oklch(0.285 0.017 163.3);
   --secondary-foreground: oklch(0.966 0.006 153.8);
-  --muted: oklch(0.275 0.017 163.3);
-  --muted-foreground: oklch(0.8 0.016 160.9);
-  --accent: oklch(0.295 0.019 161);
+  --muted: oklch(0.285 0.017 163.3);
+  --muted-foreground: oklch(0.82 0.015 160.9);
+  --accent: oklch(0.305 0.019 161);
   --accent-foreground: oklch(0.966 0.006 153.8);
   --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.76 0.16 22.2);
-  --border: oklch(0.35 0.02 163.3);
-  --input: oklch(0.4 0.022 163.3);
+  --destructive-foreground: oklch(0.78 0.15 22.2);
+  --border: oklch(0.375 0.02 163.3);
+  --input: oklch(0.43 0.022 163.3);
   --ring: oklch(0.759 0.168 154.6);
   --soft: oklch(0.294 0.045 157);
   --soft-foreground: oklch(0.856 0.111 157.3);
@@ -230,7 +230,7 @@
   --sidebar-primary-foreground: oklch(0.221 0.048 151.7);
   --sidebar-accent: oklch(0.265 0.017 163.3);
   --sidebar-accent-foreground: oklch(0.966 0.006 153.8);
-  --sidebar-border: oklch(0.35 0.02 163.3);
+  --sidebar-border: oklch(0.375 0.02 163.3);
   --sidebar-active: oklch(0.3 0.024 160);
   --sidebar-ring: oklch(0.759 0.168 154.6);
 }

@@ -118,6 +118,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
             "Draft"
           )
         }
+        // An editor: Settings, Save and Publish stay in the top bar as the text scrolls.
+        barActions
         actions={
           <>
             <ArticleSettings

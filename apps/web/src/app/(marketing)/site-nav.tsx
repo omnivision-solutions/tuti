@@ -23,6 +23,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { GithubMark } from "@/components/github-mark";
+import { AUTH_PAGES } from "@/components/theme-provider";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -223,6 +224,24 @@ export function MobileNav({ docs, pricing, signedIn }: { docs: string; pricing: 
           )}
         </div>
       </nav>
+    </>
+  );
+}
+
+/** The header's Sign in and Start free, but not on the sign-in pages themselves: the form is the way in there. */
+export function SignedOutLinks() {
+  const pathname = usePathname();
+  if (AUTH_PAGES.has(pathname.split("/")[1] ?? "")) {
+    return null;
+  }
+  return (
+    <>
+      <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
+        Sign in
+      </Link>
+      <Link href="/sign-up" className={buttonVariants({ className: "max-md:hidden" })}>
+        Start free
+      </Link>
     </>
   );
 }

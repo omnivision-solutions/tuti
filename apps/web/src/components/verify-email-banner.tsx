@@ -18,9 +18,10 @@ export function VerifyEmailBanner({ email }: { email: string }) {
   }
 
   return (
-    <div role="status" className="flex items-center gap-2 rounded-lg border bg-muted/50 py-1 pr-1 pl-3 text-sm">
+    // On a phone its button goes under the words, which keep the width (the address whole, on a line of its own if it must).
+    <div role="status" className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border bg-muted/50 py-1 pr-1 pl-3 text-sm">
       <MailIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-      <p className="min-w-0 flex-1 break-words">
+      <p className="min-w-0 flex-1 basis-56 break-words">
         <span className="font-medium">Verify your email.</span>{" "}
         <span className="text-muted-foreground">We sent a link to {email}.</span>
       </p>

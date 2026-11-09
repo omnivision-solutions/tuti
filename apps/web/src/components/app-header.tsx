@@ -73,7 +73,8 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
       <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-center" />
       {/* The project's name (Customize's section there), till the page's title scrolls up under the bar. */}
       <span className={cn("text-sm font-medium text-muted-foreground", title && "sr-only")}>
-        {customizeTitle(pathname) ?? current?.name ?? "Tuti"}
+        {/* Not on Account settings or New project, which aren't the project's. */}
+        {customizeTitle(pathname) ?? (/^\/app\/(account|new)(\/|$)/.test(pathname) ? "Tuti" : (current?.name ?? "Tuti"))}
       </span>
       {title && (
         // A copy of the page's heading, which screen readers have already. Clear of the page's "More actions" (PageActions),

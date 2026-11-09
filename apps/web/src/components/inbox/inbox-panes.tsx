@@ -202,7 +202,7 @@ export async function InboxPanes({
       ) : (
         // A conversation open beside the list has the page's heading: the list keeps its title in sight (not a
         // heading), so the views under it stay where they were.
-        <p aria-hidden className={cn(LIST_TITLE, "font-heading text-2xl font-semibold tracking-[-0.01em] max-lg:hidden sm:text-[2rem] sm:leading-10")}>
+        <p aria-hidden className={cn(LIST_TITLE, "font-heading text-2xl font-semibold tracking-[-0.02em] max-lg:hidden sm:text-[2rem] sm:leading-10")}>
           Inbox
         </p>
       )}

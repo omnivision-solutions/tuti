@@ -113,7 +113,7 @@ export function AppSidebar({
       <SidebarContent>
         {nav.map((group, i) => (
           // Each group under the one before, a line between them (no gap down to the last).
-          <SidebarGroup key={i} className={cn(i > 0 && "border-t border-sidebar-border/70 group-data-[collapsible=icon]:border-t-0")}>
+          <SidebarGroup key={i} className={cn(i > 0 && "border-t border-sidebar-border/70")}>
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.map((item) => (
@@ -157,7 +157,7 @@ function SearchButton() {
         <SidebarMenuButton tooltip={`Search (${shortcut})`} onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_MENU))}>
           <SearchIcon />
           <span className="flex-1">Search</span>
-          <kbd aria-hidden className="rounded border bg-background px-1.5 font-sans text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+          <kbd aria-hidden className="rounded border bg-background px-1.5 font-sans text-xs text-muted-foreground group-data-[collapsible=icon]:hidden max-md:hidden">
             {shortcut}
           </kbd>
         </SidebarMenuButton>
