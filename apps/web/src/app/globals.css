@@ -181,7 +181,8 @@
   --sidebar-accent: oklch(0.915 0.016 84.6);
   --sidebar-accent-foreground: oklch(0.216 0.006 56);
   --sidebar-border: oklch(0.885 0.015 84.6);
-  /* The page open in the sidebar (and Settings'/Reporting's menus): a pale green pill, its label and icon green. */
+  /* The page open in a page's own menu (Settings', Reporting's): a pale green pill, its label and icon green. The sidebar's
+     open page is a raised neutral pill (the card's colour), so a page with both shows one green. */
   --sidebar-active: oklch(0.915 0.045 155);
   --sidebar-active-foreground: oklch(0.4 0.1 155);
   --sidebar-ring: oklch(0.529 0.125 155);
