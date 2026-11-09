@@ -27,7 +27,7 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
       <aside className="px-6 pt-6 md:w-60 md:shrink-0 md:border-r md:p-0">
         <SettingsMenu groups={settingsGroups(slug, isAdminRole(membership.role))} />
       </aside>
-      <div className="flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8">
+      <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8">
         <div className="max-md:hidden md:contents">
           <PageHeader title="Settings" description="Your project, its team and the tools it connects to." />
         </div>

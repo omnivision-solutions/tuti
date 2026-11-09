@@ -308,7 +308,7 @@ export function AutopilotPanes({
         </Tabs>
       </aside>
       {/* Above the list on phones and tablets, only as tall as the page's title while the list shows. */}
-      <div className={cn("flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8 max-lg:order-first", listed && "max-lg:flex-none")}>
+      <div className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8 max-lg:order-first", listed && "max-lg:flex-none")}>
         {children}
         {listed && hint && <EmptyState className="max-lg:hidden" title={hint} />}
       </div>

@@ -12,8 +12,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-5xl (one form by
- * itself, `data-narrow`: New project, Setup, Account, max-w-2xl), its left edge 32px past the sidebar, as a pane page's
- * is: one edge everywhere. Customize's sections and pages of panes (their own column, data-slot="pane-layout") take the
+ * itself, `data-narrow`: New project, Setup, Account, max-w-2xl), centred in the room beside the sidebar. Customize's sections and pages of panes (their own column, data-slot="pane-layout") take the
  * whole width instead, as do pages that need the room (`data-wide`: Users' tables, the team's Roadmap columns).
  * The sidebar is open on every page but Customize (its own rail of sections and the portal's preview) and the pages of
  * panes (PANES), whose own column is their navigation: there it's folded to its rail (it opens again on its own
@@ -63,7 +62,7 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
           // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up. On
           // phones, room at the bottom for actions pinned there (PageActions), and for Tuti's own chat launcher (AppWidget; not in the Inbox or on Customize).
-          <div className="flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24">
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24">
             {banners}
             {children}
           </div>

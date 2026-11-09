@@ -153,7 +153,8 @@ function PasswordForm({ noPassword }: { noPassword?: NoPassword }) {
               <Input id="new-password" name="newPassword" type="password" autoComplete="new-password" minLength={8} required />
               {error && <FieldError>{error}</FieldError>}
             </Field>
-            <Button type="submit" disabled={pending} className="self-start">
+            {/* Outline: the page's one primary is Profile's Save. */}
+            <Button type="submit" variant="outline" disabled={pending} className="self-start">
               Change password
             </Button>
           </FieldGroup>

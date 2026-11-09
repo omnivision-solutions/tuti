@@ -50,7 +50,7 @@ export function ItemRow({
     <li
       data-selected={selected || picked || undefined}
       className={cn(
-        "flex gap-3 py-2.5 first:pt-0 last:pb-0",
+        "flex gap-3 py-3 first:pt-0 last:pb-0",
         wideActions ? "flex-col sm:flex-row sm:items-center sm:gap-4" : "items-center",
         (selected || picked) &&
           "-mx-(--card-spacing) border-transparent px-(--card-spacing) first:-mt-(--card-spacing) first:pt-(--card-spacing) last:-mb-(--card-spacing) last:pb-(--card-spacing)",

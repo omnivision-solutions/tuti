@@ -202,7 +202,7 @@ export async function InboxPanes({
       ) : (
         // A conversation open beside the list has the page's heading: the list keeps its title in sight (not a
         // heading), so the views under it stay where they were.
-        <p aria-hidden className={cn(LIST_TITLE, "font-heading text-2xl font-semibold tracking-[-0.01em] max-lg:hidden sm:text-[1.75rem] sm:leading-9")}>
+        <p aria-hidden className={cn(LIST_TITLE, "font-heading text-2xl font-semibold tracking-[-0.01em] max-lg:hidden sm:text-[2rem] sm:leading-10")}>
           Inbox
         </p>
       )}
@@ -270,7 +270,8 @@ export async function InboxPanes({
                         selected={c.number === open}
                         // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
                         // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
-                        className="relative isolate items-start"
+                        // A dense list: rows a little tighter than other lists', so twice as many fit.
+                        className="relative isolate items-start py-2.5"
                         leading={
                           <Avatar className="size-8">
                             {c.user?.image && <AvatarImage src={c.user.image} alt="" />}

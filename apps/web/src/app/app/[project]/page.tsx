@@ -145,7 +145,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                       {/* The done ones on a line of their own, under the cards. */}
                       {i > 0 && !overview.setup![i - 1]!.done && <li role="none" className="h-0 basis-full" />}
                       <li className="flex min-w-0 items-center gap-2 px-1 pr-3 text-sm text-muted-foreground">
-                      <CheckCircle2Icon aria-hidden className="size-4 shrink-0 text-primary" />
+                      <CheckCircle2Icon aria-hidden className="size-4 shrink-0 fill-primary text-primary-foreground" />
                       <span id={`setup-${step.key}`} className="truncate">
                         {step.title}
                       </span>
@@ -242,7 +242,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                             {item.scheduled && (
                               <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} posts={item.scheduled.posts} className="contents" />
                             )}
-                            <Link href={item.href} className={buttonVariants({ variant: "ghost", size: "sm", className: "text-muted-foreground" })}>
+                            <Link href={item.href} className={buttonVariants({ variant: "ghost", size: "sm" })}>
                               {item.action}
                               <ChevronRightIcon aria-hidden data-icon="inline-end" />
                             </Link>

@@ -12,6 +12,7 @@ import {
   MegaphoneIcon,
   MessagesSquareIcon,
   PaintbrushIcon,
+  PlusIcon,
   SearchIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -161,7 +162,7 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
           aria-controls={listId}
           aria-activedescendant={options[current] ? `${listId}-${current}` : undefined}
           aria-label="Search the project"
-          placeholder="Search posts, conversations, articles, users, settings…"
+          placeholder="Search or jump to…"
           maxLength={MAX_QUERY}
           value={query}
           onChange={(event) => {
@@ -192,7 +193,8 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
       <ul id={listId} role="listbox" aria-label="Results" className="max-h-[min(24rem,60dvh)] overflow-y-auto p-1">
         {options.length === 0 && !searching && <li className="px-3 py-6 text-center text-sm text-muted-foreground">Nothing matches “{query.trim()}”.</li>}
         {options.map((option, i) => {
-          const Icon = SECTION_ICONS[option.section];
+          // An action (New article…) a plus, so it isn't read as the page it's on.
+          const Icon = option.group === "Actions" ? PlusIcon : SECTION_ICONS[option.section];
           return (
             <li key={option.key} role="presentation">
               {(i === 0 || options[i - 1]!.group !== option.group) && (
@@ -221,6 +223,12 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
           );
         })}
       </ul>
+      {/* The keys, for a keyboard (not on phones). */}
+      <p aria-hidden className="flex gap-4 border-t px-3 py-2 text-xs text-muted-foreground max-sm:hidden">
+        <span>↑↓ to move</span>
+        <span>Enter to open</span>
+        <span>Esc to close</span>
+      </p>
     </DialogContent>
   );
 }

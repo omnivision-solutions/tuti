@@ -48,7 +48,7 @@ export function PageHeader({
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="min-w-0 font-heading text-2xl font-semibold tracking-[-0.01em] break-words sm:text-[1.75rem] sm:leading-9">{title}</h1>
+          <h1 className="min-w-0 font-heading text-2xl font-semibold tracking-[-0.01em] break-words sm:text-[2rem] sm:leading-10">{title}</h1>
           {description && <p className="text-sm text-muted-foreground">{description}</p>}
         </div>
         {pageActions &&

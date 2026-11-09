@@ -1,8 +1,6 @@
 import { prisma } from "@tuti/db";
 import type { ReactNode } from "react";
 
-import { TutiMark } from "@/components/tuti-logo";
-
 /**
  * The team's sign-in and sign-up forms, with what Tuti does beside them (above them on phones), level with the
  * form's middle. On the way back to a portal (`continuingTo`),
@@ -15,8 +13,7 @@ export function WithPitch({ children, continuingTo }: { children: ReactNode; con
   return (
     <div data-wide className="grid items-start gap-8 md:grid-cols-2 md:items-center md:gap-12">
       <div className="flex flex-col gap-3 max-md:items-center max-md:text-center">
-        <TutiMark className="size-10" />
-        <p className="font-heading text-2xl font-bold tracking-tight text-balance">
+        <p className="font-heading text-3xl font-bold text-balance">
           Feedback, roadmap, changelog and docs, kept up to date as you ship.
         </p>
       </div>
