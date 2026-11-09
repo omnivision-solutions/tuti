@@ -31,15 +31,20 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
   const title = scrolled?.pathname === pathname ? scrolled.title : null;
 
   useEffect(() => {
-    const heading = document.querySelector<HTMLElement>('main [data-slot="page-header"] h1');
+    // The page's heading that shows at this width: a page with one for phones and one for wider screens (Settings'
+    // layout) has the other hidden, which takes no room and so never goes up under the bar.
+    const pick = () => {
+      const headings = [...document.querySelectorAll<HTMLElement>('main [data-slot="page-header"] h1')];
+      return headings.find((h) => h.checkVisibility()) ?? headings[0];
+    };
+    let heading = pick();
     if (!heading) {
       return;
     }
     const bar = ref.current!.offsetHeight;
-    // Across phone width (a phone turned, a window narrowed) the page reflows: watched afresh, the heading is reported again.
     const phone = window.matchMedia("(width < 48rem)");
     let under = false;
-    const show = () => setScrolled({ pathname, title: under ? heading.textContent : null });
+    const show = () => setScrolled({ pathname, title: under ? heading!.textContent : null });
     const observer = new IntersectionObserver(
       ([entry]) => {
         // Gone up under the bar, not down past the screen's bottom. Not one that takes no room: only for screen readers
@@ -51,12 +56,18 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     );
     // Renamed while it's up there (a help article's title, saved): the page's refresh changes its text in place.
     const renamed = new MutationObserver(show);
-    const turned = () => {
-      observer.unobserve(heading);
-      observer.observe(heading);
+    const watch = () => {
+      observer.observe(heading!);
+      renamed.observe(heading!, { childList: true, characterData: true, subtree: true });
     };
-    observer.observe(heading);
-    renamed.observe(heading, { childList: true, characterData: true, subtree: true });
+    // Across phone width (a phone turned, a window narrowed) the page reflows, maybe to its other heading: watched afresh.
+    const turned = () => {
+      observer.disconnect();
+      renamed.disconnect();
+      heading = pick() ?? heading;
+      watch();
+    };
+    watch();
     phone.addEventListener("change", turned);
     return () => {
       observer.disconnect();

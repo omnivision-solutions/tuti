@@ -122,17 +122,18 @@ the list picks none to approve at once.
 
 | Role | Classes |
 | --- | --- |
-| Page title | `PageHeader`'s `h1` (heading font, semibold, tracked -0.01em, 28px from tablet width up, 24px on phones), on the page at every width |
+| Page title | `PageHeader`'s `h1` (heading font, semibold, tracked -0.02em, 32px from 640px up, 24px under), on the page at every width |
 | Section / card title | `CardTitle` or `h2` (base, semibold, Figtree: the heading font is for page titles and big numbers) |
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
-| Meta | `text-xs text-muted-foreground`, parts joined with ` · ` |
+| Meta | `text-xs text-muted-foreground` in rows, parts joined with ` · `; under a page's title (`PageHeader`'s `meta`) `text-sm` |
 | Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback), a menu's group (Settings', Reporting's) and the part above a Reporting page's title. Quieter than the items under it, never in a colour |
+
+| Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
 `text-sm` is 15px and `text-xs` 13px here (`globals.css` raises Tailwind's 14px and 12px: Figtree reads small):
 `text-xs` is the smallest text anywhere. No `text-[11px]`,
 `text-[0.625rem]` or other sizes below it for words a person reads.
-| Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
 ## Layout
 
@@ -265,7 +266,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   alone, and a line of the range's days in its chart's colour: `countTrend`, `shareTrend` in
   points, `timeTrend`), a chart (`DailyChart`: a bar a day up to a month, a week up to a
   quarter, else a month; a bar's numbers on hover) and the lists behind them. Its
-  heading (`ReportHeading`), as Ferndesk's: the part as a Group label in the primary colour, the title as a Page title,
+  heading (`ReportHeading`), as Ferndesk's: the part as a Group label, the title as a Page title,
   and the date range picker on the right (`?range=`, kept by the menu's links); never a sentence under it. The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
   in it). Every Docs page (the home too) has the docs as a tree
