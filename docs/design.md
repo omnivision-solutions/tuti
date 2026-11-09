@@ -490,8 +490,8 @@ Use these instead of hand-rolling layout:
     board as a small uppercase label over the title (17px semibold), a line of the post, then who · when · comments;
     at the right the owner's face (tablet width up) and the status menu, a quiet "⋯" (`PostStatusMenu
     badge={false}`): the tab says the status, and All, when it mixes them, is grouped under each status (its dot,
-    name and count) in the tabs' order. Where statuses mix ungrouped (Possible duplicates, a tab only while there are
-    some) the pill opens the menu. The list takes its column's whole width; a post opens beside it. The search sits
+    name and count) in the tabs' order. Where no tab or group heading names the status (Possible duplicates, a tab
+    only while there are some; All while it isn't grouped: one status, or more to load) the pill opens the menu. The list takes its column's whole width; a post opens beside it. The search sits
     in the filter row; on phones the filters are one "Filters" button (a popover, Boards in it too) beside the
     search and "+ New".
   - A post's vote count, first in its row, has the vote arrow over it (and
