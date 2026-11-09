@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { createComment, createPost, orNoSuchComment } from "@/server/operations/create";
 import { mergePost } from "@/server/operations/manage";
@@ -102,14 +102,36 @@ test("a reply or a like whose comment is deleted as it's written (its foreign ke
   await expect(
     orNoSuchComment(comment.id, () => prisma.comment.create({ data: { projectId: project.id, postId, authorId: owner.id, body: "Late", parentId: comment.id } })),
   ).rejects.toThrow("There's no such comment on this post");
-  // A reply to a reply names the top-level comment: that one gone (the reply it answers kept), still "no such comment".
+  // A reply to a reply names the top-level comment: that one deleted between the read and the write (the reply it
+  // answers kept, by a writer that doesn't lock the post, like an account's deletion), still "no such comment".
   const top = await call(createComment, as(reader.id), { number: post.number, body: "Top" });
   const answer = await call(createComment, as(owner.id), { number: post.number, body: "Answer", replyTo: top.id });
-  await prisma.comment.delete({ where: { id: top.id } });
+  const transaction = prisma.$transaction.bind(prisma);
+  const spy = vi.spyOn(prisma, "$transaction").mockImplementation(((run: (tx: typeof prisma) => Promise<unknown>) =>
+    transaction((tx) =>
+      run(
+        new Proxy(tx, {
+          get: (target, key) =>
+            key === "comment"
+              ? {
+                  ...target.comment,
+                  create: async (args: Parameters<typeof target.comment.create>[0]) => {
+                    await prisma.comment.delete({ where: { id: top.id } });
+                    return target.comment.create(args);
+                  },
+                }
+              : Reflect.get(target, key),
+        }) as typeof prisma,
+      ),
+    )) as typeof prisma.$transaction);
+  try {
+    await expect(call(createComment, as(owner.id), { number: post.number, body: "Late", replyTo: answer.id })).rejects.toThrow(
+      "There's no such comment on this post",
+    );
+  } finally {
+    spy.mockRestore();
+  }
   expect(await prisma.comment.count({ where: { id: answer.id } })).toBe(1);
-  await expect(
-    orNoSuchComment(() => top.id, () => prisma.comment.create({ data: { projectId: project.id, postId, authorId: owner.id, body: "Late", parentId: top.id } })),
-  ).rejects.toThrow("There's no such comment on this post");
   // A failure that isn't about the comment is left as it is.
   const kept = await call(createComment, as(reader.id), { number: post.number, body: "Still here" });
   await expect(orNoSuchComment(kept.id, () => prisma.commentLike.create({ data: { commentId: kept.id, userId: "no-such-user" } }))).rejects.toMatchObject({ code: "P2003" });
