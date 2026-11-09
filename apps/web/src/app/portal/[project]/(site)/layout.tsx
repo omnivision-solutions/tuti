@@ -179,10 +179,10 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
 
 /**
  * The loader's version the portal needs, in its address: up it when the portal starts relying on something new in it, so
- * no browser's copy of an older one (cached an hour) runs (3: its elements added once the page is parsed, so hydrating it
+ * no browser's copy of an older one (cached an hour) runs (4: its panel never over the portal's header; 3: its elements added once the page is parsed, so hydrating it
  * keeps them; 2: Tuti.open({ ask }); before it, `?path`: the path it's under).
  */
-const PORTAL_LOADER = 3;
+const PORTAL_LOADER = 4;
 
 /** The page with Ask AI (the widget's assistant), where the portal has it. */
 function WithAssistant({ assistant, children }: { assistant: boolean; children: React.ReactNode }) {

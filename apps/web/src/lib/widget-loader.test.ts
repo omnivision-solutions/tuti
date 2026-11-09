@@ -312,6 +312,8 @@ test("the launcher shows the team's name, colour, corner and icon once the app h
   expect((button.children[0] as FakeElement).getAttribute("stroke")).toBe("currentColor");
   expect(button.style).toMatchObject({ width: "56px", height: "56px", borderRadius: "999px", background: "#5b21b6", color: "#ffffff", left: "20px", right: "auto" });
   expect(page.panel.style).toMatchObject({ left: "20px", right: "auto" });
+  // Never over a Tuti portal's header (its height, where the page has one; nothing elsewhere).
+  expect(page.panel.style.height).toBe("min(600px, calc(100dvh - 112px - var(--portal-header-height, 0px)))");
   // The panel is named after the button that opens it, and so is one already in the page.
   expect(page.inlineFrames[0]!.title).toBe("Help & ideas");
   page.Tuti.open();

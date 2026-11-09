@@ -396,7 +396,8 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
     thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, outlines). "On this
     page" on the right on wide screens (the section being read marked). A collection's page: its icon and name, a card
     of its articles (rows with a chevron), then a card per collection in it.
-- **Widget panel** (`/widget` on the portal, framed on customers' sites): a
+- **Widget panel** (`/widget` on the portal, framed on customers' sites; floating on the portal it stays below the portal's
+  header, `--portal-header-height`, so the header's buttons stay in reach): a
   header in the project's colour (a gradient shading it away from the text
   on it, black or white, so that reads everywhere) with the tab's name and Close, the tab scrolling under
   it, the tabs with icons at the bottom and "Powered by tuti" under them. On
