@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { expect, test } from "vitest";
 
-import { createComment, createPost } from "@/server/operations/create";
+import { createComment, createPost, orNoSuchComment } from "@/server/operations/create";
 import { mergePost } from "@/server/operations/manage";
 import { likeComment } from "@/server/operations/more";
 import { listComments } from "@/server/operations/read";
@@ -88,4 +88,24 @@ test("likes: one each, taken back, counted for everyone, and only on comments th
   actAs(fan);
   expect(await setCommentLike(comment.id, true)).toEqual({});
   expect(await prisma.commentLike.count({ where: { commentId: comment.id } })).toBe(2);
+});
+
+test("a reply or a like whose comment is deleted as it's written (its foreign key fails): \"There's no such comment\", not a crash", async () => {
+  const { owner, project, reader, as, post } = await setup();
+  const comment = await call(createComment, as(reader.id), { number: post.number, body: "Please!" });
+  await prisma.comment.delete({ where: { id: comment.id } });
+  // What the database says when the comment went between the read and the write.
+  await expect(orNoSuchComment(comment.id, () => prisma.commentLike.create({ data: { commentId: comment.id, userId: owner.id } }))).rejects.toThrow(
+    "There's no such comment on this post",
+  );
+  const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id } })).id;
+  await expect(
+    orNoSuchComment(comment.id, () => prisma.comment.create({ data: { projectId: project.id, postId, authorId: owner.id, body: "Late", parentId: comment.id } })),
+  ).rejects.toThrow("There's no such comment on this post");
+  // A failure that isn't about the comment is left as it is.
+  const kept = await call(createComment, as(reader.id), { number: post.number, body: "Still here" });
+  await expect(orNoSuchComment(kept.id, () => prisma.commentLike.create({ data: { commentId: kept.id, userId: "no-such-user" } }))).rejects.toMatchObject({ code: "P2003" });
+  // And through the operations, once it's gone.
+  await expect(call(likeComment, as(owner.id), { number: post.number, id: comment.id, liked: true })).rejects.toThrow("There's no such comment on this post");
+  await expect(call(createComment, as(owner.id), { number: post.number, body: "Late", replyTo: comment.id })).rejects.toThrow("There's no such comment on this post");
 });

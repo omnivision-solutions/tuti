@@ -5,7 +5,7 @@ import { PROJECT_USE_KEYS } from "@/lib/project-uses";
 import { MAX_PROPERTY_FORMATS, propertyFormat, type PropertyFormats, storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
 
-import { author, authorId } from "./create";
+import { author, authorId, noSuchComment, orNoSuchComment } from "./create";
 import { defineOperation, OperationError } from "./define";
 import { findVisiblePost, postNumber } from "./read";
 
@@ -216,7 +216,8 @@ export const likeComment = defineOperation({
       throw new OperationError(409, "merged", "This post was merged into another one; like its comments there instead");
     }
     const userId = await authorId(context, input.author);
-    return prisma.$transaction(async (tx) => {
+    // Its comment deleted by a writer that doesn't lock the post (its author's account): "There's no such comment".
+    return orNoSuchComment(input.id, () => prisma.$transaction(async (tx) => {
       // Locked as setVote locks it: a like during a merge waits for it, then finds the post merged (its comments moved).
       const [locked] = await tx.$queryRaw<{ duplicateOfId: string | null }[]>`
         SELECT "duplicateOfId" FROM post WHERE id = ${post.id} FOR NO KEY UPDATE`;
@@ -226,7 +227,7 @@ export const likeComment = defineOperation({
       // A comment, never a note (notes are their own table): only the team sees those.
       const comment = await tx.comment.findFirst({ where: { id: input.id, postId: post.id }, select: { id: true } });
       if (!comment) {
-        throw new OperationError(404, "not_found", "There's no such comment on this post");
+        throw noSuchComment();
       }
       if (input.liked) {
         await tx.commentLike.createMany({ data: { commentId: comment.id, userId }, skipDuplicates: true });
@@ -234,7 +235,7 @@ export const likeComment = defineOperation({
         await tx.commentLike.deleteMany({ where: { commentId: comment.id, userId } });
       }
       return { id: comment.id, liked: input.liked, likes: await tx.commentLike.count({ where: { commentId: comment.id } }) };
-    });
+    }));
   },
 });
 
