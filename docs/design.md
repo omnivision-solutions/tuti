@@ -143,15 +143,14 @@ the list picks none to approve at once.
   team's Roadmap, Users' tables; and pages of panes).
   The top bar stays at the top as the page scrolls; it holds the sidebar's
   button and the project's name (the page's title once its heading has scrolled up
-  under it), and from tablet width up the page's actions (`PageHeader` puts them
-  there), fixed to the window as they are (so the page bouncing at its top can't
-  pull them apart). The page's title is on the page, its heading.
+  under it); an editor's Save and Publish (`pinActions`) sit in it from tablet width up,
+  fixed to the window as it is. The page's title, its description and its actions are on
+  the page (`PageHeader`).
   A page of three panes (the sidebar, a column of its own, the page: Settings,
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
-  width, the sidebar open as on every other page: one shell everywhere. Only Customize
-  (its own rail and the portal's preview), the Inbox (its panes fill the window, the
-  person beside the conversation) and a page of panes under 1280px wide (its own column
-  takes the room) fold it away. A pane's column is
+  width, and folds the sidebar to its rail: its own column is its navigation, so the page
+  keeps the room (Customize too, for its rail and the portal's preview); every other page
+  has the sidebar open. A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
@@ -376,22 +375,23 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
 
 Use these instead of hand-rolling layout:
 
-- **`PageHeader`** (`title`, `back`, `meta`, `actions`, `more`): the top of every page,
-  its title the page's heading at every width (the Page title style), `back` above it, `meta`
-  under it; no sentence under the title in the app: what a page is for goes in its
-  empty state, or a tooltip. `meta` is facts about the thing shown ("#12 ·
-  Ada · 3 votes"); `description` is for portals, where it's the team's own words.
-  `more` is the actions used less often, behind the top bar's "More actions".
+- **`PageHeader`** (`title`, `back`, `description`, `meta`, `actions`, `more`): the top of every page,
+  its title the page's heading at every width (the Page title style), `back` above it, then
+  `description`: one short muted line saying what the page is for ("Ideas and problems your
+  users posted, by status."; on portals the team's own words), on a section's main page
+  (Home, Feedback, Roadmap, Changelog, Docs, Autopilot, Users, Settings), not on a page
+  about one thing; then `meta`, facts about the thing shown ("#12 · Ada · 3 votes").
+  The actions sit beside the title and description, on the right, from tablet width up.
+  `more` is the actions used less often, behind "More actions".
   An editor whose title field shows the title (an article, a changelog entry) keeps the
   heading for screen readers only (`sr-only`).
-  Actions sit right on wide screens and under the title on phones; in the
-  app from tablet width up they go in the top bar, and on phones
-  they are a "More actions" menu from it (`PageActions`). A page whose
+  In the app on phones the actions are a "More actions" menu from the top bar (`PageActions`). A page whose
   every visit needs them (a conversation's Assign, Snooze and Close) shows them
   in a row under its header on phones as well, still in the menu (in reach once
   the row has scrolled away). An editor whose
-  main action must stay in reach on phones (Save and Publish) pins `actions` to a
-  bar at the bottom of the screen there (`pinActions`), the menu keeping `more`;
+  main action must stay in reach (Save and Publish) pins `actions` (`pinActions`): to a
+  bar at the bottom of the screen on phones, the menu keeping `more`, and to the top bar
+  from tablet width up;
   the bar steps aside while text is being typed (the keyboard is up then).
   Where Tuti's own chat launcher shows in the app (its cloud), what's held at the
   bottom of the screen keeps its buttons clear of the launcher's corner

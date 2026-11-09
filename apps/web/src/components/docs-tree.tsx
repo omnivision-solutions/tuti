@@ -654,7 +654,7 @@ export function DocsWorkspace({
             </div>
           </div>
         </aside>
-        <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6">{children}</div>
+        <div className="flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8">{children}</div>
       </div>
       {adding && (
         <CollectionDialog

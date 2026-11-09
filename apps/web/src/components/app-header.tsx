@@ -76,9 +76,9 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
         {customizeTitle(pathname) ?? current?.name ?? "Tuti"}
       </span>
       {title && (
-        // A copy of the page's heading, which screen readers have already. Clear of the page's actions (PageActions), fixed
-        // over the bar's right end: on phones its "More actions", from tablet width up the actions themselves.
-        <span aria-hidden data-slot="bar-title" className="mr-8 min-w-0 truncate text-sm font-semibold md:mr-[min(28rem,40%)]">
+        // A copy of the page's heading, which screen readers have already. Clear of the page's "More actions" (PageActions),
+        // fixed over the bar's right end on phones.
+        <span aria-hidden data-slot="bar-title" className="mr-8 min-w-0 truncate text-sm font-semibold">
           {title}
         </span>
       )}

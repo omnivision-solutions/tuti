@@ -61,6 +61,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     <>
       <PageHeader
         title="Changelog"
+        description="What you shipped, for your users to read."
         actions={newEntry}
       />
       {ready && (

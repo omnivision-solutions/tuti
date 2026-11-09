@@ -32,6 +32,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
     <>
       <PageHeader
         title="Autopilot"
+        description="Updates from your merged pull requests, to review before they go out."
       />
       {gone && <SentHereNotice>Nothing from Autopilot is on that {gone} any more.</SentHereNotice>}
       {!included && (

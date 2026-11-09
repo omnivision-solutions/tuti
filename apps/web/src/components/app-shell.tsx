@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { type CSSProperties, type ReactNode, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, type ReactNode, useState } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
@@ -11,38 +11,25 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
  */
 const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
 /**
- * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-5xl, its left edge 32px past the sidebar on every page as a pane page's is (one edge everywhere) (one
- * form by itself, `data-narrow`: New project, Setup, Account, max-w-2xl);
- * Customize's sections and pages of three panes (their own column, data-slot="pane-layout") take the
+ * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-5xl (one form by
+ * itself, `data-narrow`: New project, Setup, Account, max-w-2xl), its left edge 32px past the sidebar, as a pane page's
+ * is: one edge everywhere. Customize's sections and pages of panes (their own column, data-slot="pane-layout") take the
  * whole width instead, as do pages that need the room (`data-wide`: Users' tables, the team's Roadmap columns).
- * The sidebar stays open on all of them, one shell everywhere, but Customize (its own rail of sections and the
- * portal's preview need the room), the Inbox (its panes fill the window), and a page of panes under 1280px: there it's
- * folded away (it opens again on its own trigger, and is as it was on
- * the way back).
+ * The sidebar is open on every page but Customize (its own rail of sections and the portal's preview) and the pages of
+ * panes (PANES), whose own column is their navigation: there it's folded to its rail (it opens again on its own
+ * trigger, and is as it was on the way back).
  */
-/** The pages of three panes: Settings (its menu), Reporting, every Docs page (the docs' tree), Autopilot (its list). */
-const PANES = /^\/app\/[^/]+\/(settings|reporting|autopilot|docs)(\/|$)/;
-/** Under laptop-and-a-bit width (1280px), where a pane page's own column and the sidebar leave the page too little room. */
-const NARROW = "(width < 80rem)";
-const subscribeNarrow = (listener: () => void) => {
-  const query = window.matchMedia(NARROW);
-  query.addEventListener("change", listener);
-  return () => query.removeEventListener("change", listener);
-};
+/**
+ * The pages of panes: Settings (its menu), Reporting, every Docs page (the docs' tree), Autopilot (its list), the Inbox
+ * (its views and list beside the conversation). Their own column is their navigation: the sidebar folds to its rail.
+ */
+const PANES = /^\/app\/[^/]+\/(settings|reporting|autopilot|inbox|docs)(\/|$)/;
 
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
   const pathname = usePathname();
   const customizing = CUSTOMIZE.test(pathname);
   // The Inbox too: its three panes (views and list, the conversation, the person beside it) fill the window.
-  // And a pane page on a narrower screen: its own column takes the sidebar's room there.
-  const narrow = useSyncExternalStore(subscribeNarrow, () => window.matchMedia(NARROW).matches, () => false);
-  const folds = customizing
-    ? "customize"
-    : /^\/app\/[^/]+\/inbox(\/|$)/.test(pathname)
-      ? "inbox"
-      : narrow
-        ? (PANES.exec(pathname)?.[1] ?? null)
-        : null;
+  const folds = customizing ? "customize" : (PANES.exec(pathname)?.[1] ?? null);
   const folded = folds !== null;
   const [open, setOpen] = useState(true);
   // While folded: the sidebar's own state, folded again each time one of those opens.

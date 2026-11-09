@@ -39,7 +39,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
 
   return (
     <>
-      <PageHeader title="Roadmap" back={{ href: `/app/${slug}/feedback`, label: "Feedback" }} />
+      <PageHeader title="Roadmap" description="What's planned, in progress and done. Drag a card to change its status." back={{ href: `/app/${slug}/feedback`, label: "Feedback" }} />
       <ListFilters
         filters={[
           {
