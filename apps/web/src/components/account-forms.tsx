@@ -154,7 +154,7 @@ function PasswordForm({ noPassword }: { noPassword?: NoPassword }) {
               {error && <FieldError>{error}</FieldError>}
             </Field>
             {/* Outline: the page's one primary is Profile's Save. */}
-            <Button type="submit" variant="outline" disabled={pending} className="self-start">
+            <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled className="self-start">
               Change password
             </Button>
           </FieldGroup>
