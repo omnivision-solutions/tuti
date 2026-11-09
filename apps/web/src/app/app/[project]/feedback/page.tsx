@@ -91,7 +91,8 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       ? STATUS_ORDER.filter((status) => statuses.includes(status)).map((status) => ({ status, posts: posts.filter((post) => post.status === status) }))
       : [{ status: null, posts }];
   const listed = groups.flatMap((group) => group.posts);
-  const mixedUngrouped = (tab === "all" || tab === "duplicates") && groups[0]?.status == null && statuses.length > 1;
+  // Possible duplicates always (no tab says their status); All when it mixes statuses ungrouped (more to load).
+  const mixedUngrouped = tab === "duplicates" || (tab === "all" && groups[0]?.status == null && statuses.length > 1);
 
   // The post open in the pane (`?post=<number>`), and the list's links with another one open, or none.
   const opened = Number(first(searchParams.post));
