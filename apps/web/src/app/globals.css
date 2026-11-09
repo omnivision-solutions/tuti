@@ -530,6 +530,14 @@
     @apply my-0 min-h-7 font-semibold text-foreground;
   }
 }
+/* An editor's actions fixed over the top bar's right end (PageHeader's `pinActions`/`barActions`): the bar's path is cut
+   short before them, not run under them. */
+@media (width >= 48rem) {
+  main:has([data-bar-actions]) [data-slot="bar-path"] {
+    max-width: calc(100% - 26rem);
+  }
+}
+
 /*
  * Pinned actions on phones (PageActions) hide while text is being typed: the keyboard is up, and the caret could sit
  * under the bar. Back once focus leaves. Outside the layers, so it wins over the bar's own display utility.

@@ -56,7 +56,9 @@ export function PageHeader({
         </div>
         {pageActions &&
           (pinActions || barActions ? (
-            <div className="contents topbar:fixed topbar:top-0 topbar:right-4 topbar:z-20 topbar:flex topbar:h-12 topbar:items-center">{pageActions}</div>
+            <div data-bar-actions className="contents topbar:fixed topbar:top-0 topbar:right-4 topbar:z-20 topbar:flex topbar:h-12 topbar:items-center">
+              {pageActions}
+            </div>
           ) : (
             <div className="contents sm:flex sm:shrink-0 sm:pt-0.5">{pageActions}</div>
           ))}

@@ -103,7 +103,7 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
       <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-center" />
       {/* Where the page is: the project, then its part ("Acme / Feedback"; Customize's section there), till the page's
           title scrolls up under the bar. */}
-      <span className={cn("flex min-w-0 items-center gap-1.5 text-sm font-medium text-muted-foreground", title && "sr-only")}>
+      <span data-slot="bar-path" className={cn("flex min-w-0 items-center gap-1.5 text-sm font-medium text-muted-foreground", title && "sr-only")}>
         {/* Not on Account settings or New project, which aren't the project's. */}
         <span className="truncate">{customizeTitle(pathname) ?? (/^\/app\/(account|new)(\/|$)/.test(pathname) ? "Tuti" : (current?.name ?? "Tuti"))}</span>
         {!customizeTitle(pathname) && sectionOf(pathname) && (
