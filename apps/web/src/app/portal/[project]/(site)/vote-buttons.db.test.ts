@@ -36,8 +36,13 @@ test("the roadmap's, a board's and a post's vote buttons only for those who may 
 
   // Signed out: a link to sign in, coming back to the page.
   actAs(null);
-  for (const html of await pages()) {
+  // The roadmap's and the board's show the count alone: "Sign in to vote". The post's says "Upvote": its words first.
+  const [roadmap, board, postPage] = await pages();
+  for (const html of [roadmap!, board!]) {
     expect(html).toMatch(/<a aria-label="Sign in to vote \(1 vote\)"[^>]* href="\/sign-in\?next=%2Froadmap"/);
+  }
+  expect(postPage).toMatch(/<a aria-label="Upvote \(1 vote\), sign in to vote"[^>]* href="\/sign-in\?next=%2Froadmap"/);
+  for (const html of [roadmap!, board!, postPage!]) {
     expect(html).not.toMatch(/<button[^>]*aria-label="Upvote/);
   }
 
