@@ -172,6 +172,34 @@ export function NewPostForm({
 
   // A board's box before it's opened (and always signed out): the title and its button on one line.
   const oneLine = collapsible && (signedOut || !expanded);
+  // Ideas like the one typed. Opened, under the title; on one line, after its button (in the page's order too, so the
+  // keyboard goes from the title to the button).
+  const similarList = similar.length > 0 && (
+    <div className={cn("flex flex-col gap-1 rounded-lg border bg-muted/50 p-3", oneLine && "basis-full")} role="status">
+      <p className="text-sm font-medium">Already posted? Vote on it instead:</p>
+      <ul className="flex flex-col">
+        {similar.map((post) => (
+          <li key={post.id} className="flex items-center gap-2">
+            {similarVote?.(post)}
+            <Link
+              href={at(postPath({ ...post, board: { slug: post.boardSlug } }))}
+              target={linkTarget}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
+            >
+              {!similarVote && (
+                <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+                </span>
+              )}
+              <span className="min-w-0 flex-1 truncate">{post.title}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{post.boardName}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
   return (
     <form
       ref={formRef}
@@ -231,31 +259,7 @@ export function NewPostForm({
           {state.error && <FieldError>{state.error}</FieldError>}
         </Field>
 
-        {similar.length > 0 && (
-          <div className={cn("flex flex-col gap-1 rounded-lg border bg-muted/50 p-3", oneLine && "order-last basis-full")} role="status">
-            <p className="text-sm font-medium">Already posted? Vote on it instead:</p>
-            <ul className="flex flex-col">
-              {similar.map((post) => (
-                <li key={post.id} className="flex items-center gap-2">
-                  {similarVote?.(post)}
-                  <Link
-                    href={at(postPath({ ...post, board: { slug: post.boardSlug } }))}
-                    target={linkTarget}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
-                  >
-                    {!similarVote && (
-                      <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
-                      </span>
-                    )}
-                    <span className="min-w-0 flex-1 truncate">{post.title}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{post.boardName}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {!oneLine && similarList}
 
         {signedOut ? (
           // Submits the form (its sign-in GET, or the push above), so a title typed before the script ran goes too;
@@ -281,6 +285,7 @@ export function NewPostForm({
             </Button>
           </>
         )}
+        {oneLine && similarList}
       </FieldGroup>
     </form>
   );

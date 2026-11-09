@@ -446,6 +446,10 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await main.getByLabel("Title").fill("Dark theme");
   await expect(main.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" })).toContainText("Dark mode");
   await checkpoint(visitor, "portal-board-share-idea");
+  // The similar ideas come after the box's button, for the keyboard too: Tab from the title reaches the button first.
+  await main.getByLabel("Title").focus();
+  await visitor.keyboard.press("Tab");
+  await expect(main.getByRole("button", { name: "Sign in to post" })).toBeFocused();
   // Signing in to post (Enter does it too) comes back to the board as it was: its sort, and the idea in the box.
   await visitor.goto("/feedback/feature-requests?sort=new");
   await main.getByLabel("Title").fill("Dark theme");
