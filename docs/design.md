@@ -23,7 +23,10 @@ cute at the expense of clarity.
   a proper illustration.
 - **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
   ~11px (`rounded-xl`), pills fully round. Nothing else.
-- **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`). The primary
+- **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`).
+  Fields (`Input`, `Textarea`, `SelectTrigger`) sit on the card's colour (white in light) with the `input`
+  border; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
+  line above its buttons, never a grey band. The primary
   button is flat: one fill, its border the same colour, a soft shadow; no bevel or edge.
 - **Surfaces:** the page (`background`), cards on it (`card`: white in light, a step lighter than the page in dark)
   with a `border` ring and a soft shadow (`Card`, `StatTile`), never a card without its edge.
@@ -125,7 +128,8 @@ the list picks none to approve at once.
 | Meta | `text-xs text-muted-foreground`, parts joined with ` · ` |
 | Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback), a menu's group (Settings', Reporting's) and the part above a Reporting page's title. Quieter than the items under it, never in a colour |
 
-`text-xs` is 13px here (`globals.css` raises Tailwind's 12px): the smallest text anywhere. No `text-[11px]`,
+`text-sm` is 15px and `text-xs` 13px here (`globals.css` raises Tailwind's 14px and 12px: Figtree reads small):
+`text-xs` is the smallest text anywhere. No `text-[11px]`,
 `text-[0.625rem]` or other sizes below it for words a person reads.
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
@@ -133,7 +137,7 @@ the list picks none to approve at once.
 
 - **Admin app** (`/app`): every page lives in the sidebar shell
   (`app/app/layout.tsx`, `components/app-shell.tsx`), in one of three
-  columns, each starting 32px past the sidebar (left-aligned, so a page's title is in the same place on every page): max-w-4xl (lists, Home, a post), max-w-2xl for a form
+  columns, centred beside the sidebar: max-w-4xl (lists, Home, a post), max-w-2xl for a form
   by itself (`data-narrow` on it: New project, Setup, Account), or the whole width (`data-wide`: the
   team's Roadmap, Users' tables; and pages of panes).
   The top bar stays at the top as the page scrolls; it holds the sidebar's
@@ -144,7 +148,8 @@ the list picks none to approve at once.
   A page of three panes (the sidebar, a column of its own, the page: Settings,
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
   width, the sidebar open as on every other page: one shell everywhere. Only Customize
-  folds it away (its own rail and the portal's preview need the room). A pane's column is
+  (its own rail and the portal's preview) and the Inbox (its panes fill the window, the
+  person beside the conversation) fold it away. A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
@@ -267,7 +272,8 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   above it on phones); ⌘K finds articles and collections by name; a tab's page has Content, Access and
   Settings tabs; a collection's page lists what's in it, and its Settings
   button opens one page with its details and who can read it, saved by one Save.
-- **Sidebar** (`AppSidebar`): the page open is a raised pill (`sidebar-active`, semibold); a count
+- **Sidebar** (`AppSidebar`): its groups one under the other with a line between them (no gap
+  pushing the last to the bottom); the page open is a raised pill (`sidebar-active`, semibold); a count
   is a small round pill, in the highlight colour where people wait on the team (the Inbox's open
   conversations), quiet otherwise (Feedback's to triage, Autopilot's to review).
 - **Sign-in pages** (sign-in, sign-up, forgot and reset password, invitations): in the visitor's own

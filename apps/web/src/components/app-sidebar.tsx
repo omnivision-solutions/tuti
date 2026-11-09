@@ -112,8 +112,8 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         {nav.map((group, i) => (
-          // The last group (Customize, Settings) sits at the bottom.
-          <SidebarGroup key={i} className={cn(i === 2 && "mt-auto")}>
+          // Each group under the one before, a line between them (no gap down to the last).
+          <SidebarGroup key={i} className={cn(i > 0 && "border-t border-sidebar-border/70 group-data-[collapsible=icon]:border-t-0")}>
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.map((item) => (

@@ -24,10 +24,13 @@
   }
 }
 
-/* The small sizes, a step up from Tailwind's: meta lines, captions and badges at 13px, never smaller (docs/design.md). */
+/* The small sizes, a step up from Tailwind's (Figtree reads small): body in dense UI at 15px, meta lines, captions and
+   badges at 13px, never smaller (docs/design.md). */
 @theme {
   --text-xs: 0.8125rem;
-  --text-xs--line-height: 1.125rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.25rem;
 }
 
 @theme inline {

@@ -41,6 +41,9 @@ const VIEWS = {
   closed: { title: "Closed", empty: "No closed conversations yet." },
   spam: { title: "Spam", empty: "No spam." },
 } as const;
+/** The list column's title row (the Inbox's heading, or its copy while a conversation is open). */
+const LIST_TITLE = "px-6 pt-6 lg:col-start-1 lg:row-start-1 lg:border-r lg:px-3 lg:pt-4 lg:pb-2";
+
 export type View = keyof typeof VIEWS;
 
 /** The view a `?view=` asks for; Needs reply for none, or one it doesn't know. */
@@ -194,7 +197,15 @@ export async function InboxPanes({
       data-fills-window
       className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_auto_minmax(0,1fr)]"
     >
-      {member && <PageHeader title="Inbox" className="px-6 pt-6 lg:col-start-1 lg:row-start-1 lg:border-r lg:px-3 lg:pt-4 lg:pb-2" more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />}
+      {member ? (
+        <PageHeader title="Inbox" className={LIST_TITLE} more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />
+      ) : (
+        // A conversation open beside the list has the page's heading: the list keeps its title in sight (not a
+        // heading), so the views under it stay where they were.
+        <p aria-hidden className={cn(LIST_TITLE, "font-heading text-2xl font-semibold tracking-[-0.01em] max-lg:hidden sm:text-[1.75rem] sm:leading-9")}>
+          Inbox
+        </p>
+      )}
       {/* On a phone, the list or the conversation (its Back is to the list). */}
       <SubNav
         label="Views"
