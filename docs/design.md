@@ -229,9 +229,9 @@ the list picks none to approve at once.
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
-  An article's editor has Settings, History, Verify and View on portal in its top bar (ghost, icon and label; icons
-  alone in a phone's bottom bar), then Save (filled once there's something to save, else an outline) and a
-  draft's Publish; Unpublish and Delete are under "More actions". Its header is the way back (its collection), the
+  An article's editor has Settings, History and Verify in its top bar (ghost; History and Verify named from 1280px up,
+  icons under it, so the bar fits the 26rem the top bar keeps for it), then Save (filled once there's something to save, else an outline) and a
+  draft's Publish; View on portal (in words), Unpublish and Delete are under "More actions". Its header is the way back (its collection), the
   state as a pill (`ArticleStateBadge`: Draft neutral, Unpublished changes in the highlight, as it needs the team, Published soft green; never a post status's colour) and the date; a new
   article's collection is picked beside its Draft pill. Its text sits in the Docs column (max-w-3xl) at the reading size
   in the full text colour; the title field wraps. Verify is a panel from the
@@ -543,8 +543,8 @@ Use these instead of hand-rolling layout:
 - One primary button per screen or dialog, on the right; Cancel to its left.
   A section's create button in its header is that primary ("New entry", "Add
   content", "New post") unless an open item beside it has its own: then it's
-  outline. "View on portal" beside it is an outline button in words, not a bare icon (in an editor's top bar, one of
-  its quiet icon-and-label buttons, the icon alone in a phone's bottom bar).
+  outline. "View on portal" beside it is an outline button in words, not a bare icon (an editor keeps it in words under
+  "More actions").
 - A settings page saves one way: a switch or a select saves as it's changed;
   fields share one primary Save; adding to a list beside its fields (Send
   invite, Create key, Add webhook, Add redirect, Add readers) is an outline

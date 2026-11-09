@@ -45,7 +45,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const newest = await prisma.articleRevision.findFirst({
     where: { article: { projectId: membership.project.id, slug: articleSlug, deletedAt: null } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: { id: true },
+    // Its id, and when it was saved: the header's "Edited …" (`updatedAt` moves on writes that aren't saves, a move).
+    select: { id: true, createdAt: true },
   });
   // A draft's: Autopilot's edits waiting in it, which publishing it takes live (and only those), read before its text:
   // one landing between the two is in the text but not here, so Publish is refused rather than taking it live unseen.
@@ -112,7 +113,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <ArticleStateBadge state={!article.publishedAt ? "draft" : article.changes ? "changes" : "published"} />
             <span>
-              {article.publishedAt ? formatDate(article.publishedAt) : `Edited ${timeAgo(article.updatedAt)}`}
+              {article.publishedAt ? formatDate(article.publishedAt) : `Edited ${timeAgo(newest?.createdAt ?? article.updatedAt)}`}
               {article.publishedAt && listing !== "everywhere" && ` · ${LISTING_LABELS[listing]}`}
             </span>
           </span>
@@ -147,21 +148,17 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
                 preview: article.publishedAt ? previewUrl(access, `/docs/${article.slug}`) : undefined,
               }}
             />
-            {/* Settings, its panels and its page on the portal: one quiet look (labelled; icons alone on a phone's bar), Save the one fill. */}
+            {/* Settings and its panels: one quiet look, Save the one fill. The bar keeps 26rem over the top bar's end (the path
+                stops before it): History and Verify are named from a wide laptop up, icons (named on hover and to the
+                ear) under it. */}
             <Link href={`?history${keep}`} scroll={false} aria-label="History" title="History" className={buttonVariants({ variant: "ghost" })}>
               <HistoryIcon aria-hidden />
-              <span className="phonebar:hidden">History</span>
+              <span className="hidden xl:inline">History</span>
             </Link>
             <Link href={`?verify${keep}`} scroll={false} aria-label="Verify" title="Verify against your code" className={buttonVariants({ variant: "ghost" })}>
               <ShieldCheckIcon aria-hidden />
-              <span className="phonebar:hidden">Verify</span>
+              <span className="hidden xl:inline">Verify</span>
             </Link>
-            {article.publishedAt && listing !== "hidden" && listing !== "ai_only" && (
-              <Link href={url} target="_blank" aria-label="View on portal" title={url} className={buttonVariants({ variant: "ghost" })}>
-                <ExternalLinkIcon aria-hidden />
-                <span className="phonebar:hidden">View on portal</span>
-              </Link>
-            )}
             <ArticleSaveButton outline={article.publishedAt === null} />
             {article.publishedAt === null && (
               <ArticleActions
@@ -178,6 +175,13 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
         }
         more={
           <>
+            {/* Its page on the portal, in words, first in the menu. */}
+            {article.publishedAt && listing !== "hidden" && listing !== "ai_only" && (
+              <Link href={url} target="_blank" title={url} className={buttonVariants({ variant: "ghost" })}>
+                <ExternalLinkIcon aria-hidden />
+                View on portal
+              </Link>
+            )}
             {article.publishedAt !== null && (
               <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published part="publish" readers={readers} autopilotEdits={autopilotEdits} />
             )}

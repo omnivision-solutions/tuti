@@ -54,10 +54,23 @@ test("Docs' list: in reading order, a status only when it isn't published as wri
     ],
   });
 
+  // Read too, but not counted in the strip's totals (as Reporting doesn't): a sample article and a deleted one (unpublished as
+  // it was deleted).
+  const sample = await prisma.article.create({ data: { projectId: project.id, slug: "sample", title: "A sample", body: "Words.", publishedAt: new Date(), order: 4, sample: true } });
+  const gone = await prisma.article.create({ data: { projectId: project.id, slug: "gone", title: "Gone", body: "Words.", order: 5, deletedAt: new Date() } });
+  await prisma.articleViewDay.createMany({
+    data: [sample, gone].map((a) => ({ articleId: a.id, day: new Date(new Date().toISOString().slice(0, 10)), views: 50 })),
+  });
+  await prisma.articleFeedback.createMany({ data: [sample, gone].map((a) => ({ articleId: a.id, readerId: `reader-${a.slug}`, helpful: true })) });
+
   const params = Promise.resolve({ project: project.slug });
   at.pathname = `/app/${project.slug}/docs`;
   const html = renderToStaticMarkup(await TeamDocsLayout({ params, children: await TeamDocsPage({ params } as never) } as never));
   const text = html.replace(/<[^>]+>/g, "|");
+  // The strip's totals: the live articles' views and helpful votes in the window only.
+  const strip = text.slice(text.indexOf("Published, of"), text.indexOf("Waiting to publish|"));
+  expect(strip).toMatch(/\|5\|+Views · 30 days/);
+  expect(strip).toMatch(/\|2\|+Helpful votes · 30 days/);
   // What waits to be published: the draft and the one with changes, newest saved first (the changes; the draft's move
   // since isn't a save), each saying when.
   const waiting = text.slice(text.indexOf("Waiting to publish|"), text.indexOf("Article|"));

@@ -1423,7 +1423,8 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await checkpoint(team, "team-docs-article-settings", { fullPage: false });
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await team.waitForURL(`**/app/${slug}/docs/invites`);
-  await expect(team.getByRole("link", { name: "View on portal" })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
+  // (Under "More actions" in an editor.)
+  await expect(team.getByRole("link", { name: "View on portal", includeHidden: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
 
   // On a phone (from the top bar's "More actions"), the dialog scrolls in the window.
   await team.setViewportSize({ width: 390, height: 844 });
@@ -2344,4 +2345,39 @@ test("a link in an article to another of the portal's articles stays on the port
   await panel.getByRole("link", { name: "the invoices article" }).click();
   await expect(reader).toHaveURL(`${portalUrl(slug)}/widget?tab=docs&article=${invoices.slug}`);
   await expect(reader.getByRole("heading", { name: "Invoices" })).toBeInViewport();
+});
+
+test("an article's editor bar: one filled button, Save filled only once there's something to save, and it fits beside the bar's path", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/articles", { title: "A draft", body: "Words." });
+  await api("/articles", { title: "Inviting your team to a project with a long title", body: "Owners send invites." });
+  await api("/articles/inviting-your-team-to-a-project-with-a-long-title/publish", {});
+  const fill = (name: string) => team.getByRole("button", { name, exact: true }).evaluate((button) => getComputedStyle(button).backgroundColor);
+
+  // A draft: Publish is the filled one, Save an outline beside it.
+  await team.goto(`/app/${slug}/docs/a-draft`);
+  const primary = await fill("Publish");
+  expect(await fill("Save")).not.toBe(primary);
+
+  // Published, as saved: Save an outline; once there's something to save, filled.
+  await team.goto(`/app/${slug}/docs/inviting-your-team-to-a-project-with-a-long-title`);
+  expect(await fill("Save")).not.toBe(primary);
+  await team.getByRole("textbox", { name: "Article" }).click();
+  await team.keyboard.press("ControlOrMeta+End");
+  await team.keyboard.type(" Now.");
+  await expect.poll(() => fill("Save")).toBe(primary);
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+
+  // From a tablet up, the bar's buttons sit clear of its path ("Acme / Docs").
+  for (const width of [768, 1024, 1280]) {
+    await team.setViewportSize({ width, height: 900 });
+    const path = team.locator('[data-slot="bar-path"]');
+    const settings = team.getByRole("button", { name: "Settings" });
+    const [pathBox, settingsBox] = [(await path.boundingBox())!, (await settings.boundingBox())!];
+    expect(pathBox.x + pathBox.width, `at ${width}px`).toBeLessThanOrEqual(settingsBox.x);
+  }
 });
