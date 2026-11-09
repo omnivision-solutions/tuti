@@ -75,6 +75,7 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -180,8 +181,9 @@
   --sidebar-accent: oklch(0.915 0.016 84.6);
   --sidebar-accent-foreground: oklch(0.216 0.006 56);
   --sidebar-border: oklch(0.885 0.015 84.6);
-  /* The page open in the sidebar: a raised pill, the card's colour with the border round it. */
-  --sidebar-active: oklch(1 0 0);
+  /* The page open in the sidebar (and Settings'/Reporting's menus): a pale green pill, its label and icon green. */
+  --sidebar-active: oklch(0.915 0.045 155);
+  --sidebar-active-foreground: oklch(0.4 0.1 155);
   --sidebar-ring: oklch(0.529 0.125 155);
 }
 
@@ -233,7 +235,8 @@
   --sidebar-accent: oklch(0.265 0.017 163.3);
   --sidebar-accent-foreground: oklch(0.966 0.006 153.8);
   --sidebar-border: oklch(0.375 0.02 163.3);
-  --sidebar-active: oklch(0.3 0.024 160);
+  --sidebar-active: oklch(0.31 0.055 157);
+  --sidebar-active-foreground: oklch(0.86 0.11 157);
   --sidebar-ring: oklch(0.759 0.168 154.6);
 }
 

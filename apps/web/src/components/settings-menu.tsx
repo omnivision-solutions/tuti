@@ -33,7 +33,7 @@ export function SettingsMenu({ groups, label = "Settings", carry }: { groups: Se
               aria-current={page.href === current ? "page" : undefined}
               className={cn(
                 "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-muted [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
-                page.href === current ? "bg-card font-semibold text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:text-foreground",
+                page.href === current ? "bg-sidebar-active font-semibold text-sidebar-active-foreground [&_svg]:text-sidebar-active-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {page.icon}

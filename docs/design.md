@@ -46,7 +46,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders: 4.5:1 or more on the page, a card, the sidebar and a muted fill, in light and dark (`colours.test.ts`) |
 | `border`, `input` | A card's or divider's edge (1.25:1 on the page), an input's (1.5:1) |
-| `sidebar-active` | The page open in a menu (the sidebar, `SettingsMenu`): a raised pill, the card's colour with a `border` ring and a soft shadow |
+| `sidebar-active` / `sidebar-active-foreground` | The page open in a menu (the sidebar, `SettingsMenu`): a pale green pill, its label and icon green (4.5:1) |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
@@ -275,7 +275,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   Settings tabs; a collection's page lists what's in it, and its Settings
   button opens one page with its details and who can read it, saved by one Save.
 - **Sidebar** (`AppSidebar`): its groups one under the other with a line between them (no gap
-  pushing the last to the bottom); the page open is a raised pill (`sidebar-active`, semibold); a count
+  pushing the last to the bottom); the page open is a pale green pill with its label and icon green (`sidebar-active`, semibold); a count
   is a small round pill, in the highlight colour where people wait on the team (the Inbox's open
   conversations), quiet otherwise (Feedback's to triage, Autopilot's to review).
 - **Sign-in pages** (sign-in, sign-up, forgot and reset password, invitations): in the visitor's own
