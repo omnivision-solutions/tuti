@@ -436,7 +436,22 @@ Use these instead of hand-rolling layout:
   It assumes the launcher at the bottom right, where Tuti's help project keeps it:
   moved to the left (Customize → Widget), `launcher:` would need its side too.
 - **`BackLink`**: "← Feedback" above a detail page's header; in the app it's
-  `PageHeader`'s `back`.
+  `PageHeader`'s `back` (a post's page draws its own row: the back link, and the newer/older post as ‹ › at its
+  other end, away from the title).
+- **A post's page** (the team's): its header and text in one column (up to 48rem, the page the whole width), its
+  sidebar beside it from the top with a line on its left: "Properties" as icon + label rows whose values are quiet
+  selects (`QUIET_TRIGGER`: no border until hover, the chevron on hover), then Voters (their faces, three by name,
+  "N more"), what shipped it, its changelog entries (Draft/Published badges), posts like it. The meta line under the
+  title: number · author · age · "▲ N votes". Its status changes read as sentences ("Olive Owner moved it to [In
+  progress] · 11 people emailed · 2 days ago"). The team's reply box picks "Reply | Internal note" above it (tinted in
+  the highlight colour for a note), Email voters at its left, the button at its right. Team replies and notes: a 3px
+  line down the left and a light tint (green, the highlight's); every comment inset by that line, so the avatars
+  keep one column. On phones the properties are a card folded to one line (status, owner, ETA) over the post, the
+  rest of the sidebar after the comments.
+- **The team's roadmap**: no column fill (the cards make the lanes), each column's header an icon in its status's
+  colour, its name, count and a one-line note; cards: board, the vote pill and "⋯" (status menu) on top, a 16px
+  title, two lines of the post, then the owner and ETA when there are. On phones one column at a time, picked from a
+  segmented row with counts.
 - **`ItemList` + `ItemRow`** (`leading`, `title`, `badges`, `meta`, `actions`):
   every list of things (posts, boards, team, invites, suggestions), usually in
   a `Card`. Titles wrap, never get cut off.
@@ -451,7 +466,8 @@ Use these instead of hand-rolling layout:
     the list in it, Esc closes it (`pageShortcut`: not while typing, nor with a
     dialog or menu open). On a phone the pane takes the list's place, its
     arrow back to the list.
-  - Rows can be picked (a checkbox before the row, "Select <title>") for what's
+  - Rows can be picked (a checkbox in the row's left padding, "Select <title>", shown on the row's hover or
+    focus and on every row once one is picked; phones change posts one at a time) for what's
     done to many at once, each tinted green while it is (`ItemRow picked`; more
     strongly when it's also the open one; on any highlighted row the meta line
     is `text-foreground/70`, as the grey falls under 4.5:1 there); a
@@ -470,10 +486,16 @@ Use these instead of hand-rolling layout:
     away (the action done, Clear), focus moves to the first filter. Each is done as it is
     for one; what fails is said, the rest still go. What emails people
     (Completed) or can't be undone (Merge) asks first, naming how many.
-  - A list of one status (a Feedback tab) doesn't repeat it on every row: the
-    status menu opens from a small button instead (`PostStatusMenu badge={false}`).
+  - Feedback's rows (`PickedRow`), the same at every width: the votes in a small bordered box (`VoteBox`); the
+    board as a small uppercase label over the title (17px semibold), a line of the post, then who · when · comments;
+    at the right the owner's face (tablet width up) and the status menu, a quiet "⋯" (`PostStatusMenu
+    badge={false}`): the tab says the status, and All, when it mixes them, is grouped under each status (its dot,
+    name and count) in the tabs' order. Where statuses mix ungrouped (Possible duplicates, a tab only while there are
+    some) the pill opens the menu. The list takes its column's whole width; a post opens beside it. The search sits
+    in the filter row; on phones the filters are one "Filters" button (a popover, Boards in it too) beside the
+    search and "+ New".
   - A post's vote count, first in its row, has the vote arrow over it (and
-    "votes" for screen readers), so it doesn't read as a bare number (`VoteCount`).
+    "votes" for screen readers), so it doesn't read as a bare number (`VoteCount`, `VoteBox`).
   - Compact actions (a badge, one or two small buttons) stay on the right.
   - Pickers or several buttons → `wideActions`: on phones they move under the
     title and share the row width. Give select triggers `w-full sm:w-…`.

@@ -3,7 +3,7 @@ import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
 
-import { PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
+import { PostShipped, PostsLike, PostVoters, VOTERS_NAMED } from "@/components/post-sidebar";
 
 import type { GroupCondition } from "@/lib/group-conditions";
 import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
@@ -335,26 +335,24 @@ test("a post's sidebar shows them: each voter, how many more, what shipped it an
     createElement(
       Fragment,
       null,
-      createElement(PostVoters, { voters: shown, voteCount: voters.length, property: "mrr", formats, fold: true }),
+      createElement(PostVoters, { voters: shown, voteCount: voters.length, property: "mrr", formats }),
       createElement(PostShipped, { projectSlug: project.slug, ...(await howShipped(post.id)) }),
     ),
   );
   const text = html.replace(/<[^>]+>/g, "|");
-  // The one the app knows first, with their company and number (in the team's name and format for it); ten shown, two more.
+  // The one the app knows first, with their company and number (in the team's name and format for it).
   expect(text).toContain("|Voter 0| · Acme|||$1,200 MRR|");
-  // Twice: folded under faces and "12 voters" where the properties are under the post, listed beside it. "and 2 more" is
-  // plain words, not a link.
-  expect((html.match(/<li/g) ?? []).length).toBe(2 * VOTERS_SHOWN);
-  expect(text).toContain(`|${VOTERS_SHOWN + 2} voters|`);
+  // Their faces and "12 voters"; three by name, the rest of those read behind "N more", then "and 2 more" in plain words (the count is on the page, by its title).
+  expect(text).toContain("|Voters|");
+  // (And the changelog entry, a list item too.)
+  expect((html.match(/<li/g) ?? []).length).toBe(VOTERS_SHOWN + 1);
+  expect(html.split("<details")[0]!.match(/<li/g)!.length).toBe(VOTERS_NAMED);
+  expect(text).toContain(`|${VOTERS_SHOWN + 2 - VOTERS_NAMED} more|`);
   expect(text).toContain("|and 2 more|");
-  // Unfolded (Feedback's pane): the list only.
-  const pane = renderToStaticMarkup(createElement(PostVoters, { voters: shown, voteCount: voters.length, property: "mrr", formats }));
-  expect((pane.match(/<li/g) ?? []).length).toBe(VOTERS_SHOWN);
-  expect(pane).not.toContain("<details");
   expect(html).toContain(`href="/app/${project.slug}/autopilot/activity/${change.id}"`);
   expect(text).toContain("|acme/app#9|");
   expect(html).toContain(`href="/app/${project.slug}/changelog/4"`);
-  expect(text).toContain("March| · Draft|");
+  expect(text).toMatch(/March\|+Draft\|/);
 });
 
 test("posts like a post: by meaning (its kept embedding), by its title's words, both first; not itself, nor merged ones", async () => {

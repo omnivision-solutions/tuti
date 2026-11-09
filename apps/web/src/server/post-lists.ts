@@ -35,8 +35,12 @@ const teamPostSelect = {
   sample: true,
   visibility: true,
   authorId: true,
+  // A line of it under the title, and how old it is.
+  body: true,
+  createdAt: true,
   board: { select: { slug: true, name: true, off: true } },
-  author: { select: { name: true } },
+  author: { select: { name: true, image: true } },
+  owner: { select: { name: true, image: true } },
   _count: { select: { duplicateSuggestions: { where: possibleDuplicateOf } } },
 } satisfies Prisma.PostSelect;
 

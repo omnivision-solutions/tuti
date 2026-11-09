@@ -2,7 +2,7 @@
 
 import type { PostStatus } from "@tuti/db";
 import { cn } from "cn";
-import { ArrowRightLeftIcon } from "lucide-react";
+import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -95,11 +95,20 @@ export function PostStatusSelect({
         onValueChange={(value) => pick(value as PostStatus)}
       >
         <SelectTrigger size="sm" className={cn("w-36", className)} aria-label="Status">
-          <SelectValue />
+          {/* Its colour dot before it, as in the menus and the status pill. */}
+          <SelectValue>
+            {(value: PostStatus) => (
+              <>
+                <StatusDot status={value} />
+                {STATUS_LABELS[value]}
+              </>
+            )}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {STATUSES.map((s) => (
             <SelectItem key={s} value={s}>
+              <StatusDot status={s} />
               {STATUS_LABELS[s]}
             </SelectItem>
           ))}
@@ -141,15 +150,19 @@ export function PostStatusMenu({
           <DropdownMenuTrigger
             disabled={pending}
             aria-label={`Status: ${STATUS_LABELS[status]}`}
-            className="shrink-0 cursor-pointer rounded-4xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50"
+            className="group/status shrink-0 cursor-pointer rounded-4xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50"
           >
-            <PostStatusBadge status={status} />
+            {/* The chevron says it's a menu. */}
+            <span className="inline-flex items-center gap-0.5">
+              <PostStatusBadge status={status} />
+              <ChevronDownIcon aria-hidden className="size-3.5 text-muted-foreground" />
+            </span>
           </DropdownMenuTrigger>
         ) : (
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon-xs" disabled={pending} focusableWhenDisabled aria-label={`Status: ${STATUS_LABELS[status]}`} title="Change status" />}
+            render={<Button variant="ghost" size="icon-xs" disabled={pending} focusableWhenDisabled aria-label={`Status: ${STATUS_LABELS[status]}`} title="Change status" className="text-muted-foreground" />}
           >
-            <ArrowRightLeftIcon />
+            <EllipsisIcon />
           </DropdownMenuTrigger>
         )}
         <DropdownMenuContent align="end" className="w-auto min-w-40">

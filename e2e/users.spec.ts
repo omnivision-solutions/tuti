@@ -40,8 +40,8 @@ test("the team syncs its users over the API and finds them on the Users page, by
   expect((await table.boundingBox())!.width).toBeGreaterThan(900);
   await expect(table.getByRole("columnheader")).toHaveText(["User", "Company", "Plan", "Groups", "Posts", "Votes", "Conversations", "Last seen"]);
   const ada = rows.filter({ hasText: "Ada Lovelace" });
-  await expect(ada).toContainText("e2e-ada@example.com · id user-1");
-  await expect(ada.getByRole("cell")).toHaveText([/^A/, "–", "enterprise", "Enterprise", "0", "0", "0", "Never"]);
+  await expect(ada).toContainText("e2e-ada@example.com");
+  await expect(ada.getByRole("cell")).toHaveText([/^A/, "–", "enterprise", "Enterprise", "–", "–", "–", "Never"]);
   await expect(rows.filter({ hasText: "Bea Byte" })).not.toContainText("Enterprise");
 
   // Columns: the team shows seats too, and not company.
@@ -54,7 +54,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.getByRole("menuitemcheckbox", { name: "Constructor" }).click();
   await expect(table.getByRole("columnheader")).toHaveText(["User", "Plan", "Seats", "Constructor", "Groups", "Posts", "Votes", "Conversations", "Last seen"]);
   await owner.keyboard.press("Escape");
-  await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "–", "Enterprise", "0", "0", "0", "Never"]);
+  await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "–", "Enterprise", "–", "–", "–", "Never"]);
 
   // The team's names and formats for them (the API, for now): "Licensed seats", a number.
   await api("/project", { propertyFormats: { seats: { label: "Licensed seats", format: "number" } } }, "PATCH");
@@ -87,13 +87,14 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner).toHaveURL(/\?sort=votes&q=example\.com$/);
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText("Bea Byte");
-  // Bea's page: who she is (her initial for an avatar, her name its heading), beside what she did here: all six votes,
+  // Bea's page: her name its title, who she is (her initial for an avatar) beside what she did here: all six votes,
   // each status a badge.
   await rows.first().getByRole("link", { name: "Bea Byte" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users/user-2$`));
   const who = owner.getByRole("region", { name: "Who" });
-  await expect(who.getByRole("heading", { name: "Bea Byte", level: 2 })).toBeVisible();
-  await expect(who.locator("[data-slot=avatar]")).toHaveText("B");
+  await expect(owner.getByRole("heading", { name: "Bea Byte", level: 1 })).toBeVisible();
+  await expect(owner.locator("[data-slot=page-header] [data-slot=avatar]")).toHaveText("B");
+  await expect(owner.locator("[data-slot=page-header]")).toContainText("e2e-bea@example.com");
   const votes = owner.getByRole("region", { name: "Votes" });
   await expect(votes.getByRole("link")).toHaveCount(6);
   await expect(votes.getByRole("listitem").filter({ hasText: "Dark mode" }).locator("[data-slot=badge]")).toHaveText("Planned");
@@ -102,7 +103,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(conversations.filter({ hasText: "Exports in CSV?" }).locator("[data-slot=badge]")).toHaveAttribute("data-variant", "outline");
   await expect(conversations.filter({ hasText: "Invoices" }).locator("[data-slot=badge]")).toHaveText("Closed");
   await expect(conversations.filter({ hasText: "Invoices" }).locator("[data-slot=badge]")).toHaveAttribute("data-variant", "secondary");
-  const [profile, activity] = [(await who.boundingBox())!, (await votes.boundingBox())!];
+  const [profile, activity] = [(await owner.getByRole("region", { name: "Properties" }).boundingBox())!, (await votes.boundingBox())!];
   expect(profile.x + profile.width).toBeLessThan(activity.x);
   await checkpoint(owner, "team-user");
   // On a phone, her name once: the page's title, above the profile.
@@ -112,7 +113,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await checkpoint(owner, "team-user-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
   // She marks one of the project's emails as spam: her page says replies aren't emailed to her any more.
-  await expect(who).not.toContainText("as spam");
+  await expect(owner.getByText("Marked your email as spam")).toHaveCount(0);
   await sesComplaint(slug, "e2e-bea@example.com");
   await owner.reload();
   await expect(who.getByText("Marked your email as spam, so replies aren't emailed to them any more.")).toBeVisible();
@@ -121,13 +122,13 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await api("/users", { users: [{ id: "team/7 x", name: "Dee Slash" }] });
   await owner.goto(`/app/${slug}/users?q=Dee`);
   await rows.getByRole("link", { name: "Dee Slash" }).click();
-  await expect(owner.getByRole("heading", { name: "Dee Slash", level: 2 })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "Dee Slash", level: 1 })).toBeVisible();
   await expect(owner.getByText("id team/7 x")).toBeVisible();
   // A percent sign in it too.
   await api("/users", { users: [{ id: "50% off", name: "Eve Percent" }] });
   await owner.goto(`/app/${slug}/users?q=Eve`);
   await rows.getByRole("link", { name: "Eve Percent" }).click();
-  await expect(owner.getByRole("heading", { name: "Eve Percent", level: 2 })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "Eve Percent", level: 1 })).toBeVisible();
   await expect(owner.getByText("id 50% off")).toBeVisible();
   // Companies: the one Cy is at, with its users and votes; it opens its people.
   await owner.goto(`/app/${slug}/users`);
@@ -153,9 +154,9 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));
   await expect(rows.first()).toContainText("Ada Lovelace");
 
-  // Found by name, email or id, from the search box beside the page's title.
+  // Found by name, email or id, from the search box above the table (under the title and its tabs).
   const heading = (await owner.getByRole("heading", { name: "Users", level: 1 }).boundingBox())!;
-  expect((await owner.getByRole("searchbox", { name: "Search users" }).boundingBox())!.y).toBeLessThan(heading.y + heading.height);
+  expect((await owner.getByRole("searchbox", { name: "Search users" }).boundingBox())!.y).toBeGreaterThan(heading.y + heading.height);
   await owner.getByRole("searchbox", { name: "Search users" }).fill("bea");
   await owner.getByRole("searchbox", { name: "Search users" }).press("Enter");
   await expect(rows).toHaveCount(1);
@@ -213,8 +214,8 @@ test("the team syncs its users over the API and finds them on the Users page, by
   // Ids only from tablet width up, so emails don't wrap under them.
   await expect(rows.getByText("id user-3")).toBeHidden();
   await checkpoint(owner, "team-users-phone");
-  // There, the search is in the top bar's "More actions", with what it searched for.
-  await owner.getByRole("button", { name: "More actions" }).click();
+  // There too the search is above the table, with what it searched for.
+  await expect(owner.getByRole("searchbox", { name: "Search users" })).toBeInViewport();
   await expect(owner.getByRole("searchbox", { name: "Search users" })).toHaveValue("cipher");
 });
 

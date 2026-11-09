@@ -1,10 +1,10 @@
 import { prisma, type PostStatus } from "@tuti/db";
 import { boardLimit } from "@tuti/shared";
+import { ArrowUpRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { BoardOffButton, DeleteBoardButton, EditBoardDialog, NewBoardDialog } from "@/components/boards";
-import { ItemList, ItemRow } from "@/components/item-list";
+import { BoardMenu, BoardOnButton, EditBoardDialog, NewBoardDialog } from "@/components/boards";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -14,6 +14,7 @@ import { ACTIVE_STATUSES } from "@/lib/post-filters";
 import { isAdminRole } from "@/lib/roles";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
+import { cn } from "@/lib/utils";
 
 /** Feedback → Boards: the portal's boards, each with its settings; "New board" in a dialog (owners and admins). */
 export default async function BoardsPage(props: PageProps<"/app/[project]/feedback/boards">) {
@@ -65,6 +66,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
       <PageHeader
         back={{ href: `/app/${project.slug}/feedback`, label: "Feedback" }}
         title="Boards"
+        description="Where people post ideas and problems on your portal."
         actions={isAdmin && !full && <NewBoardDialog projectSlug={project.slug} />}
       />
 
@@ -82,58 +84,77 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
         </Alert>
       )}
 
-      <Card>
-        <CardContent>
-          <ItemList>
-            {boards.map((board) => (
-              <ItemRow
-                wideActions
-                key={board.id}
-                title={
-                  <Link href={`/app/${project.slug}/feedback?board=${board.slug}&status=all`} className="hover:underline">
-                    {board.name}
-                  </Link>
-                }
-                badges={
-                  board.off ? (
+      {/* A card a board: its name and who sees it, its description, its posts, where it is on the portal; then its actions. */}
+      {/* The whole width, as Feedback's list (data-wide). */}
+      <ul aria-label="Boards" data-wide className="grid gap-4 md:grid-cols-2">
+        {boards.map((board) => (
+          <li key={board.id}>
+            {/* The whole card opens its posts (its name's link stretched over it); its buttons sit above that. */}
+            <Card className="relative h-full gap-4 transition-shadow hover:shadow-sm">
+              <CardContent className="flex flex-1 flex-col gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h2 className="min-w-0 text-[1.0625rem] font-semibold break-words">
+                    <Link href={`/app/${project.slug}/feedback?board=${board.slug}&status=all`} className="after:absolute after:inset-0 hover:underline">
+                      {board.name}
+                    </Link>
+                  </h2>
+                  {board.off ? (
                     <Badge variant="outline" className="text-muted-foreground">
                       Off
                     </Badge>
+                  ) : board.postVisibility === "PUBLIC" ? (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      Public
+                    </Badge>
                   ) : (
                     <VisibilityBadge visibility={board.postVisibility} of="board" />
-                  )
-                }
-                meta={
-                  <>
-                    {/* What Off means, in words everyone sees (not a hover). */}
-                    {board.off && "Not on the portal: only the team sees it and its posts · "}
-                    <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="hover:underline">
-                      /feedback/{board.slug}
+                  )}
+                </div>
+                {/* What Off means, in words everyone sees (not a hover). */}
+                {board.off && <p className="text-sm text-muted-foreground">Not on the portal: only the team sees it and its posts.</p>}
+                {board.description && <p className="text-sm break-words text-muted-foreground">{board.description}</p>}
+                <dl className="flex gap-6">
+                  <div className="flex flex-col">
+                    <dt className="text-xs text-muted-foreground">Posts</dt>
+                    <dd className="text-xl font-semibold tabular-nums">{count(board.id)}</dd>
+                  </div>
+                  <div className="flex flex-col">
+                    <dt className="text-xs text-muted-foreground">Still open</dt>
+                    <dd className="text-xl font-semibold tabular-nums">{count(board.id, ACTIVE_STATUSES)}</dd>
+                  </div>
+                </dl>
+                {/* Where it is on one line, its actions on the next (the same on every card, whatever the URL's length). */}
+                <div className="relative mt-auto flex flex-col gap-2 border-t pt-3">
+                  {/* Whether it's on the portal (a dot), and where. */}
+                  <span className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+                    <span aria-hidden className={cn("size-2 shrink-0 rounded-full", board.off ? "bg-status-closed" : "bg-status-completed")} />
+                    <span className="sr-only">{board.off ? "Off" : "On the portal"}: </span>
+                    <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 hover:text-foreground hover:underline">
+                      <span className="truncate">/feedback/{board.slug}</span>
+                      <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0" />
                     </a>
-                    {" · "}
-                    {count(board.id)} {count(board.id) === 1 ? "post" : "posts"}
-                    {count(board.id) > 0 && ` · ${count(board.id, ACTIVE_STATUSES)} open`}
-                    {board.description && ` · ${board.description}`}
-                  </>
-                }
-                actions={
-                  isAdmin && (
-                    <>
+                  </span>
+                  {isAdmin && (
+                    <div className="-mb-1 flex items-center gap-1">
                       <EditBoardDialog projectSlug={project.slug} board={board} />
-                      {/* Always there, so focus stays on it; without room, Turn on says how to get it. */}
-                      <BoardOffButton projectSlug={project.slug} boardId={board.id} name={board.name} off={board.off} teamOnly={board.postVisibility === "TEAM"} stuck={limit !== null && on > limit} />
-                      {count(board.id) === 0 && boards.length > 1 && (
-                        <DeleteBoardButton projectSlug={project.slug} boardId={board.id} name={board.name} />
-                      )}
-                    </>
-                  )
-                }
-              />
-            ))}
-          </ItemList>
-        </CardContent>
-      </Card>
-
+                      {board.off && <BoardOnButton projectSlug={project.slug} boardId={board.id} name={board.name} off teamOnly={board.postVisibility === "TEAM"} stuck={limit !== null && on > limit} />}
+                      <BoardMenu
+                        projectSlug={project.slug}
+                        boardId={board.id}
+                        name={board.name}
+                        off={board.off}
+                        teamOnly={board.postVisibility === "TEAM"}
+                        stuck={limit !== null && on > limit}
+                        deletable={count(board.id) === 0 && boards.length > 1}
+                      />
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

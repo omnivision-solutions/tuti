@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
@@ -43,9 +43,10 @@ export function PostSteps({ projectSlug, newer, older }: { projectSlug: string; 
     );
 
   return (
-    <span className="flex items-center">
-      {step(newer, "Newer post", "K", <ChevronUpIcon />)}
-      {step(older, "Older post", "J", <ChevronDownIcon />)}
+    // One control of two halves, so it doesn't read as voting.
+    <span className="flex items-center divide-x rounded-lg border bg-card [&>*]:rounded-none [&>*:first-child]:rounded-l-lg [&>*:last-child]:rounded-r-lg">
+      {step(newer, "Newer post", "K", <ChevronLeftIcon />)}
+      {step(older, "Older post", "J", <ChevronRightIcon />)}
     </span>
   );
 }

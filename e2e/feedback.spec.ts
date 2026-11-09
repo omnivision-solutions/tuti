@@ -109,15 +109,15 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   expect(reply.text).toContain("Thanks! We're on it.");
   // And a note only the team sees.
   await expect(team.getByText("Thanks! We're on it.")).toBeVisible();
-  // Switched on once the page is ready for it (before then, a click isn't heard).
+  // Picked once the page is ready for it (before then, a click isn't heard).
   await expect(async () => {
-    await team.getByRole("switch", { name: /Internal note/ }).check();
+    await team.getByRole("tab", { name: "Internal note" }).click();
     await expect(team.getByRole("button", { name: "Add note" })).toBeVisible({ timeout: 1000 });
   }).toPass();
   await team.getByRole("textbox", { name: "Comment" }).fill("Acme asked for this on their call too.");
   await team.getByRole("button", { name: "Add note" }).click();
   await expect(team.getByRole("listitem").filter({ hasText: "Acme asked for this on their call too." })).toContainText("Internal note");
-  await expect(team.getByRole("switch", { name: /Internal note/ })).not.toBeChecked();
+  await expect(team.getByRole("tab", { name: "Reply" })).toHaveAttribute("aria-selected", "true");
   await team.getByLabel("Status").click();
   await team.getByRole("option", { name: "Planned" }).click();
   // Saved once the toast shows; the portal is opened only after that.
@@ -134,9 +134,9 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // Readers see it too: the toast says so.
   await expect(team.getByText(`ETA: ${next}, shown on the portal`)).toBeVisible();
   // Who asked for it: its voters, Bo (the duplicate's vote, moved over) and Ada, the latest first.
-  await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText(["Bo", "Ada"]);
+  await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText([/Bo$/, /Ada$/]);
   // The change is in the post's activity, after the team's answer: who made it, from what to what.
-  await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Open → Planned, by Tess Team");
+  await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Tess Team moved it to Planned");
   // Its title is the page's heading, under the top bar (which keeps a copy in view); the post merged into it is listed.
   const heading = team.getByRole("heading", { name: "Dark mode", level: 1 });
   await expect(heading).toHaveCSS("font-size", "32px");
@@ -145,18 +145,18 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(48);
   await expect(properties.getByRole("list", { name: "Merged posts" }).getByRole("link")).toHaveText(["#2 Night theme for the editor"]);
   await checkpoint(team, "team-planned");
-  // On a phone the post and its activity come first, then its properties: the voters as faces and how many, opening to their names.
+  // On a phone its properties come first, folded to a line (status, owner, ETA) that opens them; then the post and its
+  // activity; then its voters, as faces and how many, and their names.
   await team.setViewportSize({ width: 390, height: 844 });
   const comments = (await team.getByRole("region", { name: "Comments" }).boundingBox())!;
-  expect((await properties.boundingBox())!.y).toBeGreaterThanOrEqual(comments.y + comments.height);
-  await expect(properties.getByRole("list", { name: "Voters" })).toBeHidden();
-  // Screen readers hear the count, not the faces' "Voters".
-  const folded = properties.locator("summary");
-  await expect(folded).toHaveAccessibleName("2 voters");
-  await folded.click();
+  const fold = (await team.getByRole("button", { name: "Show properties" }).boundingBox())!;
+  expect(fold.y + fold.height).toBeLessThanOrEqual(comments.y);
+  await expect(properties.getByRole("combobox", { name: "Owner" })).toBeHidden();
+  expect((await properties.getByRole("group", { name: "Voters" }).boundingBox())!.y).toBeGreaterThanOrEqual(comments.y + comments.height);
+  await expect(properties.getByRole("group", { name: "Voters" })).toContainText("2 voters");
   // The toasts gone, for the screenshot.
   await expect(team.getByText(`ETA: ${next}`)).toBeHidden({ timeout: 10_000 });
-  await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText(["Bo", "Ada"]);
+  await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText([/Bo$/, /Ada$/]);
   // From the top: scrolled, the full-page shot draws the top bar where the window was.
   await team.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(team, "team-post-phone");
@@ -218,7 +218,10 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   const tabs = team.getByRole("navigation", { name: "Statuses" });
   await expect(tabs.getByRole("link", { name: "Needs triage 0" })).toHaveAttribute("aria-current", "page");
   await expect(team.getByText("Nothing to triage")).toBeVisible();
-  await tabs.getByRole("link", { name: "Possible duplicates 0" }).click();
+  // Possible duplicates is a tab only while there are some (or it's open).
+  await expect(tabs.getByRole("link", { name: /^Possible duplicates/ })).toHaveCount(0);
+  await team.goto(`/app/${slug}/feedback?show=duplicates`);
+  await expect(tabs.getByRole("link", { name: "Possible duplicates 0" })).toHaveAttribute("aria-current", "page");
   await expect(team.getByText("No possible duplicates")).toBeVisible();
   await tabs.getByRole("link", { name: "Planned 1" }).click();
   await team.waitForURL(`**/app/${slug}/feedback?status=planned`);
@@ -246,9 +249,10 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.locator('[data-slot="page-header"]').getByRole("link", { name: new URL(portalUrl(slug)).host })).toHaveCount(0);
   // One short line under the page's title says what it's for.
   await expect(team.locator('[data-slot="page-header"] p')).toHaveText(["Ideas and problems your users posted, by status."]);
-  // A row shows values, no form controls: its board as text, its status as a badge that opens a menu.
+  // A row shows values, no form controls: its board as a label, who posted it, its status's menu.
   const row = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
-  await expect(row).toContainText("#1 · Feature requests · Ada");
+  await expect(row).toContainText("Feature requestsDark mode");
+  await expect(row).toContainText("Ada");
   await expect(row.getByRole("combobox")).toHaveCount(0);
   await row.getByRole("button", { name: "Status: Planned" }).click();
   await checkpoint(team, "team-feedback-status-menu");
@@ -317,15 +321,17 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
       }),
     )
     .toBeLessThanOrEqual(1);
-  await tabs.getByRole("link", { name: "Done 0" }).focus();
-  await all.evaluate((tab) => {
+  // (Completed, a tab with one after it: the row can scroll it past the fade. All, the last, ends the row.)
+  const completed = tabs.getByRole("link", { name: "Completed 0" });
+  await tabs.getByRole("link", { name: "In progress 0" }).focus();
+  await completed.evaluate((tab) => {
     const row = tab.parentElement!;
     row.scrollLeft = tab.offsetLeft + tab.offsetWidth - row.clientWidth + 10;
   });
   await team.keyboard.press("Tab");
-  await expect(all).toBeFocused();
-  expect(await all.evaluate((tab) => tab.matches(":focus-visible"))).toBe(true);
-  const [focused, row] = [(await all.boundingBox())!, (await tabs.boundingBox())!];
+  await expect(completed).toBeFocused();
+  expect(await completed.evaluate((tab) => tab.matches(":focus-visible"))).toBe(true);
+  const [focused, row] = [(await completed.boundingBox())!, (await tabs.boundingBox())!];
   expect(focused.x + focused.width).toBeLessThanOrEqual(row.x + row.width - 32 + 1);
   // On a phone the last tab is past the window's edge: opened, the row is scrolled to it.
   await team.goto(`/app/${slug}/feedback?show=duplicates`);
@@ -824,8 +830,8 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   // The column says the status: its cards don't repeat it (a dot only by the column's name). Instead, the ETA and the owner.
   await expect(column("Planned").locator("[data-status-dot]")).toHaveCount(1);
   await expect(card("Dark mode")).toContainText("ETA Dec 2030");
-  // The owner's face and first name; the whole name to screen readers.
-  await expect(card("Dark mode")).toContainText("TessOwner: Tess Team");
+  // The owner's face; their name on hover and to screen readers.
+  await expect(card("Dark mode")).toContainText("Owner: Tess Team");
   await expect(card("Calendar sync")).not.toContainText("Owner");
   // The columns use the width, past the 4xl other pages keep to.
   const planned = (await column("Planned").boundingBox())!;
@@ -1027,7 +1033,7 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await team.setViewportSize({ width: 1440, height: 900 });
   // All of them (a post triaged in the pane stays in the list).
   await team.goto(`/app/${slug}/feedback?status=all`);
-  await expect(team.getByText("Open a post to triage it here")).toBeVisible();
+  await expect(team.getByRole("complementary", { name: "Post" })).toHaveCount(0);
   const pane = team.getByRole("region", { name: /^Post #/ });
 
   // The open row is highlighted out to the list card's edges, the first and last rows into its corners: no box in a box.
@@ -1074,22 +1080,24 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await pane.getByRole("button", { name: "Comment" }).click();
   await expect(pane.getByRole("textbox", { name: "Comment" })).toHaveText("");
 
-  // Scrolled down the pane (to its reply box) on a short laptop screen, J's post starts at its top.
+  // Scrolled down the pane (to its reply box) on a short laptop screen, the next post starts at its top. (Planned now,
+  // Calendar sync is in All's last group, after the open ones: K steps to the one before it, J back.)
   await team.setViewportSize({ width: 1440, height: 420 });
   await team.getByRole("complementary", { name: "Post" }).evaluate((aside) => aside.scrollTo(0, aside.scrollHeight));
   await expect(pane.getByRole("heading", { name: "Calendar sync" })).not.toBeInViewport();
   await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await team.keyboard.press("j");
-  const titles = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
-  const after = titles[titles.indexOf("Calendar sync") + 1]!;
-  await expect(pane.getByRole("heading", { name: after })).toBeInViewport();
+  const titles = await team.getByRole("list", { name: "Posts" }).getByRole("link").allTextContents();
+  const previous = titles[titles.indexOf("Calendar sync") - 1]!;
   await team.keyboard.press("k");
+  await expect(pane.getByRole("heading", { name: previous, exact: true })).toBeInViewport();
+  await team.getByRole("complementary", { name: "Post" }).evaluate((aside) => aside.scrollTo(0, aside.scrollHeight));
+  await team.keyboard.press("j");
   await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeInViewport();
   await team.setViewportSize({ width: 1440, height: 900 });
 
-  // Writing a reply, its Internal note switch focused: Esc doesn't close the pane (the draft would be lost).
+  // Writing a reply, its Internal note tab focused: Esc doesn't close the pane (the draft would be lost).
   await pane.getByRole("textbox", { name: "Comment" }).fill("Half a thought");
-  await pane.getByRole("switch", { name: /Internal note/ }).focus();
+  await pane.getByRole("tab", { name: "Internal note" }).focus();
   await team.keyboard.press("Escape");
   // (Once anything Esc would have done has happened.)
   await team.waitForLoadState("networkidle");
@@ -1101,13 +1109,13 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   // J and K step through the list in the pane; Esc closes it.
   const order = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
   const at = order.indexOf("Calendar sync");
-  await team.locator("body").press("j");
-  await expect(pane.getByRole("heading", { name: order[at + 1]! })).toBeVisible();
   await team.locator("body").press("k");
+  await expect(pane.getByRole("heading", { name: order[at - 1]!, exact: true })).toBeVisible();
+  await team.locator("body").press("j");
   await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeVisible();
   await team.locator("body").press("Escape");
   await expect(pane).toHaveCount(0);
-  await expect(team.getByText("Open a post to triage it here")).toBeVisible();
+  await expect(team.getByRole("complementary", { name: "Post" })).toHaveCount(0);
 
   // Open full page: the post's own page, with the reply.
   await team.getByRole("link", { name: "Dark mode", exact: true }).click();
@@ -1261,9 +1269,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const newPost = team.getByRole("link", { name: "New post (on your portal)" });
   await expect(newPost).toHaveAttribute("href", `${portalUrl(slug)}/feedback`);
   await expect(newPost).toHaveAttribute("target", "_blank");
-  // A vote count says it's votes, and a tab of every status shows each row's.
-  await expect(row("Night theme")).toContainText(/^\s*2 votes\s*Night theme/);
-  await expect(row("Night theme").getByText("Open", { exact: true })).toBeVisible();
+  // A vote count says it's votes; each row has its status's menu.
+  await expect(row("Night theme")).toContainText(/^\s*2 votes\s*Feature requests\s*Night theme/);
+  await expect(row("Night theme").getByRole("button", { name: "Status: Open" })).toBeVisible();
   const background = (title: string) => row(title).evaluate((li) => getComputedStyle(li).backgroundColor);
   const fill = () => newPost.evaluate((link) => getComputedStyle(link).backgroundColor);
   const primary = await fill();
@@ -1283,7 +1291,7 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   expect(await background("Calendar sync")).not.toBe(unpicked);
   expect(await background("Dark mode")).toBe(unpicked);
   // On the tint, the meta line is darker than on a plain row (its contrast kept).
-  const metaColor = (title: string) => row(title).getByText(/^#\d+ ·/).evaluate((meta) => getComputedStyle(meta).color);
+  const metaColor = (title: string) => row(title).locator("time").locator("..").evaluate((meta) => getComputedStyle(meta).color);
   expect(await metaColor("Calendar sync")).not.toBe(await metaColor("Dark mode"));
   await checkpoint(team, "team-feedback-bulk");
   // On a phone too, the bar is one row the filters' height: the list stays where it was.
@@ -1445,7 +1453,7 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   // The merged post's page keeps its status history (its comments moved, so no "0 comments" over it).
   await team.goto(`/app/${slug}/p/1`);
   // Named for what it shows: no comments, only its status history.
-  await expect(team.getByRole("region", { name: "Status history" })).toContainText("Open → Planned, by Olive Owner");
+  await expect(team.getByRole("region", { name: "Status history" })).toContainText("Olive Owner moved it to Planned");
   await expect(team.getByRole("region", { name: "Comments" })).toHaveCount(0);
   await expect(team.getByText(/\d+ comments?$/)).toHaveCount(0);
 });
@@ -1495,7 +1503,7 @@ test("Feedback's picked rows go by the list as it is now: Merge keeps the one wi
   await team.getByRole("menuitemradio", { name: "Planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
   // Its vote count, first in the row (not its number, #2): its author's and the two new ones.
-  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText(/^\s*3 votes\s*Night theme/);
+  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText(/^\s*3 votes\s*Feature requests\s*Night theme/);
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
   await expect(team.getByRole("alertdialog").getByRole("radio", { name: /Night theme/ })).toBeChecked();
 });
@@ -1571,7 +1579,8 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   release();
   await expect(team.getByText(/^Merged into #/)).toBeVisible();
   // The bar gone, the focus goes to the filters in its place, not the page: after an action and after Clear.
-  const board = team.getByRole("combobox", { name: "Board" });
+  // (Hidden on a phone, where the filters are a popover: never focused there.)
+  const board = team.getByRole("combobox", { name: "Board", includeHidden: true });
   await expect(board).toBeFocused();
   await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Clear" }).click();
@@ -1603,7 +1612,7 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   await expect(board).not.toBeFocused();
 });
 
-test("Feedback's picked rows' bar keeps the filters' place on a phone, even with filters that wrap", async ({ browser }, testInfo) => {
+test("Feedback's picked rows' bar keeps the filters' place on a phone, the list where it was", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");
@@ -1619,11 +1628,10 @@ test("Feedback's picked rows' bar keeps the filters' place on a phone, even with
   for (const title of ["Dark mode", "Night theme"]) {
     await api("/posts", { board: "integrations", title });
   }
-  // The board's long name: the filters take two lines, taller than the bar.
+  // On a phone the filters are one button (its popover), beside the search: the bar takes that row's place.
   await team.setViewportSize({ width: 390, height: 844 });
   await team.goto(`/app/${slug}/feedback?status=all&board=integrations`);
-  const [board, sort] = [team.getByRole("combobox", { name: "Board" }), team.getByRole("combobox", { name: "Sort" })];
-  expect((await sort.boundingBox())!.y).toBeGreaterThan((await board.boundingBox())!.y);
+  await expect(team.getByRole("button", { name: /^Filters/ })).toBeVisible();
   const first = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
   const top = (await first.boundingBox())!.y;
   await team.getByRole("checkbox", { name: "Select Dark mode" }).check();

@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { seenAs } from "@tuti/jobs";
-import { ExternalLinkIcon, LayoutListIcon, MapIcon } from "lucide-react";
+import { ExternalLinkIcon, LayoutListIcon, MessageSquareIcon, PlusIcon, SearchIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -8,18 +8,19 @@ import { CopyButton } from "@/components/copy-button";
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
-import { FeedbackBulk, FeedbackSelection, PickedRow, SelectPost } from "@/components/feedback-selection";
-import { ItemList, VoteCount } from "@/components/item-list";
+import { FeedbackBulk, FeedbackSelection, FiltersFold, PickedRow, SelectPost, VoteBox } from "@/components/feedback-selection";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusMenu } from "@/components/post-status-select";
+import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SampleBadge } from "@/components/sample-badge";
-import { asking } from "@/lib/format";
+import { asking, initial, timeAgo } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { cn } from "@/lib/utils";
 import { storedRule } from "@/lib/group-conditions";
@@ -32,12 +33,15 @@ import { teamPostCounts, teamPosts, voterTotals } from "@/server/post-lists";
 import { VisibilityBadge } from "@/components/visibility-badge";
 
 /** Feedback's tabs by status, opening on the posts nobody has triaged; then All and the possible duplicates. */
+/** The statuses in the order the tabs (and All's groups) take them. */
+const STATUS_ORDER = ["OPEN", "UNDER_REVIEW", "PLANNED", "IN_PROGRESS", "COMPLETED", "CLOSED"] as const;
+
 const TABS = [
   ["open", "Needs triage"],
   ["under-review", "Under review"],
   ["planned", "Planned"],
   ["in-progress", "In progress"],
-  ["completed", "Done"],
+  ["completed", "Completed"],
 ] as const;
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
@@ -79,6 +83,14 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   // What completing it now emails: nobody, if it's completed already (picked with others, say).
   const emailing = (post: (typeof posts)[number]) => (post.status === "COMPLETED" ? 0 : (emails.get(post.id) ?? 0));
 
+  // All, when it mixes statuses: the posts grouped by status in the tabs' order, each group most voted first (as listed).
+  const statuses = [...new Set(posts.map((post) => post.status))];
+  const groups =
+    tab === "all" && statuses.length > 1
+      ? STATUS_ORDER.filter((status) => statuses.includes(status)).map((status) => ({ status, posts: posts.filter((post) => post.status === status) }))
+      : [{ status: null, posts }];
+  const listed = groups.flatMap((group) => group.posts);
+
   // The post open in the pane (`?post=<number>`), and the list's links with another one open, or none.
   const opened = Number(first(searchParams.post));
   const open = Number.isInteger(opened) && opened > 0 ? opened : null;
@@ -110,31 +122,27 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
     });
     return params.size > 0 ? `/app/${slug}/feedback?${params}` : `/app/${slug}/feedback`;
   };
+  // This tab and its filters, the search taken off.
+  const kept = new URLSearchParams(href(tab).split("?")[1] ?? "");
+  kept.delete("q");
+  const withoutSearch = kept.size > 0 ? `/app/${slug}/feedback?${kept}` : `/app/${slug}/feedback`;
   const tabs = [
     ...TABS.map(([key, title]) => ({ key, title, count: counts.of(STATUS_PARAMS[key]!) })),
     { key: "all", title: "All", count: counts.all },
-    { key: "duplicates", title: "Possible duplicates", count: counts.duplicates },
+    // Only when there are some (or it's the one open).
+    ...(counts.duplicates > 0 || tab === "duplicates" ? [{ key: "duplicates", title: "Possible duplicates", count: counts.duplicates }] : []),
   ];
 
   return (
     <>
       <PageHeader
         title="Feedback"
-        description="Ideas and problems your users posted, by status."
+        // On phones the list comes up sooner without it.
+        description={<span className="max-sm:hidden">Ideas and problems your users posted, by status.</span>}
         actions={
           <>
-            <form role="search" className="flex w-full min-w-0 sm:w-56 lg:w-72">
-              {board && <input type="hidden" name="board" value={board} />}
-              {group && <input type="hidden" name="group" value={group.key} />}
-              {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
-              {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
-              <Input type="search" name="q" defaultValue={q} placeholder="Search titles and descriptions" aria-label="Search feedback" className="h-8" />
-            </form>
-            <Link href={`/app/${slug}/feedback/roadmap`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              <MapIcon />
-              Roadmap
-            </Link>
-            <Link href={`/app/${slug}/feedback/boards`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            {/* The roadmap is in the sidebar; the boards, used less, a quiet button. */}
+            <Link href={`/app/${slug}/feedback/boards`} className={buttonVariants({ variant: "ghost" })}>
               <LayoutListIcon />
               Boards
             </Link>
@@ -143,9 +151,9 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
               href={`${await portalAddress(slug)}/feedback`}
               target="_blank"
               rel="noreferrer"
-              className={buttonVariants({ size: "sm", variant: open === null ? "default" : "outline" })}
+              className={buttonVariants({ variant: open === null ? "default" : "outline" })}
             >
-              <ExternalLinkIcon />
+              <PlusIcon />
               New post
               <span className="sr-only"> (on your portal)</span>
             </a>
@@ -153,9 +161,9 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
         }
       />
 
-      <FeedbackKeys order={posts.map((post) => post.number)} open={open} base={withPost(null)} />
-      {/* The list and, beside it, the post a row opened (the whole width); on a phone, one or the other. */}
-      <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
+      <FeedbackKeys order={listed.map((post) => post.number)} open={open} base={withPost(null)} />
+      {/* The list (its whole column until a post opens) and, beside it, the post a row opened; on a phone, one or the other. */}
+      <div data-slot="pane-layout" className={cn("flex flex-col gap-6", open !== null && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start")}>
         {/* Rows picked for Set status, Move to board and Merge, the bar in the filters' place once some are. */}
         <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
           <div className={cn("@container flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
@@ -174,6 +182,17 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
 
             {/* Rows picked: the bar for them in the filters' place. */}
             <FeedbackBulk projectSlug={slug} boards={project.boards}>
+              <div className="flex gap-2 sm:items-center">
+              <FiltersFold
+                set={[board, group, filters.sort !== "top" && filters.sort].filter(Boolean).length}
+                // On phones the header's actions are a menu: Boards here too.
+                extra={
+                  <Link href={`/app/${slug}/feedback/boards`} className={buttonVariants({ variant: "ghost", className: "mt-1 w-full justify-start" })}>
+                    <LayoutListIcon />
+                    Boards
+                  </Link>
+                }
+              >
               <ListFilters
                 filters={[
                   {
@@ -189,13 +208,37 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                           label: "Voters",
                           // "*" can't be a group's key (a group named "All" has "all").
                           value: group?.key ?? "*",
-                          options: [{ value: "*", label: "Everyone" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
+                          options: [{ value: "*", label: "All voters" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
                         },
                       ]
                     : []),
                   sortFilter(filters.sort, TEAM_SORTS),
                 ]}
               />
+              </FiltersFold>
+              <div className="flex min-w-0 flex-1 gap-2 sm:ml-auto sm:flex-none">
+              <form role="search" className="relative flex min-w-0 flex-1 sm:w-60 sm:flex-none">
+              {board && <input type="hidden" name="board" value={board} />}
+              {group && <input type="hidden" name="group" value={group.key} />}
+              {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
+              {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
+              <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input type="search" name="q" defaultValue={q} placeholder="Search feedback" aria-label="Search feedback" className="h-9 pl-8" />
+            </form>
+              {/* On phones, where the header's actions are a menu: New post in sight, as an icon. */}
+              <a
+                href={`${await portalAddress(slug)}/feedback`}
+                target="_blank"
+                rel="noreferrer"
+                title="New post"
+                className={buttonVariants({ className: "sm:hidden" })}
+              >
+                <PlusIcon />
+                New
+                <span className="sr-only"> post (on your portal)</span>
+              </a>
+              </div>
+              </div>
             </FeedbackBulk>
             {posts.length === 0 ? (
               counts.all === 0 && !q && !board && !group ? (
@@ -216,7 +259,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                 />
               ) : (
                 <EmptyState
-                  title={q || board || group ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
+                  title={q ? "No posts match your search" : board || group ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
                   description={
                     q || board || group
                       ? "Try other words, or another board or tab."
@@ -224,55 +267,107 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                         ? "Posts that may repeat an older one show here."
                         : "Posts show here when they have this status."
                   }
+                  // The search taken off, the rest of the view kept.
+                  action={
+                    q && (
+                      <Link href={withoutSearch} className={buttonVariants({ variant: "outline" })}>
+                        Clear search
+                      </Link>
+                    )
+                  }
                 />
               )
             ) : (
-              <Card size="sm">
-                <CardContent>
-                  <ItemList>
-                    {posts.map((post) => (
-                      <PickedRow
-                        key={post.id}
-                        postId={post.id}
-                        selected={post.number === open}
-                        leading={
-                          <>
-                            <SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }} />
-                            <VoteCount count={post.voteCount} />
-                          </>
-                        }
-                        title={
-                          <Link href={withPost(post.number)} scroll={false} aria-current={post.number === open ? "true" : undefined} className="hover:underline">
-                            {post.title}
-                          </Link>
-                        }
-                        badges={
-                          <>
-                            {post.sample && <SampleBadge />}
-                            <VisibilityBadge visibility={seenAs(post)} />
-                            {post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>}
-                          </>
-                        }
-                        meta={
-                          <>
-                            #{post.number} · {post.board.name} · {post.author.name}
-                            {post.commentCount > 0 &&
-                              ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
-                            {totals.has(post.id) && ` · ${asking(totals.get(post.id)!, project.askingProperty!, formats)}`}
-                          </>
-                        }
-                        // A tab of one status says it: a small button for the menu, not the same badge on every row.
-                        actions={<PostStatusMenu
-  projectSlug={slug}
-  postId={post.id}
-  status={post.status}
-  completing={{ title: post.title, emails: emails.get(post.id) ?? 0 }}
-  badge={tab === "all" || tab === "duplicates"}
-/>}
-                      />
-                    ))}
-                  </ItemList>
-                </CardContent>
+              // All, mixing statuses: grouped under each status (with its count), as the tabs order them; one status (a
+              // tab, or All holding one): a single list.
+              <Card className="gap-0 py-0">
+                {groups.map((group) => (
+                  <section key={group.status ?? "all"} aria-label={group.status ? STATUS_LABELS[group.status] : undefined} className="border-t first:border-t-0">
+                    {group.status && (
+                      <h2 className="flex items-center gap-2 bg-muted/50 px-4 py-2 text-sm font-semibold sm:px-5">
+                        <StatusDot status={group.status} />
+                        {STATUS_LABELS[group.status]}
+                        <span className="font-normal text-muted-foreground tabular-nums">{group.posts.length}</span>
+                      </h2>
+                    )}
+                    <ul aria-label="Posts" className={cn("flex flex-col divide-y [&>:has(+[data-selected])]:border-transparent", group.status && "border-t")}>
+                      {group.posts.map((post) => (
+                        <PickedRow
+                          key={post.id}
+                          postId={post.id}
+                          selected={post.number === open}
+                          select={<SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }} />}
+                          votes={<VoteBox count={post.voteCount} />}
+                          board={post.board.name}
+                          title={
+                            <Link href={withPost(post.number)} scroll={false} aria-current={post.number === open ? "true" : undefined} className="hover:underline">
+                              {post.title}
+                            </Link>
+                          }
+                          badges={
+                            <>
+                              {post.sample && <SampleBadge />}
+                              <VisibilityBadge visibility={seenAs(post)} />
+                              {post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>}
+                            </>
+                          }
+                          excerpt={post.body.trim() || undefined}
+                          meta={
+                            <>
+                              <span className="inline-flex min-w-0 items-center gap-1.5">
+                                <Avatar aria-hidden className="size-5">
+                                  {post.author.image && <AvatarImage src={post.author.image} alt="" />}
+                                  <AvatarFallback className="text-[0.6875rem]">{initial(post.author.name)}</AvatarFallback>
+                                </Avatar>
+                                <span className="truncate text-foreground/80">{post.author.name}</span>
+                              </span>
+                              <span aria-hidden>·</span>
+                              <time dateTime={post.createdAt.toISOString()} className="whitespace-nowrap">
+                                {timeAgo(post.createdAt)}
+                              </time>
+                              {post.commentCount > 0 && (
+                                <>
+                                  <span aria-hidden>·</span>
+                                  <span className="inline-flex items-center gap-1 tabular-nums">
+                                    <MessageSquareIcon aria-hidden className="size-3.5" />
+                                    {post.commentCount}
+                                    <span className="sr-only">{post.commentCount === 1 ? " comment" : " comments"}</span>
+                                  </span>
+                                </>
+                              )}
+                              {totals.has(post.id) && (
+                                <>
+                                  <span aria-hidden>·</span>
+                                  <span>{asking(totals.get(post.id)!, project.askingProperty!, formats)}</span>
+                                </>
+                              )}
+                            </>
+                          }
+                          owner={
+                            post.owner && (
+                              <Avatar className="size-6" title={`Owner: ${post.owner.name}`}>
+                                {post.owner.image && <AvatarImage src={post.owner.image} alt="" />}
+                                <AvatarFallback className="text-xs">{initial(post.owner.name)}</AvatarFallback>
+                                <span className="sr-only">Owner: {post.owner.name}</span>
+                              </Avatar>
+                            )
+                          }
+                          // The group or the tab says the status: its menu a quiet button (the pill where they're mixed
+                          // and ungrouped: Possible duplicates).
+                          status={
+                            <PostStatusMenu
+                              projectSlug={slug}
+                              postId={post.id}
+                              status={post.status}
+                              completing={{ title: post.title, emails: emails.get(post.id) ?? 0 }}
+                              badge={tab === "duplicates"}
+                            />
+                          }
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                ))}
               </Card>
             )}
             {more && (
@@ -287,20 +382,11 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
           </div>
         </FeedbackSelection>
         {/* Keyed by the post: each one starts at the top of the pane (scrolling on its own), wherever the last was. */}
-        <aside
-          key={open ?? "none"}
-          aria-label="Post"
-          className={cn(
-            "lg:sticky lg:top-18 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto lg:border-l lg:pl-6",
-            open === null && "max-lg:hidden",
-          )}
-        >
-          {open !== null ? (
+        {open !== null && (
+          <aside key={open} aria-label="Post" className="lg:sticky lg:top-18 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto lg:border-l lg:pl-6">
             <FeedbackPane projectSlug={slug} projectId={project.id} askingProperty={project.askingProperty} formats={formats} number={open} close={withPost(null)} />
-          ) : (
-            <p className="text-sm text-muted-foreground">Open a post to triage it here: click its title, or press J.</p>
-          )}
-        </aside>
+          </aside>
+        )}
       </div>
     </>
   );

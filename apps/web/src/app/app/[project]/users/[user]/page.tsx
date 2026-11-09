@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import { PersonPanel } from "@/components/inbox/person-panel";
 import { PageHeader } from "@/components/page-header";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { initial } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { userAccounts } from "@/server/operations/users";
 
@@ -18,7 +20,7 @@ export default async function UserPage(props: PageProps<"/app/[project]/users/[u
   const externalId = decodeURIComponent(param);
   const identity = await prisma.ssoIdentity.findUnique({
     where: { projectId_externalId: { projectId, externalId } },
-    select: { userId: true, email: true, user: { select: { name: true } } },
+    select: { userId: true, email: true, user: { select: { name: true, image: true } } },
   });
   if (!identity) {
     notFound();
@@ -26,7 +28,24 @@ export default async function UserPage(props: PageProps<"/app/[project]/users/[u
 
   return (
     <>
-      <PageHeader back={{ href: `/app/${slug}/users`, label: "Users" }} title={identity.user.name} />
+      {/* Who they are in the header: their face, their name, their address. */}
+      <PageHeader
+        back={{ href: `/app/${slug}/users`, label: "Users" }}
+        title={
+          <span className="flex items-center gap-3">
+            <Avatar aria-hidden className="size-10 text-base sm:size-11">
+              {identity.user.image && <AvatarImage src={identity.user.image} alt="" />}
+              <AvatarFallback>{initial(identity.user.name)}</AvatarFallback>
+            </Avatar>
+            <span className="min-w-0">{identity.user.name}</span>
+          </span>
+        }
+        description={
+          <span className="break-all">
+            {identity.email && `${identity.email} · `}id {externalId}
+          </span>
+        }
+      />
       {/* The whole width (data-wide), their profile beside what they did. Their app's address, as it asserted it; what
           they did with every account that is them, as Users counts it. */}
       <div data-wide>

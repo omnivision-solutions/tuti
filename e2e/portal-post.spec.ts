@@ -54,7 +54,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
       await expect(reply.getByText("Team", { exact: true })).toBeVisible();
       await expect(reply).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       // Its status history, after the reply: the change and when, not who made it.
-      await expect(activity.getByRole("listitem").last()).toHaveText(/^Open → Planned · /);
+      await expect(activity.getByRole("listitem").last()).toHaveText(/^Moved to Planned · /);
       // When the team expects it, beside its status.
       await expect(visitor.getByRole("article").getByText(expected, { exact: true })).toBeVisible();
       // Who wants it: their faces (Bo's, the latest, first) and how many.

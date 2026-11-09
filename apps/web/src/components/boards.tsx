@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "cn";
+import { EllipsisIcon, PlusIcon } from "lucide-react";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -13,12 +14,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { keepingFields } from "@/lib/forms";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -46,15 +48,24 @@ function slugify(value: string) {
 }
 
 /** "New board" on Feedback → Boards: its form in a dialog, closed once the board is made. */
-export function NewBoardDialog({ projectSlug }: { projectSlug: string }) {
+export function NewBoardDialog({ projectSlug, tile = false }: { projectSlug: string; /** A dashed card in the boards' grid, after them. */ tile?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button />}>New board</DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
+      {tile ? (
+        <DialogTrigger
+          className="flex h-full min-h-40 w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed text-sm text-muted-foreground transition-colors outline-none hover:border-primary/50 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <PlusIcon aria-hidden className="size-5" />
+          Add a board
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger render={<Button />}>New board</DialogTrigger>
+      )}
+      <DialogContent className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto p-5 sm:max-w-md sm:p-6">
         <DialogHeader>
-          <DialogTitle>New board</DialogTitle>
-          <DialogDescription>Boards can be renamed or moved to a new URL any time; only empty boards can be deleted.</DialogDescription>
+          <DialogTitle className="text-xl font-semibold">New board</DialogTitle>
+          <DialogDescription>A place on your portal for one kind of feedback.</DialogDescription>
         </DialogHeader>
         <CreateBoardForm projectSlug={projectSlug} onCreated={() => setOpen(false)} />
       </DialogContent>
@@ -86,25 +97,34 @@ function CreateBoardForm({ projectSlug, onCreated }: { projectSlug: string; onCr
           <Input
             id="board-name"
             name="name"
-            placeholder="Bug reports"
+            placeholder="Integrations"
             required
             onChange={(e) => !slugEdited && setSlug(slugify(e.target.value))}
           />
         </Field>
         <Field data-invalid={state.error ? true : undefined}>
           <FieldLabel htmlFor="board-slug">URL</FieldLabel>
-          <Input
-            id="board-slug"
-            name="slug"
-            value={slug}
-            onChange={(e) => {
-              setSlug(e.target.value);
-              setSlugEdited(true);
-            }}
-            required
-            aria-invalid={state.error ? true : undefined}
-          />
-          <FieldDescription>On your portal at /feedback/{slug || "<url>"}.</FieldDescription>
+          {/* Where it is on the portal, before the part that's typed. */}
+          <div className="relative">
+            <span aria-hidden className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-muted-foreground">
+              /feedback/
+            </span>
+            <Input
+              id="board-slug"
+              name="slug"
+              value={slug}
+              placeholder="integrations"
+              className="pl-[5.5rem]"
+              onChange={(e) => {
+                setSlug(e.target.value);
+                setSlugEdited(true);
+              }}
+              required
+              aria-invalid={state.error ? true : undefined}
+              aria-describedby="board-slug-hint"
+            />
+          </div>
+          <FieldDescription id="board-slug-hint">Its address on your portal, filled in from the name.</FieldDescription>
           {state.error && <FieldError>{state.error}</FieldError>}
         </Field>
         <Field>
@@ -112,9 +132,12 @@ function CreateBoardForm({ projectSlug, onCreated }: { projectSlug: string; onCr
           <Textarea id="board-description" name="description" rows={2} placeholder="Optional, shown on the board" />
         </Field>
         <BoardVisibilityField id="board-visibility" saved="PUBLIC" />
-        <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Creating…" : "Create board"}
-        </Button>
+        <DialogFooter className="-mx-5 -mb-5 mt-1 bg-transparent px-5 pt-4 pb-5 sm:-mx-6 sm:-mb-6 sm:px-6 sm:pb-6">
+          <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
+          <Button type="submit" disabled={pending}>
+            {pending ? "Creating…" : "Create board"}
+          </Button>
+        </DialogFooter>
       </FieldGroup>
     </form>
   );
@@ -242,7 +265,7 @@ function BoardVisibilityField({ id, saved, existing = false }: { id: string; sav
   const [visibility, setVisibility] = useState(saved);
   return (
     <Field>
-      <FieldLabel id={`${id}-label`}>New posts are</FieldLabel>
+      <FieldLabel id={`${id}-label`}>Who sees new posts</FieldLabel>
       <Select name="postVisibility" items={VISIBILITY_LABELS} value={visibility} onValueChange={(value) => setVisibility(value as PostVisibility)}>
         <SelectTrigger className="w-full" aria-labelledby={`${id}-label`} aria-describedby={`${id}-description`}>
           <SelectValue />
@@ -287,26 +310,8 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
   );
 }
 
-/**
- * Turns a board off (the team's alone, off the portal), asking first, or on again. `stuck`: the project is past its
- * plan's board limit, so turning it on again would need an upgrade.
- */
-export function BoardOffButton({
-  projectSlug,
-  boardId,
-  name,
-  off,
-  teamOnly,
-  stuck,
-}: {
-  projectSlug: string;
-  boardId: string;
-  name: string;
-  off: boolean;
-  /** Team only: never on the portal, on or off; off makes its posts the team's too, whatever their own visibility. */
-  teamOnly: boolean;
-  stuck: boolean;
-}) {
+/** Turning a board off (asking first: `ask`, the question as `dialog`) or on again, with what it says when done. */
+function useBoardOff({ projectSlug, boardId, name, off, teamOnly, stuck }: BoardOffProps) {
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState(false);
   const turn = () =>
@@ -318,68 +323,108 @@ export function BoardOffButton({
         toast.success(teamOnly ? `${name} is turned ${off ? "on" : "off"}` : off ? `${name} is on the portal` : `${name} is off the portal`);
       }
     });
-  // One button either way, so focus stays on it as it turns from Turn off to Turn on and back.
+  const dialog = (
+    <AlertDialog open={asking} onOpenChange={setAsking}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Turn off {name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {teamOnly ? "Only your team sees its posts, votes and comments, even those that are public." : "It leaves your portal, and only your team sees its posts, votes and comments."}{" "}
+            {stuck ? "Your plan is past its board limit, so turning it on again needs an upgrade." : "You can turn it on again any time."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              setAsking(false);
+              turn();
+            }}
+          >
+            Turn off
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+  return { pending, turn, ask: () => setAsking(true), dialog };
+}
+
+type BoardOffProps = {
+  projectSlug: string;
+  boardId: string;
+  name: string;
+  off: boolean;
+  /** Team only: never on the portal, on or off; off makes its posts the team's too, whatever their own visibility. */
+  teamOnly: boolean;
+  /** The project is past its plan's board limit, so turning it on again would need an upgrade. */
+  stuck: boolean;
+};
+
+/** "Turn on", in sight on a board that's off (turning it off is in its menu, asking first). */
+export function BoardOnButton(props: BoardOffProps) {
+  const { pending, turn } = useBoardOff(props);
+  // aria-disabled, not disabled: a disabled button drops keyboard focus while it works.
+  return (
+    <Button variant="outline" size="sm" aria-disabled={pending} onClick={() => !pending && turn()}>
+      Turn on
+    </Button>
+  );
+}
+
+/**
+ * A board's less used actions, behind "⋯": Turn off (asking first) while it's on, and Delete (asking first) when it has
+ * no posts and isn't the only board.
+ */
+export function BoardMenu({ deletable, ...props }: BoardOffProps & { deletable: boolean }) {
+  const off = useBoardOff(props);
+  const [deleting, setDeleting] = useState(false);
+  const [pending, startTransition] = useTransition();
+  if (props.off && !deletable) {
+    return null;
+  }
   return (
     <>
-      {/* aria-disabled, not disabled: a disabled button drops keyboard focus while it works. */}
-      <Button variant="ghost" size="sm" aria-disabled={pending} onClick={() => !pending && (off ? turn() : setAsking(true))}>
-        {off ? "Turn on" : "Turn off"}
-      </Button>
-      <AlertDialog open={asking} onOpenChange={setAsking}>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`More for ${props.name}`} disabled={off.pending || pending} />}>
+          <EllipsisIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-36">
+          {!props.off && <DropdownMenuItem onClick={off.ask}>Turn off</DropdownMenuItem>}
+          {deletable && (
+            <DropdownMenuItem variant="destructive" onClick={() => setDeleting(true)}>
+              Delete
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {off.dialog}
+      <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Turn off {name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {teamOnly ? "Only your team sees its posts, votes and comments, even those that are public." : "It leaves your portal, and only your team sees its posts, votes and comments."}{" "}
-              {stuck ? "Your plan is past its board limit, so turning it on again needs an upgrade." : "You can turn it on again any time."}
-            </AlertDialogDescription>
+            <AlertDialogTitle>Delete {props.name}?</AlertDialogTitle>
+            <AlertDialogDescription>The board is removed from your portal. It has no posts.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
-                setAsking(false);
-                turn();
-              }}
+              variant="destructive"
+              onClick={() =>
+                startTransition(async () => {
+                  const result = await deleteBoard(props.projectSlug, props.boardId);
+                  if (result.error) {
+                    toast.error(result.error);
+                  } else {
+                    toast.success(`${props.name} deleted`);
+                  }
+                })
+              }
             >
-              Turn off
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </>
-  );
-}
-
-export function DeleteBoardButton({ projectSlug, boardId, name }: { projectSlug: string; boardId: string; name: string }) {
-  const [pending, startTransition] = useTransition();
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>Delete</AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
-          <AlertDialogDescription>The board is removed from your portal. It has no posts.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            onClick={() =>
-              startTransition(async () => {
-                const result = await deleteBoard(projectSlug, boardId);
-                if (result.error) {
-                  toast.error(result.error);
-                } else {
-                  toast.success(`${name} deleted`);
-                }
-              })
-            }
-          >
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }

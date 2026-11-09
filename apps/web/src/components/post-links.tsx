@@ -32,19 +32,20 @@ export function PostLinks({ projectSlug, postId, links }: { projectSlug: string;
 
   return (
     <section aria-label="GitHub links" className="flex flex-col gap-2">
-      <ul className="flex flex-col gap-1 text-sm">
+      <ul className="flex flex-col gap-2 text-sm">
         {links.map((link) => {
           const Icon = ICONS[link.kind];
           const label = link.kind === "RELEASE" ? `${link.repo} ${link.tag}` : `${link.repo}#${link.number}`;
           return (
-            <li key={link.id} className="flex items-center gap-2">
+            // A bordered chip: what it is, where it came from, and unlinking it.
+            <li key={link.id} className="flex items-center gap-2 rounded-lg border bg-card py-1.5 pr-1.5 pl-3">
               <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-              <a href={link.url} target="_blank" rel="noopener noreferrer" className="min-w-0 break-all hover:underline">
-                {label}
-                {link.title && <span className="text-muted-foreground"> · {link.title}</span>}
+              <a href={link.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 break-words hover:underline">
+                <span className="font-medium">{label}</span>
+                {link.title && <span className="text-muted-foreground max-sm:block max-sm:truncate"><span className="max-sm:hidden"> · </span>{link.title}</span>}
               </a>
               {link.codeChangeId && (
-                <Link href={`/app/${projectSlug}/autopilot/activity/${link.codeChangeId}`} className="shrink-0 text-xs text-muted-foreground hover:underline">
+                <Link href={`/app/${projectSlug}/autopilot/activity/${link.codeChangeId}`} className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground">
                   From Autopilot
                 </Link>
               )}
@@ -52,6 +53,7 @@ export function PostLinks({ projectSlug, postId, links }: { projectSlug: string;
                 variant="ghost"
                 size="icon-xs"
                 aria-label={`Remove ${label}`}
+                title="Unlink"
                 disabled={pending}
                 onClick={() =>
                   startTransition(async () => {

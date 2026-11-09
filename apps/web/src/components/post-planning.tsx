@@ -1,6 +1,8 @@
 "use client";
 
-import { useTransition } from "react";
+import { cn } from "cn";
+import { ChevronDownIcon } from "lucide-react";
+import { type ReactNode, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { etaToast, formatMonth } from "@/lib/format";
@@ -13,7 +15,7 @@ import type { PostVisibility } from "@tuti/db";
 const NOBODY = "*";
 
 /** Team-only: who on the team looks after a post, saved as it's picked. */
-export function PostOwnerSelect({ projectSlug, postId, ownerId, team }: { projectSlug: string; postId: string; ownerId: string | null; team: { id: string; name: string }[] }) {
+export function PostOwnerSelect({ projectSlug, postId, ownerId, team, className }: { projectSlug: string; postId: string; ownerId: string | null; team: { id: string; name: string }[]; className?: string }) {
   const [pending, startTransition] = useTransition();
   const items: Record<string, string> = { [NOBODY]: "Nobody", ...Object.fromEntries(team.map((member) => [member.id, member.name])) };
   return (
@@ -33,7 +35,7 @@ export function PostOwnerSelect({ projectSlug, postId, ownerId, team }: { projec
         })
       }
     >
-      <SelectTrigger size="sm" className="w-full" aria-label="Owner">
+      <SelectTrigger size="sm" className={cn("w-full", className)} aria-label="Owner">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -68,7 +70,7 @@ function months(keep: string | null): Record<string, string> {
 }
 
 /** The month the team expects a post (shown on the portal's post), picked from the next two years and saved as it's picked. */
-export function PostEtaSelect({ projectSlug, postId, eta, status }: { projectSlug: string; postId: string; eta: string | null; status: string }) {
+export function PostEtaSelect({ projectSlug, postId, eta, status, className }: { projectSlug: string; postId: string; eta: string | null; status: string; className?: string }) {
   const [pending, startTransition] = useTransition();
   const items = months(eta);
   return (
@@ -88,7 +90,7 @@ export function PostEtaSelect({ projectSlug, postId, eta, status }: { projectSlu
         })
       }
     >
-      <SelectTrigger size="sm" className="w-full" aria-label="ETA">
+      <SelectTrigger size="sm" className={cn("w-full", className)} aria-label="ETA">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -103,7 +105,22 @@ export function PostEtaSelect({ projectSlug, postId, eta, status }: { projectSlu
 }
 
 /** Who sees a post besides the team, saved as it's picked; its votes and comments go with it. */
-export function PostVisibilitySelect({ projectSlug, postId, visibility, boardOff = false }: { projectSlug: string; postId: string; visibility: PostVisibility; boardOff?: boolean }) {
+export function PostVisibilitySelect({
+  projectSlug,
+  postId,
+  visibility,
+  boardOff = false,
+  className,
+  quietHint = false,
+}: {
+  projectSlug: string;
+  postId: string;
+  visibility: PostVisibility;
+  boardOff?: boolean;
+  className?: string;
+  /** What it means read out and on hover only (a row of properties), not under it. */
+  quietHint?: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   return (
     <div className="flex flex-col gap-1">
@@ -123,7 +140,13 @@ export function PostVisibilitySelect({ projectSlug, postId, visibility, boardOff
           })
         }
       >
-        <SelectTrigger size="sm" className="w-full" aria-label="Visibility" aria-describedby={`visibility-${postId}`}>
+        <SelectTrigger
+          size="sm"
+          className={cn("w-full", className)}
+          aria-label="Visibility"
+          aria-describedby={`visibility-${postId}`}
+          title={quietHint ? (boardOff ? "Its board is off, so only the team sees it until the board is turned on." : VISIBILITY_DESCRIPTIONS[visibility]) : undefined}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -134,10 +157,33 @@ export function PostVisibilitySelect({ projectSlug, postId, visibility, boardOff
           ))}
         </SelectContent>
       </Select>
-      <p id={`visibility-${postId}`} className="text-xs text-muted-foreground">
+      <p id={`visibility-${postId}`} className={quietHint ? "sr-only" : "text-xs text-muted-foreground"}>
         {/* Its board turned off (Board.off): only the team sees it for now, whatever it's set to. */}
         {boardOff ? "Its board is off, so only the team sees it until the board is turned on." : VISIBILITY_DESCRIPTIONS[visibility]}
       </p>
     </div>
+  );
+}
+
+/**
+ * On phones, a post's properties folded to one line (`summary`: its status, owner and ETA) that opens them; from laptop
+ * width up, beside the post, they're always open and the line isn't there.
+ */
+export function PhoneFold({ summary, children }: { summary: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={open ? "Hide properties" : "Show properties"}
+        onClick={() => setOpen(!open)}
+        className="-mx-1 flex min-h-9 items-center gap-2 rounded-lg px-1 text-left text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 lg:hidden"
+      >
+        {summary}
+        <ChevronDownIcon aria-hidden className={cn("ml-auto size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      <div className={cn("flex flex-col gap-1", open ? "max-lg:mt-2 max-lg:border-t max-lg:pt-2" : "max-lg:hidden")}>{children}</div>
+    </>
   );
 }

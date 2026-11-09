@@ -27,9 +27,13 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await owner.waitForURL(`**/app/${slug}/feedback/boards`);
   // A new project starts with one board, which can't be deleted while it's the only one.
   const row = (name: string) => owner.getByRole("main").getByRole("listitem").filter({ hasText: name });
-  // Each row says what it counts: the posts Feedback lists (merged duplicates aside), and the open ones as the portal counts them.
-  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 2 posts · 1 open");
-  await expect(row("Feature requests").getByRole("button", { name: "Delete" })).toHaveCount(0);
+  // Each board's card says what it counts: the posts Feedback lists (merged duplicates aside), and the open ones as the portal counts them.
+  await expect(row("Feature requests")).toContainText("/feedback/feature-requests");
+  await expect(row("Feature requests").locator("dd")).toHaveText(["2", "1"]);
+  await row("Feature requests").getByRole("button", { name: "More for Feature requests" }).click();
+  await expect(owner.getByRole("menuitem", { name: "Turn off" })).toBeVisible();
+  await expect(owner.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
+  await owner.keyboard.press("Escape");
 
   // Add a board ("New board", in a dialog); its URL follows the name. On a short screen the dialog scrolls to its button.
   await owner.setViewportSize({ width: 1280, height: 320 });
@@ -42,7 +46,9 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(owner.getByText("Board created")).toBeVisible();
   await expect(newBoard).toBeHidden();
   await owner.setViewportSize({ width: 1280, height: 720 });
-  await expect(row("Bug reports")).toContainText("/feedback/bug-reports · 0 posts · Something broken? Tell us here.");
+  await expect(row("Bug reports")).toContainText("Something broken? Tell us here.");
+  await expect(row("Bug reports")).toContainText("/feedback/bug-reports");
+  await expect(row("Bug reports").locator("dd")).toHaveText(["0", "0"]);
   await checkpoint(owner, "team-boards");
   // A board's name opens its posts in Feedback, all of them: as many rows as its count says.
   await row("Feature requests").getByRole("link", { name: "Feature requests" }).click();
@@ -97,11 +103,14 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
 
   // Turned off, a board is the team's alone: Off in the list, gone from the portal; turned on, it's back.
-  await row("Bug reports").getByRole("button", { name: "Turn off" }).click();
+  // Turning off is in its menu ("⋯"), asking first; Turn on is in sight on a board that's off.
+  await row("Bug reports").getByRole("button", { name: "More for Bug reports" }).click();
+  await owner.getByRole("menuitem", { name: "Turn off" }).click();
   await expect(owner.getByRole("alertdialog")).toContainText("You can turn it on again any time.");
   await owner.getByRole("alertdialog").getByRole("button", { name: "Turn off" }).click();
   await expect(owner.getByText("Bug reports is off the portal")).toBeVisible();
-  await expect(row("Bug reports")).toContainText("Not on the portal: only the team sees it and its posts · /feedback/bugs");
+  await expect(row("Bug reports")).toContainText("Not on the portal: only the team sees it and its posts.");
+  await expect(row("Bug reports")).toContainText("/feedback/bugs");
   await checkpoint(owner, "team-board-off");
   expect((await visitor.goto("/feedback/bugs"))?.status()).toBe(404);
   await row("Bug reports").getByRole("button", { name: "Turn on" }).click();
@@ -112,11 +121,14 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await api("/posts", { board: "bugs", title: "Crash on dark mode" });
   await api("/posts/4/merge", { into: 1 });
   await owner.reload();
-  await expect(row("Bug reports")).toContainText("/feedback/bugs · 0 posts");
-  await expect(row("Bug reports").getByRole("button", { name: "Delete" })).toBeVisible();
+  await expect(row("Bug reports").locator("dd")).toHaveText(["0", "0"]);
+  await row("Bug reports").getByRole("button", { name: "More for Bug reports" }).click();
+  await expect(owner.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+  await owner.keyboard.press("Escape");
   await checkpoint(owner, "team-boards-merged-only");
   // Delete the empty board: gone from the team's list and from the portal.
-  await row("Bug reports").getByRole("button", { name: "Delete" }).click();
+  await row("Bug reports").getByRole("button", { name: "More for Bug reports" }).click();
+  await owner.getByRole("menuitem", { name: "Delete" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
   // (While the dialog is open the list is hidden from queries, so wait for the result first.)
   await expect(owner.getByText("Bug reports deleted")).toBeVisible();
