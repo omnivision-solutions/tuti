@@ -131,7 +131,7 @@ export function AuthForm({
   // A portal's sign-in (links): centred under the portal's mark, roomier, its other ways as lines of links.
   const portal = !usePassword;
   return (
-    <Card className={cn("mx-auto w-full max-w-sm", portal && "max-w-[26.5rem] gap-6 pt-8 shadow-card sm:pt-10")}>
+    <Card className={cn("mx-auto w-full max-w-sm", portal && "gap-6 pt-8 shadow-card sm:pt-10")}>
       <CardHeader className={cn(portal && "justify-items-center gap-2 px-6 text-center sm:px-10")}>
         {portal && mark}
         <CardTitle className={cn("font-heading text-xl font-bold", portal && "text-2xl font-[650] tracking-[-0.022em] sm:text-[1.625rem]")}>

@@ -34,7 +34,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
   ssoUrl?.searchParams.set("redirect", nextPath || "/");
 
   return (
-    <div data-auth-page className="mx-auto flex w-full max-w-[26.5rem] flex-col gap-4 sm:mt-16">
+    <div data-auth-page className="mx-auto flex w-full max-w-sm flex-col gap-4 sm:mt-12">
       {(handoff === "failed" || link === "failed") && (
         <Alert variant="destructive">
           <CircleAlertIcon />

@@ -747,6 +747,9 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await expect(months.getByRole("link").first()).toHaveAccessibleName("October 2026, 1 entry");
   await months.getByText("Earlier months").click();
   await expect(months.getByRole("link")).toHaveCount(21);
+  // An older page whose month is folded away opens "Earlier months", so its month shows.
+  await reader.goto("/changelog/page/2");
+  await expect(months.getByRole("link", { name: "February 2025, 1 entry" })).toBeVisible();
 });
 
 test("the next release waits to be written; its entry gets a cover readers see, and says how many people it told", async ({ browser }, testInfo) => {

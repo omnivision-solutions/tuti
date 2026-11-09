@@ -209,8 +209,6 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       >
         {vote("upvote")}
         {subscribe}
-        {/* What Subscribe does, under it (it says so itself once they hear anyway). */}
-        {subscribe && !(voter && following) && <p className="-mt-2 text-[0.8125rem] text-muted-foreground max-lg:hidden">Get an email when it ships.</p>}
         {voterFaces && (
           <div className="flex items-center gap-3 max-lg:order-last max-lg:basis-full lg:border-t lg:pt-4">
             {/* On phones the faces are under the actions: named. */}

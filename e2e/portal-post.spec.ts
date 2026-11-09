@@ -213,11 +213,16 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   const cy = await signUp(browser, portalUrl(slug), "Cy");
   await cy.goto(linkIn(await latestEmailTo(cy.email), "http"));
   await cy.goto(darkPath);
+  // What Subscribe does, under it, only while it offers Subscribe.
+  const hint = cy.getByText("Get an email when it ships.");
+  await expect(hint).toBeVisible();
   await cy.getByRole("button", { name: "Subscribe" }).click();
   // Saved once it's enabled again (it shows Unsubscribe right away).
   await expect(cy.getByRole("button", { name: "Unsubscribe" })).toBeEnabled();
+  await expect(hint).toHaveCount(0);
   await cy.reload();
   await expect(cy.getByRole("button", { name: "Unsubscribe" })).toBeVisible();
+  await expect(hint).toHaveCount(0);
   // Under it, the similar idea, linked; not itself, nor the unrelated one.
   const ideas = cy.getByRole("region", { name: "Similar ideas" });
   await expect(ideas.getByRole("link")).toHaveText([night]);

@@ -244,9 +244,9 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
                 <div className="flex flex-col border-l">
                   {[...months].slice(0, RECENT_MONTHS).map(([key, month]) => monthLink(key, month))}
                 </div>
-                {/* The rest folded away, so the index stays short. */}
+                {/* The rest folded away, so the index stays short; open on an older page whose month is among them. */}
                 {months.size > RECENT_MONTHS && (
-                  <details className="group/months">
+                  <details className="group/months" open={[...months.keys()].indexOf(currentMonth ?? "") >= RECENT_MONTHS}>
                     <summary className="flex cursor-pointer list-none items-center gap-1.5 border-l py-1.5 pl-3 text-sm font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
                       Earlier months
                       <ChevronDownIcon aria-hidden className="size-3.5 transition-transform group-open/months:rotate-180" />

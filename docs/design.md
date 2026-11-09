@@ -345,7 +345,7 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
     title, no card, the search an icon that widens as it's used.
   - **A post**: back link, a 38px title (28px on phones), the byline, then the status pill and "Expected <month>" with a
     calendar, the body at 17px. The rail is one card: **Upvote** filled with the count after a rule (`shape="upvote"`;
-    voted, "Upvoted" in soft green), Subscribe an outline (Unsubscribe quiet), the voters' faces, Board and Posted as
+    voted, "Upvoted" in soft green), Subscribe an outline with "Get an email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces, Board and Posted as
     rows, Copy link and Share (the device's share sheet, where it has one), "Have another idea? Post it". On phones the
     same actions in a row under the body (Copy link and Share as icon buttons), the voters under them. Signed out, one
     "Join the conversation" bar (Sign in) above the thread instead of a comment box. In the thread, the team's replies
@@ -361,9 +361,9 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
     on a line in a 110px margin; beside it the tag (New soft green, Improved blue, Fixed the orange highlight, Breaking
     destructive) above a 28px title, the cover framed as a card, the text, "Built from an idea · N votes →" (with more than one idea, each pill shows its title; with one, the title is read out after the pill's words)
     it shipped, and its reactions, small and grey until picked; a line between entries. A "Jump to month" index beside
-    the list past eight entries (the page's month marked). An entry's page: a 40px title, the reactions, then Get
+    the list past eight entries (the page's month marked): the latest six months, older ones under "Earlier months" (open when the page's month is among them). An entry's page: a 40px title, the reactions, then Get
     updates by email.
-  - **Sign-in**: one card (26.5rem) under the portal's mark (its logo, or the letter square), "Sign in to <project>",
+  - **Sign-in**: one card (max-w-sm, the width and offset of every sign-in page) under the portal's mark (its logo, or the letter square), "Sign in to <project>",
     "Vote, comment and follow ideas. We'll email you when they ship.", the email with a mail icon, **Email me a sign-in
     link**, "Use a password instead · Forgot your password?", then under a line "New here? Create an account" and
     "Team member? Sign in with Tuti".
