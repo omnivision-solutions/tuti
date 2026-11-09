@@ -28,7 +28,8 @@ cute at the expense of clarity.
   border; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
   line above its buttons, never a grey band. The primary
   button is flat: one fill, its border the same colour, a soft shadow; no bevel or edge.
-- **Surfaces:** the page (`background`), cards on it (`card`: white in light, a step lighter than the page in dark)
+- **Surfaces:** a ladder: the sidebar (a step darker than the page in light), the page (`background`, a soft
+  cream), cards on it (`card`: white in light, a step lighter than the page in dark)
   with a `border` ring and a soft shadow (`Card`, `StatTile`), never a card without its edge.
 
 ## Tokens
@@ -137,7 +138,7 @@ the list picks none to approve at once.
 
 - **Admin app** (`/app`): every page lives in the sidebar shell
   (`app/app/layout.tsx`, `components/app-shell.tsx`), in one of three
-  columns, centred beside the sidebar: max-w-4xl (lists, Home, a post), max-w-2xl for a form
+  columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, Home, a post), max-w-2xl for a form
   by itself (`data-narrow` on it: New project, Setup, Account), or the whole width (`data-wide`: the
   team's Roadmap, Users' tables; and pages of panes).
   The top bar stays at the top as the page scrolls; it holds the sidebar's
@@ -277,7 +278,7 @@ redesign). Filters are chips, not tabs (the portal changelog's). A row of tabs
   is a small round pill, in the highlight colour where people wait on the team (the Inbox's open
   conversations), quiet otherwise (Feedback's to triage, Autopilot's to review).
 - **Sign-in pages** (sign-in, sign-up, forgot and reset password, invitations): in the visitor's own
-  light or dark, as the app is; the rest of the marketing site is light only (`forcedThemeFor`).
+  light or dark, as the app is; the card's title in the heading font at 20px; the rest of the marketing site is light only (`forcedThemeFor`).
   Continue with Google and Continue with GitHub are both outline buttons with their marks, under
   nothing louder than the form's own primary.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the

@@ -116,7 +116,7 @@
  */
 :root,
 .light {
-  --background: oklch(0.994 0.007 88.6);
+  --background: oklch(0.982 0.008 88.6);
   --foreground: oklch(0.216 0.006 56);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.216 0.006 56);
@@ -134,7 +134,7 @@
   /* Text on the destructive tint (a destructive badge, the picked Breaking tag): darker, to read at small sizes. */
   --destructive-foreground: oklch(0.51 0.2 27.3);
   --border: oklch(0.9 0.014 84.6);
-  --input: oklch(0.855 0.018 86.2);
+  --input: oklch(0.845 0.018 86.2);
   --ring: oklch(0.529 0.125 155);
   --soft: oklch(0.958 0.018 155.8);
   --soft-foreground: oklch(0.426 0.097 155.7);

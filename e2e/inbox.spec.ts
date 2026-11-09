@@ -629,7 +629,9 @@ test("the views, the list and the open conversation side by side, each scrolling
   // The list and the conversation the rest of the window's height, under the header (and the banner asking to verify
   // the email); the page itself doesn't scroll.
   expect(v.y).toBeGreaterThanOrEqual(48);
-  expect(c.y).toBe(v.y);
+  // The conversation from the top of the window under the header, beside the list's title and then its views.
+  expect(c.y).toBeLessThan(v.y);
+  expect(c.y).toBe((await owner.locator('[data-slot="pane-layout"] > p[aria-hidden]').boundingBox())!.y);
   for (const pane of [l, c]) {
     expect(pane.y + pane.height).toBe(900);
   }
@@ -2253,7 +2255,8 @@ test("Tuti's chat launcher isn't in the Inbox, so the reply box's buttons are al
   const y = (await send.boundingBox())!.y;
   await owner.getByRole("list", { name: "Messages" }).locator(":scope > li").first().scrollIntoViewIfNeeded();
   await expect(reply).toBeInViewport();
-  expect((await send.boundingBox())!.y).toBe(y);
+  // The same place, to the pixel (a page whose height has half a pixel ends half a pixel off).
+  expect(Math.abs((await send.boundingBox())!.y - y)).toBeLessThanOrEqual(1);
   await expectClickable(buttons);
 
   // A page whose Save is pinned to the bottom of the screen on phones.
