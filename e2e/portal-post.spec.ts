@@ -201,6 +201,13 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await ada.reload();
   await expect(ada.getByRole("button", { name: "New idea" })).toBeVisible();
   await expect(ada.getByRole("dialog")).toHaveCount(0);
+  // Into an idea and Back: the board, its dialog still shut.
+  await ada.getByRole("main").getByRole("link", { name: dark }).click();
+  await expect(ada.getByRole("heading", { level: 1 })).toHaveText(dark);
+  await ada.goBack();
+  await expect(ada).toHaveURL(/\/feedback\/feature-requests$/);
+  await expect(ada.getByRole("button", { name: "New idea" })).toBeVisible();
+  await expect(ada.getByRole("dialog")).toHaveCount(0);
 
   // Cy (email verified) follows it without voting.
   const cy = await signUp(browser, portalUrl(slug), "Cy");

@@ -8,8 +8,8 @@ import { cache } from "react";
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
 import { PortalWidget } from "@/components/portal-widget";
-import { portalDefaultFont } from "@/components/portal-default-font";
-import { PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLookProvider } from "@/components/portal-look";
+import { PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo } from "@/components/portal-look";
+import { PortalLookProvider } from "@/components/portal-look-provider";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { PortalAssistant } from "@/components/portal-assistant";
@@ -110,8 +110,6 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
     <PortalBaseProvider base={base} slug={slug}>
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
       {!onApp && <ColorSchemeScript scheme={brand.colorScheme} />}
-      {/* Inter, the default font, preloaded (its class only keeps it in this page's fonts). */}
-      <span hidden className={portalDefaultFont.className} />
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts and search get lines of their own (search on tablets too). */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}

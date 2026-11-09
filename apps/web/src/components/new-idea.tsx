@@ -30,7 +30,9 @@ export function NewIdea({
     if (url.searchParams.has("new") || url.searchParams.has("title")) {
       url.searchParams.delete("new");
       url.searchParams.delete("title");
-      window.history.replaceState(window.history.state, "", url);
+      // Not Next's own history state (its `__NA` would make Next keep the old address in its router): null, which Next
+      // takes as the page's own change and follows.
+      window.history.replaceState(null, "", url);
     }
   }, []);
   return (
