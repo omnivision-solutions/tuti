@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/card";
  * it with its other queries; a collection's or a tab's page only when it lists articles.
  */
 export const articleRowDetails = cache(async (projectId: string) => {
-  const [details, stats, access] = await Promise.all([
+  const [details, stats, access, saves] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       select: {
@@ -37,14 +37,20 @@ export const articleRowDetails = cache(async (projectId: string) => {
         sample: true,
         ...levelSelect,
         changes: { select: { articleId: true, updatedAt: true } },
-        // When it was last saved (its newest version): `updatedAt` moves on writes that aren't saves (a move, a tab's access).
-        revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { createdAt: true } },
       },
     }),
     articleStats(projectId),
     accessChoices(projectId),
+    // When each was last saved (its newest version), in one grouped query: `updatedAt` moves on writes that aren't saves
+    // (a move, a tab's access).
+    prisma.articleRevision.groupBy({ by: ["articleId"], where: { article: { projectId, deletedAt: null } }, _max: { createdAt: true } }),
   ]);
-  return { detailsOf: new Map(details.map((d) => [d.slug, d])), stats, badge: accessBadgeFor(access) };
+  return {
+    detailsOf: new Map(details.map((d) => [d.slug, d])),
+    stats,
+    badge: accessBadgeFor(access),
+    savedAt: new Map(saves.map((s) => [s.articleId, s._max.createdAt])),
+  };
 });
 
 export type ArticleRowDetails = Awaited<ReturnType<typeof articleRowDetails>>;
@@ -359,7 +365,7 @@ export function CollectionHeader({
 export function WaitingToPublish({ projectSlug, docs, details }: { projectSlug: string; docs: TeamDocs; details: ArticleRowDetails }) {
   const waiting = [...details.detailsOf.values()]
     .filter((a) => !a.publishedAt || a.changes)
-    .map((a) => ({ ...a, saved: a.revisions[0]?.createdAt ?? a.changes?.updatedAt ?? a.updatedAt }))
+    .map((a) => ({ ...a, saved: details.savedAt.get(a.id) ?? a.changes?.updatedAt ?? a.updatedAt }))
     .toSorted((a, b) => b.saved.getTime() - a.saved.getTime());
   if (waiting.length === 0) {
     return null;

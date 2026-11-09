@@ -188,18 +188,21 @@ export function ArticleForm({
   // The title field grows with its lines (`field-sizing`); where a browser lacks that (Firefox), by its scroll height.
   const titleField = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
-    const field = titleField.current;
-    if (!field || CSS.supports("field-sizing", "content")) {
+    if (CSS.supports("field-sizing", "content")) {
       return;
     }
+    // The field as it is now: a newer version remounts it (`shown`).
     const fit = () => {
-      field.style.height = "auto";
-      field.style.height = `${field.scrollHeight}px`;
+      const field = titleField.current;
+      if (field) {
+        field.style.height = "auto";
+        field.style.height = `${field.scrollHeight}px`;
+      }
     };
     fit();
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
-  }, [title]);
+  }, [title, shown]);
   const [titleChanged, setTitleChanged] = useState(false);
   // Title changes counted: one made while a save runs keeps it changed after it.
   const titleChanges = useRef(0);
