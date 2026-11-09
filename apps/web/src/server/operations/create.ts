@@ -21,14 +21,14 @@ export const noSuchComment = () => new OperationError(404, "not_found", "There's
  * was deleted meanwhile (its author's account deleted, Autopilot's comment undone): "There's no such comment". Any other
  * failure is thrown as it is.
  */
-export async function orNoSuchComment<T>(commentId: string, write: () => Promise<T>): Promise<T> {
+export async function orNoSuchComment<T>(commentId: string | (() => string), write: () => Promise<T>): Promise<T> {
   try {
     return await write();
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2003" &&
-      !(await prisma.comment.findUnique({ where: { id: commentId }, select: { id: true } }))
+      !(await prisma.comment.findUnique({ where: { id: typeof commentId === "string" ? commentId : commentId() }, select: { id: true } }))
     ) {
       throw noSuchComment();
     }
@@ -245,6 +245,7 @@ export const createComment = defineOperation({
 
     // Written with a portal's session: a reader's, never shown as the team's, whoever wrote it.
     const asReader = await signedInAsReader(userId);
+    let target = input.replyTo;
     const write = () =>
       prisma.$transaction(async (tx) => {
         // The post locked first, as every writer of its comments takes it (votes.set, comments.like, a merge, Autopilot's
@@ -263,6 +264,7 @@ export const createComment = defineOperation({
           throw noSuchComment();
         }
         const parentId = parent ? (parent.parentId ?? parent.id) : null;
+        target = parentId ?? target;
         const created = await tx.comment.create({
           // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't).
           // Not for sample content (Home's "Add sample content"): no webhook, and its voters aren't emailed.
@@ -274,7 +276,8 @@ export const createComment = defineOperation({
         return created;
       });
     // Its parent deleted by a writer that doesn't lock the post (its author's account): "There's no such comment".
-    const comment = await saving(() => (input.replyTo ? orNoSuchComment(input.replyTo, write) : write()));
+    // The comment its foreign key names: the top-level one, for a reply to a reply.
+    const comment = await saving(() => (target ? orNoSuchComment(() => target!, write) : write()));
     const team = await onTeam(projectId, userId);
     const created = {
       id: comment.id,

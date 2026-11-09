@@ -102,6 +102,14 @@ test("a reply or a like whose comment is deleted as it's written (its foreign ke
   await expect(
     orNoSuchComment(comment.id, () => prisma.comment.create({ data: { projectId: project.id, postId, authorId: owner.id, body: "Late", parentId: comment.id } })),
   ).rejects.toThrow("There's no such comment on this post");
+  // A reply to a reply names the top-level comment: that one gone (the reply it answers kept), still "no such comment".
+  const top = await call(createComment, as(reader.id), { number: post.number, body: "Top" });
+  const answer = await call(createComment, as(owner.id), { number: post.number, body: "Answer", replyTo: top.id });
+  await prisma.comment.delete({ where: { id: top.id } });
+  expect(await prisma.comment.count({ where: { id: answer.id } })).toBe(1);
+  await expect(
+    orNoSuchComment(() => top.id, () => prisma.comment.create({ data: { projectId: project.id, postId, authorId: owner.id, body: "Late", parentId: top.id } })),
+  ).rejects.toThrow("There's no such comment on this post");
   // A failure that isn't about the comment is left as it is.
   const kept = await call(createComment, as(reader.id), { number: post.number, body: "Still here" });
   await expect(orNoSuchComment(kept.id, () => prisma.commentLike.create({ data: { commentId: kept.id, userId: "no-such-user" } }))).rejects.toMatchObject({ code: "P2003" });
