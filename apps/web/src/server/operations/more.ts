@@ -201,6 +201,32 @@ export const setVote = defineOperation({
   },
 });
 
+export const likeComment = defineOperation({
+  name: "comments.like",
+  summary: "Like a post's comment or take the like back (one each), as the key's creator or on behalf of someone from your app",
+  method: "POST",
+  path: "/posts/{number}/comments/{id}/like",
+  scope: "write",
+  access: "anyone",
+  input: z.object({ number: postNumber, id: z.string().min(1).max(64), liked: z.boolean(), author }),
+  example: { liked: true, author: { id: "user-42" } },
+  run: async (context, input) => {
+    const post = await findVisiblePost(context.actor, context.projectId, input.number);
+    // A comment, never a note (notes are their own table): only the team sees those.
+    const comment = await prisma.comment.findFirst({ where: { id: input.id, postId: post.id }, select: { id: true } });
+    if (!comment) {
+      throw new OperationError(404, "not_found", "There's no such comment on this post");
+    }
+    const userId = await authorId(context, input.author);
+    if (input.liked) {
+      await prisma.commentLike.createMany({ data: { commentId: comment.id, userId }, skipDuplicates: true });
+    } else {
+      await prisma.commentLike.deleteMany({ where: { commentId: comment.id, userId } });
+    }
+    return { id: comment.id, liked: input.liked, likes: await prisma.commentLike.count({ where: { commentId: comment.id } }) };
+  },
+});
+
 export const setSubscription = defineOperation({
   name: "subscriptions.set",
   summary: "Follow a post without voting for it, or stop: its followers are emailed when it ships, as its voters are",

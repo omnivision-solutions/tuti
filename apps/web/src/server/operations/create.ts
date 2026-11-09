@@ -150,7 +150,7 @@ export const createPost = defineOperation({
 export const createComment = defineOperation({
   name: "comments.create",
   summary:
-    "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note (`internal: true`): only the team sees it, never on the portal, in emails or webhooks. The team's reply can be emailed to the post's voters too (`emailVoters: true`)",
+    "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note (`internal: true`): only the team sees it, never on the portal, in emails or webhooks. The team's reply can be emailed to the post's voters too (`emailVoters: true`). `replyTo`: a comment's id, to reply to it (replies are one level deep: a reply to a reply goes under the comment it replies to)",
   method: "POST",
   path: "/posts/{number}/comments",
   scope: "write",
@@ -163,6 +163,8 @@ export const createComment = defineOperation({
     internal: z.boolean().optional(),
     /** The team's reply emailed to the post's voters too (those who may still read it and haven't unsubscribed). The team's only; not with a note. */
     emailVoters: z.boolean().optional(),
+    /** The id of the post's comment it replies to (comments.list); a reply's id puts it under that reply's comment. Not with a note. */
+    replyTo: z.string().min(1).max(64).optional(),
   }),
   example: { body: "Thanks! This is planned for next month." },
   run: async (context, input) => {
@@ -182,6 +184,17 @@ export const createComment = defineOperation({
     if (input.internal && input.emailVoters) {
       throw new OperationError(400, "invalid_input", "An internal note isn't emailed to anyone");
     }
+    if (input.internal && input.replyTo) {
+      throw new OperationError(400, "invalid_input", "An internal note can't reply to a comment");
+    }
+    // One level deep: a reply to a reply goes under the comment that one replies to.
+    const parent = input.replyTo
+      ? await prisma.comment.findFirst({ where: { id: input.replyTo, postId: post.id }, select: { id: true, parentId: true } })
+      : null;
+    if (input.replyTo && !parent) {
+      throw new OperationError(404, "not_found", "There's no such comment on this post");
+    }
+    const parentId = parent ? (parent.parentId ?? parent.id) : null;
     // Notes, and replies emailed to voters, are the team's own: written by a team member, or the team's key as
     // itself (keys are the team's, as actorReader has them).
     const teamOnly = input.internal ? "Only your team can write internal notes" : input.emailVoters ? "Only your team can email a post's voters" : null;
@@ -218,7 +231,7 @@ export const createComment = defineOperation({
         const created = await tx.comment.create({
           // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't).
           // Not for sample content (Home's "Add sample content"): no webhook, and its voters aren't emailed.
-          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, ...(input.emailVoters && !post.sample && seenAs(post) !== "TEAM" && { votersEmailDueAt: new Date() }) },
+          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, parentId, ...(input.emailVoters && !post.sample && seenAs(post) !== "TEAM" && { votersEmailDueAt: new Date() }) },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
         });
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });
@@ -233,6 +246,7 @@ export const createComment = defineOperation({
       body: comment.body,
       content: displayDoc(comment),
       createdAt: comment.createdAt.toISOString(),
+      replyTo: parentId,
     };
     const { url, number, title } = summary(post, portal);
     if (post.sample) {

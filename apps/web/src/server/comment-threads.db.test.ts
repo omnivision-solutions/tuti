@@ -1,0 +1,89 @@
+import { prisma } from "@tuti/db";
+import { expect, test } from "vitest";
+
+import { createComment, createPost } from "@/server/operations/create";
+import { mergePost } from "@/server/operations/manage";
+import { likeComment } from "@/server/operations/more";
+import { listComments } from "@/server/operations/read";
+import { call } from "@/server/operations/run";
+import { setCommentLike } from "@/server/posts";
+import { actAs, createProject, signUp } from "@/test/helpers";
+
+async function setup() {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const reader = await signUp("Rae Reader");
+  const as = (userId: string) => ({ actor: { kind: "user" as const, userId }, projectId: project.id });
+  const post = await call(createPost, as(reader.id), { board: "feature-requests", title: "Dark mode" });
+  return { owner, project, reader, as, post };
+}
+
+test("replies: one level deep, under their comment oldest first whichever way the thread is sorted, and counted", async () => {
+  const { owner, project, reader, as, post } = await setup();
+  const first = await call(createComment, as(reader.id), { number: post.number, body: "Please!" });
+  await call(createComment, as(reader.id), { number: post.number, body: "Also on phones" });
+  const reply = await call(createComment, as(owner.id), { number: post.number, body: "On it", replyTo: first.id });
+  expect(reply).toMatchObject({ replyTo: first.id });
+  // A reply to a reply goes under the comment it answers.
+  const deeper = await call(createComment, as(reader.id), { number: post.number, body: "Thanks!", replyTo: reply.id });
+  expect(deeper).toMatchObject({ replyTo: first.id });
+  // Not a comment on this post, nor with a note.
+  const other = await call(createPost, as(reader.id), { board: "feature-requests", title: "Night theme" });
+  await expect(call(createComment, as(reader.id), { number: other.number, body: "Wrong post", replyTo: first.id })).rejects.toThrow("There's no such comment on this post");
+  await expect(call(createComment, as(owner.id), { number: post.number, body: "Note", internal: true, replyTo: first.id })).rejects.toThrow("can't reply");
+
+  const order = async (sort: "oldest" | "newest") =>
+    (await call(listComments, as(reader.id), { number: post.number, sort })).comments.map((c) => [c.body, c.replyTo]);
+  expect(await order("oldest")).toEqual([
+    ["Please!", null],
+    ["On it", first.id],
+    ["Thanks!", first.id],
+    ["Also on phones", null],
+  ]);
+  expect(await order("newest")).toEqual([
+    ["Also on phones", null],
+    ["Please!", null],
+    ["On it", first.id],
+    ["Thanks!", first.id],
+  ]);
+  expect((await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).commentCount).toBe(4);
+
+  // Its comment gone (its author's account deleted, Autopilot's comment undone): its replies stay, as comments of their own.
+  await prisma.comment.delete({ where: { id: first.id } });
+  expect(await order("oldest")).toEqual([
+    ["Also on phones", null],
+    ["On it", null],
+    ["Thanks!", null],
+  ]);
+});
+
+test("likes: one each, taken back, counted for everyone, and only on comments the caller may see", async () => {
+  const { owner, reader, as, post } = await setup();
+  const comment = await call(createComment, as(reader.id), { number: post.number, body: "Please!" });
+  expect(await call(likeComment, as(owner.id), { number: post.number, id: comment.id, liked: true })).toEqual({ id: comment.id, liked: true, likes: 1 });
+  // Twice is once.
+  expect((await call(likeComment, as(reader.id), { number: post.number, id: comment.id, liked: true })).likes).toBe(2);
+  expect((await call(likeComment, as(reader.id), { number: post.number, id: comment.id, liked: true })).likes).toBe(2);
+  const seen = async (userId: string) => (await call(listComments, as(userId), { number: post.number })).comments[0];
+  expect(await seen(reader.id)).toMatchObject({ likes: 2, liked: true });
+  expect((await call(likeComment, as(reader.id), { number: post.number, id: comment.id, liked: false })).likes).toBe(1);
+  expect(await seen(reader.id)).toMatchObject({ likes: 1, liked: false });
+  expect(await seen(owner.id)).toMatchObject({ likes: 1, liked: true });
+
+  // An internal note isn't a comment: nobody likes one.
+  const note = await call(createComment, as(owner.id), { number: post.number, body: "Big customer", internal: true });
+  await expect(call(likeComment, as(owner.id), { number: post.number, id: note.id, liked: true })).rejects.toThrow("There's no such comment on this post");
+
+  // Merged into another post, its comments' likes go with them.
+  const other = await call(createPost, as(reader.id), { board: "feature-requests", title: "Night theme" });
+  await call(mergePost, as(owner.id), { number: post.number, into: other.number });
+  expect((await call(listComments, as(reader.id), { number: other.number })).comments[0]).toMatchObject({ body: "Please!", likes: 1 });
+
+  // The portal's action: signed out, asked to sign in; signed in, it likes.
+  actAs(null);
+  expect(await setCommentLike(comment.id, true)).toEqual({ error: "Sign in to like comments" });
+  const fan = await signUp("Fay Fan");
+  actAs(fan);
+  expect(await setCommentLike(comment.id, true)).toEqual({});
+  expect(await prisma.commentLike.count({ where: { commentId: comment.id } })).toBe(2);
+});

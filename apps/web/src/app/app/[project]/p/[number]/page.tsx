@@ -7,6 +7,8 @@ import { notFound } from "next/navigation";
 
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
+import { CommentSortMenu } from "@/components/comment-actions";
+import { commentSort } from "@/lib/comment-threads";
 import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
 import { MergePostDialog } from "@/components/merge-post-dialog";
 import type { PickablePost } from "@/components/post-picker";
@@ -86,7 +88,17 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, emailed: true, createdAt: true, actor: { select: { name: true } } } },
         comments: {
           orderBy: { createdAt: "asc" },
-          select: { id: true, body: true, content: true, createdAt: true, asReader: true, author: { select: { id: true, name: true, image: true } } },
+          select: {
+            id: true,
+            body: true,
+            content: true,
+            createdAt: true,
+            asReader: true,
+            parentId: true,
+            author: { select: { id: true, name: true, image: true } },
+            _count: { select: { likes: true } },
+            likes: { where: { userId: membership.userId }, select: { userId: true } },
+          },
         },
         notes: {
           orderBy: { createdAt: "asc" },
@@ -111,6 +123,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
   ]);
   const total = totals.get(post.id);
+  const sort = commentSort((await props.searchParams).sort);
+  const uploads = mediaStorage() ? { projectSlug: slug, mediaUrls: {} } : undefined;
   const postRef = { id: true, number: true, title: true, voteCount: true, sample: true, visibility: true, authorId: true, board: { select: { off: true } } } as const;
   // Who sees each, as merging warns of it: a post on a board turned off is the team's only (seenAs).
   const seen = <T extends { visibility: PostVisibility; board: { off: boolean } }>(row: T) => ({ ...row, visibility: seenAs(row) });
@@ -302,6 +316,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           {(!post.duplicateOf || post.events.length > 0) && (
             <section className="flex flex-col gap-4" aria-label={post.duplicateOf ? "Status history" : "Comments"}>
               {!post.duplicateOf && (
+                <div className="flex items-center justify-between gap-3">
                 <h2 className="text-sm font-semibold">
                   {post.comments.length === 0 ? (
                     <span className="font-normal text-muted-foreground">No comments yet. Reply to tell its voters what&apos;s next.</span>
@@ -315,9 +330,13 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                     </span>
                   )}
                 </h2>
+                {post.comments.length + post.notes.length > 1 && <CommentSortMenu sort={sort} />}
+                </div>
               )}
               <CommentList
-                comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
+                sort={sort}
+                ability={post.duplicateOf ? undefined : { can: "act", postId: post.id, uploads }}
+                comments={[...post.comments.map(({ _count, likes, ...comment }) => ({ ...comment, likes: _count.likes, liked: likes.length > 0 })), ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
                 teamUserIds={new Set(team.map((m) => m.userId))}
                 events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
                 mediaUrls={await mediaUrls(...post.comments.map(displayDoc), ...post.notes.map(displayDoc))}
@@ -327,7 +346,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                   placeholder="Reply as the team…"
                   notes
                   voters={toEmail}
-                  uploads={mediaStorage() ? { projectSlug: slug, mediaUrls: {} } : undefined}
+                  uploads={uploads}
                 />}
             </section>
           )}

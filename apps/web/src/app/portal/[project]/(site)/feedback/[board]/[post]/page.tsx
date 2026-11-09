@@ -8,6 +8,8 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { BackLink } from "@/components/back-link";
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
+import { CommentSortMenu } from "@/components/comment-actions";
+import { commentSort } from "@/lib/comment-threads";
 import { StatusLabel, StatusPill } from "@/components/post-status-badge";
 import { PortalAvatar } from "@/components/portal-avatar";
 import { CopyLinkButton, ShareButton } from "@/components/share-button";
@@ -64,7 +66,17 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       shippedEmails: { where: { userId: session?.user.id ?? "", sentAt: { not: null } }, select: { userId: true } },
       comments: {
         orderBy: { createdAt: "asc" },
-        select: { id: true, body: true, content: true, createdAt: true, asReader: true, author: { select: { id: true, name: true, image: true } } },
+        select: {
+          id: true,
+          body: true,
+          content: true,
+          createdAt: true,
+          asReader: true,
+          parentId: true,
+          author: { select: { id: true, name: true, image: true } },
+          _count: { select: { likes: true } },
+          likes: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
+        },
       },
       // Its status history: from what to what, and when; not who changed it or how many were emailed.
       events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, createdAt: true } },
@@ -132,6 +144,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       {post.changelogEntries[0].entry.title}
     </Link>
   );
+  const sort = commentSort((await props.searchParams).sort);
+  // Images only once signed in: uploads are someone's.
+  const uploads = session && mediaStorage() ? { projectSlug, mediaUrls: {} } : undefined;
   const address = `${await portalAddress(projectSlug)}${postPath(post)}`;
   const vote = (shape: "upvote") => (
     <VoteButton shape={shape} postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
@@ -269,18 +284,22 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         )}
 
         <section className="flex flex-col gap-4 pt-2" aria-label="Comments">
-          <h2 className="font-sans text-lg font-semibold">
-            {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-sans text-lg font-semibold">
+              {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
+            </h2>
+            {post.comments.length > 1 && <CommentSortMenu sort={sort} />}
+          </div>
           <CommentList
             portal
-            comments={post.comments}
+            sort={sort}
+            ability={{ can: voter ? "act" : session ? "none" : "signIn", postId: post.id, portal: true, uploads }}
+            comments={post.comments.map(({ _count, likes, ...comment }) => ({ ...comment, likes: _count.likes, liked: likes.length > 0 }))}
             teamUserIds={teamUserIds}
             events={post.events}
             mediaUrls={await mediaUrls(...post.comments.map(displayDoc))}
           />
-          {/* Images only once signed in: uploads are someone's. */}
-          {session && <CommentForm postId={post.id} signedIn uploads={mediaStorage() ? { projectSlug, mediaUrls: {} } : undefined} />}
+          {session && <CommentForm postId={post.id} signedIn uploads={uploads} />}
         </section>
 
         {similar.length > 0 && (

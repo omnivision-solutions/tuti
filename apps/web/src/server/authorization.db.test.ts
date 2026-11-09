@@ -562,6 +562,7 @@ const matrix: Matrix = {
       refusesSsoUsers: true,
       call: (_slug, f) => posts.addComment({}, form({ postId: f.postId, body: "Me too" })),
     },
+    setCommentLike: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.setCommentLike(f.commentId, true) },
   },
   "project-settings": {
     renameProject: { allowed: "ADMIN", call: (slug) => projectSettings.renameProject(slug, {}, form({ name: "Renamed by the matrix" })) },
@@ -840,6 +841,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const suggestion = await prisma.duplicateSuggestion.create({
     data: { projectId, postId: duplicate!.id, originalId: post!.id, similarity: 0.9 },
   });
+  const comment = await prisma.comment.create({ data: { projectId, postId: post!.id, authorId: users.OWNER.id, body: "A comment to like" } });
   const invitationToken = crypto.randomUUID();
   const invitation = await prisma.invitation.create({
     data: {
@@ -995,6 +997,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     boardId: board.id,
     emptyBoardId: emptyBoard.id,
     postId: post!.id,
+    commentId: comment.id,
     duplicateId: duplicate!.id,
     suggestionId: suggestion.id,
     invitationId: invitation.id,
