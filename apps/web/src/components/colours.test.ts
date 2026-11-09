@@ -66,8 +66,35 @@ test.each(themes)("every status's dot has a colour of its own (%s): a hue apart,
   }
 });
 
-test("only Completed's badge is green: the statuses before it are quiet", () => {
-  expect(statuses.filter((status) => STATUS_STYLES[status].badge === "default" || STATUS_STYLES[status].badge === "soft")).toEqual(["COMPLETED"]);
+test.each(themes)("a status's pill reads at 4.5:1 (%s): the text on its tint, on the page and on a card", (theme) => {
+  for (const status of statuses) {
+    const [, fill, percent] = STATUS_STYLES[status].badge.match(/^bg-([\w-]+)\/(\d+)$/)!;
+    for (const page of ["background", "card"]) {
+      const tint = blend(srgb(token(theme, fill!)), srgb(token(theme, page)), Number(percent) / 100);
+      expect(contrast(srgb(token(theme, "foreground")), tint), `${status} on ${page}`).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+});
+
+test.each(themes)("Reporting's two series are a lightness step apart (%s), so readers who can't tell green from orange tell them apart", (theme) => {
+  const [one, two] = [token(theme, "series-1"), token(theme, "series-2")];
+  expect(Math.abs(one[0] - two[0])).toBeGreaterThanOrEqual(0.15);
+  expect(contrast(srgb(one), srgb(two))).toBeGreaterThanOrEqual(1.5);
+});
+
+test.each(themes)("the page open in a menu reads at 4.5:1 on its green pill (%s)", (theme) => {
+  expect(contrast(srgb(token(theme, "sidebar-active-foreground")), srgb(token(theme, "sidebar-active")))).toBeGreaterThanOrEqual(4.5);
+});
+
+test.each(themes)("secondary text reads at 4.5:1 (%s): muted-foreground on the page, a card, the sidebar and a muted fill", (theme) => {
+  for (const under of ["background", "card", "sidebar", "muted", "sidebar-accent"]) {
+    expect(contrast(srgb(token(theme, "muted-foreground")), srgb(token(theme, under))), under).toBeGreaterThanOrEqual(4.5);
+  }
+});
+
+test.each(themes)("a card and an input's edge show on the page (%s): the border at 1.25:1, the input's at 1.5:1", (theme) => {
+  expect(contrast(srgb(token(theme, "border")), srgb(token(theme, "background")))).toBeGreaterThanOrEqual(1.25);
+  expect(contrast(srgb(token(theme, "input")), srgb(token(theme, "background")))).toBeGreaterThanOrEqual(1.5);
 });
 
 test("Breaking is the destructive colour, the other tags neutral", () => {
@@ -191,14 +218,14 @@ test("in dark mode a popover stands out from the card it opens over by its edge,
   }
 });
 
-test.each(themes)("Autopilot's badges read at 4.5:1 (%s): on the page, a card and the row open beside the list", (theme) => {
+test.each(themes)("Autopilot's badges read at 4.5:1 (%s): on their tint, on the page, a card and the row open beside the list", (theme) => {
   for (const badge of ["completing", "in_progress", "updated", "new"]) {
     const [classes] = classesIn(renderToString(createElement(TargetBadge, { badge })));
-    // Dimmer in dark mode (dark:opacity-85): blended with what's under it.
-    const opacity = theme === ".dark" ? Number(classes!.find((name) => name.startsWith("dark:opacity-"))?.slice("dark:opacity-".length) ?? 100) / 100 : 1;
+    const fill = classes!.find((name) => /^bg-[\w-]+\/\d+$/.test(name))!;
+    const [fillToken, percent] = fill.slice(3).split("/");
     for (const under of ["background", "card", "muted"]) {
-      const text = blend(srgb(token(theme, tokenIn(classes!, "text-"))), srgb(token(theme, under)), opacity);
-      expect(contrast(text, srgb(token(theme, under))), `${badge} on ${under}`).toBeGreaterThanOrEqual(4.5);
+      const tint = blend(srgb(token(theme, fillToken!)), srgb(token(theme, under)), Number(percent) / 100);
+      expect(contrast(srgb(token(theme, tokenIn(classes!, "text-"))), tint), `${badge} on ${under}`).toBeGreaterThanOrEqual(4.5);
     }
   }
 });

@@ -134,7 +134,7 @@ export default async function AutopilotLayout({ children, params }: LayoutProps<
                     href={href}
                     tabIndex={-1}
                     title={chip.label}
-                    className={cn("relative z-10 min-w-0 truncate rounded-full px-2 py-0.5 text-[0.6875rem] font-medium hover:underline", TONES[chip.tone])}
+                    className={cn("relative z-10 min-w-0 truncate rounded-full px-2 py-0.5 text-xs font-medium hover:underline", TONES[chip.tone])}
                   >
                     {chip.label}
                   </Link>

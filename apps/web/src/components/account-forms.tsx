@@ -37,7 +37,8 @@ function ProfileForm({ name, photo }: { name: string; photo?: Photo }) {
   const [error, setError] = useState<string>();
 
   return (
-    <Card>
+    // One form by itself: the app's narrow column (AppShell).
+    <Card data-narrow>
       <CardHeader>
         <CardTitle>Profile</CardTitle>
         <CardDescription>Shown on your posts and comments.</CardDescription>
@@ -152,7 +153,8 @@ function PasswordForm({ noPassword }: { noPassword?: NoPassword }) {
               <Input id="new-password" name="newPassword" type="password" autoComplete="new-password" minLength={8} required />
               {error && <FieldError>{error}</FieldError>}
             </Field>
-            <Button type="submit" disabled={pending} className="self-start">
+            {/* Outline: the page's one primary is Profile's Save. */}
+            <Button type="submit" variant="outline" disabled={pending} focusableWhenDisabled className="self-start">
               Change password
             </Button>
           </FieldGroup>

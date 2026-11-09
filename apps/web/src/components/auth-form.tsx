@@ -85,7 +85,7 @@ export function AuthForm({
     return (
       <Card className="mx-auto w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Check your email</CardTitle>
+          <CardTitle className="font-heading text-xl font-bold">Check your email</CardTitle>
           <CardDescription className="break-words">
             We sent a sign-in link to {sentTo}. It works once, for the next {SIGN_IN_LINK_MINUTES} minutes.
           </CardDescription>
@@ -122,7 +122,7 @@ export function AuthForm({
   return (
     <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
-        <CardTitle>{isSignUp ? "Create an account" : "Sign in"}</CardTitle>
+        <CardTitle className="font-heading text-xl font-bold">{isSignUp ? "Create an account" : "Sign in"}</CardTitle>
         <CardDescription>
           {description ?? (isSignUp ? "Start collecting feedback in minutes." : usePassword ? "Welcome back." : "We'll email you a link to sign in.")}
         </CardDescription>

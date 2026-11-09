@@ -125,6 +125,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     <>
       <PageHeader
         title="Docs"
+        description="Your help center's articles, in collections."
         actions={
           <>
             <a href={`${portal}/docs`} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "outline" })}>

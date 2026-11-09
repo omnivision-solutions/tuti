@@ -173,8 +173,8 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
 
-  // The sidebar is folded where a page has three panes (Customize, Settings, every Docs page: a column of its
-  // own), again each time one of them opens.
+  // The sidebar is folded on Customize (its rail and the portal's preview need the room), again each time it opens; from
+  // 1280px up a page of panes (Docs, Settings: a column of its own) keeps it open beside its column, and under 1280px folds it.
   await owner.goto(`/app/${slug}/customize/branding`);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
@@ -182,12 +182,19 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await sidebar.getByRole("link", { name: "Docs", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs`);
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await owner.setViewportSize({ width: 1100, height: 720 });
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
-  await owner.locator("header").getByRole("button", { name: "Toggle Sidebar" }).click();
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
   // Settings opens on General.
   await owner.waitForURL(`**/app/${slug}/settings/general`);
-  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  // Its panes run edge to edge beside the sidebar: the menu's column from the sidebar's edge, the page to the window's.
+  const inset = (await owner.locator('[data-slot="sidebar-inset"]').boundingBox())!;
+  const panes = (await owner.locator('[data-slot="pane-layout"]').boundingBox())!;
+  expect(panes.x).toBe(inset.x);
+  expect(panes.x + panes.width).toBe(inset.x + inset.width);
   // Settings' menu is a column of its own beside the page, the page's height; the users' settings in a group of their own.
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await expect(menu).toBeVisible();
@@ -208,6 +215,13 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   // User properties is in the menu before any user has one, and says where they come from.
   await menu.getByRole("link", { name: "User properties" }).click();
   await expect(owner.getByRole("region", { name: "User properties" })).toContainText("None yet.");
+  // Scrolled up under the top bar, the page's heading is said there (Settings' wider-screen heading, not its phone one).
+  await owner.setViewportSize({ width: 1280, height: 200 });
+  await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Team & roles" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/team`);
+  await owner.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(owner.locator('[data-slot="bar-title"]')).toHaveText("Settings");
+  await owner.evaluate(() => window.scrollTo(0, 0));
   // The top bar stays where it is as the page scrolls (fixed to the window, as the title in it is).
   await expect(owner.locator("header").first()).toHaveCSS("position", "fixed");
   // On a phone the page's heading comes first, above the menu.

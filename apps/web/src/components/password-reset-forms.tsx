@@ -36,7 +36,7 @@ export function ForgotPasswordForm({ failed, portal, next }: { failed: boolean; 
     return (
       <Card className="mx-auto w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Check your email</CardTitle>
+          <CardTitle className="font-heading text-xl font-bold">Check your email</CardTitle>
           <CardDescription className="break-words">
             If there&apos;s an account for {sentTo}, we&apos;ve sent it a link to set a new password. It works once, for
             the next {PASSWORD_RESET_MINUTES} minutes.
@@ -56,7 +56,7 @@ export function ForgotPasswordForm({ failed, portal, next }: { failed: boolean; 
       )}
       <Card>
         <CardHeader>
-          <CardTitle>Forgot your password?</CardTitle>
+          <CardTitle className="font-heading text-xl font-bold">Forgot your password?</CardTitle>
           <CardDescription>We&apos;ll email you a link to set a new one.</CardDescription>
         </CardHeader>
         <form {...keepingFields(submit)}>
@@ -116,7 +116,7 @@ export function NewPasswordForm({ token, email }: { token: string; email: string
   return (
     <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
-        <CardTitle>Set a new password</CardTitle>
+        <CardTitle className="font-heading text-xl font-bold">Set a new password</CardTitle>
         <CardDescription className="break-all">for {email}</CardDescription>
       </CardHeader>
       <form {...keepingFields(submit)}>

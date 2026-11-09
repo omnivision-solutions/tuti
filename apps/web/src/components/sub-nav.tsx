@@ -100,8 +100,9 @@ export const SCROLLING_ROW = cn("overflow-x-auto [scrollbar-width:none]", FADE_A
 /** A tab's classes, active (`data-active`) or not. */
 const tab = (active: boolean, className?: string) =>
   cn(
-    // scroll-mx-12: a tab tabbed or scrolled to clears the fade at the row's ends.
-    "shrink-0 scroll-mx-12 border-b-2 px-2 py-2 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+    // scroll-mx-12: a tab tabbed or scrolled to clears the fade at the row's ends. 14px, a step under body text: a row of
+    // seven views (Feedback's statuses) fits beside an open post.
+    "shrink-0 scroll-mx-12 border-b-2 px-2 py-2 text-[0.875rem] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
     active ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
     className,
   );

@@ -12,7 +12,7 @@ import { hasOwnContent } from "@/server/sample-content";
 export type HomeOverview = Awaited<ReturnType<typeof homeOverview>>;
 
 /** How much each of "Needs your attention"'s groups lists; past it, "See all" opens its list. */
-const ATTENTION = 5;
+const ATTENTION = 3;
 const DAY = 86_400_000;
 
 /** One thing waiting for the team, with what to do about it. */

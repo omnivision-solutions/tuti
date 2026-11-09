@@ -153,8 +153,9 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));
   await expect(rows.first()).toContainText("Ada Lovelace");
 
-  // Found by name, email or id, from the search box in the top bar.
-  expect((await owner.getByRole("searchbox", { name: "Search users" }).boundingBox())!.y).toBeLessThan(48);
+  // Found by name, email or id, from the search box beside the page's title.
+  const heading = (await owner.getByRole("heading", { name: "Users", level: 1 }).boundingBox())!;
+  expect((await owner.getByRole("searchbox", { name: "Search users" }).boundingBox())!.y).toBeLessThan(heading.y + heading.height);
   await owner.getByRole("searchbox", { name: "Search users" }).fill("bea");
   await owner.getByRole("searchbox", { name: "Search users" }).press("Enter");
   await expect(rows).toHaveCount(1);

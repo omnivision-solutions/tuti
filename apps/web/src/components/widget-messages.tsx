@@ -505,7 +505,7 @@ function ConversationList({
       {conversations?.length === 0 && <EmptyState title="No messages yet" description="Write to the team and they'll reply here." />}
       {conversations && conversations.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h2 className="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          <h2 className="px-1 group-label">
             Your conversations
           </h2>
           <ul className="flex flex-col divide-y rounded-xl border bg-card" aria-label="Conversations">

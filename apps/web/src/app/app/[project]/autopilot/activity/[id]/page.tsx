@@ -166,7 +166,7 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
           <div className="flex flex-col gap-4 p-4">
             {articles.length > 0 && (
               <section aria-label="Help center" className="flex flex-col gap-1">
-                <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Help center</h3>
+                <h3 className="group-label">Help center</h3>
                 <ul className="flex flex-col gap-2 border-l pl-3">
                   {collections.map((collection) => (
                     <li key={collection ?? ""} className="flex flex-col">
@@ -179,7 +179,7 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
             )}
             {posts.length > 0 && (
               <section aria-label="Feedback" className="flex flex-col gap-1">
-                <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Feedback</h3>
+                <h3 className="group-label">Feedback</h3>
                 <ul className="flex flex-col border-l pl-3">{posts.map(item)}</ul>
               </section>
             )}

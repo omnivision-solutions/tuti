@@ -128,7 +128,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           {canRead && <DocsSearch askAI={answersEnabled()} />}
           {/* On the right; on phones and tablets the links are in the menu. It doesn't shrink: the logo does.
               As tall without JavaScript as with its menu button, so the header doesn't grow once the page's script runs. */}
-          <div className="ml-auto flex min-h-8 shrink-0 items-center gap-2 sm:gap-3">
+          <div className="ml-auto flex min-h-9 shrink-0 items-center gap-2 sm:gap-3">
             <PortalHeaderLinks />
             {session ? (
               // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.

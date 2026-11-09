@@ -90,7 +90,7 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
   await owner.getByRole("link", { name: "Go to Home" }).click();
 
   // Home's Get set up follows the picks: the changelog's step, no article's (Docs wasn't picked), the invite done and last.
-  // Each says what it's for.
+  // Each left to do says what it's for; a done one is a line.
   await owner.waitForURL(`**/app/${slug}`);
   const setup = owner.getByRole("list", { name: "Get set up" });
   await expect(setup.getByRole("listitem")).toHaveText([
@@ -98,7 +98,7 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
     "Connect GitHub(to do)Autopilot reads your merged pull requests and suggests updates to your posts, docs and changelog.Connect",
     "Set up single sign-on(to do)Users sign in with their Acme account, so every post and message says who it's from.Set up",
     "Publish an update(to do)Show users what shipped, on your portal and in the widget.New entry",
-    "Invite your team(done)Share triage and replies with your teammates.",
+    "Invite your team(done)",
   ]);
   await expect(owner.getByRole("progressbar", { name: "Steps done" })).toHaveAttribute("aria-valuenow", "1");
   await checkpoint(owner, "home-get-set-up");

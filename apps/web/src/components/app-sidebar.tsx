@@ -97,10 +97,11 @@ export function AppSidebar({
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
   useOpenCountInTitle(current?.openConversations ?? 0);
   const nav = current ? projectNav(current) : [];
-  // The closest match is the current page: Roadmap, not Feedback, on /feedback/roadmap.
+  // The closest match is the current page: Roadmap, not Feedback, on /feedback/roadmap. A page inside a part (a post, an
+  // article, a changelog entry) keeps its part marked.
   const active = nav
     .flat()
-    .filter((item) => pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`)))
+    .filter((item) => pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`)) || (!!item.also && pathname.startsWith(`${item.also}/`)))
     .sort((a, b) => b.href.length - a.href.length)[0];
 
   return (
@@ -112,8 +113,8 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         {nav.map((group, i) => (
-          // The last group (Customize, Settings) sits at the bottom.
-          <SidebarGroup key={i} className={cn(i === 2 && "mt-auto")}>
+          // Each group under the one before, a line between them (no gap down to the last).
+          <SidebarGroup key={i} className={cn(i > 0 && "border-t border-sidebar-border/70")}>
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.map((item) => (
@@ -128,7 +129,7 @@ export function AppSidebar({
                       <span>{item.title}</span>
                     </SidebarMenuButton>
                     {!!item.badge && (
-                      <SidebarMenuBadge id={countId(item.title)}>
+                      <SidebarMenuBadge id={countId(item.title)} className={cn(item.badge.urgent && "bg-highlight text-highlight-foreground")}>
                         {item.badge.count}
                         <span className="sr-only"> {item.badge.label}</span>
                       </SidebarMenuBadge>
@@ -157,7 +158,7 @@ function SearchButton() {
         <SidebarMenuButton tooltip={`Search (${shortcut})`} onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_MENU))}>
           <SearchIcon />
           <span className="flex-1">Search</span>
-          <kbd aria-hidden className="rounded border bg-background px-1.5 font-sans text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+          <kbd aria-hidden className="rounded border bg-background px-1.5 font-sans text-xs text-muted-foreground group-data-[collapsible=icon]:hidden max-md:hidden">
             {shortcut}
           </kbd>
         </SidebarMenuButton>
@@ -209,23 +210,24 @@ const portalLabel = (url: string) => {
 
 const countId = (title: string) => `nav-count-${title.toLowerCase().replace(/\W+/g, "-")}`;
 
-type NavItem = { title: string; href: string; icon: LucideIcon; section?: boolean; badge?: { count: number; label: string } | false };
+type NavItem = { title: string; href: string; icon: LucideIcon; section?: boolean; also?: string; badge?: { count: number; label: string; urgent?: boolean } | false };
 
 /** The project's pages, in groups by how often each is used: the daily ones, then Users, then Customize and Settings. */
 function projectNav(project: ProjectSummary): NavItem[][] {
   const base = `/app/${project.slug}`;
   const admin = project.role === "OWNER" || project.role === "ADMIN";
   // Counts where work waits.
-  const waits = (count: number, label: string) => count > 0 && { count, label };
+  // `urgent`: people are waiting on the team (the Inbox), its count filled in the highlight colour.
+  const waits = (count: number, label: string, urgent = false) => count > 0 && { count, label, urgent };
   return [
     [
       { title: "Home", href: base, icon: HouseIcon },
-      { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: waits(project.openConversations, "open") },
-      // Its Boards (/feedback/boards) too.
-      { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon, section: true, badge: waits(project.toTriage, "to triage") },
+      { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: waits(project.openConversations, "open", true) },
+      // Its Boards (/feedback/boards) too, and a post's page (/p/<number>).
+      { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon, section: true, also: `${base}/p`, badge: waits(project.toTriage, "to triage") },
       { title: "Roadmap", href: `${base}/feedback/roadmap`, icon: MapIcon },
-      { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
-      { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
+      { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon, section: true },
+      { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon, section: true },
       { title: "Autopilot", href: `${base}/autopilot`, icon: GitPullRequestIcon, section: true, badge: waits(project.changesWaiting, "to review") },
     ],
     [

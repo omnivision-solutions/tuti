@@ -455,7 +455,7 @@ export function DocsWorkspace({
             >
               <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               <span className={cn("min-w-0", !article.published && "text-muted-foreground")}>{article.title}</span>
-              {!article.published && <span className="shrink-0 rounded-sm border px-1 text-[0.625rem] leading-4 text-muted-foreground">Draft</span>}
+              {!article.published && <span className="shrink-0 rounded-sm border px-1 text-xs leading-4 text-muted-foreground">Draft</span>}
             </Link>
           </Row>
         </li>
@@ -608,7 +608,7 @@ export function DocsWorkspace({
   const footerLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
   return (
     <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
-      <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
+      <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:flex-row">
         {/* Beside every Docs page, to go between them. */}
         <aside className="border-b lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0">
           <button
@@ -654,7 +654,7 @@ export function DocsWorkspace({
             </div>
           </div>
         </aside>
-        <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6">{children}</div>
+        <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8">{children}</div>
       </div>
       {adding && (
         <CollectionDialog

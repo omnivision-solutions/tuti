@@ -272,7 +272,7 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
   });
   return (
     <section aria-label="Preview" className="flex flex-col gap-4 rounded-lg bg-muted/60 p-4">
-      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Preview</p>
+      <p className="group-label">Preview</p>
       <div className="flex min-w-0 flex-col gap-1">
         <p className="font-heading text-xl font-bold tracking-tight break-words">{draft.name || "Board name"}</p>
         {draft.description.trim() && <p className="text-sm break-words text-muted-foreground">{draft.description}</p>}

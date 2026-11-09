@@ -120,6 +120,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
     <>
       <PageHeader
         title="Feedback"
+        description="Ideas and problems your users posted, by status."
         actions={
           <>
             <form role="search" className="flex w-full min-w-0 sm:w-56 lg:w-72">

@@ -33,11 +33,11 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await expect(options.nth(1)).toHaveText("New changelog entry");
   await expect(options.nth(2)).toHaveText("New post (on your portal)");
   await expect(options.nth(3)).toHaveText("Home");
-  // Each with the sidebar's icon for its part: an action the part it creates in.
+  // Each with the sidebar's icon for its part; an action a plus, so it isn't taken for the page it's on.
   const icon = (name: string) => menu.getByRole("option", { name, exact: true }).locator("svg");
-  await expect(icon("New article")).toHaveClass(/lucide-book-open/);
-  await expect(icon("New changelog entry")).toHaveClass(/lucide-megaphone/);
-  await expect(icon("New post (on your portal)")).toHaveClass(/lucide-inbox/);
+  await expect(icon("New article")).toHaveClass(/lucide-plus/);
+  await expect(icon("New changelog entry")).toHaveClass(/lucide-plus/);
+  await expect(icon("New post (on your portal)")).toHaveClass(/lucide-plus/);
   await expect(icon("Home")).toHaveClass(/lucide-house/);
   await expect(icon("Inbox")).toHaveClass(/lucide-messages-square/);
   await expect(icon("Feedback")).toHaveClass(/lucide-inbox/);

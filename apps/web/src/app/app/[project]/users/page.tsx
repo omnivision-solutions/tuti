@@ -111,7 +111,8 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
     <>
       <PageHeader
         title="Users"
-        // In the top bar from tablet width up, like other pages' controls.
+        description="The people who use your app, and what they asked for."
+        // Beside the title from tablet width up, like other pages' controls.
         actions={
           <>
             <form role="search" className="flex w-full min-w-0 sm:w-56 lg:w-72">

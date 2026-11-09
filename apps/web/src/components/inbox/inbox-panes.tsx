@@ -41,6 +41,9 @@ const VIEWS = {
   closed: { title: "Closed", empty: "No closed conversations yet." },
   spam: { title: "Spam", empty: "No spam." },
 } as const;
+/** The list column's title row (the Inbox's heading, or its copy while a conversation is open). */
+const LIST_TITLE = "px-6 pt-6 lg:col-start-1 lg:row-start-1 lg:border-r lg:px-3 lg:pt-4 lg:pb-2";
+
 export type View = keyof typeof VIEWS;
 
 /** The view a `?view=` asks for; Needs reply for none, or one it doesn't know. */
@@ -192,16 +195,24 @@ export async function InboxPanes({
     <div
       data-slot="pane-layout"
       data-fills-window
-      className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)]"
+      className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_auto_minmax(0,1fr)]"
     >
-      {member && <PageHeader title="Inbox" className="px-6 pt-6" more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />}
+      {member ? (
+        <PageHeader title="Inbox" className={LIST_TITLE} more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />
+      ) : (
+        // A conversation open beside the list has the page's heading: the list keeps its title in sight (not a
+        // heading), so the views under it stay where they were.
+        <p aria-hidden className={cn(LIST_TITLE, "font-heading text-2xl font-semibold tracking-[-0.02em] max-lg:hidden sm:text-[2rem] sm:leading-10")}>
+          Inbox
+        </p>
+      )}
       {/* On a phone, the list or the conversation (its Back is to the list). */}
       <SubNav
         label="Views"
         current={inboxHref(slug, view)}
         // The view the list shows: the page itself, or, with a conversation open, the one beside it.
         currentIs={open === null ? "page" : "true"}
-        className={cn("mx-6 mt-4 lg:mx-0 lg:mt-0 lg:border-r lg:px-3", open !== null && "max-lg:hidden")}
+        className={cn("mx-6 mt-4 lg:col-start-1 lg:row-start-2 lg:mx-0 lg:mt-0 lg:border-r lg:px-3", open !== null && "max-lg:hidden")}
         // The three worked through most as tabs; the rest under More, which fits the list's third of the window.
         items={views.slice(0, TABS).map(tab)}
         more={{ label: "More", items: views.slice(TABS).map(tab) }}
@@ -211,7 +222,7 @@ export async function InboxPanes({
       />
 
       {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
-      <div className={cn("flex flex-col lg:row-start-2 lg:min-h-0 lg:border-r", open !== null && "max-lg:hidden")}>
+      <div className={cn("flex flex-col lg:col-start-1 lg:row-start-3 lg:min-h-0 lg:border-r", open !== null && "max-lg:hidden")}>
         {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
         {!supportInbox && (
           <div className="px-6 pt-6 lg:px-3 lg:pt-3">
@@ -259,7 +270,8 @@ export async function InboxPanes({
                         selected={c.number === open}
                         // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
                         // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
-                        className="relative isolate items-start"
+                        // A dense list: rows a little tighter than other lists', so twice as many fit.
+                        className="relative isolate items-start py-2.5"
                         leading={
                           <Avatar className="size-8">
                             {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
@@ -291,7 +303,7 @@ export async function InboxPanes({
                           <span className="block truncate">
                             {/* Waiting for the team, where the view doesn't already say so: small, so it stays one line. */}
                             {needsReply && view !== "open" && (
-                              <Badge variant="highlight" className="mr-1.5 h-4 px-1.5 align-[1px] text-[0.625rem]">
+                              <Badge variant="highlight" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
                                 Needs reply
                               </Badge>
                             )}
@@ -371,7 +383,7 @@ export function ConversationPane({ open, detailsHidden = false, children }: { op
       aria-label="Conversation"
       data-inbox-conversation
       className={cn(
-        "flex min-w-0 flex-1 flex-col gap-6 p-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-hidden lg:pb-0",
+        "flex min-w-0 flex-1 flex-col gap-6 p-6 lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:min-h-0 lg:overflow-hidden lg:pb-0",
         !open && "max-lg:hidden",
       )}
     >

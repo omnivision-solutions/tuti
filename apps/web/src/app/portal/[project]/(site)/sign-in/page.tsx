@@ -61,7 +61,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           {/* Names run up to 60 characters: the button grows to wrap them. */}
           <a
             href={ssoUrl.href}
-            className={cn(buttonVariants({ variant: "secondary" }), "h-auto min-h-8 w-full py-1.5 text-center whitespace-normal")}
+            className={cn(buttonVariants({ variant: "secondary" }), "h-auto min-h-9 w-full py-1.5 text-center whitespace-normal")}
           >
             Continue with {portal.name}
           </a>

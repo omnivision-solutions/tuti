@@ -139,7 +139,9 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Open → Planned, by Tess Team");
   // Its title is the page's heading, under the top bar (which keeps a copy in view); the post merged into it is listed.
   const heading = team.getByRole("heading", { name: "Dark mode", level: 1 });
-  await expect(heading).toHaveCSS("font-size", "24px");
+  await expect(heading).toHaveCSS("font-size", "32px");
+  // The post is Feedback's: the sidebar keeps Feedback marked on its page.
+  await expect(team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: /^Feedback/ })).toHaveAttribute("data-active");
   expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(48);
   await expect(properties.getByRole("list", { name: "Merged posts" }).getByRole("link")).toHaveText(["#2 Night theme for the editor"]);
   await checkpoint(team, "team-planned");
@@ -242,8 +244,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("link", { name: /Dark mode/ })).toBeVisible();
   // The portal's address isn't in the header (the project switcher has it).
   await expect(team.locator('[data-slot="page-header"]').getByRole("link", { name: new URL(portalUrl(slug)).host })).toHaveCount(0);
-  // No sentence under the page's title (what it's for is in its empty state).
-  await expect(team.locator('[data-slot="page-header"] p')).toHaveCount(0);
+  // One short line under the page's title says what it's for.
+  await expect(team.locator('[data-slot="page-header"] p')).toHaveText(["Ideas and problems your users posted, by status."]);
   // A row shows values, no form controls: its board as text, its status as a badge that opens a menu.
   const row = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
   await expect(row).toContainText("#1 · Feature requests · Ada");

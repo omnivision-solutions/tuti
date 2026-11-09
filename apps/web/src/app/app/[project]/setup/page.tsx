@@ -52,7 +52,7 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
           </Link>
         }
       />
-      <Card className="max-w-2xl">
+      <Card data-narrow>
         {step === "from" && (
           <>
             <CardHeader>
