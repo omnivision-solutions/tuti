@@ -209,7 +209,9 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await menu.getByRole("link", { name: "User properties" }).click();
   await expect(owner.getByRole("region", { name: "User properties" })).toContainText("None yet.");
   // Scrolled up under the top bar, the page's heading is said there (Settings' wider-screen heading, not its phone one).
-  await owner.setViewportSize({ width: 1280, height: 360 });
+  await owner.setViewportSize({ width: 1280, height: 200 });
+  await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Team & roles" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/team`);
   await owner.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await expect(owner.locator('[data-slot="bar-title"]')).toHaveText("Settings");
   await owner.evaluate(() => window.scrollTo(0, 0));
