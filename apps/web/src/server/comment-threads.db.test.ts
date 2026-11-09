@@ -77,6 +77,8 @@ test("likes: one each, taken back, counted for everyone, and only on comments th
   // Merged into another post, its comments' likes go with them.
   const other = await call(createPost, as(reader.id), { board: "feature-requests", title: "Night theme" });
   await call(mergePost, as(owner.id), { number: post.number, into: other.number });
+  // Liked through the post it was merged from: refused, and nothing written (its comments are the other post's now).
+  await expect(call(likeComment, as(owner.id), { number: post.number, id: comment.id, liked: false })).rejects.toThrow("merged");
   expect((await call(listComments, as(reader.id), { number: other.number })).comments[0]).toMatchObject({ body: "Please!", likes: 1 });
 
   // The portal's action: signed out, asked to sign in; signed in, it likes.

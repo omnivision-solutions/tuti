@@ -360,18 +360,32 @@ test("a post's thread: replies under their comment, likes with counts, Oldest or
   expect((await replies.boundingBox())!.x).toBeGreaterThanOrEqual((await adas.boundingBox())!.x + 40);
   await expect(bo.getByRole("heading", { name: "3 comments" })).toBeVisible();
 
+  // Reply on Bo's reply answers Ada's comment, and the box says it's Bo being answered; Reply on Ada's names her again.
+  await ada.reload();
+  await ada.getByRole("list", { name: "Replies to Ada" }).getByRole("button", { name: "Reply to Bo" }).click();
+  const adasBox = ada.getByRole("textbox", { name: "Reply" });
+  await expect(adasBox).toBeFocused();
+  await expect(adasBox.locator("[data-placeholder]")).toHaveAttribute("data-placeholder", "Reply to Bo…");
+  await ada.getByRole("button", { name: "Reply to Ada" }).click();
+  await expect(adasBox).toBeFocused();
+  await expect(adasBox.locator("[data-placeholder]")).toHaveAttribute("data-placeholder", "Reply to Ada…");
+  await ada.getByRole("button", { name: "Cancel" }).click();
+
   // Ada likes Bo's reply, and takes it back, then likes it again: one each.
   const like = ada.getByRole("button", { name: /^Like Bo's comment/ }).first();
-  await ada.reload();
   await like.click();
   await expect(like).toHaveAttribute("aria-pressed", "true");
   await expect(like).toHaveText("1");
-  await like.click();
+  // From the keyboard too, once the like is saved: the focus stays on it while it saves.
+  await expect(like).toHaveAttribute("aria-disabled", "false");
+  await like.focus();
+  await ada.keyboard.press("Enter");
+  await expect(like).toBeFocused();
   await expect(like).toHaveText("Like");
   await like.click();
   await expect(like).toHaveText("1");
   // Saved (the button is back once it is).
-  await expect(like).toBeEnabled();
+  await expect(like).toHaveAttribute("aria-disabled", "false");
   await ada.reload();
   await expect(ada.getByRole("button", { name: "Like Bo's comment (1 like)" }).first()).toHaveAttribute("aria-pressed", "true");
 

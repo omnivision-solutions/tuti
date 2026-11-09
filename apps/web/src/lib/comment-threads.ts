@@ -7,7 +7,8 @@ export const commentSort = (value: unknown): CommentSort => (value === "newest" 
 
 /**
  * A thread's top-level items (comments, notes, status changes) in `sort`'s order, each with its replies oldest first.
- * A reply whose parent isn't among them stands on its own.
+ * A reply whose parent isn't among them stands on its own. Items written in the same millisecond keep the order they
+ * come in (read them by date, then id), and Newest first turns that round too.
  */
 export function threads<T extends { id: string; createdAt: Date; parentId?: string | null }>(items: T[], sort: CommentSort) {
   const ids = new Set(items.map((item) => item.id));

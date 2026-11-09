@@ -22,14 +22,15 @@ import { setCommentLike } from "@/server/posts";
 export type CommentAbility = { can: "act" | "signIn" | "none"; postId: string; portal?: boolean; uploads?: EditorUploads };
 
 type ThreadState = {
-  /** Which comment's Reply opened the box (null: it's closed). */
+  /** Which comment's Reply opened the box (null: it's closed), and whose it is (the box says who it answers). */
   openedBy: string | null;
+  openedFor: string;
   /** Bumped by every Reply, so a box already open takes the focus again. */
   asked: number;
-  reply: (commentId: string, button: HTMLButtonElement) => void;
+  reply: (commentId: string, author: string, button: HTMLButtonElement) => void;
   close: () => void;
 };
-const Thread = createContext<ThreadState>({ openedBy: null, asked: 0, reply: () => {}, close: () => {} });
+const Thread = createContext<ThreadState>({ openedBy: null, openedFor: "", asked: 0, reply: () => {}, close: () => {} });
 
 /**
  * A top-level comment and its replies: Reply on any of them opens one box, under the last reply (focused, again on each
@@ -37,6 +38,7 @@ const Thread = createContext<ThreadState>({ openedBy: null, asked: 0, reply: () 
  */
 export function ReplyThread({ children }: { children: React.ReactNode }) {
   const [openedBy, setOpenedBy] = useState<string | null>(null);
+  const [openedFor, setOpenedFor] = useState("");
   const [asked, setAsked] = useState(0);
   const opener = useRef<HTMLButtonElement | null>(null);
   const closing = useRef(false);
@@ -46,21 +48,22 @@ export function ReplyThread({ children }: { children: React.ReactNode }) {
       opener.current?.focus();
     }
   }, [openedBy]);
-  const reply = (commentId: string, button: HTMLButtonElement) => {
+  const reply = (commentId: string, author: string, button: HTMLButtonElement) => {
     opener.current = button;
     setOpenedBy(commentId);
+    setOpenedFor(author);
     setAsked((n) => n + 1);
   };
   const close = () => {
     closing.current = true;
     setOpenedBy(null);
   };
-  return <Thread.Provider value={{ openedBy, asked, reply, close }}>{children}</Thread.Provider>;
+  return <Thread.Provider value={{ openedBy, openedFor, asked, reply, close }}>{children}</Thread.Provider>;
 }
 
-/** The thread's reply box, once Reply is pressed; it closes once the reply is posted. */
-export function ReplyBox({ ability, replyTo, author }: { ability: CommentAbility; replyTo: string; author: string }) {
-  const { openedBy, asked, close } = useContext(Thread);
+/** The thread's reply box, once Reply is pressed, naming whose Reply opened it; it closes once the reply is posted. */
+export function ReplyBox({ ability, replyTo }: { ability: CommentAbility; replyTo: string }) {
+  const { openedBy, openedFor, asked, close } = useContext(Thread);
   const box = useRef<HTMLDivElement>(null);
   // Reply again while it's open: back into the box (as it's made, the editor focuses itself).
   useEffect(() => {
@@ -74,7 +77,7 @@ export function ReplyBox({ ability, replyTo, author }: { ability: CommentAbility
       <CommentForm
         postId={ability.postId}
         replyTo={replyTo}
-        placeholder={`Reply to ${author}…`}
+        placeholder={`Reply to ${openedFor}…`}
         signedIn={ability.portal ? true : undefined}
         uploads={ability.uploads}
         autoFocus
@@ -85,7 +88,7 @@ export function ReplyBox({ ability, replyTo, author }: { ability: CommentAbility
   );
 }
 
-const ACTION = "inline-flex h-8 items-center gap-1.5 rounded-md px-1.5 -mx-1.5 text-sm font-medium text-muted-foreground hover:text-foreground [&_svg]:size-4";
+const ACTION = "inline-flex h-8 items-center gap-1.5 rounded-lg px-1.5 -mx-1.5 text-sm font-medium text-muted-foreground hover:text-foreground [&_svg]:size-4";
 
 /** Reply and Like under a comment (`author`: whose, for their names: "Reply to Ada", "Like Ada's comment"). */
 export function CommentActions({ ability, commentId, author, likes, liked }: { ability: CommentAbility; commentId: string; author: string; likes: number; liked: boolean }) {
@@ -111,7 +114,7 @@ export function CommentActions({ ability, commentId, author, likes, liked }: { a
           className={ACTION}
           aria-label={`Reply to ${author}`}
           aria-expanded={openedBy === commentId}
-          onClick={(event) => reply(commentId, event.currentTarget)}
+          onClick={(event) => reply(commentId, author, event.currentTarget)}
         >
           <ReplyIcon aria-hidden />
           Reply
@@ -126,11 +129,13 @@ export function CommentActions({ ability, commentId, author, likes, liked }: { a
       {ability.can === "act" ? (
         <button
           type="button"
-          disabled={pending}
+          // Not `disabled` while it saves: that would drop the keyboard's focus. A press meanwhile does nothing.
+          aria-disabled={pending}
           aria-pressed={optimistic.liked}
           aria-label={`Like ${author}'s comment (${count})`}
           className={cn(ACTION, optimistic.liked && "text-primary hover:text-primary")}
           onClick={() =>
+            !pending &&
             startTransition(async () => {
               const next = !optimistic.liked;
               setOptimistic((s) => ({ liked: next, likes: s.likes + (next ? 1 : -1) }));

@@ -16,3 +16,12 @@ test("replies sit under their parent, oldest first, whichever way the thread is 
   expect(shape("oldest")).toEqual([["a", ["a1", "a2"]], ["b", []], ["orphan", []]]);
   expect(shape("newest")).toEqual([["orphan", []], ["b", []], ["a", ["a1", "a2"]]]);
 });
+
+test("written in the same millisecond, they keep the order they're read in (date, then id); Newest first turns it round", () => {
+  const same = [
+    { id: "first", createdAt: at(1) },
+    { id: "second", createdAt: at(1) },
+  ];
+  expect(threads(same, "oldest").map((t) => t.item.id)).toEqual(["first", "second"]);
+  expect(threads(same, "newest").map((t) => t.item.id)).toEqual(["second", "first"]);
+});

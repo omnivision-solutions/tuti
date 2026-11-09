@@ -140,7 +140,7 @@ export function CommentList({
                       ))}
                     </ol>
                   )}
-                  {ability && !item.comment!.internal && <ReplyBox ability={ability} replyTo={item.id} author={item.comment!.author.name} />}
+                  {ability && !item.comment!.internal && <ReplyBox ability={ability} replyTo={item.id} />}
                 </div>
               )}
             </ReplyThread>

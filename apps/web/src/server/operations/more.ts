@@ -212,18 +212,29 @@ export const likeComment = defineOperation({
   example: { liked: true, author: { id: "user-42" } },
   run: async (context, input) => {
     const post = await findVisiblePost(context.actor, context.projectId, input.number);
-    // A comment, never a note (notes are their own table): only the team sees those.
-    const comment = await prisma.comment.findFirst({ where: { id: input.id, postId: post.id }, select: { id: true } });
-    if (!comment) {
-      throw new OperationError(404, "not_found", "There's no such comment on this post");
+    if (post.duplicateOf) {
+      throw new OperationError(409, "merged", "This post was merged into another one; like its comments there instead");
     }
     const userId = await authorId(context, input.author);
-    if (input.liked) {
-      await prisma.commentLike.createMany({ data: { commentId: comment.id, userId }, skipDuplicates: true });
-    } else {
-      await prisma.commentLike.deleteMany({ where: { commentId: comment.id, userId } });
-    }
-    return { id: comment.id, liked: input.liked, likes: await prisma.commentLike.count({ where: { commentId: comment.id } }) };
+    return prisma.$transaction(async (tx) => {
+      // Locked as setVote locks it: a like during a merge waits for it, then finds the post merged (its comments moved).
+      const [locked] = await tx.$queryRaw<{ duplicateOfId: string | null }[]>`
+        SELECT "duplicateOfId" FROM post WHERE id = ${post.id} FOR NO KEY UPDATE`;
+      if (locked?.duplicateOfId) {
+        throw new OperationError(409, "merged", "This post was merged into another one; like its comments there instead");
+      }
+      // A comment, never a note (notes are their own table): only the team sees those.
+      const comment = await tx.comment.findFirst({ where: { id: input.id, postId: post.id }, select: { id: true } });
+      if (!comment) {
+        throw new OperationError(404, "not_found", "There's no such comment on this post");
+      }
+      if (input.liked) {
+        await tx.commentLike.createMany({ data: { commentId: comment.id, userId }, skipDuplicates: true });
+      } else {
+        await tx.commentLike.deleteMany({ where: { commentId: comment.id, userId } });
+      }
+      return { id: comment.id, liked: input.liked, likes: await tx.commentLike.count({ where: { commentId: comment.id } }) };
+    });
   },
 });
 

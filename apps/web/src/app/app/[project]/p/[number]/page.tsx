@@ -87,7 +87,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         },
         events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, emailed: true, createdAt: true, actor: { select: { name: true } } } },
         comments: {
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           select: {
             id: true,
             body: true,
@@ -101,7 +101,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           },
         },
         notes: {
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
         },
       },

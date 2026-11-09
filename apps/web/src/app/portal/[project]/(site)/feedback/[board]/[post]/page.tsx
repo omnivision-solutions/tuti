@@ -65,7 +65,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       // Told it shipped already (a completion before it was reopened): never emailed about it again.
       shippedEmails: { where: { userId: session?.user.id ?? "", sentAt: { not: null } }, select: { userId: true } },
       comments: {
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
           id: true,
           body: true,

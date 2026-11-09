@@ -170,11 +170,13 @@ export const listComments = defineOperation({
     const caller = actor.kind === "user" ? actor.userId : actor.createdById;
     const select = { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true } } } as const;
     const [comments, notes, team] = await Promise.all([
+      // In the order they were written (the id breaks a tie: two in the same millisecond), as threads keeps it.
       prisma.comment.findMany({
         where: { postId: post.id },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: { ...select, asReader: true, parentId: true, _count: { select: { likes: true } }, likes: { where: { userId: caller }, select: { userId: true } } },
       }),
-      ofTeam ? prisma.postNote.findMany({ where: { postId: post.id }, select }) : [],
+      ofTeam ? prisma.postNote.findMany({ where: { postId: post.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select }) : [],
       prisma.teamMember.findMany({ where: { projectId }, select: { userId: true } }),
     ]);
     const teamIds = new Set(team.map((m) => m.userId));
