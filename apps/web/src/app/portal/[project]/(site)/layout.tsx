@@ -8,7 +8,8 @@ import { cache } from "react";
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
 import { PortalWidget } from "@/components/portal-widget";
-import { PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLookProvider } from "@/components/portal-look";
+import { PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo } from "@/components/portal-look";
+import { PortalLookProvider } from "@/components/portal-look-provider";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { PortalAssistant } from "@/components/portal-assistant";
@@ -118,7 +119,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         {/* On phones the parts' tabs sit on its bottom edge, under room for the first line. */}
         <header className="portal-header border-b">
         {/* Its contents as wide as the pages under it, the same on every page. */}
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-2.5">
+        <div className="mx-auto flex min-h-14 max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:min-h-16 sm:gap-x-8 sm:px-6">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           {/* On phones it takes what the buttons leave (a long name is cut short), so they share its line. */}
           <div className="flex min-w-0 max-sm:grow max-sm:basis-0">
@@ -179,10 +180,10 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
 
 /**
  * The loader's version the portal needs, in its address: up it when the portal starts relying on something new in it, so
- * no browser's copy of an older one (cached an hour) runs (3: its elements added once the page is parsed, so hydrating it
+ * no browser's copy of an older one (cached an hour) runs (4: its panel never over the portal's header; 3: its elements added once the page is parsed, so hydrating it
  * keeps them; 2: Tuti.open({ ask }); before it, `?path`: the path it's under).
  */
-const PORTAL_LOADER = 3;
+const PORTAL_LOADER = 4;
 
 /** The page with Ask AI (the widget's assistant), where the portal has it. */
 function WithAssistant({ assistant, children }: { assistant: boolean; children: React.ReactNode }) {

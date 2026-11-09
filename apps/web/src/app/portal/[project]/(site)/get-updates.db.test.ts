@@ -85,7 +85,7 @@ test("a board's Get updates: the email promised only to whom it reaches, confirm
   const team = await getUpdates();
   expect(team).not.toContain("Vote for an idea");
   expect(team).not.toContain("Confirm your email");
-  expect(team).toContain("Changelog");
+  expect(team).toContain("Read the changelog");
 });
 
 /** Beside the shipped emails, Get updates offers the changelog by email, as the changelog does (changelogByEmail). */
@@ -104,7 +104,7 @@ test("a board's Get updates offers the changelog by email: the form, or where a 
   expect(signedOut).toMatch(/<input[^>]*name="email"/);
   expect(signedOut).toContain("Subscribe");
   // Said beside the shipped emails' line, the form says what it subscribes to.
-  expect(signedOut).toContain("The changelog by email:");
+  expect(signedOut).toContain("Or get every update by email:");
 
   // A reader who gets it: where they stand, with Manage, not the form.
   const reader = await signUp("Reader");

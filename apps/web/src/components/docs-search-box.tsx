@@ -74,6 +74,7 @@ export function DocsSearchBox({
     () => false,
   );
   const [open, setOpen] = useState(false);
+  const assistant = useDocsAssistant();
   const shortcutText = useShortcutLabel("K");
   useEffect(() => {
     if (!shortcut) {
@@ -119,17 +120,34 @@ export function DocsSearchBox({
         className={cn(
           "flex items-center gap-2 rounded-lg text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
           "w-full border border-input px-2.5 text-sm dark:bg-input/30",
-          inHeader ? "h-9 md:h-8 md:w-60" : hero ? "h-14 gap-3 rounded-lg bg-card px-4 text-base shadow-sm dark:bg-card" : "h-8",
+          inHeader
+            ? "h-9 max-sm:w-9 max-sm:justify-center max-sm:border-transparent max-sm:px-0 max-sm:dark:bg-transparent md:w-64 md:rounded-lg"
+            : hero
+              ? cn("h-[3.75rem] gap-3 rounded-xl bg-card px-5 text-[1.0625rem] shadow-card dark:bg-card", assistant && askAI && "pr-32")
+              : "h-8",
         )}
       >
         <SearchIcon aria-hidden className={cn("shrink-0", hero ? "size-5" : "size-4")} />
-        <span className={cn("flex-1 truncate", query && "text-foreground")}>{query || label}</span>
-        {shortcut && (
-          <kbd aria-hidden className="rounded border bg-muted px-1.5 font-sans text-xs max-md:hidden">
+        <span className={cn("flex-1 truncate", query && "text-foreground", inHeader && "max-sm:hidden")}>{query || label}</span>
+        {/* The home's box says it too: ⌘K is the header's (the same box). */}
+        {(shortcut || hero) && (
+          <kbd aria-hidden className="rounded-md border border-b-2 bg-muted px-1.5 font-sans text-xs max-md:hidden">
             {shortcutText}
           </kbd>
         )}
       </button>
+      {/* The home's box: Ask AI at its end, straight to the assistant. */}
+      {hero && askAI && assistant && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => assistant.open()}
+          className="absolute top-1/2 right-2.5 -translate-y-1/2 border-primary/30 bg-soft font-semibold text-soft-foreground hover:bg-soft/80"
+        >
+          <SparklesIcon />
+          Ask AI
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         {open && <SearchDialog askAI={askAI} initialQuery={query} onClose={() => setOpen(false)} />}
       </Dialog>

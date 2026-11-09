@@ -18,7 +18,7 @@ test("someone writes a formatted post with a video, and a comment with a link", 
     route.fulfill({ contentType: "text/html", body: "<body style='background:#222;color:#fff'>Video</body>" }),
   );
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByRole("button", { name: "New idea" }).click();
   await ada.getByLabel("Title").fill("Dark mode");
 
   // Bold from the bar over selected text, a link with its shortcut, and a list and a video from the / menu.
@@ -27,7 +27,12 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   // The bar shows over selected text, and goes once the selection does.
   const formatting = ada.getByRole("toolbar", { name: "Formatting" });
   await ada.keyboard.type("Dark mode would help at night.");
-  await ada.keyboard.press("Shift+Home");
+  // Selected once the editor has caught up with the typing: on a loaded machine its render after the last key can land after
+  // Shift+Home and put the caret back at the end, so the selection is made again until it holds (the bar shows over it).
+  await expect(async () => {
+    await ada.keyboard.press("Shift+Home");
+    await expect(formatting.getByRole("button", { name: "Bold" })).toBeVisible({ timeout: 1000 });
+  }).toPass();
   await formatting.getByRole("button", { name: "Bold" }).click();
   await ada.keyboard.press("End");
   await expect(formatting).toBeHidden();
@@ -106,7 +111,7 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByRole("button", { name: "New idea" }).click();
   await ada.getByLabel("Title").fill("Make the hero smaller");
   await ada.getByRole("textbox", { name: "Details" }).click();
   await ada.keyboard.type("It takes the whole screen:");
@@ -166,7 +171,7 @@ test("someone comments with a screenshot, and the team replies with one", async 
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Submit post" }).click();
+  await ada.getByRole("button", { name: "New idea" }).click();
   await ada.getByLabel("Title").fill("Export is broken");
   await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByRole("link", { name: "Export is broken" }).click();

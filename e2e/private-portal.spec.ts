@@ -41,7 +41,7 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   // With the header's parts, and on Docs its box to search and ask (the preview has no session on the portal).
   await owner.goto(`/app/${slug}/customize/docs-home`);
   await expect(preview.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" })).toBeVisible();
-  await expect(preview.getByRole("banner").getByRole("button", { name: "Search or ask AI" })).toBeVisible();
+  await expect(preview.getByRole("button", { name: "Search or ask AI" })).toBeVisible();
 
   // A signed-out visitor gets the sign-in page, and comes back to where they were going afterwards.
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -80,7 +80,7 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   // Signed in on the portal, the team reads it as anyone else would: only as one of its readers (Customize's preview
   // shows it to them). Whoever runs a portal's site sees its sessions, so a session started there is never the team's.
   await owner.goto(`${portalUrl(slug)}/sign-in?next=%2Froadmap`);
-  await owner.getByRole("link", { name: "Continue with your Tuti account" }).click();
+  await owner.getByRole("link", { name: "Sign in with Tuti" }).click();
   await owner.getByRole("button", { name: "Continue as Olive Owner" }).click();
   await expect(owner.getByText(`Acme is private, and ${owner.email} doesn't have access.`, { exact: false })).toBeVisible();
 });

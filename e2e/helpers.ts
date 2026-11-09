@@ -89,10 +89,12 @@ export async function skipSetup(page: Page, slug: string) {
  * Posts feedback from the board's dialog and waits for it on the board. Saving runs the post's
  * jobs (inline here) before it answers, so it gets longer than an assertion's usual 5 seconds.
  */
+/** Posts an idea on the portal board that's open: its New idea, then the dialog's form. */
 export async function postFeedback(page: Page, title: string) {
-  await page.getByRole("button", { name: "Submit post" }).click();
-  await page.getByLabel("Title").fill(title);
-  await page.getByRole("button", { name: "Submit post" }).click();
+  await page.getByRole("button", { name: "New idea" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share an idea" });
+  await dialog.getByLabel("Title").fill(title);
+  await dialog.getByRole("button", { name: "Submit post" }).click();
   await expect(page.getByRole("link", { name: title })).toBeVisible({ timeout: 15_000 });
 }
 

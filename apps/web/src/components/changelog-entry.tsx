@@ -1,6 +1,7 @@
 import type { ChangelogTag } from "@tuti/db";
 import { RichText } from "@tuti/content/react";
 import type { Doc, MediaUrls } from "@tuti/content";
+import { ArrowRightIcon, LightbulbIcon } from "lucide-react";
 import Link from "next/link";
 
 import { ChangelogReactions } from "@/components/changelog-reactions";
@@ -16,11 +17,11 @@ import { cn } from "@/lib/utils";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 
-/** Each tag tinted on the portal, so a list can be scanned for what's new (Breaking keeps its destructive look). */
+/** Each tag tinted on the portal, so a list can be scanned for what's new: New green, Improved blue, Fixed the orange highlight (Breaking keeps its destructive look). */
 const TAG_TINTS: Record<ChangelogTag, string | undefined> = {
-  NEW: "border-transparent bg-soft text-soft-foreground",
-  IMPROVED: "border-transparent bg-status-in-progress/16 text-foreground",
-  FIXED: "border-transparent bg-status-under-review/20 text-foreground",
+  NEW: "border-primary/20 bg-soft text-soft-foreground",
+  IMPROVED: "border-tag-improved/25 bg-tag-improved-bg text-tag-improved",
+  FIXED: "border-highlight-foreground/25 bg-highlight text-highlight-foreground",
   BREAKING: undefined,
 };
 
@@ -33,7 +34,7 @@ export type PublishedEntry = {
   doc: Doc;
   /** Its cover image, as a document of that one image (the entry's title its text), signed with `doc`; null for none. */
   cover: Doc | null;
-  posts: { number: number; title: string; board: { slug: string } }[];
+  posts: { number: number; title: string; voteCount: number; board: { slug: string } }[];
   reactions: ReactionCounts;
   /** The ones the signed-in reader left. */
   reacted: Reaction[];
@@ -68,43 +69,31 @@ export function ChangelogEntryView({
   // widget's panel (an h1 too) keeps the base.
   const onPage = dateMargin || !!react;
   const at = (path: string) => withBase(base, path);
-  const date = <time dateTime={entry.publishedAt.toISOString()}>{formatDate(entry.publishedAt)}</time>;
+  // In the list, short ("7 Nov 2026"), as in its margin.
+  const date = <time dateTime={entry.publishedAt.toISOString()}>{dateMargin ? shortDate(entry.publishedAt) : formatDate(entry.publishedAt)}</time>;
   return (
     <article className="flex gap-6" aria-labelledby={`entry-${entry.number}`}>
       {/* On the list's timeline (wide screens): the date in a margin, a dot by it on the line down the list. */}
       {dateMargin && (
-        <p className="relative hidden w-28 shrink-0 pt-1 text-sm font-medium text-muted-foreground lg:block">
+        <p className="relative hidden w-[6.875rem] shrink-0 pt-[2.375rem] pl-4 text-sm font-medium text-muted-foreground tabular-nums lg:block">
           <time dateTime={entry.publishedAt.toISOString()}>{shortDate(entry.publishedAt)}</time>
-          {/* Its tags under it, so the title starts the entry. */}
-          {entry.tags.length > 0 && (
-            <span className="mt-2 flex flex-wrap gap-1.5">
-              {entry.tags.map((tag) => (
-                <TagBadge key={tag} tag={tag} className={TAG_TINTS[tag]} />
-              ))}
-            </span>
-          )}
-          <span aria-hidden className="absolute top-3 -right-3 size-[0.6875rem] translate-x-1/2 rounded-full bg-primary ring-4 ring-background" />
+          <span aria-hidden className="absolute top-[2.875rem] left-0 size-[0.4375rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-4 ring-background" />
         </p>
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <div
-          className={cn(
-            "flex flex-wrap items-center gap-2 text-sm text-muted-foreground",
-            // In the margin, the date and the tags leave the row (they're beside the entry): the row goes too, unless it's a sample.
-            dateMargin && !entry.sample && "lg:hidden",
-          )}
-        >
-          <span className={cn("font-medium", dateMargin && "lg:hidden")}>{date}</span>
+        {/* Its tags (and on phones, or an entry's page, its date) above the title. */}
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           {entry.tags.map((tag) => (
-            <TagBadge key={tag} tag={tag} className={cn(onPage && TAG_TINTS[tag], dateMargin && "lg:hidden")} />
+            <TagBadge key={tag} tag={tag} className={cn(onPage && TAG_TINTS[tag], onPage && "h-6 rounded-md px-2 text-[0.8125rem] font-semibold")} />
           ))}
+          <span className={cn("font-medium", dateMargin && "lg:hidden")}>{date}</span>
           {entry.sample && <SampleBadge />}
         </div>
         <Title
           id={`entry-${entry.number}`}
           className={cn(
             "font-heading font-semibold tracking-tight break-words",
-            !onPage ? "text-xl" : heading === "h1" ? "text-[2rem] leading-tight sm:text-[2.5rem]" : "text-2xl leading-tight sm:text-[1.75rem]",
+            !onPage ? "text-xl" : heading === "h1" ? "text-[2rem] leading-tight font-[650] tracking-[-0.022em] sm:text-[2.5rem]" : "-mt-1 text-2xl leading-tight font-[650] tracking-[-0.022em] sm:text-[1.75rem]",
           )}
         >
           {heading === "h2" ? (
@@ -115,9 +104,36 @@ export function ChangelogEntryView({
             entry.title
           )}
         </Title>
-        {entry.cover && <RichText doc={entry.cover} mediaUrls={mediaUrls} className="rich-text" />}
-        <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-[1.0625rem] leading-7 text-foreground/85")} />
-        {entry.posts.length > 0 && (
+        {entry.cover && (
+          <RichText
+            doc={entry.cover}
+            mediaUrls={mediaUrls}
+            className={cn("rich-text", onPage && "[&_img]:rounded-xl [&_img]:border-0 [&_img]:shadow-card [&_img]:ring-1 [&_img]:ring-border")}
+          />
+        )}
+        <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
+        {onPage && entry.posts.length > 0 ? (
+          // The ideas it shipped, with how many asked: a pill each. One idea: the entry's title says which (its title is read
+          // out after the pill's words); more than one: each pill shows its idea's title.
+          <ul className="flex flex-wrap gap-2">
+            {entry.posts.map((post) => (
+              <li key={post.number} className="min-w-0 max-w-full">
+                <Link
+                  href={at(postPath(post))}
+                  target={linkTarget}
+                  className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-soft px-3 text-[0.8125rem] font-semibold text-soft-foreground hover:underline"
+                >
+                  <LightbulbIcon aria-hidden className="size-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {entry.posts.length > 1 ? post.title : "Built from an idea"} · {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+                    {entry.posts.length === 1 && <span className="sr-only">: {post.title}</span>}
+                  </span>
+                  <ArrowRightIcon aria-hidden className="size-3.5 shrink-0" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : entry.posts.length > 0 && (
           <p className="text-sm text-muted-foreground">
             Completes{" "}
             {entry.posts.map((post, i) => (
@@ -137,6 +153,7 @@ export function ChangelogEntryView({
             counts={entry.reactions}
             reacted={entry.reacted}
             signedIn={react.signedIn}
+            quiet={dateMargin}
           />
         )}
       </div>

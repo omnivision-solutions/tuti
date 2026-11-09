@@ -306,10 +306,13 @@ export function boardsWithCounts(projectId: string, viewer: PostViewer) {
 
 /** A board's completed posts `viewer` sees, the latest completed first (as the roadmap's Completed: older ones by their last change), for its "Recently shipped" card. */
 export function recentlyShipped(boardId: string, viewer: PostViewer) {
-  return prisma.$queryRaw<{ id: string; number: number; title: string; voteCount: number }[]>`
-    SELECT p.id, p.number, p.title, p."voteCount" FROM post p
+  // When each shipped: its activity's latest Completed, or for one completed before status changes were kept, its last change.
+  return prisma.$queryRaw<{ id: string; number: number; title: string; voteCount: number; shippedAt: Date }[]>`
+    SELECT p.id, p.number, p.title, p."voteCount",
+      COALESCE((SELECT MAX(e."createdAt") FROM post_event e WHERE e."postId" = p.id AND e."to" = 'COMPLETED'), p."updatedAt") AS "shippedAt"
+    FROM post p
     WHERE p."boardId" = ${boardId} AND p."duplicateOfId" IS NULL AND p.status = 'COMPLETED' AND ${visiblePostsSql(viewer)}
-    ORDER BY COALESCE((SELECT MAX(e."createdAt") FROM post_event e WHERE e."postId" = p.id AND e."to" = 'COMPLETED'), p."updatedAt") DESC, p.id DESC
+    ORDER BY "shippedAt" DESC, p.id DESC
     LIMIT 5`;
 }
 

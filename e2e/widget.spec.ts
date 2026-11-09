@@ -214,7 +214,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await ideaTab.waitForLoadState("load");
   await signInWithPassword(ideaTab, bea.email);
   await ideaTab.getByRole("button", { name: "Upvote (1 vote)" }).click();
-  await expect(ideaTab.getByRole("button", { name: "Remove vote (2 votes)" })).toBeVisible();
+  await expect(ideaTab.getByRole("button", { name: "Upvoted (2 votes)" })).toBeVisible();
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await visitorPanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();

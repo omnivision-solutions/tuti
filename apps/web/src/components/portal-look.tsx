@@ -2,123 +2,21 @@
 
 import { LinkIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@/components/tuti-logo";
-import { PORTAL_FONT_CLASSES } from "@/components/portal-fonts";
-import { brandCss } from "@/lib/colors";
-import { fontVariable } from "@/lib/portal-fonts";
-import { CUSTOMIZE } from "@/lib/portal-base";
-import { DEFAULT_LOOK, type FromPortal, isToPortal, type LookImage, type PortalLook, PREVIEW_FRAME, styleText, webOnly } from "@/lib/portal-look";
+import { DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
 /** In Customize's preview: a frame named PREVIEW_FRAME (its own page, or the widget's panel in it). */
 export const inPreview = () => window.name === PREVIEW_FRAME && window.parent !== window;
-
-/**
- * Light or dark mode in the preview only: on the page, not where next-themes keeps a reader's pick
- * (the frame shares the portal's storage with the team member's own visits to it).
- */
-function showTheme(scheme: PortalLook["colorScheme"]) {
-  const mode = scheme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : scheme;
-  const html = document.documentElement;
-  html.classList.remove("light", "dark");
-  html.classList.add(mode);
-  html.style.colorScheme = mode;
-}
 
 export const LookContext = createContext<PortalLook | null>(null);
 
 /** How the portal looks on this page: what's saved, or in Customize's preview what the team is trying. */
 export function usePortalLook(): PortalLook {
   return useContext(LookContext) ?? DEFAULT_LOOK;
-}
-
-/**
- * The portal's look (its accent colour as CSS, and for the parts that show it). In Customize's
- * preview (a frame named PREVIEW_FRAME), it also takes changes not saved yet and light or dark mode
- * from the app (`appOrigin` only), says which page is open, keeps the preview at the portal's Tuti
- * address as people click around in it, and opens other sites' links in a new tab.
- */
-export function PortalLookProvider({ saved, appOrigin, children }: { saved: PortalLook; appOrigin: string; children: ReactNode }) {
-  const [draft, setDraft] = useState<Partial<PortalLook>>({});
-  const router = useRouter();
-  const path = usePortalPath();
-
-  useEffect(() => {
-    if (!inPreview()) {
-      return;
-    }
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== appOrigin || event.source !== window.parent || !isToPortal(event.data)) {
-        return;
-      }
-      if (event.data.type === "tuti:look") {
-        setDraft(webOnly(event.data.look));
-      } else if (event.data.type === "tuti:theme") {
-        showTheme(event.data.theme);
-      }
-    };
-    const onClick = (event: MouseEvent) => {
-      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
-      if (!(link instanceof HTMLAnchorElement) || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) {
-        return;
-      }
-      const url = new URL(link.href);
-      event.preventDefault();
-      if (url.origin !== window.location.origin) {
-        window.open(url, "_blank", "noopener,noreferrer");
-        return;
-      }
-      url.searchParams.set(CUSTOMIZE.param, CUSTOMIZE.value);
-      router.push(`${url.pathname}${url.search}${url.hash}`);
-    };
-    window.addEventListener("message", onMessage);
-    // Before Next.js's own link handling, which would drop the preview's param.
-    document.addEventListener("click", onClick, true);
-    return () => {
-      window.removeEventListener("message", onMessage);
-      document.removeEventListener("click", onClick, true);
-    };
-  }, [appOrigin, router]);
-
-  useEffect(() => {
-    if (inPreview()) {
-      window.parent.postMessage({ type: "tuti:ready", path } satisfies FromPortal, appOrigin);
-    }
-  }, [appOrigin, path]);
-
-  // The default colour scheme, being tried in the preview: once per change of it, so the preview's own
-  // light and dark mode still win until it changes again.
-  const tried = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (inPreview() && draft.colorScheme && draft.colorScheme !== tried.current) {
-      tried.current = draft.colorScheme;
-      showTheme(draft.colorScheme);
-    }
-  }, [draft.colorScheme]);
-
-  const look = { ...saved, ...draft };
-  const css = brandCss(look.color);
-  // The team's fonts (Customize → Branding → Typography) in place of the page's: a wrapper that adds
-  // nothing to the layout (display: contents) but passes them down, the symbols fallback after them (app/layout.tsx).
-  const { heading, body } = look.fonts;
-  const fonts = {
-    ...(body && { "--font-sans": `var(${fontVariable(body)})`, fontFamily: `var(${fontVariable(body)}), var(--font-symbols)` }),
-    ...(heading && { "--font-heading": `var(${fontVariable(heading)})` }),
-  } as CSSProperties;
-  return (
-    <LookContext value={look}>
-      {css && <style>{css}</style>}
-      <div className={cn("contents", PORTAL_FONT_CLASSES)} style={fonts}>
-        {children}
-      </div>
-      {/* The team's own CSS (Customize → Custom code), after everything else. */}
-      {look.customCss && <style>{styleText(look.customCss)}</style>}
-    </LookContext>
-  );
 }
 
 /**
@@ -139,10 +37,14 @@ export function PortalLogo({ name, href }: { name: string; href: string }) {
       {logoText && <span className="truncate">{logoText}</span>}
     </>
   ) : (
-    <span className="truncate">{logoText || name}</span>
+    <>
+      {/* Without a logo, a mark of the name's first letter, so the header has the brand's square as every portal's does. */}
+      <LetterMark name={logoText || name} className="size-8 rounded-lg text-[0.9375rem]" />
+      <span className="truncate">{logoText || name}</span>
+    </>
   );
   // It gives way (a long name is cut short with "…") rather than the header's buttons.
-  const className = "flex min-w-0 items-center gap-2 font-heading text-lg font-bold tracking-tight";
+  const className = "flex min-w-0 items-center gap-2.5 font-heading text-lg font-bold tracking-[-0.02em]";
   return logoLink ? (
     <a href={logoLink} className={className}>
       {contents}
@@ -151,6 +53,31 @@ export function PortalLogo({ name, href }: { name: string; href: string }) {
     <Link href={href} className={className}>
       {contents}
     </Link>
+  );
+}
+
+/** A square in the brand's colour with the name's first letter: the portal's mark where it has no logo. */
+function LetterMark({ name, className }: { name: string; className?: string }) {
+  return (
+    <span aria-hidden className={cn("grid shrink-0 place-items-center bg-primary font-bold text-primary-foreground", className)}>
+      {name.trim().slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+/** The portal's mark over its sign-in: its logo (and dark one), or the letter mark. */
+export function PortalMark({ name }: { name: string }) {
+  const { logo, logoDark, logoText } = usePortalLook();
+  if (!logo) {
+    return <LetterMark name={logoText || name} className="mb-2 size-12 rounded-xl text-xl" />;
+  }
+  // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
+  const image = (image: LookImage, className?: string) => <img src={image.url} alt="" className={cn("mb-2 h-12 w-auto max-w-48 object-contain", className)} />;
+  return (
+    <>
+      {image(logo, logoDark ? "dark:hidden" : undefined)}
+      {logoDark && image(logoDark, "hidden dark:block")}
+    </>
   );
 }
 
@@ -229,7 +156,7 @@ export function PortalFooter({ docs = false }: { docs?: boolean }) {
   }
   return (
     // Inside <main> on Docs, where a footer isn't the page's footer landmark unless it says so.
-    <footer role={docs ? "contentinfo" : undefined} className={cn("portal-footer flex flex-col items-center gap-3", docs ? "mt-auto pt-10" : "px-6 pb-6")}>
+    <footer role={docs ? "contentinfo" : undefined} className={cn("portal-footer flex flex-col items-center gap-3", docs ? "mt-auto pt-10" : "border-t px-6 py-6")}>
       {footerLinks.length > 0 && (
         <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
           {footerLinks.map((link, i) => (

@@ -59,7 +59,7 @@ test("in the first run the team comes from Frill: a bad key is refused, a good o
   await expect(post.getByText("Night owls need it.")).toBeVisible();
   await expect(post.locator("figure img")).toHaveCount(1);
   await expect(post.locator('time[datetime="2024-01-10T08:00:00.000Z"]')).toBeVisible();
-  await expect(visitor.getByRole("link", { name: "Sign in to vote (3 votes)" })).toBeVisible();
+  await expect(visitor.getByRole("link", { name: "Upvote (3 votes), sign in to vote" })).toBeVisible();
   await expect(visitor.getByRole("region", { name: "Comments" }).getByText("Yes please!")).toBeVisible();
   await expect(visitor.getByText("Planning it for June.")).toHaveCount(0);
   await checkpoint(visitor, "portal-frill-post");

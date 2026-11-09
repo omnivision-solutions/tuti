@@ -13,7 +13,18 @@ import { Card } from "@/components/ui/card";
  * "Get updates by email" on the portal's changelog: a link to confirm is emailed first (subscribeToChangelog). `inCard`:
  * just the form, in a card with its own heading (a board's Get updates).
  */
-export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { projectSlug: string; email?: string; inCard?: boolean }) {
+export function ChangelogSubscribe({
+  projectSlug,
+  email,
+  inCard = false,
+  bare = false,
+}: {
+  projectSlug: string;
+  email?: string;
+  inCard?: boolean;
+  /** Its heading and the form, without the card (the changelog's Subscribe popover). */
+  bare?: boolean;
+}) {
   // Its own ids: the changelog shows it in its rail on wide screens and after the list below them.
   const headingId = useId();
   const errorId = useId();
@@ -25,7 +36,7 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
     // The form stays (and its button keeps focus), with what was typed if it's refused; the answer is read out from here.
     <form {...keepingFields(action)} className="flex flex-col gap-2">
       <p className="text-sm text-muted-foreground">
-        {inCard ? "The changelog by email:" : "New entries in your inbox, each with a link to unsubscribe."}
+        {inCard ? "Or get every update by email:" : "New entries in your inbox, each with a link to unsubscribe."}
       </p>
       <div className="flex flex-wrap gap-2">
         <Input
@@ -38,7 +49,7 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
           required
           aria-invalid={state.error ? true : undefined}
           aria-describedby={state.error ? errorId : undefined}
-          className="min-w-0 flex-1 basis-56"
+          className={inCard ? "min-w-0 flex-1 basis-32" : "min-w-0 flex-1 basis-56"}
         />
         {/* Disabled while it sends, but keeping its focus. */}
         <Button type="submit" variant={inCard ? "outline" : "default"} disabled={pending} focusableWhenDisabled>
@@ -51,6 +62,16 @@ export function ChangelogSubscribe({ projectSlug, email, inCard = false }: { pro
       </p>
     </form>
   );
+  if (bare) {
+    return (
+      <section role="region" aria-labelledby={headingId} className="flex flex-col gap-2">
+        <h2 id={headingId} className="font-sans text-[0.9375rem] font-semibold">
+          Get updates by email
+        </h2>
+        {form}
+      </section>
+    );
+  }
   return inCard ? (
     form
   ) : (

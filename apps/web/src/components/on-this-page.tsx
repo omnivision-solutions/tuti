@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-/** An article's sections beside it, the one being read marked: the one just linked to while it's near the top (or in view at the bottom of the page), else the last heading above the top third of the screen (at the bottom of the page, the last one). */
+/** An article's sections beside it, the one being read marked: the one just linked to while it's near the top (or in view at the bottom of the page), else the last heading above the top third of the screen (none yet: the first; at the bottom of the page, the last one). */
 export function OnThisPage({ headings }: { headings: Heading[] }) {
   const [current, setCurrent] = useState<string | null>(null);
   useEffect(() => {
@@ -18,7 +18,8 @@ export function OnThisPage({ headings }: { headings: Heading[] }) {
         const { top } = element.getBoundingClientRect();
         return `#${element.id}` === window.location.hash && top >= 0 && (inTopThird(element) || (atBottom && top < window.innerHeight));
       });
-      setCurrent((linked ?? (atBottom ? elements.at(-1) : elements.filter(inTopThird).at(-1)))?.id ?? null);
+      // Above the first, the first: it's what's next.
+      setCurrent((linked ?? (atBottom ? elements.at(-1) : (elements.filter(inTopThird).at(-1) ?? elements[0])))?.id ?? null);
     };
     update();
     window.addEventListener("scroll", update, { passive: true });
@@ -33,7 +34,7 @@ export function OnThisPage({ headings }: { headings: Heading[] }) {
   }, [headings]);
   return (
     <nav aria-label="On this page" className="flex flex-col gap-3 text-sm">
-      <p className="font-heading font-semibold">On this page</p>
+      <p className="font-medium text-muted-foreground">On this page</p>
       <ul className="flex flex-col border-l">
         {headings.map((heading) => (
           <li key={heading.id}>
@@ -41,7 +42,7 @@ export function OnThisPage({ headings }: { headings: Heading[] }) {
               href={`#${heading.id}`}
               aria-current={heading.id === current ? "location" : undefined}
               className={cn(
-                "-ml-px block border-l-2 border-transparent py-1 pl-3 break-words text-muted-foreground transition-colors hover:text-foreground aria-[current=location]:border-primary aria-[current=location]:font-medium aria-[current=location]:text-foreground",
+                "-ml-px block border-l-2 border-transparent py-1 pl-3 break-words text-muted-foreground transition-colors hover:text-foreground aria-[current=location]:border-primary aria-[current=location]:font-medium aria-[current=location]:text-soft-foreground",
                 heading.level === 3 && "pl-6",
               )}
             >

@@ -9,13 +9,14 @@ import Link from "next/link";
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { articleLinks } from "@/components/article-links";
 import { StillStuck, type SupportContact } from "@/components/docs-assistant";
-import { DocsHomeHeader, PopularArticles } from "@/components/docs-home";
+import { DocsHomeHeader, PopularArticles, PopularChips } from "@/components/docs-home";
 import { DocsSearchBox } from "@/components/docs-search-box";
 import { OnThisPage } from "@/components/on-this-page";
 import { DocsSidebarLinks, IfSidebarLinks, PortalFooter } from "@/components/portal-look";
 import { ArticleFeedback, ArticleViewCount } from "@/components/article-feedback";
 import { articleDescription } from "@/lib/article-links";
 import { allCollections } from "@/lib/docs-level-above";
+import { CodeCopyButtons } from "@/components/code-copy-buttons";
 import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
 import { DocsAnswer } from "@/components/docs-answer";
@@ -130,17 +131,20 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
   // gets them whatever the saved one.
   const preview = (await headers()).get(CUSTOMIZE.header) === CUSTOMIZE.value;
   const popular = (await shownPopularArticles(project, tab ?? docs, { preview })).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title }));
+  // "Can't find it?": how to reach the team (Ask AI is in the search above it).
+  const support = home ? await supportContact(project) : null;
   return (
-    <div className="flex flex-col gap-10">
-      {/* The home: its heading over a big box for searching and asking (the header's is the same box). */}
+    <div className="flex flex-col gap-8">
+      {/* The home: its heading over a big box for searching and asking (the header's is the same box), and the most-read as chips. */}
       {home ? (
         <div
           data-docs-hero
-          className="flex flex-col gap-6 bg-[radial-gradient(ellipse_farthest-side_at_50%_0%,color-mix(in_oklch,var(--color-primary)_14%,transparent),transparent)] pt-6 pb-2 sm:pt-10 [&_[data-slot=page-header]_p]:text-base [&_h1]:text-[2rem] sm:[&_h1]:text-[2.5rem]"
+          className="-mx-4 flex flex-col items-center gap-5 bg-[radial-gradient(ellipse_50%_70%_at_50%_30%,color-mix(in_oklch,var(--color-primary)_10%,transparent),transparent)] px-4 pt-2 pb-2 sm:-mx-6 sm:gap-6 sm:px-6 sm:pt-10 sm:pb-4"
         >
           <DocsHomeHeader />
-          {/* Below tablet width the header's box is a line of its own, the whole width, right above: one is enough. */}
-          <DocsSearchBox askAI={answersEnabled()} hero className="max-md:hidden" />
+          {/* The header's box gives way to it here (the same box). */}
+          <DocsSearchBox askAI={answersEnabled()} hero className="w-full max-w-[46rem]" />
+          <PopularChips articles={popular} />
         </div>
       ) : (
         <PageHeader title={tab.name} />
@@ -154,20 +158,22 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
             <li key={collection.slug}>
               <Link
                 href={at(`/docs/${collection.slug}`)}
-                className="group flex h-full items-start gap-3.5 rounded-xl bg-card p-4 shadow-xs ring-1 ring-border transition-shadow hover:shadow-md hover:ring-primary/40 sm:p-5"
+                className="group flex h-full flex-col gap-2 rounded-xl bg-card p-5 shadow-card ring-1 ring-border transition-shadow hover:ring-primary/40 sm:p-6"
               >
-                {collection.icon && (
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-soft text-lg text-soft-foreground">
-                    <CollectionIcon name={collection.icon} />
-                  </span>
-                )}
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <h2 className="text-base font-semibold break-words group-hover:text-primary">
+                <h2 className="flex items-center gap-3 font-sans text-[1.0625rem] font-semibold break-words group-hover:text-primary">
+                  {collection.icon && (
+                    <span className="flex shrink-0 text-[1.25rem] text-primary">
+                      <CollectionIcon name={collection.icon} />
+                    </span>
+                  )}
+                  <span className="min-w-0">
                     {collection.name}
                     {collection.locked && <LockedMark />}
-                  </h2>
-                  {collection.sample && <SampleBadge />}
-                  {collection.description && <p className="line-clamp-2 text-sm break-words text-muted-foreground">{collection.description}</p>}
+                  </span>
+                </h2>
+                {collection.sample && <SampleBadge />}
+                {collection.description && <p className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
+                <div className="mt-auto pt-2">
                   <ArticleCount count={articleCount(collection)} />
                 </div>
               </Link>
@@ -186,13 +192,14 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
           <ArticleLinks articles={uncollected} href={(slug) => at(`/docs/${slug}`)} />
         </section>
       )}
+      {support && <StillStuck support={support} home />}
     </div>
   );
 }
 
 /** A collection card's "2 articles": what this reader may open in it (none in a locked one, which shows nothing). */
 function ArticleCount({ count }: { count: number }) {
-  return count > 0 && <p className="mt-1 text-xs font-medium text-muted-foreground">{count === 1 ? "1 article" : `${count} articles`}</p>;
+  return count > 0 && <p className="text-sm font-medium text-muted-foreground">{count === 1 ? "1 article" : `${count} articles`}</p>;
 }
 
 /**
@@ -338,29 +345,73 @@ export async function DocsArticle({
   const tree = docsTree(docs, article.tab ?? docs.home, article.collection?.slug ?? null);
   const headings = readable ? docHeadings(readable.doc) : [];
   const up = collection ? { href: `/docs/${collection.slug}`, label: collection.name } : allCollections(docs, tab);
-  // "Was this helpful?" goes under "On this page" where that shows (wide screens), else under the article.
-  const feedback = (beside: boolean, className?: string) => readable && <ArticleFeedback projectSlug={project} slug={slug} beside={beside} className={className} />;
+  const markdown = readable && (await articleMarkdown(readable));
+  // How long it takes to read, at about 200 words a minute.
+  const minutes = markdown ? Math.max(1, Math.round(markdown.split(/\s+/).filter(Boolean).length / 200)) : null;
   return (
-    <DocsLayout tree={tree} current={slug} headings={headings} beside={feedback(true)}>
+    <DocsLayout tree={tree} current={slug} headings={headings}>
       <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
-        <div className="flex flex-col gap-1">
-          {/* The actions beside the title on wide screens, under it on phones. */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 flex-col gap-1">
-              {/* The level above: its collection (when it has a page for this reader; an unlisted article may be all it has), else its tab or all of them. */}
-              <p className="text-sm font-medium text-primary">
-                <Link href={at(up.href)} className="hover:underline">
-                  {up.label}
-                </Link>
-              </p>
-              <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[2rem] leading-tight font-semibold tracking-tight break-words sm:text-[2.5rem]">
-                {article.title}
-              </h1>
-              {readable?.sample && <SampleBadge />}
-            </div>
-            {readable && <ArticleActions markdown={await articleMarkdown(readable)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />}
+        <div className="flex flex-col gap-3">
+          {/* The way up (Docs, then its collection, when it has a page for this reader; an unlisted article may be all it
+              has), the actions at the row's end on wide screens, under the title on phones. */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+              {up.href !== "/docs" && (
+                <>
+                  <Link href={at("/docs")} className="hover:text-foreground">
+                    Docs
+                  </Link>
+                  <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
+                </>
+              )}
+              <Link href={at(up.href)} className="truncate font-medium text-foreground hover:underline">
+                {up.label}
+              </Link>
+            </nav>
+            {readable && markdown && (
+              <div className="max-sm:hidden">
+                <ArticleActions markdown={markdown} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
+              </div>
+            )}
           </div>
-          {readable?.updatedAt && <ArticleUpdated at={readable.updatedAt.toISOString()} label={formatDate(readable.updatedAt)} />}
+          <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[2rem] leading-[1.1] font-[650] tracking-[-0.025em] break-words sm:text-[2.625rem]">
+            {article.title}
+          </h1>
+          {readable?.sample && <SampleBadge />}
+          {readable && (
+            <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+              {readable.updatedAt && <ArticleUpdated at={readable.updatedAt.toISOString()} label={formatDate(readable.updatedAt)} />}
+              {minutes && (
+                <span className="inline-flex items-center gap-2 [&:not(:first-child)]:before:content-['·']">
+                  {minutes} min read
+                </span>
+              )}
+            </p>
+          )}
+          {/* On phones the page's actions under its title and dates, only as wide as their buttons. */}
+          {readable && markdown && (
+            <div className="w-fit sm:hidden">
+              <ArticleActions markdown={markdown} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
+            </div>
+          )}
+          {/* Where "On this page" isn't beside it (below wide screens), its sections in a disclosure under the title. */}
+          {readable && outlined(headings) && (
+            <details className="group/toc mt-1 border-y text-[0.9375rem] xl:hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between py-2.5 font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
+                On this page
+                <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open/toc:rotate-90" />
+              </summary>
+              <ul className="-mx-2 flex flex-col pb-2">
+                {headings.map((heading) => (
+                  <li key={heading.id}>
+                    <a href={`#${heading.id}`} className={cn("block rounded-md px-2 py-1.5 text-muted-foreground hover:text-foreground", heading.level === 3 && "pl-5")}>
+                      {heading.text}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
         {readable ? (
           <>
@@ -371,10 +422,11 @@ export async function DocsArticle({
               // Its links to the portal's other docs pages stay here, under this address, in this tab.
               link={await articleLinks(project, readable.doc, ({ slug, hash }) => `${at(`/docs/${slug}`)}${hash}`)}
               // On the portal a step brighter and closer than the shared reading style: it's the page's whole point.
-              className="rich-text article-text gap-4 break-words text-foreground/90"
+              className="rich-text article-text gap-4 break-words text-foreground"
             />
+            <CodeCopyButtons />
             <ArticleViewCount projectSlug={project} slug={slug} />
-            {feedback(false, outlined(headings) ? "xl:hidden" : undefined)}
+            <ArticleFeedback projectSlug={project} slug={slug} className="mt-4" />
             <ArticleEnd end={await articleEnd(project, slug, article.collection?.slug ?? null, readable.tab, docs)} support={await supportContact(project)} />
           </>
         ) : (
@@ -455,7 +507,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
       title={title}
       aria-current={slug === current ? "page" : undefined}
       className={cn(
-        "flex items-center rounded-lg px-2 py-1 text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-sidebar-active aria-[current=page]:font-medium aria-[current=page]:text-sidebar-active-foreground",
+        "flex items-center rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-soft aria-[current=page]:font-medium aria-[current=page]:text-soft-foreground",
         className,
       )}
     >
@@ -472,7 +524,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
   // A page's name, with a lock if it's locked for this reader (kept in view when the name is cut short).
   const locked = (name: string, isLocked?: boolean) => (
     <>
-      <span className="min-w-0 truncate">{name}</span>
+      <span className="min-w-0 break-words">{name}</span>
       {isLocked && <LockedMark />}
     </>
   );
@@ -494,19 +546,20 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
     </ul>
   );
   return (
-    <nav aria-label="Docs" className="flex flex-col gap-5 text-sm">
-      <DocsSidebarLinks className="border-b pb-4" />
+    <nav aria-label="Docs" className="flex flex-col gap-1 text-[0.9375rem]">
+      <DocsSidebarLinks className="mb-3 border-b pb-4" />
+      {/* Each collection a row that opens (`<details>`, so it works without JavaScript): the page's own open, a line down its articles. */}
       {tree.collections.map((collection) => (
-        <div key={collection.slug} className="flex flex-col gap-1">
-          {link(collection.slug, collection.name, named(collection), "gap-2 font-heading font-semibold text-foreground")}
-          {contents(collection)}
-        </div>
+        <details key={collection.slug} open={collection.open} className="group/collection">
+          <summary className="flex cursor-pointer list-none items-center rounded-lg hover:bg-accent/50 [&::-webkit-details-marker]:hidden">
+            {link(collection.slug, collection.name, named(collection), "min-w-0 flex-1 gap-2.5 font-medium text-foreground [&>svg]:size-4 [&>svg]:text-muted-foreground")}
+            <ChevronRightIcon aria-hidden className="mr-2 size-4 shrink-0 text-muted-foreground transition-transform group-open/collection:rotate-90" />
+          </summary>
+          <div className="my-1 ml-[1.0625rem] border-l pl-2.5">{contents(collection)}</div>
+        </details>
       ))}
       {tree.uncollected.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {tree.collections.length > 0 && <p className="px-2 py-1 font-heading font-semibold">More</p>}
-          <ul className="flex flex-col gap-0.5">{articles(tree.uncollected)}</ul>
-        </div>
+        <ul className={cn("flex flex-col gap-0.5", tree.collections.length > 0 && "mt-4 border-t pt-4")}>{articles(tree.uncollected)}</ul>
       )}
     </nav>
   );
@@ -524,15 +577,12 @@ export function DocsLayout({
   tree,
   current,
   headings = [],
-  beside,
   children,
 }: {
   /** Null for none (a tab's overview, whose cards are its collections). */
   tree: DocsTree | null;
   current: string | null;
   headings?: Heading[];
-  /** Under "On this page" (shown from wide screens with two headings or more; see `outlined`). */
-  beside?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0) ? tree : null;
@@ -542,16 +592,16 @@ export function DocsLayout({
   return (
     // At least the window's height (flex-1 in <main>), so the tree's line runs to the bottom on a short page.
     // In the header's container (its contents' width: 72rem less its padding), so the tree's left edge is the logo's.
-    <div data-docs-layout className="mx-auto flex w-full max-w-[69rem] flex-1 gap-10">
+    <div data-docs-layout className="mx-auto flex w-full max-w-[71rem] flex-1 gap-10">
       {/* From the header to the bottom of the page, with a line beside it; the tree scrolls on its own, under the header. */}
       {column(
-        <aside className="-my-10 hidden w-72 shrink-0 border-r md:block">
-          <div className="sticky top-[var(--portal-header-height,0px)] max-h-[calc(100dvh-var(--portal-header-height,0px))] overflow-y-auto py-10 pr-4 [scrollbar-width:thin]">
+        <aside className="-my-10 hidden w-64 shrink-0 border-r md:block">
+          <div className="sticky top-[var(--portal-header-height,0px)] max-h-[calc(100dvh-var(--portal-header-height,0px))] overflow-y-auto py-8 pr-4 [scrollbar-width:thin]">
             {nav}
           </div>
         </aside>
       )}
-      <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-6">
+      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", shown ? "max-w-[43rem]" : "max-w-[71rem]")}>
         {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
@@ -568,11 +618,10 @@ export function DocsLayout({
         <PortalFooter docs />
       </div>
       {outlined(headings) && (
-        <aside className="hidden w-64 shrink-0 xl:block">
+        <aside className="hidden w-56 shrink-0 xl:block">
           {/* Stays in view as the article scrolls, under the header. */}
           <div className="sticky top-[calc(var(--portal-header-height,0px)+1.5rem)] flex max-h-[calc(100dvh-var(--portal-header-height,0px)-3rem)] flex-col gap-6 overflow-y-auto">
             <OnThisPage headings={headings} />
-            {beside}
           </div>
         </aside>
       )}

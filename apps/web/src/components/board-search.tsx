@@ -3,7 +3,10 @@
 import Form from "next/form";
 import { type ReactNode, useState } from "react";
 
+import { SearchIcon } from "lucide-react";
+
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 /**
  * A board's search: a form that navigates without a reload (so an idea being written on the page stays),
@@ -28,7 +31,7 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
       action={action}
       scroll={false}
       role="search"
-      className="flex w-full sm:mb-1 sm:w-56"
+      className={cn("relative flex shrink-0 transition-[width] focus-within:w-40 sm:w-56", value ? "w-40" : "w-10")}
       onSubmit={() => setSubmitted(value.trim().slice(0, 255))}
     >
       {children}
@@ -39,8 +42,9 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
         onChange={(event) => setValue(event.target.value)}
         placeholder="Search ideas"
         aria-label="Search ideas"
-        className="h-8"
+        className="h-9 rounded-lg pl-9 max-sm:not-focus:placeholder:text-transparent"
       />
+      <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
     </Form>
   );
 }

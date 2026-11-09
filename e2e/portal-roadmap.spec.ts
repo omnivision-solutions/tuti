@@ -28,6 +28,8 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await api("/posts", { board: "feature-requests", title: "Webhooks" }); // 4
   await api("/posts", { board: "feature-requests", title: "Night theme" }); // 5
   await api("/posts/1", { status: "planned" }, "PATCH");
+  // When the team expects it (far ahead: a month that's passed isn't shown).
+  await api("/posts/1", { eta: "2099-06" }, "PATCH");
   await api("/posts/5", { status: "planned" }, "PATCH");
   await api("/posts/2", { status: "in_progress" }, "PATCH");
   // CSV export shipped in a published entry; Webhooks is completed, its entry still a draft.
@@ -58,7 +60,9 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   // Votes on the cards; signed out, they ask to sign in.
   const darkMode = column("Planned").getByRole("listitem").filter({ hasText: "Dark mode" });
   await expect(darkMode.getByRole("link", { name: /^Sign in to vote/ })).toHaveAttribute("href", "/sign-in?next=%2Froadmap");
-  await expect(visitor.getByRole("main").getByText("Sign in to vote")).toBeVisible();
+  await expect(visitor.getByRole("main").getByText(/to vote\.$/)).toBeVisible();
+  // The card says when it's expected.
+  await expect(darkMode).toContainText("Expected June 2099");
 
   // A completed card links to the published entry that shipped it, not to a draft.
   const completed = column("Completed");
@@ -70,7 +74,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   // Shipped, there's nothing left to vote for: its votes as text, no button.
   const csvCard = completed.getByRole("listitem").filter({ hasText: "CSV export" });
   await expect(csvCard.getByRole("button")).toHaveCount(0);
-  await expect(csvCard.getByText("vote", { exact: true })).toBeVisible();
+  await expect(csvCard.getByText(/^\d+ votes?$/)).toBeAttached();
 
   // On a phone, one column at a time: Planned first, the others from the tabs over it.
   await visitor.setViewportSize({ width: 390, height: 844 });
@@ -81,34 +85,43 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await columns.getByRole("link", { name: "Completed 2" }).click();
   await visitor.waitForURL("**/roadmap?column=completed");
   await expect(column("Completed")).toBeVisible();
+  // A board's chip keeps the column open, and so does All boards.
+  const boardChips = visitor.getByRole("navigation", { name: "Board" });
+  await boardChips.getByRole("link", { name: "Bug reports" }).click();
+  await visitor.waitForURL("**/roadmap?board=all&column=completed");
+  await expect(column("Completed")).toBeVisible();
+  await expect(boardChips.getByRole("link", { name: "All boards" })).toHaveAttribute("href", "/roadmap?column=completed");
+  await visitor.goto("/roadmap?column=completed");
   await expect(column("Planned")).toBeHidden();
   await checkpoint(visitor, "roadmap-phone-completed", { fullPage: false });
   await visitor.goto("/roadmap");
   await visitor.setViewportSize({ width: 1440, height: 900 });
 
-  // With every board shown, "Share an idea" asks which.
-  await visitor.getByRole("button", { name: "Share an idea" }).click();
+  // With every board shown, New idea asks which.
+  await visitor.getByRole("button", { name: "New idea" }).click();
   await expect(visitor.getByRole("menuitem")).toHaveText(["Feature requests", "Bug reports"]);
   await checkpoint(visitor, "roadmap-signed-out", { fullPage: false });
   await visitor.keyboard.press("Escape");
 
-  // The board filter narrows the cards and stays in the address.
-  await visitor.getByRole("combobox", { name: "Board" }).click();
-  await visitor.getByRole("option", { name: "Bug reports" }).click();
+  // The boards' chips narrow the cards and stay in the address.
+  const boards = visitor.getByRole("navigation", { name: "Board" });
+  await expect(boards.getByRole("link")).toHaveText(["All boards", "Feature requests", "Bug reports"]);
+  await expect(boards.getByRole("link", { name: "All boards" })).toHaveAttribute("aria-current", "page");
+  await boards.getByRole("link", { name: "Bug reports" }).click();
   await visitor.waitForURL("**/roadmap?board=all");
   await expect(column("Planned")).toContainText("Nothing here yet.");
   await visitor.reload();
   await expect(column("In progress").getByRole("link", { name: "Login fails on Safari" })).toBeVisible();
   await expect(visitor.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
-  await expect(visitor.getByRole("combobox", { name: "Board" })).toContainText("Bug reports");
-  // "Share an idea" goes to that board's idea form.
-  await expect(visitor.getByRole("link", { name: "Share an idea" })).toHaveAttribute("href", "/feedback/all");
+  await expect(boards.getByRole("link", { name: "Bug reports" })).toHaveAttribute("aria-current", "page");
+  // New idea opens that board's idea form.
+  await expect(visitor.getByRole("link", { name: "New idea" })).toHaveAttribute("href", "/feedback/all?new");
 
   // Signed in, a vote from a card counts.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.setViewportSize({ width: 1440, height: 900 });
   await ada.goto("/roadmap");
-  await expect(ada.getByRole("main").getByText("Sign in to vote")).toHaveCount(0);
+  await expect(ada.getByRole("main").getByText(/to vote\.$/)).toHaveCount(0);
   const adaCard = ada.getByRole("region", { name: "Planned" }).getByRole("listitem").filter({ hasText: "Dark mode" });
   // Tess's own vote, as the post's author; the count is in the button's name, for screen readers.
   await expect(adaCard.getByRole("button", { name: "Upvote" })).toHaveText("1");

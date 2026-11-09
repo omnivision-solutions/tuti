@@ -312,6 +312,16 @@ test("the launcher shows the team's name, colour, corner and icon once the app h
   expect((button.children[0] as FakeElement).getAttribute("stroke")).toBe("currentColor");
   expect(button.style).toMatchObject({ width: "56px", height: "56px", borderRadius: "999px", background: "#5b21b6", color: "#ffffff", left: "20px", right: "auto" });
   expect(page.panel.style).toMatchObject({ left: "20px", right: "auto" });
+  // Never over a Tuti portal's header (its height, where the page has one; nothing elsewhere), except on a window too short
+  // to leave it a usable panel: then at least 360px (or all the window leaves without the header, if that's less).
+  const height = (window: number, header: number | null) =>
+    new Function(
+      `return ${page.panel.style.height!.replaceAll("min(", "Math.min(").replaceAll("max(", "Math.max(").replaceAll("calc(", "(").replaceAll("100dvh", String(window)).replaceAll("var(--portal-header-height, 0px)", String(header ?? 0)).replaceAll("px", "")};`,
+    )() as number;
+  expect(height(900, null)).toBe(600); // a customer's site: as before
+  expect(height(720, 65)).toBe(543); // a laptop on the portal: 720 - 112 - 65, clear of the header
+  expect(height(500, 65)).toBe(360); // a phone on its side: usable rather than 323px
+  expect(height(420, 65)).toBe(308); // shorter still: all the window leaves (420 - 112)
   // The panel is named after the button that opens it, and so is one already in the page.
   expect(page.inlineFrames[0]!.title).toBe("Help & ideas");
   page.Tuti.open();

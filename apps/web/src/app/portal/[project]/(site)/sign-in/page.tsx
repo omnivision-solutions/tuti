@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { CircleAlertIcon, LockIcon } from "lucide-react";
 
 import { AuthForm } from "@/components/auth-form";
+import { PortalMark } from "@/components/portal-look";
 import { TutiMark } from "@/components/tuti-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -68,29 +69,31 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
           <Or />
         </>
       )}
-      {/* Sign-in links need email that really goes out. Passwords are typed on the app (lib/auth.ts): its "Use a password instead" and the Tuti account below go there. */}
-      {emailConfigured() && (
-        <>
-          <AuthForm
-            mode="sign-in"
-            redirectTo="/"
-            next={nextPath || undefined}
-            linkProject={project}
-            forgotPassword
-            // Accounts made here can't read a private portal.
-            signUp={!isPrivate}
-          />
-          <Or />
-        </>
+      {/* Sign-in links need email that really goes out. Passwords are typed on the app (lib/auth.ts): its "Use a password instead"
+          and the team's Tuti account go there. A plain link to /continue: a route that sets a cookie and leaves for the app host. */}
+      {emailConfigured() ? (
+        <AuthForm
+          mode="sign-in"
+          redirectTo="/"
+          next={nextPath || undefined}
+          linkProject={project}
+          forgotPassword
+          // Accounts made here can't read a private portal.
+          signUp={!isPrivate}
+          title={portal ? `Sign in to ${portal.name}` : undefined}
+          description="Vote, comment and follow ideas. We'll email you when they ship."
+          mark={<PortalMark name={portal?.name ?? project} />}
+          teamHref={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
+        />
+      ) : (
+        <a
+          href={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
+          className={buttonVariants({ variant: "outline", className: "w-full" })}
+        >
+          <TutiMark className="size-4" />
+          Continue with your Tuti account
+        </a>
       )}
-      {/* A plain link: /continue is a route that sets a cookie and leaves for the app host. */}
-      <a
-        href={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
-        className={buttonVariants({ variant: "outline", className: "w-full" })}
-      >
-        <TutiMark className="size-4" />
-        Continue with your Tuti account
-      </a>
     </div>
   );
 }

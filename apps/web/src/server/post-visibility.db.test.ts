@@ -4,7 +4,6 @@ import { isValidElement, type ReactNode } from "react";
 import { expect, onTestFinished, test, vi } from "vitest";
 
 import { BackLink } from "@/components/back-link";
-import { ListFilters } from "@/components/list-filters";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import BoardPage from "@/app/portal/[project]/(site)/feedback/[board]/page";
 import PostPage from "@/app/portal/[project]/(site)/feedback/[board]/[post]/page";
@@ -197,7 +196,7 @@ test("the portal's board, post page and roadmap show each reader the posts they 
   const roadmapFilters = async () => {
     const tree = await RoadmapPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never);
     const has = (node: ReactNode): boolean =>
-      Array.isArray(node) ? node.some(has) : isValidElement<{ children?: ReactNode }>(node) && (node.type === ListFilters || has(node.props.children));
+      Array.isArray(node) ? node.some(has) : isValidElement<{ children?: ReactNode; "aria-label"?: string }>(node) && (node.props["aria-label"] === "Board" || has(node.props.children));
     return has(tree);
   };
   expect(await roadmapFilters()).toBe(false);

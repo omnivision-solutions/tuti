@@ -199,7 +199,7 @@ export const ROADMAP = [
  * each. The team's roadmap narrows to a board, and Completed to what finished in its last `completedDays`.
  */
 export async function roadmapColumns(projectId: string, viewer: PostViewer, { board, completedDays }: { board?: string; completedDays?: number } = {}) {
-  const select = { ...postSummarySelect, id: true, body: true, board: { select: { slug: true, name: true, off: true } }, author: { select: { name: true, image: true } } } as const;
+  const select = { ...postSummarySelect, id: true, body: true, eta: true, board: { select: { slug: true, name: true, off: true } }, author: { select: { name: true, image: true } } } as const;
   // Only the posts `viewer` may see (post-visibility.ts).
   const onBoard = { ...(board ? { board: { slug: board } } : {}), ...visiblePosts(viewer) };
   return Promise.all(

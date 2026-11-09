@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { seedAiConversations, seedViewsLastMonth } from "./articles";
 import { checkpoints } from "./checkpoint";
@@ -9,22 +9,22 @@ import { apiFor, createProject, newPerson, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
 
-/** A Docs page's search box (the header's, or `where`'s): opens its dialog and types `query` in it. */
-async function typeSearch(page: Page, query: string, where = page.getByRole("banner")) {
+/** A Docs page's search box (the one shown: the header's, or on the docs home its big one; or `where`'s): opens its dialog and types `query` in it. */
+async function typeSearch(page: Page, query: string, where: Page | Locator = page) {
   await where.getByRole("button", { name: "Search or ask AI" }).click();
   const box = page.getByRole("dialog").getByRole("combobox", { name: "Search or ask AI" });
   await box.fill(query);
   return box;
 }
 
-/** Opens the docs' assistant as it was, from the header's box (the one way into AI there): the widget's, before anything's typed. */
+/** Opens the docs' assistant as it was, from the search box shown (the header's, or the docs home's): the widget's, before anything's typed. */
 async function openAssistant(page: Page) {
-  await page.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+  await page.getByRole("button", { name: /^Search or ask AI/ }).click();
   await page.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
 }
 
-/** The articles a Docs page's search box (the header's, or `where`'s) finds as `query` is typed, then closes it. */
-async function foundAsTyped(page: Page, query: string, where = page.getByRole("banner")) {
+/** The articles a Docs page's search box (the one shown, or `where`'s) finds as `query` is typed, then closes it. */
+async function foundAsTyped(page: Page, query: string, where: Page | Locator = page) {
   await typeSearch(page, query, where);
   // The first row asks the AI; the rest are the articles, once they've come.
   return page.getByRole("dialog").getByRole("listbox", { name: "Search results" });
@@ -221,9 +221,11 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(tree.getByRole("link", { name: "Inviting your team" })).toHaveAttribute("aria-current", "page");
   const onThisPage = visitor.getByRole("navigation", { name: "On this page" });
   await expect(onThisPage.getByRole("link")).toHaveText(["Who can invite", "Roles"]);
-  // Under it, "Was this helpful?"; above the title, the level above: the collection it's in.
-  await expect(visitor.locator("aside", { has: onThisPage }).getByRole("region", { name: "Was this helpful?" })).toBeVisible();
-  await expect(article.getByRole("region", { name: "Was this helpful?" })).toBeHidden();
+  // How long it takes to read, under the title.
+  await expect(article).toContainText("1 min read");
+  // "Was this helpful?" at the article's end (not beside it); above the title, the level above: the collection it's in.
+  await expect(visitor.locator("aside", { has: onThisPage }).getByRole("region", { name: "Was this helpful?" })).toHaveCount(0);
+  await expect(article.getByRole("region", { name: "Was this helpful?" })).toBeVisible();
   await expect(article.getByRole("link", { name: "Getting started" })).toHaveAttribute("href", "/docs/getting-started");
   await checkpoint(visitor, "portal-docs-article");
   await onThisPage.getByRole("link", { name: "Roles" }).click();
@@ -814,17 +816,8 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Taxes"]);
   const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
   await expect(tree.getByRole("link", { name: "Invoices", exact: true })).toHaveAttribute("aria-current", "page");
-  // Taxes (in Invoices) is closed: its articles aren't shown.
-  await expect(tree.getByRole("link")).toHaveText([
-    "Billing",
-    "Card payments",
-    "Invoices",
-    "Downloading invoices",
-    "Taxes",
-    "Getting started",
-    "Your first board",
-    "Inviting your team",
-  ]);
+  // Taxes (in Invoices) is closed: its articles aren't shown; nor are another collection's (only the page's is open).
+  await expect(tree.getByRole("link")).toHaveText(["Billing", "Card payments", "Invoices", "Downloading invoices", "Taxes", "Getting started"]);
   await checkpoint(visitor, "portal-docs-collection-nested");
   await tree.getByRole("link", { name: "Taxes" }).click();
   await expect(visitor).toHaveURL(/\/docs\/taxes$/);
@@ -1144,7 +1137,8 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
   // Beside a collection's page, its tab's tree: the other tab's collections aren't in it.
   const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
-  await expect(tree.getByRole("link")).toHaveText(["Getting started", "Inviting your team", "Billing", "Card payments"]);
+  // Only the page's collection is open.
+  await expect(tree.getByRole("link")).toHaveText(["Getting started", "Billing", "Card payments"]);
   await expect(tree.getByRole("link", { name: "Billing" })).toHaveAttribute("aria-current", "page");
   await checkpoint(visitor, "portal-docs-collection");
   await tree.getByRole("link", { name: "Card payments" }).click();
@@ -1244,7 +1238,7 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   // it has, then (on the first) the articles in none. The collections once: no tree beside them; the docs home's heading
   // has the big box for searching and asking (the header's too).
   await visitor.goto("/docs");
-  await expect(main.getByRole("heading", { level: 1 })).toHaveText("Docs");
+  await expect(main.getByRole("heading", { level: 1 })).toHaveText("How can we help?");
   await expect(main.getByRole("region", { name: "Popular articles" }).getByRole("link")).toHaveText(["Invoices", "Card payments", "Your first board"]);
   const cards = main.getByRole("list", { name: "Collections" }).getByRole("link");
   await expect(cards).toHaveText([/^Getting started.*1 article$/, /^Billing.*2 articles$/, /^Teams.*1 article$/]);
@@ -1259,20 +1253,20 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await visitor.keyboard.press("Escape");
   // The team's sidebar links are still beside them.
   await expect(main.getByRole("list", { name: "Links" }).getByRole("link", { name: "Status page" })).toBeVisible();
+  // On the docs home the header's box gives way to the big one (the same box).
   const headerSearch = visitor.getByRole("banner").getByRole("button", { name: "Search or ask AI" });
-  await expect(headerSearch).toContainText("Search or ask AI");
-  // The one way into AI there: no button of its own beside it.
-  await expect(visitor.getByRole("banner").getByRole("button", { name: "Ask AI", exact: true })).toHaveCount(0);
+  await expect(headerSearch).toBeHidden();
   await checkpoint(visitor, "portal-docs-overview");
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "portal-docs-overview-dark");
   await visitor.setViewportSize({ width: 390, height: 844 });
   await checkpoint(visitor, "portal-docs-overview-phone-dark");
   await visitor.emulateMedia({ colorScheme: "light" });
-  // On a phone the header's box is a line of its own, the whole width, and searches (and asks) the same way.
-  const box = (await headerSearch.boundingBox())!;
+  // On a phone the big box is the whole width (the header's is left out here too), and searches (and asks) the same way.
+  const heroSearch = main.getByRole("button", { name: "Search or ask AI" });
+  const box = (await heroSearch.boundingBox())!;
   expect(box.width).toBeGreaterThan(280);
-  await expect(headerSearch).toContainText("Search or ask AI");
+  await expect(heroSearch).toContainText("Search or ask AI");
   await checkpoint(visitor, "portal-docs-overview-phone");
   const onPhone = await foundAsTyped(visitor, "invoi");
   await expect(onPhone.getByRole("option").first()).toContainText("Ask AI:");
@@ -1544,6 +1538,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   // portal's own widget, at Messages), which the portal has for it.
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
   await visitor.goto("/docs");
+  // The docs home's big box has Ask AI at its end too, straight to the assistant.
+  await expect(visitor.getByRole("main").getByRole("button", { name: "Ask AI", exact: true })).toBeVisible();
   await typeSearch(visitor, question);
   const first = visitor.getByRole("dialog").getByRole("option").first();
   await expect(first).toContainText("Ask AI:");

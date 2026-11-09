@@ -60,7 +60,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // The board list has vote buttons too: vote only once the post page is open.
   await bo.waitForURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   await bo.getByRole("button", { name: "Upvote" }).click();
-  await expect(bo.getByRole("button", { name: "Remove vote" })).toHaveText("2");
+  await expect(bo.getByRole("button", { name: "Upvoted" })).toHaveText("Upvoted2");
 
   // The sidebar counts the posts waiting for triage (Open), where the team works.
   await team.goto(`/app/${slug}/p/2`);
@@ -175,7 +175,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await bo.goto("/feedback/feature-requests/night-theme-for-the-editor-2");
   await expect(bo).toHaveURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   // Bo voted for both, so counts once: Ada + Bo.
-  await expect(bo.getByRole("button", { name: "Remove vote" })).toHaveText("2");
+  await expect(bo.getByRole("button", { name: "Upvoted" })).toHaveText("Upvoted2");
   await expect(bo.getByText("Thanks! We're on it.")).toBeVisible();
   await expect(bo.getByText("Acme asked for this on their call too.")).toHaveCount(0);
   await expect(bo.getByText("Team", { exact: true })).toBeVisible();
@@ -185,15 +185,15 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // The board's status filter finds it under Planned only.
   await bo.goto("/feedback/feature-requests?status=planned");
   await expect(bo.getByRole("link", { name: "Dark mode" })).toBeVisible();
-  // Its badge has Planned's dark green dot beside it.
-  const dot = bo.getByRole("main").locator("[data-status-dot]");
+  // Its status above the title, in Planned's colour.
+  const label = bo.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" }).getByText("Planned", { exact: true });
   const plannedColor = await bo.evaluate(() => {
     const probe = document.body.appendChild(document.createElement("span"));
-    probe.style.backgroundColor = "var(--status-planned)";
-    return getComputedStyle(probe).backgroundColor;
+    probe.style.color = "var(--status-planned)";
+    return getComputedStyle(probe).color;
   });
   expect(plannedColor).not.toBe("rgba(0, 0, 0, 0)");
-  await expect(dot).toHaveCSS("background-color", plannedColor);
+  await expect(label).toHaveCSS("color", plannedColor);
   await bo.goto("/feedback/feature-requests?status=open");
   await expect(bo.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
   await checkpoint(bo, "portal-filtered");
@@ -421,6 +421,15 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
   await portal.waitForURL(/\?sort=top$/);
   await expect(portal.getByRole("link", { name: "Load more" })).toBeVisible();
   await expect.poll(() => portal.evaluate(() => window.scrollY)).toBe(scrolled);
+  // Opened by the address (`?new`) and closed, New idea stays shut on the next page: Load more doesn't carry `new` (nor `title`).
+  await portal.goto("/feedback/feature-requests?new");
+  await expect(portal.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
+  await portal.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+  await expect(portal.getByRole("dialog")).toHaveCount(0);
+  await portal.getByRole("link", { name: "Load more" }).click();
+  await portal.waitForURL(/\/feedback\/feature-requests\?page=2$/);
+  await expect(portal.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
+  await expect(portal.getByRole("dialog")).toHaveCount(0);
   // All, with more to load and statuses mixed, isn't grouped yet: each row's status shows as its pill.
   // (#2: on page one; #1, the oldest, is on page two.)
   await api("/posts/2", { status: "planned" }, "PATCH");
@@ -450,6 +459,8 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await expect(main.getByRole("link", { name: "Dark mode" })).toBeVisible();
   const shipped = main.getByRole("region", { name: "Recently shipped" });
   await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+  // With its votes and the day it shipped.
+  await expect(shipped.getByRole("listitem").filter({ hasText: "Export to CSV" })).toContainText(/1 vote · shipped \d{1,2} [A-Z][a-z]{2,3}$/);
   await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
   // The card says they shipped: no Completed badge on each, so a title has the room to wrap by word, not mid-word.
   await expect(shipped).not.toContainText("Completed");
@@ -458,27 +469,28 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await visitor.setViewportSize({ width: 390, height: 844 });
   await checkpoint(visitor, "portal-board-recently-shipped-phone");
   await visitor.setViewportSize({ width: 1280, height: 720 });
-  // Signed out, the box takes an idea and shows the similar ones as it's typed.
-  await main.getByLabel("Title").fill("Dark theme");
-  await expect(main.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" })).toContainText("Dark mode");
+  // Signed out, New idea's box takes an idea and shows the similar ones as it's typed.
+  await visitor.getByRole("button", { name: "New idea" }).click();
+  const box = visitor.getByRole("dialog", { name: "Share an idea" });
+  await box.getByLabel("Title").fill("Dark theme");
+  await expect(box.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" })).toContainText("Dark mode");
   await checkpoint(visitor, "portal-board-share-idea");
   // The similar ideas come after the box's button, for the keyboard too: Tab from the title reaches the button first.
-  await main.getByLabel("Title").focus();
+  await box.getByLabel("Title").focus();
   await visitor.keyboard.press("Tab");
-  await expect(main.getByRole("button", { name: "Sign in to post" })).toBeFocused();
+  await expect(box.getByRole("button", { name: "Sign in to post" })).toBeFocused();
   // Signing in to post (Enter does it too) comes back to the board as it was: its sort, and the idea in the box.
   await visitor.goto("/feedback/feature-requests?sort=new");
-  await main.getByLabel("Title").fill("Dark theme");
-  await main.getByLabel("Title").press("Enter");
+  await visitor.getByRole("button", { name: "New idea" }).click();
+  await box.getByLabel("Title").fill("Dark theme");
+  await box.getByLabel("Title").press("Enter");
   await visitor.waitForURL(/\/sign-in\?next=/);
   expect(new URL(visitor.url()).searchParams.get("next")).toBe("/feedback/feature-requests?sort=new&title=Dark+theme");
-  // A title typed before the page's script ran (no input event reached it) goes along too.
-  await visitor.goto("/feedback/feature-requests");
-  await main.getByLabel("Title").evaluate((input: HTMLInputElement) => (input.value = "Typed early"));
-  await main.getByRole("button", { name: "Sign in to post" }).click();
-  await visitor.waitForURL(/\/sign-in\?next=/);
-  expect(new URL(visitor.url()).searchParams.get("next")).toBe("/feedback/feature-requests?title=Typed+early");
-  // Before the page's script runs (here, without JavaScript), "Sign in to post" still goes to sign-in, back to the board as it was.
+  // Back with the title, the box is open with it.
+  await visitor.goto("/feedback/feature-requests?sort=new&title=Dark+theme");
+  await expect(box.getByLabel("Title")).toHaveValue("Dark theme");
+  await visitor.keyboard.press("Escape");
+  // Without JavaScript (New idea can't open), the board's box is in the page: "Sign in to post" goes to sign-in, back to the board as it was.
   const noScript = await browser.newContext({ baseURL: portalUrl(slug), javaScriptEnabled: false });
   const early = await noScript.newPage();
   await early.goto("/feedback/feature-requests?sort=new");
@@ -486,8 +498,8 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await early.getByRole("main").getByRole("button", { name: "Sign in to post" }).click();
   await early.waitForURL(/\/sign-in\?/);
   expect(new URL(early.url()).searchParams.get("next")).toBe("/feedback/feature-requests?sort=new");
-  // Signing in there comes back with the title too (the "Continue" link carries where it goes).
-  await expect(early.getByRole("link", { name: "Continue with your Tuti account" })).toHaveAttribute(
+  // Signing in there comes back with the title too (the team's "Sign in with Tuti" link carries where it goes).
+  await expect(early.getByRole("link", { name: "Sign in with Tuti" })).toHaveAttribute(
     "href",
     `/continue?${new URLSearchParams({ redirect: "/feedback/feature-requests?sort=new&title=Dark+theme" })}`,
   );
@@ -545,6 +557,12 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   };
   await rowLayout();
   await checkpoint(visitor, "portal-board-rows");
+  // Under the list, how many are still to come, and a way to share one: it opens New idea's dialog.
+  await expect(main.getByText("That's all 3 ideas still to come in Feature requests.")).toBeVisible();
+  await main.getByRole("button", { name: "Share yours" }).click();
+  await expect(visitor.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
+  await visitor.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+  await expect(visitor.getByRole("dialog")).toHaveCount(0);
 
   // A tab reorders the list where it is: on a short window scrolled down to the tabs, the page doesn't jump to its top.
   await visitor.setViewportSize({ width: 1280, height: 500 });
@@ -562,8 +580,11 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
 
   // The search keeps the order and looks through every status, the shipped one too (it's no longer only in Recently shipped).
   await expect(main.getByRole("region", { name: "Recently shipped" })).toBeVisible();
-  // An idea half written in the box stays there through a search.
-  await main.getByLabel("Title").fill("Calendar in week view");
+  // An idea half written in New idea's box stays there through a search.
+  await visitor.getByRole("button", { name: "New idea" }).click();
+  const idea = visitor.getByRole("dialog", { name: "Share an idea" }).getByLabel("Title");
+  await idea.fill("Calendar in week view");
+  await visitor.keyboard.press("Escape");
   await main.getByRole("searchbox", { name: "Search ideas" }).fill("sync");
   await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
   await visitor.waitForURL(/\?sort=new&q=sync$/);
@@ -574,7 +595,9 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await expect(main.getByRole("status").filter({ hasText: "ideas match" })).toHaveText('2 ideas match "sync"');
   await expect(main.getByRole("listitem").filter({ hasText: "Sync contacts" })).toContainText("Completed");
   await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(0);
-  await expect(main.getByLabel("Title")).toHaveValue("Calendar in week view");
+  await visitor.getByRole("button", { name: "New idea" }).click();
+  await expect(idea).toHaveValue("Calendar in week view");
+  await visitor.keyboard.press("Escape");
   // The tabs keep the search.
   await tabs.getByRole("link", { name: "Trending" }).click();
   await visitor.waitForURL(/\?q=sync$/);
@@ -754,7 +777,7 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   await visitor.goto("/feedback/feature-requests?q=sync");
   const shippedRow = visitor.getByRole("main").getByRole("listitem").filter({ hasText: "Sync contacts" });
   await expect(shippedRow.getByRole("button")).toHaveCount(0);
-  await expect(shippedRow.getByText("vote", { exact: true })).toBeVisible();
+  await expect(shippedRow.getByText(/^\d+ votes?$/)).toBeAttached();
   await expect(visitor.getByRole("main").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("link", { name: /^Sign in to vote/ })).toBeVisible();
 
   // On a phone no sidebar: the boards' row is above, Recently shipped under the list, and nothing runs off the side. Light and dark.

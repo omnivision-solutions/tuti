@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDownIcon, CopyIcon, ExternalLinkIcon, FileTextIcon } from "lucide-react";
+import { ChevronDownIcon, CopyIcon, ExternalLinkIcon, FileTextIcon, Clock3Icon } from "lucide-react";
 import { toast } from "sonner";
 
 import { usePortalLook } from "@/components/portal-look";
@@ -71,8 +71,9 @@ export function ArticleUpdated({ at, label }: { at: string; label: string }) {
     return null;
   }
   return (
-    <p className="text-sm text-muted-foreground">
+    <span className="inline-flex items-center gap-1.5">
+      <Clock3Icon aria-hidden className="size-3.5" />
       Updated <time dateTime={at}>{label}</time>
-    </p>
+    </span>
   );
 }

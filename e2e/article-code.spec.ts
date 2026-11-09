@@ -216,6 +216,12 @@ test("the team writes install steps as code tabs and a config file as named code
   await expect(article.getByText("yarn add acme")).toBeVisible();
   // The config file under its name.
   await expect(article.getByRole("figure", { name: "acme.json" })).toContainText('{ "project": "acme" }');
+  // Each block's Copy copies its code alone: the named one's in its strip, the tab shown's at its corner.
+  await visitor.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await article.getByRole("figure", { name: "acme.json" }).getByRole("button", { name: "Copy code" }).click();
+  await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe('{ "project": "acme" }');
+  await article.getByRole("button", { name: "Copy code" }).first().click();
+  await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe("yarn add acme");
   await checkpoint(visitor, "portal-article-code-tabs");
 
   // In Markdown, each tab under its label.

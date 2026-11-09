@@ -26,7 +26,7 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   // While typing a similar title, the portal suggests voting on the existing post.
   const bo = await signUp(browser, portalUrl(slug), "Bo");
   await bo.goto("/feedback/feature-requests");
-  await bo.getByRole("button", { name: "Submit post" }).click();
+  await bo.getByRole("button", { name: "New idea" }).click();
   await bo.getByLabel("Title").fill(duplicate);
   const suggestions = bo.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" });
   await expect(suggestions.getByRole("link", { name: new RegExp(original) })).toBeVisible();

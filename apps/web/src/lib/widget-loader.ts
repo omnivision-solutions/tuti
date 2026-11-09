@@ -467,11 +467,13 @@ export function widgetLoader(portalTemplate: string): string {
     css(panel, {
       paddingTop: "0", paddingRight: "0", paddingBottom: "0", paddingLeft: "0",
       top: "auto", bottom: hideLauncher ? "20px" : "88px", right: onLeft ? "auto" : "20px", left: onLeft ? "20px" : "auto",
-      borderRadius: "14px", zIndex: "2147483000", width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 112px))",
+      borderRadius: "14px", zIndex: "2147483000", width: "min(400px, calc(100vw - 40px))", height: "min(600px, max(min(360px, calc(100vh - 112px)), calc(100vh - 112px - var(--portal-header-height, 0px))))",
       transformOrigin: onLeft ? "bottom left" : "bottom right"
     });
-    // The screen's height without the browser's bars, where it's known (iOS counts them in 100vh).
-    panel.style.height = "min(600px, calc(100dvh - 112px))";
+    // The screen's height without the browser's bars, where it's known (iOS counts them in 100vh). On a Tuti portal, less
+    // its header (--portal-header-height, PortalTop), so the panel never covers the header's buttons (Account, Sign in);
+    // on a short window (a phone on its side) never under 360px for that, so it stays usable, over the header then.
+    panel.style.height = "min(600px, max(min(360px, calc(100dvh - 112px)), calc(100dvh - 112px - var(--portal-header-height, 0px))))";
   }
   // Opening, the panel grows out of the launcher's corner (a sidebar slides in from its edge); closing, the
   // reverse, then it's hidden. Not for visitors who ask for less motion (as they do now), nor where browsers
