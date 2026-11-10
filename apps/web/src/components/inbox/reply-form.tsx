@@ -197,7 +197,7 @@ export function ReplyForm({
     <>
       <form
         ref={form}
-        className="inbox-composer flex flex-col gap-0 rounded-[0.6875rem] border border-input bg-card p-2.5 shadow-[0_2px_7px] shadow-black/3.5 max-lg:p-2 [&_button[type=submit]]:h-8 [&_button[type=submit]]:text-xs [&_button[aria-label='More_ways_to_send']]:h-8 [&_button[aria-label='More_ways_to_send']]:text-xs"
+        className="inbox-composer flex flex-col gap-0 rounded-xl border border-input bg-card p-2.5 shadow-[0_2px_7px] shadow-black/3.5 max-lg:p-2 [&_button[type=submit]]:h-8 [&_button[type=submit]]:text-xs [&_button[aria-label='More_ways_to_send']]:h-8 [&_button[aria-label='More_ways_to_send']]:text-xs"
         onSubmit={(event) => {
           event.preventDefault();
           send();

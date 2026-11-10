@@ -43,7 +43,7 @@ const VIEWS = {
   spam: { title: "Spam", empty: "No spam." },
 } as const;
 /** The list column's title row (the Inbox's heading, or its copy while a conversation is open). */
-const LIST_TITLE = "inbox-list-title col-start-1 row-start-1 h-18 rounded-t-[0.875rem] bg-card px-4.5 pt-5 pb-3.5 max-lg:group-data-[open=true]/inbox:hidden max-md:h-13.5 max-md:rounded-none max-md:px-4 max-md:pt-2 max-md:pb-3";
+const LIST_TITLE = "inbox-list-title col-start-1 row-start-1 h-18 rounded-t-2xl bg-card px-4.5 pt-5 pb-3.5 max-lg:group-data-[open=true]/inbox:hidden max-md:h-13.5 max-md:rounded-none max-md:px-4 max-md:pt-2 max-md:pb-3";
 
 export type View = keyof typeof VIEWS;
 
@@ -226,7 +226,7 @@ export async function InboxPanes({
       />
 
       {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
-      <div className={cn("inbox-list-body col-start-1 row-start-3 flex min-h-0 flex-col overflow-hidden rounded-b-[0.875rem] bg-card max-lg:flex-1", open !== null && "max-lg:hidden")}>
+      <div className={cn("inbox-list-body col-start-1 row-start-3 flex min-h-0 flex-col overflow-hidden rounded-b-2xl bg-card max-lg:flex-1", open !== null && "max-lg:hidden")}>
         {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
         {!supportInbox && (
           <div className="px-4.5 pt-4 pb-1">
@@ -291,7 +291,7 @@ export async function InboxPanes({
                       // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
                       // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
                       // A dense list: rows a little tighter than other lists', so twice as many fit.
-                      className={cn("inbox-row relative isolate items-start my-0.75 mx-0 rounded-[0.6875rem] border-0 px-2.5 py-3.75 first:mt-0.75 first:pt-3.75 last:mb-0.75 last:pb-3.75 data-selected:bg-secondary [&>div:first-child]:items-start [&>div:first-child]:gap-2.5 [&>div:last-child]:self-stretch", needsReply && "inbox-needs-reply [&_a]:font-[650] [&_.inbox-row-subject]:font-[650]")}
+                      className={cn("inbox-row relative isolate items-start my-0.75 mx-0 rounded-xl border-0 px-2.5 py-3.75 first:mt-0.75 first:pt-3.75 last:mb-0.75 last:pb-3.75 data-selected:bg-secondary [&>div:first-child]:items-start [&>div:first-child]:gap-2.5 [&>div:last-child]:self-stretch", needsReply && "inbox-needs-reply [&_a]:font-[650] [&_.inbox-row-subject]:font-[650]")}
                       leading={
                         <Avatar className="mt-0.5 size-7.5 text-xs">
                           {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
@@ -387,21 +387,21 @@ export async function InboxPanes({
       {stats ? (
         // Until a conversation opens (from laptop width up: on a phone the list is alone), how the Inbox is doing.
         <ConversationPane open={false}>
-          <div className="inbox-overview inbox-surface flex flex-1 flex-col px-7.5 py-6 min-w-0 min-h-0 bg-card shadow-inbox rounded-[0.875rem] max-md:rounded-xl">
+          <div className="inbox-overview inbox-surface flex flex-1 flex-col px-7.5 py-6 min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
             <div className="inbox-overview-title flex items-center justify-between gap-3 [&>h2]:font-sans [&>h2]:text-base [&>h2]:leading-[normal] [&>h2]:font-semibold [&>span]:text-xs [&>span]:leading-normal [&>span]:text-muted-foreground">
               <h2>Inbox overview</h2>
               <span>{membership.project.name}</span>
             </div>
-            <div className="inbox-all-clear m-auto max-w-104 py-15 text-center [&>h1]:mb-3.5 [&>h1]:text-[2rem] [&>h1]:font-[650] [&>h1]:tracking-[-0.03em] [&>p]:mb-6 [&>p]:text-sm [&>p]:leading-[1.65] [&>p]:text-muted-foreground">
+            <div className="inbox-all-clear m-auto max-w-104 py-15 text-center [&>h2]:mb-3.5 [&>h2]:text-[2rem] [&>h2]:font-[650] [&>h2]:tracking-[-0.03em] [&>p]:mb-6 [&>p]:text-sm [&>p]:leading-[1.65] [&>p]:text-muted-foreground">
               {none && (
-                <div className="inbox-empty-mark relative mx-auto mb-5.5 grid size-17 place-items-center rounded-[1.25rem] bg-soft text-primary [&>svg]:size-7.5 [&>span]:absolute [&>span]:-right-1.25 [&>span]:-bottom-1 [&>span]:grid [&>span]:size-5.75 [&>span]:place-items-center [&>span]:rounded-full [&>span]:bg-primary [&>span]:text-primary-foreground [&>span]:ring-4 [&>span]:ring-card [&>span>svg]:size-3.5">
+                <div className="inbox-empty-mark relative mx-auto mb-5.5 grid size-17 place-items-center rounded-4xl bg-soft text-primary [&>svg]:size-7.5 [&>span]:absolute [&>span]:-right-1.25 [&>span]:-bottom-1 [&>span]:grid [&>span]:size-5.75 [&>span]:place-items-center [&>span]:rounded-full [&>span]:bg-primary [&>span]:text-primary-foreground [&>span]:ring-4 [&>span]:ring-card [&>span>svg]:size-3.5">
                   <InboxIcon aria-hidden />
                   <span>
                     <CheckIcon aria-hidden />
                   </span>
                 </div>
               )}
-              <h1>{none ? "You’re all caught up." : "Open a conversation"}</h1>
+              <h2>{none ? "You’re all caught up." : "Open a conversation"}</h2>
               <p>
                 {none ? (
                   <>
@@ -418,7 +418,7 @@ export async function InboxPanes({
                 </Link>
               )}
             </div>
-            <div className="inbox-overview-stats grid gap-5 sm:grid-cols-3 pt-6 pb-2.5 [&>div]:rounded-none [&>div]:bg-transparent [&>div]:p-0 [&>div]:shadow-none [&>div]:ring-0 [&>a]:rounded-none [&>a]:bg-transparent [&>a]:p-0 [&>a]:shadow-none [&>a]:ring-0 [&>*>span:nth-child(2)]:order-first [&>*>span:nth-child(2)]:mb-1">
+            <div className="inbox-overview-stats grid gap-5 sm:grid-cols-3 pt-6 pb-2.5 [&>div]:rounded-none [&>div]:bg-transparent [&>div]:p-0 [&>div]:shadow-none [&>div]:ring-0 [&>a]:rounded-none [&>a]:bg-transparent [&>a]:p-0 [&>a]:shadow-none [&>a]:ring-0 [&>*>span:nth-child(2)]:order-first [&>*>span:nth-child(2)]:mb-1 [&>*>span:nth-child(2)]:text-xs">
               <StatTile
                 value={stats.waiting}
                 label="Waiting for a reply"
@@ -430,7 +430,7 @@ export async function InboxPanes({
                 label="Usual first reply"
                 detail={stats.replyMs === null ? "Not enough yet" : "Last 30 days"}
               />
-              <StatTile value={stats.newThisWeek} label="New conversations this week" />
+              <StatTile value={stats.newThisWeek} label="New conversations this week" detail="Conversations started" />
             </div>
           </div>
         </ConversationPane>

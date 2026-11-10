@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { actOn } from "@/components/inbox/list-keys";
+import { cn } from "@/lib/utils";
+import { CONVERSATION_STATUS_STYLES } from "@/lib/conversation-statuses";
 import { initial } from "@/lib/format";
 import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails, snoozeConversation, summarizeWithAi } from "@/server/inbox";
 
@@ -72,7 +74,7 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
 }
 
 /** Quiet label/value pickers in the conversation details card and sheet. */
-const TRIAGE_VALUE = "inbox-triage-value h-auto min-h-8 w-full min-w-0 justify-start border-0 bg-transparent px-1 py-0.5 text-left text-xs leading-5 whitespace-normal shadow-none [&>svg:first-child]:hidden [&[aria-label=Snooze]]:text-muted-foreground group-[.inbox-details-sheet]/details:min-h-8.75 group-[.inbox-details-sheet]/details:text-[0.875rem]";
+const TRIAGE_VALUE = "inbox-triage-value h-auto min-h-8 w-full min-w-0 justify-start border-0 bg-transparent px-1 py-0.5 text-left text-xs leading-5 whitespace-normal shadow-none [&>svg:first-child]:hidden group-[.inbox-details-sheet]/details:min-h-8.75 group-[.inbox-details-sheet]/details:text-[0.875rem]";
 
 type Teammate = { userId: string; name: string; image: string | null };
 
@@ -103,7 +105,7 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
   const self = team.find((m) => m.userId === me);
   // Assigned to someone no longer on the team: removing a member unassigns theirs, but an assignment racing that can stay.
   const former = !!assigneeId && !assignee;
-  const name = assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign";
+  const name = assignee ? `Assigned to ${assignee.name}` : former ? "Former teammate, assign conversation" : "Unassigned, assign conversation";
   const button = (
     <Button
       // Still with someone who left the team (rare): said in words, not as the icon an unassigned one has.
@@ -205,8 +207,7 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
                 <Button
                   variant={snoozedUntil ? "outline" : "ghost"}
                   size="sm"
-                  aria-label={snoozedUntil ? undefined : "Snooze"}
-                  className={TRIAGE_VALUE}
+                  className={cn(TRIAGE_VALUE, !snoozedUntil && "text-muted-foreground")}
                   disabled={pending}
                   focusableWhenDisabled
                 />
@@ -330,9 +331,9 @@ export function ConversationStatusMenu({ projectSlug, number, status, answered }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="sm" className={TRIAGE_VALUE} aria-label="Change status" disabled={pending} focusableWhenDisabled />}
+        render={<Button variant="ghost" size="sm" className={TRIAGE_VALUE} aria-label={`${status === "OPEN" ? "Needs reply" : status === "WAITING" ? "Waiting on user" : "Closed"}, change status`} disabled={pending} focusableWhenDisabled />}
       >
-        <span className="inbox-status-dot size-1.5 flex-none rounded-full bg-highlight-foreground" />
+        <span aria-hidden className={cn("inbox-status-dot size-1.5 flex-none rounded-full", CONVERSATION_STATUS_STYLES[status].dot)} />
         {status === "OPEN" ? "Needs reply" : status === "WAITING" ? "Waiting on user" : "Closed"}
         <ChevronDownIcon className="ml-auto size-3" />
       </DropdownMenuTrigger>

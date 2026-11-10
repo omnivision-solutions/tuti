@@ -44,7 +44,7 @@ export function ConversationMore({ children, label = "More actions" }: { childre
       <div
         id={id}
         hidden={!open}
-        className="inbox-more-menu absolute top-full right-0 z-40 w-56 rounded-[0.625rem] border border-border bg-popover p-1 shadow-inbox [&:not([hidden])]:flex [&:not([hidden])]:flex-col [&:not([hidden])]:gap-1 [&>button]:justify-start"
+        className="inbox-more-menu absolute top-full right-0 z-40 w-56 rounded-xl border border-border bg-popover p-1 shadow-inbox [&:not([hidden])]:flex [&:not([hidden])]:flex-col [&:not([hidden])]:gap-1 [&>button]:justify-start"
         onClick={(event) => {
           if ((event.target as Element).closest('button:not([aria-haspopup="menu"])')) {
             trigger.current?.focus();

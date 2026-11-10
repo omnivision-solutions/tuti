@@ -37,6 +37,7 @@
   --color-inbox-canvas: var(--inbox-canvas);
   --color-inbox-customer: var(--inbox-customer);
   --color-inbox-team: var(--inbox-team);
+  --color-inbox-note: var(--inbox-note);
   --shadow-inbox: var(--inbox-shadow);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -125,6 +126,7 @@
   --inbox-canvas: #f7f4ee;
   --inbox-customer: #f8f4f1;
   --inbox-team: color-mix(in srgb, var(--soft) 70%, var(--card));
+  --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--inbox-surface));
   --inbox-surface: var(--card);
   --inbox-muted: var(--muted-foreground);
   --inbox-secondary: var(--secondary);
@@ -205,6 +207,7 @@
   --inbox-canvas: var(--background);
   --inbox-customer: oklch(0.292 0.016 160);
   --inbox-team: oklch(0.325 0.052 157);
+  --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--inbox-surface));
   --inbox-surface: oklch(0.218 0.013 160.1);
   --inbox-muted: oklch(0.76 0.016 160);
   --inbox-secondary: oklch(0.257 0.017 163.3);

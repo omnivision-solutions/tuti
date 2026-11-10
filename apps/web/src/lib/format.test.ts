@@ -9,7 +9,16 @@ test.each([
   ["2026-11-08T12:00:00Z", "2026-11-10T12:00:00Z", "8 November"],
   ["2026-11-11T12:00:00Z", "2026-11-10T12:00:00Z", "11 November"],
 ])("conversation day %s, relative to %s", (date, now, label) => {
-  expect(conversationDay(new Date(date), new Date(now))).toBe(label);
+  expect(conversationDay(new Date(date), "UTC", new Date(now))).toBe(label);
+});
+
+test.each([
+  ["2026-03-08T07:30:00Z", "2026-03-09T19:00:00Z", "America/Los_Angeles", "7 March"],
+  ["2026-03-08T08:30:00Z", "2026-03-09T19:00:00Z", "America/Los_Angeles", "Yesterday · 8 March"],
+  ["2026-11-10T23:30:00Z", "2026-11-11T01:00:00Z", "America/Los_Angeles", "Today · 10 November"],
+  ["2026-11-10T23:30:00Z", "2026-11-11T01:00:00Z", "Asia/Tokyo", "Today · 11 November"],
+])("conversation days use calendar boundaries in %s / %s / %s", (date, now, zone, label) => {
+  expect(conversationDay(new Date(date), zone, new Date(now))).toBe(label);
 });
 
 const now = new Date("2026-10-18T12:00:00Z");

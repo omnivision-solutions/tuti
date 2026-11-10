@@ -36,6 +36,8 @@ export function ConversationDetails({ hidden, children }: { hidden: boolean; chi
 export function DetailsPanel({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const beside = useSyncExternalStore(subscribeWidth, wide, () => true);
+  // Reset during the breakpoint render so narrowing cannot resurrect a sheet from the previous phone view.
+  if (beside && open) setOpen(false);
   useEffect(() => {
     const show = () => setOpen(true);
     window.addEventListener(OPEN_DETAILS, show);
@@ -43,12 +45,12 @@ export function DetailsPanel({ children }: { children: ReactNode }) {
   }, []);
   return (
     <>
-      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details inbox-surface col-start-2 row-span-2 row-start-1 flex flex-col overflow-hidden group-data-[details=hidden]/thread:hidden max-[75rem]:hidden min-w-0 min-h-0 bg-card shadow-inbox rounded-[0.875rem] max-md:rounded-[0.75rem]">
+      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details inbox-surface col-start-2 row-span-2 row-start-1 flex flex-col overflow-hidden group-data-[details=hidden]/thread:hidden max-[75rem]:hidden min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
         <h2 className="px-4.5 pt-5 pb-3 font-sans text-sm leading-[normal] font-semibold">Conversation details</h2>
         <div className="inbox-details-scroll min-h-0 overflow-y-auto px-4.5 pb-4.5 [scrollbar-width:thin] group-[.inbox-details-sheet]/details:px-5">{children}</div>
       </aside>
       <Sheet open={open && !beside} onOpenChange={setOpen}>
-        <SheetContent overlayClassName="bg-(--inbox-overlay) backdrop-filter-none!" side="bottom" className="inbox-details-sheet group/details inset-x-2! top-17.5 bottom-2! h-auto gap-0 rounded-[1.125rem_1.125rem_0.75rem_0.75rem] border-0! bg-card [--card:var(--inbox-surface)] dark:[--muted-foreground:var(--inbox-muted)] dark:[--secondary:var(--inbox-secondary)] [&>[data-slot=sheet-close]]:top-5 [&>[data-slot=sheet-close]]:right-4.5 [&>[data-slot=sheet-close]]:size-7.5">
+        <SheetContent overlayClassName="bg-(--inbox-overlay) backdrop-filter-none!" side="bottom" className="inbox-details-sheet group/details inset-x-2! top-17.5 bottom-2! h-auto gap-0 rounded-t-3xl rounded-b-xl border-0! bg-card [--card:var(--inbox-surface)] dark:[--muted-foreground:var(--inbox-muted)] dark:[--secondary:var(--inbox-secondary)] [&>[data-slot=sheet-close]]:top-5 [&>[data-slot=sheet-close]]:right-4.5">
           <div className="inbox-sheet-handle mx-auto mt-2.5 h-1 w-8.5 flex-none rounded-sm bg-input" />
           <SheetHeader className="min-h-12 justify-center px-4.5 pt-2 pb-2.5">
             <SheetTitle className="font-sans text-[1.0625rem] leading-[normal] font-semibold">Conversation details</SheetTitle>

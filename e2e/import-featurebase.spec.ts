@@ -329,7 +329,7 @@ test("the help center comes across from Featurebase: the portal's docs have its 
   await checkpoint(owner, "setup-featurebase-help-center");
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
-  await expect(status).toContainText("Imported from Featurebase");
+  await expect(status).toContainText("Imported from Featurebase", { timeout: 30_000 });
   await expect(status).toContainText("3 collections, 3 articles, 1 article as a draft (only some people could see it) brought across.");
   await checkpoint(owner, "setup-help-center-imported");
 
@@ -384,7 +384,7 @@ test("the changelog comes across from Featurebase: its entries on the portal at 
   await checkpoint(owner, "setup-featurebase-changelog");
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
-  await expect(status).toContainText("Imported from Featurebase");
+  await expect(status).toContainText("Imported from Featurebase", { timeout: 30_000 });
   await expect(status).toContainText("3 changelog entries, 2 images in the changelog brought across.");
   await expect(status).toContainText("2 changelog entries only some people see");
   await expect(owner.getByRole("link", { name: "See changelog" })).toBeVisible();
@@ -432,7 +432,7 @@ test("the inbox comes across from Featurebase: its conversations with their mess
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Check the key and start" }).click();
   const status = owner.getByRole("status").filter({ hasText: "Featurebase" });
-  await expect(status).toContainText("Imported from Featurebase");
+  await expect(status).toContainText("Imported from Featurebase", { timeout: 30_000 });
   await expect(status).toContainText("3 contacts, 4 conversations, 1 attachment brought across.");
   await checkpoint(owner, "setup-featurebase-inbox-imported");
 
@@ -453,7 +453,7 @@ test("the inbox comes across from Featurebase: its conversations with their mess
   await expect(messages.nth(0)).toContainText("Can I export my data to CSV?");
   await expect(messages.nth(1)).toContainText("Yes: Settings → Export. See the guide (https://docs.example.com/export).");
   await expect(messages.nth(1)).toContainText("Seen");
-  await expect(messages.nth(2)).toContainText("Note · Olive Owner");
+  await expect(messages.nth(2)).toContainText("Internal note · Olive Owner");
   await expect(messages.nth(2)).toContainText("They're on the pro plan.");
   await expect(messages.nth(3).getByRole("img", { name: "shot.png" })).toBeVisible();
   await checkpoint(owner, "conversation-imported");

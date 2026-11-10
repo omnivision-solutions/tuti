@@ -32,12 +32,18 @@ export function formatDay(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 }
 
-/** Inbox day divider, using UTC calendar days as the other date labels do. */
-export function conversationDay(date: Date, now = new Date()): string {
-  const day = (at: Date) => Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
-  const days = (day(now) - day(date)) / 86_400_000;
+/** A calendar day in the viewer's explicit time zone, independent of the server's zone and DST. */
+export function conversationDayKey(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)!.value);
+  return Date.UTC(value("year"), value("month") - 1, value("day"));
+}
+
+/** Inbox day divider, relative to the viewer's calendar day. */
+export function conversationDay(date: Date, timeZone: string, now = new Date()): string {
+  const days = (conversationDayKey(now, timeZone) - conversationDayKey(date, timeZone)) / 86_400_000;
   const relative = days === 0 ? "Today · " : days === 1 ? "Yesterday · " : "";
-  return relative + date.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
+  return relative + date.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone });
 }
 
 /** A month, like "November 2026" (UTC, as formatDate): a post's ETA. */

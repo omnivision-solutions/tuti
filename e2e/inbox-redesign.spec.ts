@@ -5,6 +5,8 @@ import { verifyEmail } from "./mail";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 
+test.use({ timezoneId: "UTC" });
+
 test("inbox cards keep triage in details, context folded, and phone details in a sheet", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const capture = checkpoints(testInfo);
@@ -103,7 +105,8 @@ test("inbox cards keep triage in details, context folded, and phone details in a
     }
   };
   await expect(details).toBeVisible();
-  await expect(owner.locator(".inbox-day")).toHaveText(/^Today · /);
+  // A run across midnight can make the first message yesterday by the time it opens.
+  await expect(owner.locator(".inbox-day")).toHaveText(/^(Today|Yesterday) · /);
   const folded = ["Customer details", "Company", "Other conversations from this person", "Recent page visits", "Events", "Conversation attributes"];
   for (const name of folded) {
     const section = details.locator("details").filter({ has: owner.locator("summary", { hasText: name }) });
@@ -112,8 +115,8 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   }
   for (const name of ["Linked posts", "Looks related"])
     await expect(details.locator("details").filter({ has: owner.locator("summary", { hasText: name }) })).toHaveAttribute("open");
-  await expect(owner.locator(".inbox-title-row").getByRole("button", { name: "Assign", exact: true })).toHaveCount(0);
-  await details.getByRole("button", { name: "Assign", exact: true }).click();
+  await expect(owner.locator(".inbox-title-row").getByRole("button", { name: "Unassigned, assign conversation", exact: true })).toHaveCount(0);
+  await details.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
   await owner.getByRole("menuitem", { name: "Assign to me" }).click();
   await expect(details.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
   await owner.reload();
@@ -175,9 +178,9 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByRole("list", { name: "Messages" })).toContainText("Thanks, Sam!");
   await title.getByRole("button", { name: "Show details" }).click();
-  await sheet.getByRole("button", { name: "Change status" }).click();
+  await sheet.getByRole("button", { name: "Waiting on user, change status" }).click();
   await owner.getByRole("menuitem", { name: "Needs reply", exact: true }).click();
-  await expect(sheet.getByRole("button", { name: "Change status" })).toContainText("Needs reply");
+  await expect(sheet.getByRole("button", { name: "Needs reply, change status" })).toContainText("Needs reply");
   await sheet.locator("summary", { hasText: "Other conversations from this person" }).click();
   await sheet.getByRole("link", { name: "Inviting a teammate" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
@@ -210,7 +213,7 @@ test("long names and subjects fit both laptop widths with wrapping details label
     await owner.goto(`/app/${slug}/inbox/1`);
     const details = owner.getByRole("complementary", { name: "Conversation details", exact: true });
     if (width === 1440) {
-      await details.getByRole("button", { name: "Assign", exact: true }).click();
+      await details.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
       await owner.getByRole("menuitem", { name: "Assign to me" }).click();
     }
     await expect(details.getByRole("button", { name: `Assigned to ${teammate}` })).toBeVisible();
@@ -223,6 +226,12 @@ test("long names and subjects fit both laptop widths with wrapping details label
     for (const box of [title, details, details.locator("summary", { hasText: "Other conversations from this person" })]) {
       expect(await box.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
     }
+    // Capture the layout after transient assignment feedback has cleared the heading.
+    await owner.mouse.move(0, 0);
+    await owner.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    });
+    await expect(owner.locator("[data-sonner-toast]")).toHaveCount(0);
     await checkpoint(owner, `long-content-${width}`, { fullPage: false });
   }
 });

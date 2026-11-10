@@ -9,7 +9,7 @@ import { inboxHref, inInboxView, type View } from "@/components/inbox/inbox-pane
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
+import { ConversationStatusText } from "./conversation-status";
 import { cn } from "@/lib/utils";
 import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/property-formats";
 import type { PropertyValue } from "@tuti/shared/user-properties";
@@ -19,7 +19,7 @@ import { firstLine, formatDay } from "@/lib/format";
 
 /** Beside a conversation; their own page lists them all (up to 500). */
 const SHOWN = 5;
-/** Beside a conversation, the properties shown before "Details": these first, when they have them, then the others in order. */
+/** The business properties grouped under Company in the Inbox. */
 const KEY_PROPERTIES = ["company", "plan", "seats"];
 
 /** A part of what they did. `card`: on their own page, a card of its own with a heading. */
@@ -241,8 +241,7 @@ export async function PersonPanel({
       list
     );
   };
-  // Beside a conversation: who they are at a glance (their company, plan and seats, or their first properties), the rest
-  // under Details.
+  // Company keeps its business properties together; Customer details holds all the others.
   const allProperties = Object.entries(view?.properties ?? {});
   const keyProperties = KEY_PROPERTIES.flatMap((key) => allProperties.filter(([name]) => name.toLowerCase() === key));
   const keyNames = new Set(keyProperties.map(([name]) => name));
@@ -301,9 +300,7 @@ export async function PersonPanel({
             meta: (
               <>
                 #{c.number}
-                <Badge variant={c.status === "OPEN" ? "outline" : "secondary"}>
-                  {CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}
-                </Badge>
+                <ConversationStatusText status={c.status} />
               </>
             ),
           }))}
@@ -376,7 +373,7 @@ export async function PersonPanel({
                     {c.subject}
                   </Link>
                   <p className="text-muted-foreground">
-                    {CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]} · #{c.number} · {formatDay(c.lastMessageAt)}
+                    <ConversationStatusText status={c.status} /> · #{c.number} · {formatDay(c.lastMessageAt)}
                   </p>
                   <p className="max-w-full truncate text-muted-foreground">{firstLine(otherMessages.get(c.id)?.body ?? "")}</p>
                 </li>

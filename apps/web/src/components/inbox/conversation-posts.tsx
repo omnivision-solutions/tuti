@@ -193,6 +193,7 @@ export function LinkPostButton({ projectSlug, number, linked, inline = false }: 
             variant="ghost"
             size="sm"
             disabled={pending}
+            focusableWhenDisabled
             className={inline ? "inbox-link-post mt-2.5 flex h-auto min-h-6 w-fit p-0 text-xs leading-5 font-normal text-muted-foreground [&>svg]:size-3.5" : undefined}
             aria-label={inline ? "Link a post to this conversation" : undefined}
           />

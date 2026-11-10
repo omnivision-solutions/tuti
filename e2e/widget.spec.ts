@@ -8,7 +8,7 @@ import pg from "pg";
 import { checkpoints } from "./checkpoint";
 import { spendCredits } from "./credits";
 import { APP_URL, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, expectMoreView, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
+import { apiFor, createProject, expectMoreView, openPersonDetails, newPerson, png, postFeedback, signInWithPassword, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { latestEmailTo, linkIn } from "./mail";
 import { heldModelReply, modelRequests, nextModelReply, releaseModelReply } from "./model";
@@ -2038,7 +2038,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(before.frameLocator('iframe[title="Feedback"]').getByRole("link", { name: "Messages" })).toHaveCount(0);
 
   // Customize → Widget and the Inbox say so, the Inbox with the way to turn it on.
-  const off = owner.getByRole("note").filter({ hasText: "Messages in the widget is off, so the widget has no Messages tab." });
+  const off = owner.getByRole("note").filter({ hasText: "Messages in the widget is off." });
   await owner.goto(`/app/${slug}/customize/widget`);
   await expect(off).toBeVisible();
   await checkpoint(owner, "customize-widget-messages-off");
@@ -2094,7 +2094,11 @@ test("with the support inbox on, someone the page signs in messages the team fro
   // A row opens by its link (who it's with), found by its subject.
   await owner.getByRole("main").getByRole("listitem").filter({ hasText: "How do I export my data?" }).getByRole("link").click();
   await expect(owner.getByRole("img", { name: "screenshot.png" })).toBeVisible();
-  await expect(owner.getByText(/Sam from Acme \(e2e-sam-.*\) · started from the widget/)).toBeVisible();
+  const meta = owner.locator("header[data-inbox-header] > p");
+  await expect(meta).toContainText("Sam from Acme");
+  await expect(meta).toContainText("via widget");
+  await openPersonDetails(owner);
+  await expect(owner.getByRole("complementary", { name: "About them" })).toContainText(samEmail(slug));
   // The address in it is a link, opening in a new tab, without the brackets and full stop around it: what customers write isn't vouched for.
   const theirs = owner.getByRole("list", { name: "Messages" }).getByRole("link", { name: "https://example.com/help/export" });
   await expect(theirs).toHaveAttribute("href", "https://example.com/help/export");
@@ -2129,8 +2133,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await widget.getByRole("textbox", { name: "Reply" }).fill("Perfect, found it.");
   await widget.getByRole("button", { name: "Send" }).click();
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(3, { timeout: 4_000 });
-  // Open again: its status starts the conversation's meta line.
-  await expect(owner.locator('[data-slot="page-header"] > p')).toContainText("Open · #");
+  // Their reply needs the team again, reflected in the header's status pill.
+  await expect(meta.locator(".inbox-conversation-state")).toHaveText("Needs reply");
 
   // Another reply while the panel's closed: the launcher's dot, until it's seen.
   await closeWithEscape(visitor, visitor.locator("#tuti-widget"));
@@ -2584,7 +2588,7 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
   await expect(messages).toHaveCount(3);
   await expect(messages.nth(0)).toContainText("I'm not an admin.");
   await expect(messages.nth(1)).toContainText("Owners and admins send invites from the Team page.");
-  await expect(messages.nth(2)).toContainText("Note · AI");
+  await expect(messages.nth(2)).toContainText("Internal note · AI");
   await expect(messages.nth(2)).toContainText("Summary: They want to invite a colleague but aren't an admin.");
   await checkpoint(owner, "escalated-conversation");
 

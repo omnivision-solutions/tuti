@@ -209,10 +209,10 @@ the list picks none to approve at once.
   Linked posts and Looks related start open. Customer details, Company, Other conversations from this person,
   Recent page visits, Events and Conversation attributes start folded, each with an icon, count and chevron.
   Other conversations expand to a title, a muted status · number · date line and one line of the latest message.
-  Day dividers say "Today · <date>" or "Yesterday · <date>" for those UTC calendar days. The widget-off notice is
+  Day dividers group each message by its own day in the viewer’s time zone, with "Today · <date>" or "Yesterday · <date>" when applicable. The widget-off notice is
   13px muted text, and More sits at the end of the views row. Inbox layout uses component Tailwind utilities;
   its canvas, surface, bubble fills and shadow use the `inbox-*` tokens in `globals.css`.
-  Customer details keeps identity, properties, groups, posts and votes reachable; visits and events show zero until
+  Company keeps company, plan and seats together; Customer details keeps identity, other properties, groups, posts and votes reachable; visits and events show zero until
   recorded. The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes

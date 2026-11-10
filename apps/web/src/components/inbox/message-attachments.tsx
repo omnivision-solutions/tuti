@@ -32,8 +32,8 @@ export function MessageAttachments({ attachments, dropped, imported = false, car
       {files.length > 0 && (
         <ul className={cn("flex flex-col gap-1", cards && "mt-2")} aria-label="Attachments">
           {files.map((file) => (
-            <li key={file.id} className={cn("flex min-w-0 items-center gap-1.5 text-sm", cards && "grid min-w-55 grid-cols-[1.875rem_minmax(0,1fr)] gap-x-2.25 gap-y-0 rounded-[0.4375rem] bg-card/80 px-2.25 py-1.75 max-md:min-w-0")}>
-              <PaperclipIcon className={cn("size-3.5 shrink-0 text-muted-foreground", cards && "row-span-2 row-start-1 h-8 w-7.5 rounded-[0.3125rem] bg-secondary p-1.75")} aria-hidden />
+            <li key={file.id} className={cn("flex min-w-0 items-center gap-1.5 text-sm", cards && "grid min-w-55 grid-cols-[1.875rem_minmax(0,1fr)] gap-x-2.25 gap-y-0 rounded-lg bg-card/80 px-2.25 py-1.75 max-md:min-w-0")}>
+              <PaperclipIcon className={cn("size-3.5 shrink-0 text-muted-foreground", cards && "row-span-2 row-start-1 h-8 w-7.5 rounded-sm bg-secondary p-1.75")} aria-hidden />
               {file.url ? (
                 <a href={file.url} className={cn("min-w-0 truncate underline underline-offset-4", cards && "text-xs leading-5 font-[550] no-underline")} download={file.filename}>
                   {file.filename}

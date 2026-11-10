@@ -245,7 +245,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await team.end();
   await tara.close();
   await owner.reload();
-  await owner.getByRole("button", { name: "Assign", exact: true }).click();
+  await owner.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
   await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me", /Tara Teammate$/]);
   await checkpoint(owner, "conversation-assign-menu");
   await owner.getByRole("menuitem", { name: "Tara Teammate" }).click();
@@ -259,11 +259,11 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await off.query(`DELETE FROM team_member WHERE "userId" = (SELECT id FROM "user" WHERE email = $1)`, [tara.email]);
   await off.end();
   await owner.reload();
-  await owner.getByRole("button", { name: "Assigned to a former teammate" }).click();
+  await owner.getByRole("button", { name: "Former teammate, assign conversation" }).click();
   await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me", "Unassign"]);
   await owner.getByRole("menuitem", { name: "Unassign" }).click();
   await expect(owner.getByRole("region", { name: /Notifications/ }).getByText("Unassigned", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Assign", exact: true })).toBeFocused();
+  await expect(owner.getByRole("button", { name: "Unassigned, assign conversation", exact: true })).toBeFocused();
   // Then to themselves, from the keyboard.
   await owner.keyboard.press("Enter");
   await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me"]);
@@ -351,7 +351,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeVisible();
 
   // Snoozed for a few hours: out of Open, in Snoozed, till then; woken by hand.
-  await owner.getByRole("button", { name: "Snooze" }).click();
+  await owner.getByRole("button", { name: "Not snoozed" }).click();
   await owner.getByRole("menuitem", { name: "In 3 hours" }).click();
   await expect(owner.getByText(/^Snoozed till /).first()).toBeVisible();
   await owner.goto(`/app/${slug}/inbox?view=snoozed`);
@@ -371,7 +371,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.keyboard.press("Enter");
   await owner.getByRole("menuitem", { name: "Wake now" }).press("Enter");
   await expect(owner.getByText("Back in the inbox")).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Snooze", exact: true })).toBeFocused();
+  await expect(owner.getByRole("button", { name: "Not snoozed", exact: true })).toBeFocused();
   await owner.goto(`/app/${slug}/inbox?view=mine`);
   await expect(views.getByRole("link", { name: "Mine 1" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
@@ -412,7 +412,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(meta(owner)).toContainText("Closed");
   await owner.unroute("**/*");
   await expect(owner.getByRole("button", { name: "Reopen" })).toBeFocused();
-  await expect(owner.getByRole("button", { name: "Snooze" })).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Not snoozed" })).toHaveCount(0);
   await checkpoint(owner, "conversation-closed");
   await owner.keyboard.press("Enter");
   await expect(owner.getByText("Reopened")).toBeVisible();
@@ -425,7 +425,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.getByRole("button", { name: "Assigned to Olive Owner" }).click();
   await owner.getByRole("menuitem", { name: "Unassign" }).click();
   await expect(owner.getByRole("region", { name: /Notifications/ }).getByText("Unassigned", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("button", { name: "Assign", exact: true })).toBeFocused();
+  await expect(owner.getByRole("button", { name: "Unassigned, assign conversation", exact: true })).toBeFocused();
   await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
   await owner.keyboard.press("Enter");
   await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me"]);
@@ -461,6 +461,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // The other one is spam: marked from More actions, it leaves the inbox for Spam.
   await owner.goto(`/app/${slug}/inbox/2`);
   // Someone known only by their address.
+  await expect(meta(owner)).toContainText("(not verified)");
   await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("e2e-asker@example.com (not verified)");
   // Never broken mid-word ("not verifie / d"), wherever the line ends: only the address breaks anywhere.
   expect(
@@ -634,8 +635,8 @@ test("composer tools keep accessible names and tooltips, AI draft is labelled on
   }
   await owner.getByRole("button", { name: "Show details" }).click();
   const detailsSheet = owner.getByRole("dialog", { name: "Conversation details" });
-  await expect(detailsSheet.getByRole("button", { name: "Assign", exact: true })).toContainText("Unassigned");
-  await expect(detailsSheet.getByRole("button", { name: "Snooze", exact: true })).toContainText("Not snoozed");
+  await expect(detailsSheet.getByRole("button", { name: "Unassigned, assign conversation", exact: true })).toContainText("Unassigned");
+  await expect(detailsSheet.getByRole("button", { name: "Not snoozed", exact: true })).toContainText("Not snoozed");
   await owner.keyboard.press("Escape");
   // What the tooltips add, screen readers hear too: Insert article's shortcut, and why Draft with AI is off once the
   // project is out of AI credits.
@@ -672,7 +673,7 @@ test("on a phone the title keeps Close and details, and the sheet's assignment m
   for (const name of ["Close", "More actions", "Show details"]) await expect(title.getByRole("button", { name, exact: true })).toBeVisible();
   await title.getByRole("button", { name: "Show details" }).click();
   const sheet = owner.getByRole("dialog", { name: "Conversation details" });
-  await sheet.getByRole("button", { name: "Assign", exact: true }).click();
+  await sheet.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
   const menu = owner.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: longName })).toBeVisible();
   const box = (await menu.boundingBox())!;
@@ -836,7 +837,7 @@ test("the team member's own action taking the open conversation out of its view 
   await checkpoint(owner, "closed-the-next-opens", { fullPage: false });
 
   // Assigned, it's still in Needs reply: it stays open.
-  await owner.getByRole("button", { name: "Assign", exact: true }).click();
+  await owner.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
   await owner.getByRole("menuitem", { name: "Assign to me" }).click();
   await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
@@ -858,7 +859,7 @@ test("the team member's own action taking the open conversation out of its view 
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=unassigned$`));
   await row(3).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/3\\?view=unassigned$`));
-  await owner.getByRole("button", { name: "Assign", exact: true }).click();
+  await owner.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
   await owner.getByRole("menuitem", { name: "Assign to me" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=unassigned$`));
   await expect(owner.getByText("Every open conversation has someone on it.")).toBeVisible();
@@ -957,7 +958,7 @@ test("the team member's own action taking the open conversation out of its view 
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/5$`));
 
   // Kept in the view by their own action (assigned, it still waits for a reply), then closed by a teammate: it stays open.
-  await owner.getByRole("button", { name: "Assign", exact: true }).click();
+  await owner.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
   await owner.getByRole("menuitem", { name: "Assign to me" }).click();
   await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
   await api("/conversations/5", { status: "closed" }, "PATCH");
@@ -1139,7 +1140,7 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await owner.goto(`/app/${slug}/inbox`);
   await expect(tile("Waiting for a reply")).toHaveText(/^0\s*Waiting for a reply\s*Nobody's waiting$/);
   await expect(tile("Usual first reply")).toContainText("Not enough yet");
-  await expect(tile("New conversations this week")).toHaveText(/^0\s*New conversations this week$/);
+  await expect(tile("New conversations this week")).toHaveText(/^0\s*New conversations this week\s*Conversations started$/);
   await expect(pane.getByText("Nothing needs a reply. New conversations from your widget, email and API will appear here.")).toBeVisible();
   await expect(list.getByText("New conversations show up here as they come in.")).toBeHidden();
   await shots("inbox-stats-empty");
@@ -1153,7 +1154,7 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await api("/conversations/3", { spam: true }, "PATCH");
   await owner.goto(`/app/${slug}/inbox`);
   await expect(tile("Waiting for a reply")).toHaveText(/^1\s*Waiting for a reply\s*Longest \d+ minutes?$/);
-  await expect(tile("New conversations this week")).toHaveText(/^2\s*New conversations this week$/);
+  await expect(tile("New conversations this week")).toHaveText(/^2\s*New conversations this week\s*Conversations started$/);
   await expect(pane).toContainText("Open a conversation to reply here: click it, or press J.");
   // Waiting is the Needs reply view's: it opens it, from another view.
   await owner.goto(`/app/${slug}/inbox?view=closed`);
@@ -1603,7 +1604,7 @@ test("answered with Send, a conversation stays open though it's left Needs reply
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
   // Answered again, then taken: still being worked on, it stays.
   await send("Found it.");
-  await owner.getByRole("button", { name: "Assign", exact: true }).click();
+  await owner.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
   await owner.getByRole("menuitem", { name: "Assign to me" }).click();
   await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
   await api("/conversations", { email: "e2e-fourth@example.com", body: "A fourth question" });
@@ -1636,7 +1637,7 @@ test("after a Send that kept it open, Snooze and Mark as spam are done with it t
   await expect(row(4)).toBeVisible();
   await send(3, "Looking into it.");
   // Snoozed till later, it's done with for now: the next one down opens.
-  await owner.getByRole("button", { name: "Snooze", exact: true }).click();
+  await owner.getByRole("button", { name: "Not snoozed", exact: true }).click();
   await owner.getByRole("menuitem", { name: "In 3 hours" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
   await expect(row(2)).toBeFocused();
