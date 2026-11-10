@@ -87,3 +87,35 @@ test("a reader gets an article with room to read, turns on reading mode to read 
   await reader.waitForURL(/#import-a-file$/);
   await expect(page.getByRole("heading", { name: "Import a file" })).toBeInViewport();
 });
+
+test("an article with sections keeps its measure with no tree beside it: the team's links alone, and in reading mode", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/branding", { sidebarLinks: [{ label: "Status page", url: "https://status.example.com" }] }, "PATCH");
+  // Unlisted, all its collection has: no tree for readers.
+  await api("/collections", { name: "Hidden away", icon: "rocket" });
+  const content = { type: "doc", content: [paragraph(long), heading("Before you start"), paragraph(long), heading("Import a file"), paragraph(long)] };
+  const { slug: article } = await api("/articles", { title: "Import events", content, collection: "hidden-away", listing: "unlisted" });
+  await api(`/articles/${article}/publish`, {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1440, height: 900 });
+  await reader.goto(`/docs/${article}`);
+  const links = reader.getByRole("list", { name: "Links" }).first();
+  await expect(links).toBeVisible();
+  await expect(reader.getByRole("navigation", { name: "Docs", exact: true })).toBeHidden();
+  await expect(reader.getByRole("navigation", { name: "On this page" })).toBeVisible();
+  // Between the links and "On this page", about 70 characters a line (the 46rem column), not squeezed and not stretched.
+  const firstLine = reader.getByRole("article", { name: "Import events" }).getByText(long).first();
+  const width = async () => (await firstLine.boundingBox())!.width;
+  expect(await width()).toBeGreaterThan(700);
+  expect(await width()).toBeLessThan(760);
+  // Reading mode hides what's beside it; the lines don't grow.
+  await reader.getByRole("button", { name: "Reading mode" }).click();
+  await expect(links).toBeHidden();
+  expect(await width()).toBeGreaterThan(700);
+  expect(await width()).toBeLessThan(760);
+});
