@@ -26,6 +26,8 @@ cute at the expense of clarity.
 - **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
   ~11px (`rounded-xl`), pills fully round. On the public portal `--radius` is 0.625rem: controls 10px,
   cards 14px, through the same `rounded-lg` and `rounded-xl`. The portal board search variant below uses the larger corners.
+  A workspace's panes, the large surfaces that sit on the page's canvas side by side (the Inbox's list, conversation
+  and details; the composer card), are a step larger, `rounded-2xl` (~14px), so they read as panes, not as cards inside one.
 - **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`).
   Fields (`Input`, `Textarea`, `SelectTrigger`) sit on the card's colour in light (white) and on the
   page's in dark (a step below the card), with the `input` border, their placeholder lighter than a value; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
