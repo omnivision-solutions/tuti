@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { findPostsToLink, linkPostToConversation } from "@/server/inbox";
 
@@ -35,9 +36,10 @@ function useLink(projectSlug: string, number: number) {
 }
 
 /**
- * The posts a conversation is about, beside it (once there are some, or some look related): each opens the post or is
- * unlinked; "Looks related": open posts like it (postsLikeConversation), each linked in a click. Another is linked from
- * the top bar's menu (LinkPostButton).
+ * The posts a conversation is about, beside it, in a card (once there are some, or some look related): each opens the
+ * post or is unlinked; "Looks related": open posts like it (postsLikeConversation), each linked in a click. Another is
+ * linked from the top bar's menu (LinkPostButton). Kept mounted without a card, so what it does with the keyboard's focus
+ * after the last one is unlinked still happens.
  */
 export function ConversationPosts({
   projectSlug,
@@ -51,106 +53,118 @@ export function ConversationPosts({
   related: { number: number; title: string; status: PostStatus }[];
 }) {
   const { pending, link: save } = useLink(projectSlug, number);
-  // Where the keyboard's focus goes once the refreshed list has the change (kept till then; dropped if it failed): one
-  // linked from "Looks related" moves up into the linked posts, so to its Unlink; one unlinked leaves its row, so to the
-  // next Unlink (or the one before), else to its Link if it looks related, else to "More actions", where "Link a post…" is.
+  // Where the keyboard's focus goes once a link or unlink saved and the refreshed list has it: one linked from "Looks
+  // related" moves up into the linked posts, so to its Unlink; one unlinked leaves its row, so to the next Unlink (or the
+  // one before), else to its Link if it looks related, else (the card gone) to "More actions", where "Link a post…" is.
+  // Only while the focus is still where it was (on the button, or lost with its row) and in the same conversation: not
+  // after they've moved on (opened a post, another conversation, hid the details). A failed one leaves it on its button.
   const section = useRef<HTMLElement>(null);
-  const moved = useRef<{ post: number; linked: boolean; next: number | null } | null>(null);
+  const moved = useRef<{ conversation: number; post: number; linked: boolean; next: number | null; saved: boolean } | null>(null);
   useEffect(() => {
     const change = moved.current;
-    if (pending || !change || posts.some((post) => post.number === change.post) !== change.linked) {
+    if (!change || change.conversation !== number) {
+      moved.current = null;
+      return;
+    }
+    if (pending || !change.saved || posts.some((post) => post.number === change.post) !== change.linked) {
       return;
     }
     moved.current = null;
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && !section.current?.contains(focused)) {
+      return;
+    }
     const targets = change.linked ? [`[data-unlink="${change.post}"]`] : [...(change.next === null ? [] : [`[data-unlink="${change.next}"]`]), `[data-link="${change.post}"]`];
     const target = targets.map((selector) => section.current?.querySelector<HTMLButtonElement>(selector)).find(Boolean);
     (target ?? moreActions())?.focus();
-  }, [pending, posts]);
-  // The last one unlinked with nothing looking related: the card goes, so the focus goes to "More actions".
-  useEffect(
-    () => () => {
-      if (moved.current && !moved.current.linked) {
-        moreActions()?.focus();
-      }
-    },
-    [],
-  );
+  }, [pending, posts, number]);
 
   const link = (post: number, linked: boolean) => {
     const at = posts.findIndex((p) => p.number === post);
-    moved.current = { post, linked, next: linked ? null : (posts[at + 1] ?? posts[at - 1])?.number ?? null };
+    const change = { conversation: number, post, linked, next: linked ? null : ((posts[at + 1] ?? posts[at - 1])?.number ?? null), saved: false };
+    moved.current = change;
     save(post, linked, (ok) => {
-      if (!ok) {
-        moved.current = null;
+      if (moved.current === change) {
+        moved.current = ok ? { ...change, saved: true } : null;
       }
     });
   };
 
+  if (posts.length === 0 && related.length === 0) {
+    return null;
+  }
+
   return (
-    // A region named Linked posts only once there are some: before, it holds only what looks related.
-    <section ref={section} aria-label={posts.length > 0 ? "Linked posts" : undefined} className="flex flex-col gap-2">
-      {posts.length > 0 && (
-        <>
-          <h2 className="text-xs font-medium text-muted-foreground">Linked posts</h2>
-          <ul className="flex flex-col gap-2">
-            {posts.map((post) => (
-              <li key={post.number} className="flex items-start gap-2">
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
-                    {post.title}
-                  </Link>
-                  <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <PostStatusBadge status={post.status} />#{post.number}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Unlink “${post.title}”`}
-                  title="Unlink"
-                  data-unlink={post.number}
-                  disabled={pending}
-                  // Keeps the keyboard's focus while it saves; then it moves on (above).
-                  focusableWhenDisabled
-                  onClick={() => link(post.number, false)}
-                >
-                  <XIcon />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {related.length > 0 && (
-        <section aria-label="Looks related" className="flex flex-col gap-2">
-          <h3 className="text-xs font-medium text-muted-foreground">Looks related</h3>
-          <ul className="flex flex-col gap-2">
-            {related.map((post) => (
-              <li key={post.number} className="flex items-start gap-2">
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
-                    {post.title}
-                  </Link>
-                  <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <PostStatusBadge status={post.status} />#{post.number}
-                  </span>
-                </div>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  aria-label={`Link “${post.title}”`}
-                  data-link={post.number}
-                  disabled={pending}
-                  onClick={() => link(post.number, true)}
-                >
-                  Link
-                </Button>
-              </li>
-            ))}
-          </ul>
+    <Card size="sm">
+      <CardContent>
+        {/* A region named Linked posts only once there are some: before, it holds only what looks related. */}
+        <section ref={section} aria-label={posts.length > 0 ? "Linked posts" : undefined} className="flex flex-col gap-2">
+          {posts.length > 0 && (
+            <>
+              <h2 className="text-xs font-medium text-muted-foreground">Linked posts</h2>
+              <ul className="flex flex-col gap-2">
+                {posts.map((post) => (
+                  <li key={post.number} className="flex items-start gap-2">
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
+                        {post.title}
+                      </Link>
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <PostStatusBadge status={post.status} />#{post.number}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Unlink “${post.title}”`}
+                      title="Unlink"
+                      data-unlink={post.number}
+                      disabled={pending}
+                      // Keeps the keyboard's focus while it saves; then it moves on (above).
+                      focusableWhenDisabled
+                      onClick={() => link(post.number, false)}
+                    >
+                      <XIcon />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {related.length > 0 && (
+            <section aria-label="Looks related" className="flex flex-col gap-2">
+              <h3 className="text-xs font-medium text-muted-foreground">Looks related</h3>
+              <ul className="flex flex-col gap-2">
+                {related.map((post) => (
+                  <li key={post.number} className="flex items-start gap-2">
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
+                        {post.title}
+                      </Link>
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <PostStatusBadge status={post.status} />#{post.number}
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      aria-label={`Link “${post.title}”`}
+                      data-link={post.number}
+                      // Keeps the keyboard's focus while it saves (and after, if it failed).
+                      focusableWhenDisabled
+                      disabled={pending}
+                      onClick={() => link(post.number, true)}
+                    >
+                      Link
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </section>
-      )}
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -174,7 +188,9 @@ export function LinkPostButton({ projectSlug, number, linked }: { projectSlug: s
         <LinkIcon />
         Link a post…
       </DialogTrigger>
-      <DialogContent>
+      {/* Opened from "More actions", which closes as it opens: the focus goes back to that button, not to this one
+          (hidden in its closed menu). */}
+      <DialogContent finalFocus={() => moreActions() ?? true}>
         <DialogHeader>
           <DialogTitle>Link a post</DialogTitle>
           <DialogDescription>Pick the post this conversation is about. It shows on the post, beside its voters.</DialogDescription>

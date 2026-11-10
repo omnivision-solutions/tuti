@@ -256,13 +256,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               id="conversation-details"
               className="flex flex-col gap-4 *:shrink-0 @3xl:sticky @3xl:top-16 @3xl:col-start-2 @3xl:row-start-1 @3xl:max-h-[calc(100svh-5.5rem)] @3xl:self-start @3xl:overflow-y-auto lg:@3xl:top-0 lg:@3xl:max-h-[100cqh] @3xl:in-data-[details=hidden]:hidden"
             >
-              {(posts.length > 0 || related.length > 0) && (
-                <Card size="sm">
-                  <CardContent>
-                    <ConversationPosts projectSlug={slug} number={conversation.number} posts={posts} related={related} />
-                  </CardContent>
-                </Card>
-              )}
+              <ConversationPosts projectSlug={slug} number={conversation.number} posts={posts} related={related} />
               <PersonDetails name={personName}>
                 <PersonPanel
                   projectId={projectId}

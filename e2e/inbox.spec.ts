@@ -348,6 +348,13 @@ test("conversations from the API land in the inbox, where the team replies, assi
   const related = owner.getByRole("region", { name: "Looks related" });
   await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeFocused();
   await expect(related.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
+  // A Link that fails says so and keeps the keyboard's focus, to try again.
+  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await related.getByRole("button", { name: "Link “Export reports to CSV”" }).press("Enter");
+  await expect(owner.getByText("Couldn't reach Tuti. Try again.")).toBeVisible();
+  await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeEnabled();
+  await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeFocused();
+  await owner.unroute("**/*");
   await checkpoint(owner, "conversation-looks-related");
   await related.getByRole("button", { name: "Link “Export reports to CSV”" }).click();
   // Focus follows it, so a keyboard is still where it was.
@@ -510,7 +517,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await checkpoint(owner, "team-reporting-inbox");
 });
 
-test("unlinking a post moves the keyboard's focus to the next one's Unlink, and after the last to More actions, where Link a post is", async ({ browser }) => {
+test("unlinking a post moves the keyboard's focus to the next one's Unlink, and after the last to More actions, where Link a post is; not once they've moved on", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
@@ -524,6 +531,7 @@ test("unlinking a post moves the keyboard's focus to the next one's Unlink, and 
   await api("/conversations/1/posts", { post: 2 });
   await owner.goto(`/app/${slug}/inbox/1`);
   const linkedPosts = owner.getByRole("region", { name: "Linked posts" });
+  const more = owner.getByRole("button", { name: "More actions" });
   await linkedPosts.getByRole("button", { name: "Unlink “Dark mode”" }).focus();
   await owner.keyboard.press("Enter");
   await expect(owner.getByText("Unlinked #1")).toBeVisible();
@@ -533,9 +541,96 @@ test("unlinking a post moves the keyboard's focus to the next one's Unlink, and 
   await owner.keyboard.press("Enter");
   await expect(owner.getByText("Unlinked #2")).toBeVisible();
   await expect(linkedPosts).toHaveCount(0);
-  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
+  await expect(more).toBeFocused();
   await owner.keyboard.press("Enter");
-  await expect(owner.getByRole("button", { name: "Link a post…" })).toBeVisible();
+  // Link a post… closes More actions as its dialog opens: closed, or once it links, the focus is back on More actions.
+  const dialog = owner.getByRole("dialog", { name: "Link a post" });
+  await owner.getByRole("button", { name: "Link a post…" }).click();
+  await expect(dialog).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(more).toBeFocused();
+  await owner.keyboard.press("Enter");
+  await owner.getByRole("button", { name: "Link a post…" }).click();
+  await dialog.getByRole("textbox", { name: "Search posts" }).fill("dark");
+  await dialog.getByRole("button", { name: /Dark mode/ }).click();
+  await expect(owner.getByText("Linked to #1")).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await expect(more).toBeFocused();
+
+  // While an Unlink saves (its answer held here), they hide the details: the focus stays on the toggle, not moved to
+  // More actions as the card goes.
+  let release!: () => void;
+  const hold = async () => {
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await owner.route("**/*", async (route) => {
+      if (!route.request().headers()["next-action"]) {
+        return route.fallback();
+      }
+      const response = await route.fetch();
+      await held;
+      // One the page gave up on meanwhile (a refresh replacing it) is gone: nothing to answer.
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+  };
+  await hold();
+  await linkedPosts.getByRole("button", { name: "Unlink “Dark mode”" }).press("Enter");
+  await owner.getByRole("button", { name: "Hide details" }).click();
+  release();
+  await expect(owner.getByText("Unlinked #1").last()).toBeVisible();
+  await owner.unrouteAll({ behavior: "ignoreErrors" });
+  await expect(owner.getByRole("button", { name: "Show details" })).toBeFocused();
+});
+
+test("the top bar's Assign and Snooze and the reply box's tools are icons, named to screen readers and in a tooltip on hover and keyboard focus; on a phone Assign and Snooze say their words", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-asker@example.com", subject: "A question", body: "Hello there" });
+  // A published article, so Insert article is there.
+  const { slug: article } = await api("/articles", { title: "Exporting reports", body: "Reports → Export." });
+  await api(`/articles/${article}/publish`, {});
+  const tooltip = owner.locator('[data-slot="tooltip-content"]');
+  // Only an icon shows: no words, or words only screen readers get (a 1px box).
+  const wordless = (button: Locator) =>
+    button.evaluate((element) => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const box = walker.currentNode.parentElement!.getBoundingClientRect();
+        if (walker.currentNode.textContent!.trim() && box.width > 1) return false;
+      }
+      return true;
+    });
+  const icons = [
+    ["Assign", "Assign"],
+    ["Snooze", "Snooze"],
+    ["Attach files", "Attach files"],
+    ["Insert article", /^Insert article \((⌘|Ctrl) ?K\)$/],
+    ["Draft with AI", "Draft with AI"],
+    ["More ways to send", "More ways to send"],
+  ] as const;
+  for (const width of [1440, 390]) {
+    await owner.setViewportSize({ width, height: 900 });
+    await owner.goto(`/app/${slug}/inbox/1`);
+    // On a phone the reply box's tools stay icons, Assign and Snooze are in the row under the title, in words.
+    for (const [name, tip] of width === 390 ? icons.slice(2) : icons) {
+      const button = owner.getByRole("button", { name, exact: true }).first();
+      expect(await wordless(button)).toBe(true);
+      // The keyboard reaches it (Shift first, so the focus is the keyboard's): its tooltip shows.
+      await owner.keyboard.press("Shift");
+      await button.focus();
+      await expect(tooltip).toHaveText(tip);
+      await button.blur();
+      await expect(tooltip).toHaveCount(0);
+    }
+  }
+  for (const name of ["Assign", "Snooze"]) {
+    const button = owner.getByRole("button", { name, exact: true }).first();
+    await expect(button).toBeVisible();
+    expect(await wordless(button)).toBe(false);
+    await expect(button).toContainText(name);
+  }
 });
 
 test("on a phone, Assign, Snooze and Close are under the title, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }, testInfo) => {

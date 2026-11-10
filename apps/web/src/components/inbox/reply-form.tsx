@@ -12,6 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
@@ -239,36 +240,50 @@ export function ReplyForm({
           <AttachButton attach={files.attach} iconOnly />
           {!note && articles && (
             <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                disabled={pending}
-                aria-label="Insert article"
-                title={`Insert article (${shortcut})`}
-                // A click from the reply leaves the focus there, so its cursor is where the link goes.
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={openPicker}
-              >
-                <FileTextIcon />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={pending}
+                      aria-label="Insert article"
+                      // A click from the reply leaves the focus there, so its cursor is where the link goes.
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={openPicker}
+                    />
+                  }
+                >
+                  <FileTextIcon />
+                </TooltipTrigger>
+                <TooltipContent>{`Insert article (${shortcut})`}</TooltipContent>
+              </Tooltip>
               <InsertArticleDialog projectSlug={projectSlug} number={number} open={inserting} onOpenChange={setInserting} onPick={insert} finalFocus={textarea} />
             </>
           )}
           {draftWithAi !== "off" && (
-            <Button
-              type="button"
-              variant="ghost"
-              size={drafting ? "sm" : "icon-sm"}
-              disabled={drafting || pending || draftWithAi === "paused"}
-              aria-label={drafting ? undefined : "Draft with AI"}
-              title={draftWithAi === "paused" ? "This project is out of AI credits" : "Draft with AI"}
-              onClick={draft}
-            >
-              <SparklesIcon />
-              {/* Said while it works: it takes a few seconds. */}
-              {drafting && "Drafting…"}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size={drafting ? "sm" : "icon-sm"}
+                    disabled={drafting || pending || draftWithAi === "paused"}
+                    // Out of credits, still reached from the keyboard, where its tooltip says why it's off.
+                    focusableWhenDisabled
+                    aria-label={drafting ? undefined : "Draft with AI"}
+                    onClick={draft}
+                  />
+                }
+              >
+                <SparklesIcon />
+                {/* Said while it works: it takes a few seconds. */}
+                {drafting && "Drafting…"}
+              </TooltipTrigger>
+              <TooltipContent>{draftWithAi === "paused" ? "Draft with AI: this project is out of AI credits" : "Draft with AI"}</TooltipContent>
+            </Tooltip>
           )}
         </div>
         {/* Send, the one button in words, and in its menu Send and close: answered, and done with, closed with the reply (not
@@ -280,21 +295,27 @@ export function ReplyForm({
           </Button>
           {!note && (
             <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon"
-                    className="rounded-l-none border-l border-l-primary-foreground/25"
-                    aria-label="More ways to send"
-                    title="More ways to send"
-                    disabled={pending || drafting || files.uploading}
-                    focusableWhenDisabled
-                  />
-                }
-              >
-                <ChevronDownIcon />
-              </DropdownMenuTrigger>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          size="icon"
+                          className="rounded-l-none border-l border-l-primary-foreground/25"
+                          aria-label="More ways to send"
+                          disabled={pending || drafting || files.uploading}
+                          focusableWhenDisabled
+                        />
+                      }
+                    />
+                  }
+                >
+                  <ChevronDownIcon />
+                </TooltipTrigger>
+                <TooltipContent>More ways to send</TooltipContent>
+              </Tooltip>
               <DropdownMenuContent align="end" className="w-max">
                 <DropdownMenuItem onClick={() => send(true)}>Send and close</DropdownMenuItem>
               </DropdownMenuContent>
