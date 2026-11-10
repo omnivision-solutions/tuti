@@ -326,7 +326,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             <div className="inbox-composer-wrap sticky bottom-0 mt-auto -mx-1.5 bg-card pt-1.25 pb-2.5 max-lg:-mx-0.5 min-[75rem]:group-data-[details=hidden]/thread:-mx-2">
               <ReplyForm
                 recipient={personName}
-                emailed={"to" in (await replyRecipient(conversation.id))}
+                emailed={!waitsForPause && "to" in (await replyRecipient(conversation.id))}
                 projectSlug={slug}
                 number={conversation.number}
                 userId={membership.userId}
@@ -388,7 +388,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               <dd>{person.verified ? "Yes" : "No"}</dd>
             </dl>
           </DetailSection>
-          <p className="inbox-detail-foot mt-4.5 text-[0.75rem] leading-normal text-muted-foreground">
+          <p className="inbox-detail-foot mt-4.5 text-xs leading-normal text-muted-foreground">
             Started from {ORIGINS[conversation.origin]} · {timeAgo(conversation.createdAt)}
           </p>
         </DetailsPanel>

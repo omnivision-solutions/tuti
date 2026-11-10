@@ -2011,6 +2011,8 @@ test("on a server selling plans, a new project's email is capped in its first we
   await sesBounce(CLOUD_URL, projectId);
   await owner.reload();
   await expect(owner.getByText("Not emailed while your project's email is paused (Settings → Inbox and email)")).toBeVisible();
+  // The composer makes no promise that replies are emailed while they wait.
+  await expect(owner.getByText(/^Replies are emailed to/)).toHaveCount(0);
   await checkpoint(owner, "reply-waits-while-paused");
   await owner.goto(`/app/${slug}/settings/support`);
   const paused = owner.getByText("Email sending is paused because of a high bounce rate. We need to review it before sending can be enabled again.");
