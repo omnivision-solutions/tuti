@@ -237,7 +237,8 @@ export async function PersonPanel({
     ...KEY_PROPERTIES.flatMap((key) => allProperties.filter(([name]) => name.toLowerCase() === key)),
     ...allProperties.filter(([name]) => !KEY_PROPERTIES.includes(name.toLowerCase())),
   ].slice(0, KEY_SHOWN);
-  const otherProperties = allProperties.filter((entry) => !keyProperties.includes(entry));
+  const keyNames = new Set(keyProperties.map(([name]) => name));
+  const otherProperties = allProperties.filter(([name]) => !keyNames.has(name));
 
   const profile = (
     <>
