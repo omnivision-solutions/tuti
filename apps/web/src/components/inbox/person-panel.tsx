@@ -1,6 +1,8 @@
 import { type PostStatus, prisma } from "@tuti/db";
 import { historySince, visibleConversations } from "@tuti/jobs";
 import Link from "next/link";
+import { BuildingIcon, UserIcon, MessagesSquareIcon } from "lucide-react";
+import { DetailSection } from "@/components/inbox/detail-section";
 import type { ReactNode } from "react";
 
 import { inboxHref, inInboxView, type View } from "@/components/inbox/inbox-panes";
@@ -17,7 +19,6 @@ import { viewsOf } from "@/server/operations/users";
 const SHOWN = 5;
 /** Beside a conversation, the properties shown before "Details": these first, when they have them, then the others in order. */
 const KEY_PROPERTIES = ["company", "plan", "seats"];
-const KEY_SHOWN = 3;
 
 /** A part of what they did. `card`: on their own page, a card of its own with a heading. */
 function Section({ title, count, card = false, big = false, children }: { title: string; count?: number; card?: boolean; big?: boolean; children: ReactNode }) {
@@ -160,7 +161,14 @@ export async function PersonPanel({
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } }),
   ]);
   const formats = storedPropertyFormats(propertyFormats);
-  const inView = inbox ? await inInboxView(projectId, inbox.userId, inbox.view, others.map((c) => c.id)) : new Set<number>();
+  const inView = inbox
+    ? await inInboxView(
+        projectId,
+        inbox.userId,
+        inbox.view,
+        others.map((c) => c.id),
+      )
+    : new Set<number>();
   const lookalike = !userId && email ? await maybeUser(projectId, email) : null;
   const sso = user?.ssoIdentity;
   const view = sso && user ? (await viewsOf(projectId, [{ ...sso, user: { name: user.name, image: user.image } }]))[0]! : null;
@@ -233,20 +241,14 @@ export async function PersonPanel({
   // Beside a conversation: who they are at a glance (their company, plan and seats, or their first properties), the rest
   // under Details.
   const allProperties = Object.entries(view?.properties ?? {});
-  const keyProperties = [
-    ...KEY_PROPERTIES.flatMap((key) => allProperties.filter(([name]) => name.toLowerCase() === key)),
-    ...allProperties.filter(([name]) => !KEY_PROPERTIES.includes(name.toLowerCase())),
-  ].slice(0, KEY_SHOWN);
+  const keyProperties = KEY_PROPERTIES.flatMap((key) => allProperties.filter(([name]) => name.toLowerCase() === key));
   const keyNames = new Set(keyProperties.map(([name]) => name));
   const otherProperties = allProperties.filter(([name]) => !keyNames.has(name));
 
   const profile = (
     <>
       <section className="flex flex-col gap-1 empty:hidden" aria-label="Who">
-        {page && user ? (
-          // On their own page the header has their face, name, address and id.
-          null
-        ) : (
+        {page && user ? null : ( // On their own page the header has their face, name, address and id.
           <p className="font-medium break-words">{user?.name ?? person.name ?? shownEmail ?? "Unknown"}</p>
         )}
         {shownEmail && !(page && user) && (
@@ -266,7 +268,7 @@ export async function PersonPanel({
         {page && groupBadges}
       </section>
 
-      {page ? properties(allProperties, "Properties") : properties(keyProperties)}
+      {page ? properties(allProperties, "Properties") : null}
     </>
   );
   const activity = (
@@ -296,7 +298,9 @@ export async function PersonPanel({
             meta: (
               <>
                 #{c.number}
-                <Badge variant={c.status === "OPEN" ? "outline" : "secondary"}>{CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}</Badge>
+                <Badge variant={c.status === "OPEN" ? "outline" : "secondary"}>
+                  {CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}
+                </Badge>
               </>
             ),
           }))}
@@ -322,21 +326,57 @@ export async function PersonPanel({
       </div>
     </div>
   ) : (
-    <div className="flex flex-col gap-3">
-      {profile}
-      <details className="group flex flex-col">
-        <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">Details</summary>
-        <div className="mt-3 flex flex-col gap-5">
-          {(identity || groupBadges) && (
-            <div className="flex flex-col gap-1">
-              {identity}
-              {groupBadges}
-            </div>
-          )}
+    <aside aria-label="About them">
+      <DetailSection
+        title="Customer details"
+        count={
+          Number(!!(user?.name ?? person.name)) +
+          Number(!!shownEmail) +
+          Number(!!view) +
+          otherProperties.length +
+          (view?.groups.length ?? 0) +
+          postCount +
+          voteCount
+        }
+        icon={UserIcon}
+      >
+        <div className="flex flex-col gap-3">
+          {profile}
+          {identity}
+          {groupBadges}
           {properties(otherProperties, "Properties")}
-          {activity}
+          {user && (
+            <>
+              <Section title="Posts" count={postCount}>
+                <Links items={posts.map(postLink)} empty="No posts." />
+              </Section>
+              <Section title="Votes" count={voteCount}>
+                <Links items={votes.map((v) => postLink(v.post))} empty="No votes on others' posts." />
+              </Section>
+            </>
+          )}
         </div>
-      </details>
-    </div>
+      </DetailSection>
+      <DetailSection title="Company" count={keyProperties.length} icon={BuildingIcon}>
+        {keyProperties.length ? properties(keyProperties) : <p className="text-sm text-muted-foreground">No company details.</p>}
+      </DetailSection>
+      <DetailSection title="Other conversations from this person" count={otherCount} icon={MessagesSquareIcon}>
+        <Section title="Other conversations" count={otherCount}>
+          <Links
+            items={others.map((c) => ({
+              href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages) : `/app/${slug}/inbox/${c.number}`,
+              title: c.subject,
+              meta: (
+                <>
+                  <span>#{c.number}</span>
+                  <Badge variant="secondary">{CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}</Badge>
+                </>
+              ),
+            }))}
+            empty="None."
+          />
+        </Section>
+      </DetailSection>
+    </aside>
   );
 }

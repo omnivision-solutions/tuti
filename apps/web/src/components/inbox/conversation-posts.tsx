@@ -1,7 +1,7 @@
 "use client";
 
 import type { PostStatus } from "@tuti/db";
-import { LinkIcon, XIcon } from "lucide-react";
+import { LinkIcon, SparklesIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { DetailSection } from "@/components/inbox/detail-section";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { findPostsToLink, linkPostToConversation } from "@/server/inbox";
 
@@ -75,14 +75,23 @@ export function ConversationPosts({
     if (focused && focused !== document.body && focused !== change.from) {
       return;
     }
-    const targets = change.linked ? [`[data-unlink="${change.post}"]`] : [...(change.next === null ? [] : [`[data-unlink="${change.next}"]`]), `[data-link="${change.post}"]`];
+    const targets = change.linked
+      ? [`[data-unlink="${change.post}"]`]
+      : [...(change.next === null ? [] : [`[data-unlink="${change.next}"]`]), `[data-link="${change.post}"]`];
     const target = targets.map((selector) => section.current?.querySelector<HTMLButtonElement>(selector)).find(Boolean);
     (target ?? moreActions())?.focus();
   }, [pending, posts, number]);
 
   const link = (post: number, linked: boolean) => {
     const at = posts.findIndex((p) => p.number === post);
-    const change = { conversation: number, post, linked, next: linked ? null : ((posts[at + 1] ?? posts[at - 1])?.number ?? null), saved: false, from: document.activeElement };
+    const change = {
+      conversation: number,
+      post,
+      linked,
+      next: linked ? null : ((posts[at + 1] ?? posts[at - 1])?.number ?? null),
+      saved: false,
+      from: document.activeElement,
+    };
     moved.current = change;
     save(post, linked, (ok) => {
       if (moved.current === change) {
@@ -91,81 +100,71 @@ export function ConversationPosts({
     });
   };
 
-  if (posts.length === 0 && related.length === 0) {
-    return null;
-  }
-
   return (
-    <Card size="sm">
-      <CardContent>
-        {/* A region named Linked posts only once there are some: before, it holds only what looks related. */}
-        <section ref={section} aria-label={posts.length > 0 ? "Linked posts" : undefined} className="flex flex-col gap-2">
-          {posts.length > 0 && (
-            <>
-              <h2 className="text-xs font-medium text-muted-foreground">Linked posts</h2>
-              <ul className="flex flex-col gap-2">
-                {posts.map((post) => (
-                  <li key={post.number} className="flex items-start gap-2">
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
-                        {post.title}
-                      </Link>
-                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <PostStatusBadge status={post.status} />#{post.number}
-                      </span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Unlink “${post.title}”`}
-                      title="Unlink"
-                      data-unlink={post.number}
-                      disabled={pending}
-                      // Keeps the keyboard's focus while it saves; then it moves on (above).
-                      focusableWhenDisabled
-                      onClick={() => link(post.number, false)}
-                    >
-                      <XIcon />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {related.length > 0 && (
-            <section aria-label="Looks related" className="flex flex-col gap-2">
-              <h3 className="text-xs font-medium text-muted-foreground">Looks related</h3>
-              <ul className="flex flex-col gap-2">
-                {related.map((post) => (
-                  <li key={post.number} className="flex items-start gap-2">
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
-                        {post.title}
-                      </Link>
-                      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <PostStatusBadge status={post.status} />#{post.number}
-                      </span>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      aria-label={`Link “${post.title}”`}
-                      data-link={post.number}
-                      // Keeps the keyboard's focus while it saves (and after, if it failed).
-                      focusableWhenDisabled
-                      disabled={pending}
-                      onClick={() => link(post.number, true)}
-                    >
-                      Link
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+    <div className="inbox-posts">
+      {/* A region named Linked posts only once there are some: before, it holds only what looks related. */}
+      <section ref={section} aria-label={posts.length > 0 ? "Linked posts" : undefined} className="flex flex-col gap-2">
+        <DetailSection title="Linked posts" count={posts.length} icon={LinkIcon} open>
+          <ul className="flex flex-col gap-2">
+            {posts.map((post) => (
+              <li key={post.number} className="flex items-start gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
+                    {post.title}
+                  </Link>
+                  <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <PostStatusBadge status={post.status} />#{post.number}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Unlink “${post.title}”`}
+                  title="Unlink"
+                  data-unlink={post.number}
+                  disabled={pending}
+                  // Keeps the keyboard's focus while it saves; then it moves on (above).
+                  focusableWhenDisabled
+                  onClick={() => link(post.number, false)}
+                >
+                  <XIcon />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </DetailSection>
+        <section aria-label="Looks related">
+          <DetailSection title="Looks related" count={related.length} icon={SparklesIcon} open>
+            <ul className="flex flex-col gap-2">
+              {related.map((post) => (
+                <li key={post.number} className="flex items-start gap-2">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
+                      {post.title}
+                    </Link>
+                    <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <PostStatusBadge status={post.status} />#{post.number}
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    aria-label={`Link “${post.title}”`}
+                    data-link={post.number}
+                    // Keeps the keyboard's focus while it saves (and after, if it failed).
+                    focusableWhenDisabled
+                    disabled={pending}
+                    onClick={() => link(post.number, true)}
+                  >
+                    Link
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </DetailSection>
         </section>
-      </CardContent>
-    </Card>
+      </section>
+    </div>
   );
 }
 

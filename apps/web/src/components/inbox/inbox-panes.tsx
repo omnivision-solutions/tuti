@@ -1,11 +1,15 @@
+import "./inbox.css";
 import { type Prisma, prisma } from "@tuti/db";
 import { historySince, pastConversations, visibleConversations } from "@tuti/jobs";
 import { cn } from "cn";
 import Link from "next/link";
+import { InboxIcon, CheckIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { EmptyState } from "@/components/empty-state";
+import { ConversationMore } from "@/components/inbox/more-actions";
 import { ConversationDetails } from "@/components/inbox/conversation-details";
 import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
@@ -13,13 +17,11 @@ import { LoadMore } from "@/components/inbox/load-more";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
 import { StatTile } from "@/components/stat-tile";
 import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { initial, longDuration, replyTime, rowBy, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
@@ -42,7 +44,7 @@ const VIEWS = {
   spam: { title: "Spam", empty: "No spam." },
 } as const;
 /** The list column's title row (the Inbox's heading, or its copy while a conversation is open). */
-const LIST_TITLE = "inbox-list-title px-6 pt-6 lg:col-start-1 lg:row-start-1 lg:border-r lg:px-3 lg:pt-4 lg:pb-2";
+const LIST_TITLE = "inbox-list-title px-6 pt-6 lg:col-start-1 lg:row-start-1 lg:px-3 lg:pt-4 lg:pb-2";
 
 export type View = keyof typeof VIEWS;
 
@@ -171,9 +173,7 @@ export async function InboxPanes({
     Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId, history) }))),
     listed(view, projectId, userId, history, pages),
     // The list's own header, with no conversation open (one that is has its own).
-    open === null
-      ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } })
-      : null,
+    open === null ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } }) : null,
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, plan: true } }),
     open === null ? inboxStats(projectId) : null,
   ]);
@@ -189,16 +189,21 @@ export async function InboxPanes({
   const companies = await conversationCompanies(projectId, conversations);
 
   return (
-    // From laptop width up, the rest of the window under the header and any banners (-mt-6 etc.: over the page's own padding).
-    // The list a third of the width (22–25rem): rows that read in a few lines, the conversation's pane still wide enough
-    // for the person beside it at 1280 and 1440px.
-    <div
-      data-slot="pane-layout"
-      data-fills-window
-      className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:grid lg:min-h-0 lg:grid-cols-[clamp(22rem,33%,25rem)_minmax(0,1fr)] lg:grid-rows-[auto_auto_minmax(0,1fr)]"
-    >
+    // Rounded panes fill the available window under any account banners.
+    <div data-slot="pane-layout" data-fills-window data-open={open !== null} className="inbox-workspace">
+      <div className="inbox-phone-project">
+        <SidebarTrigger />
+        <span>{membership.project.name}</span>
+      </div>
       {member ? (
-        <PageHeader title="Inbox" className={LIST_TITLE} more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />} />
+        <div data-slot="page-header" className={LIST_TITLE}>
+          <div className="inbox-list-title-row">
+            <h1>Inbox</h1>
+            <ConversationMore>
+              <NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />
+            </ConversationMore>
+          </div>
+        </div>
       ) : (
         // A conversation open beside the list has the page's heading: the list keeps its title in sight (not a
         // heading), so the views under it stay where they were.
@@ -212,7 +217,7 @@ export async function InboxPanes({
         current={inboxHref(slug, view)}
         // The view the list shows: the page itself, or, with a conversation open, the one beside it.
         currentIs={open === null ? "page" : "true"}
-        className={cn("mx-6 mt-4 lg:col-start-1 lg:row-start-2 lg:mx-0 lg:mt-0 lg:border-r lg:px-3", open !== null && "max-lg:hidden")}
+        className={cn("inbox-views", open !== null && "max-lg:hidden")}
         // The three worked through most as tabs; the rest under More, which fits the list's third of the window.
         items={views.slice(0, TABS).map(tab)}
         more={{ label: "More", items: views.slice(TABS).map(tab) }}
@@ -222,7 +227,7 @@ export async function InboxPanes({
       />
 
       {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
-      <div className={cn("flex flex-col lg:col-start-1 lg:row-start-3 lg:min-h-0 lg:border-r", open !== null && "max-lg:hidden")}>
+      <div className={cn("inbox-list-body", open !== null && "max-lg:hidden")}>
         {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
         {!supportInbox && (
           <div className="px-6 pt-6 lg:px-3 lg:pt-3">
@@ -231,7 +236,17 @@ export async function InboxPanes({
         )}
         {hidden > 0 && (
           <div className="px-6 pt-6 lg:px-3 lg:pt-3">
-            <PastHistoryNotice what={view === "spam" ? "Spam conversations" : "Closed conversations"} plan={plan} projectSlug={slug} admin={isAdminRole(membership.role)} />
+            <PastHistoryNotice
+              what={view === "spam" ? "Spam conversations" : "Closed conversations"}
+              plan={plan}
+              projectSlug={slug}
+              admin={isAdminRole(membership.role)}
+            />
+          </div>
+        )}
+        {conversations.length > 0 && (
+          <div className="inbox-list-context">
+            Latest message first<span>{counts[views.indexOf(view)]} conversations</span>
           </div>
         )}
         <ListKeys
@@ -240,103 +255,112 @@ export async function InboxPanes({
           none={inboxHref(slug, view, null, pages)}
           aria-label="Conversations"
           // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
-          className="p-6 lg:relative lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-3"
+          className="inbox-list-scroll"
         >
           {conversations.length === 0 ? (
             // From laptop width up, an empty Inbox says new conversations show up here, beside the list, with its numbers.
             <EmptyState title={VIEWS[view].empty} description={<span className={cn(none && "lg:hidden")}>{whereFrom}</span>} />
           ) : (
-            <Card size="sm">
-              <CardContent>
-                <ItemList>
-                  {conversations.map((c) => {
-                    const person = conversationPerson(c);
-                    const name = person.name ?? person.email ?? "Unknown";
-                    // Their company, as the team's app says (Users' company property), when it says one.
-                    const company = companies.get(c.id);
-                    // The latest message's first line, with who wrote it when it isn't the person (an AI answer isn't their question).
-                    const message = latest.get(c.id);
-                    const text = message && rowLine(c.subject, message.body);
-                    const by = message && rowBy(message, userId);
-                    const line = text && (by ? `${by}: ${text}` : text);
-                    // Spam waits on nobody, however it came in. Not said in Needs reply, where every row does.
-                    const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
-                    // One age per row: how long they've waited for the team, or since the latest message.
-                    const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
-                    const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
-                    return (
-                      <ItemRow
-                        key={c.number}
-                        selected={c.number === open}
-                        // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
-                        // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
-                        // A dense list: rows a little tighter than other lists', so twice as many fit.
-                        className="relative isolate items-start py-2.5"
-                        leading={
-                          <Avatar className="size-8">
-                            {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
-                            <AvatarFallback>{initial(name)}</AvatarFallback>
-                          </Avatar>
-                        }
-                        title={
-                          // Named for screen readers by whom, what and which: one person's conversations told apart.
-                          // Who on one line, cut short (in full on hover, and in the conversation).
+            <div className="inbox-rows">
+              <ItemList>
+                {conversations.map((c) => {
+                  const person = conversationPerson(c);
+                  const name = person.name ?? person.email ?? "Unknown";
+                  // Their company, as the team's app says (Users' company property), when it says one.
+                  const company = companies.get(c.id);
+                  // The latest message's first line, with who wrote it when it isn't the person (an AI answer isn't their question).
+                  const message = latest.get(c.id);
+                  const text = message && rowLine(c.subject, message.body);
+                  const by = message && rowBy(message, userId);
+                  const line = text && (by ? `${by}: ${text}` : text);
+                  // Spam waits on nobody, however it came in. Not said in Needs reply, where every row does.
+                  const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
+                  // One age per row: how long they've waited for the team, or since the latest message.
+                  const since = needsReply && c.waitingSince ? c.waitingSince : c.lastMessageAt;
+                  const age = needsReply ? `Waiting ${longDuration(since)}` : `Latest message ${longDuration(since)} ago`;
+                  return (
+                    <ItemRow
+                      key={c.number}
+                      selected={c.number === open}
+                      // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
+                      // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
+                      // A dense list: rows a little tighter than other lists', so twice as many fit.
+                      className="inbox-row relative isolate items-start"
+                      leading={
+                        <Avatar className="size-8">
+                          {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
+                          <AvatarFallback>{initial(name)}</AvatarFallback>
+                        </Avatar>
+                      }
+                      title={
+                        // Named for screen readers by whom, what and which: one person's conversations told apart.
+                        // Who on one line, cut short (in full on hover, and in the conversation).
+                        <Link
+                          href={inboxHref(slug, view, c.number, pages)}
+                          scroll={false}
+                          data-row-link={c.number}
+                          aria-current={c.number === open ? "page" : undefined}
+                          aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})${c.assignee ? `, assigned to ${c.assignee.name}` : ""}`}
+                          className="block truncate after:absolute after:inset-0 hover:underline"
+                        >
+                          {/* In full on hover (over the link's cover, still inside the link); not read out again after the link's name. */}
+                          <span aria-hidden className="relative z-10" title={`${name}${company ? ` · ${company}` : ""}`}>
+                            {name}
+                            {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
+                          </span>
+                        </Link>
+                      }
+                      badges={c.sample && <SampleBadge />}
+                      meta={
+                        // One line, cut short (in full in the conversation): what it's about, then the latest message.
+                        // Snoozed, when it's back first.
+                        <span className="block truncate">
+                          {/* Waiting for the team, where the view doesn't already say so: small, so it stays one line. */}
+                          {needsReply && view !== "open" && (
+                            <Badge variant="highlight" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
+                              Needs reply
+                            </Badge>
+                          )}
+                          {view === "snoozed" && c.snoozedUntil && `Back ${timeAgo(c.snoozedUntil)} · `}
+                          <span className="inbox-row-subject text-foreground">{c.subject}</span>
+                          {line && (
+                            <span className="inbox-row-preview">
+                              <span className="sr-only"> · </span>
+                              {line}
+                            </span>
+                          )}
+                        </span>
+                      }
+                      actions={
+                        // Who has it, as their face (their name on hover, and in the row's link to the ear), and the age,
+                        // short to the eye, in words to the ear (and on hover). A link of the row's own over its link, so
+                        // the hover reaches them and a click opens it too; not a stop of its own for the keyboard.
+                        <>
                           <Link
                             href={inboxHref(slug, view, c.number, pages)}
                             scroll={false}
-                            data-row-link={c.number}
-                            aria-current={c.number === open ? "page" : undefined}
-                            aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})${c.assignee ? `, assigned to ${c.assignee.name}` : ""}`}
-                            className="block truncate after:absolute after:inset-0 hover:underline"
+                            tabIndex={-1}
+                            aria-hidden
+                            className="relative flex items-center gap-1.5"
                           >
-                            {/* In full on hover (over the link's cover, still inside the link); not read out again after the link's name. */}
-                            <span aria-hidden className="relative z-10" title={`${name}${company ? ` · ${company}` : ""}`}>
-                              {name}
-                              {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
-                            </span>
-                          </Link>
-                        }
-                        badges={c.sample && <SampleBadge />}
-                        meta={
-                          // One line, cut short (in full in the conversation): what it's about, then the latest message.
-                          // Snoozed, when it's back first.
-                          <span className="block truncate">
-                            {/* Waiting for the team, where the view doesn't already say so: small, so it stays one line. */}
-                            {needsReply && view !== "open" && (
-                              <Badge variant="highlight" className="mr-1.5 h-4 px-1.5 align-top text-xs leading-none">
-                                Needs reply
-                              </Badge>
+                            {c.assignee && (
+                              <Avatar title={c.assignee.name} data-assignee className="size-5">
+                                {c.assignee.image && <AvatarImage src={c.assignee.image} alt="" />}
+                                <AvatarFallback className="text-[0.625rem]">{initial(c.assignee.name)}</AvatarFallback>
+                              </Avatar>
                             )}
-                            {view === "snoozed" && c.snoozedUntil && `Back ${timeAgo(c.snoozedUntil)} · `}
-                            <span className="text-foreground">{c.subject}</span>
-                            {line && ` · ${line}`}
-                          </span>
-                        }
-                        actions={
-                          // Who has it, as their face (their name on hover, and in the row's link to the ear), and the age,
-                          // short to the eye, in words to the ear (and on hover). A link of the row's own over its link, so
-                          // the hover reaches them and a click opens it too; not a stop of its own for the keyboard.
-                          <>
-                            <Link href={inboxHref(slug, view, c.number, pages)} scroll={false} tabIndex={-1} aria-hidden className="relative flex items-center gap-1.5">
-                              {c.assignee && (
-                                <Avatar title={c.assignee.name} data-assignee className="size-5">
-                                  {c.assignee.image && <AvatarImage src={c.assignee.image} alt="" />}
-                                  <AvatarFallback className="text-[0.625rem]">{initial(c.assignee.name)}</AvatarFallback>
-                                </Avatar>
-                              )}
-                              <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
-                                {shortDuration(since)}
-                              </time>
-                            </Link>
-                            <span className="sr-only">{age}</span>
-                          </>
-                        }
-                      />
-                    );
-                  })}
-                </ItemList>
-              </CardContent>
-            </Card>
+                            <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
+                              {shortDuration(since)}
+                            </time>
+                          </Link>
+                          <span className="sr-only">{age}</span>
+                        </>
+                      }
+                    />
+                  );
+                })}
+              </ItemList>
+            </div>
           )}
           <LoadMore
             href={inboxHref(slug, view, open, pages + 1, messages)}
@@ -345,26 +369,51 @@ export async function InboxPanes({
             more={counts[views.indexOf(view)]! > conversations.length}
           />
         </ListKeys>
+        <div className="inbox-list-footer">
+          <InboxIcon aria-hidden />
+          All conversations stay here.
+          <span>
+            <kbd>J</kbd> <kbd>K</kbd>
+          </span>
+        </div>
       </div>
 
       {stats ? (
         // Until a conversation opens (from laptop width up: on a phone the list is alone), how the Inbox is doing.
         <ConversationPane open={false}>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <StatTile
-              value={stats.waiting}
-              label="Waiting for a reply"
-              detail={stats.oldest ? `Longest ${longDuration(stats.oldest)}` : "Nobody's waiting"}
-              href={inboxHref(slug, "open")}
-            />
-            <StatTile
-              value={stats.replyMs === null ? "Not enough yet" : replyTime(stats.replyMs).replace(/^./, (c) => c.toUpperCase())}
-              label="Usual first reply"
-              detail="Last 30 days"
-            />
-            <StatTile value={stats.newThisWeek} label="New conversations this week" />
+          <div className="inbox-overview inbox-surface">
+            <h2>Inbox overview</h2>
+            <div className="inbox-all-clear">
+              {none && (
+                <div className="inbox-empty-mark">
+                  <InboxIcon aria-hidden />
+                  <span>
+                    <CheckIcon aria-hidden />
+                  </span>
+                </div>
+              )}
+              <h1>{none ? "You’re all caught up." : "Open a conversation"}</h1>
+              <p>
+                {none
+                  ? "Nothing needs a reply. New conversations from your widget, email and API will appear here."
+                  : "Open a conversation to reply here: click it, or press J."}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <StatTile
+                value={stats.waiting}
+                label="Waiting for a reply"
+                detail={stats.oldest ? `Longest ${longDuration(stats.oldest)}` : "Nobody's waiting"}
+                href={inboxHref(slug, "open")}
+              />
+              <StatTile
+                value={stats.replyMs === null ? "Not enough yet" : replyTime(stats.replyMs).replace(/^./, (c) => c.toUpperCase())}
+                label="Usual first reply"
+                detail="Last 30 days"
+              />
+              <StatTile value={stats.newThisWeek} label="New conversations this week" />
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">{none ? whereFrom : "Open a conversation to reply here: click it, or press J."}</p>
         </ConversationPane>
       ) : (
         children
@@ -379,14 +428,7 @@ export async function InboxPanes({
  */
 export function ConversationPane({ open, detailsHidden = false, children }: { open: boolean; detailsHidden?: boolean; children: ReactNode }) {
   return (
-    <section
-      aria-label="Conversation"
-      data-inbox-conversation
-      className={cn(
-        "flex min-w-0 flex-1 flex-col gap-6 p-6 lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:min-h-0 lg:overflow-hidden lg:pb-0",
-        !open && "max-lg:hidden",
-      )}
-    >
+    <section aria-label="Conversation" data-inbox-conversation className={cn("inbox-conversation-pane", !open && "max-lg:hidden")}>
       <ConversationDetails hidden={detailsHidden}>{children}</ConversationDetails>
     </section>
   );

@@ -36,6 +36,8 @@ const kept = new Map<string, { drafts: Record<Kind, string>; files: Upload[]; un
  */
 export function ReplyForm({
   projectSlug,
+  recipient,
+  emailed = false,
   number,
   userId,
   filesLastFor,
@@ -45,6 +47,8 @@ export function ReplyForm({
   emailWaits,
 }: {
   projectSlug: string;
+  recipient?: string;
+  emailed?: boolean;
   /** Who's signed in: their drafts are theirs. */
   userId: string;
   /** How long a file attached can still be sent (ms): unsent, the server deletes it after a while. */
@@ -71,7 +75,8 @@ export function ReplyForm({
     const now = Date.now();
     const gone = files.filter((file) => now - file.startedAt >= filesLastFor).map((file) => file.name);
     const unfinished = kept.get(key)?.unfinished ?? [];
-    const again = (names: string[], why: string) => (names.length > 0 ? [`${names.join(", ")} ${why}: attach ${names.length === 1 ? "it" : "them"} again.`] : []);
+    const again = (names: string[], why: string) =>
+      names.length > 0 ? [`${names.join(", ")} ${why}: attach ${names.length === 1 ? "it" : "them"} again.`] : [];
     return {
       files: files.filter((file) => now - file.startedAt < filesLastFor),
       notice: [...again(gone, "attached too long ago to send"), ...again(unfinished, "didn't finish uploading")].join(" ") || undefined,
@@ -189,157 +194,170 @@ export function ReplyForm({
     });
 
   return (
-    <form
-      ref={form}
-      className="flex flex-col gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        send();
-      }}
-    >
-      <Tabs
-        value={kind}
-        onValueChange={(value) => {
-          setKind(value as Kind);
-          current.current = value as Kind;
-          setError(undefined);
+    <>
+      <form
+        ref={form}
+        className="inbox-composer flex flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          send();
         }}
       >
-        <TabsList>
-          <TabsTrigger value="reply">Reply</TabsTrigger>
-          <TabsTrigger value="note">Note</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      <Field data-invalid={error ? true : undefined}>
-        <Textarea
-          ref={textarea}
-          aria-label={note ? "Note" : "Reply"}
-          placeholder={note ? "Write a note only your team sees…" : "Write a reply…"}
-          value={drafts[kind]}
-          onChange={(event) => setDrafts((current) => ({ ...current, [kind]: event.target.value }))}
-          onKeyDown={(event) => {
-            // As in the docs editor, ⌘/Ctrl+K puts in a link (⌘K's search stays shut).
-            if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !note && articles && !pending) {
-              event.preventDefault();
-              openPicker();
-            }
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !pending && !drafting && !files.uploading) {
-              event.preventDefault();
-              form.current?.requestSubmit();
-            }
-          }}
-          rows={4}
-          // While it's sending, what's there is what's sent: nothing to add that the send would then clear or repeat.
-          readOnly={pending}
-          className={note ? "border-dashed bg-highlight/40" : undefined}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-        />
-        {error && <FieldError id={errorId}>{error}</FieldError>}
-      </Field>
-      <UploadList uploads={files.uploads} remove={files.remove} />
-      {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
-      {/* On a phone, the send buttons go to a row of their own (on the right) rather than past the screen's edge. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1">
-          <AttachButton attach={files.attach} iconOnly />
-          {!note && articles && (
-            <>
+        <div className="inbox-composer-top">
+          <Tabs
+            value={kind}
+            onValueChange={(value) => {
+              setKind(value as Kind);
+              current.current = value as Kind;
+              setError(undefined);
+            }}
+          >
+            <TabsList>
+              <TabsTrigger value="reply">Reply</TabsTrigger>
+              <TabsTrigger value="note">Note</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {!note && recipient && <span className="inbox-composer-to">To {recipient}</span>}
+        </div>
+        <Field data-invalid={error ? true : undefined}>
+          <Textarea
+            ref={textarea}
+            aria-label={note ? "Note" : "Reply"}
+            placeholder={note ? "Write a note only your team sees…" : "Write a reply…"}
+            value={drafts[kind]}
+            onChange={(event) => setDrafts((current) => ({ ...current, [kind]: event.target.value }))}
+            onKeyDown={(event) => {
+              // As in the docs editor, ⌘/Ctrl+K puts in a link (⌘K's search stays shut).
+              if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !note && articles && !pending) {
+                event.preventDefault();
+                openPicker();
+              }
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !pending && !drafting && !files.uploading) {
+                event.preventDefault();
+                form.current?.requestSubmit();
+              }
+            }}
+            rows={2}
+            // While it's sending, what's there is what's sent: nothing to add that the send would then clear or repeat.
+            readOnly={pending}
+            className={note ? "inbox-reply-text inbox-reply-note" : "inbox-reply-text"}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+          />
+          {error && <FieldError id={errorId}>{error}</FieldError>}
+        </Field>
+        <UploadList uploads={files.uploads} remove={files.remove} />
+        {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
+        {/* On a phone, the send buttons go to a row of their own (on the right) rather than past the screen's edge. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            <AttachButton attach={files.attach} iconOnly />
+            {!note && articles && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        disabled={pending}
+                        aria-label="Insert article"
+                        // Its shortcut to screen readers too, as the tooltip shows it.
+                        aria-describedby={shortcutId}
+                        // A click from the reply leaves the focus there, so its cursor is where the link goes.
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={openPicker}
+                      />
+                    }
+                  >
+                    <FileTextIcon />
+                    <span id={shortcutId} className="sr-only">
+                      {shortcut}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{`Insert article (${shortcut})`}</TooltipContent>
+                </Tooltip>
+                <InsertArticleDialog
+                  projectSlug={projectSlug}
+                  number={number}
+                  open={inserting}
+                  onOpenChange={setInserting}
+                  onPick={insert}
+                  finalFocus={textarea}
+                />
+              </>
+            )}
+            {draftWithAi !== "off" && (
               <Tooltip>
                 <TooltipTrigger
                   render={
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon-sm"
-                      disabled={pending}
-                      aria-label="Insert article"
-                      // Its shortcut to screen readers too, as the tooltip shows it.
-                      aria-describedby={shortcutId}
-                      // A click from the reply leaves the focus there, so its cursor is where the link goes.
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={openPicker}
+                      size={drafting ? "sm" : "icon-sm"}
+                      disabled={drafting || pending || draftWithAi === "paused"}
+                      // Out of credits, still reached from the keyboard, where its tooltip says why it's off.
+                      focusableWhenDisabled
+                      aria-label={drafting ? undefined : "Draft with AI"}
+                      // Why it's off, to screen readers too, as the tooltip shows it.
+                      aria-describedby={draftWithAi === "paused" ? pausedId : undefined}
+                      onClick={draft}
                     />
                   }
                 >
-                  <FileTextIcon />
-                  <span id={shortcutId} className="sr-only">
-                    {shortcut}
-                  </span>
+                  <SparklesIcon />
+                  {/* Said while it works: it takes a few seconds. */}
+                  {drafting && "Drafting…"}
+                  {draftWithAi === "paused" && (
+                    <span id={pausedId} className="sr-only">
+                      {PAUSED}
+                    </span>
+                  )}
                 </TooltipTrigger>
-                <TooltipContent>{`Insert article (${shortcut})`}</TooltipContent>
+                <TooltipContent>{draftWithAi === "paused" ? "Draft with AI: this project is out of AI credits" : "Draft with AI"}</TooltipContent>
               </Tooltip>
-              <InsertArticleDialog projectSlug={projectSlug} number={number} open={inserting} onOpenChange={setInserting} onPick={insert} finalFocus={textarea} />
-            </>
-          )}
-          {draftWithAi !== "off" && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size={drafting ? "sm" : "icon-sm"}
-                    disabled={drafting || pending || draftWithAi === "paused"}
-                    // Out of credits, still reached from the keyboard, where its tooltip says why it's off.
-                    focusableWhenDisabled
-                    aria-label={drafting ? undefined : "Draft with AI"}
-                    // Why it's off, to screen readers too, as the tooltip shows it.
-                    aria-describedby={draftWithAi === "paused" ? pausedId : undefined}
-                    onClick={draft}
-                  />
-                }
-              >
-                <SparklesIcon />
-                {/* Said while it works: it takes a few seconds. */}
-                {drafting && "Drafting…"}
-                {draftWithAi === "paused" && (
-                  <span id={pausedId} className="sr-only">
-                    {PAUSED}
-                  </span>
-                )}
-              </TooltipTrigger>
-              <TooltipContent>{draftWithAi === "paused" ? "Draft with AI: this project is out of AI credits" : "Draft with AI"}</TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-        {/* Send, the one button in words, and in its menu Send and close: answered, and done with, closed with the reply (not
+            )}
+          </div>
+          {/* Send, the one button in words, and in its menu Send and close: answered, and done with, closed with the reply (not
             left waiting on them). Both keep the keyboard's focus while it sends: a plain Send leaves the conversation open, with
             nothing else to take it. */}
-        <div className="ml-auto flex items-center">
-          <Button type="submit" className={note ? undefined : "rounded-r-none"} disabled={pending || drafting || files.uploading} focusableWhenDisabled>
-            {pending ? "Sending…" : note ? "Add note" : "Send"}
-          </Button>
-          {!note && (
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          type="button"
-                          size="icon"
-                          className="rounded-l-none border-l border-l-primary-foreground/25"
-                          aria-label="More ways to send"
-                          disabled={pending || drafting || files.uploading}
-                          focusableWhenDisabled
-                        />
-                      }
-                    />
-                  }
-                >
-                  <ChevronDownIcon />
-                </TooltipTrigger>
-                <TooltipContent>More ways to send</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="end" className="w-max">
-                <DropdownMenuItem onClick={() => send(true)}>Send and close</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <div className="ml-auto flex items-center">
+            <Button type="submit" className={note ? undefined : "rounded-r-none"} disabled={pending || drafting || files.uploading} focusableWhenDisabled>
+              {pending ? "Sending…" : note ? "Add note" : "Send"}
+            </Button>
+            {!note && (
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            type="button"
+                            size="icon"
+                            className="rounded-l-none border-l border-l-primary-foreground/25"
+                            aria-label="More ways to send"
+                            disabled={pending || drafting || files.uploading}
+                            focusableWhenDisabled
+                          />
+                        }
+                      />
+                    }
+                  >
+                    <ChevronDownIcon />
+                  </TooltipTrigger>
+                  <TooltipContent>More ways to send</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-max">
+                  <DropdownMenuItem onClick={() => send(true)}>Send and close</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
-      </div>
-    </form>
+      </form>
+      {emailed && !note && <p className="inbox-composer-hint">Replies are emailed to {recipient ?? "them"}.</p>}
+    </>
   );
 }

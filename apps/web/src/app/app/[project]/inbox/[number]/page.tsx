@@ -2,30 +2,41 @@ import { type EmailStatus, prisma } from "@tuti/db";
 import { aiPaused, cappedProjects, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
+import { EyeIcon, ClockIcon, ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
 import { EarlierMessages } from "@/components/inbox/load-more";
-import { DetailsToggle } from "@/components/inbox/conversation-details";
+import { DetailsToggle, DetailsPanel } from "@/components/inbox/conversation-details";
 import { ConversationPosts, LinkPostButton } from "@/components/inbox/conversation-posts";
-import { AssignMenu, CloseButton, MarkStatusButton, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
+import {
+  AssignMenu,
+  ConversationStatusMenu,
+  CloseButton,
+  MarkStatusButton,
+  SnoozeMenu,
+  SpamButton,
+  SummarizeButton,
+} from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageText } from "@/components/inbox/message-text";
-import { AboutButton, PersonDetails } from "@/components/inbox/person-details";
+import { DetailSection } from "@/components/inbox/detail-section";
+import { ConversationMore } from "@/components/inbox/more-actions";
+import { BackLink } from "@/components/back-link";
 import { PersonPanel } from "@/components/inbox/person-panel";
 import { RefreshAt } from "@/components/inbox/refresh-at";
 import { ReplyForm } from "@/components/inbox/reply-form";
 import { ScrollToEnd } from "@/components/scroll-to-end";
 import { PageHeader } from "@/components/page-header";
 import { SampleBadge } from "@/components/sample-badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
-import { Card, CardContent } from "@/components/ui/card";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
-import { timeAgo } from "@/lib/format";
+import { initial, timeAgo } from "@/lib/format";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 import { isAdminRole } from "@/lib/roles";
 import { attachmentLinks } from "@/server/attachments";
@@ -70,7 +81,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
   // Replies wait to be emailed while the project's email is paused.
   const emailPaused =
-    plansEnabled() && !!supportDomain() && !!(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
+    plansEnabled() &&
+    !!supportDomain() &&
+    !!(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
   const history = await historySince(projectId);
   const [conversation, team, said] = await Promise.all([
     prisma.conversation.findUnique({
@@ -131,12 +144,21 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   ]);
   if (!conversation) {
     // Closed before the plan's history starts: kept (for a while), and back with a plan that reaches it.
-    const past = history && (await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { activeAt: true, updatedAt: true } }));
+    const past =
+      history && (await prisma.conversation.findUnique({ where: { projectId_number: { projectId, number } }, select: { activeAt: true, updatedAt: true } }));
     if (past) {
       const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
       return (
         <InboxPanes slug={slug} view={view} open={number} pages={pages}>
-          <PastHistory slug={slug} view={view} pages={pages} number={number} days={historyDays(plan)!} admin={isAdminRole(membership.role)} upgrade={inSomePlansHistory(past)} />
+          <PastHistory
+            slug={slug}
+            view={view}
+            pages={pages}
+            number={number}
+            days={historyDays(plan)!}
+            admin={isAdminRole(membership.role)}
+            upgrade={inSomePlansHistory(past)}
+          />
         </InboxPanes>
       );
     }
@@ -146,7 +168,10 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   // Signed as the page renders: an image is shown, any other file is saved under its name.
   // Out of AI credits: the AI's buttons show, disabled (the layout says why).
   const paused = aiEnabled() && (await aiPaused(projectId));
-  const [signed, related] = await Promise.all([attachmentLinks(conversation.messages.flatMap((m) => m.attachments)), postsLikeConversation(projectId, conversation)]);
+  const [signed, related] = await Promise.all([
+    attachmentLinks(conversation.messages.flatMap((m) => m.attachments)),
+    postsLikeConversation(projectId, conversation),
+  ]);
   const links = new Map(signed.map((a) => [a.id, a]));
 
   const person = conversationPerson(conversation);
@@ -167,28 +192,6 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const personName = person.name ?? person.email ?? "Unknown";
   // Waiting is the team having replied last: replying sets it; by hand, only once their reply is the latest.
   const answered = said?.author === "TEAM";
-  // What's done with every conversation: in the top bar, and on phones under the title as well as in its menu.
-  const actions = (
-    <>
-      <AssignMenu
-        projectSlug={slug}
-        number={conversation.number}
-        assigneeId={conversation.assigneeId}
-        me={membership.userId}
-        team={team.map((m) => ({ userId: m.userId, name: m.user.name, image: m.user.image }))}
-      />
-      {!conversation.spam && conversation.status !== "CLOSED" && (
-        <SnoozeMenu
-          projectSlug={slug}
-          number={conversation.number}
-          // Till then; once it's passed, not snoozed (the wake job opens it).
-          snoozedUntil={conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null}
-        />
-      )}
-      <CloseButton projectSlug={slug} number={conversation.number} closed={conversation.status === "CLOSED"} />
-    </>
-  );
-
   // The column beside the messages, hidden or not as this browser left it (DetailsToggle).
   const detailsHidden = (await cookies()).get(DETAILS_HIDDEN_COOKIE)?.value === "1";
   const posts = conversation.posts.map((link) => link.post);
@@ -196,10 +199,23 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
       <ConversationPane open detailsHidden={detailsHidden}>
-        <PageHeader
-          back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }}
-          title={conversation.subject}
-          meta={
+        <header data-slot="page-header" className="inbox-conversation-head inbox-surface">
+          <BackLink href={inboxHref(slug, view, null, pages)}>Inbox</BackLink>
+          <div className="inbox-title-row">
+            <h1>{conversation.subject}</h1>
+            <div className="inbox-title-actions">
+              <CloseButton projectSlug={slug} number={conversation.number} closed={conversation.status === "CLOSED"} />
+              <ConversationMore>
+                <LinkPostButton projectSlug={slug} number={conversation.number} linked={posts.map((post) => post.number)} />
+                {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
+                {conversation.status === "WAITING" && <MarkStatusButton projectSlug={slug} number={conversation.number} status="open" />}
+                {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}
+                <SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} />
+              </ConversationMore>
+              <DetailsToggle hidden={detailsHidden} />
+            </div>
+          </div>
+          <p className="inbox-conversation-meta">
             <>
               {conversation.sample && <SampleBadge />}
               {online && (
@@ -213,135 +229,158 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   ·{" "}
                 </>
               )}
-              {CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]} · #{conversation.number} · {personName}
-              {person.email && person.name && ` (${person.email}${person.verified ? "" : ", not verified"})`}
-              {!person.name && person.email && !person.verified && " (not verified)"} · started from {ORIGINS[conversation.origin]}{" "}
-              {timeAgo(conversation.createdAt)}
+              <span className="inbox-conversation-state">
+                <span />
+                {conversation.status === "OPEN" ? "Needs reply" : CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]}
+              </span>{" "}
+              <span>
+                #{conversation.number} · {personName}
+              </span>
+              <span className="inbox-origin"> · via {ORIGINS[conversation.origin].replace(/^the /, "")}</span>
             </>
-          }
-          // On phones in the top bar's menu too, for when the row under the title has scrolled away.
-          actions={
-            <>
-              {actions}
-              <DetailsToggle hidden={detailsHidden} />
-            </>
-          }
-          more={
-            <>
-              <AboutButton name={personName} />
-              <LinkPostButton projectSlug={slug} number={conversation.number} linked={posts.map((post) => post.number)} />
-              {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
-              {conversation.status === "WAITING" && <MarkStatusButton projectSlug={slug} number={conversation.number} status="open" />}
-              {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}
-              <SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} />
-            </>
-          }
-        />
-
-        <div className="-mt-3 hidden flex-wrap gap-2 phonebar:flex">{actions}</div>
-        {conversation.spam && <Badge variant="outline">Spam</Badge>}
-
-        {/* The pane's height at least, so the reply box is at the bottom of the screen with few messages too. Laid out by
-            the pane's width (the list beside it takes some), not the window's. From laptop width up it's what scrolls in
-            the pane, under its meta line (-mx-6 px-6: its scrollbar at the pane's edge), and its height (100cqh) is what
-            beside the messages is held to, whatever is above it; relative, so what's placed absolutely in it (a file
-            input, labels for screen readers) stays in it, not past the page's end. */}
-        <div id="conversation" className="@container flex flex-1 flex-col lg:relative lg:-mx-6 lg:min-h-0 lg:overflow-y-auto lg:px-6 lg:pb-6 lg:[container-type:size]">
-          <div className="flex flex-1 flex-col gap-4 @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_18rem] @3xl:gap-6 @3xl:in-data-[details=hidden]:grid-cols-1">
-            {/* Beside it: the posts it's linked to (once there are some: "Link a post…" is in the top bar's menu), then the
-                person (a sheet where the pane is narrow, the posts staying in it). Held in view as the messages scroll (the page's
-                scroll on phones, the pane's beside the list), scrolling on its own when taller than the screen (so it never makes
-                the row taller). Hidden by DetailsToggle, the messages take its room. */}
-            <div
-              id="conversation-details"
-              className="flex flex-col gap-4 *:shrink-0 @3xl:sticky @3xl:top-[calc(var(--app-toolbar-height,0px)+1rem)] @3xl:col-start-2 @3xl:row-start-1 @3xl:max-h-[calc(100svh-var(--app-toolbar-height,0px)-2.5rem)] @3xl:self-start @3xl:overflow-y-auto lg:@3xl:top-0 lg:@3xl:max-h-[100cqh] @3xl:in-data-[details=hidden]:hidden"
-            >
-              <ConversationPosts projectSlug={slug} number={conversation.number} posts={posts} related={related} />
-              <PersonDetails name={personName}>
-                <PersonPanel
-                  projectId={projectId}
-                  slug={slug}
-                  // Its name as the page shows it: an emailed name only once the address is verified.
-                  person={{ ...conversation, name: person.name }}
-                  besides={conversation.number}
-                  inbox={{ view, pages, userId: membership.userId }}
-                />
-              </PersonDetails>
-            </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-4 @3xl:col-start-1 @3xl:row-start-1">
-              <EarlierMessages
-                href={inboxHref(slug, view, conversation.number, pages, messagePages + 1)}
-                first={conversation.messages[0]?.id ?? ""}
-                more={conversation._count.messages > shown}
-              />
-              <ol className="flex flex-col gap-3" aria-label="Messages">
-                {conversation.messages.map((message) => {
-                  const fromTeam = message.author !== "USER";
-                  // Someone else on the email (in Cc) shows as their address.
-                  const name =
-                    message.author === "USER"
-                      ? (message.fromAddress ?? personName)
-                      : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
-                  return (
-                    <li key={message.id} data-message={message.id} className={cn("flex", fromTeam && "justify-end", message.note && "justify-center")}>
-                      <Card size="sm" className={cn("max-w-[85%]", fromTeam && "bg-muted", message.note && "border-dashed bg-highlight/40")}>
-                        <CardContent className="flex flex-col gap-1">
-                          <p className="text-xs text-muted-foreground">
-                            {message.note && <span className="font-medium text-foreground">Note · </span>}
-                            <span className="font-medium text-foreground">{name}</span> · {timeAgo(message.createdAt)}
+          </p>
+          {conversation.spam && <Badge variant="outline">Spam</Badge>}
+        </header>
+        <div id="conversation" className="inbox-conversation-body inbox-surface">
+          <div className="inbox-messages-and-composer">
+            <EarlierMessages
+              href={inboxHref(slug, view, conversation.number, pages, messagePages + 1)}
+              first={conversation.messages[0]?.id ?? ""}
+              more={conversation._count.messages > shown}
+            />
+            <p className="inbox-day">{conversation.createdAt.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}</p>
+            <ol className="inbox-messages" aria-label="Messages">
+              {conversation.messages.map((message) => {
+                const fromTeam = message.author !== "USER";
+                // Someone else on the email (in Cc) shows as their address.
+                const name =
+                  message.author === "USER" ? (message.fromAddress ?? personName) : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
+                return (
+                  <li key={message.id} data-message={message.id} className={cn("inbox-message", fromTeam && "team", message.note && "note")}>
+                    <Avatar className="inbox-chat-avatar">
+                      <AvatarFallback>{initial(name)}</AvatarFallback>
+                    </Avatar>
+                    <div className="inbox-message-body">
+                      <div className="inbox-bubble">
+                        {message.note && (
+                          <p className="inbox-note-by">
+                            <LockKeyholeIcon aria-hidden />
+                            Internal note · {name}
                           </p>
-                          <p className="text-sm break-words whitespace-pre-wrap">
-                            <MessageText text={message.body} ugc={message.author === "USER"} />
-                          </p>
-                          <MessageAttachments attachments={message.attachments.map((a) => links.get(a.id)!)} dropped={message.attachmentsDropped} imported={!!message.importId} />
-                          {message.author === "TEAM" && !message.note && (message.seenAt || message.importId || message.emailStatus || waits) && (
-                            <p className="text-xs text-muted-foreground">
-                              {/* Imported history was never emailed: no email status for it (docs/plan.md, Switching from Featurebase). */}
-                              {message.seenAt
-                                ? "Seen"
-                                : message.importId
-                                  ? "Imported from Featurebase"
-                                  : message.emailStatus
-                                    ? EMAIL_STATUS[message.emailStatus](message.emailError)
-                                    : waits}
+                        )}
+                        <p className="text-sm break-words whitespace-pre-wrap">
+                          <MessageText text={message.body} ugc={message.author === "USER"} />
+                        </p>
+                        <MessageAttachments
+                          attachments={message.attachments.map((a) => links.get(a.id)!)}
+                          dropped={message.attachmentsDropped}
+                          imported={!!message.importId}
+                        />
+                        {message.original && (
+                          <details className="text-xs text-muted-foreground">
+                            <summary className="cursor-pointer">Show the whole email</summary>
+                            <p className="mt-1 break-words whitespace-pre-wrap">
+                              <MessageText text={message.original} ugc={message.author === "USER"} />
                             </p>
-                          )}
-                          {message.original && (
-                            <details className="text-xs text-muted-foreground">
-                              <summary className="cursor-pointer">Show the whole email</summary>
-                              <p className="mt-1 break-words whitespace-pre-wrap">
-                                <MessageText text={message.original} ugc={message.author === "USER"} />
-                              </p>
-                            </details>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </li>
-                  );
-                })}
-              </ol>
+                          </details>
+                        )}
+                      </div>
+                      <p className="inbox-message-by">
+                        {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
+                        {!message.note && `${name} · `}
+                        {timeAgo(message.createdAt)}{" "}
+                        {message.author === "TEAM" && !message.note && (message.seenAt || message.importId || message.emailStatus || waits) && (
+                          <span>
+                            {/* Imported history was never emailed: no email status for it (docs/plan.md, Switching from Featurebase). */}
+                            {message.seenAt
+                              ? "Seen"
+                              : message.importId
+                                ? "Imported from Featurebase"
+                                : message.emailStatus
+                                  ? EMAIL_STATUS[message.emailStatus](message.emailError)
+                                  : waits}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
 
-              {/* Opens at the newest message, and follows new ones. */}
-              <ScrollToEnd count={conversation._count.messages} within="conversation" />
-              {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the pane's own padding).
+            {/* Opens at the newest message, and follows new ones. */}
+            <ScrollToEnd count={conversation._count.messages} within="conversation" />
+            {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the pane's own padding).
                   Tuti's chat launcher isn't in the Inbox (AppWidget), so nothing sits over its buttons. */}
-              <div className="sticky bottom-0 -mb-6 mt-auto bg-background pt-2 pb-6">
-                <ReplyForm
-                  projectSlug={slug}
-                  number={conversation.number}
-                  userId={membership.userId}
-                  // An hour short of when the hourly cleanup may delete a file never sent.
-                  filesLastFor={(UNUSED_UPLOAD_HOURS - 1) * 60 * 60 * 1000}
-                  draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"}
-                  // "Insert article": once there's an article they can be sent (what its search finds).
-                  articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
-                  seen={conversation.messages.at(-1)?.createdAt.toISOString()}
-                  emailWaits={waits}
-                />
-              </div>
+            <div className="inbox-composer-wrap">
+              <ReplyForm
+                recipient={personName}
+                emailed={!!person.email && !!supportDomain() && !conversation.spam}
+                projectSlug={slug}
+                number={conversation.number}
+                userId={membership.userId}
+                // An hour short of when the hourly cleanup may delete a file never sent.
+                filesLastFor={(UNUSED_UPLOAD_HOURS - 1) * 60 * 60 * 1000}
+                draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"}
+                // "Insert article": once there's an article they can be sent (what its search finds).
+                articles={await anyArticleToSend(projectId, await readerToSend(projectId, conversation.userId))}
+                seen={conversation.messages.at(-1)?.createdAt.toISOString()}
+                emailWaits={waits}
+              />
             </div>
           </div>
         </div>
+        <DetailsPanel key={conversation.number}>
+          <div className="inbox-triage">
+            <span>Assignee</span>
+            <AssignMenu
+              projectSlug={slug}
+              number={conversation.number}
+              assigneeId={conversation.assigneeId}
+              me={membership.userId}
+              team={team.map((m) => ({ userId: m.userId, name: m.user.name, image: m.user.image }))}
+            />
+            <span>Status</span>
+            <ConversationStatusMenu projectSlug={slug} number={conversation.number} status={conversation.status} answered={answered} />
+            <span>{conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? "Waiting until" : "Snooze"}</span>
+            {!conversation.spam && conversation.status !== "CLOSED" ? (
+              <SnoozeMenu
+                projectSlug={slug}
+                number={conversation.number}
+                snoozedUntil={conversation.snoozedUntil && conversation.snoozedUntil > new Date() ? conversation.snoozedUntil.toISOString() : null}
+              />
+            ) : (
+              <span>Not snoozed</span>
+            )}
+          </div>
+          <ConversationPosts projectSlug={slug} number={conversation.number} posts={posts} related={related} />
+          <PersonPanel
+            projectId={projectId}
+            slug={slug}
+            person={{ ...conversation, name: person.name }}
+            besides={conversation.number}
+            inbox={{ view, pages, userId: membership.userId }}
+          />
+          <DetailSection title="Recent page visits" count={0} icon={EyeIcon}>
+            <p className="text-sm text-muted-foreground">No page visits recorded.</p>
+          </DetailSection>
+          <DetailSection title="Events" count={0} icon={ClockIcon}>
+            <p className="text-sm text-muted-foreground">No events recorded.</p>
+          </DetailSection>
+          <DetailSection title="Conversation attributes" count={3} icon={ListIcon}>
+            <dl className="grid grid-cols-[auto_1fr] gap-2 text-sm">
+              <dt>Channel</dt>
+              <dd>{ORIGINS[conversation.origin]}</dd>
+              <dt>Started</dt>
+              <dd>{conversation.createdAt.toLocaleDateString("en-GB")}</dd>
+              <dt>Email verified</dt>
+              <dd>{person.verified ? "Yes" : "No"}</dd>
+            </dl>
+          </DetailSection>
+          <p className="inbox-detail-foot">
+            Started from {ORIGINS[conversation.origin]} · {timeAgo(conversation.createdAt)}
+          </p>
+        </DetailsPanel>
       </ConversationPane>
     </InboxPanes>
   );
@@ -351,7 +390,23 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
  * A conversation with nothing done in it for longer than the plan's history (`days`): what happened to it, and how to see it
  * again. `upgrade`: it's in some plan's history (inSomePlansHistory), so an upgrade shows it; past every plan's, nothing does.
  */
-function PastHistory({ slug, view, pages, number, days, admin, upgrade }: { slug: string; view: ReturnType<typeof inboxView>; pages: number; number: number; days: number; admin: boolean; upgrade: boolean }) {
+function PastHistory({
+  slug,
+  view,
+  pages,
+  number,
+  days,
+  admin,
+  upgrade,
+}: {
+  slug: string;
+  view: ReturnType<typeof inboxView>;
+  pages: number;
+  number: number;
+  days: number;
+  admin: boolean;
+  upgrade: boolean;
+}) {
   return (
     <ConversationPane open>
       <PageHeader back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }} title={`Conversation #${number}`} />

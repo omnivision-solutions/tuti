@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MessageSquareIcon, ArrowRightIcon } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -9,12 +10,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 export function MessagesOffNotice({ projectSlug, admin }: { projectSlug: string; admin: boolean }) {
   return (
     <Alert role="note">
+      <MessageSquareIcon aria-hidden />
       <AlertDescription>
         <p>
-          Messages in the widget is off, so the widget has no Messages tab.{" "}
+          Messages in the widget is off.
           {admin && (
-            <Link href={`/app/${projectSlug}/settings/support`} className="underline underline-offset-4">
-              Turn it on
+            <Link href={`/app/${projectSlug}/settings/support`} className="inbox-messages-on">
+              Turn it on <ArrowRightIcon aria-hidden />
             </Link>
           )}
         </p>
