@@ -25,7 +25,7 @@ import { getPost, getRoadmap, listBoards, listComments, listPosts, roadmapColumn
 import { call } from "./operations/run";
 import { firstBoardPath, portalHomePath } from "./portal-home";
 import { addSampleContent } from "./sample-content";
-import { accountPosts, boardsWithCounts, postsLike, recentlyShipped, votersToEmail } from "./post-lists";
+import { accountPosts, boardStatusCounts, boardsWithCounts, postsLike, recentlyShipped, votersToEmail } from "./post-lists";
 import { postViewer, SIGNED_OUT_VIEWER, TEAM_VIEWER } from "./post-visibility";
 import { findSimilarPosts } from "./similar-posts";
 import { widgetIdeas } from "./widget";
@@ -228,6 +228,12 @@ test("Similar ideas, typing suggestions, the widget's ideas and news, Account an
   expect(titles(await ideaNews(project.id, bob.id))).toEqual(["Dark mode for the editor"]);
   expect(titles((await accountPosts(project.id, bob.id, bobViews)).votes)).toEqual([]);
   expect((await boardsWithCounts(project.id, adaViews))[0]!._count.posts).toBe(2);
+  // The board's status menu counts only what each may see: Ada her private post too; Bob and a signed-out visitor not.
+  const statusTotal = async (viewer: Parameters<typeof boardStatusCounts>[1]) =>
+    Object.values(await boardStatusCounts(open.boardId, viewer)).reduce((sum, count) => sum + (count ?? 0), 0);
+  expect(await statusTotal(adaViews)).toBe(2);
+  expect(await statusTotal(bobViews)).toBe(1);
+  expect(await statusTotal(SIGNED_OUT_VIEWER)).toBe(1);
   // Made the team's own: not in its author's Account either.
   await prisma.post.update({ where: { id: mine.id }, data: { visibility: "TEAM" } });
   expect(titles((await accountPosts(project.id, ada.id, adaViews)).posts)).toEqual([]);

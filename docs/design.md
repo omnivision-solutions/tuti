@@ -24,13 +24,18 @@ cute at the expense of clarity.
   favicon `app/icon.svg`). The current drawing is a placeholder until we have
   a proper illustration.
 - **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
-  ~11px (`rounded-xl`), pills fully round. Nothing else. On the public portal `--radius` is 0.625rem: controls 10px,
-  cards 14px, through the same `rounded-lg` and `rounded-xl`.
+  ~11px (`rounded-xl`), pills fully round. On the public portal `--radius` is 0.625rem: controls 10px,
+  cards 14px, through the same `rounded-lg` and `rounded-xl`. The portal board search variant below uses the larger corners.
 - **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`).
   Fields (`Input`, `Textarea`, `SelectTrigger`) sit on the card's colour in light (white) and on the
   page's in dark (a step below the card), with the `input` border, their placeholder lighter than a value; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
   line above its buttons, never a grey band. The primary
   button is flat: one fill, its border the same colour, a soft shadow; no bevel or edge.
+- **Portal board search:** a larger, filled field (`BoardSearch`), full width as the first step in finding an existing
+  idea: 40px high on phones (`h-10`), 44px from 640px (`sm:h-11`), with 14px portal corners (`rounded-xl`) and the
+  page's fill in light and dark (`bg-background`). Its search icon sits inside on the left. Text is 16px below 768px
+  to avoid iOS focus zoom, 15px from 768px (`text-base md:text-[0.9375rem]`). This named variant deliberately differs from
+  the standard control's height, radius and light-mode fill; it gives the board's search room to lead the list.
 - **Surfaces:** a ladder: the sidebar (a step darker than the page in light), the page (`background`, a soft
   cream), cards on it (`card`: white in light, a step lighter than the page in dark)
   with a `border` ring and a soft shadow (`Card`, `StatTile`), never a card without its edge.
@@ -276,7 +281,8 @@ the list picks none to approve at once.
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
 redesign). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed) are underline tabs (`SubNav`), as the board's sort tabs, so the
-  portal's lists read the same way. The portal roadmap's three columns, one at a time on phones, are a segmented control:
+  portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
+  count): a second row of chips or tabs would put more between the visitor and the list. The portal roadmap's three columns, one at a time on phones, are a segmented control:
   three fixed parts of one board that always fit, side by side on wider screens. A row of tabs
   never wraps (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
   into view, faded at the end that has more (`useScrollingRow`; the portal's
@@ -340,18 +346,27 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
     the pages' container (max-w-6xl; 82rem on a docs article with "On this page" beside it). On phones the header is one line (mark and name, Sign in or the account, the
     menu): the parts are in the menu. Under it the current part's row (boards, docs tabs) when it has two or more
     (none on a post's page, nor beside a board's rail). A "Powered by tuti" footer under a line.
-  - **A board**: a card with its name (34px), its line (the team's description, else "Vote for the ideas you want
-    most, or share your own."), then under a line the sort tabs with icons (Trending flame, Top trending, New clock,
-    Mine) and the search with its icon. Then the rows, open on the page and inset to the card's text: the status label
-    above the title (none for Open), a 17px title, two lines of excerpt, a byline (initial, name, when, comments), a
-    boxed vote on the right (`VoteButton shape="box"`: chevron over the count, 52×58; voted, soft green with a green
-    edge; a completed idea's a green-tinted box with a check). Under the default list "That's all N ideas still to come in <board>. Share
-    yours". The rail: **New idea** (the page's one filled button; it opens the board's form in a dialog, `NewIdea`, open
-    as the page loads with `?title=` or `?new`; signed out its title and "Sign in to post", which comes back with the
-    title; without JavaScript the old box is in the page), Boards in a card (the open one soft green), Recently shipped
-    (a check, the title, "11 votes · shipped 6 Oct"), and under a line Get updates (a bell, an RSS icon button, one line
-    for where the reader stands, the changelog by email on one row, "Read the changelog"). Phones: New idea beside the
-    title, no card, the search an icon that widens as it's used.
+  - **A board** (the visitor's job: is my idea here? then vote or post it): a card with its name (34px), its line (the team's
+    description, else "Vote for the ideas you want most, or share your own."), and at its top right **Get updates** (an
+    outline with a bell; a popover with where the reader stands, the changelog by email, "Read the changelog" and RSS).
+    Then the Portal board search variant above, first and full width: after a typing pause it replaces the current URL
+    without adding a history entry; Enter submits a new entry. Back and Forward cancel waiting typing and update the
+    box only when the URL's search changes, keeping unsent words through sort- or status-only history changes. Links
+    restore the destination's search; opening a link elsewhere leaves this page's search alone. Then under a line the
+    sort tabs with icons (Trending flame, Top trending, New clock, Mine) and at the row's end the **status menu**, a quiet
+    button saying what the list shows and how many ("Not done yet 8"; a status in its icon and colour): a menu of links
+    with counts, Not done yet (the default), each status with ideas on the board, then Every idea. Then the rows, open on
+    the page and inset to the card's text: the status label above the title (none for Open), a 17px title, two lines of
+    excerpt, a byline (initial, name, when, comments), a boxed vote on the right (`VoteButton shape="box"`: chevron over
+    the count, 52×58; voted, soft green with a green edge; a completed idea's a green-tinted box with a check). Under the
+    default list "That's all N ideas still to come in <board>. Share yours"; under a search's results "Not here? Post it".
+    The rail, nothing else competing with the list: **New idea** (the page's one filled button; it opens the board's form
+    in a dialog, `NewIdea`, open as the page loads with `?title=` or `?new`; signed out its title and "Sign in to post",
+    which comes back with the title; without JavaScript the old box is in the page; after a search that found nothing it
+    reads "Not here? Post it", and the empty list has "Post it as a new idea"), Boards in a card (the open one soft green),
+    and the latest shipped idea as one line ("Shipped 9 Nov: <title>"; the rest under Completed in the status menu).
+    Phones: New idea beside the title, no card, the status menu's count without its words, the shipped line and Get
+    updates under the list.
   - **A post**: back link, a 38px title (28px on phones), the byline, then the status pill and "Expected <month>" with a
     calendar, the body at 17px. The rail is one card: **Upvote** filled with the count after a rule (`shape="upvote"`;
     voted, "Upvoted" in soft green), Subscribe an outline with "Get an email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces, Board and Posted as

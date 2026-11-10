@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test, vi } from "vitest";
 
@@ -14,17 +15,27 @@ vi.mock("next/navigation", async (original) => ({
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }),
 }));
 
+// Get updates is a popover, its content not in the page until it opens: here it's in place, between two markers.
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }: { children: ReactNode }) => children,
+  PopoverTrigger: () => null,
+  PopoverContent: ({ children }: { children: ReactNode }) => createElement("div", null, createElement("i", { "data-get-updates": "" }), children, createElement("i", { "data-get-updates-end": "" })),
+}));
+
+/** Get updates' popover in the board's page as HTML (the first of its two copies: in the card, and under the list for phones). */
+const popoverHtml = (html: string) => html.slice(html.indexOf("data-get-updates="), html.indexOf("data-get-updates-end"));
+
 /** A board's Get updates says only what holds for the reader: what the shipped email does for them (audienceReach), or how to vote. */
 test("a board's Get updates: the email promised only to whom it reaches, confirm when that's missing, unsubscribed said, sign in for who can't vote", async () => {
   const owner = await signUp("Owner");
   const project = await createProject(owner);
   const other = await createProject(owner);
-  // Get updates' card as HTML, then with its tags taken out.
+  // Get updates as HTML, then with its tags taken out.
   const getUpdatesHtml = async () => {
     const html = renderToStaticMarkup(
       await BoardPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests" }), searchParams: Promise.resolve({}) } as never),
     );
-    return html.slice(html.indexOf('id="get-updates"'), html.indexOf("</aside>"));
+    return popoverHtml(html);
   };
   const getUpdates = async () => (await getUpdatesHtml()).replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
   const accountLink = /<a [^>]*href="[^"]*\/account"[^>]*>You&#x27;ve unsubscribed from these emails.<\/a>/;
@@ -96,7 +107,7 @@ test("a board's Get updates offers the changelog by email: the form, or where a 
     const html = renderToStaticMarkup(
       await BoardPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests" }), searchParams: Promise.resolve({}) } as never),
     );
-    return html.slice(html.indexOf('id="get-updates"'), html.indexOf("</aside>"));
+    return popoverHtml(html);
   };
 
   actAs(null);
