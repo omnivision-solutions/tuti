@@ -197,13 +197,13 @@ export function ReplyForm({
     <>
       <form
         ref={form}
-        className="inbox-composer flex flex-col gap-2"
+        className="inbox-composer flex flex-col gap-0 rounded-[0.6875rem] border border-input bg-card p-2.5 shadow-[0_2px_7px] shadow-black/3.5 max-lg:p-2 [&_button[type=submit]]:h-8 [&_button[type=submit]]:text-xs [&_button[aria-label='More_ways_to_send']]:h-8 [&_button[aria-label='More_ways_to_send']]:text-xs"
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
       >
-        <div className="inbox-composer-top">
+        <div className="inbox-composer-top flex items-center gap-3">
           <Tabs
             value={kind}
             onValueChange={(value) => {
@@ -212,15 +212,15 @@ export function ReplyForm({
               setError(undefined);
             }}
           >
-            <TabsList>
-              <TabsTrigger value="reply">Reply</TabsTrigger>
-              <TabsTrigger value="note">
+            <TabsList className="h-7">
+              <TabsTrigger value="reply" className="inline-flex items-center gap-1.25 text-xs leading-5">Reply</TabsTrigger>
+              <TabsTrigger value="note" className="inline-flex items-center gap-1.25 text-xs leading-5 [&>svg]:size-3.25">
                 <LockKeyholeIcon aria-hidden />
                 Note
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          {!note && recipient && <span className="inbox-composer-to">To {recipient}</span>}
+          {!note && recipient && <span className="inbox-composer-to truncate text-xs leading-normal text-muted-foreground">To {recipient}</span>}
         </div>
         <Field data-invalid={error ? true : undefined}>
           <Textarea
@@ -243,7 +243,7 @@ export function ReplyForm({
             rows={2}
             // While it's sending, what's there is what's sent: nothing to add that the send would then clear or repeat.
             readOnly={pending}
-            className={note ? "inbox-reply-text inbox-reply-note" : "inbox-reply-text"}
+            className={note ? "inbox-reply-text inbox-reply-note min-h-10 border-0 bg-transparent dark:bg-transparent px-1 py-0.75 text-sm shadow-none bg-highlight dark:bg-highlight" : "inbox-reply-text min-h-10 border-0 bg-transparent dark:bg-transparent px-1 py-0.75 text-sm shadow-none"}
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
           />
@@ -299,7 +299,7 @@ export function ReplyForm({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="inbox-ai-draft"
+                      className="inbox-ai-draft px-1.75 text-xs leading-5 text-muted-foreground max-[75rem]:[&>span:not(.sr-only)]:hidden"
                       disabled={drafting || pending || draftWithAi === "paused"}
                       // Out of credits, still reached from the keyboard, where its tooltip says why it's off.
                       focusableWhenDisabled
@@ -370,7 +370,7 @@ export function ReplyForm({
         </div>
       </form>
       {emailed && !note && (
-        <p className="inbox-composer-hint">
+        <p className="inbox-composer-hint leading-normal mt-1.5 flex items-center justify-center gap-1.25 text-center text-xs text-muted-foreground [&>svg]:size-3.25">
           <MailIcon aria-hidden />
           Replies are emailed to {recipient?.split(" ")[0] ?? "them"}.
         </p>

@@ -37,14 +37,14 @@ export function ConversationMore({ children, label = "More actions" }: { childre
     };
   }, [open]);
   return (
-    <div ref={ref} className="inbox-more">
+    <div ref={ref} className="inbox-more relative">
       <Button ref={trigger} variant="ghost" size="icon-sm" aria-label={label} aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
         <EllipsisIcon />
       </Button>
       <div
         id={id}
         hidden={!open}
-        className="inbox-more-menu"
+        className="inbox-more-menu absolute top-full right-0 z-40 w-56 rounded-[0.625rem] border border-border bg-popover p-1 shadow-inbox [&:not([hidden])]:flex [&:not([hidden])]:flex-col [&:not([hidden])]:gap-1 [&>button]:justify-start"
         onClick={(event) => {
           if ((event.target as Element).closest('button:not([aria-haspopup="menu"])')) {
             trigger.current?.focus();

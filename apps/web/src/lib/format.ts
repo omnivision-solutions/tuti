@@ -32,6 +32,14 @@ export function formatDay(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 }
 
+/** Inbox day divider, using UTC calendar days as the other date labels do. */
+export function conversationDay(date: Date, now = new Date()): string {
+  const day = (at: Date) => Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
+  const days = (day(now) - day(date)) / 86_400_000;
+  const relative = days === 0 ? "Today · " : days === 1 ? "Yesterday · " : "";
+  return relative + date.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
+}
+
 /** A month, like "November 2026" (UTC, as formatDate): a post's ETA. */
 export function formatMonth(date: Date): string {
   return date.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });

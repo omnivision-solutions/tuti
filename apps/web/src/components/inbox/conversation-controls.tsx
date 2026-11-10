@@ -72,7 +72,7 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
 }
 
 /** Quiet label/value pickers in the conversation details card and sheet. */
-const TRIAGE_VALUE = "inbox-triage-value";
+const TRIAGE_VALUE = "inbox-triage-value h-auto min-h-8 w-full min-w-0 justify-start border-0 bg-transparent px-1 py-0.5 text-left text-xs leading-5 whitespace-normal shadow-none [&>svg:first-child]:hidden [&[aria-label=Snooze]]:text-muted-foreground group-[.inbox-details-sheet]/details:min-h-8.75 group-[.inbox-details-sheet]/details:text-[0.875rem]";
 
 type Teammate = { userId: string; name: string; image: string | null };
 
@@ -330,9 +330,9 @@ export function ConversationStatusMenu({ projectSlug, number, status, answered }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="sm" className="inbox-triage-value" aria-label="Change status" disabled={pending} focusableWhenDisabled />}
+        render={<Button variant="ghost" size="sm" className={TRIAGE_VALUE} aria-label="Change status" disabled={pending} focusableWhenDisabled />}
       >
-        <span className="inbox-status-dot" />
+        <span className="inbox-status-dot size-1.5 flex-none rounded-full bg-highlight-foreground" />
         {status === "OPEN" ? "Needs reply" : status === "WAITING" ? "Waiting on user" : "Closed"}
         <ChevronDownIcon className="ml-auto size-3" />
       </DropdownMenuTrigger>

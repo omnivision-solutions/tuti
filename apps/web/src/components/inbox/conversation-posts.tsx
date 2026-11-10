@@ -101,7 +101,7 @@ export function ConversationPosts({
   };
 
   return (
-    <div className="inbox-posts">
+    <div className="inbox-posts [&_.inbox-detail-section]:mb-3.5 [&_summary]:text-[0.875rem] [&_.inbox-section-body]:pl-0 [&_a]:text-[0.875rem] [&_a]:font-medium">
       {/* A region named Linked posts only once there are some: before, it holds only what looks related. */}
       <section ref={section} aria-label={posts.length > 0 ? "Linked posts" : undefined} className="flex flex-col gap-2">
         <DetailSection title="Linked posts" count={posts.length} icon={LinkIcon} open>
@@ -150,7 +150,7 @@ export function ConversationPosts({
                   <Button
                     variant="ghost"
                     size="xs"
-                    className="inbox-related-link"
+                    className="inbox-related-link ml-auto self-end border-0 bg-transparent px-0 font-normal text-primary shadow-none [&>svg]:size-3.25"
                     aria-label={`Link “${post.title}”`}
                     data-link={post.number}
                     // Keeps the keyboard's focus while it saves (and after, if it failed).
@@ -193,7 +193,7 @@ export function LinkPostButton({ projectSlug, number, linked, inline = false }: 
             variant="ghost"
             size="sm"
             disabled={pending}
-            className={inline ? "inbox-link-post" : undefined}
+            className={inline ? "inbox-link-post mt-2.5 flex h-auto min-h-6 w-fit p-0 text-xs leading-5 font-normal text-muted-foreground [&>svg]:size-3.5" : undefined}
             aria-label={inline ? "Link a post to this conversation" : undefined}
           />
         }

@@ -1,4 +1,3 @@
-import "./inbox.css";
 import { type Prisma, prisma } from "@tuti/db";
 import { historySince, pastConversations, visibleConversations } from "@tuti/jobs";
 import { cn } from "cn";
@@ -44,7 +43,7 @@ const VIEWS = {
   spam: { title: "Spam", empty: "No spam." },
 } as const;
 /** The list column's title row (the Inbox's heading, or its copy while a conversation is open). */
-const LIST_TITLE = "inbox-list-title px-6 pt-6 lg:col-start-1 lg:row-start-1 lg:px-3 lg:pt-4 lg:pb-2";
+const LIST_TITLE = "inbox-list-title col-start-1 row-start-1 h-18 rounded-t-[0.875rem] bg-card px-4.5 pt-5 pb-3.5 max-lg:group-data-[open=true]/inbox:hidden max-md:h-13.5 max-md:rounded-none max-md:px-4 max-md:pt-2 max-md:pb-3";
 
 export type View = keyof typeof VIEWS;
 
@@ -189,17 +188,17 @@ export async function InboxPanes({
 
   return (
     // Rounded panes fill the available window under any account banners.
-    <div data-slot="pane-layout" data-fills-window data-open={open !== null} className="inbox-workspace">
-      <div className="inbox-phone-project">
+    <div data-slot="pane-layout" data-fills-window data-open={open !== null} className="inbox-workspace group/inbox grid flex-1 min-h-0 grid-cols-[21.875rem_minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)] gap-x-3 max-lg:flex max-lg:flex-col [--card:var(--inbox-surface)] dark:[--muted-foreground:var(--inbox-muted)] dark:[--secondary:var(--inbox-secondary)]">
+      <div className="inbox-phone-project hidden max-md:flex items-center gap-1.5 rounded-t-xl bg-card px-4 pt-2 text-xs text-muted-foreground group-data-[open=true]/inbox:hidden">
         <SidebarTrigger />
         <span>{membership.project.name}</span>
       </div>
-      <div data-slot="page-header" className={LIST_TITLE}>
-        <div className="inbox-list-title-row">
+      <div data-slot="page-header" data-inbox-header className={LIST_TITLE}>
+        <div className="inbox-list-title-row flex items-center justify-between [&_h1]:text-[2rem] [&_h1]:leading-[1.2] [&_h1]:font-[650] [&_h1]:tracking-[-0.03em] max-md:[&_h1]:text-[1.75rem]">
           {open === null ? (
             <h1>Inbox</h1>
           ) : (
-            <p aria-hidden className="font-heading inbox-list-heading">
+            <p aria-hidden className="font-heading inbox-list-heading text-[2rem] leading-[1.2] font-[650] tracking-[-0.03em]">
               Inbox
             </p>
           )}
@@ -217,7 +216,7 @@ export async function InboxPanes({
         current={inboxHref(slug, view)}
         // The view the list shows: the page itself, or, with a conversation open, the one beside it.
         currentIs={open === null ? "page" : "true"}
-        className={cn("inbox-views", open !== null && "max-lg:hidden")}
+        className={cn("inbox-views col-start-1 row-start-2 border-0 bg-card px-3 pt-0 shadow-none [&>[aria-current]]:text-primary [&>[aria-current]]:font-semibold [&>button]:ml-auto", open !== null && "max-lg:hidden")}
         // The three worked through most as tabs; the rest under More, which fits the list's third of the window.
         items={views.slice(0, TABS).map(tab)}
         more={{ label: "More", items: views.slice(TABS).map(tab) }}
@@ -227,10 +226,10 @@ export async function InboxPanes({
       />
 
       {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
-      <div className={cn("inbox-list-body", open !== null && "max-lg:hidden")}>
+      <div className={cn("inbox-list-body col-start-1 row-start-3 flex min-h-0 flex-col overflow-hidden rounded-b-[0.875rem] bg-card max-lg:flex-1", open !== null && "max-lg:hidden")}>
         {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
         {!supportInbox && (
-          <div className="px-6 pt-6 lg:px-3 lg:pt-3">
+          <div className="px-4.5 pt-4 pb-1">
             <MessagesOffNotice projectSlug={slug} admin={isAdminRole(membership.role)} />
           </div>
         )}
@@ -245,7 +244,7 @@ export async function InboxPanes({
           </div>
         )}
         {conversations.length > 0 && (
-          <div className="inbox-list-context">
+          <div className="inbox-list-context leading-normal flex justify-between px-4.5 pt-5 pb-2 text-xs text-muted-foreground [&>span]:hidden max-md:[&>span]:inline">
             Latest message first
             <span>
               {counts[views.indexOf(view)]} {counts[views.indexOf(view)] === 1 ? "conversation" : "conversations"}
@@ -258,17 +257,17 @@ export async function InboxPanes({
           none={inboxHref(slug, view, null, pages)}
           aria-label="Conversations"
           // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
-          className="inbox-list-scroll"
+          className="inbox-list-scroll relative min-h-0 flex-1 overflow-y-auto px-2 pt-0 pb-4.5"
         >
           {conversations.length === 0 ? (
             // From laptop width up, an empty Inbox says new conversations show up here, beside the list, with its numbers.
-            <div className="inbox-list-empty">
+            <div className="inbox-list-empty mt-18 mx-5 flex flex-col items-center gap-2 text-center max-md:mt-37.5 [&>svg]:size-6.25 [&>svg]:text-primary [&>p]:text-sm [&>p]:leading-normal [&>p]:font-[550] [&>span]:text-xs [&>span]:leading-normal [&>span]:text-muted-foreground">
               <CheckIcon aria-hidden />
               <p>{VIEWS[view].empty}</p>
               <span className={cn(none && view !== "open" && "lg:hidden")}>{view === "open" ? "You’re up to date." : whereFrom}</span>
             </div>
           ) : (
-            <div className="inbox-rows">
+            <div className="inbox-rows [&>ul]:m-0">
               <ItemList>
                 {conversations.map((c) => {
                   const person = conversationPerson(c);
@@ -292,9 +291,9 @@ export async function InboxPanes({
                       // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
                       // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
                       // A dense list: rows a little tighter than other lists', so twice as many fit.
-                      className={cn("inbox-row relative isolate items-start", needsReply && "inbox-needs-reply")}
+                      className={cn("inbox-row relative isolate items-start my-0.75 mx-0 rounded-[0.6875rem] border-0 px-2.5 py-3.75 first:mt-0.75 first:pt-3.75 last:mb-0.75 last:pb-3.75 data-selected:bg-secondary [&>div:first-child]:items-start [&>div:first-child]:gap-2.5 [&>div:last-child]:self-stretch", needsReply && "inbox-needs-reply [&_a]:font-[650] [&_.inbox-row-subject]:font-[650]")}
                       leading={
-                        <Avatar className="size-8">
+                        <Avatar className="mt-0.5 size-7.5 text-xs">
                           {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
                           <AvatarFallback>{initial(name)}</AvatarFallback>
                         </Avatar>
@@ -308,12 +307,12 @@ export async function InboxPanes({
                           data-row-link={c.number}
                           aria-current={c.number === open ? "page" : undefined}
                           aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})${c.assignee ? `, assigned to ${c.assignee.name}` : ""}`}
-                          className="block truncate after:absolute after:inset-0 hover:underline"
+                          className="block truncate text-[0.875rem] font-medium after:absolute after:inset-0 hover:underline"
                         >
                           {/* In full on hover (over the link's cover, still inside the link); not read out again after the link's name. */}
                           <span aria-hidden className="relative z-10" title={`${name}${company ? ` · ${company}` : ""}`}>
                             {name}
-                            {company && <span className="inbox-row-company font-normal text-muted-foreground"> {company}</span>}
+                            {company && <span className="inbox-row-company font-normal text-muted-foreground ml-0.75 text-xs"> {company}</span>}
                           </span>
                         </Link>
                       }
@@ -329,9 +328,9 @@ export async function InboxPanes({
                             </Badge>
                           )}
                           {view === "snoozed" && c.snoozedUntil && `Back ${timeAgo(c.snoozedUntil)} · `}
-                          <span className="inbox-row-subject text-foreground">{c.subject}</span>
+                          <span className="inbox-row-subject text-foreground block overflow-hidden text-ellipsis text-sm leading-5.5 font-normal">{c.subject}</span>
                           {line && (
-                            <span className="inbox-row-preview">
+                            <span className={cn(c.assignee && "pr-6", "inbox-row-preview block overflow-hidden text-ellipsis text-xs leading-5")}>
                               <span className="sr-only"> · </span>
                               {line}
                             </span>
@@ -348,15 +347,15 @@ export async function InboxPanes({
                             scroll={false}
                             tabIndex={-1}
                             aria-hidden
-                            className="relative flex items-center gap-1.5"
+                            className="relative flex h-full items-start gap-1.5"
                           >
                             {c.assignee && (
-                              <Avatar title={c.assignee.name} data-assignee className="size-5">
+                              <Avatar title={c.assignee.name} data-assignee className="absolute right-0 bottom-px size-4.5">
                                 {c.assignee.image && <AvatarImage src={c.assignee.image} alt="" />}
                                 <AvatarFallback className="text-[0.625rem]">{initial(c.assignee.name)}</AvatarFallback>
                               </Avatar>
                             )}
-                            <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
+                            <time dateTime={since.toISOString()} title={age} className="text-xs leading-5 font-normal whitespace-nowrap text-muted-foreground tabular-nums">
                               {shortDuration(since)}
                             </time>
                           </Link>
@@ -376,7 +375,7 @@ export async function InboxPanes({
             more={counts[views.indexOf(view)]! > conversations.length}
           />
         </ListKeys>
-        <div className="inbox-list-footer">
+        <div className="inbox-list-footer leading-normal mt-auto flex items-center gap-1.75 px-4.5 py-4 text-xs text-muted-foreground [&>svg]:size-3.5 [&>span]:ml-auto max-lg:[&>span]:hidden [&_kbd]:rounded-sm [&_kbd]:border [&_kbd]:border-border [&_kbd]:px-1 [&_kbd]:text-xs [&_kbd]:leading-4">
           <InboxIcon aria-hidden />
           All conversations stay here.
           <span>
@@ -388,14 +387,14 @@ export async function InboxPanes({
       {stats ? (
         // Until a conversation opens (from laptop width up: on a phone the list is alone), how the Inbox is doing.
         <ConversationPane open={false}>
-          <div className="inbox-overview inbox-surface">
-            <div className="inbox-overview-title">
+          <div className="inbox-overview inbox-surface flex flex-1 flex-col px-7.5 py-6 min-w-0 min-h-0 bg-card shadow-inbox rounded-[0.875rem] max-md:rounded-xl">
+            <div className="inbox-overview-title flex items-center justify-between gap-3 [&>h2]:font-sans [&>h2]:text-base [&>h2]:leading-[normal] [&>h2]:font-semibold [&>span]:text-xs [&>span]:leading-normal [&>span]:text-muted-foreground">
               <h2>Inbox overview</h2>
               <span>{membership.project.name}</span>
             </div>
-            <div className="inbox-all-clear">
+            <div className="inbox-all-clear m-auto max-w-104 py-15 text-center [&>h1]:mb-3.5 [&>h1]:text-[2rem] [&>h1]:font-[650] [&>h1]:tracking-[-0.03em] [&>p]:mb-6 [&>p]:text-sm [&>p]:leading-[1.65] [&>p]:text-muted-foreground">
               {none && (
-                <div className="inbox-empty-mark">
+                <div className="inbox-empty-mark relative mx-auto mb-5.5 grid size-17 place-items-center rounded-[1.25rem] bg-soft text-primary [&>svg]:size-7.5 [&>span]:absolute [&>span]:-right-1.25 [&>span]:-bottom-1 [&>span]:grid [&>span]:size-5.75 [&>span]:place-items-center [&>span]:rounded-full [&>span]:bg-primary [&>span]:text-primary-foreground [&>span]:ring-4 [&>span]:ring-card [&>span>svg]:size-3.5">
                   <InboxIcon aria-hidden />
                   <span>
                     <CheckIcon aria-hidden />
@@ -419,7 +418,7 @@ export async function InboxPanes({
                 </Link>
               )}
             </div>
-            <div className="inbox-overview-stats grid gap-5 sm:grid-cols-3">
+            <div className="inbox-overview-stats grid gap-5 sm:grid-cols-3 pt-6 pb-2.5 [&>div]:rounded-none [&>div]:bg-transparent [&>div]:p-0 [&>div]:shadow-none [&>div]:ring-0 [&>a]:rounded-none [&>a]:bg-transparent [&>a]:p-0 [&>a]:shadow-none [&>a]:ring-0 [&>*>span:nth-child(2)]:order-first [&>*>span:nth-child(2)]:mb-1">
               <StatTile
                 value={stats.waiting}
                 label="Waiting for a reply"
@@ -427,9 +426,9 @@ export async function InboxPanes({
                 href={inboxHref(slug, "open")}
               />
               <StatTile
-                value={stats.replyMs === null ? "Not enough yet" : replyTime(stats.replyMs).replace(/^./, (c) => c.toUpperCase())}
+                value={stats.replyMs === null ? "—" : replyTime(stats.replyMs).replace(/^./, (c) => c.toUpperCase())}
                 label="Usual first reply"
-                detail="Last 30 days"
+                detail={stats.replyMs === null ? "Not enough yet" : "Last 30 days"}
               />
               <StatTile value={stats.newThisWeek} label="New conversations this week" />
             </div>
@@ -448,7 +447,7 @@ export async function InboxPanes({
  */
 export function ConversationPane({ open, detailsHidden = false, children }: { open: boolean; detailsHidden?: boolean; children: ReactNode }) {
   return (
-    <section aria-label="Conversation" data-inbox-conversation className={cn("inbox-conversation-pane", !open && "max-lg:hidden")}>
+    <section aria-label="Conversation" data-inbox-conversation className={cn("inbox-conversation-pane col-start-2 row-span-3 row-start-1 flex min-h-0 min-w-0 max-lg:flex-1", !open && "max-lg:hidden")}>
       <ConversationDetails hidden={detailsHidden}>{children}</ConversationDetails>
     </section>
   );

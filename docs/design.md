@@ -194,7 +194,7 @@ the list picks none to approve at once.
   marked; J and K open the next and the previous one. Until one opens, the pane
   beside the list has the Inbox's numbers (`StatTile`, as Home's): who's waiting
   for a reply and the longest wait (the Needs reply tab's count, opening it), the
-  usual first reply (the widget's, "Not enough yet" before five answers) and the
+  usual first reply (the widget's, "—" with "Not enough yet" below before five answers) and the
   week's new conversations (those two without sample content), with "Open a conversation to
   reply here" under them (an empty Inbox: that new ones show up here, said
   there rather than in the list's empty state too). On phones the list is alone.
@@ -208,6 +208,10 @@ the list picks none to approve at once.
   kept for the browser; on phones and smaller tablets its toggle opens the same controls and context in a sheet.
   Linked posts and Looks related start open. Customer details, Company, Other conversations from this person,
   Recent page visits, Events and Conversation attributes start folded, each with an icon, count and chevron.
+  Other conversations expand to a title, a muted status · number · date line and one line of the latest message.
+  Day dividers say "Today · <date>" or "Yesterday · <date>" for those UTC calendar days. The widget-off notice is
+  13px muted text, and More sits at the end of the views row. Inbox layout uses component Tailwind utilities;
+  its canvas, surface, bubble fills and shadow use the `inbox-*` tokens in `globals.css`.
   Customer details keeps identity, properties, groups, posts and votes reachable; visits and events show zero until
   recorded. The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   A changelog entry's editor has a sidebar

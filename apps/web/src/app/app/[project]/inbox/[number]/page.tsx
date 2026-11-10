@@ -36,7 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
-import { initial, timeAgo } from "@/lib/format";
+import { conversationDay, initial, timeAgo } from "@/lib/format";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 import { isAdminRole } from "@/lib/roles";
 import { attachmentLinks } from "@/server/attachments";
@@ -199,11 +199,11 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
       <ConversationPane open detailsHidden={detailsHidden}>
-        <header data-slot="page-header" className="inbox-conversation-head inbox-surface">
+        <header data-slot="page-header" data-inbox-header className="inbox-conversation-head inbox-surface col-start-1 row-start-1 rounded-b-none px-6 py-3 shadow-none max-lg:px-3.5 max-lg:pt-3.5 min-[75rem]:group-data-[details=hidden]/thread:px-8 [&>a]:mb-2.25 [&>a]:text-xs [&>a]:leading-5 max-md:[&>a]:mb-3 min-w-0 min-h-0 bg-card rounded-t-[0.875rem] max-md:rounded-t-[0.75rem]">
           <BackLink href={inboxHref(slug, view, null, pages)}>Inbox</BackLink>
-          <div className="inbox-title-row">
+          <div className="inbox-title-row flex items-start justify-between gap-3 max-lg:gap-2 [&>h1]:min-w-0 [&>h1]:text-[1.5625rem] [&>h1]:leading-[1.2] [&>h1]:font-[650] [&>h1]:tracking-[-0.025em] [&>h1]:wrap-anywhere max-lg:[&>h1]:flex-1 max-lg:[&>h1]:text-[1.4375rem] max-lg:[&>h1]:leading-[1.18] min-[75rem]:group-data-[details=hidden]/thread:[&>h1]:text-[1.6875rem]">
             <h1>{conversation.subject}</h1>
-            <div className="inbox-title-actions">
+            <div className="inbox-title-actions flex flex-none items-center gap-0.5 max-lg:gap-px [&>button]:h-8 [&>button:first-child]:gap-1 [&>button:first-child]:px-2.25 max-md:[&>button:first-child]:px-1.75 [&>button:first-child>svg]:size-3.5">
               <CloseButton projectSlug={slug} number={conversation.number} closed={conversation.status === "CLOSED"} />
               <ConversationMore>
                 <LinkPostButton projectSlug={slug} number={conversation.number} linked={posts.map((post) => post.number)} />
@@ -215,7 +215,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               <DetailsToggle hidden={detailsHidden} />
             </div>
           </div>
-          <p className="inbox-conversation-meta">
+          <p className="inbox-conversation-meta mt-2.25 flex flex-wrap items-center gap-1.5 text-xs leading-5 text-muted-foreground wrap-anywhere max-md:mt-2.5">
             <>
               {conversation.sample && <SampleBadge />}
               {online && (
@@ -229,41 +229,41 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   ·{" "}
                 </>
               )}
-              <span className="inbox-conversation-state">
+              <span className="inbox-conversation-state inline-flex items-center gap-1.25 rounded-full bg-highlight px-1.75 text-highlight-foreground [&>span]:size-1.25 [&>span]:rounded-full [&>span]:bg-current">
                 <span />
                 {conversation.status === "OPEN" ? "Needs reply" : CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]}
               </span>{" "}
               <span>
                 #{conversation.number} · {personName}
               </span>
-              <span className="inbox-origin"> · via {ORIGINS[conversation.origin].replace(/^the /, "")}</span>
+              <span className="inbox-origin max-md:hidden"> · via {ORIGINS[conversation.origin].replace(/^the /, "")}</span>
             </>
           </p>
           {conversation.spam && <Badge variant="outline">Spam</Badge>}
         </header>
-        <div id="conversation" className="inbox-conversation-body inbox-surface">
-          <div className="inbox-messages-and-composer">
+        <div id="conversation" className="inbox-conversation-body inbox-surface relative col-start-1 row-start-2 overflow-y-auto rounded-t-none shadow-none [scrollbar-width:thin] max-md:[mask-image:linear-gradient(to_bottom,transparent_0,black_1.25rem,black_100%)] min-w-0 min-h-0 bg-card rounded-b-[0.875rem] max-md:rounded-b-[0.75rem]">
+          <div className="inbox-messages-and-composer flex min-h-full flex-col gap-2.5 px-6 pt-1.5 max-lg:px-3 min-[75rem]:group-data-[details=hidden]/thread:px-9">
             <EarlierMessages
               href={inboxHref(slug, view, conversation.number, pages, messagePages + 1)}
               first={conversation.messages[0]?.id ?? ""}
               more={conversation._count.messages > shown}
             />
-            <p className="inbox-day">{conversation.createdAt.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}</p>
-            <ol className="inbox-messages" aria-label="Messages">
+            <p className="inbox-day pt-0.5 pb-3 text-center text-xs leading-normal text-muted-foreground">{conversationDay(conversation.createdAt)}</p>
+            <ol className="inbox-messages flex flex-col gap-3 pb-2" aria-label="Messages">
               {conversation.messages.map((message) => {
                 const fromTeam = message.author !== "USER";
                 // Someone else on the email (in Cc) shows as their address.
                 const name =
                   message.author === "USER" ? (message.fromAddress ?? personName) : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
                 return (
-                  <li key={message.id} data-message={message.id} className={cn("inbox-message", fromTeam && "team", message.note && "note")}>
-                    <Avatar className="inbox-chat-avatar">
+                  <li key={message.id} data-message={message.id} className={cn("inbox-message flex items-end gap-2", fromTeam && "team flex-row-reverse justify-start", message.note && "note mx-5 flex-row justify-center max-lg:mx-3.75 min-[75rem]:group-data-[details=hidden]/thread:mx-17.5")}>
+                    <Avatar className={cn("inbox-chat-avatar mb-5.75 size-6.5 flex-none text-xs max-md:size-6", message.note && "hidden")}>
                       <AvatarFallback>{initial(name)}</AvatarFallback>
                     </Avatar>
-                    <div className="inbox-message-body">
-                      <div className="inbox-bubble">
+                    <div className={cn("inbox-message-body min-w-0 max-w-[min(65ch,calc(100%_-_3.75rem))] max-md:max-w-[calc(100%_-_2.8125rem)]", message.note && "max-w-full max-md:max-w-full")}>
+                      <div className={cn("inbox-bubble rounded-[0.75rem_0.75rem_0.75rem_0.1875rem] bg-inbox-customer px-3.25 py-2.25 wrap-anywhere max-md:px-2.75 [&_p]:text-sm [&>p:not(.inbox-message-by)]:leading-normal", fromTeam && "rounded-[0.75rem_0.75rem_0.1875rem_0.75rem] bg-inbox-team", message.note && "rounded-[0.5625rem] border border-dashed border-highlight-foreground/40 bg-[color-mix(in_srgb,var(--highlight)_70%,var(--card))] px-3 py-2 max-md:px-3 max-md:py-2 [&_.inbox-note-by]:text-xs [&_.inbox-note-by]:leading-4.5")}>
                         {message.note && (
-                          <p className="inbox-note-by">
+                          <p className="inbox-note-by mb-0.5 flex items-center gap-1.25 text-xs leading-4.5 font-semibold text-highlight-foreground [&>svg]:size-3.25 [&>svg]:flex-none">
                             <LockKeyholeIcon aria-hidden />
                             Internal note · {name}
                           </p>
@@ -272,6 +272,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                           <MessageText text={message.body} ugc={message.author === "USER"} />
                         </p>
                         <MessageAttachments
+                          cards
                           attachments={message.attachments.map((a) => links.get(a.id)!)}
                           dropped={message.attachmentsDropped}
                           imported={!!message.importId}
@@ -285,7 +286,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                           </details>
                         )}
                       </div>
-                      <p className="inbox-message-by">
+                      <p className={cn("inbox-message-by m-0 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center")}>
                         {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
                         {!message.note && `${name} · `}
                         {timeAgo(message.createdAt)}{" "}
@@ -312,7 +313,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             <ScrollToEnd count={conversation._count.messages} within="conversation" />
             {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the pane's own padding).
                   Tuti's chat launcher isn't in the Inbox (AppWidget), so nothing sits over its buttons. */}
-            <div className="inbox-composer-wrap">
+            <div className="inbox-composer-wrap sticky bottom-0 mt-auto -mx-1.5 bg-card pt-1.25 pb-2.5 max-lg:-mx-0.5 min-[75rem]:group-data-[details=hidden]/thread:-mx-2">
               <ReplyForm
                 recipient={personName}
                 emailed={!!person.email && !!supportDomain() && !conversation.spam}
@@ -331,7 +332,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           </div>
         </div>
         <DetailsPanel key={conversation.number}>
-          <div className="inbox-triage">
+          <div className="inbox-triage leading-normal grid grid-cols-[5.125rem_minmax(0,1fr)] items-center gap-x-1 gap-y-0.75 pb-4 text-xs [&>span]:text-muted-foreground group-[.inbox-details-sheet]/details:grid-cols-[6.5rem_minmax(0,1fr)] group-[.inbox-details-sheet]/details:text-[0.875rem]">
             <span>Assignee</span>
             <AssignMenu
               projectSlug={slug}
@@ -377,7 +378,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               <dd>{person.verified ? "Yes" : "No"}</dd>
             </dl>
           </DetailSection>
-          <p className="inbox-detail-foot">
+          <p className="inbox-detail-foot mt-4.5 text-[0.75rem] leading-normal text-muted-foreground">
             Started from {ORIGINS[conversation.origin]} · {timeAgo(conversation.createdAt)}
           </p>
         </DetailsPanel>

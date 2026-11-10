@@ -22,6 +22,17 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   const api = await apiFor(owner, slug);
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/inbox`);
+  await expect(owner.getByRole("note").locator("p")).toHaveCSS("font-size", "13px");
+  const views = owner.getByRole("navigation", { name: "Views" });
+  const assertMoreAtEnd = async () => {
+    const bounds = (await views.boundingBox())!;
+    const more = (await views.getByRole("button", { name: "More", exact: true }).boundingBox())!;
+    expect(bounds.x + bounds.width - (more.x + more.width)).toBeCloseTo(12, 0);
+  };
+  await assertMoreAtEnd();
+  const firstReply = owner.locator(".inbox-overview-stats > div").first();
+  await expect(firstReply).toContainText("—");
+  await expect(firstReply).toContainText("Not enough yet");
   await checkpoint(owner, "empty-laptop-light", { fullPage: false });
   await owner.getByRole("link", { name: "See waiting conversations" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=waiting$`));
@@ -92,6 +103,7 @@ test("inbox cards keep triage in details, context folded, and phone details in a
     }
   };
   await expect(details).toBeVisible();
+  await expect(owner.locator(".inbox-day")).toHaveText(/^Today · /);
   const folded = ["Customer details", "Company", "Other conversations from this person", "Recent page visits", "Events", "Conversation attributes"];
   for (const name of folded) {
     const section = details.locator("details").filter({ has: owner.locator("summary", { hasText: name }) });
@@ -118,7 +130,15 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await checkpoint(owner, "laptop-dark", { fullPage: false });
   await details.locator("summary", { hasText: "Other conversations from this person" }).click();
   await expect(details.getByRole("link", { name: "Inviting a teammate" })).toBeVisible();
+  const other = details.getByRole("region", { name: "Other conversations", exact: true }).getByRole("listitem");
+  await expect(other).toContainText(/Closed · #4 · \d+ \w+/);
+  await expect(other).toContainText("Thanks, that worked. We’re all set!");
   await checkpoint(owner, "section-expanded-dark", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 900 });
+  await expect(details).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBe(1280);
+  await checkpoint(owner, "laptop-1280-dark", { fullPage: false });
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.getByRole("button", { name: "Hide details" }).click();
   await expect(details).toBeHidden();
   await assertTeamAtRight();
@@ -166,6 +186,43 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await owner.locator('[data-slot="page-header"]').getByRole("link", { name: "Inbox" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
   await expect(owner.getByRole("region", { name: "Conversations", exact: true })).toBeVisible();
+  await expect(owner.getByRole("note").locator("p")).toHaveCSS("font-size", "13px");
+  await assertMoreAtEnd();
   await checkpoint(owner, "phone-list-light", { fullPage: false });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+});
+
+test("long names and subjects fit both laptop widths with wrapping details labels", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const teammate = "Olive Owner with a very long name that still fits the assignment control";
+  const person = "Sam Smith with a very long customer name that stays inside the list";
+  const subject = "Can I export the reports for all our calendars across the entire company for the weekly planning meeting?";
+  const owner = await signUp(browser, APP_URL, teammate);
+  await createProject(owner, "Acme Calendar", slug);
+  await verifyEmail(owner);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "long-name", name: person, email: "e2e-long-name@example.com" }, subject, body: "Please keep the full report." });
+  await api("/conversations", { user: { id: "long-name", name: person, email: "e2e-long-name@example.com" }, subject: `${subject} The previous question.`, body: "Thanks, the previous export worked." });
+  await api("/conversations/2", { status: "closed" }, "PATCH");
+  for (const width of [1440, 1280]) {
+    await owner.setViewportSize({ width, height: 900 });
+    await owner.goto(`/app/${slug}/inbox/1`);
+    const details = owner.getByRole("complementary", { name: "Conversation details", exact: true });
+    if (width === 1440) {
+      await details.getByRole("button", { name: "Assign", exact: true }).click();
+      await owner.getByRole("menuitem", { name: "Assign to me" }).click();
+    }
+    await expect(details.getByRole("button", { name: `Assigned to ${teammate}` })).toBeVisible();
+    await details.locator("summary", { hasText: "Other conversations from this person" }).click();
+    await expect(details.getByRole("link", { name: `${subject} The previous question.` })).toBeVisible();
+    const title = owner.locator(".inbox-title-row");
+    await expect(title.getByRole("heading", { name: subject, exact: true })).toBeVisible();
+    await expect(title.getByRole("button", { name: "Close", exact: true })).toBeInViewport();
+    expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    for (const box of [title, details, details.locator("summary", { hasText: "Other conversations from this person" })]) {
+      expect(await box.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    }
+    await checkpoint(owner, `long-content-${width}`, { fullPage: false });
+  }
 });

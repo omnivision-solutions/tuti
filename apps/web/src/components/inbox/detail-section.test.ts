@@ -8,11 +8,11 @@ describe("inbox detail sections", () => {
     const html = renderToStaticMarkup(DetailSection({ title: "Customer details", count: 4, icon: UserIcon, children: "Customer context" }));
     expect(html).toMatch(/<details[^>]*>/);
     expect(html).not.toMatch(/<details[^>]* open/);
-    expect(html).toMatch(/<summary>.*Customer details.*<small>4<\/small>.*<\/summary>/);
+    expect(html).toMatch(/<summary[^>]*>.*Customer details.*<small[^>]*>4<\/small>.*<\/summary>/);
   });
   it("opens triage work explicitly, including empty counts", () => {
     const html = renderToStaticMarkup(DetailSection({ title: "Linked posts", count: 0, icon: UserIcon, open: true, children: "No linked posts" }));
     expect(html).toMatch(/<details[^>]* open=""/);
-    expect(html).toContain("<small>0</small>");
+    expect(html).toMatch(/<small[^>]*>0<\/small>/);
   });
 });

@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/property-formats";
 import type { PropertyValue } from "@tuti/shared/user-properties";
 import { viewsOf } from "@/server/operations/users";
+import { latestMessages } from "@/server/operations/conversations";
+import { firstLine, formatDay } from "@/lib/format";
 
 /** Beside a conversation; their own page lists them all (up to 500). */
 const SHOWN = 5;
@@ -155,12 +157,13 @@ export async function PersonPanel({
       where: theirs,
       orderBy: { lastMessageAt: "desc" },
       take,
-      select: { id: true, number: true, subject: true, status: true },
+      select: { id: true, number: true, subject: true, status: true, lastMessageAt: true },
     }),
     prisma.conversation.count({ where: theirs }),
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } }),
   ]);
   const formats = storedPropertyFormats(propertyFormats);
+  const otherMessages = page ? new Map() : await latestMessages(others.map((c) => c.id));
   const inView = inbox
     ? await inInboxView(
         projectId,
@@ -362,19 +365,24 @@ export async function PersonPanel({
       </DetailSection>
       <DetailSection title="Other conversations from this person" count={otherCount} icon={MessagesSquareIcon}>
         <section aria-label="Other conversations" className="inbox-other-conversations">
-          <Links
-            items={others.map((c) => ({
-              href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages) : `/app/${slug}/inbox/${c.number}`,
-              title: c.subject,
-              meta: (
-                <>
-                  <span>#{c.number}</span>
-                  <Badge variant="secondary">{CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}</Badge>
-                </>
-              ),
-            }))}
-            empty="None."
-          />
+          {others.length === 0 ? <p className="text-sm text-muted-foreground">None.</p> : (
+            <ul className="flex min-w-0 flex-col gap-1">
+              {others.map((c) => (
+                <li key={c.number} className="flex min-w-0 flex-col items-start gap-1 pt-0.5 pb-3 text-xs">
+                  <Link
+                    href={inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages) : `/app/${slug}/inbox/${c.number}`}
+                    className="max-w-full font-[550] wrap-anywhere hover:underline"
+                  >
+                    {c.subject}
+                  </Link>
+                  <p className="text-muted-foreground">
+                    {CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]} · #{c.number} · {formatDay(c.lastMessageAt)}
+                  </p>
+                  <p className="max-w-full truncate text-muted-foreground">{firstLine(otherMessages.get(c.id)?.body ?? "")}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </DetailSection>
     </aside>
