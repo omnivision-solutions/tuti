@@ -396,8 +396,10 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
     one row, the description, how many articles the reader may open at the bottom; two per row), Popular articles as a
     card in two columns (three or more, a tab's own), the articles in no collection, and "Can't find it?" (Contact us)
     where the project answers messages. The overview takes the container's width.
-  - **Content first.** A page's core content gets the room it needs before anything goes beside it: prose about 70
-    characters a line (at least 64 from 1280px up), lists and boards at least half the screen. Side columns
+  - **Content first.** A page's core content gets the room it needs before anything goes beside it: a long read (an
+    article with sections) about 70 characters a line, 64 at least from 1280px up. Short pages and lists stay as compact as
+    reads best (a wider short article or collection only stretched, in blind reviews): the measure is what the visitor
+    came for, not a share of the screen. Side columns
     are slim and quiet (muted type, nothing heavier than a hairline competing with the content); what a reader may want but
     didn't come for sits one click away (a menu, a disclosure) rather than in another column.
   - **An article**: the tab's tree on the left (`DocsLayout`, 16rem, a line beside it the page's height): each
