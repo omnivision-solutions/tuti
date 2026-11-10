@@ -710,7 +710,7 @@ function HelpCenter({ docs, dogfood }: { docs: string; dogfood: boolean }) {
         </div>
         <div className="feat">
           <div>Markdown, llms.txt, ChatGPT and Claude</div>
-          <div>Failed-search reports</div>
+          <div>Failed-search reports{plansEnabled() && " (Pro)"}</div>
           <div>Your own domain</div>
           <div>Private reader groups</div>
         </div>
