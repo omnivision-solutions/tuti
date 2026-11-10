@@ -236,8 +236,20 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await search.fill("light");
   await search.press("Enter");
   await expect(team.getByText("No posts match")).toBeVisible();
-  // Trending: the most votes this week first; the tab and the search stay.
+  // The status tabs, the search and Filters are one row above the list; at 1920px its rows stop at 72rem.
+  await team.setViewportSize({ width: 1920, height: 1080 });
   await team.goto(`/app/${slug}/feedback?status=all`);
+  const filtersButton = team.getByRole("button", { name: /^Filters/ });
+  const tabsBox = (await tabs.boundingBox())!;
+  const searchBox = (await search.boundingBox())!;
+  expect(Math.abs(tabsBox.y + tabsBox.height - (searchBox.y + searchBox.height))).toBeLessThan(12);
+  expect((await filtersButton.boundingBox())!.y).toBeLessThan(tabsBox.y + tabsBox.height);
+  expect((await team.getByRole("main").getByRole("list", { name: "Posts" }).first().boundingBox())!.width).toBeLessThanOrEqual(72 * 16);
+  await checkpoint(team, "team-feedback-toolbar-wide");
+  await team.setViewportSize({ width: 1280, height: 720 });
+  // Trending: the most votes this week first; the tab and the search stay. The board, voters and sort are under Filters.
+  await filtersButton.click();
+  await checkpoint(team, "team-feedback-filters");
   await team.getByRole("combobox", { name: "Sort" }).click();
   await team.getByRole("option", { name: "Trending" }).click();
   await team.waitForURL(`**/app/${slug}/feedback?status=all&sort=trending`);
@@ -368,9 +380,14 @@ test("Feedback's statuses are one row of tabs at laptop width and on a phone: to
   expect(paged).toBeGreaterThan(100);
   // The fade follows the counts: in a window where the row is 3px too wide, a post out of Needs triage (10 to 9)
   // makes it fit, though the row itself is the same size.
-  const over = await tabs.evaluate((row) => row.scrollWidth - row.clientWidth);
-  await team.setViewportSize({ width: 390 + over - 3, height: 844 });
-  await expect.poll(() => tabs.evaluate((row) => row.scrollWidth - row.clientWidth)).toBe(3);
+  // (Wider than a phone the search and Filters share the row: widened until the row is 3px short, as it settles.)
+  let width = 390;
+  for (let over = await tabs.evaluate((row) => row.scrollWidth - row.clientWidth); over !== 3; ) {
+    width += over - 3;
+    await team.setViewportSize({ width, height: 844 });
+    await expect.poll(() => tabs.evaluate((row) => row.scrollWidth - row.clientWidth)).not.toBe(over);
+    over = await tabs.evaluate((row) => row.scrollWidth - row.clientWidth);
+  }
   await expect(tabs).toHaveAttribute("data-more", "end");
   const idea = team.getByRole("main").getByRole("listitem").filter({ hasText: "Idea number 10" });
   await idea.getByRole("button", { name: "Status: Open" }).click();
@@ -1091,6 +1108,23 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
     expect(await line(index)).toBe("rgba(0, 0, 0, 0)");
     if (index > 0) expect(await line(index - 1)).toBe("rgba(0, 0, 0, 0)");
   }
+  // Beside the open post the statuses are the first three tabs and More (reading as All, the one open): the row
+  // fits, with Needs triage in sight.
+  const statuses = team.getByRole("navigation", { name: "Statuses" });
+  await expect(statuses.getByRole("link")).toHaveText([/^Needs triage/, /^Under review/, /^Planned/]);
+  await expect(statuses.getByRole("button", { name: /^All 3/ })).toHaveAttribute("aria-current", "page");
+  expect(await statuses.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+  await checkpoint(team, "team-feedback-statuses-beside-post");
+  // On a smaller laptop, where the list's column is too narrow for one row beside a post, the toolbar is two rows with
+  // or without one open: the list doesn't move as a post opens.
+  await team.setViewportSize({ width: 1200, height: 800 });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  const firstRow = rows.first().getByRole("link");
+  const closedTop = (await firstRow.boundingBox())!.y;
+  await firstRow.click();
+  await expect(firstRow).toHaveAttribute("aria-current", "true");
+  expect((await firstRow.boundingBox())!.y).toBeCloseTo(closedTop, 0);
+  await team.setViewportSize({ width: 1440, height: 900 });
 
   // A row's title opens it beside the list, which stays.
   await team.getByRole("link", { name: "Calendar sync", exact: true }).click();
@@ -1202,7 +1236,8 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await team.goto(`/app/${slug}/feedback?status=all`);
   await team.getByRole("link", { name: "Crash on export", exact: true }).click();
   await expect(pane.getByRole("heading", { name: "Crash on export" })).toBeVisible();
-  await team.getByRole("combobox", { name: "Board" }).first().click();
+  await team.getByRole("button", { name: /^Filters/ }).click();
+  await team.getByRole("dialog").getByRole("combobox", { name: "Board" }).click();
   await team.getByRole("option", { name: "Feature requests" }).click();
   await expect(team.getByRole("link", { name: "Crash on export", exact: true })).toHaveCount(0);
   const filtered = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
@@ -1319,7 +1354,7 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
   await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
   await expect(bar).toContainText("2 selected");
-  await expect(team.getByRole("combobox", { name: "Board" })).toHaveCount(0);
+  await expect(team.getByRole("button", { name: /^Filters/ })).toHaveCount(0);
   expect((await row("Night theme").boundingBox())!.y).toBe(top);
   expect(await background("Calendar sync")).not.toBe(unpicked);
   expect(await background("Dark mode")).toBe(unpicked);
@@ -1466,11 +1501,15 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(team.getByRole("region", { name: /^Post #/ })).toBeVisible();
   await team.keyboard.press("Escape");
 
-  // Another tab or filter: what was picked isn't any more (none of it may be listed).
+  // While rows are picked the bar is in the tabs' and filters' place: the statuses are back once they're cleared.
   await expect(bar).toContainText("1 selected");
+  await expect(team.getByRole("navigation", { name: "Statuses" })).toHaveCount(0);
+  // Another view (the sidebar's Feedback: Needs triage): what was picked isn't any more (none of it may be listed).
+  await team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: /^Feedback/ }).click();
+  await team.waitForURL((url) => url.pathname.endsWith("/feedback") && url.search === "");
+  await expect(bar).toHaveCount(0);
   await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Planned/ }).click();
   await team.waitForURL(/status=planned/);
-  await expect(bar).toHaveCount(0);
   // A tab of one status doesn't say it on every row: a small button opens the menu.
   await expect(row("Calendar sync").getByRole("button", { name: "Status: Planned" })).toBeVisible();
   await expect(row("Calendar sync").getByText("Planned", { exact: true })).toHaveCount(0);
@@ -1611,9 +1650,8 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   await expect(merge).toBeFocused();
   release();
   await expect(team.getByText(/^Merged into #/)).toBeVisible();
-  // The bar gone, the focus goes to the filters in its place, not the page: after an action and after Clear.
-  // (Hidden on a phone, where the filters are a popover: never focused there.)
-  const board = team.getByRole("combobox", { name: "Board", includeHidden: true });
+  // The bar gone, the focus goes to the filters in its place (their button), not the page: after an action and after Clear.
+  const board = team.getByRole("button", { name: /^Filters/ });
   await expect(board).toBeFocused();
   await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Clear" }).click();

@@ -150,25 +150,22 @@ export function PickedRow({
 }
 
 /**
- * The list's filters: in a row from tablet width up; on phones behind one "Filters" button (with how many are set),
- * opening them in a popover, so the search has the width.
+ * The list's filters and sort behind one "Filters" button (with how many are set, the sort too), opening them in a
+ * popover: the row above the list is the status tabs, the search and this. In place of the list's filters while rows are
+ * picked, the bar takes that whole row, its bottom (on phones, the search's line under the tabs).
  */
-export function FiltersFold({ set, extra, children }: { set: number; /** Under the filters in the popover (phones). */ extra?: ReactNode; children: ReactNode }) {
+export function FiltersFold({ set, compact = false, children }: { set: number; /** Its icon alone (a post open beside the list). */ compact?: boolean; children: ReactNode }) {
   return (
-    <>
-      <div className="max-sm:hidden">{children}</div>
-      <Popover>
-        <PopoverTrigger render={<Button variant="outline" className="sm:hidden" />}>
-          <SlidersHorizontalIcon />
-          Filters
-          {set > 0 && <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">{set}</span>}
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 [&_[data-slot=select-trigger]]:w-full [&>div>div]:flex-col [&>div>div]:items-stretch">
-          {children}
-          {extra}
-        </PopoverContent>
-      </Popover>
-    </>
+    <Popover>
+      <PopoverTrigger render={<Button variant="outline" title={compact ? "Filters" : undefined} />}>
+        <SlidersHorizontalIcon />
+        <span className={compact ? "sr-only" : undefined}>Filters</span>
+        {set > 0 && <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">{set}</span>}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 [&_[data-slot=select-trigger]]:w-full [&>div>div]:flex-col [&>div>div]:items-stretch">
+        {children}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -207,8 +204,12 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   const barHeld = useRef(false);
   useEffect(() => {
     if (hadBar.current && picked.length === 0 && barHeld.current && document.activeElement === document.body) {
-      // The first one shown (on phones the Filters button; the inline filters are hidden there).
-      [...(filtersRef.current?.querySelectorAll<HTMLElement>("button") ?? [])].find((button) => button.getClientRects().length > 0)?.focus({ preventScroll: true });
+      // The first button shown past the tabs (Filters), once it's visible: its transitions take `visibility` with them, so it can't
+      // take focus until they're done.
+      const button = [...(filtersRef.current?.querySelectorAll<HTMLElement>("button:not(nav *)") ?? [])].find((one) => one.getClientRects().length > 0);
+      void Promise.allSettled(button?.getAnimations().map((animation) => animation.finished) ?? []).then(() => {
+        if (document.activeElement === document.body) button?.focus({ preventScroll: true });
+      });
     }
     hadBar.current = picked.length > 0;
     if (picked.length === 0) {
@@ -241,7 +242,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
     </div>
   );
   if (picked.length === 0) {
-    return <div className="grid grid-cols-1 *:[grid-area:1/1]">{filters(false)}</div>;
+    return <div className="grid grid-cols-1 items-end *:[grid-area:1/1]">{filters(false)}</div>;
   }
   const count = `${picked.length} ${picked.length === 1 ? "post" : "posts"}`;
   // Who completing them emails, at most (one person asking for two is counted twice).
@@ -267,7 +268,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   // In a narrow list column (a phone, a post open beside it), shorter words (the same names for screen readers): the
   // bar stays one row.
   return (
-    <div className="grid grid-cols-1 *:[grid-area:1/1]">
+    <div className="grid grid-cols-1 items-end *:[grid-area:1/1]">
       {filters(true)}
       <div
         role="toolbar"

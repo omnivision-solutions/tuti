@@ -19,8 +19,9 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await api("/posts/2", { status: "completed" }, "PATCH");
   await api("/posts/3/merge", { into: 1 });
 
-  // Boards are in Feedback (its header's Boards button); the old address lands there too.
+  // Boards are in Feedback (its header's "…" menu); the old address lands there too.
   await owner.goto(`/app/${slug}/feedback`);
+  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("link", { name: "Boards" }).click();
   await owner.waitForURL(`**/app/${slug}/feedback/boards`);
   await owner.goto(`/app/${slug}/boards`);
