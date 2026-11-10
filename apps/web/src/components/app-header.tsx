@@ -64,6 +64,9 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     const phone = window.matchMedia("(width < 48rem)");
     const tall = window.matchMedia("(height >= 40rem)");
     let toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"]')!;
+    // Retries for a remounted header that isn't in the page yet (turned).
+    let frame = 0;
+    let retry = 0;
     // Focused fields and anchor targets must clear the actual toolbar, including wrapped titles and editor actions.
     const measure = () => {
       // A query-only navigation can remount the page's header without rerunning this effect.
@@ -101,8 +104,13 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     const turned = () => {
       const next = pick();
       if (!next) {
+        // The remounted header may not be in the page yet: try again for a few frames (a page without one stops there).
+        if (retry++ < 10) {
+          frame = requestAnimationFrame(turned);
+        }
         return;
       }
+      retry = 0;
       observer.disconnect();
       renamed.disconnect();
       sizes.unobserve(toolbar);
@@ -122,6 +130,7 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
       phone.removeEventListener("change", turned);
       tall.removeEventListener("change", measure);
       sizes.disconnect();
+      cancelAnimationFrame(frame);
       document.documentElement.style.removeProperty("--app-toolbar-height");
     };
   }, [pathname]);
