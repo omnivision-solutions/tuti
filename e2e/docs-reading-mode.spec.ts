@@ -62,6 +62,33 @@ test("navigating between articles with and without sections keeps the docs align
   await expect(reader.getByRole("heading", { name: "Calendar basics", level: 1 })).toBeVisible();
   expect((await reader.locator("header").getByRole("link", { name: "Acme", exact: true }).boundingBox())!.x).toBe(48);
   expect((await reader.getByRole("article").boundingBox())!.width).toBe(43 * 16);
+
+  // The overview fills the desktop container too: its first card lines up with the logo.
+  await reader.setViewportSize({ width: 1440, height: 900 });
+  await reader.goto("/docs");
+  await expect(tree).toBeHidden();
+  const collections = reader.getByRole("list", { name: "Collections", exact: true });
+  const firstCard = collections.getByRole("link").first();
+  await expect(firstCard).toBeVisible();
+  const logo = (await reader.locator("header").getByRole("link", { name: "Acme", exact: true }).boundingBox())!;
+  expect(Math.abs((await firstCard.boundingBox())!.x - logo.x)).toBeLessThanOrEqual(1);
+  const container = (await reader.locator("[data-docs-layout]").boundingBox())!;
+  const rightEdge = async () => {
+    const box = (await collections.boundingBox())!;
+    return box.x + box.width;
+  };
+  expect(Math.abs(await rightEdge() - (container.x + container.width))).toBeLessThanOrEqual(1);
+  await checkpoint(reader, "docs-overview-1440", { fullPage: false });
+
+  // With the team's links beside it, the overview fills the remaining space up to the same right edge.
+  await api("/branding", { sidebarLinks: [{ label: "Status page", url: "https://status.example.com" }] }, "PATCH");
+  await reader.reload();
+  const links = reader.getByRole("list", { name: "Links", exact: true }).first();
+  await expect(links).toBeVisible();
+  expect(Math.abs((await links.boundingBox())!.x - logo.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs((await firstCard.boundingBox())!.x - (logo.x + 18 * 16))).toBeLessThanOrEqual(1);
+  expect(Math.abs(await rightEdge() - (container.x + container.width))).toBeLessThanOrEqual(1);
+  await checkpoint(reader, "docs-overview-with-sidebar-links-1440", { fullPage: false });
 });
 
 test("a reader gets an article with room to read, turns on reading mode to read it alone, and it stays on", async ({ browser }, testInfo) => {
