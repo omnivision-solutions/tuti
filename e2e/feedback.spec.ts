@@ -1131,9 +1131,10 @@ test("Feedback's search keeps newer typing while its results load", async ({ bro
   try {
     await search.fill("exp");
     await search.press("Enter");
-    // Type through the keyboard, without focusing the locator again.
-    await team.keyboard.type("ort");
-    await expect(search).toHaveValue("export");
+    // Type through the keyboard, without focusing the locator again: a different search, not only more of the same.
+    await team.keyboard.press("ControlOrMeta+a");
+    await team.keyboard.type("dark");
+    await expect(search).toHaveValue("dark");
     await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
   } finally {
     release();
@@ -1141,7 +1142,7 @@ test("Feedback's search keeps newer typing while its results load", async ({ bro
   await expect(team).toHaveURL(/\?q=exp$/);
   await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toHaveCount(0);
   await expect(team.getByRole("link", { name: "Export to PDF", exact: true })).toBeVisible();
-  await expect(search).toHaveValue("export");
+  await expect(search).toHaveValue("dark");
   await expect(search).toBeFocused();
   await checkpoint(team, "team-feedback-search-newer-draft");
   // History is different from our own results: it resets a focused draft too, even when that draft starts with q.

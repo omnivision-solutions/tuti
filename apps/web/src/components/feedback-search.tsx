@@ -17,7 +17,7 @@ export function FeedbackSearch({ action, q, compact, children }: { action: strin
     // Only our own results may keep a newer draft. Clear search and history always follow the URL, even with focus.
     const ownSearch = submitted.current === query;
     submitted.current = null;
-    if (box && box.value !== query && !(ownSearch && document.activeElement === box && box.value.startsWith(query))) {
+    if (box && box.value !== query && !(ownSearch && document.activeElement === box)) {
       box.value = query;
     }
   }, [q]);
