@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -14,6 +14,14 @@ import { DOCS_TREE_FOLDED_ATTRIBUTE, DOCS_TREE_FOLDED_KEY } from "@/lib/docs-tre
  * layout's script sets it before the page shows) is the one place it's kept.
  */
 export function DocsTreeFold({ open, className }: { /** The rail's button (it opens the tree), or the tree's (it folds it). */ open: boolean; className?: string }) {
+  // Entering the app from marketing or sign-in mounts its inline script on the client, where it does not run.
+  useEffect(() => {
+    try {
+      document.documentElement.toggleAttribute(DOCS_TREE_FOLDED_ATTRIBUTE, localStorage.getItem(DOCS_TREE_FOLDED_KEY) === "1");
+    } catch {
+      // Storage blocked: keep this visit's fold.
+    }
+  }, []);
   const folded = useSyncExternalStore(subscribe, () => document.documentElement.hasAttribute(DOCS_TREE_FOLDED_ATTRIBUTE), () => false);
   const set = (next: boolean) => {
     document.documentElement.toggleAttribute(DOCS_TREE_FOLDED_ATTRIBUTE, next);

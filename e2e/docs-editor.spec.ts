@@ -105,6 +105,14 @@ test("the docs tree remembers its fold across reloads and app pages and unfolds 
   await team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: "Docs", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs`);
   await expect(tree).toBeHidden();
+  // A fresh marketing document must restore the saved fold when its app link navigates on the client.
+  await team.goto("/");
+  await team.locator("header").getByRole("link", { name: "Open app", exact: true }).click();
+  await team.waitForURL(`**/app/${slug}`);
+  await team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: "Docs", exact: true }).click();
+  await team.waitForURL(`**/app/${slug}/docs`);
+  await expect(team.getByRole("button", { name: "Show the docs tree" })).toBeVisible();
+  await expect(tree).toBeHidden();
   await team.getByRole("button", { name: "Show the docs tree" }).click();
   await expect(tree).toBeVisible();
   await team.reload();
