@@ -197,6 +197,57 @@ test("app anchors clear each visible toolbar once, and Reporting adds no invisib
   await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
 });
 
+test("a long docs collection and its settings keep their own toolbar in view", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/collections", { name: "Getting started" });
+  await Promise.all(Array.from({ length: 25 }, (_, i) => api("/articles", { title: `Guide ${i + 1}`, body: "Instructions for your team.", collection: "getting-started" })));
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  for (const suffix of ["", "/settings"]) {
+    await owner.goto(`/app/${slug}/docs/collections/getting-started${suffix}`);
+    if (suffix) {
+      await owner.evaluate(() => {
+        const room = document.createElement("div");
+        room.style.height = "100vh";
+        document.body.append(room);
+      });
+    }
+    await owner.evaluate(() => window.scrollTo(0, 600));
+    expect(await owner.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+    await expect.soft(owner.getByRole("heading", { name: "Getting started", level: 1, exact: true })).toBeInViewport();
+    await expect.soft(owner.locator('[data-slot="page-header"]').getByRole("button", { name: "More actions", exact: true })).toBeInViewport();
+    await checkpoint(owner, suffix ? "collection-settings-sticky-toolbar" : "collection-sticky-toolbar", { fullPage: false });
+  }
+});
+
+test("scroll padding clears a sticky toolbar pushed out of view by a short containing block", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}`);
+  const toolbar = owner.locator('[data-slot="page-header"]');
+  await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
+  // Reproduce a shortened containing block independently of any page's current markup.
+  await toolbar.evaluate((element) => {
+    const boundary = document.createElement("div");
+    element.replaceWith(boundary);
+    boundary.append(element);
+    const room = document.createElement("div");
+    room.style.height = "200vh";
+    document.body.append(room);
+  });
+  await owner.evaluate(() => window.scrollTo(0, 600));
+  await expect(toolbar).toHaveCSS("position", "sticky");
+  await expect(owner.getByRole("heading", { level: 1 })).not.toBeInViewport();
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+  await owner.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
+});
+
 test("billing's plan and usage anchors keep only their gap below the toolbar", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");

@@ -71,7 +71,12 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
         turned();
         return;
       }
-      const height = phone.matches ? ref.current!.offsetHeight : getComputedStyle(toolbar).position === "sticky" ? toolbar.offsetHeight : 0;
+      // Reserve the row as it approaches the top, but only its remaining coverage if its parent pushes it offscreen.
+      const height = phone.matches
+        ? ref.current!.offsetHeight
+        : getComputedStyle(toolbar).position === "sticky"
+          ? Math.max(0, Math.min(toolbar.offsetHeight, toolbar.getBoundingClientRect().bottom))
+          : 0;
       document.documentElement.style.setProperty("--app-toolbar-height", `${height}px`);
     };
     const sizes = new ResizeObserver(measure);
@@ -116,11 +121,13 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     phone.addEventListener("change", turned);
     // Stickiness can change without the toolbar resizing when only the window height changes.
     tall.addEventListener("change", measure);
+    window.addEventListener("scroll", measure, { passive: true });
     return () => {
       observer.disconnect();
       renamed.disconnect();
       phone.removeEventListener("change", turned);
       tall.removeEventListener("change", measure);
+      window.removeEventListener("scroll", measure);
       sizes.disconnect();
       document.documentElement.style.removeProperty("--app-toolbar-height");
     };

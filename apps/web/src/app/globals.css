@@ -614,6 +614,12 @@
   main[data-slot="sidebar-inset"] [data-slot="post-header"] [data-slot="page-header"] {
     position: static;
   }
+  @media (width < 64rem) {
+    /* Above the stacked Autopilot list, the title's column is only as tall as the title itself. */
+    main[data-slot="sidebar-inset"] [data-autopilot-listed] > [data-slot="page-header"] {
+      position: static;
+    }
+  }
   @media (height < 40rem) {
     main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-pins-actions]) {
       position: static;

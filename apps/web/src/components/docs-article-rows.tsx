@@ -337,7 +337,7 @@ export function CollectionHeader({
 }) {
   const base = `/app/${projectSlug}/docs/collections/${collection.slug}`;
   return (
-    <div className="flex flex-col gap-5">
+    <>
       <PageHeader
         title={
           <span className="flex items-center gap-2.5">
@@ -360,7 +360,7 @@ export function CollectionHeader({
         ]}
         itemClassName="first:pl-0"
       />
-    </div>
+    </>
   );
 }
 

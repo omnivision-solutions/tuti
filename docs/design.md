@@ -224,6 +224,7 @@ the list picks none to approve at once.
   on every board) then Help center (articles, and new articles' drafts), the ones that
   reach the most people first; and Activity, every merged pull request (those with
   nothing to do folded away at the end, To review pointing to those not read yet).
+  On tablets the list sits below a short title section, which scrolls with it and reserves no sticky toolbar space.
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
   once nothing of it waits, the next one to review opens by itself. One going out by itself says when in its bar,
