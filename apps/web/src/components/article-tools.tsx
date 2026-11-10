@@ -65,7 +65,10 @@ export function ArticleTools({
   useEffect(() => {
     if (!desktop || !active) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !document.querySelector('[role="dialog"], [role="alertdialog"], [role="listbox"]')) select(null);
+      const overlayOpen = Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="listbox"]')).some(
+        (overlay) => overlay.getClientRects().length > 0,
+      );
+      if (event.key === "Escape" && !overlayOpen) select(null);
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);

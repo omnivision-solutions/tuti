@@ -622,7 +622,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.goto(`/app/${slug}/docs/inviting-your-team/history`);
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team?history`);
   await expect(historyPanel.getByRole("link", { name: /^Saved / })).toHaveCount(5);
-  await team.keyboard.press("Escape");
+  await historyPanel.getByRole("button", { name: "Collapse article tools" }).click();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
 
   // Listing: unlisted, it's gone from /docs but its link still works; hidden, its page is a 404.
@@ -1961,7 +1961,7 @@ test("a collection's settings are one page: its name, description, icon and plac
   const access = team.getByRole("region", { name: "Access" });
   await expect(details.getByLabel("Name")).toHaveValue("Billing");
   await expect(access.getByRole("radio", { name: "Inherit" }).first()).toBeChecked();
-  // One Save for both, in a bar at the bottom of the window as the form scrolls.
+  // One Save for both, in the page's heading.
   const save = team.getByRole("button", { name: "Save" });
   await expect(save).toHaveCount(1);
   await expect(save).toBeInViewport();
