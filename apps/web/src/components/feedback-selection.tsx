@@ -196,6 +196,11 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   const [completing, setCompleting] = useState(false);
   const [merging, setMerging] = useState(false);
   const [keep, setKeep] = useState<string | null>(null);
+  // A view change can clear the picks while a question is open. Discard it before another selection can show it again.
+  if (picked.length === 0 && (completing || merging)) {
+    setCompleting(false);
+    setMerging(false);
+  }
   // The bar gone (an action done, Clear) while it held the focus: to the first filter, in its place, the page left
   // where it is. Not when the focus was never in it (Safari doesn't focus a box that's clicked: unticking the last
   // one mustn't scroll the page to the filters). `barHeld`: focus came into the bar and hasn't left it, to elsewhere

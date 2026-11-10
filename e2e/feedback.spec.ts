@@ -1071,6 +1071,83 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(card("Calendar sync")).toBeVisible();
 });
 
+test("Feedback's search field follows Clear search and browser history", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await team.goto(`/app/${slug}/feedback`);
+  const search = team.getByRole("searchbox", { name: "Search feedback" });
+  await search.fill("dark");
+  await search.press("Enter");
+  await expect(team).toHaveURL(/\?q=dark$/);
+  await search.fill("light");
+  await search.press("Enter");
+  await expect(team.getByText("No posts match your search", { exact: true })).toBeVisible();
+  // A draft edit after submitting must be cleared too, rather than submitted by the next Enter.
+  await search.fill("lighter");
+  await team.getByRole("link", { name: "Clear search", exact: true }).click();
+  await expect(team).toHaveURL(`/app/${slug}/feedback`);
+  await expect(search).toHaveValue("");
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
+  await checkpoint(team, "team-feedback-search-cleared");
+
+  await team.goBack();
+  await expect(team).toHaveURL(/\?q=light$/);
+  await expect(search).toHaveValue("light");
+  await team.goBack();
+  await expect(team).toHaveURL(/\?q=dark$/);
+  await expect(search).toHaveValue("dark");
+  await team.goForward();
+  await expect(team).toHaveURL(/\?q=light$/);
+  await expect(search).toHaveValue("light");
+  await team.goForward();
+  await expect(team).toHaveURL(`/app/${slug}/feedback`);
+  await expect(search).toHaveValue("");
+});
+
+for (const action of ["Completed", "Merge"] as const) {
+  test(`Feedback's ${action} confirmation stays closed after leaving the view`, async ({ browser }, testInfo) => {
+    const checkpoint = checkpoints(testInfo);
+    const slug = `e2e-${randomUUID().slice(0, 8)}`;
+    const team = await signUp(browser, APP_URL, "Olive Owner");
+    await createProject(team, "Acme", slug);
+    const api = await apiFor(team, slug);
+    for (const title of ["Dark mode", "Calendar sync"]) {
+      await api("/posts", { board: "feature-requests", title });
+    }
+    await team.goto(`/app/${slug}/feedback`);
+    await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^All/ }).click();
+    await expect(team).toHaveURL(/\?status=all$/);
+    await team.getByRole("checkbox", { name: "Select Dark mode", exact: true }).check();
+    await team.getByRole("checkbox", { name: "Select Calendar sync", exact: true }).check();
+    const bar = team.getByRole("toolbar", { name: "Selected posts" });
+    if (action === "Completed") {
+      await bar.getByRole("button", { name: "Set status", exact: true }).click();
+      await team.getByRole("menuitem", { name: "Completed", exact: true }).click();
+    } else {
+      await bar.getByRole("button", { name: "Merge…", exact: true }).click();
+    }
+    await expect(team.getByRole("alertdialog", { name: action === "Completed" ? "Mark 2 posts as Completed?" : "Merge 2 posts into one?" })).toBeVisible();
+    // Browser navigation can leave the view while a confirmation is still open.
+    await team.goBack();
+    await expect(team).toHaveURL(`/app/${slug}/feedback`);
+    await expect(bar).toHaveCount(0);
+    await expect(team.getByRole("alertdialog")).toHaveCount(0);
+    await team.getByRole("checkbox", { name: "Select Dark mode", exact: true }).check();
+    await expect(team.getByRole("alertdialog")).toHaveCount(0);
+    // Merge is offered for two rows: picking another mustn't bring the old question back either.
+    if (action === "Merge") {
+      await team.getByRole("checkbox", { name: "Select Calendar sync", exact: true }).check();
+      await expect(team.getByRole("alertdialog")).toHaveCount(0);
+    }
+    await expect(bar).toContainText(action === "Merge" ? "2 selected" : "1 selected");
+    await checkpoint(team, `team-feedback-${action.toLowerCase()}-confirmation-reset`);
+  });
+}
+
 test("Feedback's filters stay open and keep keyboard focus across choices", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

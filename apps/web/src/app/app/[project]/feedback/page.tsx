@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { seenAs } from "@tuti/jobs";
 import { ExternalLinkIcon, LayoutListIcon, MessageSquareIcon, PlusIcon, SearchIcon } from "lucide-react";
+import Form from "next/form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -203,14 +204,14 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                 />
                 <div className="min-w-0 @min-[64rem]/page:shrink-0 @min-[64rem]/page:pb-1.5">
                   <div className="flex min-w-0 gap-2">
-                    <form role="search" className={cn("relative flex min-w-0 flex-1 @min-[64rem]/page:flex-none", open === null ? "@min-[64rem]/page:w-60" : "@min-[64rem]/page:w-40")}>
+                    <Form action={`/app/${slug}/feedback`} scroll={false} role="search" className={cn("relative flex min-w-0 flex-1 @min-[64rem]/page:flex-none", open === null ? "@min-[64rem]/page:w-60" : "@min-[64rem]/page:w-40")}>
                       {board && <input type="hidden" name="board" value={board} />}
                       {group && <input type="hidden" name="group" value={group.key} />}
                       {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
                       {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
                       <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input type="search" name="q" defaultValue={q} placeholder={open === null ? "Search feedback" : "Search"} aria-label="Search feedback" className="h-9 pl-8" />
-                    </form>
+                      <Input key={q ?? ""} type="search" name="q" defaultValue={q} placeholder={open === null ? "Search feedback" : "Search"} aria-label="Search feedback" className="h-9 pl-8" />
+                    </Form>
                     <FiltersFold compact={open !== null} set={[board, group, filters.sort !== "top" && filters.sort].filter(Boolean).length}>
                       <ListFilters
                         filters={[
