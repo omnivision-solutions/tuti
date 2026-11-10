@@ -159,8 +159,9 @@ the list picks none to approve at once.
   `PageHeader` keeps the title, description, metadata and actions together and sticks to the top as the page scrolls;
   a post's back/previous/next row sticks with it. Editors keep Save and Publish beside their page context, in the same
   sticky header. An article's back link and draft state share one compact block beside its actions, with a lower
-  divider; the toolbar and text share a reading column, at the portal's width. The sidebar's rail toggles the sidebar, by pointer or keyboard ("Toggle Sidebar", Ctrl/⌘B), with a
-  visible focus indicator. On phones a compact sticky row keeps the menu and project/section path, the page's title
+  divider; the toolbar and text share a reading column, at the portal's width. The sidebar's visible "Toggle Sidebar"
+  button sits beside the project switcher when expanded and at the top of the icon rail when collapsed. The edge rail
+  and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. On phones a compact sticky row keeps the menu and project/section path, the page's title
   once its heading scrolls away, and `PageActions` at its right end. An editor's primary actions (`pinActions`) stay
   at the bottom on phones. Customize has its own section heading and Save changes row; it sticks at the top on
   wider screens and below the menu row on phones. Pane heights and sticky menus use the full window on wider screens.

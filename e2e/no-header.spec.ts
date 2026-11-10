@@ -20,6 +20,16 @@ test("pages use their own toolbar above tablet width and the sidebar rail works 
     await owner.goto(`/app/${slug}`);
     await expect(owner.locator("main > header")).toBeHidden();
     expect((await owner.getByRole("heading", { level: 1 }).boundingBox())!.y).toBeLessThan(48);
+    if (width === 1440) {
+      const toggle = sidebar.locator('[data-slot="sidebar-header"]').getByRole("button", { name: "Toggle Sidebar", exact: true });
+      await expect(toggle).toBeInViewport();
+      await toggle.click();
+      await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+      await expect(toggle).toBeInViewport();
+      await checkpoint(owner, "sidebar-visible-toggle-collapsed", { fullPage: false });
+      await toggle.click();
+      await expect(sidebar).toHaveAttribute("data-state", "expanded");
+    }
     // Tab reaches the rail from the last control in the sidebar, with a visible focus indicator.
     await sidebar.locator('[data-slot="sidebar-footer"] button').last().focus();
     await owner.keyboard.press("Tab");
@@ -82,7 +92,9 @@ test("a long post keeps its title and actions in view, and phones keep the menu 
   await expect(owner.getByRole("link", { name: "View on portal" })).toBeInViewport();
   await owner.keyboard.press("Escape");
   await bar.getByRole("button", { name: "Toggle Sidebar" }).click();
-  await expect(owner.getByRole("dialog", { name: "Sidebar" })).toBeVisible();
+  const phoneSidebar = owner.getByRole("dialog", { name: "Sidebar" });
+  await expect(phoneSidebar).toBeVisible();
+  await expect(phoneSidebar.locator('[data-slot="sidebar-trigger"]')).toBeHidden();
   await owner.keyboard.press("Escape");
   await checkpoint(owner, "phone-navigation-and-actions", { fullPage: false });
 });
