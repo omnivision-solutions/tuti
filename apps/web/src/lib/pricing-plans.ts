@@ -145,6 +145,7 @@ export function pricingPlans(): PricingPlan[] {
         versions("BUSINESS"),
         { text: "Reporting, every range" },
         { text: "A private help center, with reader groups" },
+        { text: "Your help center under a path of your site" },
         { text: "Priority support" },
       ],
       cta: { label: "Start with Business", href: "/sign-up" },

@@ -65,24 +65,34 @@ function Start({ start, className = "btn btn-primary", arrow = true }: { start: 
   );
 }
 
+/** The second button: Tuti's own help center where the server has one, else the docs in the repository. */
+function DocsLink({ docs, live, className = "btn btn-ghost", arrow = false }: { docs: string; live: boolean; className?: string; arrow?: boolean }) {
+  return (
+    <a className={className} href={docs}>
+      {live ? "See a live help center" : "Read the docs"}
+      {arrow && <ArrowRightIcon aria-hidden size={16} />}
+    </a>
+  );
+}
+
 export function Landing({ start, docs, dogfood }: Links & { dogfood: boolean }) {
   return (
     <div data-full className={`lp ${inter.variable}`}>
-      <Hero start={start} docs={docs} />
+      <Hero start={start} docs={docs} live={dogfood} />
       <Breaks />
-      <Autopilot start={start} docs={docs} />
+      <Autopilot start={start} docs={docs} live={dogfood} />
       <Control />
       <HelpCenter docs={docs} dogfood={dogfood} />
       <FeatureRequests />
       <Switch start={start} />
       {plansEnabled() && <Pricing start={start} />}
       <Faq />
-      <Final start={start} docs={docs} />
+      <Final start={start} docs={docs} live={dogfood} />
     </div>
   );
 }
 
-function Hero({ start, docs }: Links) {
+function Hero({ start, docs, live }: Links & { live: boolean }) {
   return (
     <section className="hero">
       <div className="wrap">
@@ -105,14 +115,12 @@ function Hero({ start, docs }: Links) {
             <p>The help center, feature requests and changelog that update themselves when you ship.</p>
             <div className="hero-cta">
               <Start start={start} />
-              <a className="btn btn-ghost" href={docs}>
-                See a live help center
-              </a>
+              <DocsLink docs={docs} live={live} />
             </div>
             <div className="ticks">
               <span>
                 <Tick />
-                You review first. Undo anything.
+                You review first. Undo an edit in a click.
               </span>
             </div>
           </div>
@@ -217,7 +225,7 @@ function HeroApp() {
           </div>
           <ul className="olist">
             <Outcome title="Article fixed" meta="Exporting your data · 3 lines" tag={<span className="tag t-upd">In 22h</span>} />
-            <Outcome title="New article written" meta="Scheduling exports · Data & exports" tag={<span className="tag t-upd">Draft in 22h</span>} />
+            <Outcome title="New article written" meta="Scheduling exports · Data & exports" tag={<span className="tag t-done">Drafted</span>} />
             <li className="wait">
               <span className="ck">
                 <HandIcon aria-hidden size={12} />
@@ -330,7 +338,7 @@ function Faces({ letters }: { letters: string }) {
   );
 }
 
-function Autopilot({ start, docs }: Links) {
+function Autopilot({ start, docs, live }: Links & { live: boolean }) {
   return (
     <section className="s" id="autopilot">
       <div className="wrap">
@@ -348,7 +356,7 @@ function Autopilot({ start, docs }: Links) {
             <span className="num">01</span>
             <h3>Stale articles, corrected.</h3>
             <p>Line by line, with the reason.</p>
-            <div className="mini">
+            <div className="mini" role="img" aria-label="An article, Inviting teammates, with its stale line replaced: invites now expire after 14 days, because of #476">
               <div className="hd">
                 <BookOpenIcon aria-hidden size={14} />
                 Account › Inviting teammates
@@ -372,7 +380,7 @@ function Autopilot({ start, docs }: Links) {
           <div className="tile t-b">
             <span className="num">02</span>
             <h3>New feature, new article.</h3>
-            <div className="mini">
+            <div className="mini" role="img" aria-label="A new article, Two-factor sign-in, added to the Account and security collection">
               <div className="hd">Account &amp; security</div>
               <div className="coll">
                 <div className="r">
@@ -394,7 +402,7 @@ function Autopilot({ start, docs }: Links) {
             <span className="num">03</span>
             <h3>Feature requests closed, with your OK.</h3>
             <p>Everyone who asked gets an email.</p>
-            <div className="mail">
+            <div className="mail" role="img" aria-label="The email everyone who asked gets: Good news, Two-factor sign-in is here">
               <div className="mh">
                 <span>From Acme</span>
                 <span>to 28 people</span>
@@ -410,7 +418,7 @@ function Autopilot({ start, docs }: Links) {
           <div className="tile t-d">
             <span className="num">04</span>
             <h3>The changelog draft fills itself.</h3>
-            <div className="clog">
+            <div className="clog" role="img" aria-label="The changelog draft for the next release, with Two-factor sign-in added">
               <div className="entry">
                 <div className="d">
                   <span className="tag t-upd">Draft</span>November release · 3 changes
@@ -436,7 +444,7 @@ function Autopilot({ start, docs }: Links) {
             <span className="num">05</span>
             <h3>Already stale? Verify.</h3>
             <p>Checks articles against your code, fixes what&apos;s wrong.</p>
-            <div className="mini">
+            <div className="mini" role="img" aria-label="Verify checking three articles against the code: one claim fixed, the rest up to date">
               <div className="hd">
                 <SearchIcon aria-hidden size={14} />
                 Verify · 3 articles checked
@@ -462,7 +470,7 @@ function Autopilot({ start, docs }: Links) {
             <span className="num">06</span>
             <h3>Refactors and bumps? Skipped.</h3>
             <p>Logged as “Nothing to do”, with the reason.</p>
-            <div className="mini mlog">
+            <div className="mini mlog" role="img" aria-label="Autopilot's log: #476 Add two-factor sign-in made 3 updates; a refactor and a dependency bump were Nothing to do">
               <div className="lr">
                 <GitMergeIcon aria-hidden size={14} className="merged" />
                 <b>#476 Add two-factor sign-in</b>
@@ -483,9 +491,7 @@ function Autopilot({ start, docs }: Links) {
         </div>
         <div className="mid-cta">
           <Start start={start} />
-          <a className="btn btn-ghost" href={docs}>
-            See a live help center
-          </a>
+          <DocsLink docs={docs} live={live} />
         </div>
       </div>
     </section>
@@ -497,7 +503,7 @@ function Control() {
     { icon: ClockIcon, title: "24-hour review window", text: "Stop it, or publish early." },
     { icon: HandIcon, title: "Waits when unsure", text: "Under 95% confident? It asks you." },
     { icon: UsersIcon, title: "Waits when widely seen", text: "25+ people, or 500+ monthly views." },
-    { icon: Undo2Icon, title: "Undo anything", text: "Every edit is a revision tagged with its PR." },
+    { icon: Undo2Icon, title: "Undo an edit", text: "Every edit is a revision tagged with its PR." },
   ];
   return (
     <section className="s control">
@@ -520,20 +526,20 @@ function Control() {
           </div>
         </div>
         <div className="relative">
-          <div className="inbox">
+          <div className="inbox" role="img" aria-label="Autopilot email: one feature request needs approval, one article edit goes live in 13 hours, one new article drafted">
             <div className="ih">
               <span className="lg">
                 <TutiMark className="size-6" />
               </span>
               <div>
                 <b>Tuti Autopilot</b>
-                <small>Your daily review · Acme</small>
+                <small>To you · Acme</small>
               </div>
-              <span className="mono ml-auto text-xs text-muted-foreground">9:00</span>
+              <span className="mono ml-auto text-xs text-muted-foreground">now</span>
             </div>
             <div className="ib">
-              <div className="sj">3 updates from yesterday&apos;s merges</div>
-              <div className="lead">One needs you. Two go out tonight.</div>
+              <div className="sj">3 updates from #478</div>
+              <div className="lead">One needs you, one goes live in 13h.</div>
               <div className="qi hot">
                 <div className="top">
                   <LightbulbIcon aria-hidden size={16} />
@@ -561,12 +567,9 @@ function Control() {
               <div className="qi">
                 <div className="top">
                   <FilePlusIcon aria-hidden size={16} />
-                  New article: Bulk editing posts<span className="tag t-upd">Draft in 13h</span>
+                  New article: Bulk editing posts<span className="tag t-done">Drafted</span>
                 </div>
-                <div className="btns">
-                  <span className="sb ink">Publish now</span>
-                  <span className="sb">Stop</span>
-                </div>
+                <div className="qwhy">A draft only your team sees.</div>
               </div>
             </div>
             <div className="if">Edit any update on the review page.</div>
@@ -590,7 +593,7 @@ function HelpCenter({ docs, dogfood }: { docs: string; dogfood: boolean }) {
           <h2 className="display">A help center customers actually find answers in.</h2>
           <p>Ask AI cites its sources, or says “I don&apos;t know”.</p>
         </div>
-        <div className="hc-shot">
+        <div className="hc-shot" role="img" aria-label="Acme help center: Ask AI answers with numbered sources, beside the in-app widget and a failed-searches report">
           <div className="flank r widget-m">
             <div className="wh">
               <b>Acme</b>
@@ -710,16 +713,18 @@ function HelpCenter({ docs, dogfood }: { docs: string; dogfood: boolean }) {
           <div>Your own domain</div>
           <div>Private reader groups</div>
         </div>
-        <div className="live-cta">
-          <span className="thumb" aria-hidden />
-          <div>
-            <b>See a live help center.</b>
-            <p>{dogfood ? "Tuti's own help center runs on Tuti, kept current by Autopilot." : "Search it. Ask it something."}</p>
+        {dogfood && (
+          <div className="live-cta">
+            <span className="thumb" aria-hidden />
+            <div>
+              <b>See a live help center.</b>
+              <p>Tuti&apos;s own help center runs on Tuti, kept current by Autopilot.</p>
+            </div>
+            <a className="btn btn-ghost" href={docs}>
+              See a live help center <ArrowRightIcon aria-hidden size={16} />
+            </a>
           </div>
-          <a className="btn btn-ghost" href={docs}>
-            See a live help center <ArrowRightIcon aria-hidden size={16} />
-          </a>
-        </div>
+        )}
       </div>
     </section>
   );
@@ -828,7 +833,7 @@ function FeatureRequests() {
 
 function Switch({ start }: { start: string }) {
   const objections = [
-    ["We'll lose our links.", "Import by address: old URLs redirect."],
+    ["We'll lose our links.", `Old URLs redirect on your own domain${plansEnabled() ? " (Pro)" : ""}.`],
     ["Customers will get spammed.", "Imports are quiet. No emails sent."],
     ["Our articles are already wrong.", "Verify checks them against your code."],
     ["We'll be stuck.", "Every article is Markdown, and the API reads it all."],
@@ -852,7 +857,7 @@ function Switch({ start }: { start: string }) {
             <Start start={start} />
           </div>
         </div>
-        <div className="importer">
+        <div className="importer" role="img" aria-label="Importing into Acme from Featurebase, Canny, Frill, Nolt, Ferndesk, Intercom or a help center address: articles, feature requests and redirects, with no emails sent">
           <div className="h">Import into Acme</div>
           <div className="sub">Help center and feature requests. Contacts from Intercom.</div>
           <div className="srcgrid">
@@ -981,7 +986,7 @@ function Faq() {
   );
 }
 
-function Final({ start, docs }: Links) {
+function Final({ start, docs, live }: Links & { live: boolean }) {
   return (
     <section className="final">
       <div className="wrap">
@@ -992,9 +997,7 @@ function Final({ start, docs }: Links) {
         </h2>
         <div className="hero-cta">
           <Start start={start} className="btn btn-light" />
-          <a className="btn btn-outline-dark" href={docs}>
-            See a live help center
-          </a>
+          <DocsLink docs={docs} live={live} className="btn btn-outline-dark" />
         </div>
         {plansEnabled() && (
           <div className="ticks">

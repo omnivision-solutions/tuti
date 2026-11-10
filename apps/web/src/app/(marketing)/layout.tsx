@@ -33,8 +33,9 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
           </div>
         </div>
       </header>
+      {/* Anchors land below the sticky 64px header (the home page's sections, /docs/api#…). */}
       {/* Centred down the window: a short page (sign-in, forgot password) sits in the middle, not under the header. */}
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-10 has-data-wide:max-w-5xl has-data-full:max-w-none has-data-full:p-0">{children}</main>
+      <main className="mx-auto flex [&_[id]]:scroll-mt-16 w-full max-w-3xl flex-1 flex-col justify-center px-6 py-10 has-data-wide:max-w-5xl has-data-full:max-w-none has-data-full:p-0">{children}</main>
       <footer>
         <div className="mx-auto flex w-full max-w-[1240px] flex-wrap items-start gap-10 px-5 pt-14 pb-16 text-sm text-muted-foreground md:px-8">
           <div>
