@@ -1,5 +1,5 @@
 
-import type { Doc } from "@tuti/content";
+import { docHeadings, type Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { editsInChanges } from "@tuti/jobs";
 import { aiProvider, articleVersionsNote, planIncludes } from "@tuti/shared";
@@ -209,6 +209,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           revision: newest?.id ?? null,
         }}
         mediaUrls={await mediaUrls(displayDoc(edited))}
+        // As the portal measures it (portal-docs' `outlined`).
+        sections={docHeadings(displayDoc(edited)).length >= 2}
       />
       <HistorySheet
         open={showsHistory}

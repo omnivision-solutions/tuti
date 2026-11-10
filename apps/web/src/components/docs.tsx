@@ -165,10 +165,16 @@ export function ArticleForm({
   article,
   mediaUrls,
   defaultTitle,
+  sections = false,
 }: {
   projectSlug: string;
   article: Article | null;
   mediaUrls: MediaUrls | null;
+  /**
+   * Whether it has sections (two headings or more), as it opened: the portal gives such an article 46rem beside "On this
+   * page", any other 43rem, and so does its editor, so the text wraps as it will publish.
+   */
+  sections?: boolean;
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
 }) {
@@ -272,7 +278,7 @@ export function ArticleForm({
   useEffect(() => setUnsaved(dirty), [setUnsaved, dirty]);
 
   return (
-    <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed}>
+    <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed} className={sections ? undefined : "max-w-[43rem]"}>
       {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
       {!article && <PlaceFields place={place} />}
       {/* The version this text was made on, and after a refusal the newest one shown beside it: the next save (merged

@@ -9,6 +9,7 @@ import { PendingInvitations } from "@/components/pending-invitations";
 import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { portalAddress } from "@/server/custom-domains";
 import { appWidgetProject } from "@/lib/app-portal";
+import { DOCS_TREE_FOLDED_SCRIPT } from "@/lib/docs-tree-fold";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { asksToVerifyEmail } from "@/lib/verify-email";
 import { pendingInvitationsFor } from "@/server/invitation-lookup";
@@ -35,11 +36,16 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
   return (
     <AppShell
       sidebar={
-        <AppSidebar
-          projects={projects}
-          fallbackSlug={fallbackSlug}
-          user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
-        />
+        <>
+          {/* Before any page shows: the docs tree folded where it was left folded (DocsTreeFold), on whichever app page
+              the browser first opens, so going to Docs later finds it as it was. */}
+          <script dangerouslySetInnerHTML={{ __html: DOCS_TREE_FOLDED_SCRIPT }} />
+          <AppSidebar
+            projects={projects}
+            fallbackSlug={fallbackSlug}
+            user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
+          />
+        </>
       }
       header={<AppHeader projects={projects} fallbackSlug={fallbackSlug} />}
       banners={
