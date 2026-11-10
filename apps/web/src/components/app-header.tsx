@@ -66,6 +66,11 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     let toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"]')!;
     // Focused fields and anchor targets must clear the actual toolbar, including wrapped titles and editor actions.
     const measure = () => {
+      // A query-only navigation can remount the page's header without rerunning this effect.
+      if (!toolbar.isConnected) {
+        turned();
+        return;
+      }
       const height = phone.matches ? ref.current!.offsetHeight : getComputedStyle(toolbar).position === "sticky" ? toolbar.offsetHeight : 0;
       document.documentElement.style.setProperty("--app-toolbar-height", `${height}px`);
     };
@@ -92,12 +97,16 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
       observer.observe(heading!);
       renamed.observe(heading!, { childList: true, characterData: true, subtree: true });
     };
-    // Across phone width (a phone turned, a window narrowed) the page reflows, maybe to its other heading: watched afresh.
+    // A width change or a remounted toolbar needs the current heading and all its observers afresh.
     const turned = () => {
+      const next = pick();
+      if (!next) {
+        return;
+      }
       observer.disconnect();
       renamed.disconnect();
       sizes.unobserve(toolbar);
-      heading = pick() ?? heading;
+      heading = next;
       toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"]')!;
       sizes.observe(toolbar);
       measure();

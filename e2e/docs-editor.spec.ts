@@ -4,7 +4,7 @@ import { expect, test, type Browser } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
-import { apiFor, createProject, signUp } from "./helpers";
+import { afterIntersections, apiFor, createProject, signUp } from "./helpers";
 
 async function editor(browser: Browser) {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -72,6 +72,62 @@ test("a short window keeps Save and Publish in reach while editing the end of a 
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
   await team.reload();
   await expect(article.locator("p").last()).toContainText("Invite the rest of your team.");
+});
+
+test("typing in a phone article editor keeps its title and back link while the bottom Save bar hides", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { team, slug } = await editor(browser);
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  const back = team.locator('[data-slot="page-header"]').getByRole("link", { name: "Docs", exact: true });
+  const title = team.getByRole("textbox", { name: "Title", exact: true });
+  const article = team.getByRole("textbox", { name: "Article", exact: true });
+  const save = team.getByRole("button", { name: "Save", exact: true });
+  await expect(save).toBeInViewport();
+
+  for (const [field, text] of [[title, "Invite your whole team"], [article, "Owners can send invitations from Settings."]] as const) {
+    await field.fill(text);
+    await expect(field).toBeFocused();
+    await expect(save).toBeHidden();
+    await expect(back).toBeInViewport();
+    await expect(title).toBeInViewport();
+    await expect(title).toHaveValue("Invite your whole team");
+  }
+  await checkpoint(team, "docs-editor-phone-typing-keeps-context", { fullPage: false });
+  // Leaving text entry brings the bottom actions back without navigating away.
+  await back.focus();
+  await expect(save).toBeInViewport();
+});
+
+test("switching a new article's collection keeps measuring its remounted toolbar", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { team, slug, api } = await editor(browser);
+  await api("/collections", { name: "Getting started" });
+  await api("/collections", { name: "Billing" });
+  await team.goto(`/app/${slug}/docs/new?collection=getting-started`);
+  const root = team.locator("html");
+  const toolbar = team.locator('[data-slot="page-header"]');
+  const clearance = () => root.evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop));
+  await expect(team.getByRole("combobox", { name: "In collection", exact: true })).toContainText("Getting started");
+  await expect.poll(clearance).toBeGreaterThan(0);
+
+  // A client navigation changes only the query and remounts ArticleEditor, including its PageHeader.
+  await team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("button", { name: "Add to Billing", exact: true }).click();
+  await team.getByRole("menuitem", { name: "New article", exact: true }).click();
+  await team.waitForURL(`**/app/${slug}/docs/new?collection=billing`);
+  await expect(team.getByRole("combobox", { name: "In collection", exact: true })).toContainText("Billing");
+  await afterIntersections(team);
+  await expect.soft.poll(clearance).toBeGreaterThan(0);
+
+  // Larger text after the remount must resize the measured toolbar as well.
+  const before = await toolbar.evaluate((element) => element.offsetHeight);
+  await root.evaluate((element) => {
+    element.style.fontSize = "20px";
+  });
+  const after = await toolbar.evaluate((element) => element.offsetHeight);
+  expect(after).toBeGreaterThan(before);
+  await expect.poll(clearance).toBe(after);
+  await checkpoint(team, "docs-new-remounted-toolbar-measures-larger-text", { fullPage: false });
 });
 
 test("the article text matches the portal's width at 1440px, with and without sections", async ({ browser }, testInfo) => {
