@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { findPostsToLink, linkPostToConversation } from "@/server/inbox";
 
+/** The top bar's "More actions" that shows (one on phones, one from tablet width up): "Link a post…" is behind it. */
+const moreActions = () => [...document.querySelectorAll<HTMLButtonElement>('button[aria-label="More actions"]')].find((button) => button.checkVisibility());
+
 /** Links a post to the conversation (or unlinks it), saying so, and the page refreshes with it. */
 function useLink(projectSlug: string, number: number) {
   const router = useRouter();
@@ -48,24 +51,40 @@ export function ConversationPosts({
   related: { number: number; title: string; status: PostStatus }[];
 }) {
   const { pending, link: save } = useLink(projectSlug, number);
-  // One linked from "Looks related" moves up into the linked posts: focus follows it there, to its Unlink, once the
-  // refreshed list has it (kept till then; dropped if the link failed).
+  // Where the keyboard's focus goes once the refreshed list has the change (kept till then; dropped if it failed): one
+  // linked from "Looks related" moves up into the linked posts, so to its Unlink; one unlinked leaves its row, so to the
+  // next Unlink (or the one before), else to its Link if it looks related, else to "More actions", where "Link a post…" is.
   const section = useRef<HTMLElement>(null);
-  const moved = useRef<number | null>(null);
+  const moved = useRef<{ post: number; linked: boolean; next: number | null } | null>(null);
   useEffect(() => {
-    const unlink = pending || moved.current === null ? null : section.current?.querySelector<HTMLButtonElement>(`[data-unlink="${moved.current}"]`);
-    if (unlink) {
-      unlink.focus();
-      moved.current = null;
+    const change = moved.current;
+    if (pending || !change || posts.some((post) => post.number === change.post) !== change.linked) {
+      return;
     }
+    moved.current = null;
+    const targets = change.linked ? [`[data-unlink="${change.post}"]`] : [...(change.next === null ? [] : [`[data-unlink="${change.next}"]`]), `[data-link="${change.post}"]`];
+    const target = targets.map((selector) => section.current?.querySelector<HTMLButtonElement>(selector)).find(Boolean);
+    (target ?? moreActions())?.focus();
   }, [pending, posts]);
+  // The last one unlinked with nothing looking related: the card goes, so the focus goes to "More actions".
+  useEffect(
+    () => () => {
+      if (moved.current && !moved.current.linked) {
+        moreActions()?.focus();
+      }
+    },
+    [],
+  );
 
-  const link = (post: number, linked: boolean) =>
+  const link = (post: number, linked: boolean) => {
+    const at = posts.findIndex((p) => p.number === post);
+    moved.current = { post, linked, next: linked ? null : (posts[at + 1] ?? posts[at - 1])?.number ?? null };
     save(post, linked, (ok) => {
       if (!ok) {
         moved.current = null;
       }
     });
+  };
 
   return (
     // A region named Linked posts only once there are some: before, it holds only what looks related.
@@ -84,7 +103,17 @@ export function ConversationPosts({
                     <PostStatusBadge status={post.status} />#{post.number}
                   </span>
                 </div>
-                <Button variant="ghost" size="icon-sm" aria-label={`Unlink “${post.title}”`} title="Unlink" data-unlink={post.number} disabled={pending} onClick={() => link(post.number, false)}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Unlink “${post.title}”`}
+                  title="Unlink"
+                  data-unlink={post.number}
+                  disabled={pending}
+                  // Keeps the keyboard's focus while it saves; then it moves on (above).
+                  focusableWhenDisabled
+                  onClick={() => link(post.number, false)}
+                >
                   <XIcon />
                 </Button>
               </li>
@@ -110,11 +139,9 @@ export function ConversationPosts({
                   variant="outline"
                   size="xs"
                   aria-label={`Link “${post.title}”`}
+                  data-link={post.number}
                   disabled={pending}
-                  onClick={() => {
-                    moved.current = post.number;
-                    link(post.number, true);
-                  }}
+                  onClick={() => link(post.number, true)}
                 >
                   Link
                 </Button>

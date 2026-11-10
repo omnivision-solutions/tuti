@@ -337,12 +337,16 @@ test("conversations from the API land in the inbox, where the team replies, assi
   });
   await linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
   await expect(linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" })).toBeDisabled();
+  // It keeps the keyboard's focus while it waits.
+  await expect(linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" })).toBeFocused();
   releaseUnlink();
   await expect(owner.getByText("Unlinked #1")).toBeVisible();
   await owner.unroute("**/*");
   await expect(linkedPosts).toHaveCount(0);
-  // Unlinked, it looks related (an open post with the subject's words): Link links it, and it moves to the linked posts.
+  // Unlinked, it looks related (an open post with the subject's words): the focus is on its Link there. Link links it,
+  // and it moves to the linked posts.
   const related = owner.getByRole("region", { name: "Looks related" });
+  await expect(related.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeFocused();
   await expect(related.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
   await checkpoint(owner, "conversation-looks-related");
   await related.getByRole("button", { name: "Link “Export reports to CSV”" }).click();
@@ -504,6 +508,34 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("table", { name: "Where they began" }).getByRole("row").filter({ hasText: "The API" })).toContainText("1");
   await expect(owner.getByRole("table", { name: "Replies by teammate" })).toContainText("Olive Owner");
   await checkpoint(owner, "team-reporting-inbox");
+});
+
+test("unlinking a post moves the keyboard's focus to the next one's Unlink, and after the last to More actions, where Link a post is", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-asker@example.com", subject: "A question", body: "Hello there" });
+  // Posts with none of the subject's words, so none looks related once unlinked.
+  for (const title of ["Dark mode", "Shared calendars"]) {
+    await api("/posts", { board: "feature-requests", title, author: { id: "user-42" } });
+  }
+  await api("/conversations/1/posts", { post: 1 });
+  await api("/conversations/1/posts", { post: 2 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const linkedPosts = owner.getByRole("region", { name: "Linked posts" });
+  await linkedPosts.getByRole("button", { name: "Unlink “Dark mode”" }).focus();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByText("Unlinked #1")).toBeVisible();
+  await expect(linkedPosts.getByRole("link")).toHaveText(["Shared calendars"]);
+  await expect(linkedPosts.getByRole("button", { name: "Unlink “Shared calendars”" })).toBeFocused();
+  // The last one: the card goes, and the focus is on More actions, where Link a post… is.
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByText("Unlinked #2")).toBeVisible();
+  await expect(linkedPosts).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("button", { name: "Link a post…" })).toBeVisible();
 });
 
 test("on a phone, Assign, Snooze and Close are under the title, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }, testInfo) => {
