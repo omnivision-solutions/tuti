@@ -241,7 +241,7 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
     case "overview":
       // Its cards are the collections: no tree beside them.
       return (
-        <DocsLayout tree={null} current={null}>
+        <DocsLayout tree={null} current={null} overview>
           <DocsOverview project={project} docs={docs} tab={tab} />
         </DocsLayout>
       );
@@ -586,6 +586,7 @@ const outlined = (headings: Heading[]) => headings.length >= 2;
 export function DocsLayout({
   tree,
   current,
+  overview = false,
   headings = [],
   reading = false,
   children,
@@ -593,6 +594,8 @@ export function DocsLayout({
   /** Null for none (a tab's overview, whose cards are its collections). */
   tree: DocsTree | null;
   current: string | null;
+  /** A tab's overview: its collection cards fill the container from desktop width up. */
+  overview?: boolean;
   headings?: Heading[];
   /** An article's page with sections: in reading mode (ReadingModeToggle) the tree and "On this page" go. */
   reading?: boolean;
@@ -602,14 +605,13 @@ export function DocsLayout({
   // Without a tree (a tab's overview), the team's sidebar links alone, where it has some.
   const nav = shown ? <DocsTree tree={shown} current={current} /> : <DocsSidebarLinks />;
   const column = (node: React.ReactNode) => (shown ? node : <IfSidebarLinks>{node}</IfSidebarLinks>);
-  // An article with sections, "On this page" beside it: wider (the header too), so between the tree and its sections the
-  // text still gets 65 to 70 characters a line. Other pages keep the header's width, the text centred beside the tree.
-  // Whatever is beside it (the tree, the team's sidebar links, or nothing): the widths add up to 79rem with a 16rem column.
-  const wide = outlined(headings);
+  // Keep the desktop columns (and header) in place when moving between articles. Short articles keep their 43rem
+  // measure, aligned to the longer article's left edge, with empty space where its outline would be.
+  const sections = outlined(headings);
   return (
     // At least the window's height (flex-1 in <main>), so the tree's line runs to the bottom on a short page.
-    // In the header's container (its contents' width: 72rem, 82rem when wide, less its padding), so the tree's left edge is the logo's.
-    <div data-docs-layout data-docs-wide={wide ? "" : undefined} className={cn("mx-auto flex w-full flex-1", wide ? "max-w-[79rem] gap-8" : "max-w-[71rem] gap-10")}>
+    // In the header's 82rem container, less its padding, so the tree's left edge is the logo's.
+    <div data-docs-layout data-docs-wide={sections ? "" : undefined} className={cn("mx-auto flex w-full flex-1 xl:max-w-[79rem] xl:gap-8", sections ? "max-w-[79rem] gap-8" : "max-w-[71rem] gap-10")}>
       {/* From the header to the bottom of the page, with a line beside it; the tree scrolls on its own, under the header. */}
       {column(
         <aside className={cn("-my-10 hidden w-64 shrink-0 border-r md:block", reading && READING_HIDES)}>
@@ -618,8 +620,9 @@ export function DocsLayout({
           </div>
         </aside>
       )}
-      {/* An article with sections keeps its measure even without a tree (and in reading mode): never wider lines. */}
-      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", wide ? "max-w-[46rem]" : shown ? "max-w-[43rem]" : "max-w-[71rem]")}>
+      {/* An article with sections keeps its measure even without a tree (and in reading mode): never wider lines.
+          Only the overview takes the container's width; tree-less search results and short articles keep their cap. */}
+      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", sections ? "max-w-[46rem] xl:[:root:not([data-docs-reading])_&]:ml-0" : shown ? "max-w-[43rem] xl:ml-0" : overview ? "max-w-[71rem] xl:max-w-none" : "max-w-[71rem] xl:ml-0")}>
         {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
@@ -635,12 +638,14 @@ export function DocsLayout({
         {children}
         <PortalFooter docs />
       </div>
-      {outlined(headings) && (
-        <aside className={cn("hidden w-52 shrink-0 xl:block", reading && READING_HIDES)}>
+      {(sections || shown) && (
+        <aside aria-hidden={sections ? undefined : true} className={cn("hidden w-52 shrink-0 xl:block", reading && READING_HIDES)}>
           {/* Stays in view as the article scrolls, under the header. */}
-          <div className="sticky top-[calc(var(--portal-header-height,0px)+1.5rem)] flex max-h-[calc(100dvh-var(--portal-header-height,0px)-3rem)] flex-col gap-6 overflow-y-auto">
-            <OnThisPage headings={headings} />
-          </div>
+          {sections && (
+            <div className="sticky top-[calc(var(--portal-header-height,0px)+1.5rem)] flex max-h-[calc(100dvh-var(--portal-header-height,0px)-3rem)] flex-col gap-6 overflow-y-auto">
+              <OnThisPage headings={headings} />
+            </div>
+          )}
         </aside>
       )}
     </div>

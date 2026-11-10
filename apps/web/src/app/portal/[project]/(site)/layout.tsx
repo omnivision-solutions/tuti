@@ -121,8 +121,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalTop>
         {/* On phones the parts' tabs sit on its bottom edge, under room for the first line. */}
         <header className="portal-header border-b">
-        {/* Its contents as wide as the pages under it: wider on a docs article with "On this page" beside it (DocsLayout). */}
-        <div className="mx-auto flex min-h-14 max-w-6xl [:root:has([data-docs-wide])_&]:max-w-[82rem] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:min-h-16 sm:gap-x-8 sm:px-6">
+        {/* At desktop width every docs page shares its columns' width; below it keep the article's existing geometry. */}
+        <div className="mx-auto flex min-h-14 max-w-6xl [:root:has([data-docs-wide])_&]:max-w-[82rem] xl:[:root:has([data-docs-layout])_&]:max-w-[82rem] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:min-h-16 sm:gap-x-8 sm:px-6">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           {/* On phones it takes what the buttons leave (a long name is cut short), so they share its line. */}
           <div className="flex min-w-0 max-sm:grow max-sm:basis-0">
