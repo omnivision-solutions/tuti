@@ -11,6 +11,59 @@ const paragraph = (value: string) => ({ type: "paragraph", content: [text(value)
 const heading = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: [text(value)] });
 const long = "Imports go into one calendar. Make a calendar for them first if you want to keep imported events apart from your own; you can merge them later, and nothing in your old calendar changes.";
 
+test("navigating between articles with and without sections keeps the docs aligned", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/collections", { name: "Getting started", icon: "rocket" });
+  for (const [title, content] of [
+    ["Import events", [paragraph(long), heading("Before you start"), paragraph(long), heading("Import a file"), paragraph(long)]],
+    ["Calendar basics", [paragraph(long)]],
+  ] as const) {
+    const { slug: article } = await api("/articles", { title, content: { type: "doc", content }, collection: "getting-started" });
+    await api(`/articles/${article}/publish`, {});
+  }
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1440, height: 900 });
+  await reader.goto("/docs/import-events");
+  const tree = reader.getByRole("navigation", { name: "Docs", exact: true });
+  const outline = reader.getByRole("navigation", { name: "On this page" });
+  const positions = async () => {
+    const elements = [
+      reader.locator("header").getByRole("link", { name: "Acme", exact: true }),
+      tree,
+      reader.getByRole("navigation", { name: "Breadcrumb" }),
+      reader.getByRole("heading", { level: 1 }),
+    ];
+    return Promise.all(elements.map(async (element) => (await element.boundingBox())!.x));
+  };
+  for (const width of [1440, 1280]) {
+    await reader.setViewportSize({ width, height: 900 });
+    await expect(outline).toBeVisible();
+    const withSections = await positions();
+    await checkpoint(reader, `docs-with-sections-${width}`, { fullPage: false });
+    await tree.getByRole("link", { name: "Calendar basics", exact: true }).click();
+    await expect(reader.getByRole("heading", { name: "Calendar basics", level: 1 })).toBeVisible();
+    await expect(outline).toBeHidden();
+    await checkpoint(reader, `docs-without-sections-${width}`, { fullPage: false });
+    expect(await positions()).toEqual(withSections);
+    // Short articles keep the editor's measure; alignment doesn't stretch their lines.
+    expect((await reader.getByRole("article").boundingBox())!.width).toBe(43 * 16);
+    await tree.getByRole("link", { name: "Import events", exact: true }).click();
+    await expect(outline).toBeVisible();
+    expect(await positions()).toEqual(withSections);
+  }
+  // Below the desktop breakpoint the short article keeps its existing header and text widths.
+  await reader.setViewportSize({ width: 1200, height: 900 });
+  await tree.getByRole("link", { name: "Calendar basics", exact: true }).click();
+  await expect(reader.getByRole("heading", { name: "Calendar basics", level: 1 })).toBeVisible();
+  expect((await reader.locator("header").getByRole("link", { name: "Acme", exact: true }).boundingBox())!.x).toBe(48);
+  expect((await reader.getByRole("article").boundingBox())!.width).toBe(43 * 16);
+});
+
 test("a reader gets an article with room to read, turns on reading mode to read it alone, and it stays on", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);

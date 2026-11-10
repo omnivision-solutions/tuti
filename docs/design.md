@@ -438,10 +438,12 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
     a sunken chip, code blocks as cards (a labelled one with its label in a strip, and Copy: `CodeCopyButtons`), quotes
     as callouts (an info-blue rule and icon on the card's surface). At its end: "Was this helpful?" (Yes and No with
     thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, outlines). With two or more
-    sections, "On this page" on the right from 1280px (13rem, the section being read marked) and the page grows with
-    the screen (the header to 82rem) so the text keeps 65–70 characters a line between the two (a 46rem column; 64ch
+    sections, "On this page" on the right from 1280px (13rem, the section being read marked). Every docs page uses
+    the same desktop container (79rem, the header 82rem) so navigation keeps the logo, tree and article's left edge in place.
+    The text keeps 65–70 characters a line between the two (a 46rem column; 64ch
     at 1280px); below 1280px "On this page" is a compact menu under the title. Without sections the text is a 43rem
-    column centred beside the tree: wider only stretched short pages. **Reading mode** hides the tree and "On this page", leaving the article alone; the same
+    column, aligned to the same left edge beside the tree from 1280px, with the outline's column left empty; below that it stays centred beside the tree.
+    **Reading mode** hides the tree and "On this page", leaving the article alone; the same
     button (pressed, soft green) brings them back. Remembered per browser (`localStorage`, set on `<html>` before the
     page shows, `lib/docs-reading.ts`). A collection's page: its icon and name, a card
     of its articles (rows with a chevron), then a card per collection in it.
