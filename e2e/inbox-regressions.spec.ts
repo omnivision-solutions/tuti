@@ -11,6 +11,10 @@ async function inbox(browser: Browser) {
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await verifyEmail(owner);
+  // A support address, so replies are emailed at all (replyRecipient).
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("button", { name: "Get a support address" }).click();
+  await expect(owner.getByText("No email received yet.")).toBeVisible();
   const api = await apiFor(owner, slug);
   await api("/conversations", { email: "e2e-reader@example.com", subject: "Reports", body: "First message" });
   await owner.setViewportSize({ width: 1440, height: 900 });
@@ -26,19 +30,19 @@ async function update(sql: string, values: unknown[]) {
 test("blocked recipients have no composer promise that replies are emailed", async ({ browser }) => {
   const { owner, slug, url } = await inbox(browser);
   await owner.goto(url);
-  await expect(owner.getByText(/^Replies are emailed to/)).toBeVisible();
+  await expect(owner.getByText(/^(Replies are emailed|Emailed) to/)).toBeVisible();
   await sesComplaint(slug, "E2E-Reader@example.com");
   await owner.reload();
-  await expect(owner.getByText(/^Replies are emailed to/)).toHaveCount(0);
+  await expect(owner.getByText(/^(Replies are emailed|Emailed) to/)).toHaveCount(0);
 });
 
 test("sample conversations have no composer promise that replies are emailed: the reply job skips them", async ({ browser }) => {
   const { owner, slug, url } = await inbox(browser);
   await owner.goto(url);
-  await expect(owner.getByText(/^Replies are emailed to/)).toBeVisible();
+  await expect(owner.getByText(/^(Replies are emailed|Emailed) to/)).toBeVisible();
   await update(`UPDATE conversation c SET sample = true FROM project p WHERE c."projectId" = p.id AND p.slug = $1`, [slug]);
   await owner.reload();
-  await expect(owner.getByText(/^Replies are emailed to/)).toHaveCount(0);
+  await expect(owner.getByText(/^(Replies are emailed|Emailed) to/)).toHaveCount(0);
 });
 
 test("each message day is grouped in the viewer's time zone", async ({ browser }) => {
