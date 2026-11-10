@@ -4,6 +4,7 @@ import { type Browser, expect, type Locator, type Page, test } from "@playwright
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
+import { spendCredits } from "./credits";
 import { publishMx } from "./dns";
 import { setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
@@ -377,10 +378,14 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("main").getByRole("listitem").locator("time")).toHaveAttribute("title", /^Latest message \d+ minutes? ago$/);
   await expect(owner.getByRole("main").getByRole("listitem").getByText("Needs reply", { exact: true })).toHaveCount(0);
   await checkpoint(owner, "inbox-snoozed");
+  // Woken from the keyboard while it's snoozed: the keyboard's focus stays on its button, Snooze again. (Opened from
+  // Snoozed, waking takes it out of that view, so the next one there opens instead, as Close does.)
   await owner.goto(`/app/${slug}/inbox/1`);
-  await owner.getByRole("button", { name: /^Snoozed till / }).click();
-  await owner.getByRole("menuitem", { name: "Wake now" }).click();
+  await owner.getByRole("button", { name: /^Snoozed till / }).focus();
+  await owner.keyboard.press("Enter");
+  await owner.getByRole("menuitem", { name: "Wake now" }).press("Enter");
   await expect(owner.getByText("Back in the inbox")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Snooze", exact: true })).toBeFocused();
   await owner.goto(`/app/${slug}/inbox?view=mine`);
   await expect(views.getByRole("link", { name: "Mine 1" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
@@ -633,6 +638,20 @@ test("the top bar's Assign and Snooze and the reply box's tools are icons, named
     expect(await wordless(button)).toBe(false);
     await expect(button).toContainText(name);
   }
+
+  // What the tooltips add, screen readers hear too: Insert article's shortcut, and why Draft with AI is off once the
+  // project is out of AI credits.
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await expect.soft(owner.getByRole("button", { name: "Insert article" })).toHaveAccessibleDescription(/^(⌘K|Ctrl K)$/);
+  await expect(owner.getByRole("button", { name: "Draft with AI" })).toHaveAccessibleDescription("");
+  await spendCredits(slug);
+  await owner.reload();
+  const draft = owner.getByRole("button", { name: "Draft with AI" });
+  await expect(draft).toBeDisabled();
+  await expect.soft(draft).toHaveAccessibleDescription("This project is out of AI credits");
+  await owner.keyboard.press("Shift");
+  await draft.focus();
+  await expect(tooltip).toHaveText("Draft with AI: this project is out of AI credits");
 });
 
 test("on a phone, Assign, Snooze and Close are under the title, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }, testInfo) => {

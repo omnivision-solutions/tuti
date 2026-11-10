@@ -198,20 +198,31 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
     });
   return (
     <DropdownMenu>
-      {/* Snoozed, it says till when (in words: it's what the conversation is now); not, an icon. */}
-      {snoozedUntil ? (
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled />}>
-          {inBrowser ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snoozed"}
-        </DropdownMenuTrigger>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger render={<DropdownMenuTrigger render={<Button variant="ghost" size="sm" className={ICON_ACTION} disabled={pending} focusableWhenDisabled />} />}>
-            <AlarmClockIcon />
-            <Label>Snooze</Label>
-          </TooltipTrigger>
-          <TooltipContent>Snooze</TooltipContent>
-        </Tooltip>
-      )}
+      {/* Snoozed, it says till when (in words: it's what the conversation is now); not, an icon. One button either way, so
+          the keyboard's focus stays on it as it snoozes or wakes. */}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              render={<Button variant={snoozedUntil ? "outline" : "ghost"} size="sm" className={snoozedUntil ? undefined : ICON_ACTION} disabled={pending} focusableWhenDisabled />}
+            />
+          }
+        >
+          {snoozedUntil ? (
+            inBrowser ? (
+              `Snoozed till ${snoozeTime(new Date(snoozedUntil))}`
+            ) : (
+              "Snoozed"
+            )
+          ) : (
+            <>
+              <AlarmClockIcon />
+              <Label>Snooze</Label>
+            </>
+          )}
+        </TooltipTrigger>
+        <TooltipContent>{snoozedUntil ? "Snooze again, or wake it now" : "Snooze"}</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => snooze(new Date(Date.now() + 3 * 3_600_000))}>In 3 hours</DropdownMenuItem>
         <DropdownMenuItem onClick={() => snooze(morning(1))}>Tomorrow, 9:00</DropdownMenuItem>

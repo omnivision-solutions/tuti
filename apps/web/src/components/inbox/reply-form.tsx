@@ -19,6 +19,9 @@ import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/
 
 type Kind = "reply" | "note";
 
+/** Why Draft with AI is off, while the project is out of AI credits. */
+const PAUSED = "This project is out of AI credits";
+
 /**
  * What's written in each conversation's reply and note, the files attached that had uploaded (and the names of those
  * still uploading, which aren't kept), and what the team had seen as the reply was started: kept in the tab as another
@@ -102,6 +105,8 @@ export function ReplyForm({
     }
   }, [drafts]);
   const errorId = useId();
+  const shortcutId = useId();
+  const pausedId = useId();
   const note = kind === "note";
   // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
   // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty
@@ -249,6 +254,8 @@ export function ReplyForm({
                       size="icon-sm"
                       disabled={pending}
                       aria-label="Insert article"
+                      // Its shortcut to screen readers too, as the tooltip shows it.
+                      aria-describedby={shortcutId}
                       // A click from the reply leaves the focus there, so its cursor is where the link goes.
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={openPicker}
@@ -256,6 +263,9 @@ export function ReplyForm({
                   }
                 >
                   <FileTextIcon />
+                  <span id={shortcutId} className="sr-only">
+                    {shortcut}
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent>{`Insert article (${shortcut})`}</TooltipContent>
               </Tooltip>
@@ -274,6 +284,8 @@ export function ReplyForm({
                     // Out of credits, still reached from the keyboard, where its tooltip says why it's off.
                     focusableWhenDisabled
                     aria-label={drafting ? undefined : "Draft with AI"}
+                    // Why it's off, to screen readers too, as the tooltip shows it.
+                    aria-describedby={draftWithAi === "paused" ? pausedId : undefined}
                     onClick={draft}
                   />
                 }
@@ -281,6 +293,11 @@ export function ReplyForm({
                 <SparklesIcon />
                 {/* Said while it works: it takes a few seconds. */}
                 {drafting && "Drafting…"}
+                {draftWithAi === "paused" && (
+                  <span id={pausedId} className="sr-only">
+                    {PAUSED}
+                  </span>
+                )}
               </TooltipTrigger>
               <TooltipContent>{draftWithAi === "paused" ? "Draft with AI: this project is out of AI credits" : "Draft with AI"}</TooltipContent>
             </Tooltip>
