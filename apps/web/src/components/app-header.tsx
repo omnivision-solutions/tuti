@@ -77,7 +77,18 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
         : getComputedStyle(toolbar).position === "sticky"
           ? Math.max(0, Math.min(toolbar.offsetHeight, toolbar.getBoundingClientRect().bottom))
           : 0;
-      document.documentElement.style.setProperty("--app-toolbar-height", `${height}px`);
+      // Only when it changes: a new value restyles the whole page.
+      if (height !== last) {
+        last = height;
+        document.documentElement.style.setProperty("--app-toolbar-height", `${height}px`);
+      }
+    };
+    let last = -1;
+    // Scrolling measures at most once a frame.
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
     };
     const sizes = new ResizeObserver(measure);
     sizes.observe(toolbar);
@@ -121,13 +132,14 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     phone.addEventListener("change", turned);
     // Stickiness can change without the toolbar resizing when only the window height changes.
     tall.addEventListener("change", measure);
-    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       observer.disconnect();
       renamed.disconnect();
       phone.removeEventListener("change", turned);
       tall.removeEventListener("change", measure);
-      window.removeEventListener("scroll", measure);
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
       sizes.disconnect();
       document.documentElement.style.removeProperty("--app-toolbar-height");
     };

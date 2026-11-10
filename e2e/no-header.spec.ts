@@ -215,8 +215,8 @@ test("a long docs collection and its settings keep their own toolbar in view", a
         document.body.append(room);
       });
     }
-    await owner.evaluate(() => window.scrollTo(0, 600));
-    expect(await owner.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+    // Scrolled again on each try, in case the page is still growing.
+    await expect.poll(() => owner.evaluate(() => (window.scrollTo(0, 600), window.scrollY))).toBeGreaterThan(300);
     await expect.soft(owner.getByRole("heading", { name: "Getting started", level: 1, exact: true })).toBeInViewport();
     await expect.soft(owner.locator('[data-slot="page-header"]').getByRole("button", { name: "More actions", exact: true })).toBeInViewport();
     await checkpoint(owner, suffix ? "collection-settings-sticky-toolbar" : "collection-sticky-toolbar", { fullPage: false });
