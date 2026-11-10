@@ -83,7 +83,8 @@ export function UploadList({ uploads, remove }: Pick<ReturnType<typeof useUpload
 }
 
 /** "Attach files": picks files for `attach`. */
-export function AttachButton({ attach }: { attach: (files: FileList | null) => void }) {
+/** `iconOnly`: the paperclip alone, its name in a tooltip (the Inbox's reply box, where Send is the one word). */
+export function AttachButton({ attach, iconOnly = false }: { attach: (files: FileList | null) => void; iconOnly?: boolean }) {
   const picker = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -98,9 +99,9 @@ export function AttachButton({ attach }: { attach: (files: FileList | null) => v
           event.target.value = "";
         }}
       />
-      <Button type="button" variant="ghost" size="sm" onClick={() => picker.current?.click()}>
+      <Button type="button" variant="ghost" size={iconOnly ? "icon-sm" : "sm"} aria-label={iconOnly ? "Attach files" : undefined} title={iconOnly ? "Attach files" : undefined} onClick={() => picker.current?.click()}>
         <PaperclipIcon />
-        Attach files
+        {!iconOnly && "Attach files"}
       </Button>
     </>
   );

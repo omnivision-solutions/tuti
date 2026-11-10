@@ -13,10 +13,28 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { findPostsToLink, linkPostToConversation } from "@/server/inbox";
 
+/** Links a post to the conversation (or unlinks it), saying so, and the page refreshes with it. */
+function useLink(projectSlug: string, number: number) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const link = (post: number, linked: boolean, done?: (ok: boolean) => void) =>
+    startTransition(async () => {
+      const result = await linkPostToConversation(projectSlug, number, post, linked).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(linked ? `Linked to #${post}` : `Unlinked #${post}`);
+        router.refresh();
+      }
+      done?.(!result.error);
+    });
+  return { pending, link };
+}
+
 /**
- * The posts a conversation is about, beside it: each opens the post or is unlinked; "Looks related": open posts like it
- * (postsLikeConversation), each linked in a click; "Link post…" searches the project's posts (findPostsToLink) as it's
- * typed in, to pick another.
+ * The posts a conversation is about, beside it (once there are some, or some look related): each opens the post or is
+ * unlinked; "Looks related": open posts like it (postsLikeConversation), each linked in a click. Another is linked from
+ * the top bar's menu (LinkPostButton).
  */
 export function ConversationPosts({
   projectSlug,
@@ -29,11 +47,7 @@ export function ConversationPosts({
   posts: { number: number; title: string; status: PostStatus }[];
   related: { number: number; title: string; status: PostStatus }[];
 }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const search = usePostSearch((q) => findPostsToLink(projectSlug, q));
-  const linked = new Set(posts.map((post) => post.number));
+  const { pending, link: save } = useLink(projectSlug, number);
   // One linked from "Looks related" moves up into the linked posts: focus follows it there, to its Unlink, once the
   // refreshed list has it (kept till then; dropped if the link failed).
   const section = useRef<HTMLElement>(null);
@@ -47,25 +61,16 @@ export function ConversationPosts({
   }, [pending, posts]);
 
   const link = (post: number, linked: boolean) =>
-    startTransition(async () => {
-      const result = await linkPostToConversation(projectSlug, number, post, linked).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
-      if (result.error) {
+    save(post, linked, (ok) => {
+      if (!ok) {
         moved.current = null;
-        toast.error(result.error);
-        return;
       }
-      toast.success(linked ? `Linked to #${post}` : `Unlinked #${post}`);
-      search.restart(false);
-      setOpen(false);
-      router.refresh();
     });
 
   return (
     <section ref={section} aria-label="Linked posts" className="flex flex-col gap-2">
-      <h2 className="text-xs font-medium text-muted-foreground">Linked posts</h2>
-      {posts.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Link the posts this is about: it shows on them, beside their voters.</p>
-      ) : (
+      {posts.length > 0 && <h2 className="text-xs font-medium text-muted-foreground">Linked posts</h2>}
+      {posts.length > 0 && (
         <ul className="flex flex-col gap-2">
           {posts.map((post) => (
             <li key={post.number} className="flex items-start gap-2">
@@ -115,32 +120,51 @@ export function ConversationPosts({
           </ul>
         </section>
       )}
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          search.restart(next);
-        }}
-      >
-        <DialogTrigger render={<Button variant="outline" size="sm" className="self-start" disabled={pending} />}>
-          <LinkIcon />
-          Link post…
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Link a post</DialogTitle>
-            <DialogDescription>Pick the post this conversation is about.</DialogDescription>
-          </DialogHeader>
-          <PostPicker
-            candidates={search.found.filter((post) => !linked.has(post.number))}
-            query={search.query}
-            onQueryChange={search.onQueryChange}
-            onPick={(post) => link(post.number, true)}
-            disabled={pending}
-            searching={search.searching}
-          />
-        </DialogContent>
-      </Dialog>
     </section>
+  );
+}
+
+/**
+ * "Link a post…", in the conversation's top bar menu: searches the project's posts (findPostsToLink) as it's typed in,
+ * to pick the one this is about (it shows on the post, beside its voters). `linked`: those it's linked to already.
+ */
+export function LinkPostButton({ projectSlug, number, linked }: { projectSlug: string; number: number; linked: number[] }) {
+  const [open, setOpen] = useState(false);
+  const { pending, link } = useLink(projectSlug, number);
+  const search = usePostSearch((q) => findPostsToLink(projectSlug, q));
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        search.restart(next);
+      }}
+    >
+      <DialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>
+        <LinkIcon />
+        Link a post…
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Link a post</DialogTitle>
+          <DialogDescription>Pick the post this conversation is about. It shows on the post, beside its voters.</DialogDescription>
+        </DialogHeader>
+        <PostPicker
+          candidates={search.found.filter((post) => !linked.includes(post.number))}
+          query={search.query}
+          onQueryChange={search.onQueryChange}
+          onPick={(post) =>
+            link(post.number, true, (ok) => {
+              if (ok) {
+                search.restart(false);
+                setOpen(false);
+              }
+            })
+          }
+          disabled={pending}
+          searching={search.searching}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }

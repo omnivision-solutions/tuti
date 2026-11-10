@@ -198,3 +198,11 @@ export async function afterIntersections(page: Page) {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
 }
+
+/** Opens Details in who a conversation is with (their other properties, posts, votes and conversations). */
+export async function openPersonDetails(page: Page) {
+  await page
+    .getByRole("complementary", { name: "About them" })
+    .locator("details")
+    .evaluate((details: HTMLDetailsElement) => (details.open = true));
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileTextIcon, SparklesIcon } from "lucide-react";
+import { ChevronDownIcon, FileTextIcon, SparklesIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -8,6 +8,7 @@ import { AttachButton, type Upload, UploadList, useUploads } from "@/components/
 import { actOn } from "@/components/inbox/list-keys";
 import { InsertArticleDialog, type InsertableArticle } from "@/components/inbox/insert-article";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -235,16 +236,21 @@ export function ReplyForm({
       {/* On a phone, the send buttons go to a row of their own (on the right) rather than past the screen's edge. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          <AttachButton attach={files.attach} />
+          <AttachButton attach={files.attach} iconOnly />
           {!note && articles && (
             <>
-              <Button type="button" variant="ghost" size="sm" disabled={pending} title={`Insert article (${shortcut})`}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                disabled={pending}
+                aria-label="Insert article"
+                title={`Insert article (${shortcut})`}
                 // A click from the reply leaves the focus there, so its cursor is where the link goes.
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={openPicker}
               >
                 <FileTextIcon />
-                Insert article
               </Button>
               <InsertArticleDialog projectSlug={projectSlug} number={number} open={inserting} onOpenChange={setInserting} onPick={insert} finalFocus={textarea} />
             </>
@@ -253,27 +259,47 @@ export function ReplyForm({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size={drafting ? "sm" : "icon-sm"}
               disabled={drafting || pending || draftWithAi === "paused"}
-              title={draftWithAi === "paused" ? "This project is out of AI credits" : undefined}
+              aria-label={drafting ? undefined : "Draft with AI"}
+              title={draftWithAi === "paused" ? "This project is out of AI credits" : "Draft with AI"}
               onClick={draft}
             >
               <SparklesIcon />
-              {drafting ? "Drafting…" : "Draft with AI"}
+              {/* Said while it works: it takes a few seconds. */}
+              {drafting && "Drafting…"}
             </Button>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {/* Answered, and done with: closed with the reply (not left waiting on them). Both keep the keyboard's focus while it
-              sends: a plain Send leaves the conversation open, with nothing else to take it. */}
-          {!note && (
-            <Button type="button" variant="outline" disabled={pending || drafting || files.uploading} focusableWhenDisabled onClick={() => send(true)}>
-              Send and close
-            </Button>
-          )}
-          <Button type="submit" disabled={pending || drafting || files.uploading} focusableWhenDisabled>
+        {/* Send, the one button in words, and in its menu Send and close: answered, and done with, closed with the reply (not
+            left waiting on them). Both keep the keyboard's focus while it sends: a plain Send leaves the conversation open, with
+            nothing else to take it. */}
+        <div className="ml-auto flex items-center">
+          <Button type="submit" className={note ? undefined : "rounded-r-none"} disabled={pending || drafting || files.uploading} focusableWhenDisabled>
             {pending ? "Sending…" : note ? "Add note" : "Send"}
           </Button>
+          {!note && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon"
+                    className="rounded-l-none border-l border-l-primary-foreground/25"
+                    aria-label="More ways to send"
+                    title="More ways to send"
+                    disabled={pending || drafting || files.uploading}
+                    focusableWhenDisabled
+                  />
+                }
+              >
+                <ChevronDownIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-max">
+                <DropdownMenuItem onClick={() => send(true)}>Send and close</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
     </form>

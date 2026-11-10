@@ -7,7 +7,7 @@ import { checkpoints } from "./checkpoint";
 import { publishMx } from "./dns";
 import { setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { afterIntersections, apiFor, createProject, expectMoreView, expectOneRowOfTabs, moreView, png, signUp } from "./helpers";
+import { afterIntersections, apiFor, createProject, expectMoreView, expectOneRowOfTabs, moreView, openPersonDetails, png, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
@@ -15,6 +15,12 @@ import { sesBounce, verifySesDomain } from "./ses";
 
 /** A conversation's meta line, its status first: "Waiting on user · #1 · Sam Smith …". */
 const meta = (page: Page) => page.locator('[data-slot="page-header"] > p');
+
+/** Sends the reply and closes the conversation: Send and close, in Send's menu. */
+async function sendAndClose(page: Page) {
+  await page.getByRole("button", { name: "More ways to send" }).click();
+  await page.getByRole("menuitem", { name: "Send and close" }).click();
+}
 
 test("conversations from the API land in the inbox, where the team replies, assigns, closes and marks spam", async ({ browser }, testInfo) => {
   // The whole flow, dozens of pages (each Inbox page with its list beside the conversation): near 30 seconds on a busy runner.
@@ -164,13 +170,17 @@ test("conversations from the API land in the inbox, where the team replies, assi
     expect(onTop).toBe(true);
   }
 
-  // Beside it, who Sam is: their app's id, properties and groups, and nothing else from them yet.
+  // Beside it, who Sam is: their company, plan and seats at a glance; their app's id, other properties and groups under
+  // Details, and nothing else from them yet.
   const about = owner.getByRole("complementary", { name: "About them" });
   await expect(about).toContainText("Sam Smith");
   await expect(about).toContainText("e2e-sam@example.com");
+  await expect(about.getByRole("definition")).toHaveText(["Initech", "enterprise", "40"]);
+  await expect(about.getByText("id user-42")).toBeHidden();
+  await about.getByText("Details", { exact: true }).click();
   await expect(about).toContainText("id user-42");
   await expect(about).toContainText("Enterprise");
-  await expect(about.getByRole("definition")).toHaveText(["enterprise", "40", "Initech", "x"]);
+  await expect(about.getByRole("definition")).toHaveText(["Initech", "enterprise", "40", "x"]);
   // Long names wrap inside the panel, never past it.
   const panel = (await about.boundingBox())!;
   const name = (await about.getByText("averyveryveryverylongpropertynamewithoutanyspacesatallinit").boundingBox())!;
@@ -283,8 +293,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
     return face.closest("a")!.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
   })).toBe(true);
   await expect(owner.getByRole("button", { name: "Assigned to Olive Owner" })).toBeFocused();
-  // Beside the messages, the linked posts aren't squeezed by who it's with under them: their button shows whole.
-  await expect(owner.getByRole("region", { name: "Linked posts" }).getByRole("button", { name: "Link post…" })).toBeInViewport({ ratio: 1 });
+  // Nothing linked yet, so no linked posts beside it: linking is in the top bar's menu.
+  await expect(owner.getByRole("region", { name: "Linked posts" })).toHaveCount(0);
   await checkpoint(owner, "conversation");
 
   // Its row shows the latest message, not a note: the team's "These are the steps.", not the AI's summary after it, said
@@ -300,8 +310,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await api("/posts", { board: "feature-requests", title: "Export reports to CSV", author: { id: "user-42" } });
   await owner.reload();
   const linkedPosts = owner.getByRole("region", { name: "Linked posts" });
-  await expect(linkedPosts).toContainText("Link the posts this is about");
-  await linkedPosts.getByRole("button", { name: "Link post…" }).click();
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Link a post…" }).click();
   await owner.getByRole("dialog").getByRole("textbox", { name: "Search posts" }).fill("csv");
   await owner.getByRole("dialog").getByRole("button", { name: /Export reports to CSV/ }).click();
   await expect(owner.getByText("Linked to #1")).toBeVisible();
@@ -314,7 +324,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await checkpoint(owner, "post-linked-conversation");
   await conversations.getByRole("link", { name: "Can't export to CSV" }).click();
   await owner.waitForURL(`**/app/${slug}/inbox/1`);
-  // Unlinked, it's off the post again. While that runs (its answer held here), "Link post…" waits.
+  // Unlinked, it's off the post again. While that runs (its answer held here), its Unlink waits.
   let releaseUnlink!: () => void;
   const unlinkHeld = new Promise<void>((resolve) => (releaseUnlink = resolve));
   await owner.route("**/*", async (route) => {
@@ -326,11 +336,11 @@ test("conversations from the API land in the inbox, where the team replies, assi
     await route.fulfill({ response });
   });
   await linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
-  await expect(linkedPosts.getByRole("button", { name: "Link post…" })).toBeDisabled();
+  await expect(linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" })).toBeDisabled();
   releaseUnlink();
   await expect(owner.getByText("Unlinked #1")).toBeVisible();
   await owner.unroute("**/*");
-  await expect(linkedPosts).toContainText("Link the posts this is about");
+  await expect(linkedPosts.getByRole("heading", { name: "Linked posts" })).toHaveCount(0);
   // Unlinked, it looks related (an open post with the subject's words): Link links it, and it moves to the linked posts.
   const related = linkedPosts.getByRole("region", { name: "Looks related" });
   await expect(related.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
@@ -423,7 +433,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Answered and done with: Send and close. Closed, it moves to Closed (the next one in Needs reply opens); Mine has
   // nothing left.
   await owner.getByRole("textbox", { name: "Reply" }).fill("It ships on Monday. Closing this for now.");
-  await owner.getByRole("button", { name: "Send and close" }).click();
+  await sendAndClose(owner);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
   await owner.goto(`/app/${slug}/inbox`);
   await expect(views.getByRole("link", { name: "Needs reply 1" })).toBeVisible();
@@ -656,7 +666,7 @@ test("the views, the list and the open conversation side by side, each scrolling
   expect(await scrollTop(thread)).toBe(at);
   await expect(messages.last()).toBeInViewport();
   // Held beside the messages, what's about the conversation starts in the pane, not cut off above it.
-  expect((await owner.getByRole("region", { name: "Linked posts" }).boundingBox())!.y).toBeGreaterThanOrEqual((await thread.boundingBox())!.y);
+  expect((await owner.getByRole("complementary", { name: "About them" }).boundingBox())!.y).toBeGreaterThanOrEqual((await thread.boundingBox())!.y);
   // A conversation near the bottom of the list (the oldest but #1) opens beside it, the list where it was.
   const listAt = await scrollTop(list);
   await list.getByRole("link", { name: /Question number 2 / }).click();
@@ -864,14 +874,12 @@ test("the details beside a conversation hide for every conversation, after a rel
   await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/inbox/1`);
-  const posts = owner.getByRole("region", { name: "Linked posts" });
   const about = owner.getByRole("complementary", { name: "About them" });
   const messages = owner.getByRole("list", { name: "Messages" });
   const hide = owner.getByRole("button", { name: "Hide details" });
   const show = owner.getByRole("button", { name: "Show details" });
 
   // Shown to start with, its toggle at the end of the header's actions.
-  await expect(posts).toBeVisible();
   await expect(about).toBeVisible();
   await expect(hide).toHaveAttribute("aria-expanded", "true");
   const close = (await owner.getByRole("button", { name: "Close", exact: true }).boundingBox())!;
@@ -881,7 +889,6 @@ test("the details beside a conversation hide for every conversation, after a rel
 
   // Hidden: the messages and the reply box take the pane's whole width.
   await hide.click();
-  await expect(posts).toBeHidden();
   await expect(about).toBeHidden();
   await expect(show).toHaveAttribute("aria-expanded", "false");
   expect((await messages.boundingBox())!.width).toBeGreaterThan(width + 250);
@@ -894,7 +901,6 @@ test("the details beside a conversation hide for every conversation, after a rel
   await expect(about).toBeHidden();
   await owner.reload();
   await expect(show).toBeVisible();
-  await expect(posts).toBeHidden();
   // Hidden as the server sends it, before any script runs: no flash of the column on load.
   const html = await (await owner.request.get(`/app/${slug}/inbox/2`)).text();
   expect(html).toContain('data-details="hidden"');
@@ -904,7 +910,6 @@ test("the details beside a conversation hide for every conversation, after a rel
 
   // Shown again, as it was.
   await show.click();
-  await expect(posts).toBeVisible();
   await expect(about).toBeVisible();
   await expect(hide).toBeVisible();
   expect((await messages.boundingBox())!.width).toBeCloseTo(width, 0);
@@ -1187,7 +1192,7 @@ test("a reply kept while another conversation was open holds what the team had s
   await expect(owner).toHaveURL(/\/inbox\/1$/);
   await expect(messages).toHaveCount(2);
   await expect(reply).toHaveValue("Reports, then Export.");
-  await owner.getByRole("button", { name: "Send and close" }).click();
+  await sendAndClose(owner);
   await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
   await expect(meta(owner)).toContainText("Open · #");
 });
@@ -1350,6 +1355,7 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
   await rows.first().click();
   await expect(owner.getByRole("heading", { level: 1, name: "The newest question" })).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/102\\?page=2$`));
+  await openPersonDetails(owner);
   await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: "The oldest question" }).click();
   await expect(owner.getByRole("heading", { level: 1, name: "The oldest question" })).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1\\?page=2$`));
@@ -1548,7 +1554,7 @@ test("answered with Send, a conversation stays open though it's left Needs reply
   await expect(row(1)).toBeFocused();
   // The last one in the list, answered and closed at once: with none below it, the first opens.
   await reply.fill("All sorted.");
-  await owner.getByRole("button", { name: "Send and close" }).click();
+  await sendAndClose(owner);
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
   await expect(row(4)).toBeFocused();
 });
@@ -1686,12 +1692,14 @@ test("only a conversation the list opens gets its row focused: not after a click
   await sam.click();
   await expect(owner).toHaveURL(/\/inbox\/1\?view=unassigned$/);
   // Sam's other conversation, opened from who they are, not from the list: beside the same view.
+  await openPersonDetails(owner);
   await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: /And invoices\?/ }).click();
   await expect(owner).toHaveURL(/\/inbox\/3\?view=unassigned$/);
   await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Unassigned 3" })).toHaveAttribute("aria-current", "true");
   await expect(list.getByRole("link", { name: /And invoices\?/ })).toHaveAttribute("aria-current", "page");
   await expect(list.getByRole("link", { name: /And invoices\?/ })).not.toBeFocused();
   // One that isn't in Unassigned opens in the first view, where it has its row.
+  await openPersonDetails(owner);
   await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: /And refunds\?/ }).click();
   await expect(owner).toHaveURL(/\/inbox\/4$/);
   await expect(list.getByRole("link", { name: /And refunds\?/ })).toHaveAttribute("aria-current", "page");
@@ -1716,7 +1724,7 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await api("/conversations/1/messages", { body: "Also, can it be a PDF?", author: { id: "user-42" } });
   await expect(messages).toHaveCount(2);
   await owner.getByRole("textbox", { name: "Reply" }).fill("Reports, then Export: these are the steps.");
-  await owner.getByRole("button", { name: "Send and close" }).click();
+  await sendAndClose(owner);
   await expect(owner.getByText("Sent, and kept open: they wrote again since")).toBeVisible();
   await expect(meta(owner)).toContainText("Open · #");
   await checkpoint(owner, "inbox-kept-open");
@@ -1743,7 +1751,7 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await api("/conversations/1/messages", { body: "Thanks, and the PDF?", author: { id: "user-42" } });
   await expect(messages).toHaveCount(4);
   await owner.getByRole("textbox", { name: "Reply" }).fill("Yes: pick PDF in the export menu.");
-  await owner.getByRole("button", { name: "Send and close" }).click();
+  await sendAndClose(owner);
   // Closed, it leaves Mine, the only one there: back to Mine's list.
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=mine$`));
   await expectMoreView(owner, "Closed 1");
@@ -1779,8 +1787,7 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
   await expect(messages.last()).toBeInViewport();
   await expect(messages.first()).not.toBeInViewport();
   await expect(reply).toBeInViewport();
-  // What's beside it stays in view too: the linked posts and who it's with.
-  await expect(owner.getByRole("region", { name: "Linked posts" })).toBeInViewport();
+  // What's beside it stays in view too: who it's with.
   await expect(owner.getByRole("complementary", { name: "About them" })).toBeInViewport();
   await checkpoint(owner, "conversation-newest", { fullPage: false });
   // Scrolled back to the first message, the reply box is where it was.
@@ -1824,6 +1831,7 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
 
   // The tall panel scrolls on its own: the conversation opens at its message, not past it.
   await owner.goto(`/app/${slug}/inbox/3`);
+  await openPersonDetails(owner);
   await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("Property49");
   await expect(messages.first()).toBeInViewport();
   await expect(reply).toBeInViewport();

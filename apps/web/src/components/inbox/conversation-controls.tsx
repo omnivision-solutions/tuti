@@ -1,5 +1,6 @@
 "use client";
 
+import { AlarmClockIcon, UserPlusIcon } from "lucide-react";
 import { useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -68,6 +69,13 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
   );
 }
 
+/**
+ * An icon in the top bar (its name in a tooltip, and to the ear), so Close is the one word there; on phones, where the
+ * actions are a row under the title and a menu, the name too.
+ */
+const ICON_ACTION = "topbar:w-7 topbar:px-0";
+const Label = ({ children }: { children: string }) => <span className="topbar:sr-only">{children}</span>;
+
 type Teammate = { userId: string; name: string; image: string | null };
 
 function TeammateAvatar({ teammate }: { teammate: Teammate }) {
@@ -100,17 +108,28 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label={assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign"} />}
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            className={ICON_ACTION}
+            disabled={pending}
+            focusableWhenDisabled
+            aria-label={assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign"}
+            title={assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign"}
+          />
+        }
       >
         {assignee ? (
           <>
             <TeammateAvatar teammate={assignee} />
-            <span className="max-w-32 truncate">{assignee.name}</span>
+            <span className="max-w-32 truncate topbar:sr-only">{assignee.name}</span>
           </>
-        ) : former ? (
-          "Former teammate"
         ) : (
-          "Assign"
+          <>
+            <UserPlusIcon />
+            <Label>{former ? "Former teammate" : "Assign"}</Label>
+          </>
         )}
       </DropdownMenuTrigger>
       {/* As wide as the longest name, but never wider than the screen: a long one wraps. */}
@@ -172,8 +191,18 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
     });
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled />}>
-        {snoozedUntil ? (inBrowser ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snoozed") : "Snooze"}
+      {/* Snoozed, it says till when (in words: it's what the conversation is now); not, an icon. */}
+      <DropdownMenuTrigger
+        render={<Button variant={snoozedUntil ? "outline" : "ghost"} size="sm" className={snoozedUntil ? undefined : ICON_ACTION} disabled={pending} focusableWhenDisabled title={snoozedUntil ? undefined : "Snooze"} />}
+      >
+        {snoozedUntil ? (
+          inBrowser ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snoozed"
+        ) : (
+          <>
+            <AlarmClockIcon />
+            <Label>Snooze</Label>
+          </>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => snooze(new Date(Date.now() + 3 * 3_600_000))}>In 3 hours</DropdownMenuItem>

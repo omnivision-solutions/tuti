@@ -9,7 +9,7 @@ import { notFound } from "next/navigation";
 import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
 import { EarlierMessages } from "@/components/inbox/load-more";
 import { DetailsToggle } from "@/components/inbox/conversation-details";
-import { ConversationPosts } from "@/components/inbox/conversation-posts";
+import { ConversationPosts, LinkPostButton } from "@/components/inbox/conversation-posts";
 import { AssignMenu, CloseButton, MarkStatusButton, SnoozeMenu, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { MessageText } from "@/components/inbox/message-text";
@@ -191,6 +191,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
   // The column beside the messages, hidden or not as this browser left it (DetailsToggle).
   const detailsHidden = (await cookies()).get(DETAILS_HIDDEN_COOKIE)?.value === "1";
+  const posts = conversation.posts.map((link) => link.post);
 
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
@@ -228,6 +229,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           more={
             <>
               <AboutButton name={personName} />
+              <LinkPostButton projectSlug={slug} number={conversation.number} linked={posts.map((post) => post.number)} />
               {conversation.status === "OPEN" && answered && <MarkStatusButton projectSlug={slug} number={conversation.number} status="waiting" />}
               {conversation.status === "WAITING" && <MarkStatusButton projectSlug={slug} number={conversation.number} status="open" />}
               {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}
@@ -246,18 +248,21 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             input, labels for screen readers) stays in it, not past the page's end. */}
         <div id="conversation" className="@container flex flex-1 flex-col lg:relative lg:-mx-6 lg:min-h-0 lg:overflow-y-auto lg:px-6 lg:pb-6 lg:[container-type:size]">
           <div className="flex flex-1 flex-col gap-4 @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_18rem] @3xl:gap-6 @3xl:in-data-[details=hidden]:grid-cols-1">
-            {/* Beside it: the posts it's about, then the person (a sheet where the pane is narrow, the posts staying in it). Held
-                in view as the messages scroll (the page's scroll on phones, the pane's beside the list), scrolling on its own when
-                taller than the screen (so it never makes the row taller). Hidden by DetailsToggle, the messages take its room. */}
+            {/* Beside it: the posts it's linked to (once there are some: "Link a post…" is in the top bar's menu), then the
+                person (a sheet where the pane is narrow, the posts staying in it). Held in view as the messages scroll (the page's
+                scroll on phones, the pane's beside the list), scrolling on its own when taller than the screen (so it never makes
+                the row taller). Hidden by DetailsToggle, the messages take its room. */}
             <div
               id="conversation-details"
               className="flex flex-col gap-4 *:shrink-0 @3xl:sticky @3xl:top-16 @3xl:col-start-2 @3xl:row-start-1 @3xl:max-h-[calc(100svh-5.5rem)] @3xl:self-start @3xl:overflow-y-auto lg:@3xl:top-0 lg:@3xl:max-h-[100cqh] @3xl:in-data-[details=hidden]:hidden"
             >
-              <Card size="sm">
-                <CardContent>
-                  <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} related={related} />
-                </CardContent>
-              </Card>
+              {(posts.length > 0 || related.length > 0) && (
+                <Card size="sm">
+                  <CardContent>
+                    <ConversationPosts projectSlug={slug} number={conversation.number} posts={posts} related={related} />
+                  </CardContent>
+                </Card>
+              )}
               <PersonDetails name={personName}>
                 <PersonPanel
                   projectId={projectId}
