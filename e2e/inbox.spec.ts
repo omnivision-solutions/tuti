@@ -282,7 +282,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.keyboard.press("Enter");
   await expect(owner.getByRole("menuitem")).toHaveText(["Assign to me"]);
   await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
-  await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
+  await expect(owner.getByRole("region", { name: /Notifications/ }).getByText("Assigned to Olive Owner")).toBeVisible();
   // Its row in the list beside it shows who has it: their face, their name on hover (reached over the row's link, a click
   // there opening it as anywhere in the row) and in the row's name to the ear.
   const assigned = list.getByRole("link", { name: /, assigned to Olive Owner$/ });
@@ -733,7 +733,7 @@ test("on a phone, Assign, Snooze and Close are under the title, who the conversa
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "inbox-phone-assign-menu");
   await owner.getByRole("menuitem", { name: "Assign to me" }).press("Enter");
-  await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
+  await expect(owner.getByRole("region", { name: /Notifications/ }).getByText("Assigned to Olive Owner")).toBeVisible();
   await expect(more).toBeFocused();
   await about.click();
   const aboutSheet = owner.getByRole("dialog", { name: `About ${address}` });
