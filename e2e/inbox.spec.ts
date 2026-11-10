@@ -579,6 +579,8 @@ test("unlinking a post moves the keyboard's focus to the next one's Unlink, and 
   release();
   await expect(owner.getByText("Unlinked #1").last()).toBeVisible();
   await owner.unrouteAll({ behavior: "ignoreErrors" });
+  // Once the refreshed page has it: its Unlink gone (the card's hidden, so looked for in the page itself).
+  await expect(owner.locator("[data-unlink]")).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Show details" })).toBeFocused();
 });
 
@@ -2228,7 +2230,8 @@ test("Insert article in a reply: ⌘K in the reply box, search, ↓ and Enter pu
   await checkpoint(owner, "inbox-article-inserted");
 
   // The button opens it too, its shortcut named as this platform has it (Ctrl K off a Mac).
-  await expect(owner.getByRole("button", { name: "Insert article" })).toHaveAttribute("title", process.platform === "darwin" ? "Insert article (⌘K)" : "Insert article (Ctrl K)");
+  await owner.getByRole("button", { name: "Insert article" }).hover();
+  await expect(owner.locator('[data-slot="tooltip-content"]')).toHaveText(process.platform === "darwin" ? "Insert article (⌘K)" : "Insert article (Ctrl K)");
   await owner.getByRole("button", { name: "Insert article" }).click();
   await expect(dialog).toBeVisible();
   await owner.keyboard.press("Escape");
