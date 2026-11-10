@@ -121,6 +121,18 @@ test("tree-less short articles and search results keep their capped widths", asy
   expect.soft((await reader.locator("[data-docs-layout] > div").boundingBox())!.width).toBe(71 * 16);
   expect(Math.abs((await reader.locator("[data-docs-layout] > div").boundingBox())!.x - logo.x)).toBeLessThanOrEqual(1);
   await checkpoint(reader, "docs-tree-less-search-results-1440", { fullPage: false });
+
+  // One with sections, still without a tree: its title starts at the logo too (the outline beside it on the right).
+  const { slug: sectioned } = await api("/articles", {
+    title: "Import events",
+    content: { type: "doc", content: [paragraph(long), heading("Before you start"), paragraph(long), heading("Import a file"), paragraph(long)] },
+    listing: "unlisted",
+  });
+  await api(`/articles/${sectioned}/publish`, {});
+  await reader.goto(`/docs/${sectioned}`);
+  const title = reader.getByRole("heading", { name: "Import events", level: 1 });
+  await expect(title).toBeVisible();
+  expect(Math.abs((await title.boundingBox())!.x - logo.x)).toBeLessThanOrEqual(1);
 });
 
 test("a reader gets an article with room to read, turns on reading mode to read it alone, and it stays on", async ({ browser }, testInfo) => {
