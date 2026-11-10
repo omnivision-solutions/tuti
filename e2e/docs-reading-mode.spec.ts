@@ -48,6 +48,11 @@ test("a reader gets an article with room to read, turns on reading mode to read 
   await expect(onThisPage).toBeHidden();
   await expect(page.getByRole("heading", { name: "Import a file" })).toBeVisible();
   await checkpoint(reader, "portal-docs-article-reading-mode", { fullPage: false });
+  // The sections stay one click away: the compact menu under the title takes the column's place.
+  await page.getByText("On this page", { exact: true }).click();
+  await page.getByRole("link", { name: "Import a file" }).click();
+  await reader.waitForURL(/#import-a-file$/);
+  await expect(page.getByRole("heading", { name: "Import a file" })).toBeInViewport();
 
   // Remembered in this browser: on the next article page too, from its first paint.
   await reader.reload();

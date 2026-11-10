@@ -401,9 +401,9 @@ export async function DocsArticle({
               <ArticleActions markdown={markdown} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
             </div>
           )}
-          {/* Where "On this page" isn't beside it (below wide screens), a compact menu under the title. */}
+          {/* Where "On this page" isn't beside it (below wide screens, or in reading mode), a compact menu under the title. */}
           {readable && outlined(headings) && (
-            <details className="group/toc mt-1 text-sm xl:hidden">
+            <details className="group/toc mt-1 text-sm xl:hidden xl:[:root[data-docs-reading]_&]:block">
               <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
                 On this page
                 <ChevronDownIcon aria-hidden className="size-4 transition-transform group-open/toc:rotate-180" />
