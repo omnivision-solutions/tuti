@@ -110,9 +110,10 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
       <DropdownMenuTrigger
         render={
           <Button
-            variant="ghost"
+            // Still with someone who left the team (rare): said in words, not as the icon an unassigned one has.
+            variant={former ? "outline" : "ghost"}
             size="sm"
-            className={ICON_ACTION}
+            className={former ? undefined : ICON_ACTION}
             disabled={pending}
             focusableWhenDisabled
             aria-label={assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign"}
@@ -125,10 +126,12 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
             <TeammateAvatar teammate={assignee} />
             <span className="max-w-32 truncate topbar:sr-only">{assignee.name}</span>
           </>
+        ) : former ? (
+          "Former teammate"
         ) : (
           <>
             <UserPlusIcon />
-            <Label>{former ? "Former teammate" : "Assign"}</Label>
+            <Label>Assign</Label>
           </>
         )}
       </DropdownMenuTrigger>

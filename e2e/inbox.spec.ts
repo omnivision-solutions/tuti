@@ -340,9 +340,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   releaseUnlink();
   await expect(owner.getByText("Unlinked #1")).toBeVisible();
   await owner.unroute("**/*");
-  await expect(linkedPosts.getByRole("heading", { name: "Linked posts" })).toHaveCount(0);
+  await expect(linkedPosts).toHaveCount(0);
   // Unlinked, it looks related (an open post with the subject's words): Link links it, and it moves to the linked posts.
-  const related = linkedPosts.getByRole("region", { name: "Looks related" });
+  const related = owner.getByRole("region", { name: "Looks related" });
   await expect(related.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
   await checkpoint(owner, "conversation-looks-related");
   await related.getByRole("button", { name: "Link “Export reports to CSV”" }).click();

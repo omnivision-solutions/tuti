@@ -68,26 +68,29 @@ export function ConversationPosts({
     });
 
   return (
-    <section ref={section} aria-label="Linked posts" className="flex flex-col gap-2">
-      {posts.length > 0 && <h2 className="text-xs font-medium text-muted-foreground">Linked posts</h2>}
+    // A region named Linked posts only once there are some: before, it holds only what looks related.
+    <section ref={section} aria-label={posts.length > 0 ? "Linked posts" : undefined} className="flex flex-col gap-2">
       {posts.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {posts.map((post) => (
-            <li key={post.number} className="flex items-start gap-2">
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
-                  {post.title}
-                </Link>
-                <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <PostStatusBadge status={post.status} />#{post.number}
-                </span>
-              </div>
-              <Button variant="ghost" size="icon-sm" aria-label={`Unlink “${post.title}”`} title="Unlink" data-unlink={post.number} disabled={pending} onClick={() => link(post.number, false)}>
-                <XIcon />
-              </Button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <h2 className="text-xs font-medium text-muted-foreground">Linked posts</h2>
+          <ul className="flex flex-col gap-2">
+            {posts.map((post) => (
+              <li key={post.number} className="flex items-start gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <Link href={`/app/${projectSlug}/p/${post.number}`} className="text-sm break-words hover:underline">
+                    {post.title}
+                  </Link>
+                  <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <PostStatusBadge status={post.status} />#{post.number}
+                  </span>
+                </div>
+                <Button variant="ghost" size="icon-sm" aria-label={`Unlink “${post.title}”`} title="Unlink" data-unlink={post.number} disabled={pending} onClick={() => link(post.number, false)}>
+                  <XIcon />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       {related.length > 0 && (
         <section aria-label="Looks related" className="flex flex-col gap-2">
