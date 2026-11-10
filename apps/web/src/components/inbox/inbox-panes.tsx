@@ -3,13 +3,12 @@ import { type Prisma, prisma } from "@tuti/db";
 import { historySince, pastConversations, visibleConversations } from "@tuti/jobs";
 import { cn } from "cn";
 import Link from "next/link";
-import { InboxIcon, CheckIcon } from "lucide-react";
+import { InboxIcon, CheckIcon, ArrowRightIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { EmptyState } from "@/components/empty-state";
-import { ConversationMore } from "@/components/inbox/more-actions";
+import { ConversationMore, InboxSearchButton } from "@/components/inbox/more-actions";
 import { ConversationDetails } from "@/components/inbox/conversation-details";
 import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
@@ -22,6 +21,7 @@ import { StatTile } from "@/components/stat-tile";
 import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { initial, longDuration, replyTime, rowBy, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
@@ -35,7 +35,7 @@ const TABS = 3;
 
 /** The inbox's views: what needs an answer first, then the rest. */
 const VIEWS = {
-  open: { title: "Needs reply", empty: "Nothing waits for an answer." },
+  open: { title: "Needs reply", empty: "No replies waiting" },
   mine: { title: "Mine", empty: "Nothing's assigned to you." },
   unassigned: { title: "Unassigned", empty: "Every open conversation has someone on it." },
   waiting: { title: "Waiting on user", empty: "No conversations wait on a user." },
@@ -172,8 +172,7 @@ export async function InboxPanes({
   const [counts, conversations, member, { supportInbox, plan }, stats] = await Promise.all([
     Promise.all(views.map((v) => prisma.conversation.count({ where: viewWhere(v, projectId, userId, history) }))),
     listed(view, projectId, userId, history, pages),
-    // The list's own header, with no conversation open (one that is has its own).
-    open === null ? prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } }) : null,
+    prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId, userId } }, select: { emailNewConversations: true } }),
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, plan: true } }),
     open === null ? inboxStats(projectId) : null,
   ]);
@@ -195,22 +194,23 @@ export async function InboxPanes({
         <SidebarTrigger />
         <span>{membership.project.name}</span>
       </div>
-      {member ? (
-        <div data-slot="page-header" className={LIST_TITLE}>
-          <div className="inbox-list-title-row">
+      <div data-slot="page-header" className={LIST_TITLE}>
+        <div className="inbox-list-title-row">
+          {open === null ? (
             <h1>Inbox</h1>
-            <ConversationMore>
+          ) : (
+            <p aria-hidden className="font-heading inbox-list-heading">
+              Inbox
+            </p>
+          )}
+          <div className="flex items-center gap-1">
+            <InboxSearchButton />
+            <ConversationMore label="Inbox options">
               <NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />
             </ConversationMore>
           </div>
         </div>
-      ) : (
-        // A conversation open beside the list has the page's heading: the list keeps its title in sight (not a
-        // heading), so the views under it stay where they were.
-        <p aria-hidden className={cn(LIST_TITLE, "font-heading text-2xl font-semibold tracking-[-0.02em] max-lg:hidden sm:text-[2rem] sm:leading-10")}>
-          Inbox
-        </p>
-      )}
+      </div>
       {/* On a phone, the list or the conversation (its Back is to the list). */}
       <SubNav
         label="Views"
@@ -259,7 +259,11 @@ export async function InboxPanes({
         >
           {conversations.length === 0 ? (
             // From laptop width up, an empty Inbox says new conversations show up here, beside the list, with its numbers.
-            <EmptyState title={VIEWS[view].empty} description={<span className={cn(none && "lg:hidden")}>{whereFrom}</span>} />
+            <div className="inbox-list-empty">
+              <CheckIcon aria-hidden />
+              <p>{VIEWS[view].empty}</p>
+              <span className={cn(none && view !== "open" && "lg:hidden")}>{view === "open" ? "You’re up to date." : whereFrom}</span>
+            </div>
           ) : (
             <div className="inbox-rows">
               <ItemList>
@@ -382,7 +386,10 @@ export async function InboxPanes({
         // Until a conversation opens (from laptop width up: on a phone the list is alone), how the Inbox is doing.
         <ConversationPane open={false}>
           <div className="inbox-overview inbox-surface">
-            <h2>Inbox overview</h2>
+            <div className="inbox-overview-title">
+              <h2>Inbox overview</h2>
+              <span>{membership.project.name}</span>
+            </div>
             <div className="inbox-all-clear">
               {none && (
                 <div className="inbox-empty-mark">
@@ -398,8 +405,13 @@ export async function InboxPanes({
                   ? "Nothing needs a reply. New conversations from your widget, email and API will appear here."
                   : "Open a conversation to reply here: click it, or press J."}
               </p>
+              {none && (
+                <Link href={inboxHref(slug, "waiting")} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  See waiting conversations <ArrowRightIcon aria-hidden />
+                </Link>
+              )}
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="inbox-overview-stats grid gap-5 sm:grid-cols-3">
               <StatTile
                 value={stats.waiting}
                 label="Waiting for a reply"

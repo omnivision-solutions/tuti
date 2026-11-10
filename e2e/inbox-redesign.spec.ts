@@ -16,6 +16,13 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/inbox`);
   await checkpoint(owner, "empty-laptop-light", { fullPage: false });
+  await owner.getByRole("link", { name: "See waiting conversations" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=waiting$`));
+  await owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Needs reply 0" }).click();
+  await owner.getByRole("button", { name: "Search project", exact: true }).click();
+  await expect(owner.getByRole("dialog", { name: "Go to or do" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("dialog", { name: "Go to or do" })).toBeHidden();
   await api("/conversations", {
     user: { id: "demo-sam", name: "Sam Smith", email: "e2e-sam@example.com" },
     subject: "Can I export my reports?",
@@ -103,12 +110,18 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await expect(sheet.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
   for (const name of folded) await expect(sheet.locator("details").filter({ has: owner.locator("summary", { hasText: name }) })).not.toHaveAttribute("open");
   await checkpoint(owner, "phone-details-light", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "phone-details-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
   await sheet.getByRole("button", { name: "Close", exact: true }).click();
   await expect(sheet).toBeHidden();
   await expect(title.getByRole("button", { name: "Show details" })).toBeFocused();
   await expect(owner.getByRole("region", { name: "Conversations", exact: true })).toBeHidden();
   await expect(owner.getByRole("textbox", { name: "Reply" })).toBeInViewport();
   await checkpoint(owner, "phone-conversation-light", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "phone-conversation-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
   await owner.getByRole("textbox", { name: "Reply" }).fill("Thanks, Sam! We’ll check this for you.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByRole("list", { name: "Messages" })).toContainText("Thanks, Sam!");

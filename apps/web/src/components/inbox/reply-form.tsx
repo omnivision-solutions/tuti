@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDownIcon, FileTextIcon, SparklesIcon } from "lucide-react";
+import { ChevronDownIcon, FileTextIcon, SparklesIcon, LockKeyholeIcon, ArrowRightIcon, MailIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -214,7 +214,10 @@ export function ReplyForm({
           >
             <TabsList>
               <TabsTrigger value="reply">Reply</TabsTrigger>
-              <TabsTrigger value="note">Note</TabsTrigger>
+              <TabsTrigger value="note">
+                <LockKeyholeIcon aria-hidden />
+                Note
+              </TabsTrigger>
             </TabsList>
           </Tabs>
           {!note && recipient && <span className="inbox-composer-to">To {recipient}</span>}
@@ -295,7 +298,8 @@ export function ReplyForm({
                     <Button
                       type="button"
                       variant="ghost"
-                      size={drafting ? "sm" : "icon-sm"}
+                      size="sm"
+                      className="inbox-ai-draft"
                       disabled={drafting || pending || draftWithAi === "paused"}
                       // Out of credits, still reached from the keyboard, where its tooltip says why it's off.
                       focusableWhenDisabled
@@ -308,7 +312,7 @@ export function ReplyForm({
                 >
                   <SparklesIcon />
                   {/* Said while it works: it takes a few seconds. */}
-                  {drafting && "Drafting…"}
+                  {drafting ? "Drafting…" : <span>Draft with AI</span>}
                   {draftWithAi === "paused" && (
                     <span id={pausedId} className="sr-only">
                       {PAUSED}
@@ -324,7 +328,15 @@ export function ReplyForm({
             nothing else to take it. */}
           <div className="ml-auto flex items-center">
             <Button type="submit" className={note ? undefined : "rounded-r-none"} disabled={pending || drafting || files.uploading} focusableWhenDisabled>
-              {pending ? "Sending…" : note ? "Add note" : "Send"}
+              {pending ? (
+                "Sending…"
+              ) : note ? (
+                "Add note"
+              ) : (
+                <>
+                  Send <ArrowRightIcon aria-hidden />
+                </>
+              )}
             </Button>
             {!note && (
               <DropdownMenu>
@@ -357,7 +369,12 @@ export function ReplyForm({
           </div>
         </div>
       </form>
-      {emailed && !note && <p className="inbox-composer-hint">Replies are emailed to {recipient ?? "them"}.</p>}
+      {emailed && !note && (
+        <p className="inbox-composer-hint">
+          <MailIcon aria-hidden />
+          Replies are emailed to {recipient?.split(" ")[0] ?? "them"}.
+        </p>
+      )}
     </>
   );
 }

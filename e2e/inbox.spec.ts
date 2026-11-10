@@ -35,7 +35,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.goto(`/app/${slug}`);
   await owner.getByRole("link", { name: "Inbox", exact: true }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
-  await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
+  await expect(owner.getByText("No replies waiting")).toBeVisible();
 
   // Someone from the team's app, and someone known only by their email address, write in.
   const api = await apiFor(owner, slug);
@@ -106,7 +106,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
     const list = (await owner.getByRole("region", { name: "Conversations", exact: true }).boundingBox())!;
     const who = (await rows.first().getByRole("link").boundingBox())!;
     expect(who.height).toBeLessThan(30);
-    // Who on one line, the message on the other: two lines (the first row has no padding above it).
+    // Who, subject and preview use three lines.
     expect((await rows.first().boundingBox())!.height).toBeLessThanOrEqual(100);
     expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     return list.width;
@@ -454,7 +454,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
 
   // Nobody's waiting now but the one about to be marked as spam; and the owner turns the emails off.
   await expect(owner).toHaveTitle(/^\(1\) /);
-  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Inbox options" }).click();
   await owner.getByRole("button", { name: "Stop emailing me new conversations" }).click();
   await expect(owner.getByText("You won't be emailed new conversations")).toBeVisible();
 
@@ -498,7 +498,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await (await apiFor(owner, otherSlug))("/conversations", { email: "e2e-elsewhere@example.com", body: "Another project's question" });
   await owner.goto(`/app/${slug}/inbox?view=constructor`);
   await expect(views.getByRole("link", { name: "Needs reply 0" })).toHaveAttribute("aria-current", "page");
-  await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
+  await expect(owner.getByText("No replies waiting")).toBeVisible();
 
   // Reporting counts this project's conversations, spam left out, and the team's replies.
   await owner.goto(`/app/${slug}/reporting/inbox`);
@@ -591,7 +591,7 @@ test("unlinking a post moves the keyboard's focus to the next one's Unlink, and 
   await expect(other).toBeFocused();
 });
 
-test("the reply box tools are icons, named to screen readers and in tooltips; triage values are in details", async ({ browser }) => {
+test("composer tools keep accessible names and tooltips, AI draft is labelled on laptops, and triage values are in details", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
@@ -620,10 +620,10 @@ test("the reply box tools are icons, named to screen readers and in tooltips; tr
   for (const width of [1440, 390]) {
     await owner.setViewportSize({ width, height: 900 });
     await owner.goto(`/app/${slug}/inbox/1`);
-    // On a phone the reply box's tools stay icons, Assign and Snooze are in the row under the title, in words.
+    // On phones the composer tools use icons; laptop AI drafting also has a visible label.
     for (const [name, tip] of icons) {
       const button = owner.getByRole("button", { name, exact: true }).first();
-      expect(await wordless(button)).toBe(true);
+      expect(await wordless(button)).toBe(name !== "Draft with AI" || width < 1200);
       // The keyboard reaches it (Shift first, so the focus is the keyboard's): its tooltip shows.
       await owner.keyboard.press("Shift");
       await button.focus();
@@ -736,8 +736,9 @@ test("the views, the list and the open conversation side by side, each scrolling
   expect(v.y).toBeGreaterThanOrEqual(48);
   // The conversation from the top of the window under the header, beside the list's title and then its views.
   expect(c.y).toBeLessThan(v.y);
-  expect(c.y).toBe((await owner.locator('[data-slot="pane-layout"] > p[aria-hidden]').boundingBox())!.y);
-  for (const pane of [l, c]) {
+  expect(c.y).toBe((await owner.locator('.inbox-list-title').boundingBox())!.y);
+  const listSurface = (await owner.locator(".inbox-list-body").boundingBox())!;
+  for (const pane of [listSurface, c]) {
     expect(pane.y + pane.height).toBe(884);
   }
   // Between the views and the list, the note that Messages in the widget is off.

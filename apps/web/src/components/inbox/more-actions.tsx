@@ -1,12 +1,13 @@
 "use client";
 
-import { EllipsisIcon } from "lucide-react";
+import { EllipsisIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
 import { Button } from "@/components/ui/button";
 
 /** Keeps dialog actions mounted when their menu closes, so the dialog can finish and return focus. */
-export function ConversationMore({ children }: { children: ReactNode }) {
+export function ConversationMore({ children, label = "More actions" }: { children: ReactNode; label?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -37,7 +38,7 @@ export function ConversationMore({ children }: { children: ReactNode }) {
   }, [open]);
   return (
     <div ref={ref} className="inbox-more">
-      <Button ref={trigger} variant="ghost" size="icon-sm" aria-label="More actions" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+      <Button ref={trigger} variant="ghost" size="icon-sm" aria-label={label} aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
         <EllipsisIcon />
       </Button>
       <div
@@ -54,5 +55,14 @@ export function ConversationMore({ children }: { children: ReactNode }) {
         {children}
       </div>
     </div>
+  );
+}
+
+/** Opens the existing project search without leaving the Inbox. */
+export function InboxSearchButton() {
+  return (
+    <Button variant="ghost" size="icon-sm" aria-label="Search project" onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_MENU))}>
+      <SearchIcon />
+    </Button>
   );
 }
