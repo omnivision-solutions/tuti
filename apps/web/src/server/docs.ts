@@ -104,6 +104,7 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
     content: formData.get("content") || undefined,
     body: formData.get("content") ? undefined : "",
     ...placeFrom(formData),
+    ...(slug === null && formData.has("description") && { description: String(formData.get("description") ?? "") }),
     // The version the editor opened on, and after a refusal the newest it showed.
     ...(formData.get("revision") && { revision: String(formData.get("revision")) }),
     ...(formData.get("seen") && { seen: String(formData.get("seen")) }),

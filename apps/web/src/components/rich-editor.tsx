@@ -56,8 +56,10 @@ import {
   TextIcon,
   VideoIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { useEditorSlot } from "@/components/use-editor-slot";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
@@ -106,6 +108,8 @@ export function RichEditor({
   onCreate,
   onReadable,
   bare = false,
+  toolbarId,
+  toolbarEnd,
 }: {
   profile: Profile;
   name: string;
@@ -132,7 +136,11 @@ export function RichEditor({
    */
   onReadable?: (readable: boolean) => void;
   bare?: boolean;
+  /** A pinned formatting row owned by an article editor, outside its scrolling text. */
+  toolbarId?: string;
+  toolbarEnd?: ReactNode;
 }) {
+  const toolbarHost = useEditorSlot(toolbarId);
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [uploading, setUploading] = useState(0);
@@ -433,11 +441,15 @@ export function RichEditor({
       >
         {/* Not over text it can't read: its commands would change what's shown (none of it is sent). */}
         {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} className="border-b px-1 py-1" />}
+        {editor && toolbarHost && !unreadable && createPortal(<>
+          <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} expanded />
+          {toolbarEnd}
+        </>, toolbarHost)}
         <EditorContent editor={editor} />
         {editor && bare && (
           <>
             <div ref={menus} />
-            <SelectionBar editor={editor} onPrompt={setPrompt} host={menusHost} />
+            {!toolbarId && <SelectionBar editor={editor} onPrompt={setPrompt} host={menusHost} />}
             <SlashMenu
               editor={editor}
               host={menusHost}
@@ -791,10 +803,14 @@ function SelectionBar({ editor, onPrompt, host }: { editor: Editor; onPrompt: (k
 }
 
 /** `onImage`: picks images to upload (with uploads set up). */
-function Toolbar({ editor, onPrompt, onImage, className }: { editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; className?: string }) {
+function Toolbar({ editor, onPrompt, onImage, className, expanded = false }: { editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; className?: string; expanded?: boolean }) {
   const active = useEditorState({
     editor,
     selector: ({ editor }) => ({
+      heading: editor.isActive("heading", { level: 2 }) ? "h2" : editor.isActive("heading", { level: 3 }) ? "h3" : "text",
+      bulletList: editor.isActive("bulletList"),
+      orderedList: editor.isActive("orderedList"),
+      blockquote: editor.isActive("blockquote"),
       bold: editor.isActive("bold"),
       italic: editor.isActive("italic"),
       code: editor.isActive("code"),
@@ -810,6 +826,14 @@ function Toolbar({ editor, onPrompt, onImage, className }: { editor: Editor; onP
     <div role="toolbar" aria-label="Formatting" className={cn("flex flex-wrap items-center gap-0.5", className)}>
       {!active.image && !active.codeBlock && (
         <>
+          {expanded && <>
+            <select aria-label="Text style" className="docs-format-select" value={active.heading} onChange={(event) => {
+              if (event.target.value === "h2") chain().setHeading({ level: 2 }).run();
+              else if (event.target.value === "h3") chain().setHeading({ level: 3 }).run();
+              else chain().setParagraph().run();
+            }}><option value="text">Text</option><option value="h2">Heading</option><option value="h3">Subheading</option></select>
+            <span className="docs-toolbar-separator" />
+          </>}
           <Tool icon={BoldIcon} label="Bold" active={active.bold} onClick={() => chain().toggleBold().run()} />
           <Tool icon={ItalicIcon} label="Italic" active={active.italic} onClick={() => chain().toggleItalic().run()} />
           <Tool icon={CodeIcon} label="Code" active={active.code} onClick={() => chain().toggleCode().run()} />
@@ -819,7 +843,22 @@ function Toolbar({ editor, onPrompt, onImage, className }: { editor: Editor; onP
             active={active.link}
             onClick={() => (active.link ? chain().extendMarkRange("link").unsetLink().run() : onPrompt("link"))}
           />
+          {expanded && <>
+            <span className="docs-toolbar-separator" />
+            <Tool icon={ListIcon} label="Bulleted list" active={active.bulletList} onClick={() => chain().toggleBulletList().run()} />
+            <Tool icon={ListOrderedIcon} label="Numbered list" active={active.orderedList} onClick={() => chain().toggleOrderedList().run()} />
+            <Tool icon={QuoteIcon} label="Quote" active={active.blockquote} onClick={() => chain().toggleBlockquote().run()} />
+            <span className="docs-toolbar-separator" />
+          </>}
           {onImage && <Tool icon={ImageIcon} label="Image" active={false} onClick={onImage} />}
+          {expanded && <>
+            <Tool icon={TableIcon} label="Table" active={active.table} onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />
+            <details className="docs-insert-menu" onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }} onClick={(event) => { if ((event.target as Element).closest("button")) event.currentTarget.open = false; }}><summary>+ <span>Insert</span></summary><div>
+              <button type="button" onClick={() => chain().setCodeBlock().run()}>Code block</button>
+              <button type="button" onClick={() => chain().setHorizontalRule().run()}>Divider</button>
+              <button type="button" onClick={() => onPrompt("video")}>Video</button>
+            </div></details>
+          </>}
         </>
       )}
       {active.image && (

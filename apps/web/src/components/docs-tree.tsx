@@ -1,12 +1,15 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronRightIcon, FileTextIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { BookOpenIcon, ChevronRightIcon, FileTextIcon, FolderIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
+import { useSidebar } from "@/components/ui/sidebar";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { CollectionDialog, TabDialog } from "@/components/docs";
 import { DocsTreeFold } from "@/components/docs-tree-fold";
 import { LucideIcon } from "@/components/icon-field";
@@ -231,6 +234,7 @@ export function DocsWorkspace({
   access,
   parents,
   deleted,
+  projectName,
   children,
 }: {
   projectSlug: string;
@@ -243,6 +247,7 @@ export function DocsWorkspace({
   parents: { slug: string; name: string }[];
   /** How many articles were deleted lately (they can be restored from the Docs home). */
   deleted: number;
+  projectName: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -251,6 +256,9 @@ export function DocsWorkspace({
   const [dragging, setDragging] = useState<{ kind: Kind; slug: string } | null>(null);
   const [target, setTarget] = useState<{ key: string; where: Where } | null>(null);
   const [browsing, setBrowsing] = useState(false);
+  const { setOpenMobile } = useSidebar();
+  const openingApp = useRef(false);
+  const openingSearch = useRef(false);
   // Where "New collection" adds one, while its dialog is open.
   const [adding, setAdding] = useState<NewCollection | null>(null);
   // The handle to focus again once the move is done, moved or refused: it's disabled while the move runs
@@ -263,7 +271,10 @@ export function DocsWorkspace({
       return;
     }
     refocus.current = null;
-    document.getElementById(id)?.focus();
+    // A phone sheet can still be mounted while its exit transition finishes.
+    document.querySelectorAll<HTMLElement>(`[id="${CSS.escape(id)}"]`).forEach((handle) => {
+      if (handle.getClientRects().length) handle.focus();
+    });
   }, [pending, tabs, collections, uncollected]);
 
   // The tree by slug, for the checks the server makes too.
@@ -539,14 +550,14 @@ export function DocsWorkspace({
                     aria-current={current?.kind === "collection" && current.slug === collection.slug ? "page" : undefined}
                     className={rowLink}
                   >
-                    {collection.icon && <LucideIcon name={collection.icon} className="text-muted-foreground" />}
+                    {collection.icon ? <LucideIcon name={collection.icon} className="text-muted-foreground" /> : <FolderIcon className="size-4 shrink-0 text-muted-foreground" />}
                     <span title={collection.name} className="min-w-0 truncate">
                       {collection.name}
                     </span>
                   </Link>
                 </Row>
                 {expanded && !empty && (
-                  <div className="ml-3 border-l pl-1">
+                  <div className="ml-3 pl-1">
                     {collection.articles.length > 0 && <ul aria-label={`Articles in ${collection.name}`}>{articleRows(collection.articles, collection.slug)}</ul>}
                     {collectionRows(inside, `Collections in ${collection.name}`)}
                   </div>
@@ -596,7 +607,7 @@ export function DocsWorkspace({
               <>
                 <AddContentMenu
                   label={`Add to ${tab.name}`}
-                 
+
                   parent={null}
                   tab={tab.slug}
                   // An article in no collection is on the first tab; on another, a new one starts in its first collection.
@@ -631,28 +642,11 @@ export function DocsWorkspace({
     .filter(Boolean);
 
   const footerLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
-  return (
-    <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
-      <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:flex-row">
-        {/* Beside every Docs page, to go between them. */}
-        <aside className="border-b lg:w-64 lg:shrink-0 lg:border-r lg:border-b-0 lg:[:root[data-docs-tree-folded]_&]:w-12">
-          {/* Folded (from laptop width up, `data-docs-tree-folded` on <html>: DocsTreeFold): a rail with the button that
-              opens the tree again, where the tree's own was. */}
-          <div className="hidden justify-center p-2 lg:sticky lg:top-0 lg:[:root[data-docs-tree-folded]_&]:flex">
-            <DocsTreeFold open />
-          </div>
-          <button
-            type="button"
-            aria-expanded={browsing}
-            aria-controls="docs-tree"
-            onClick={() => setBrowsing(!browsing)}
-            className="flex w-full items-center gap-2 px-6 py-3 text-sm font-medium lg:hidden"
-          >
-            <ChevronRightIcon aria-hidden className={cn("size-4 transition-transform", browsing && "rotate-90")} />
-            Browse docs
-          </button>
-          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-0 lg:flex lg:max-h-dvh lg:overflow-y-auto", "lg:[:root[data-docs-tree-folded]_&]:hidden", browsing ? "flex" : "hidden")}>
-            {/* Back to the docs' home, which shows them all at a glance; beside it, from laptop width up, the tree's fold. */}
+  const navigation = <>
+    <div className="docs-tree-heading"><h2>Docs</h2><div className="flex items-center"><Button variant="ghost" size="icon-sm" aria-label="Search docs" onClick={() => { if (browsing) { openingSearch.current = true; setBrowsing(false); } else window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); }}><SearchIcon className="size-4" /></Button><DocsTreeFold open={false} className="max-lg:hidden" /></div></div>
+    <p className="docs-tree-caption">{projectName} help center</p>
+    <div className="docs-tree-content" onClick={(event) => { if ((event.target as Element).closest("a")) setBrowsing(false); }}>
+
             <div className="flex items-center gap-1">
               <Row draggable={false} drop={undefined} handlers={{}} className="min-w-0 flex-1 pl-2">
                 <Link href={base} aria-current={pathname === base ? "page" : undefined} className={rowLink}>
@@ -660,15 +654,13 @@ export function DocsWorkspace({
                   Overview
                 </Link>
               </Row>
-              <DocsTreeFold open={false} className="max-lg:hidden" />
+
             </div>
             <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
               {tabs.length > 0 ? (
                 <>
                   {/* Named, so a first-time reader knows these are the help center's tabs (and that there can be more). */}
-                  <p aria-hidden className="px-2 pb-1 group-label">
-                    Tabs
-                  </p>
+
                   <ul aria-label="Tabs" className="flex flex-col gap-3">
                     {tabSections}
                   </ul>
@@ -683,12 +675,13 @@ export function DocsWorkspace({
                 </div>
               )}
             </nav>
-            <div className="flex flex-col gap-0.5 border-t pt-3">
+            <div className="docs-tree-footer flex flex-col gap-0.5 pt-3">
               {/* The tree's main action, always in reach under it. */}
               <Link href={`${base}/new`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mb-1.5 w-full")}>
                 <PlusIcon aria-hidden />
                 New article
               </Link>
+              <Button variant="ghost" className="justify-start lg:hidden" onClick={() => { openingApp.current = true; setBrowsing(false); }}><PanelLeftIcon />App navigation</Button>
               <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} />
               {deleted > 0 && (
                 <Link href={`${base}#recently-deleted`} className={footerLink}>
@@ -697,11 +690,24 @@ export function DocsWorkspace({
                 </Link>
               )}
             </div>
-          </div>
+
+    </div>
+  </>;
+  return (
+    <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
+      <div data-slot="pane-layout" className="docs-workspace" data-editing={editing}>
+        <aside className="docs-tree-pane docs-surface">
+          <div className="docs-tree-folded"><DocsTreeFold open /></div>
+          <div className="docs-tree-expanded">{navigation}</div>
         </aside>
-        {/* Lists stay at a reading width. An editor's toolbar and text share one column; its text matches the portal
-            (46rem with sections, 43rem without). */}
-        <div className={cn("mx-auto flex w-full min-w-0 flex-1 flex-col gap-6 p-6 md:px-8", editing ? "max-w-[50rem] topbar:gap-8" : "max-w-3xl")}>{children}</div>
+        <button type="button" aria-label="Browse docs" aria-expanded={browsing} onClick={() => setBrowsing(true)} className="docs-phone-trigger"><BookOpenIcon className="size-3.5" />Docs</button>
+        <Sheet open={browsing} onOpenChange={setBrowsing} onOpenChangeComplete={(open) => { if (!open && openingApp.current) { openingApp.current = false; setOpenMobile(true); } if (!open && openingSearch.current) { openingSearch.current = false; window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); } }}>
+          <SheetContent side="bottom" className="docs-tree-sheet">
+            <SheetTitle className="sr-only">Docs navigation</SheetTitle>
+            {navigation}
+          </SheetContent>
+        </Sheet>
+        <div className="docs-page-content">{children}</div>
       </div>
       {adding && (
         <CollectionDialog

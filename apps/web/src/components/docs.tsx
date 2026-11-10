@@ -4,8 +4,11 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import { editedSections } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { cn } from "cn";
-import { PlusIcon } from "lucide-react";
+import { CheckIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
+import { useEditorSlot } from "@/components/use-editor-slot";
+import { ArticleToolButtons } from "@/components/article-tools";
 import { useRouter } from "next/navigation";
 import { createContext, type ReactNode, useActionState, useContext, useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -24,7 +27,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -153,8 +156,8 @@ export function ArticleSaveButton({ label = "Save", outline = false, filled = fa
   const { pending, unsaved } = useArticleEditor();
   return (
     // Quiet (an outline) while there's nothing to save; still a button (on an article it can't edit it points to why).
-    <Button type="submit" form={ARTICLE_FORM} disabled={pending} variant={outline || (!filled && !unsaved) ? "outline" : "default"}>
-      {pending ? "Saving…" : label}
+    <Button type="submit" form={ARTICLE_FORM} aria-label={label} disabled={pending} variant={outline || (!filled && !unsaved) ? "outline" : "default"}>
+      {pending ? "Saving…" : label === "Save" && !unsaved ? <><CheckIcon className="size-3.5" />Saved</> : label}
     </Button>
   );
 }
@@ -166,6 +169,7 @@ export function ArticleForm({
   mediaUrls,
   defaultTitle,
   sections = false,
+  description,
 }: {
   projectSlug: string;
   article: Article | null;
@@ -175,10 +179,12 @@ export function ArticleForm({
    * page", any other 43rem, and so does its editor, so the text wraps as it will publish.
    */
   sections?: boolean;
+  description?: string;
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
 }) {
   const [wide] = useState(sections);
+  const titleHost = useEditorSlot(article ? "article-title" : undefined);
   // The text shown (`opened`) and the version its saves are made on (`base`), kept while it has edits not saved,
   // whatever is saved meanwhile (Autopilot's edit landing, a teammate's save): what was typed is never replaced, and its
   // save says the version it was made on. With nothing unsaved, a newer saved version starts the form afresh (`shown`).
@@ -278,23 +284,8 @@ export function ArticleForm({
   // Publish (ArticleActions) waits for a save while there's typing not saved.
   useEffect(() => setUnsaved(dirty), [setUnsaved, dirty]);
 
-  return (
-    <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed} className={wide ? undefined : "max-w-[43rem]"}>
-      {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
-      {!article && <PlaceFields place={place} />}
-      {/* The version this text was made on, and after a refusal the newest one shown beside it: the next save (merged
-          by hand) goes on top of that, keeping Autopilot's edits to other parts. */}
-      {opened && <input type="hidden" name="revision" value={base ?? ""} />}
-      {(state.newest ?? seenSaved)?.revision && <input type="hidden" name="seen" value={(state.newest ?? seenSaved)!.revision!} />}
-      {own && <input type="hidden" name="own" value={own} />}
-      <FieldGroup key={shown}>
-        {/* Written as it's published: the title, then the text, no boxes. */}
-        <div className="flex flex-col gap-1">
-          {/* A saved article's title is sent only once changed here (since it opened or last saved): one left alone keeps
-              whatever it's renamed to meanwhile, and a change back to how it opened still counts. */}
-          {(!opened || titleChanged) && <input type="hidden" name="title" value={title} />}
-          {/* A line that wraps (a long title stays in sight on a phone), Enter doesn't add a line. */}
-          <textarea
+  const titleInput = (
+<textarea
             ref={titleField}
             aria-label="Title"
             rows={1}
@@ -317,18 +308,42 @@ export function ArticleForm({
             aria-describedby={state.error ? "article-error" : undefined}
             className={cn(BARE_TITLE, "resize-none text-3xl leading-tight font-semibold [field-sizing:content] placeholder:text-muted-foreground/70 sm:text-[2.25rem]")}
           />
+  );
+
+  return (
+    <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed} className={cn("docs-article-form", wide ? "max-w-[46rem]" : "max-w-[43rem]")}>
+      {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
+      {!article && <PlaceFields place={place} />}
+      {/* The version this text was made on, and after a refusal the newest one shown beside it: the next save (merged
+          by hand) goes on top of that, keeping Autopilot's edits to other parts. */}
+      {opened && <input type="hidden" name="revision" value={base ?? ""} />}
+      {(state.newest ?? seenSaved)?.revision && <input type="hidden" name="seen" value={(state.newest ?? seenSaved)!.revision!} />}
+      {own && <input type="hidden" name="own" value={own} />}
+      <FieldGroup key={shown}>
+        {/* Written as it's published: the title, then the text, no boxes. */}
+        <div className="flex flex-col gap-1">
+          {/* A saved article's title is sent only once changed here (since it opened or last saved): one left alone keeps
+              whatever it's renamed to meanwhile, and a change back to how it opened still counts. */}
+          {(!opened || titleChanged) && <input type="hidden" name="title" value={title} />}
+          {/* A line that wraps (a long title stays in sight on a phone), Enter doesn't add a line. */}
+          {titleHost ? createPortal(titleInput, titleHost) : !article ? titleInput : null}
           {state.error && <FieldError id="article-error">{state.error}</FieldError>}
           {newer && dirty && !state.newest && !seenSaved && (
             <p className="text-sm text-muted-foreground">It was saved since you opened it. Your text is kept: save it to see whether anything needs merging.</p>
           )}
         </div>
         {state.newest ? <NewestVersion newest={state.newest} /> : seenSaved && <NewestVersion newest={seenSaved} merged />}
+        {description && <p className="docs-article-description">{description}</p>}
+        {!article && <Textarea name="description" aria-label="Description" maxLength={300} placeholder="What it helps with, e.g. inviting your team" className="docs-new-description" rows={1} />}
+        {!article && <div className="flex items-center gap-3 text-xs text-muted-foreground"><span>Draft</span><ArticlePlaceLine /></div>}
         <RichEditor
+          toolbarId="article-toolbar"
+          toolbarEnd={<ArticleToolButtons />}
           bare
           profile="article"
           name="content"
           label="Article"
-          placeholder="Write it here. Type / for headings, lists and more"
+          placeholder="Explain it step by step. Type / for headings, lists and more."
           initial={opened?.content}
           // Every change counts, pasted or formatted too (they fire no input event).
           onChange={changed}
@@ -525,7 +540,9 @@ export function ArticleChanges({
   savedAt,
   saved,
   diff,
+  compact = false,
 }: {
+  compact?: boolean;
   projectSlug: string;
   slug: string;
   /** When the changes were saved (ISO): they're published or discarded only if nobody saved more since. */
@@ -536,6 +553,7 @@ export function ArticleChanges({
 }) {
   const [pending, startTransition] = useTransition();
   const [reviewing, setReviewing] = useState(false);
+  const stateHost = useEditorSlot(compact ? "article-state-tools" : undefined);
   const run = (action: typeof publishArticleChanges, done: string) =>
     startTransition(async () => {
       const result = await action(projectSlug, slug, savedAt);
@@ -547,26 +565,13 @@ export function ArticleChanges({
       }
     });
   const publish = (
-    <Button disabled={pending} onClick={() => run(publishArticleChanges, "Changes published")}>
-      Publish changes
+    <Button aria-label="Publish changes" disabled={pending} onClick={() => run(publishArticleChanges, "Changes published")}>
+      {compact ? "Publish" : "Publish changes"}
     </Button>
   );
 
-  return (
-    // A strip in the state's colour (Unpublished changes: the highlight, as ArticleStateBadge), its actions on the right.
-    <section
-      role="region"
-      aria-labelledby="article-changes-title"
-      className="flex flex-col gap-3 rounded-xl bg-highlight px-4 py-3 ring-1 ring-highlight-foreground/25 sm:flex-row sm:items-center"
-    >
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <h2 id="article-changes-title" className="flex items-center gap-2 text-sm font-semibold">
-          <span aria-hidden className="size-2 shrink-0 rounded-full bg-highlight-foreground" />
-          Unpublished changes
-        </h2>
-        <p className="text-sm text-muted-foreground">Saved {saved}. Readers see the published version until you publish them.</p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
+  const controls = (
+<details open={compact ? undefined : true} className={compact ? "docs-change-menu" : "contents"}><summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle" : "hidden"}><span className="size-1.5 rounded-full bg-highlight-foreground" />Unpublished changes<span aria-hidden>⌄</span></summary>
         <AlertDialog>
           <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>
           <AlertDialogContent closeDisabled={pending}>
@@ -602,7 +607,27 @@ export function ArticleChanges({
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        {publish}
+        </details>
+  );
+
+  return (
+    // A strip in the state's colour (Unpublished changes: the highlight, as ArticleStateBadge), its actions on the right.
+    <section
+      role="region"
+      aria-labelledby="article-changes-title"
+      className={compact ? "docs-changes-actions" : "flex flex-col gap-3 rounded-xl bg-highlight px-4 py-3 ring-1 ring-highlight-foreground/25 sm:flex-row sm:items-center"}
+    >
+      <div className={compact ? "sr-only" : "flex min-w-0 flex-1 flex-col gap-0.5"}>
+        <h2 id="article-changes-title" className="flex items-center gap-2 text-sm font-semibold">
+          <span aria-hidden className="size-2 shrink-0 rounded-full bg-highlight-foreground" />
+          Unpublished changes
+        </h2>
+        <p className="text-sm text-muted-foreground">Saved {saved}. Readers see the published version until you publish them.</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {compact && publish}
+        {stateHost ? createPortal(controls, stateHost) : !compact ? controls : null}
+        {!compact && publish}
       </div>
     </section>
   );
@@ -719,14 +744,14 @@ type CollectionSettings = {
 };
 
 /** A collection's name (with `error`, a refused save's), icon and description, as form fields; `collection` gives their values. */
-function CollectionFields({ id, collection, error, onIconChange }: { id: string; collection?: CollectionSettings; error?: string; onIconChange?: () => void }) {
+function CollectionFields({ id, collection, error, onIconChange, separateIcon = false }: { id: string; collection?: CollectionSettings; error?: string; onIconChange?: () => void; separateIcon?: boolean }) {
   return (
     <>
       {/* Its icon beside its name, as the tree shows them. */}
       <Field data-invalid={error ? true : undefined}>
-        <FieldLabel htmlFor={`collection-name-${id}`}>Name and icon</FieldLabel>
+        <FieldLabel htmlFor={`collection-name-${id}`}>{separateIcon ? "Name" : "Name and icon"}</FieldLabel>
         <div className="flex items-center gap-2">
-          <IconField compact defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
+          {!separateIcon && <IconField compact defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />}
           <Input
             id={`collection-name-${id}`}
             name="name"
@@ -749,6 +774,7 @@ function CollectionFields({ id, collection, error, onIconChange }: { id: string;
           placeholder="Optional, shown in your docs"
         />
       </Field>
+      {separateIcon && <Field><FieldLabel>Icon</FieldLabel><div><IconField compact defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} /></div></Field>}
     </>
   );
 }
@@ -823,6 +849,7 @@ export function CollectionSettingsForm({
   backHref: string;
   level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
+  const actionsHost = useEditorSlot("collection-actions");
   const [parent, setParent] = useState(collection.parent);
   // "Inherit" says from where: the parent picked, else its tab, else the docs.
   const inheritsFrom = (parent ? parents.find((c) => c.slug === parent)?.name : null) ?? tabName ?? "your docs";
@@ -853,6 +880,7 @@ export function CollectionSettingsForm({
   }, {});
   return (
     <form
+      id="collection-settings"
       {...keepingFields(action)}
       onChange={(event) => {
         // A field the person typed in or picked (by its name; the icon and the parent say so themselves).
@@ -861,7 +889,7 @@ export function CollectionSettingsForm({
           touched.current.add(name);
         }
       }}
-      className="flex flex-col gap-6"
+      className="docs-collection-settings"
     >
       <Card role="region" aria-labelledby="collection-details-title">
         <CardHeader>
@@ -869,7 +897,7 @@ export function CollectionSettingsForm({
         </CardHeader>
         <CardContent>
           <FieldGroup>
-            <CollectionFields id={collection.slug} collection={collection} error={state.error} onIconChange={() => touched.current.add("icon")} />
+            <CollectionFields separateIcon id={collection.slug} collection={collection} error={state.error} onIconChange={() => touched.current.add("icon")} />
             <ParentField
               id={`collection-${collection.slug}`}
               parents={parents}
@@ -899,16 +927,7 @@ export function CollectionSettingsForm({
           />
         </CardContent>
       </Card>
-      {/* In reach as the form scrolls: a bar at the bottom of the window. */}
-      {/* Clear of Tuti's chat launcher's corner where it shows (launcher:), as the app's other bottom bars. */}
-      <div className="sticky bottom-0 z-10 -mx-4 flex justify-end gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur-sm launcher:pr-24">
-        <Link href={backHref} className={buttonVariants({ variant: "ghost" })}>
-          Cancel
-        </Link>
-        <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Save"}
-        </Button>
-      </div>
+      {actionsHost && createPortal(<><Link href={backHref} className="docs-cancel">Cancel</Link><Button type="submit" form="collection-settings" disabled={pending}>{pending ? "Saving…" : "Save"}</Button></>, actionsHost)}
     </form>
   );
 }

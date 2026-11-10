@@ -1,13 +1,14 @@
 import { prisma } from "@tuti/db";
 import { cn } from "cn";
-import { ChevronRightIcon, FilesIcon, FolderIcon, PlusIcon } from "lucide-react";
+import { ChevronRightIcon, ExternalLinkIcon, FilesIcon, FolderIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { cache, type ReactNode } from "react";
 
 import { DeleteCollectionButton } from "@/components/docs";
 import { AddContentMenu } from "@/components/docs-tree";
 import { LucideIcon } from "@/components/icon-field";
-import { PageHeader } from "@/components/page-header";
+import { DocsPageHeader } from "@/components/docs-page-header";
+import { portalAddress } from "@/server/custom-domains";
 import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { SampleBadge } from "@/components/sample-badge";
@@ -68,24 +69,24 @@ export const ARTICLE_STATES: Record<ArticleState, { label: string; dot: string; 
 /** An article's state as a tinted pill with its dot (the editor's header). */
 export function ArticleStateBadge({ state }: { state: ArticleState }) {
   return (
-    <Badge variant="outline" className={cn("border-transparent text-foreground", ARTICLE_STATES[state].tint)}>
-      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", ARTICLE_STATES[state].dot)} />
-      {ARTICLE_STATES[state].label}
+    <Badge variant="outline" className={cn("border-transparent text-foreground", ARTICLE_STATES[state ?? "published"].tint)}>
+      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", ARTICLE_STATES[state ?? "published"].dot)} />
+      {ARTICLE_STATES[state ?? "published"].label}
     </Badge>
   );
 }
 
 /** The columns' widths, shared by the header and the rows so the numbers line up. */
-const NUMBER = "w-12 shrink-0 text-right tabular-nums sm:w-20";
+const NUMBER = "w-12 shrink-0 text-right tabular-nums sm:w-16";
 /** The state column, from tablet width up (on phones the state is a line under the title). */
 const STATUS = "hidden w-44 shrink-0 sm:block";
 
 /** A list of articles' column headings: what the numbers under them count. */
 export function ArticleColumns({ first = "Article" }: { first?: string }) {
   return (
-    <div className="flex items-center gap-3 border-b px-5 py-2.5 group-label">
+    <div className="docs-article-columns flex items-center gap-3 border-b px-1 py-2.5 text-xs text-muted-foreground">
       <span className="flex-1">{first}</span>
-      <span className={STATUS}>Status</span>
+      <span className={STATUS}>State</span>
       {/* The window the numbers count, said under them (not only on hover). */}
       <span className={NUMBER}>
         Views<span className="block text-xs font-normal tracking-normal normal-case">{INSIGHTS_DAYS} days</span>
@@ -93,6 +94,7 @@ export function ArticleColumns({ first = "Article" }: { first?: string }) {
       <span className={NUMBER}>
         Helpful<span className="block text-xs font-normal tracking-normal normal-case">{INSIGHTS_DAYS} days</span>
       </span>
+      <span className="docs-updated">Updated</span>
     </div>
   );
 }
@@ -183,6 +185,7 @@ export function DocsArticleRows({
     const facts = [
       ...(state ? [state] : []),
       ...(article?.publishedAt && article.listing !== "EVERYWHERE" ? [LISTING_LABELS[article.listing.toLowerCase() as Listing]] : []),
+      ...(!state && article?.publishedAt ? ["published"] : []),
     ];
     const access = article && badge(article);
     return (
@@ -208,10 +211,10 @@ export function DocsArticleRows({
           )}
         </div>
         <span className={STATUS}>
-          {state && (
-            <Badge variant="outline" className={cn("border-transparent text-foreground", ARTICLE_STATES[state].tint)}>
-              <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", ARTICLE_STATES[state].dot)} />
-              {ARTICLE_STATES[state].label}
+          {(state || article?.publishedAt) && (
+            <Badge variant="outline" className={cn("border-transparent text-foreground", ARTICLE_STATES[state ?? "published"].tint)}>
+              <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", ARTICLE_STATES[state ?? "published"].dot)} />
+              {ARTICLE_STATES[state ?? "published"].label}
             </Badge>
           )}
           {!state && article?.publishedAt && article.listing !== "EVERYWHERE" && (
@@ -230,6 +233,7 @@ export function DocsArticleRows({
           {read?.helpful ? read.helpful.toLocaleString("en") : "–"}
           <span className="sr-only"> {read?.helpful ?? 0} found it helpful</span>
         </span>
+        <span className="docs-updated">{article ? timeAgo(article.updatedAt) : "–"}</span>
       </li>
     );
   });
@@ -323,7 +327,7 @@ export function TabContents({
  * A collection's header, on its page and its settings: its icon and name, its description, Add content (and Delete
  * behind "More actions"), then its views as underline tabs: Content and Settings.
  */
-export function CollectionHeader({
+export async function CollectionHeader({
   projectSlug,
   collection,
   hasChildren,
@@ -336,22 +340,17 @@ export function CollectionHeader({
   settings?: boolean;
 }) {
   const base = `/app/${projectSlug}/docs/collections/${collection.slug}`;
+  const portal = await portalAddress(projectSlug);
   return (
     <>
-      <PageHeader
-        title={
-          <span className="flex items-center gap-2.5">
-            {collection.knownIcon && collection.icon && <LucideIcon name={collection.icon} className="size-7 text-muted-foreground" />}
-            {collection.name}
-          </span>
-        }
-        // A page about one thing: its own description (if it has one) as the line under it, no filler.
-        meta={collection.description || undefined}
-        actions={settings ? undefined : <AddContentMenu parent={collection.slug} article={collection.slug} />}
-        more={<DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={hasChildren} />}
+      <DocsPageHeader
+        back={{ href: `/app/${projectSlug}/docs`, label: "Docs" }}
+        title={collection.name}
+        icon={collection.knownIcon && collection.icon ? <LucideIcon name={collection.icon} /> : <FolderIcon />}
+        description={collection.description || undefined}
+        actions={settings ? <div id="collection-actions" /> : <><a href={`${portal}/docs/${collection.slug}`} target="_blank" rel="noreferrer" className="docs-live-link"><ExternalLinkIcon className="size-3.5" /><span>View on help center</span></a><AddContentMenu parent={collection.slug} article={collection.slug} /></>}
+        more={settings ? undefined : <DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={hasChildren} />}
       />
-      {/* On a phone the header's actions are its top bar's menu: the main one stays in sight here too. */}
-      {!settings && <AddContentMenu parent={collection.slug} article={collection.slug} className="self-start topbar:hidden" />}
       <SubNav
         label="Collection"
         items={[
@@ -361,48 +360,5 @@ export function CollectionHeader({
         itemClassName="first:pl-0"
       />
     </>
-  );
-}
-
-/**
- * What waits to be published, newest first (the docs' home): each draft and each article with changes saved but not
- * published, its state, its collection and when it was last saved. Null when nothing waits.
- */
-export function WaitingToPublish({ projectSlug, docs, details }: { projectSlug: string; docs: TeamDocs; details: ArticleRowDetails }) {
-  const waiting = [...details.detailsOf.values()]
-    .filter((a) => !a.publishedAt || a.changes)
-    .map((a) => ({ ...a, saved: details.savedAt.get(a.id) ?? a.changes?.updatedAt ?? a.updatedAt }))
-    .toSorted((a, b) => b.saved.getTime() - a.saved.getTime());
-  if (waiting.length === 0) {
-    return null;
-  }
-  const collectionOf = (slug: string) => docs.collections.find((c) => c.articles.some((a) => a.slug === slug))?.name;
-  return (
-    <Card role="region" aria-labelledby="waiting-title" className="gap-0 py-0">
-      <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
-        <h2 id="waiting-title" className="text-base font-semibold">
-          Waiting to publish
-        </h2>
-        <span className="text-xs text-muted-foreground">Readers don&apos;t see these until you publish</span>
-      </div>
-      <ul className="flex flex-col divide-y px-5">
-        {waiting.map((article) => {
-          const state: ArticleState = article.publishedAt ? "changes" : "draft";
-          return (
-            <li key={article.slug} className="flex items-center gap-3 py-3">
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <Link href={`/app/${projectSlug}/docs/${article.slug}`} className="min-w-0 text-sm font-medium break-words hover:underline">
-                  {article.title}
-                </Link>
-                <span className="text-xs text-muted-foreground">
-                  {[collectionOf(article.slug) ?? "Not in a collection", `saved ${timeAgo(article.saved)}`].join(" · ")}
-                </span>
-              </div>
-              <ArticleStateBadge state={state} />
-            </li>
-          );
-        })}
-      </ul>
-    </Card>
   );
 }

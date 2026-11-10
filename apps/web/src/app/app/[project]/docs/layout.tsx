@@ -1,3 +1,5 @@
+import "@/components/docs-workspace.css";
+
 import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
@@ -22,6 +24,7 @@ export default async function TeamDocsLayout({ children, params }: LayoutProps<"
   ]);
   return (
     <DocsWorkspace
+      projectName={membership.project.name}
       projectSlug={slug}
       tabs={docs.tabs.map((tab) => ({ slug: tab.slug, name: tab.name }))}
       collections={docs.collections.map((c) => ({

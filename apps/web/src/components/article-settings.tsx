@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SettingsIcon } from "lucide-react";
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
@@ -7,7 +8,7 @@ import { toast } from "sonner";
 import { CollectionSelect } from "@/components/collection-select";
 import { type ArticlePlace, PlaceFields, useArticleEditor } from "@/components/docs";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSeparator, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -102,8 +103,17 @@ function NewPlace() {
  * its title and text: on a published one a new collection waits for "Publish changes" (as the
  * article's Save would keep it), the rest changes at once. A new article's go with its first save.
  */
-export function ArticleSettings({ saved }: { saved?: Saved }) {
+export function ArticleSettings({ saved, inline = false }: { saved?: Saved; inline?: boolean }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const search = useSearchParams();
+  const router = useRouter();
+  const close = () => {
+    const next = new URLSearchParams(search);
+    next.delete("settings");
+    router.replace(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false });
+  };
+  if (inline && saved) return <SavedSettings {...saved} inline onSaved={close} />;
   return (
     // A panel from the right, beside the article (which stays as it was underneath).
     <Sheet open={open} onOpenChange={setOpen}>
@@ -159,7 +169,7 @@ type Saved = {
 };
 
 /** A saved article's panel (opened again: as saved, not as left). */
-function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved }: Saved & { onSaved: () => void }) {
+function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved, inline = false }: Saved & { onSaved: () => void; inline?: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveArticleSettings(projectSlug, article.slug, prev, formData);
     if (!result.error) {
@@ -176,10 +186,8 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
 
   return (
     <form {...keepingFields(action)} className="flex min-h-0 flex-1 flex-col">
-      <SheetHeader className="border-b">
-        <SheetTitle>Article settings</SheetTitle>
-      </SheetHeader>
-      <FieldGroup className="min-h-0 flex-1 overflow-y-auto p-4">
+      {!inline && <SheetHeader className="border-b"><SheetTitle>Article settings</SheetTitle></SheetHeader>}
+      <FieldGroup className={inline ? "gap-5" : "min-h-0 flex-1 overflow-y-auto p-4"}>
         <Place place={place} loaded={loaded} onChange={setPlace} published={article.published} />
         <FieldSeparator />
         <WhoCanRead
@@ -265,12 +273,12 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
         </FieldSet>
         {state.error && <FieldError id="article-settings-error">{state.error}</FieldError>}
       </FieldGroup>
-      <SheetFooter className="flex-row items-center justify-between border-t">
+      <div className="mt-5 flex items-center justify-between gap-2 border-t pt-4">
         <p className="text-sm text-muted-foreground">Applies to this article.</p>
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save changes"}
         </Button>
-      </SheetFooter>
+      </div>
     </form>
   );
 }

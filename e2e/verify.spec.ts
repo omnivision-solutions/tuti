@@ -42,15 +42,15 @@ test("Verify checks an article against the repository: its history, and its fix 
 
   // Verify is an icon in the editor's top bar, beside History: a panel saying what it sends where.
   await owner.goto(`/app/${slug}/docs/${articleSlug}`);
-  await owner.getByRole("link", { name: "Verify", exact: true }).click();
+  await owner.getByRole("button", { name: "Verify", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs/${articleSlug}?verify`);
-  const panel = owner.getByRole("dialog", { name: "Verify" });
+  const panel = owner.getByRole("complementary", { name: "Article tools" });
   await expect(panel).toContainText("It sends the files it reads to");
   await checkpoint(owner, "verify-panel", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "verify-panel-dark", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "light" });
-  await panel.getByRole("button", { name: "Verify", exact: true }).click();
+  await panel.locator(".docs-tools-scroll").getByRole("button", { name: "Verify", exact: true }).click();
   const toast = owner.getByText("Verified: 1 out of date, its fix waits for you");
   await expect(toast).toBeVisible();
 
@@ -65,6 +65,12 @@ test("Verify checks an article against the repository: its history, and its fix 
   await run.getByText("What it found").click();
   await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeVisible();
   await expect(run.getByText("src/seats.ts")).toBeVisible();
+  await run.getByRole("button", { name: "Jump to sentence" }).click();
+  await expect(owner.getByText("This sentence has changed in the editor.")).toBeVisible();
+  await run.getByText("Still true (1)", { exact: true }).click();
+  await run.locator(".docs-current-findings").getByRole("button", { name: "Jump to sentence" }).click();
+  await expect(owner.getByRole("textbox", { name: "Article", exact: true })).toBeFocused();
+  await expect.poll(() => owner.evaluate(() => window.getSelection()?.toString())).toBe("People are admins or members.");
   // (Once the toast has gone, so the panel's title shows.)
   await expect(toast).toBeHidden({ timeout: 10_000 });
   await checkpoint(owner, "verify-history", { fullPage: false });
@@ -75,7 +81,13 @@ test("Verify checks an article against the repository: its history, and its fix 
   await checkpoint(owner, "verify-history-phone-dark", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "light" });
   await checkpoint(owner, "verify-history-phone", { fullPage: false });
+  await owner.getByRole("dialog", { name: "Verify", exact: true }).getByText("Still true (1)", { exact: true }).click();
+  await owner.getByRole("dialog", { name: "Verify", exact: true }).locator(".docs-current-findings").getByRole("button", { name: "Jump to sentence" }).click();
+  await expect(owner.getByRole("dialog", { name: "Verify", exact: true })).toBeHidden();
+  await expect(owner.getByRole("textbox", { name: "Article", exact: true })).toBeFocused();
+  await expect.poll(() => owner.evaluate(() => window.getSelection()?.toString())).toBe("People are admins or members.");
   await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.getByRole("button", { name: "Verify", exact: true }).click();
 
   // Its fix on the article's review: a Verify chip, its part in its popover, approved like a pull request's edit.
   await run.getByRole("link", { name: "Review it" }).click();
@@ -137,7 +149,6 @@ test("Verify all says what it will cost first, then shows its progress, opened a
 
   // Docs' "More actions": Verify all, saying what it will cost before anything runs.
   await owner.goto(`/app/${slug}/docs`);
-  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Verify all" }).click();
   const confirm = owner.getByRole("dialog", { name: "Verify all 2 published articles?" });
   await expect(confirm).toContainText("Articles verified at that commit and unchanged since are skipped.");
@@ -170,7 +181,6 @@ test("Verify all says what it will cost first, then shows its progress, opened a
   // Opened again elsewhere while it runs: the one running, not a new start.
   const other = await owner.context().newPage();
   await other.goto(`/app/${slug}/docs`);
-  await other.getByRole("button", { name: "More actions" }).click();
   await other.getByRole("button", { name: "Verify all" }).click();
   await expect(other.getByRole("dialog", { name: "Verifying all articles" })).toContainText("Checked 1 of 2 articles.");
   await releaseModelReply(`verify-all-${id}`);

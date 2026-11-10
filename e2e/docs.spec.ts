@@ -43,7 +43,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("link", { name: "Docs", exact: true }).click();
   await expect(team.getByText("No articles yet")).toBeVisible();
   // The portal's docs, in words beside the create button.
-  await expect(team.getByRole("link", { name: "View on portal" })).toHaveAttribute("href", `${portalUrl(slug)}/docs`);
+  await expect(team.getByRole("link", { name: "View on help center", exact: true }).first()).toHaveAttribute("href", `${portalUrl(slug)}/docs`);
   // The docs' home adds an article or a collection.
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
@@ -81,11 +81,11 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await picker.getByRole("button", { name: "rocket", exact: true }).click();
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
-  // The docs' home shows it as a card, with its icon; the tree is beside it, where it is beside a collection's page.
-  await expect(team.getByRole("region", { name: "Getting started" }).locator("svg.lucide-rocket")).toBeVisible();
+  // The tree keeps the collection and its icon reachable beside the overview and collection page.
+  await expect(teamTree.getByRole("link", { name: "Getting started", exact: true }).locator("svg.lucide-rocket")).toBeVisible();
   const treeAtHome = await teamTree.boundingBox();
   await checkpoint(team, "team-docs");
-  await team.getByRole("region", { name: "Getting started" }).getByRole("link", { name: "Getting started" }).click();
+  await teamTree.getByRole("link", { name: "Getting started", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/collections/getting-started`);
   const treeHere = await teamTree.boundingBox();
   expect([treeHere!.x, treeHere!.y, treeHere!.width]).toEqual([treeAtHome!.x, treeAtHome!.y, treeAtHome!.width]);
@@ -158,7 +158,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await checkpoint(team, "team-docs-article-draft");
   await team.getByRole("button", { name: "Save draft" }).click();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
-  await expect(team.locator('[data-slot="page-header"]').getByText("Draft", { exact: true })).toBeVisible();
+  await expect(team.locator('[data-slot="docs-page-header"]').getByText("Draft", { exact: true })).toBeVisible();
   // The page's heading is its title, for screen readers: the form's title field shows it, once.
   await expect(team.getByRole("heading", { level: 1, name: "Inviting your team" })).toHaveCount(1);
   await expect(team.getByRole("textbox", { name: "Title" })).toHaveValue("Inviting your team");
@@ -366,7 +366,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("link", { name: "Docs", exact: true }).first().click();
   await team.waitForURL(`**/app/${slug}/docs`);
   // The list says how often each article was read lately; what readers did is in Reporting.
-  await expect(team.getByText("2 views in 30 days")).toBeVisible();
+  await expect(team.getByRole("region", { name: "At a glance" })).toContainText("2Views");
   await checkpoint(team, "team-docs-list-views");
   await expect(team.getByRole("navigation", { name: "Docs sections" })).toHaveCount(0);
   // A view in the 30 days before Reporting's: each number says how it changed on them (the article's 2 views now, 1 then).
@@ -490,7 +490,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
 
   // Deleting the collection, from its page, keeps its article. While it runs (slowed down here), Delete can't be clicked again.
   await team.goto(`/app/${slug}/docs`);
-  await team.getByRole("region", { name: "Getting started" }).getByRole("link", { name: "Getting started" }).click();
+  await team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Getting started", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/collections/getting-started`);
   await expect(team.getByRole("region", { name: "Getting started" }).getByRole("listitem")).toHaveText([/^Inviting your team/, "New article"]);
   await team.route("**/*", async (route) => {
@@ -511,7 +511,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // Its page is gone: the Docs home instead.
   await team.waitForURL(`**/app/${slug}/docs`);
   await team.unroute("**/*");
-  await expect(team.getByRole("region", { name: "Not in a collection" }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  await expect(team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await visitor.goto("/docs");
   // In the home's articles in no collection (one article read is too few for Popular articles); no card for the collection.
   await expect(visitor.getByRole("main").getByRole("link", { name: "Inviting your team" })).toHaveCount(1);
@@ -530,7 +530,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.goto(`/app/${slug}/docs`);
 
   // The team edits it twice. It's published, so the edits wait as unpublished changes until the team publishes them.
-  await team.getByRole("region", { name: "Not in a collection" }).getByRole("link", { name: "Inviting your team" }).click();
+  await team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" }).click();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   const paragraph = editor.locator("p", { hasText: "Owners and admins send invites" });
   for (const sentence of [" Members can ask them.", " Invites last a week."]) {
@@ -558,14 +558,15 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   const original = "Owners and admins send invites from the Team page.";
   const edited = `${original} Members can ask them. Invites last a week.`;
   const unpublished = team.getByRole("region", { name: "Unpublished changes" });
-  await expect(unpublished).toContainText("Readers see the published version until you publish them.");
+  await expect(team.getByRole("button", { name: "Manage unpublished changes" })).toBeVisible();
   await checkpoint(team, "team-docs-article-unpublished-changes");
   await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByText(original, { exact: true })).toBeVisible();
   await expect(visitor.getByText(/Members can ask them/)).toHaveCount(0);
 
   // Reviewed against the published version, then published.
-  await unpublished.getByRole("button", { name: "Review changes" }).click();
+  await team.getByRole("button", { name: "Manage unpublished changes" }).click();
+  await team.getByRole("button", { name: "Review changes", exact: true }).click();
   const review = team.getByRole("dialog", { name: "Review changes" });
   await expect(review.getByRole("deletion")).toHaveText(original);
   await expect(review.getByRole("insertion")).toHaveText(edited);
@@ -582,10 +583,10 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await checkpoint(visitor, "portal-docs-article-updated");
 
   // Its history (an icon in the top bar), in a panel from the right over the article, shows what changed since the first version.
-  await team.getByRole("link", { name: "History" }).click();
+  await team.getByRole("button", { name: "History", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team?history`);
-  const historyPanel = team.getByRole("dialog", { name: "History" });
-  await expect(historyPanel).toHaveAttribute("data-side", "right");
+  const historyPanel = team.getByRole("complementary", { name: "Article tools" });
+  await expect(historyPanel).toHaveCSS("width", "330px");
   const versions = historyPanel.getByRole("link", { name: /^Saved / });
   await expect(versions).toHaveCount(3);
   await versions.nth(2).click();
@@ -603,14 +604,15 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await restoring.getByRole("button", { name: "Restore" }).click();
   await expect(team.getByText("Version restored")).toBeVisible();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
-  await unpublished.getByRole("button", { name: "Discard changes" }).click();
+  await team.getByRole("button", { name: "Manage unpublished changes" }).click();
+  await team.getByRole("button", { name: "Discard changes", exact: true }).click();
   const discarding = team.getByRole("alertdialog");
   await expect(discarding).toContainText("The changes stay in its history");
   await discarding.getByRole("button", { name: "Discard changes" }).click();
   await expect(team.getByText("Changes discarded")).toBeVisible();
   await expect(unpublished).toHaveCount(0);
   await expect(editor).toContainText(edited);
-  await team.getByRole("link", { name: "History" }).click();
+  await team.getByRole("button", { name: "History", exact: true }).click();
   await expect(historyPanel.getByRole("link", { name: /^Saved / })).toHaveCount(5);
   // Closing it leaves the article where it was; its old address opens it too.
   await team.keyboard.press("Escape");
@@ -627,9 +629,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await teamTree.getByRole("link", { name: "Inviting your team" }).click();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   // The page header's line under the title.
-  const header = team.locator('[data-slot="page-header"]');
+  const header = team.locator('[data-slot="docs-page-header"]');
   // In the article's settings, with what each listing means under it.
-  const articleSettings = team.getByRole("dialog", { name: "Article settings" });
+  const articleSettings = team.getByRole("region", { name: "Article settings" });
   const setListing = async (name: string, description: string, shot?: string) => {
     await team.getByRole("button", { name: "Settings" }).click();
     await articleSettings.getByLabel("Listed in").click();
@@ -699,7 +701,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByText("Restored “Inviting your team” as a draft")).toBeVisible();
   await expect(team.getByRole("region", { name: "Recently deleted" })).toHaveCount(0);
   // A draft again, in no collection now.
-  await expect(team.getByRole("region", { name: "Not in a collection" }).getByRole("listitem").filter({ hasText: "Inviting your team" })).toContainText("Draft");
+  await team.getByRole("region", { name: /Waiting to publish/ }).getByRole("link", { name: "Inviting your team", exact: true }).click();
+  await expect(team.locator(".docs-editor-state")).toContainText("Draft");
   await checkpoint(team, "team-docs-article-restored");
 });
 
@@ -1093,21 +1096,13 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await team.waitForURL(`**/app/${slug}/docs/tabs/api-reference`);
   await checkpoint(team, "team-docs-tabs");
 
-  // The docs' home shows them all: each tab, in order, with its collections as cards.
+  // Tabs and their settings stay reachable in the tree beside the overview.
   await team.goto(`/app/${slug}/docs`);
-  // Each tab's heading, in order.
-  await expect(team.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["API reference", "Guides"]);
-  const apiSection = team.getByRole("region", { name: "API reference" });
-  await expect(apiSection.getByRole("region")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/]);
+  await expect(rows("Tabs")).toHaveText([/^API reference/, /^Guides/]);
   await checkpoint(team, "team-docs-home");
-  // "Tab settings" opens the tab on its Settings.
-  await apiSection.getByRole("link", { name: "Tab settings" }).click();
-  await team.waitForURL(`**/app/${slug}/docs/tabs/api-reference?view=settings`);
-  await expect(team.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true");
+  await structure.getByRole("link", { name: "API reference", exact: true }).click();
+  await team.getByRole("tab", { name: "Settings" }).click();
   await expect(team.getByRole("tabpanel", { name: "Settings" }).getByLabel("Name")).toHaveValue("API reference");
-  await team.goBack();
-  await team.waitForURL(`**/app/${slug}/docs`);
-  // On a phone the tree is a "Browse docs" menu above it, as above every Docs page.
   await team.setViewportSize({ width: 390, height: 844 });
   await expect(team.getByRole("button", { name: "Browse docs" })).toBeVisible();
   await checkpoint(team, "team-docs-home-phone", { fullPage: false });
@@ -1191,7 +1186,8 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await confirm.getByRole("button", { name: "Delete" }).click();
   await expect(team.getByText("Guides deleted")).toBeVisible();
   await team.waitForURL(`**/app/${slug}/docs`);
-  await expect(team.getByRole("region", { name: "API reference" }).getByRole("region")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/, /^Getting started/, /^Billing/]);
+  await structure.getByRole("link", { name: "API reference", exact: true }).click();
+  await expect(team.getByRole("tabpanel", { name: "Content" }).getByRole("region")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/, /^Getting started/, /^Billing/]);
 });
 
 test("a tab's landing page: the overview's cards, or a page the team picks in the tab's settings", async ({ browser }, testInfo) => {
@@ -1310,7 +1306,7 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await team.goto(`/app/${slug}/docs`);
   const structure = team.getByRole("navigation", { name: "Docs", exact: true });
   const settings = team.getByRole("tabpanel", { name: "Settings" });
-  await team.getByRole("heading", { name: "Guides" }).getByRole("link").click();
+  await structure.getByRole("link", { name: "Guides", exact: true }).click();
   await team.getByRole("tab", { name: "Settings" }).click();
   await expect(settings.getByLabel("Address")).toHaveValue("/docs");
   await expect(settings).toContainText("Your docs' home");
@@ -1375,36 +1371,22 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await api("/collections", { name: "Team basics" });
 
   await team.goto(`/app/${slug}/docs/inviting-your-team`);
-  // Settings is in the top bar, before Save (a draft's Publish after it); History, Unpublish and Delete are behind its "More actions".
-  // The article itself is its title and text: its collection and the updated date are in Settings.
+  // Saved state lives in the title row; Settings is an icon on the pinned formatting row.
   const bar = (name: string) => team.getByRole("button", { name, exact: true });
-  const [settingsBox, saveBox, publishBox] = await Promise.all(
-    [bar("Settings"), bar("Save"), team.locator('button[aria-label="More actions"]:visible')].map(async (button) => (await button.boundingBox())!),
-  );
-  const toolbar = (await team.locator('[data-slot="page-header"]').boundingBox())!;
-  expect(settingsBox.y).toBeGreaterThanOrEqual(toolbar.y);
-  expect(settingsBox.y + settingsBox.height).toBeLessThanOrEqual(toolbar.y + toolbar.height);
-  expect(Math.round(saveBox.y)).toBe(Math.round(settingsBox.y));
-  expect(settingsBox.x).toBeLessThan(saveBox.x);
-  expect(saveBox.x).toBeLessThan(publishBox.x);
+  await expect(team.locator("#article-toolbar").getByRole("button", { name: "Settings" })).toBeVisible();
+  await expect(bar("Save")).toContainText("Saved");
   await expect(team.getByRole("button", { name: "Delete" })).toBeHidden();
   await expect(team.getByRole("combobox", { name: "Collection" })).toHaveCount(0);
   await expect(team.getByRole("checkbox", { name: /^Show the updated date/ })).toHaveCount(0);
   await checkpoint(team, "team-docs-article-editor", { fullPage: false });
   await bar("Settings").click();
-  const dialog = team.getByRole("dialog", { name: "Article settings" });
+  const dialog = team.getByRole("region", { name: "Article settings" });
   await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("No collection");
   await expect(dialog.getByRole("checkbox", { name: /^Show the updated date/ })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
-  // A panel from the right, the window's whole height and at most 448px wide, with the article beside it.
-  await expect(dialog).toHaveAttribute("data-side", "right");
-  // (Measured once it has slid in.)
-  await expect
-    .poll(async () => {
-      const panel = (await dialog.boundingBox())!;
-      return [Math.round(panel.y), Math.round(panel.x + panel.width), Math.round(panel.height), Math.round(panel.width) <= 448];
-    })
-    .toEqual([0, 1280, 720, true]);
+  // The shared card takes 330px (300px at this laptop width), and leaves the text beside it.
+  await expect(team.getByRole("complementary", { name: "Article tools" })).toBeVisible();
+  expect((await team.getByRole("complementary", { name: "Article tools" }).boundingBox())!.width).toBe(330);
   await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveCount(0);
   // Published, with the box off: its address stays as it is, and the checkbox says so.
   await expect(dialog.getByRole("checkbox", { name: /^Custom slug/ })).toHaveAccessibleName(/Its address stays as it is; links to it keep working\.$/);
@@ -1423,12 +1405,11 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await team.waitForURL(`**/app/${slug}/docs/invites`);
   // (Under "More actions" in an editor.)
-  await expect(team.getByRole("link", { name: "View on portal", includeHidden: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
+  await expect(team.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
 
-  // On a phone (from the top bar's "More actions"), the dialog scrolls in the window.
+  // On a phone, the toolbar opens the same settings in a scrolling sheet.
   await team.setViewportSize({ width: 390, height: 844 });
   await checkpoint(team, "team-docs-article-editor-phone", { fullPage: false });
-  await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("button", { name: "Settings" }).click();
   await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveValue("invites");
   await expect(dialog.getByRole("textbox", { name: "Keywords" })).toHaveValue("add a colleague, seats");
@@ -1488,7 +1469,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await expect(team.getByText("Settings saved").first()).toBeVisible();
   await expect(dialog).toBeHidden();
-  await expect(team.locator('[data-slot="page-header"]')).toContainText("Unlisted");
+  await expect(team.locator('[data-slot="docs-page-header"]')).toContainText("Unlisted");
   await team.getByRole("button", { name: "Settings" }).click();
   await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("Team basics");
   await team.keyboard.press("Escape");
@@ -1878,9 +1859,8 @@ test("the docs' home shows a tab with nothing in it yet, linking to its page", a
   await api("/tabs", { name: "Guides" });
 
   await team.goto(`/app/${slug}/docs`);
-  const guides = team.getByRole("region", { name: "Guides" });
-  await expect(guides).toContainText("Nothing in this tab yet.");
-  await guides.getByRole("link", { name: "Guides" }).click();
+  const guides = team.getByRole("navigation", { name: "Docs", exact: true });
+  await guides.getByRole("link", { name: "Guides", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/tabs/guides`);
 });
 
@@ -1919,22 +1899,12 @@ test("the team's docs lists (Content, a collection's page, a tab's page): in rea
   await expect(visitor.getByText("Thanks for letting us know.")).toBeVisible();
 
   await team.goto(`/app/${slug}/docs`);
-  // How many wait to be published, at a glance, and which: newest saved first, drafts and published ones with changes.
-  await expect(team.getByRole("region", { name: "At a glance" })).toContainText("3Waiting to publish");
-  const waiting = team.getByRole("region", { name: "Waiting to publish" }).getByRole("listitem");
-  await expect(waiting).toHaveText([/^Refunds.*Draft$/, /^Your first board.*Unpublished changes$/, /^Billing basics.*Draft$/]);
-  // The first collection opens with the page; the rest fold to their band.
-  await expect(team.getByRole("region", { name: "Getting started" }).locator("details")).toHaveAttribute("open", "");
-  await expect(team.getByRole("region", { name: "Account" }).locator("details")).not.toHaveAttribute("open");
-  const rows = team.getByRole("region", { name: "Getting started" }).getByRole("listitem");
-  // In reading order, as the tree has them; a status where work waits.
-  await expect(rows).toHaveText([/^Inviting your team/, /^Billing basics/, /^Your first board/, /^Workspaces/]);
-  await expect(rows.nth(1)).toContainText("Draft");
-  await expect(rows.nth(2)).toContainText("Unpublished changes");
-  // Published as written: no status, its views and helpful answers in Reporting's 30 days.
-  await expect(rows.nth(0)).toContainText("1 view in 30 days");
-  await expect(rows.nth(0)).toContainText("1 found it helpful");
-  await expect(rows.nth(0)).not.toContainText(/Draft|Unpublished changes|Published/);
+  // The overview separates live readership from the saved versions waiting to publish.
+  await expect(team.getByRole("region", { name: "At a glance" })).toContainText("3Live articles");
+  const waiting = team.getByRole("region", { name: /Waiting to publish/ }).getByRole("listitem");
+  await expect(waiting).toHaveText([/^Refunds.*Publish$/, /^Your first board.*Publish$/, /^Billing basics.*Publish$/]);
+  const mostRead = team.getByRole("region", { name: /Most read/ }).getByRole("listitem");
+  await expect(mostRead.filter({ hasText: "Inviting your team" })).toContainText("1");
   await checkpoint(team, "team-docs-list-statuses");
   await team.setViewportSize({ width: 390, height: 844 });
   await checkpoint(team, "team-docs-list-statuses-phone");
@@ -1944,7 +1914,7 @@ test("the team's docs lists (Content, a collection's page, a tab's page): in rea
   await team.emulateMedia({ colorScheme: "light" });
 
   // The collection's own page lists them the same way, then the collections in it.
-  await team.getByRole("region", { name: "Getting started" }).getByRole("link", { name: "Getting started" }).click();
+  await team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Getting started", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/collections/getting-started`);
   const own = team.getByRole("region", { name: "Getting started" }).getByRole("listitem");
   // Then a row to write another in it.
@@ -2133,7 +2103,7 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   await team.setViewportSize({ width: 390, height: 844 });
   await team.goto(`/app/${slug}/docs/${article.slug}`);
   // An editor's own actions stay in a bar at the bottom (History, Verify, Save, Publish); the rest (Delete) are the top bar's menu.
-  await expect(team.getByRole("link", { name: "History" })).toBeVisible();
+  await expect(team.getByRole("button", { name: "History", exact: true })).toBeVisible();
   await expect(team.getByRole("button", { name: "Publish", exact: true })).toBeVisible();
   const remove = team.getByRole("button", { name: "Delete" });
   await expect(remove).toBeHidden();
@@ -2149,20 +2119,17 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   await expect(more).toBeFocused();
   // Settings, in the bar (its gear), opens its dialog.
   await team.getByRole("button", { name: "Settings" }).click();
-  const settings = team.getByRole("dialog", { name: "Article settings" });
+  const settings = team.getByRole("region", { name: "Article settings" });
   await expect(settings).toBeVisible();
   await team.keyboard.press("Escape");
   await expect(settings).toBeHidden();
 
-  // A menu in it ("Add content" on the docs' home): picking from it closes both.
+  // The overview keeps Add content directly in reach on a phone.
   await team.goto(`/app/${slug}/docs`);
-  await more.click();
-  await expect(more).toHaveAttribute("aria-expanded", "true");
-  await team.locator('[data-slot="page-header"]').getByRole("button", { name: "Add content" }).click();
+  await team.locator('[data-slot="docs-page-header"]').getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
   await expect(team.getByRole("dialog", { name: "New collection" })).toBeVisible();
   // The dialog hides the page from role queries, so both menus are checked by their markup.
-  await expect(team.locator('button[aria-label="More actions"]:visible')).toHaveAttribute("aria-expanded", "false");
   await expect(team.locator('[role="menu"]')).toHaveCount(0);
 });
 
@@ -2177,7 +2144,7 @@ test("a long article's History scrolls in its panel, its changes whole", async (
   await api(`/articles/${article.slug}`, { body: paragraphs("Second") }, "PATCH");
 
   await team.goto(`/app/${slug}/docs/${article.slug}?history`);
-  const panel = team.getByRole("dialog", { name: "History" });
+  const panel = team.getByRole("complementary", { name: "Article tools" });
   await panel.getByRole("link", { name: /^Saved / }).last().click();
   const changes = panel.getByRole("region", { name: "Changes since this version" });
   await expect(changes).toContainText("First paragraph 30");
@@ -2348,7 +2315,7 @@ test("a link in an article to another of the portal's articles stays on the port
   await expect(reader.getByRole("heading", { name: "Invoices" })).toBeInViewport();
 });
 
-test("an article's editor bar: one filled button, Save filled only once there's something to save, and its toolbar fits from tablet width up", async ({ browser }) => {
+test("an article's editor bar: saved state, Publish and the pinned tools fit from tablet width up", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
@@ -2363,15 +2330,16 @@ test("an article's editor bar: one filled button, Save filled only once there's 
   const primary = await fill("Publish");
   expect(await fill("Save")).not.toBe(primary);
 
-  // Published, as saved: Save an outline; once there's something to save, filled.
+  // Published, as saved: the quiet Saved control becomes Save when typing changes the article.
   await team.goto(`/app/${slug}/docs/inviting-your-team-to-a-project-with-a-long-title`);
   expect(await fill("Save")).not.toBe(primary);
   await team.getByRole("textbox", { name: "Article" }).click();
   await team.keyboard.press("ControlOrMeta+End");
   await team.keyboard.type(" Now.");
-  await expect.poll(() => fill("Save")).toBe(primary);
+  await expect(team.getByRole("button", { name: "Save", exact: true })).toHaveText("Save");
+  expect(await fill("Save")).not.toBe(primary);
   await team.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
 
   // From a tablet up, the page owns its toolbar: no bar above it and no horizontal overflow.
   for (const width of [768, 1024, 1280]) {

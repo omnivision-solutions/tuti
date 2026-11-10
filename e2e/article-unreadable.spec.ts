@@ -42,7 +42,8 @@ test("an article with something this editor doesn't know opens read-only, shows 
       await expect(editor).toHaveAccessibleDescription(/Reload the page to edit it/);
       // Still reached with Tab from the title, so it can be read (and its note heard).
       await team.getByLabel("Title").focus();
-      await team.keyboard.press("Tab");
+      // The title now shares its row with Save and Publish; the body remains in the keyboard order.
+      for (let tab = 0; tab < 12 && !(await editor.evaluate((element) => element === document.activeElement)); tab++) await team.keyboard.press("Tab");
       await expect(editor).toBeFocused();
       if (name === "a new block") {
         await checkpoint(team, "article-unreadable", { fullPage: false });

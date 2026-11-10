@@ -4,7 +4,7 @@ import { expect, test, type Browser } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
-import { afterIntersections, apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, signUp } from "./helpers";
 
 async function editor(browser: Browser) {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -21,7 +21,7 @@ test("the app sidebar folds for saved and new article editors and opens elsewher
   const sidebar = team.locator('[data-slot="sidebar"][data-state]');
   const tree = team.getByRole("navigation", { name: "Docs", exact: true });
   await team.goto(`/app/${slug}/docs`);
-  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   await tree.getByRole("link", { name: "Invite your team" }).click();
   await team.waitForURL(`**/app/${slug}/docs/invite-your-team`);
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
@@ -32,7 +32,7 @@ test("the app sidebar folds for saved and new article editors and opens elsewher
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New article", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/new`);
-  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/settings/general`);
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
@@ -44,8 +44,8 @@ test("an article editor keeps Save and Publish visible while its text scrolls", 
   await api("/articles/invite-your-team", { body: "Owners send invites from Settings.\n\n".repeat(80) }, "PATCH");
   await team.goto(`/app/${slug}/docs/invite-your-team`);
   await expect(team.getByRole("textbox", { name: "Article", exact: true })).toBeVisible();
-  await team.evaluate(() => window.scrollTo(0, 700));
-  expect(await team.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(700);
+  await team.locator(".docs-editor-scroll").evaluate((pane) => pane.scrollTo(0, 700));
+  expect(await team.locator(".docs-editor-scroll").evaluate((pane) => pane.scrollTop)).toBeGreaterThanOrEqual(700);
   await expect(team.getByRole("button", { name: "Save", exact: true })).toBeInViewport();
   await expect(team.getByRole("button", { name: "Publish", exact: true })).toBeInViewport();
   await checkpoint(team, "docs-editor-sticky-actions", { fullPage: false });
@@ -62,24 +62,24 @@ test("a short window keeps Save and Publish in reach while editing the end of a 
   await team.keyboard.press("ControlOrMeta+End");
   await team.keyboard.type("Invite the rest of your team.");
   await expect(article.locator("p").last()).toContainText("Invite the rest of your team.");
-  expect(await team.evaluate(() => window.scrollY)).toBeGreaterThan(700);
+  expect(await team.locator(".docs-editor-scroll").evaluate((pane) => pane.scrollTop)).toBeGreaterThan(700);
   const save = team.getByRole("button", { name: "Save", exact: true });
   await expect.soft(save).toBeInViewport();
   await expect.soft(team.getByRole("button", { name: "Publish", exact: true })).toBeInViewport();
-  await expect.poll(() => team.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
+  await expect(team.getByRole("toolbar", { name: "Formatting", exact: true })).toBeInViewport();
   await checkpoint(team, "docs-editor-short-window-actions", { fullPage: false });
   await save.click();
-  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
   await team.reload();
   await expect(article.locator("p").last()).toContainText("Invite the rest of your team.");
 });
 
-test("typing in a phone article editor keeps its title and back link while the bottom Save bar hides", async ({ browser }, testInfo) => {
+test("typing in a phone article editor keeps its title, parent link and Save in the heading", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const { team, slug } = await editor(browser);
   await team.setViewportSize({ width: 390, height: 844 });
   await team.goto(`/app/${slug}/docs/invite-your-team`);
-  const back = team.locator('[data-slot="page-header"]').getByRole("link", { name: "Docs", exact: true });
+  const back = team.locator('[data-slot="docs-page-header"]').getByRole("link", { name: "Docs", exact: true });
   const title = team.getByRole("textbox", { name: "Title", exact: true });
   const article = team.getByRole("textbox", { name: "Article", exact: true });
   const save = team.getByRole("button", { name: "Save", exact: true });
@@ -88,7 +88,7 @@ test("typing in a phone article editor keeps its title and back link while the b
   for (const [field, text] of [[title, "Invite your whole team"], [article, "Owners can send invitations from Settings."]] as const) {
     await field.fill(text);
     await expect(field).toBeFocused();
-    await expect(save).toBeHidden();
+    await expect(save).toBeInViewport();
     await expect(back).toBeInViewport();
     await expect(title).toBeInViewport();
     await expect(title).toHaveValue("Invite your whole team");
@@ -99,35 +99,37 @@ test("typing in a phone article editor keeps its title and back link while the b
   await expect(save).toBeInViewport();
 });
 
-test("switching a new article's collection keeps measuring its remounted toolbar", async ({ browser }, testInfo) => {
-  const checkpoint = checkpoints(testInfo);
+test("a new article’s collection and pinned formatting survive navigation between collections", async ({ browser }, testInfo) => {
   const { team, slug, api } = await editor(browser);
-  await api("/collections", { name: "Getting started" });
-  await api("/collections", { name: "Billing" });
+  for (const name of ["Getting started", "Billing"]) await api("/collections", { name });
   await team.goto(`/app/${slug}/docs/new?collection=getting-started`);
-  const root = team.locator("html");
-  const toolbar = team.locator('[data-slot="page-header"]');
-  const clearance = () => root.evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop));
   await expect(team.getByRole("combobox", { name: "In collection", exact: true })).toContainText("Getting started");
-  await expect.poll(clearance).toBeGreaterThan(0);
-
-  // A client navigation changes only the query and remounts ArticleEditor, including its PageHeader.
   await team.getByRole("navigation", { name: "Docs", exact: true }).getByRole("button", { name: "Add to Billing", exact: true }).click();
   await team.getByRole("menuitem", { name: "New article", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/new?collection=billing`);
   await expect(team.getByRole("combobox", { name: "In collection", exact: true })).toContainText("Billing");
-  await afterIntersections(team);
-  await expect.soft.poll(clearance).toBeGreaterThan(0);
-
-  // Larger text after the remount must resize the measured toolbar as well.
-  const before = await toolbar.evaluate((element) => element.offsetHeight);
-  await root.evaluate((element) => {
-    element.style.fontSize = "20px";
-  });
-  const after = await toolbar.evaluate((element) => element.offsetHeight);
-  expect(after).toBeGreaterThan(before);
-  await expect.poll(clearance).toBe(after);
-  await checkpoint(team, "docs-new-remounted-toolbar-measures-larger-text", { fullPage: false });
+  await expect(team.getByRole("toolbar", { name: "Formatting", exact: true })).toBeInViewport();
+  await team.getByRole("textbox", { name: "Title", exact: true }).fill("Your first invoice");
+  await team.getByRole("textbox", { name: "Description", exact: true }).fill("Download and read your invoices.");
+  const text = team.getByRole("textbox", { name: "Article", exact: true });
+  await text.fill("Open Billing to download it.");
+  const style = team.getByRole("combobox", { name: "Text style" });
+  await style.selectOption("h2");
+  await expect(text.getByRole("heading", { name: "Open Billing to download it.", level: 2 })).toBeVisible();
+  await expect(style).toHaveValue("h2");
+  await style.selectOption("text");
+  await expect(text.locator("p").first()).toHaveText("Open Billing to download it.");
+  await text.locator("p").first().click();
+  const list = team.getByRole("toolbar", { name: "Formatting", exact: true }).getByRole("button", { name: "Bulleted list", exact: true });
+  await list.click();
+  await expect(list).toHaveAttribute("aria-pressed", "true");
+  await expect(text.getByRole("listitem")).toHaveText("Open Billing to download it.");
+  await list.click();
+  await team.getByRole("button", { name: "Save draft", exact: true }).click();
+  await team.waitForURL(`**/app/${slug}/docs/your-first-invoice`);
+  await expect(team.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Your first invoice");
+  await expect(team.getByText("Download and read your invoices.", { exact: true })).toBeVisible();
+  await checkpoints(testInfo)(team, "docs-new-collection-navigation");
 });
 
 test("the article text matches the portal's width at 1440px, with and without sections", async ({ browser }, testInfo) => {
@@ -166,7 +168,7 @@ test("the article text matches the portal's width at 1440px, with and without se
   }
   await expect(text.locator("h2")).toHaveCount(2);
   await team.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
   // Wait for the refreshed article to reach the form: its new sections must not rewrap the open editor.
   await expect(revision).not.toHaveValue(before);
   await expect.poll(async () => Math.round((await text.boundingBox())!.width)).toBe(43 * 16);
@@ -182,21 +184,17 @@ test("the article text matches the portal's width at 1440px, with and without se
   await expect(text.locator("h2")).toHaveText(["Invitations", "Permissions"]);
   await expect.poll(async () => Math.round((await text.boundingBox())!.width)).toBe(46 * 16);
 
-  // The old History address opens the editor's panel; it is not a separate Docs page.
-  const column = team.locator('[data-slot="pane-layout"] > div');
-  const beforeHistory = (await column.boundingBox())!;
-  // The toolbar and the article share one left edge and the same reading column.
-  expect((await team.locator('[data-slot="page-header"]').boundingBox())!.x).toBe((await text.boundingBox())!.x);
+  // Its old History address now opens the shared side card and returns the width when collapsed.
+  const beforeHistory = (await text.boundingBox())!.width;
   await team.goto(`/app/${slug}/docs/invite-your-team/history`);
   await team.waitForURL(`**/app/${slug}/docs/invite-your-team?history`);
-  const history = team.getByRole("dialog", { name: "History", exact: true });
+  const history = team.getByRole("complementary", { name: "Article tools" });
   await expect(history).toBeVisible();
-  await expect.poll(async () => Math.round((await history.boundingBox())!.width)).toBe(36 * 16);
-  await expect.poll(() => column.boundingBox()).toEqual(beforeHistory);
-  // The panel hides the page from role queries, while the editor keeps its layout behind it.
-  const article = team.locator('#article-form [role="textbox"][aria-label="Article"]');
-  await expect.poll(async () => Math.round((await article.boundingBox())!.width)).toBe(46 * 16);
-  await checkpoint(team, "docs-editor-history-width", { fullPage: false });
+  await expect(history).toHaveCSS("width", "330px");
+  expect((await text.boundingBox())!.width).toBeLessThan(beforeHistory);
+  await history.getByRole("button", { name: "Collapse article tools" }).click();
+  await expect.poll(async () => (await text.boundingBox())!.width).toBe(beforeHistory);
+  await checkpoints(testInfo)(team, "docs-editor-history-width", { fullPage: false });
 });
 
 test("the docs tree remembers its fold across reloads and app pages and unfolds again", async ({ browser }) => {
@@ -244,4 +242,78 @@ test("folding and unfolding the docs tree keeps keyboard focus on the button tha
   await team.keyboard.press("Space");
   await expect.soft(hide).toBeFocused();
   await expect(hide).toHaveAttribute("aria-expanded", "true");
+});
+
+
+test("article tools collapse into the pinned toolbar and restore without a preview", async ({ browser }, testInfo) => {
+  const { team, slug } = await editor(browser);
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  const article = team.getByRole("textbox", { name: "Article", exact: true });
+  const width = (await article.boundingBox())!.width;
+  await team.getByRole("button", { name: "History", exact: true }).click();
+  const tools = team.getByRole("complementary", { name: "Article tools" });
+  await expect(tools).toBeVisible();
+  await expect(tools.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+  expect((await article.boundingBox())!.width).toBeLessThan(width);
+  await tools.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(tools.getByRole("combobox", { name: "Collection", exact: true })).toBeVisible();
+  await tools.getByRole("button", { name: "Collapse article tools" }).click();
+  await expect(tools).toBeHidden();
+  await expect.poll(async () => (await article.boundingBox())!.width).toBe(width);
+  const toolbar = team.getByRole("toolbar", { name: "Article tools" });
+  for (const name of ["Settings", "History", "Verify"]) await expect(toolbar.getByRole("button", { name, exact: true })).toBeVisible();
+  await toolbar.getByRole("button", { name: "Verify", exact: true }).click();
+  await expect(tools.getByRole("heading", { name: "Verify", exact: true })).toBeVisible();
+  await expect(team.getByRole("tab", { name: "Preview", exact: true })).toHaveCount(0);
+  await expect(team.locator("iframe")).toHaveCount(0);
+  await checkpoints(testInfo)(team, "docs-shared-tools");
+  await team.setViewportSize({ width: 390, height: 844 });
+  const sheet = team.getByRole("dialog", { name: "Verify", exact: true });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "Collapse article tools" }).click();
+  await team.getByRole("button", { name: "Browse docs", exact: true }).click();
+  const navigation = team.getByRole("dialog", { name: "Docs navigation" });
+  await expect(navigation.getByRole("link", { name: "Overview", exact: true })).toBeVisible();
+  await navigation.getByRole("link", { name: "Overview", exact: true }).click();
+  await expect(navigation).toBeHidden();
+  await expect(team.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+});
+
+
+test("the overview expands its publish queue and confirms publishing the saved articles", async ({ browser }, testInfo) => {
+  const { team, slug, api } = await editor(browser);
+  for (const title of ["First steps", "Calendar settings", "Team settings"]) await api("/articles", { title, body: "Open Settings." });
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: /Waiting to publish/ });
+  await expect(queue.getByRole("listitem")).toHaveCount(3);
+  const more = queue.getByRole("button", { name: "Show 1 more" });
+  await more.click();
+  await expect(queue.getByRole("listitem")).toHaveCount(4);
+  await expect(queue.getByRole("button", { name: "Show fewer" })).toHaveAttribute("aria-expanded", "true");
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  const confirm = team.getByRole("alertdialog", { name: "Publish 4 articles?" });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toBeHidden();
+  await expect(queue.getByRole("listitem")).toHaveCount(4);
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+  await expect(team.getByText("Articles published", { exact: true })).toBeVisible();
+  await expect(queue).toContainText("Everything is published.");
+  await expect(team.getByRole("region", { name: "At a glance" })).toContainText("4Live articles");
+  await checkpoints(testInfo)(team, "docs-published-queue", { fullPage: false });
+});
+
+
+test("the phone Docs sheet keeps app navigation reachable without a breadcrumb bar", async ({ browser }) => {
+  const { team, slug } = await editor(browser);
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}/docs`);
+  await expect(team.locator("main > header")).toHaveCount(0);
+  await team.getByRole("button", { name: "Browse docs" }).click();
+  await team.getByRole("dialog", { name: "Docs navigation" }).getByRole("button", { name: "App navigation" }).click();
+  const app = team.getByRole("dialog", { name: "Sidebar" });
+  await expect(app).toBeVisible();
+  await app.getByRole("link", { name: "Settings", exact: true }).click();
+  await team.waitForURL(`**/app/${slug}/settings/general`);
 });

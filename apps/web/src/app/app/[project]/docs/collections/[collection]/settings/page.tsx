@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { notFound, redirect } from "next/navigation";
 
-import { CollectionSettingsForm } from "@/components/docs";
+import { CollectionSettingsForm, DeleteCollectionButton } from "@/components/docs";
 import { CollectionHeader } from "@/components/docs-article-rows";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { fromNoAccess, fromReadAccess } from "@/lib/read-access";
@@ -57,6 +57,7 @@ export default async function CollectionSettingsPage(props: PageProps<"/app/[pro
         backHref={`/app/${slug}/docs/collections/${collection.slug}`}
         level={{ access: fromReadAccess(collection.access), groups: claimsOf(collection), noAccess: fromNoAccess(collection.noAccess) }}
       />
+      <section className="docs-collection-delete"><div><h2>Delete collection</h2><p>Its articles stay, without a collection.</p></div><DeleteCollectionButton projectSlug={slug} slug={collection.slug} name={collection.name} hasChildren={docs.collections.some((c) => c.parentId === collection.id)} /></section>
     </>
   );
 }

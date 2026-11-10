@@ -41,10 +41,11 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
         collection={{ slug: collection.slug, name: collection.name, description: collection.description, icon: collection.icon, knownIcon: collection.knownIcon }}
         hasChildren={inside.length > 0}
       />
+      {rowDetails && <div className="docs-collection-summary"><span><b>{collection.articles.reduce((sum, a) => sum + (rowDetails.stats.get(rowDetails.detailsOf.get(a.slug)?.id ?? "")?.views ?? 0), 0).toLocaleString("en")}</b> views</span><span><b>{collection.articles.reduce((sum, a) => sum + (rowDetails.stats.get(rowDetails.detailsOf.get(a.slug)?.id ?? "")?.helpful ?? 0), 0)}</b> helpful votes</span><small>Last 30 days</small></div>}
       {collection.articles.length === 0 && inside.length === 0 ? (
         <EmptyState title="Nothing in this collection yet" description="Add an article or a collection to it, or move some here in the tree." />
       ) : (
-        <Card role="region" aria-label={collection.name} className="gap-0 py-0">
+        <Card role="region" aria-label={collection.name} className="docs-collection-table gap-0 py-0">
           <ArticleColumns />
           <ul className="flex flex-col divide-y px-5">
             {rowDetails && <DocsArticleRows projectSlug={slug} details={rowDetails} articles={collection.articles} />}

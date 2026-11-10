@@ -2,6 +2,8 @@
 
 Living checklist. Items get ticked as they land; finished phases stay for history.
 
+- [x] Team Docs workspace redesign: rounded navigation and page surfaces, publishing overview, flat collection settings, pinned editor toolbar, collapsible Settings/History/Verify and phone sheets; live links replace embedded previews.
+
 ## Phase 0 — Foundation ✅
 
 - [x] Name, domain (tuti.so), private repo `omnivision-solutions/tuti`, AGPL-3.0

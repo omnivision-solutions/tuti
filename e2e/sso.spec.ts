@@ -189,7 +189,7 @@ test("a collection for one reader group: people the app signs in with that group
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(owner.getByText("Collection added")).toBeVisible();
   // Its page's Access says so.
-  await owner.getByRole("region", { name: "Enterprise" }).getByRole("link", { name: "Enterprise", exact: true }).click();
+  await owner.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Enterprise", exact: true }).click();
   await owner.getByRole("navigation", { name: "Collection" }).getByRole("link", { name: "Settings" }).click();
   await expect(owner.getByRole("region", { name: "Access" }).getByRole("checkbox", { name: "Enterprise customers" })).toBeChecked();
   await checkpoint(owner, "team-docs-collection-groups");
@@ -255,7 +255,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   // In the editor's settings: "Who can read", inheriting from its collection, set to signed-in readers.
   await owner.goto(`/app/${slug}/docs/pricing`);
   await owner.getByRole("button", { name: "Settings" }).click();
-  const articleSettings = owner.getByRole("dialog", { name: "Article settings" });
+  const articleSettings = owner.getByRole("region", { name: "Article settings" });
   const whoCanRead = articleSettings.getByRole("group", { name: "Who can read" });
   await expect(whoCanRead.getByRole("radio", { name: "Inherit from Basics" })).toBeChecked();
   await expect(whoCanRead).toContainText("Anyone can read it");
@@ -283,7 +283,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await publishing.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(owner.getByText("Published", { exact: true }).first()).toBeVisible();
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
-  await owner.goto(`/app/${slug}/docs`);
+  await owner.goto(`/app/${slug}/docs/collections/basics`);
   await expect(owner.getByRole("region", { name: "Basics" }).getByRole("listitem").filter({ hasText: "Pricing" }).getByText("Signed-in", { exact: true })).toBeVisible();
 
   // Someone signed out doesn't find it; anyone signed in on the portal reads it.
@@ -300,7 +300,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   // The Enterprise tab, for the group: "Who can read" in its page's Access.
   const tree = owner.getByRole("navigation", { name: "Docs", exact: true });
   const access = owner.getByRole("tabpanel", { name: "Access" });
-  await owner.getByRole("heading", { name: "Enterprise" }).getByRole("link").click();
+  await tree.getByRole("link", { name: "Enterprise", exact: true }).click();
   await owner.getByRole("tab", { name: "Access" }).click();
   await expect(access.getByRole("radio", { name: "Inherit" })).toBeChecked();
   await access.getByRole("radio", { name: "Specific groups" }).check();
@@ -358,7 +358,7 @@ test("people without access: an article shown with a lock asks people signed out
   // In the article's settings, "People without access" shows once some people can't read it: the group only, shown with a lock.
   await owner.goto(`/app/${slug}/docs/pricing`);
   await owner.getByRole("button", { name: "Settings" }).click();
-  const articleSettings = owner.getByRole("dialog", { name: "Article settings" });
+  const articleSettings = owner.getByRole("region", { name: "Article settings" });
   const withoutAccess = articleSettings.getByRole("group", { name: "People without access" });
   await expect(withoutAccess).toBeHidden();
   const whoCanRead = articleSettings.getByRole("group", { name: "Who can read" });
