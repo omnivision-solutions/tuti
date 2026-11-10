@@ -617,8 +617,9 @@ export function DocsLayout({
           </div>
         </aside>
       )}
-      {/* An article with sections keeps its measure even without a tree (and in reading mode): never wider lines. */}
-      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", sections ? "max-w-[46rem]" : shown ? "max-w-[43rem] xl:ml-0" : "max-w-[71rem] xl:max-w-none")}>
+      {/* An article with sections keeps its measure even without a tree (and in reading mode): never wider lines. The
+          overview (no tree, no current page) takes the container's width. */}
+      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", sections ? "max-w-[46rem]" : shown ? "max-w-[43rem] xl:ml-0" : current === null ? "max-w-[71rem] xl:max-w-none" : "max-w-[71rem]")}>
         {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
