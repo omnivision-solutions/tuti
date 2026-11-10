@@ -34,7 +34,7 @@ export function ArticleSentenceJump({ sentence }: { sentence: string }) {
   return (
     <button
       type="button"
-      className="docs-sentence-jump"
+      className="docs-sentence-jump inline-flex items-center gap-1.25 mt-1 text-primary text-[13px]"
       onClick={() => {
         // The phone tools sheet defers focus until it has closed and released its focus trap.
         if (window.dispatchEvent(new CustomEvent(ARTICLE_SENTENCE_JUMP, { detail: sentence, cancelable: true }))) focusArticleSentence(sentence);

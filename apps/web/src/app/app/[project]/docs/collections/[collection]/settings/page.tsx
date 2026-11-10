@@ -57,7 +57,7 @@ export default async function CollectionSettingsPage(props: PageProps<"/app/[pro
         backHref={`/app/${slug}/docs/collections/${collection.slug}`}
         level={{ access: fromReadAccess(collection.access), groups: claimsOf(collection), noAccess: fromNoAccess(collection.noAccess) }}
       />
-      <section className="docs-collection-delete"><div><h2>Delete collection</h2><p>Its articles stay, without a collection.</p></div><DeleteCollectionButton projectSlug={slug} slug={collection.slug} name={collection.name} hasChildren={docs.collections.some((c) => c.parentId === collection.id)} /></section>
+      <section className="docs-collection-delete max-w-[690px] flex justify-between items-center gap-4 m-[0_0_0_150px] [&_h2]:[font:600_14px_var(--font-sans)] [&_h2]:text-destructive-foreground [&_p]:text-[13px] [&_p]:text-muted-foreground [&_p]:mt-0.75 max-sm:ml-0 max-sm:flex-wrap"><div><h2>Delete collection</h2><p>Its articles stay, without a collection.</p></div><DeleteCollectionButton standalone projectSlug={slug} slug={collection.slug} name={collection.name} hasChildren={docs.collections.some((c) => c.parentId === collection.id)} /></section>
     </>
   );
 }

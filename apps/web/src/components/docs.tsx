@@ -4,7 +4,7 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import { editedSections } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { cn } from "cn";
-import { CheckIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useEditorSlot } from "@/components/use-editor-slot";
@@ -185,7 +185,9 @@ export function ArticleForm({
   defaultTitle,
   sections = false,
   description,
+  findings,
 }: {
+  findings?: import("@/components/verification-marks").VerificationFinding[];
   projectSlug: string;
   article: Article | null;
   mediaUrls: MediaUrls | null;
@@ -333,7 +335,7 @@ export function ArticleForm({
       id={ARTICLE_FORM}
       {...keepingFields(action)}
       onInput={changed}
-      className={cn("docs-article-form", wide ? "max-w-[46rem]" : "max-w-[43rem]")}
+      className={cn("docs-article-form w-full m-[0_auto] p-[32px_36px_56px] box-content max-w-[min(43rem,_calc(100%_-_72px))] pt-7 [&_>_[data-slot='field-group']]:gap-4", wide ? "max-w-[min(46rem,calc(100%_-_72px))]" : "max-w-[min(43rem,calc(100%_-_72px))]")}
     >
       {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
       {!article && <PlaceFields place={place} />}
@@ -344,7 +346,7 @@ export function ArticleForm({
       {own && <input type="hidden" name="own" value={own} />}
       <FieldGroup key={shown}>
         {/* Written as it's published: the title, then the text, no boxes. */}
-        <div className="docs-title-field flex flex-col gap-1">
+        <div className="docs-title-field flex flex-col gap-1 [&:has(textarea:only-child)]:flex [&:not(:has(textarea,_[role='alert'],_p,_#article-error))]:hidden">
           {/* A saved article's title is sent only once changed here (since it opened or last saved): one left alone keeps
               whatever it's renamed to meanwhile, and a change back to how it opened still counts. */}
           {(!opened || titleChanged) && <input type="hidden" name="title" value={title} />}
@@ -358,14 +360,14 @@ export function ArticleForm({
           )}
         </div>
         {state.newest ? <NewestVersion newest={state.newest} /> : seenSaved && <NewestVersion newest={seenSaved} merged />}
-        {description && <p className="docs-article-description">{description}</p>}
+        {description && <p className="docs-article-description mb-2 text-[17px] leading-[1.6] text-muted-foreground max-sm:text-[14px]">{description}</p>}
         {!article && (
           <Textarea
             name="description"
             aria-label="Description"
             maxLength={300}
             placeholder="What it helps with, e.g. inviting your team"
-            className="docs-new-description"
+            className="docs-new-description dark:bg-transparent border-0 rounded-none p-0 shadow-none ring-0 bg-transparent text-[14px] min-h-5.5 text-muted-foreground [&:focus-visible]:shadow-none [&:focus-visible]:ring-0 [&:focus-visible]:border-[transparent] [&::placeholder]:text-muted-foreground [&::placeholder]:[opacity:1]"
             rows={1}
           />
         )}
@@ -378,6 +380,7 @@ export function ArticleForm({
         <RichEditor
           toolbarId="article-toolbar"
           toolbarEnd={<ArticleToolButtons />}
+          findings={findings}
           bare
           profile="article"
           name="content"
@@ -610,8 +613,8 @@ export function ArticleChanges({
   );
 
   const controls = (
-    <details open={compact ? undefined : true} className={compact ? "docs-change-menu" : "contents"}>
-      <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle" : "hidden"}>
+    <details open={compact ? undefined : true} className={compact ? "docs-change-menu relative right-[auto] top-[auto] z-20 [&:not([open])]:relative [&:not([open])]:top-[auto] [&:not([open])]:right-[auto] [&[open]]:w-auto [&[open]]:p-0 [&[open]]:bg-transparent [&[open]]:border-0 [&[open]]:rounded-[8px] [&[open]]:relative [&_>_button]:mt-2 [&[open]_>_button]:flex [&[open]_>_button]:w-47.5 [&[open]_>_button]:justify-start [&[open]_>_button]:m-0 [&[open]_>_button]:bg-popover [&[open]_>_button]:border [&[open]_>_button]:border-border [&[open]_>_button]:absolute [&[open]_>_button]:left-[0] [&[open]_>_button]:top-8 [&[open]_>_button]:z-30 [&[open]_>_button:last-child]:top-16.5" : "contents"}>
+      <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle text-[12.5px] text-highlight-foreground list-none cursor-pointer inline-flex items-center gap-1.5 p-[3px_9px] bg-highlight rounded-[30px] max-sm:text-[12px] max-sm:gap-1 max-sm:px-2" : "hidden"}>
         <span className="size-1.5 rounded-full bg-highlight-foreground" />
         Unpublished changes
         <ChevronDownIcon aria-hidden className="size-3" />
@@ -659,7 +662,7 @@ export function ArticleChanges({
       aria-labelledby="article-changes-title"
       className={
         compact
-          ? "docs-changes-actions"
+          ? "docs-changes-actions relative"
           : "flex flex-col gap-3 rounded-xl bg-highlight px-4 py-3 ring-1 ring-highlight-foreground/25 sm:flex-row sm:items-center"
       }
     >
@@ -706,7 +709,7 @@ export function RestoreVersionButton({
         }
       }}
     >
-      <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Restore this version</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button variant="outline" size="sm" className="h-[27px] px-2 text-[12px]" disabled={pending} />}>Restore this version</AlertDialogTrigger>
       <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle>Restore this version?</AlertDialogTitle>
@@ -832,7 +835,7 @@ function CollectionFields({
           </div>
         </Field>
       )}
-      <Field className={separateIcon ? "docs-description-field" : undefined}>
+      <Field className={separateIcon ? "docs-description-field [&_textarea]:min-h-19.5 [&_textarea]:pb-5.5 max-sm:[&_textarea]:min-h-22.5" : undefined}>
         <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
         <div className="relative">
           <Textarea
@@ -844,7 +847,7 @@ function CollectionFields({
             defaultValue={collection?.description}
             placeholder="Optional, shown in your docs"
           />
-          {separateIcon && <small className="docs-description-count">{descriptionLength} / 300</small>}
+          {separateIcon && <small className="docs-description-count absolute bottom-1.5 right-2.25 text-muted-foreground text-[11px]">{descriptionLength} / 300</small>}
         </div>
       </Field>
     </>
@@ -929,6 +932,11 @@ export function CollectionSettingsForm({
   // The fields the person changed here since the form opened or last saved: a save sends only those (one set back
   // as it was too), never one left alone, so it doesn't undo a change made elsewhere; a refresh keeps what's typed.
   const touched = useRef(new Set<string>());
+  const [unsaved, setUnsaved] = useState(0);
+  const mark = (name: string) => {
+    touched.current.add(name);
+    setUnsaved(touched.current.size);
+  };
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const sent = new Set(touched.current);
     // Groups go with "Specific groups": both, or neither.
@@ -948,6 +956,7 @@ export function CollectionSettingsForm({
     } else {
       toast.success("Collection saved");
     }
+    setUnsaved(touched.current.size);
     return result;
   }, {});
   return (
@@ -958,10 +967,30 @@ export function CollectionSettingsForm({
         // A field the person typed in or picked (by its name; the icon and the parent say so themselves).
         const name = (event.target as Element).getAttribute("name");
         if (name) {
-          touched.current.add(name);
+          mark(name);
         }
       }}
-      className="docs-collection-settings"
+      className={cn(
+        "docs-collection-settings [&_fieldset_label]:bg-transparent! [&_fieldset_label]:border-0 [&_fieldset_label]:ring-0 max-w-[840px] flex flex-col gap-0 [&_>_[data-slot='card']]:grid",
+        "[&_>_[data-slot='card']]:[grid-template-columns:130px_minmax(0,_1fr)] [&_>_[data-slot='card']]:gap-5",
+        "[&_>_[data-slot='card']:first-child]:pt-0 [&_>_[data-slot='card']]:p-[26px_0_22px] [&_>_[data-slot='card']]:bg-transparent [&_>_[data-slot='card']]:border-0",
+        "[&_>_[data-slot='card']]:rounded-none [&_>_[data-slot='card']]:shadow-none [&_>_[data-slot='card']]:ring-0 [&_>_[data-slot='card']]:border-b",
+        "[&_>_[data-slot='card']]:border-border [&_>_[data-slot='card']]:overflow-visible [&_[data-slot='card-header']]:p-0",
+        "[&_[data-slot='card-content']]:p-0 [&_[data-slot='card-title']]:[font:600_15px_var(--font-sans)] [&_[data-slot='card-title']]:pt-1.75",
+        "[&_[data-slot='field-group']]:gap-4 [&_[data-slot='field']]:grid [&_[data-slot='field']]:[grid-template-columns:145px_minmax(0,_1fr)]",
+        "[&_[data-slot='field']]:[align-items:start] [&_[data-slot='field']]:gap-4 [&_[data-slot='field']_>_label]:pt-1.75",
+        "[&_[data-slot='field']_>_label]:text-[14px] [&_fieldset_>_label]:border-0 [&_fieldset_>_label]:p-[4px_0] [&_fieldset_>_label]:rounded-none",
+        "[&_fieldset_>_label]:bg-transparent [&_input]:text-[14px] [&_textarea]:text-[14px] [&_fieldset]:gap-3",
+        "[&_>_.docs-collection-form-actions]:hidden max-sm:[&_>_[data-slot='card']]:grid-cols-1 max-sm:[&_>_[data-slot='card']]:gap-5",
+        "max-sm:[&_>_[data-slot='card']]:pt-2 max-sm:[&_>_[data-slot='card']]:mt-0 max-sm:[&_[data-slot='field']]:grid-cols-1",
+        "max-sm:[&_[data-slot='field']]:gap-2 [&_[data-slot='field-description']]:[grid-column:2]",
+        "max-sm:[&_[data-slot='field-description']]:[grid-column:1] sm:[&_[data-slot='card-content']_fieldset]:relative",
+        "sm:[&_[data-slot='card-content']_fieldset]:pl-40.25 sm:[&_[data-slot='card-content']_fieldset_>_legend]:absolute",
+        "sm:[&_[data-slot='card-content']_fieldset_>_legend]:left-[0] sm:[&_[data-slot='card-content']_fieldset_>_legend]:top-1",
+        "sm:[&_[data-slot='card-content']_fieldset_>_legend]:w-36.25 sm:[&_[data-slot='card-content']_fieldset_fieldset]:pl-0",
+        "dark:[&_input]:bg-docs-surface dark:[&_textarea]:bg-docs-surface dark:[&_[data-slot='select-trigger']]:bg-docs-surface",
+        "[&_[data-slot='field']:has(.docs-description-count)_>_div]:min-w-0",
+      )}
     >
       <Card role="region" aria-labelledby="collection-details-title">
         <CardHeader>
@@ -974,14 +1003,14 @@ export function CollectionSettingsForm({
               id={collection.slug}
               collection={collection}
               error={state.error}
-              onIconChange={() => touched.current.add("icon")}
+              onIconChange={() => mark("icon")}
             />
             <ParentField
               id={`collection-${collection.slug}`}
               parents={parents}
               value={parent}
               onValueChange={(next) => {
-                touched.current.add("parent");
+                mark("parent");
                 setParent(next);
               }}
             />
@@ -994,6 +1023,7 @@ export function CollectionSettingsForm({
         </CardHeader>
         <CardContent>
           <WhoCanRead
+            compact
             id={`collection-access-${collection.slug}`}
             projectSlug={projectSlug}
             groups={access.groups}
@@ -1012,7 +1042,8 @@ export function CollectionSettingsForm({
       {actionsHost &&
         createPortal(
           <>
-            <Link href={backHref} className="docs-cancel">
+            {unsaved > 0 && <span className="mr-auto inline-flex items-center gap-1.5 text-[12px] text-highlight-foreground"><span aria-hidden className="size-1 rounded-full bg-highlight-foreground" />{unsaved} unsaved {unsaved === 1 ? "change" : "changes"}</span>}
+            <Link href={backHref} className="docs-cancel p-[6px_8px] text-[13px] text-muted-foreground">
               Cancel
             </Link>
             <Button type="submit" form="collection-settings" disabled={pending}>
@@ -1166,17 +1197,19 @@ export function DeleteCollectionButton({
   slug,
   name,
   hasChildren = false,
+  standalone = false,
 }: {
   projectSlug: string;
   slug: string;
   name: string;
   /** It has collections in it, which move up a level. */
   hasChildren?: boolean;
+  standalone?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>Delete</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button variant={standalone ? "outline" : "ghost"} size="sm" disabled={pending} className={standalone ? "h-[30px] border-destructive/45 text-[13px] text-destructive-foreground" : undefined} />}>{standalone ? <><Trash2Icon className="size-3.5" />Delete collection</> : "Delete"}</AlertDialogTrigger>
       <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
@@ -1383,8 +1416,10 @@ export function TabSettingsForm({ projectSlug, tab, home }: { projectSlug: strin
 }
 
 /** "New tab": adds one, after the others (`first`: the first one, which takes the collections there are, as the dialog says). */
-export function TabDialog({ projectSlug, first = false }: { projectSlug: string; first?: boolean }) {
-  const [open, setOpen] = useState(false);
+export function TabDialog({ projectSlug, first = false, open: controlledOpen, onOpenChange, renderTrigger = true }: { projectSlug: string; first?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void; renderTrigger?: boolean }) {
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const setOpen = onOpenChange ?? setOwnOpen;
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveTab(projectSlug, null, prev, formData);
     if (!result.error) {
@@ -1395,11 +1430,11 @@ export function TabDialog({ projectSlug, first = false }: { projectSlug: string;
   }, {});
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="sm" className="justify-start text-sm font-normal" />}>
+      {renderTrigger && <DialogTrigger render={<Button variant="ghost" size="sm" className="justify-start text-sm font-normal" />}>
         <PlusIcon aria-hidden className="text-muted-foreground" />
         New tab
-      </DialogTrigger>
-      <DialogContent>
+      </DialogTrigger>}
+      <DialogContent finalFocus={renderTrigger ? undefined : () => document.querySelector<HTMLElement>(".docs-tab-switcher")}>
         <form {...keepingFields(action)}>
           <DialogHeader>
             <DialogTitle>New tab</DialogTitle>

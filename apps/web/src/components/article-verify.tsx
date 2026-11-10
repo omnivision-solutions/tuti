@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -63,7 +63,7 @@ export async function ArticleVerify({
   provider,
 }: {
   projectSlug: string;
-  article: { id: string; slug: string };
+  article: { id: string; slug: string; title: string };
   /** Why Verify can't run now (null: it can). */
   unavailable: string | null;
   provider: string;
@@ -86,18 +86,19 @@ export async function ArticleVerify({
           )}
         </Card>
       ) : (
-        <div className="docs-verify-again">
+        <div className="docs-verify-again flex justify-end mb-3.5 absolute top-4.5 right-13.25 m-0 z-[1] [&_button]:h-6.75 [&_button]:text-[11.5px] [&_button]:px-2">
           <VerifyButton projectSlug={projectSlug} slug={article.slug} again />
         </div>
       )}
       {runs.map((run) => (
         <Card key={run.id} role="region" aria-label={`${stateLabel(run)} ${timeAgo(new Date(run.createdAt))}`}>
           <CardHeader>
-            <CardTitle className="text-base">
-              {run.state === "done" && run.counts.outdated > 0 ? `${plural(run.counts.outdated, "statement")} out of date` : stateLabel(run)}
+            <CardTitle className={cn("flex items-start gap-2 text-[15px]", run.counts.outdated > 0 && "text-destructive")}>
+              {run.counts.outdated > 0 && <CircleAlertIcon className="mt-0.5 size-4 shrink-0" />}
+              {run.state === "done" && run.counts.outdated > 0 ? `${plural(run.counts.outdated, "statement")} ${run.counts.outdated === 1 ? "is" : "are"} out of date` : stateLabel(run)}
             </CardTitle>
             <CardDescription>
-              {stateLabel(run)}{" "}
+              {stateLabel(run)} “{article.title}”{" "}
               <time dateTime={run.createdAt} title={run.createdAt} className="font-normal text-muted-foreground" suppressHydrationWarning>
                 {timeAgo(new Date(run.createdAt))}
               </time>
@@ -116,7 +117,7 @@ export async function ArticleVerify({
             <CardContent className="flex flex-col gap-4">
               {(run.state === "done" || run.state === "changed") && run.statements.length > 0 && (
                 // The counts, each in its verdict's colour; said as one sentence to the ear.
-                <p className="docs-verify-counts flex flex-wrap gap-2">
+                <p className="docs-verify-counts flex flex-wrap gap-2 justify-between [&_>_span:not(.sr-only)]:bg-transparent [&_>_span:not(.sr-only)]:border-0 [&_>_span:not(.sr-only)]:rounded-none [&_>_span:not(.sr-only)]:p-0 [&_>_span:not(.sr-only)]:shadow-none [&_>_span:not(.sr-only)]:ring-0 [&_>_span:not(.sr-only)]:text-[11px] [&_>_span:not(.sr-only)_>_span]:hidden [&_>_span:nth-child(2)]:text-highlight-foreground">
                   <span className="sr-only">
                     {plural(run.counts.current, "statement")} still true · {run.counts.outdated} out of date · {run.counts.unclear} it can&apos;t tell
                   </span>
@@ -143,14 +144,14 @@ export async function ArticleVerify({
                     {run.statements
                       .filter((statement) => statement.verdict !== "current")
                       .map((statement, i) => (
-                        <li key={i} className="flex flex-col items-start gap-1.5 py-4 first:pt-1">
+                        <li key={i} className="flex flex-col items-start gap-1.5 py-4 text-[13px] leading-[1.5] first:pt-1">
                           <span
                             className={cn(
                               "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
                               VERDICTS[statement.verdict].pill,
                             )}
                           >
-                            <span aria-hidden className={cn("size-1.5 rounded-full", VERDICTS[statement.verdict].dot)} />
+                            <span aria-hidden className="grid size-4 place-items-center rounded-sm">{i + 1}</span>
                             {VERDICTS[statement.verdict].label}
                           </span>
                           {/* Each claim as a sentence, whatever case it was written down in. */}
@@ -160,12 +161,13 @@ export async function ArticleVerify({
                             <span className="font-mono text-xs break-all text-muted-foreground">{statement.evidence.join(", ")}</span>
                           )}
                           {statement.verdict !== "current" && <ArticleSentenceJump sentence={statement.statement} />}
+                          {run.fix && statement === run.statements.find((item) => item.verdict === "outdated") && <VerificationFix fix={run.fix} projectSlug={projectSlug} articleId={article.id} />}
                         </li>
                       ))}
                   </ul>
                   {run.counts.current > 0 && (
                     <Folded summary={`Still true (${run.counts.current})`}>
-                      <ul className="docs-current-findings">
+                      <ul className="docs-current-findings flex flex-col gap-4 [padding-block:12px] text-[13px] [&_p]:text-muted-foreground [&_p]:[font-weight:normal] [&_code]:text-muted-foreground [&_code]:[font-weight:normal] [&_code]:text-[11px]">
                         {run.statements
                           .filter((statement) => statement.verdict === "current")
                           .map((statement, i) => (
@@ -181,29 +183,14 @@ export async function ArticleVerify({
                   )}
                 </Folded>
               )}
-              {run.fix && (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2.5">
-                  <span className="text-sm">{fixStatus(run.fix)}</span>
-                  {run.fix.status === "waiting" && (
-                    <Link
-                      href={`/app/${projectSlug}/autopilot/articles/${article.id}`}
-                      className={buttonVariants({
-                        variant: "outline",
-                        size: "sm",
-                      })}
-                    >
-                      Review it
-                    </Link>
-                  )}
-                </div>
-              )}
+              {run.fix && !run.statements.some((statement) => statement.verdict === "outdated") && <VerificationFix fix={run.fix} projectSlug={projectSlug} articleId={article.id} />}
             </CardContent>
           ) : null}
         </Card>
       ))}
       {!unavailable && (
         <Folded summary="How it works">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             It reads your repository&apos;s default branch at its latest commit and finds what&apos;s still true, what&apos;s out of date and what it
             can&apos;t tell. It sends the files it reads to {provider}, with files that hold secrets left out and secret-looking strings masked.
             What&apos;s out of date is fixed as an edit for you to review.
@@ -214,11 +201,18 @@ export async function ArticleVerify({
   );
 }
 
+function VerificationFix({ fix, projectSlug, articleId }: { fix: NonNullable<VerificationView["fix"]>; projectSlug: string; articleId: string }) {
+  return <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-2 rounded-lg bg-highlight px-3 py-2.5 text-[13px] text-highlight-foreground">
+    <span>{fixStatus(fix)}</span>
+    {fix.status === "waiting" && <Link href={`/app/${projectSlug}/autopilot/articles/${articleId}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-7 px-2 text-[12px]")}>Review it</Link>}
+  </div>;
+}
+
 /** Folded away until asked for: a chevron (as the docs' tree has) that turns as it opens. */
 function Folded({ summary, open = false, children }: { summary: string; open?: boolean; children: ReactNode }) {
   return (
-    <details open={open} className="group w-full">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+    <details open={open} className="group w-full text-[13px] leading-[1.5]">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon aria-hidden className="size-4 transition-transform group-open:rotate-90" />
         {summary}
       </summary>

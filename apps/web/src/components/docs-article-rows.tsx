@@ -85,7 +85,7 @@ const STATUS = "hidden w-44 shrink-0 sm:block";
 /** A list of articles' column headings: what the numbers under them count. */
 export function ArticleColumns({ first = "Article" }: { first?: string }) {
   return (
-    <div className="docs-article-columns flex items-center gap-3 border-b px-1 py-2.5 text-xs text-muted-foreground">
+    <div className="docs-article-columns flex items-center gap-3 border-b px-1 py-2.5 text-xs text-muted-foreground normal-case tracking-[0] [&_span_>_span]:hidden">
       <span className="flex-1">{first}</span>
       <span className={STATUS}>State</span>
       {/* The window the numbers count, said under them (not only on hover). */}
@@ -95,7 +95,7 @@ export function ArticleColumns({ first = "Article" }: { first?: string }) {
       <span className={NUMBER}>
         Helpful<span className="block text-xs font-normal tracking-normal normal-case">{INSIGHTS_DAYS} days</span>
       </span>
-      <span className="docs-updated">Updated</span>
+      <span className="docs-updated hidden w-20 shrink-0 text-right text-[13px] text-muted-foreground max-sm:hidden">Updated</span>
     </div>
   );
 }
@@ -154,13 +154,14 @@ export function ArticleGroup({
 }
 
 /** The last row of a collection's articles: write another in it. */
-export function NewArticleRow({ href }: { href: string }) {
+export function NewArticleRow({ href, beside }: { href: string; beside?: ReactNode }) {
   return (
-    <li>
+    <li className="flex items-center gap-4">
       <Link href={href} className="flex items-center gap-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
         <PlusIcon aria-hidden className="size-4" />
         New article
       </Link>
+      {beside}
     </li>
   );
 }
@@ -174,7 +175,9 @@ export function DocsArticleRows({
   projectSlug,
   details: { detailsOf, stats, badge },
   articles,
+  reorder = false,
 }: {
+  reorder?: boolean;
   projectSlug: string;
   details: ArticleRowDetails;
   articles: { slug: string; title: string }[];
@@ -190,7 +193,7 @@ export function DocsArticleRows({
     ];
     const access = article && badge(article);
     return (
-      <li key={articleSlug} className="flex items-center gap-3 py-2.5">
+      <li key={articleSlug} draggable={reorder} data-article-slug={reorder ? articleSlug : undefined} className="flex items-center gap-3 py-2.5 data-[drop-target]:bg-docs-selection">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <Link href={`/app/${projectSlug}/docs/${articleSlug}`} className="min-w-0 text-sm break-words hover:underline">
@@ -213,10 +216,10 @@ export function DocsArticleRows({
         </div>
         <span className={STATUS}>
           {(state || article?.publishedAt) && (
-            <Badge variant="outline" className={cn("border-transparent text-foreground", ARTICLE_STATES[state ?? "published"].tint)}>
+            <span className={cn("inline-flex items-center gap-1.5 text-[13px]", state === "changes" ? "text-highlight-foreground" : state === "draft" ? "text-muted-foreground" : "text-primary")}>
               <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", ARTICLE_STATES[state ?? "published"].dot)} />
               {ARTICLE_STATES[state ?? "published"].label}
-            </Badge>
+            </span>
           )}
           {!state && article?.publishedAt && article.listing !== "EVERYWHERE" && (
             <span className="text-xs text-muted-foreground">{LISTING_LABELS[article.listing.toLowerCase() as Listing]}</span>
@@ -234,7 +237,7 @@ export function DocsArticleRows({
           {read?.helpful ? read.helpful.toLocaleString("en") : "–"}
           <span className="sr-only"> {read?.helpful ?? 0} found it helpful</span>
         </span>
-        <span className="docs-updated">{article ? timeAgo(article.updatedAt) : "–"}</span>
+        <span className="docs-updated hidden w-20 shrink-0 text-right text-[13px] text-muted-foreground max-sm:hidden">{article ? timeAgo(article.updatedAt) : "–"}</span>
       </li>
     );
   });
@@ -349,7 +352,7 @@ export async function CollectionHeader({
         title={collection.name}
         icon={collection.knownIcon && collection.icon ? <CollectionIcon name={collection.icon} /> : <FolderIcon />}
         description={collection.description || undefined}
-        actions={settings ? <div id="collection-actions" /> : <><a href={`${portal}/docs/${collection.slug}`} target="_blank" rel="noreferrer" className="docs-live-link"><ExternalLinkIcon className="size-3.5" /><span>View on help center</span></a><AddContentMenu parent={collection.slug} article={collection.slug} /></>}
+        actions={settings ? <div id="collection-actions" className="flex items-center gap-[8px]" /> : <><a href={`${portal}/docs/${collection.slug}`} target="_blank" rel="noreferrer" className="docs-live-link inline-flex gap-1.5 items-center text-muted-foreground text-[13px] whitespace-nowrap [&:hover]:text-primary"><ExternalLinkIcon className="size-3.5" /><span>View on help center</span></a><AddContentMenu parent={collection.slug} article={collection.slug} /></>}
         more={settings ? undefined : <DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={hasChildren} />}
       />
       <SubNav

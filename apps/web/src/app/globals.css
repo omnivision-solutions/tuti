@@ -34,6 +34,10 @@
 }
 
 @theme inline {
+  --color-docs-surface: var(--docs-surface);
+  --color-docs-canvas: var(--docs-canvas);
+  --color-docs-edge: var(--docs-edge);
+  --color-docs-selection: var(--docs-selection);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   /* After each font, the symbols none of them has (--font-symbols, app/layout.tsx), so they never show as an empty box. */
@@ -117,6 +121,11 @@
  */
 :root,
 .light {
+  --docs-surface: var(--card);
+  --docs-canvas: color-mix(in srgb, var(--secondary) 68%, var(--background));
+  --docs-edge: color-mix(in oklch, var(--border) 35%, transparent);
+  --docs-selection: color-mix(in srgb, var(--primary) 9%, var(--card));
+  --docs-overlay: color-mix(in srgb, var(--foreground) 42%, transparent);
   --background: oklch(0.982 0.008 88.6);
   --foreground: oklch(0.216 0.006 56);
   --card: oklch(1 0 0);
@@ -189,6 +198,11 @@
 }
 
 .dark {
+  --docs-surface: color-mix(in srgb, var(--card) 50%, var(--background));
+  --docs-canvas: var(--background);
+  --docs-edge: color-mix(in oklch, var(--border) 32%, transparent);
+  --docs-selection: color-mix(in srgb, var(--primary) 12%, var(--card));
+  --docs-overlay: color-mix(in srgb, var(--background) 65%, transparent);
   --background: oklch(0.185 0.01 158.9);
   --foreground: oklch(0.966 0.006 153.8);
   --card: oklch(0.248 0.014 160.1);

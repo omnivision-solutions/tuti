@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon, ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -24,6 +24,7 @@ export function WhoCanRead({
   defaultGroups = [],
   defaultNoAccess = "inherit",
   preview,
+  compact = false,
 }: {
   /** Unique on the page, for the fields' ids. */
   id: string;
@@ -40,6 +41,8 @@ export function WhoCanRead({
   defaultNoAccess?: WithoutAccess;
   /** The page on the portal, for "Preview as a reader" (none for a page that isn't there yet). */
   preview?: string;
+  /** Settings pages keep the less common visibility choices behind a disclosure. */
+  compact?: boolean;
 }) {
   const [access, setAccess] = useState<Access>(defaultAccess);
   const [noAccess, setNoAccess] = useState<WithoutAccess>(defaultNoAccess);
@@ -49,33 +52,68 @@ export function WhoCanRead({
     ["groups", "Specific groups", "Only readers in the groups you pick"],
   ];
   const noAccessChoices: [WithoutAccess, string, string][] = [
-    ["inherit", inherit.label, inherit.shows === "lock" ? "Shown with a lock, like what it's in" : "Hidden (the default)"],
-    ["lock", "Show with a lock", "Its title is listed with a lock. Opening it asks them to sign in, or says they don't have access, never showing the content."],
-    ["hide", "Hide", "It isn't listed, and its link says the page wasn't found."],
+    [
+      "inherit",
+      inherit.label,
+      inherit.shows === "lock"
+        ? "Shown with a lock, like what it's in"
+        : "Hidden (the default)",
+    ],
+    [
+      "lock",
+      "Show with a lock",
+      "Its title is listed with a lock. Opening it asks them to sign in, or says they don't have access, never showing the content.",
+    ],
+    [
+      "hide",
+      "Hide",
+      "It isn't listed, and its link says the page wasn't found.",
+    ],
   ];
   // Only for a page some people can't read.
   const forSome = access !== "inherit" || inherit.description !== ANYONE;
   return (
     <div className="flex flex-col gap-6">
-      <Choices id={id} legend="Who can read" name="access" choices={choices} value={access} onChange={setAccess}>
+      <Choices
+        id={id}
+        legend="Who can read"
+        name="access"
+        choices={choices}
+        value={access}
+        onChange={setAccess}
+      >
         <div hidden={access !== "groups"} className="pl-7">
           {groups.length > 0 ? (
             <fieldset className="flex flex-col gap-2">
               <legend className="sr-only">Groups</legend>
               <div className="flex flex-wrap gap-x-4 gap-y-2">
                 {groups.map((group) => (
-                  <label key={group.key} className="flex items-center gap-2 text-sm break-words">
-                    <input type="checkbox" name="groups" value={group.key} defaultChecked={defaultGroups.includes(group.key)} className="size-4 accent-primary" />
+                  <label
+                    key={group.key}
+                    className="flex items-center gap-2 text-sm break-words"
+                  >
+                    <input
+                      type="checkbox"
+                      name="groups"
+                      value={group.key}
+                      defaultChecked={defaultGroups.includes(group.key)}
+                      className="size-4 accent-primary"
+                    />
                     {group.name}
                   </label>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">With none ticked, only your team can read it.</p>
+              <p className="text-xs text-muted-foreground">
+                With none ticked, only your team can read it.
+              </p>
             </fieldset>
           ) : (
             <p className="text-sm text-muted-foreground">
               You don&apos;t have any groups yet.{" "}
-              <Link href={`/app/${projectSlug}/settings/groups`} className="text-primary underline underline-offset-4">
+              <Link
+                href={`/app/${projectSlug}/settings/groups`}
+                className="text-primary underline underline-offset-4"
+              >
                 Create one
               </Link>
             </p>
@@ -84,17 +122,72 @@ export function WhoCanRead({
       </Choices>
       {/* Hidden, its choice is still sent, so it's kept for when it's for some people again. */}
       <div hidden={!forSome}>
-        <Choices id={`${id}-no-access`} legend="People without access" name="noAccess" choices={noAccessChoices} value={noAccess} onChange={setNoAccess}>
-          {preview && (
-            <p className="text-sm text-muted-foreground">
-              <a href={preview} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary underline underline-offset-4">
-                Preview as a reader
-                <ExternalLinkIcon aria-hidden className="size-3.5" />
-              </a>{" "}
-              opens its page on your portal as people signed out see it.
-            </p>
-          )}
-        </Choices>
+        {compact ? (
+          <>
+            <details className="group/visibility text-[13px]">
+              <summary className="flex min-h-10 cursor-pointer list-none items-center gap-3 [&::-webkit-details-marker]:hidden">
+                <span>People without access</span>
+                <span className="ml-auto text-muted-foreground">
+                  {noAccess === "lock" ||
+                  (noAccess === "inherit" && inherit.shows === "lock")
+                    ? "Shown with a lock"
+                    : "Hidden"}
+                </span>
+                <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-open/visibility:rotate-90" />
+              </summary>
+              <div className="py-3 sm:[&_fieldset]:pl-0! [&_legend]:sr-only">
+                <Choices
+                  id={`${id}-no-access`}
+                  legend="People without access"
+                  name="noAccess"
+                  choices={noAccessChoices}
+                  value={noAccess}
+                  onChange={setNoAccess}
+                />
+              </div>
+            </details>
+            {preview && (
+              <a
+                href={preview}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-h-10 items-center gap-3 text-[13px] text-primary"
+              >
+                <span>View as a reader</span>
+                <span className="ml-auto text-muted-foreground">
+                  See it signed out
+                </span>
+                <ExternalLinkIcon className="size-3.5" />
+              </a>
+            )}
+          </>
+        ) : (
+          <>
+            <Choices
+              id={`${id}-no-access`}
+              legend="People without access"
+              name="noAccess"
+              choices={noAccessChoices}
+              value={noAccess}
+              onChange={setNoAccess}
+            >
+              {preview && (
+                <p className="text-sm text-muted-foreground">
+                  <a
+                    href={preview}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-primary underline underline-offset-4"
+                  >
+                    Preview as a reader
+                    <ExternalLinkIcon aria-hidden className="size-3.5" />
+                  </a>{" "}
+                  opens its page on your portal as people signed out see it.
+                </p>
+              )}
+            </Choices>
+          </>
+        )}
       </div>
     </div>
   );
@@ -137,10 +230,16 @@ function Choices<T extends string>({
             className="mt-0.5 size-4 shrink-0 accent-primary"
           />
           <span className="flex min-w-0 flex-col gap-0.5">
-            <span id={`${id}-${choice}-label`} className="font-medium break-words">
+            <span
+              id={`${id}-${choice}-label`}
+              className="font-medium break-words"
+            >
               {label}
             </span>
-            <span id={`${id}-${choice}-description`} className="break-words text-muted-foreground">
+            <span
+              id={`${id}-${choice}-description`}
+              className="break-words text-muted-foreground"
+            >
               {description}
             </span>
           </span>

@@ -1,3 +1,6 @@
+import { diffBlocks } from "@tuti/content";
+import { displayDoc } from "@/server/content";
+import { plural } from "@/lib/autopilot-words";
 import { prisma } from "@tuti/db";
 import { HistoryIcon } from "lucide-react";
 import Link from "next/link";
@@ -80,14 +83,14 @@ export async function ArticleHistory({
                   {index === 0 && <Badge>Current</Badge>}
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {[revision.author?.name ?? "Someone whose account is gone", revision.title !== current.title && `Titled “${revision.title}”`]
+                  {[revision.author?.name ?? "Someone whose account is gone", revisions[index + 1] ? plural(diffBlocks(displayDoc(revisions[index + 1]!), displayDoc(revision)).filter((block) => block.kind !== "same").length, "line") + " changed" : "first version", revision.title !== current.title && `Titled “${revision.title}”`]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>
               </span>
             </Link>
             {revision === selected && (
-              <section role="region" aria-labelledby="version-title" className="docs-version-diff">
+              <section role="region" aria-labelledby="version-title" className="docs-version-diff m-[0_0_12px_16px] p-[8px_0_4px_25px] border-l-2 border-primary text-[13px] [&_[data-slot='button']]:h-7.5 [&_[data-slot='button']]:text-[13px] [&_.rich-text]:text-[13px] [&_.rich-text]:leading-[1.6] [&_[data-slot='card']]:overflow-visible">
                 <h3 id="version-title" className="mb-2 text-xs font-medium text-muted-foreground">
                   Changes since this version
                 </h3>

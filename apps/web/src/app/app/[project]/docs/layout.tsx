@@ -1,9 +1,8 @@
-import "@/components/docs-workspace.css";
-
 import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { DocsWorkspace } from "@/components/docs-tree";
+import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
@@ -25,6 +24,7 @@ export default async function TeamDocsLayout({ children, params }: LayoutProps<"
   return (
     <DocsWorkspace
       projectName={membership.project.name}
+      portal={await portalAddress(slug)}
       projectSlug={slug}
       tabs={docs.tabs.map((tab) => ({ slug: tab.slug, name: tab.name }))}
       collections={docs.collections.map((c) => ({

@@ -35,6 +35,7 @@ import {
   AlignLeftIcon,
   AlignRightIcon,
   AppWindowIcon,
+  ChevronDownIcon,
   BoldIcon,
   CodeIcon,
   FootprintsIcon,
@@ -59,6 +60,7 @@ import {
 import { createPortal } from "react-dom";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { verificationPlugin, type VerificationFinding } from "@/components/verification-marks";
 import { useEditorSlot } from "@/components/use-editor-slot";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -110,6 +112,7 @@ export function RichEditor({
   bare = false,
   toolbarId,
   toolbarEnd,
+  findings,
 }: {
   profile: Profile;
   name: string;
@@ -139,6 +142,7 @@ export function RichEditor({
   /** A pinned formatting row owned by an article editor, outside its scrolling text. */
   toolbarId?: string;
   toolbarEnd?: ReactNode;
+  findings?: VerificationFinding[];
 }) {
   const toolbarHost = useEditorSlot(toolbarId);
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
@@ -374,6 +378,14 @@ export function RichEditor({
       onChange?.(editor);
     },
   });
+
+  // Checked sentences are decorations, independent of the document being saved.
+  useEffect(() => {
+    if (!editor || !findings?.length) return;
+    const plugin = verificationPlugin(findings);
+    editor.registerPlugin(plugin);
+    return () => { editor.unregisterPlugin("verificationHighlights"); };
+  }, [editor, findings]);
 
   // A new placeholder in an open editor: drawn again.
   useEffect(() => {
@@ -827,12 +839,12 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false }: { e
       {!active.image && !active.codeBlock && (
         <>
           {expanded && <>
-            <select aria-label="Text style" className="docs-format-select" value={active.heading} onChange={(event) => {
+            <span className="relative flex shrink-0 items-center"><select aria-label="Text style" className={cn("docs-format-select appearance-none pr-4 max-w-[75px] text-[13px] p-1 bg-docs-surface border-0 rounded-[6px] max-sm:max-w-[52px] max-sm:text-[12px]", active.heading === "text" ? "w-12" : "w-18.75")} value={active.heading} onChange={(event) => {
               if (event.target.value === "h2") chain().setHeading({ level: 2 }).run();
               else if (event.target.value === "h3") chain().setHeading({ level: 3 }).run();
               else chain().setParagraph().run();
-            }}><option value="text">Text</option><option value="h2">Heading</option><option value="h3">Subheading</option></select>
-            <span className="docs-toolbar-separator" />
+            }}><option value="text">Text</option><option value="h2">Heading</option><option value="h3">Subheading</option></select><ChevronDownIcon aria-hidden className="pointer-events-none absolute right-0 size-3" /></span>
+            <span className="docs-toolbar-separator w-0.25 h-4 bg-border m-[0_3px] shrink-0" />
           </>}
           <Tool icon={BoldIcon} label="Bold" active={active.bold} onClick={() => chain().toggleBold().run()} />
           <Tool icon={ItalicIcon} label="Italic" active={active.italic} onClick={() => chain().toggleItalic().run()} />
@@ -844,16 +856,22 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false }: { e
             onClick={() => (active.link ? chain().extendMarkRange("link").unsetLink().run() : onPrompt("link"))}
           />
           {expanded && <>
-            <span className="docs-toolbar-separator" />
+            <span className="docs-toolbar-separator w-0.25 h-4 bg-border m-[0_3px] shrink-0" />
             <Tool icon={ListIcon} label="Bulleted list" active={active.bulletList} onClick={() => chain().toggleBulletList().run()} />
             <Tool icon={ListOrderedIcon} label="Numbered list" active={active.orderedList} onClick={() => chain().toggleOrderedList().run()} />
             <Tool icon={QuoteIcon} label="Quote" active={active.blockquote} onClick={() => chain().toggleBlockquote().run()} />
-            <span className="docs-toolbar-separator" />
+            <span className="docs-toolbar-separator w-0.25 h-4 bg-border m-[0_3px] shrink-0" />
           </>}
           {onImage && <Tool icon={ImageIcon} label="Image" active={false} onClick={onImage} />}
           {expanded && <>
             <Tool icon={TableIcon} label="Table" active={active.table} onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />
-            <details className="docs-insert-menu" onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }} onClick={(event) => { if ((event.target as Element).closest("button")) event.currentTarget.open = false; }}><summary>+ <span>Insert</span></summary><div>
+            <details className={cn(
+              "docs-insert-menu [&_>_summary::-webkit-details-marker]:hidden relative text-[13px] [&_>_summary]:p-1.25 [&_>_summary]:whitespace-nowrap",
+              "[&_>_summary]:cursor-pointer [&_>_summary]:list-none [&_>_div]:absolute [&_>_div]:top-[100%] [&_>_div]:left-[0] [&_>_div]:w-37.5",
+              "[&_>_div]:p-1.25 [&_>_div]:border [&_>_div]:border-border [&_>_div]:rounded-[8px] [&_>_div]:bg-popover",
+              "[&_>_div]:shadow-[0_2px_8px_var(--docs-edge)] [&_button]:block [&_button]:p-1.5 [&_button]:w-full [&_button]:text-left",
+              "max-sm:[&_>_summary_span]:hidden",
+            )} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }} onClick={(event) => { if ((event.target as Element).closest("button")) event.currentTarget.open = false; }}><summary>+ <span>Insert</span></summary><div>
               <button type="button" onClick={() => chain().setCodeBlock().run()}>Code block</button>
               <button type="button" onClick={() => chain().setHorizontalRule().run()}>Divider</button>
               <button type="button" onClick={() => onPrompt("video")}>Video</button>

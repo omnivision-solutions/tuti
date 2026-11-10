@@ -59,6 +59,9 @@ test("Verify checks an article against the repository: its history, and its fix 
   await expect(run).toContainText(`${repo}@c0ffee1`);
   await expect(run).toContainText("1 statement still true · 1 out of date · 0 it can't tell");
   await expect(run).toContainText("Its fix waits for you");
+  const outdated = run.getByRole("listitem").filter({ hasText: "Each plan has 5 seats" });
+  await expect(outdated.getByRole("link", { name: "Review it" })).toBeVisible();
+  await expect(run.locator("details").filter({ has: owner.getByText("Still true (1)", { exact: true }) }).last().getByRole("link", { name: "Review it" })).toHaveCount(0);
   await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeVisible();
   await run.getByText("What it found").click();
   await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeHidden();
@@ -149,7 +152,7 @@ test("Verify all says what it will cost first, then shows its progress, opened a
 
   // Docs' "More actions": Verify all, saying what it will cost before anything runs.
   await owner.goto(`/app/${slug}/docs`);
-  await owner.getByRole("button", { name: "Verify all" }).click();
+  await owner.getByRole("button", { name: "Start verifying" }).click();
   const confirm = owner.getByRole("dialog", { name: "Verify all 2 published articles?" });
   await expect(confirm).toContainText("Articles verified at that commit and unchanged since are skipped.");
   // Credits are on (like Tuti's cloud): about 5 an article before the project has run any, of its 1,000 free.
@@ -181,7 +184,7 @@ test("Verify all says what it will cost first, then shows its progress, opened a
   // Opened again elsewhere while it runs: the one running, not a new start.
   const other = await owner.context().newPage();
   await other.goto(`/app/${slug}/docs`);
-  await other.getByRole("button", { name: "Verify all" }).click();
+  await other.getByRole("button", { name: "Start verifying" }).click();
   await expect(other.getByRole("dialog", { name: "Verifying all articles" })).toContainText("Checked 1 of 2 articles.");
   await releaseModelReply(`verify-all-${id}`);
 
