@@ -834,7 +834,7 @@ function FeatureRequests() {
 
 function Switch({ start }: { start: string }) {
   const objections = [
-    ["We'll lose our links.", `Old URLs redirect on your own domain${plansEnabled() ? " (Pro)" : ""}.`],
+    ["We'll lose our links.", `Old links on help.yoursite.com keep working${plansEnabled() ? " (Pro)" : ""}.`],
     ["Customers will get spammed.", "Imports are quiet. No emails sent."],
     ["Our articles are already wrong.", "Verify checks them against your code."],
     ["We'll be stuck.", "Every article is Markdown, and the API reads it all."],
