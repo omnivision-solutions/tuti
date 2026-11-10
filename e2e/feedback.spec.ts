@@ -1088,6 +1088,7 @@ test("Feedback's search field follows Clear search and browser history", async (
   await search.fill("light");
   await search.press("Enter");
   await expect(team.getByText("No posts match your search", { exact: true })).toBeVisible();
+  await expect(team.getByRole("status").filter({ hasText: "Search found" })).toHaveText("Search found no posts");
   // A draft edit after submitting must be cleared too, rather than submitted by the next Enter.
   await search.fill("lighter");
   await team.getByRole("link", { name: "Clear search", exact: true }).click();
@@ -1144,6 +1145,8 @@ test("Feedback's search keeps newer typing while its results load", async ({ bro
   await expect(team.getByRole("link", { name: "Export to PDF", exact: true })).toBeVisible();
   await expect(search).toHaveValue("dark");
   await expect(search).toBeFocused();
+  // No new page to announce: a screen reader hears what the search found.
+  await expect(team.getByRole("status").filter({ hasText: "Search found" })).toHaveText("Search found 1 post");
   await checkpoint(team, "team-feedback-search-newer-draft");
   // History is different from our own results: it resets a focused draft too, even when that draft starts with q.
   await team.goBack();

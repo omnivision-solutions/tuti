@@ -209,6 +209,10 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                       {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
                       {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
                     </FeedbackSearch>
+                    {/* Searching doesn't load a new page, so a screen reader hears what it found here (polite, there from the start). */}
+                    <p role="status" className="sr-only">
+                      {q ? (listed.length === 0 ? "Search found no posts" : listed.length === 1 && !more ? "Search found 1 post" : `Search found ${listed.length}${more ? " posts, and more to load" : " posts"}`) : ""}
+                    </p>
                     <FiltersFold compact={open !== null} set={[board, group, filters.sort !== "top" && filters.sort].filter(Boolean).length}>
                       <ListFilters
                         filters={[
