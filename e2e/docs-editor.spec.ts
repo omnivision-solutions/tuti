@@ -89,6 +89,20 @@ test("the article text matches the portal's width at 1440px, with and without se
   await team.waitForURL(`**/app/${slug}/docs/invite-your-team`);
   await expect(text.locator("h2")).toHaveText(["Invitations", "Permissions"]);
   await expect.poll(async () => Math.round((await text.boundingBox())!.width)).toBe(46 * 16);
+
+  // The old History address opens the editor's panel; it is not a separate Docs page.
+  const column = team.locator('[data-slot="pane-layout"] > div');
+  await expect.poll(async () => Math.round((await column.boundingBox())!.width)).toBe(50 * 16);
+  await team.goto(`/app/${slug}/docs/invite-your-team/history`);
+  await team.waitForURL(`**/app/${slug}/docs/invite-your-team?history`);
+  const history = team.getByRole("dialog", { name: "History", exact: true });
+  await expect(history).toBeVisible();
+  await expect.poll(async () => Math.round((await history.boundingBox())!.width)).toBe(36 * 16);
+  await expect.poll(async () => Math.round((await column.boundingBox())!.width)).toBe(50 * 16);
+  // The panel hides the page from role queries, while the editor keeps its layout behind it.
+  const article = team.locator('#article-form [role="textbox"][aria-label="Article"]');
+  await expect.poll(async () => Math.round((await article.boundingBox())!.width)).toBe(46 * 16);
+  await checkpoint(team, "docs-editor-history-width", { fullPage: false });
 });
 
 test("the docs tree remembers its fold across reloads and app pages and unfolds again", async ({ browser }) => {
@@ -109,6 +123,8 @@ test("the docs tree remembers its fold across reloads and app pages and unfolds 
   await team.goto("/");
   await team.locator("header").getByRole("link", { name: "Open app", exact: true }).click();
   await team.waitForURL(`**/app/${slug}`);
+  // The app entry restores the preference before a Docs page can render, rather than folding after its first paint.
+  await expect(team.locator("html")).toHaveAttribute("data-docs-tree-folded", "");
   await team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: "Docs", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs`);
   await expect(team.getByRole("button", { name: "Show the docs tree" })).toBeVisible();

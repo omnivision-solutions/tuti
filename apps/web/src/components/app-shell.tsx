@@ -1,9 +1,10 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { type CSSProperties, type ReactNode, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, type ReactNode, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { DOCS_TREE_FOLDED_ATTRIBUTE, DOCS_TREE_FOLDED_KEY } from "@/lib/docs-tree-fold";
 
 /**
  * Customize (/app/<project>/customize/<section>): the settings beside a preview of the portal. /customize itself too: the
@@ -36,6 +37,14 @@ const subscribeNarrow = (listener: () => void) => {
 };
 
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
+  // The inline script covers full loads; client entry from marketing or sign-in restores the fold before paint too.
+  useLayoutEffect(() => {
+    try {
+      document.documentElement.toggleAttribute(DOCS_TREE_FOLDED_ATTRIBUTE, localStorage.getItem(DOCS_TREE_FOLDED_KEY) === "1");
+    } catch {
+      // Storage blocked: keep this visit's fold.
+    }
+  }, []);
   const pathname = usePathname();
   const customizing = CUSTOMIZE.test(pathname);
   // The Inbox too: its three panes (views and list, the conversation, the person beside it) fill the window.
