@@ -23,7 +23,8 @@ export default async function NewArticlePage(props: PageProps<"/app/[project]/do
       {/* The title field is the heading people see; Settings and Save draft stay in the top bar (on phones, at the bottom). */}
       <PageHeader
         back={{ href: `/app/${slug}/docs`, label: "Docs" }}
-        title={<span className="sr-only">New article</span>}
+        title="New article"
+        titleInForm
         meta={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <ArticleStateBadge state="draft" />

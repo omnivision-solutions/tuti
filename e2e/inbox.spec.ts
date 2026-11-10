@@ -1307,10 +1307,11 @@ test("on a phone, a long conversation's title shows in the top bar once it's scr
     text.textContent = "Can I export to PDF?";
   });
   await expect(barTitle).toHaveText("Can I export to PDF?");
-  // Wider than a phone (turned on its side), the bar still says it while it's up under the bar.
+  // Wider than a phone, the page's own header holds the title; the phone row is hidden.
   await owner.setViewportSize({ width: 900, height: 844 });
   await afterIntersections(owner);
-  await expect(barTitle).toHaveText("Can I export to PDF?");
+  await expect(owner.locator("main > header")).toBeHidden();
+  await expect(owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" })).toBeInViewport();
   await owner.setViewportSize({ width: 390, height: 844 });
   // Back at the top, the title is on the page: the bar has the project's name again.
   await owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" }).scrollIntoViewIfNeeded();

@@ -25,7 +25,7 @@ test("the app sidebar folds for saved and new article editors and opens elsewher
   await tree.getByRole("link", { name: "Invite your team" }).click();
   await team.waitForURL(`**/app/${slug}/docs/invite-your-team`);
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
-  await team.locator("header").getByRole("button", { name: "Toggle Sidebar" }).click();
+  await team.locator('[data-slot="sidebar-rail"]').click();
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await team.getByRole("link", { name: "Overview", exact: true }).click();
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
@@ -92,13 +92,15 @@ test("the article text matches the portal's width at 1440px, with and without se
 
   // The old History address opens the editor's panel; it is not a separate Docs page.
   const column = team.locator('[data-slot="pane-layout"] > div');
-  await expect.poll(async () => Math.round((await column.boundingBox())!.width)).toBe(50 * 16);
+  const beforeHistory = (await column.boundingBox())!;
+  // The toolbar and the article share one left edge and the same reading column.
+  expect((await team.locator('[data-slot="page-header"]').boundingBox())!.x).toBe((await text.boundingBox())!.x);
   await team.goto(`/app/${slug}/docs/invite-your-team/history`);
   await team.waitForURL(`**/app/${slug}/docs/invite-your-team?history`);
   const history = team.getByRole("dialog", { name: "History", exact: true });
   await expect(history).toBeVisible();
   await expect.poll(async () => Math.round((await history.boundingBox())!.width)).toBe(36 * 16);
-  await expect.poll(async () => Math.round((await column.boundingBox())!.width)).toBe(50 * 16);
+  expect(await column.boundingBox()).toEqual(beforeHistory);
   // The panel hides the page from role queries, while the editor keeps its layout behind it.
   const article = team.locator('#article-form [role="textbox"][aria-label="Article"]');
   await expect.poll(async () => Math.round((await article.boundingBox())!.width)).toBe(46 * 16);

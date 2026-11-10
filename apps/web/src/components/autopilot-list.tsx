@@ -269,7 +269,7 @@ export function AutopilotPanes({
         <Tabs
           value={tab}
           onValueChange={pick}
-          className="lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:p-4">
+          className="lg:sticky lg:top-0 lg:max-h-dvh lg:overflow-y-auto lg:p-4">
           <TabsList className="w-full">
             <TabsTrigger value="review" className="flex-1">
               {/* Counted as the sidebar and Home count them: sample content left out (its rows say Sample). */}

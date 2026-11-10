@@ -60,9 +60,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(linkPost.getByText("No matching posts.")).toBeVisible();
   await team.keyboard.press("Escape");
   await expect(linkPost).toBeHidden();
-  // A refused save keeps what was typed and picked. Save draft is in the top bar.
+  // A refused save keeps what was typed and picked. Save draft is in the page's own toolbar.
   const saveDraft = team.getByRole("button", { name: "Save draft" });
-  expect((await saveDraft.boundingBox())!.y).toBeLessThan(48);
+  const draftToolbar = (await team.locator('[data-slot="page-header"]').boundingBox())!;
+  expect((await saveDraft.boundingBox())!.y).toBeGreaterThanOrEqual(draftToolbar.y);
+  expect((await saveDraft.boundingBox())!.y).toBeLessThan(draftToolbar.y + draftToolbar.height);
   await team.getByLabel("Title").fill("Hi");
   await saveDraft.click();
   await expect(team.getByText("Title is too short")).toBeVisible();
@@ -168,9 +170,12 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(completes.getByRole("button", { name: "Link post…" })).toHaveCount(0);
   await expect(completes.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
   await expect(sidebar.getByRole("link", { name: "View as reader" })).toHaveAttribute("href", `${portalUrl(slug)}/changelog/1`);
-  // Save and Unpublish together in the top bar.
+  // Save and Unpublish together in the page's own sticky toolbar.
   for (const name of ["Save", "Unpublish"]) {
-    expect((await team.getByRole("button", { name, exact: true }).boundingBox())!.y).toBeLessThan(48);
+    const toolbar = (await team.locator('[data-slot="page-header"]').boundingBox())!;
+    const button = (await team.getByRole("button", { name, exact: true }).boundingBox())!;
+    expect(button.y).toBeGreaterThanOrEqual(toolbar.y);
+    expect(button.y + button.height).toBeLessThanOrEqual(toolbar.y + toolbar.height);
   }
   await checkpoint(team, "team-changelog-published");
   // On a phone the title shows once, the one to edit (the page's heading kept for screen readers), and Save and

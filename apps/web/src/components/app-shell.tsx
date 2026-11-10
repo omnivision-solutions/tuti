@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { type CSSProperties, type ReactNode, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { DOCS_TREE_FOLDED_ATTRIBUTE, DOCS_TREE_FOLDED_KEY } from "@/lib/docs-tree-fold";
@@ -73,18 +73,14 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
     <SidebarProvider
       open={folded ? peek : open}
       onOpenChange={folded ? setPeek : setOpen}
-      // How wide the sidebar is now: the top bar's title starts past it (PageHeader).
-      style={{ "--app-sidebar": (folded ? peek : open) ? "var(--sidebar-width)" : "var(--sidebar-width-icon)" } as CSSProperties}
     >
       {sidebar}
       <SidebarInset>
         {header}
-        {/* Where the top bar is, once it's fixed to the window (from tablet width up). */}
-        <div aria-hidden className="hidden h-12 shrink-0 topbar:block" />
         {customizing ? (
-          // From laptop width up, the window's height under the top bar: the page doesn't scroll, each of its panes does
+          // From laptop width up, the window's height: the page doesn't scroll, each of its panes does
           // (the banners too, past a third of it, so the panes keep their room).
-          <div className="flex flex-1 flex-col lg:h-[calc(100svh-3rem)] lg:flex-none">
+          <div className="flex flex-1 flex-col lg:h-svh lg:flex-none">
             <div className="flex flex-col gap-4 p-4 empty:hidden lg:max-h-1/3 lg:overflow-y-auto">{banners}</div>
             {children}
           </div>
@@ -92,7 +88,7 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
           // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up. On
           // phones, room at the bottom for actions pinned there (PageActions), and for Tuti's own chat launcher (AppWidget; not in the Inbox or on Customize).
-          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none lg:has-data-fills-window:h-[calc(100dvh-3rem)] lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24">
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none lg:has-data-fills-window:h-dvh lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24">
             {banners}
             {children}
           </div>

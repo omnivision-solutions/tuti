@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 
 /**
  * A page's actions (PageHeader's): `children` are the ones it uses most, `more` the others. From
- * tablet width up the first are in the top bar and `more` behind its "More actions" button; in the
+ * tablet width up the first are beside the page's title and `more` behind its "More actions" button; in the
  * app on phones, that button (in the bar) opens all of them as a menu. They're hidden while it's
  * closed, not taken away, so a dialog one of them opened (Settings, Delete) stays open when it closes.
  * `pinned`: on phones the first stay in a bar at the bottom of the screen instead (a main action like Publish, in

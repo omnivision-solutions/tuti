@@ -42,7 +42,7 @@ const VIEWS = {
   spam: { title: "Spam", empty: "No spam." },
 } as const;
 /** The list column's title row (the Inbox's heading, or its copy while a conversation is open). */
-const LIST_TITLE = "px-6 pt-6 lg:col-start-1 lg:row-start-1 lg:border-r lg:px-3 lg:pt-4 lg:pb-2";
+const LIST_TITLE = "inbox-list-title px-6 pt-6 lg:col-start-1 lg:row-start-1 lg:border-r lg:px-3 lg:pt-4 lg:pb-2";
 
 export type View = keyof typeof VIEWS;
 

@@ -67,13 +67,13 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   // The one out of date isn't in the changes, and the page says so above them, with Write it again.
   await expect(owner.getByText("One of its edits was written on an earlier version of the article, so it isn't in the changes below.", { exact: false })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Write it again" })).toHaveCount(1);
-  // Scrolled under the app's header (a short window, so the page scrolls), a chip goes behind it, not over it.
+  // Scrolled under the page's sticky toolbar (a short window), a chip goes behind it, not over it.
   await owner.setViewportSize({ width: 1280, height: 300 });
   const underHeader = await chips
     .getByRole("button", { name: /^PR #/ })
     .first()
     .evaluate((chip) => {
-      const header = document.querySelector("header")!;
+      const header = document.querySelector('[data-slot="page-header"]')!;
       window.scrollBy(0, chip.getBoundingClientRect().top - header.getBoundingClientRect().top - 4);
       const { left, top, width, height } = chip.getBoundingClientRect();
       // Top to bottom, as painted.
