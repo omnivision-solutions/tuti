@@ -72,7 +72,7 @@
   .ticks { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 14px; color: var(--ink2); }
   .ticks span { display: inline-flex; align-items: center; gap: 7px; }
   .tick { color: var(--g); }
-  .track .tag { font-size: 13px; }
+  .track .tag, .bcell .tag { font-size: 13px; }
 
   /* HERO */
   .hero {
@@ -307,6 +307,8 @@
   .flank .fr span { margin-left: auto; color: var(--mute); font-size: 12.5px; }
   .flank.l { left: -34px; top: 230px; }
   .flank.r { right: -50px; top: 440px; width: 240px; }
+  /* Below 1340px the side margin is just the 32px padding: keep the widget and its launcher inside the window. */
+  @media (max-width: 1340px) { .flank.r { right: -18px; } }
   .widget-m { padding: 0; width: 270px; overflow: visible; }
   .widget-m .wh { background: var(--ink); color: var(--primary-foreground); padding: 14px 16px; border-radius: 14px 14px 0 0; }
   .widget-m .wh b { display: block; }

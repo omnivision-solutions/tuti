@@ -526,7 +526,7 @@ function Control() {
           </div>
         </div>
         <div className="relative">
-          <div className="inbox" role="img" aria-label="Autopilot email: one feature request needs approval, one article edit goes live in 13 hours, one new article drafted">
+          <div className="inbox" role="img" aria-label="Autopilot email: one feature request needs approval, one article edit goes live in 24 hours, one new article drafted">
             <div className="ih">
               <span className="lg">
                 <TutiMark className="size-6" />
@@ -539,7 +539,7 @@ function Control() {
             </div>
             <div className="ib">
               <div className="sj">3 updates from #478</div>
-              <div className="lead">One needs you, one goes live in 13h.</div>
+              <div className="lead">One needs you, one goes live in 24h.</div>
               <div className="qi hot">
                 <div className="top">
                   <LightbulbIcon aria-hidden size={16} />
@@ -554,7 +554,7 @@ function Control() {
               <div className="qi">
                 <div className="top">
                   <BookOpenIcon aria-hidden size={16} />
-                  Editing posts<span className="tag t-upd">Live in 13h</span>
+                  Editing posts<span className="tag t-upd">Live in 24h</span>
                 </div>
                 <div className="diffline">
                   <del className="del">Edit posts one at a time.</del> <ins className="ins">Select several posts to edit them together.</ins>
