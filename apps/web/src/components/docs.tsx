@@ -178,6 +178,7 @@ export function ArticleForm({
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
 }) {
+  const [wide] = useState(sections);
   // The text shown (`opened`) and the version its saves are made on (`base`), kept while it has edits not saved,
   // whatever is saved meanwhile (Autopilot's edit landing, a teammate's save): what was typed is never replaced, and its
   // save says the version it was made on. With nothing unsaved, a newer saved version starts the form afresh (`shown`).
@@ -278,7 +279,7 @@ export function ArticleForm({
   useEffect(() => setUnsaved(dirty), [setUnsaved, dirty]);
 
   return (
-    <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed} className={sections ? undefined : "max-w-[43rem]"}>
+    <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed} className={wide ? undefined : "max-w-[43rem]"}>
       {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
       {!article && <PlaceFields place={place} />}
       {/* The version this text was made on, and after a refusal the newest one shown beside it: the next save (merged

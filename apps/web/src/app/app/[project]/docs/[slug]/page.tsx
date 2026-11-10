@@ -200,6 +200,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
       )}
       {/* A newer saved version starts the form afresh unless it has unsaved edits, which are never replaced (ArticleForm). */}
       <ArticleForm
+        key={`${slug}/${article.slug}`}
         projectSlug={slug}
         article={{
           slug: article.slug,

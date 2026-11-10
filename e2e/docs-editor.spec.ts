@@ -55,6 +55,40 @@ test("the article text matches the portal's width at 1440px, with and without se
   await team.getByRole("button", { name: "Hide the docs tree" }).click();
   await expect.poll(async () => Math.round((await text.boundingBox())!.width)).toBe(46 * 16);
   await checkpoint(team, "docs-editor-tree-folded");
+
+  await team.getByRole("button", { name: "Show the docs tree" }).click();
+  const tree = team.getByRole("navigation", { name: "Docs", exact: true });
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  await expect(text).toHaveText("Owners send invites from Settings.");
+  await expect.poll(async () => Math.round((await text.boundingBox())!.width)).toBe(43 * 16);
+  const revision = team.locator('#article-form input[name="revision"]');
+  const before = await revision.inputValue();
+  await text.fill("Owners send invites from Settings.");
+  for (const heading of ["Invitations", "Permissions"]) {
+    await team.keyboard.press("Enter");
+    await team.keyboard.type("/head");
+    await team.getByRole("listbox", { name: "Blocks" }).getByRole("option", { name: "Heading", exact: true }).click();
+    await team.keyboard.type(heading);
+    await team.keyboard.press("Enter");
+    await team.keyboard.type("Owners can manage the team.");
+  }
+  await expect(text.locator("h2")).toHaveCount(2);
+  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  // Wait for the refreshed article to reach the form: its new sections must not rewrap the open editor.
+  await expect(revision).not.toHaveValue(before);
+  await expect.poll(async () => Math.round((await text.boundingBox())!.width)).toBe(43 * 16);
+  await checkpoint(team, "docs-editor-saved-width");
+
+  // A different article starts afresh; reopening the saved one now uses its sections too.
+  await tree.getByRole("link", { name: "Roles" }).click();
+  await team.waitForURL(`**/app/${slug}/docs/roles`);
+  await expect(text.locator("h2")).toHaveText(["Owners", "Members"]);
+  await expect.poll(async () => Math.round((await text.boundingBox())!.width)).toBe(46 * 16);
+  await tree.getByRole("link", { name: "Invite your team" }).click();
+  await team.waitForURL(`**/app/${slug}/docs/invite-your-team`);
+  await expect(text.locator("h2")).toHaveText(["Invitations", "Permissions"]);
+  await expect.poll(async () => Math.round((await text.boundingBox())!.width)).toBe(46 * 16);
 });
 
 test("the docs tree remembers its fold across reloads and app pages and unfolds again", async ({ browser }) => {
