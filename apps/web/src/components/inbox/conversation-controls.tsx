@@ -51,9 +51,7 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
   const [pending, startTransition] = useTransition();
   const label = status === "waiting" ? "waiting on user" : "open";
   return (
-    <Button
-      variant="ghost"
-      size="sm"
+    <DropdownMenuItem
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
@@ -69,7 +67,7 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
       }
     >
       Mark as {label}
-    </Button>
+    </DropdownMenuItem>
   );
 }
 
@@ -245,9 +243,7 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
 export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button
-      variant="ghost"
-      size="sm"
+    <DropdownMenuItem
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
@@ -263,7 +259,7 @@ export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolea
       }
     >
       {spam ? "Not spam" : "Mark as spam"}
-    </Button>
+    </DropdownMenuItem>
   );
 }
 
@@ -271,9 +267,7 @@ export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolea
 export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: string; on: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button
-      variant="ghost"
-      size="sm"
+    <DropdownMenuItem
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
@@ -287,7 +281,7 @@ export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: 
       }
     >
       {on ? "Stop emailing me new conversations" : "Email me new conversations"}
-    </Button>
+    </DropdownMenuItem>
   );
 }
 
@@ -295,9 +289,7 @@ export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: 
 export function SummarizeButton({ projectSlug, number, paused }: Props & { paused: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button
-      variant="ghost"
-      size="sm"
+    <DropdownMenuItem
       disabled={pending || paused}
       title={paused ? "This project is out of AI credits" : undefined}
       onClick={() =>
@@ -312,7 +304,7 @@ export function SummarizeButton({ projectSlug, number, paused }: Props & { pause
       }
     >
       {pending ? "Summarizing…" : "Summarize with AI"}
-    </Button>
+    </DropdownMenuItem>
   );
 }
 

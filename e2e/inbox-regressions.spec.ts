@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type Browser, expect, test } from "@playwright/test";
 import pg from "pg";
 import { APP_URL } from "./env";
+import { checkpoints } from "./checkpoint";
 import { apiFor, createProject, signUp } from "./helpers";
 import { verifyEmail } from "./mail";
 import { sesComplaint } from "./ses";
@@ -30,7 +31,7 @@ async function update(sql: string, values: unknown[]) {
 test("blocked recipients have no composer promise that replies are emailed", async ({ browser }) => {
   const { owner, slug, url } = await inbox(browser);
   await owner.goto(url);
-  await expect(owner.getByText(/^(Replies are emailed|Emailed) to/)).toBeVisible();
+  await expect(owner.getByText("Replies are emailed to e2e-reader@example.com.", { exact: true })).toBeVisible();
   await sesComplaint(slug, "E2E-Reader@example.com");
   await owner.reload();
   await expect(owner.getByText(/^(Replies are emailed|Emailed) to/)).toHaveCount(0);
@@ -39,7 +40,7 @@ test("blocked recipients have no composer promise that replies are emailed", asy
 test("sample conversations have no composer promise that replies are emailed: the reply job skips them", async ({ browser }) => {
   const { owner, slug, url } = await inbox(browser);
   await owner.goto(url);
-  await expect(owner.getByText(/^(Replies are emailed|Emailed) to/)).toBeVisible();
+  await expect(owner.getByText("Replies are emailed to e2e-reader@example.com.", { exact: true })).toBeVisible();
   await update(`UPDATE conversation c SET sample = true FROM project p WHERE c."projectId" = p.id AND p.slug = $1`, [slug]);
   await owner.reload();
   await expect(owner.getByText(/^(Replies are emailed|Emailed) to/)).toHaveCount(0);
@@ -192,3 +193,46 @@ test("the AI-answer origin stays visible with details collapsed and on phones", 
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(origin).toBeVisible();
 });
+
+
+test("conversation dates use the viewer's day and a written month", async ({ browser }, testInfo) => {
+  const { owner, slug, api, url } = await inbox(browser);
+  await api("/conversations", { email: "e2e-reader@example.com", subject: "Previous question", body: "All sorted" });
+  await update(`UPDATE conversation c SET "createdAt" = '2026-03-08T07:30:00Z', "lastMessageAt" = '2026-03-08T07:30:00Z' FROM project p WHERE c."projectId" = p.id AND p.slug = $1`, [slug]);
+  const context = await browser.newContext({ storageState: await owner.context().storageState(), timezoneId: "America/Los_Angeles", viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await page.clock.setFixedTime(new Date("2026-03-09T19:00:00Z"));
+  await page.goto(`${APP_URL}${url}`);
+  await page.locator("summary", { hasText: "Conversation attributes" }).click();
+  const started = page.getByText("Started", { exact: true }).locator("+ dd");
+  await expect.soft(started).toHaveText("7 March 2026");
+  await page.locator("summary", { hasText: "Other conversations from this person" }).click();
+  const other = page.getByRole("region", { name: "Other conversations", exact: true });
+  await expect.soft(other).toContainText("#2 · 7 March");
+  await checkpoints(testInfo)(page, "viewer-local-conversation-dates");
+  await context.close();
+});
+
+for (const label of ["More actions", "Inbox options"]) {
+  test(`${label} closes when tabbing out and leaves Escape in the reply box alone`, async ({ browser }, testInfo) => {
+    const { owner, url } = await inbox(browser);
+    await owner.goto(url);
+    const trigger = owner.getByRole("button", { name: label, exact: true });
+    const action = owner.getByText(label === "More actions" ? "Link a post…" : "Stop emailing me new conversations", { exact: true });
+    await trigger.click();
+    await expect(action).toBeVisible();
+    await checkpoints(testInfo)(owner, "actions-menu");
+    // Shift+Tab exits the popup even when focus starts on the trigger in the old implementation.
+    await owner.keyboard.press("Shift+Tab");
+    await expect.soft(action).toBeHidden();
+    if (await action.isVisible()) await trigger.click();
+    await trigger.click();
+    await expect(action).toBeVisible();
+    const reply = owner.getByRole("textbox", { name: "Reply", exact: true });
+    // Keyboard/programmatic focus leaving the popup must dismiss it, just like a pointer click.
+    await reply.focus();
+    await reply.press("Escape");
+    await expect.soft(reply).toBeFocused();
+    await expect.soft(action).toBeHidden();
+  });
+}

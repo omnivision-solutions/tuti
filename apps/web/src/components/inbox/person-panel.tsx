@@ -15,7 +15,8 @@ import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/p
 import type { PropertyValue } from "@tuti/shared/user-properties";
 import { viewsOf } from "@/server/operations/users";
 import { latestMessages } from "@/server/operations/conversations";
-import { firstLine, formatDay } from "@/lib/format";
+import { ViewerDate } from "@/components/inbox/viewer-date";
+import { firstLine } from "@/lib/format";
 
 /** Beside a conversation; their own page lists them all (up to 500). */
 const SHOWN = 5;
@@ -373,7 +374,7 @@ export async function PersonPanel({
                     {c.subject}
                   </Link>
                   <p className="text-muted-foreground">
-                    <ConversationStatusText status={c.status} /> · #{c.number} · {formatDay(c.lastMessageAt)}
+                    <ConversationStatusText status={c.status} /> · #{c.number} · <ViewerDate at={c.lastMessageAt.toISOString()} />
                   </p>
                   <p className="max-w-full truncate text-muted-foreground">{firstLine(otherMessages.get(c.id)?.body ?? "")}</p>
                 </li>

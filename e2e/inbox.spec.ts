@@ -228,7 +228,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("button", { name: "Draft with AI" })).toBeVisible();
   await nextModelReply("Sam's CSV export fails; a fix is on its way, and billing needs checking.", "Can't export to CSV");
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Summarize with AI" }).click();
+  await owner.getByRole("menuitem", { name: "Summarize with AI" }).click();
   await expect(owner.getByText("Summary added as a note")).toBeVisible();
   await expect(messages).toHaveCount(5);
   await expect(messages.last()).toContainText("Internal note · AI");
@@ -298,7 +298,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.reload();
   const linkedPosts = owner.getByRole("region", { name: "Linked posts" });
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Link a post…" }).click();
+  await owner.getByRole("menuitem", { name: "Link a post…" }).click();
   await owner.getByRole("dialog").getByRole("textbox", { name: "Search posts" }).fill("csv");
   await owner.getByRole("dialog").getByRole("button", { name: /Export reports to CSV/ }).click();
   await expect(owner.getByText("Linked to #1")).toBeVisible();
@@ -385,7 +385,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
 
   // (Waiting on user isn't theirs to pick while Sam's message is the latest: replying sets it.)
   await owner.getByRole("button", { name: "More actions" }).click();
-  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toHaveCount(0);
+  await expect(owner.getByRole("menuitem", { name: "Mark as waiting on user" })).toHaveCount(0);
   await owner.keyboard.press("Escape");
 
   // Closed and reopened from its button, which keeps the focus; closed, it can't be snoozed. Opened in Closed, which it
@@ -455,7 +455,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Nobody's waiting now but the one about to be marked as spam; and the owner turns the emails off.
   await expect(owner).toHaveTitle(/^\(1\) /);
   await owner.getByRole("button", { name: "Inbox options" }).click();
-  await owner.getByRole("button", { name: "Stop emailing me new conversations" }).click();
+  await owner.getByRole("menuitem", { name: "Stop emailing me new conversations" }).click();
   await expect(owner.getByText("You won't be emailed new conversations")).toBeVisible();
 
   // The other one is spam: marked from More actions, it leaves the inbox for Spam.
@@ -479,7 +479,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(conversations).toContainText("Do you have a discount for nonprofits?");
   await owner.goto(`/app/${slug}/inbox/2`);
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Mark as spam" }).click();
+  await owner.getByRole("menuitem", { name: "Mark as spam" }).click();
   await expect(owner.getByText("Marked as spam")).toBeVisible();
   await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByRole("complementary", { name: "Properties" })).toContainText("Voters");
@@ -537,13 +537,13 @@ test("unlinking a post moves the keyboard's focus to the next one's Unlink, and 
   await owner.keyboard.press("Enter");
   // Link a post… closes More actions as its dialog opens: closed, or once it links, the focus is back on More actions.
   const dialog = owner.getByRole("dialog", { name: "Link a post" });
-  await owner.getByRole("button", { name: "Link a post…" }).click();
+  await owner.getByRole("menuitem", { name: "Link a post…" }).click();
   await expect(dialog).toBeVisible();
   await owner.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(more).toBeFocused();
   await owner.keyboard.press("Enter");
-  await owner.getByRole("button", { name: "Link a post…" }).click();
+  await owner.getByRole("menuitem", { name: "Link a post…" }).click();
   await dialog.getByRole("textbox", { name: "Search posts" }).fill("dark");
   await dialog.getByRole("button", { name: /Dark mode/ }).click();
   await expect(owner.getByText("Linked to #1")).toBeVisible();
@@ -1448,7 +1448,7 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
   await api("/conversations/1", { spam: true }, "PATCH");
   await owner.goto(`/app/${slug}/inbox/1?view=spam&page=2`);
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Not spam" }).click();
+  await owner.getByRole("menuitem", { name: "Not spam" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=spam&page=2$`));
 });
 
@@ -1562,9 +1562,9 @@ test("a long conversation opens at its latest fifty messages; Show earlier messa
   await expect(messages.last()).toContainText("Note 50");
   await expect(messages.first()).toContainText("Note 1");
   await owner.getByRole("button", { name: "More actions" }).click();
-  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toBeVisible();
+  await expect(owner.getByRole("menuitem", { name: "Mark as waiting on user" })).toBeVisible();
   await owner.keyboard.press("Escape");
-  await expect(owner.getByRole("button", { name: "Mark as waiting on user" })).toBeHidden();
+  await expect(owner.getByRole("menuitem", { name: "Mark as waiting on user" })).toBeHidden();
   // Gone on to the reply box while the earlier ones load, focus stays there; scrolled meanwhile, they stay where that left them.
   const reply = owner.getByRole("textbox", { name: "Reply" });
   const release = await holdNavigations(owner, /[?&]messages=2/);
@@ -1599,7 +1599,7 @@ test("answered with Send, a conversation stays open though it's left Needs reply
   await send("Looking into it.");
   // Marked as open again, it's back in the list: it stays.
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Mark as open" }).click();
+  await owner.getByRole("menuitem", { name: "Mark as open" }).click();
   await expect(row(2)).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
   // Answered again, then taken: still being worked on, it stays.
@@ -1644,7 +1644,7 @@ test("after a Send that kept it open, Snooze and Mark as spam are done with it t
   // Answered, then marked as spam: the same.
   await send(2, "Is this about the export?");
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Mark as spam" }).click();
+  await owner.getByRole("menuitem", { name: "Mark as spam" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await expect(row(1)).toBeFocused();
 });
@@ -1792,17 +1792,17 @@ test("a reply started before the user wrote again doesn't close it: what the tea
   await checkpoint(owner, "inbox-kept-open");
   // The reply answered the follow-up too: the team spoke last, so they set it waiting on Sam themselves.
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Mark as waiting on user" }).click();
+  await owner.getByRole("menuitem", { name: "Mark as waiting on user" }).click();
   await expect(owner.getByText("Marked as waiting on user")).toBeVisible();
   await expect(meta(owner)).toContainText("Waiting on user");
   // Picked from More actions, which closes: the keyboard's focus is back on its button.
   await expect(owner.getByRole("button", { name: "More actions" })).toBeFocused();
   // And back to open, when it needs a reply after all; then waiting again.
   await owner.keyboard.press("Enter");
-  await owner.getByRole("button", { name: "Mark as open" }).click();
+  await owner.getByRole("menuitem", { name: "Mark as open" }).click();
   await expect(meta(owner)).toContainText("Needs reply");
   await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Mark as waiting on user" }).click();
+  await owner.getByRole("menuitem", { name: "Mark as waiting on user" }).click();
   await expect(meta(owner)).toContainText("Waiting on user");
 
   // A file that couldn't upload, left in the list, isn't a reply started: Sam writing again is seen, and the next reply closes.
@@ -2278,6 +2278,13 @@ test("on a server selling plans, a conversation closed before the plan's history
   await expect(owner.getByText("Past your plan's history")).toBeVisible();
   await expect(owner.getByText("Nothing has happened in it for more than 7 days, longer than your plan keeps inbox history. Upgrade to see it again.")).toBeVisible();
   await expect(owner.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  for (const width of [1440, 1280]) {
+    await owner.setViewportSize({ width, height: 900 });
+    const header = (await owner.locator('[data-inbox-conversation] [data-slot="page-header"]').boundingBox())!;
+    const empty = (await owner.getByText("Past your plan's history", { exact: true }).locator("..").boundingBox())!;
+    expect.soft(empty.y, `empty state starts below the header at ${width}px`).toBeGreaterThanOrEqual(header.y + header.height);
+    expect.soft(empty.width, `empty state uses the conversation width at ${width}px`).toBeGreaterThan(400);
+  }
   await checkpoint(owner, "conversation-past-plan-history");
 });
 

@@ -10,6 +10,7 @@ import { notFound } from "next/navigation";
 import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
 import { EarlierMessages } from "@/components/inbox/load-more";
 import { DetailsToggle, DetailsPanel } from "@/components/inbox/conversation-details";
+import { ViewerDate } from "@/components/inbox/viewer-date";
 import { ConversationPosts, LinkPostButton } from "@/components/inbox/conversation-posts";
 import {
   AssignMenu,
@@ -37,7 +38,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { CONVERSATION_STATUS_LABELS, CONVERSATION_STATUS_STYLES, type ConversationStatusName } from "@/lib/conversation-statuses";
-import { formatDate, initial, timeAgo } from "@/lib/format";
+import { initial, timeAgo } from "@/lib/format";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 import { isAdminRole } from "@/lib/roles";
 import { attachmentLinks } from "@/server/attachments";
@@ -384,7 +385,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               <dt>Channel</dt>
               <dd>{ORIGINS[conversation.origin]}</dd>
               <dt>Started</dt>
-              <dd>{formatDate(conversation.createdAt)}</dd>
+              <dd><ViewerDate at={conversation.createdAt.toISOString()} year /></dd>
               <dt>Email verified</dt>
               <dd>{person.verified ? "Yes" : "No"}</dd>
             </dl>
@@ -421,21 +422,23 @@ function PastHistory({
 }) {
   return (
     <ConversationPane open>
-      <PageHeader back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }} title={`Conversation #${number}`} />
-      <EmptyState
-        title="Past your plan's history"
-        description={`Nothing has happened in it for more than ${days} days, longer than your plan keeps inbox history. ${
-          !upgrade ? "" : admin ? "Upgrade to see it again." : "An owner or admin can upgrade to see it again."
-        }`.trim()}
-        action={
-          admin &&
-          upgrade && (
-            <Link href={`/app/${slug}/settings/billing`} className={buttonVariants()}>
-              See plans
-            </Link>
-          )
-        }
-      />
+      <div className="col-span-full row-span-2 flex min-w-0 flex-col gap-6 overflow-y-auto rounded-2xl bg-card p-6 shadow-inbox">
+        <PageHeader className="bg-card!" back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }} title={`Conversation #${number}`} />
+        <EmptyState
+          title="Past your plan's history"
+          description={`Nothing has happened in it for more than ${days} days, longer than your plan keeps inbox history. ${
+            !upgrade ? "" : admin ? "Upgrade to see it again." : "An owner or admin can upgrade to see it again."
+          }`.trim()}
+          action={
+            admin &&
+            upgrade && (
+              <Link href={`/app/${slug}/settings/billing`} className={buttonVariants()}>
+                See plans
+              </Link>
+            )
+          }
+        />
+      </div>
     </ConversationPane>
   );
 }

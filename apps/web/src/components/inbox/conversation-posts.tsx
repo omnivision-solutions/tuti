@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { PostPicker, usePostSearch } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DetailSection } from "@/components/inbox/detail-section";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { findPostsToLink, linkPostToConversation } from "@/server/inbox";
@@ -187,21 +188,26 @@ export function LinkPostButton({ projectSlug, number, linked, inline = false }: 
         search.restart(next);
       }}
     >
-      <DialogTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={pending}
-            focusableWhenDisabled
-            className={inline ? "inbox-link-post mt-2.5 flex h-auto min-h-6 w-fit p-0 text-xs leading-5 font-normal text-muted-foreground [&>svg]:size-3.5" : undefined}
-            aria-label={inline ? "Link a post to this conversation" : undefined}
-          />
-        }
-      >
-        {inline ? <PlusIcon /> : <LinkIcon />}
-        {inline ? "Link a post" : "Link a post…"}
-      </DialogTrigger>
+      {inline ? (
+        <DialogTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              focusableWhenDisabled
+              className="inbox-link-post mt-2.5 flex h-auto min-h-6 w-fit p-0 text-xs leading-5 font-normal text-muted-foreground [&>svg]:size-3.5"
+              aria-label="Link a post to this conversation"
+            />
+          }
+        >
+          <PlusIcon /> Link a post
+        </DialogTrigger>
+      ) : (
+        <DropdownMenuItem disabled={pending} onClick={() => { setOpen(true); search.restart(true); }}>
+          <LinkIcon /> Link a post…
+        </DropdownMenuItem>
+      )}
       {/* Opened from "More actions", which closes as it opens: the focus goes back to that button, not to this one
           (hidden in its closed menu). */}
       <DialogContent finalFocus={inline ? undefined : () => moreActions() ?? true}>

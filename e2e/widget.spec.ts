@@ -2097,6 +2097,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   const meta = owner.locator("header[data-inbox-header] > p");
   await expect(meta).toContainText("Sam from Acme");
   await expect(meta).toContainText("via widget");
+  await expect(owner.getByText("Emailed to Sam if they haven't seen it in the widget within a minute.", { exact: true })).toBeVisible();
   await openPersonDetails(owner);
   await expect(owner.getByRole("complementary", { name: "About them" })).toContainText(samEmail(slug));
   // The address in it is a link, opening in a new tab, without the brackets and full stop around it: what customers write isn't vouched for.
