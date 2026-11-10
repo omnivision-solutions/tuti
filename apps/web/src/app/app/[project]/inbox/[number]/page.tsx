@@ -37,7 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { CONVERSATION_STATUS_LABELS, CONVERSATION_STATUS_STYLES, type ConversationStatusName } from "@/lib/conversation-statuses";
-import { initial, timeAgo } from "@/lib/format";
+import { formatDate, initial, timeAgo } from "@/lib/format";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 import { isAdminRole } from "@/lib/roles";
 import { attachmentLinks } from "@/server/attachments";
@@ -240,7 +240,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                 {conversation.status === "OPEN" ? "Needs reply" : CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]}
               </span>{" "}
               <span>
-                #{conversation.number} · {personName}{!person.verified && " (not verified)"}
+                #{conversation.number} · {personName}{person.email && !person.verified && " (not verified)"}
               </span>
               <span className={cn("inbox-origin", conversation.origin !== "ESCALATION" && "max-md:hidden")}>
                 {conversation.origin === "ESCALATION" ? " · started from an AI answer" : ` · via ${ORIGINS[conversation.origin].replace(/^the /, "")}`}
@@ -326,6 +326,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             <div className="inbox-composer-wrap sticky bottom-0 mt-auto -mx-1.5 bg-card pt-1.25 pb-2.5 max-lg:-mx-0.5 min-[75rem]:group-data-[details=hidden]/thread:-mx-2">
               <ReplyForm
                 recipient={personName}
+                inWidget={!!(conversation.userId || conversation.visitorHash)}
                 emailed={!waitsForPause && "to" in (await replyRecipient(conversation.id))}
                 projectSlug={slug}
                 number={conversation.number}
@@ -383,7 +384,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
               <dt>Channel</dt>
               <dd>{ORIGINS[conversation.origin]}</dd>
               <dt>Started</dt>
-              <dd>{conversation.createdAt.toLocaleDateString("en-GB")}</dd>
+              <dd>{formatDate(conversation.createdAt)}</dd>
               <dt>Email verified</dt>
               <dd>{person.verified ? "Yes" : "No"}</dd>
             </dl>

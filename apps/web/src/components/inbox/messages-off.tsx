@@ -5,9 +5,26 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 
 /**
  * Says the widget has no Messages tab (Settings → Inbox and email's switch), with a link to it for owners and admins.
- * A note, not an alert: it's there on every Inbox page, so screen readers shouldn't cut in with it each time.
+ * `compact`: the Inbox list's quiet line. A note, not an alert: it's there on every Inbox page, so screen readers shouldn't cut in with it each time.
  */
-export function MessagesOffNotice({ projectSlug, admin }: { projectSlug: string; admin: boolean }) {
+export function MessagesOffNotice({ projectSlug, admin, compact = false }: { projectSlug: string; admin: boolean; compact?: boolean }) {
+  if (!compact) {
+    return (
+      <Alert role="note">
+        <AlertDescription>
+          <p>
+            Messages in the widget is off, so the widget has no Messages tab.{" "}
+            {admin && (
+              <Link href={`/app/${projectSlug}/settings/support`} className="underline underline-offset-4">
+                Turn it on
+              </Link>
+            )}
+          </p>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  // The Inbox list's quieter line.
   return (
     <Alert role="note" className="grid-cols-[0.9375rem_1fr]! gap-x-2.25! rounded-none border-0 p-0 text-xs text-muted-foreground shadow-none">
       <MessageSquareIcon aria-hidden className="size-3.5" />

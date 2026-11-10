@@ -230,7 +230,7 @@ export async function InboxPanes({
         {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
         {!supportInbox && (
           <div className="px-4.5 pt-4 pb-1">
-            <MessagesOffNotice projectSlug={slug} admin={isAdminRole(membership.role)} />
+            <MessagesOffNotice projectSlug={slug} admin={isAdminRole(membership.role)} compact />
           </div>
         )}
         {hidden > 0 && (
