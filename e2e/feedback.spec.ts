@@ -556,7 +556,7 @@ for (const via of ["pending searches", "sort tabs", "status menu"] as const) {
     const box = main.getByRole("searchbox", { name: "Search ideas" });
 
     if (via === "pending searches") {
-      // Both pauses finish before the first response lands. Release responses in order: they still make one step back.
+      // Both pauses finish before the first response lands. The second search waits for the first to land, then replaces it.
       let releaseFirst!: () => void;
       let releaseSecond!: () => void;
       let deliveredFirst!: () => void;
@@ -577,9 +577,11 @@ for (const via of ["pending searches", "sort tabs", "status menu"] as const) {
       const requestedSecond = visitor.waitForRequest((request) => new URL(request.url()).searchParams.get("q") === "dark mode");
       await box.fill("dark mode");
       await visitor.clock.runFor(400);
-      await requestedSecond;
       releaseFirst();
       await delivered;
+      await visitor.waitForURL(/\?q=dark$/);
+      await expect(box).toHaveValue("dark mode");
+      await requestedSecond;
       releaseSecond();
       await visitor.waitForURL(/\?q=dark\+mode$/);
       await expect(main.getByRole("status").filter({ hasText: /matches/ })).toHaveText('1 idea matches "dark mode"');
@@ -613,6 +615,53 @@ for (const via of ["pending searches", "sort tabs", "status menu"] as const) {
       await expect(box).toHaveValue("dark");
     }
     await checkpoint(visitor, `portal-board-history-${via.replaceAll(" ", "-")}`);
+  });
+}
+
+for (const via of ["Top", "Enter"] as const) {
+  test(`leaving a pending typed search with ${via} leaves no extra board entry`, async ({ browser }, testInfo) => {
+    const checkpoint = checkpoints(testInfo);
+    const slug = `e2e-${randomUUID().slice(0, 8)}`;
+    const team = await signUp(browser, APP_URL, "Tess Team");
+    await createProject(team, "Acme", slug);
+    const api = await apiFor(team, slug);
+    await api("/posts", { board: "feature-requests", title: "Dark mode" });
+    const visitor = await newPerson(browser, portalUrl(slug));
+    await visitor.clock.install();
+    // A known page before the board: two Backs after the explicit navigation must reach it.
+    await visitor.goto("/roadmap");
+    await visitor.goto("/feedback/feature-requests");
+    const box = visitor.getByRole("searchbox", { name: "Search ideas" });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    await visitor.route((url) => url.searchParams.get("q") === "dark", async (route) => {
+      await released;
+      // Following the link or submitting can cancel the typed request.
+      await route.continue().catch(() => {});
+    });
+    try {
+      const requested = visitor.waitForRequest((request) => new URL(request.url()).searchParams.get("q") === "dark");
+      await box.fill("dark");
+      await visitor.clock.runFor(400);
+      await requested;
+      if (via === "Top") {
+        await visitor.getByRole("navigation", { name: "Sort" }).getByRole("link", { name: "Top" }).click();
+        await visitor.waitForURL(/\?sort=top$/);
+      } else {
+        await box.press("Enter");
+      }
+      release();
+      if (via === "Enter") await visitor.waitForURL(/\?q=dark$/);
+      await visitor.waitForLoadState("networkidle");
+      await visitor.goBack();
+      await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
+      await expect(box).toHaveValue("");
+      await checkpoint(visitor, `portal-board-pending-${via.toLowerCase()}-back`);
+      await visitor.goBack();
+      await expect(visitor).toHaveURL(/\/roadmap$/);
+    } finally {
+      release();
+    }
   });
 }
 
