@@ -418,12 +418,15 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.setViewportSize({ width: 768, height: 1024 });
   await team.goto(`/app/${slug}/reporting/ai-conversations?range=year`);
   // The title's text ends before the picker starts: the dates beside the button wait for a laptop's width.
-  const titleRight = await team.getByRole("heading", { name: "AI conversations", level: 2 }).evaluate((heading) => {
-    const text = document.createRange();
-    text.selectNodeContents(heading);
-    return text.getBoundingClientRect().right;
-  });
-  expect(titleRight).toBeLessThanOrEqual((await rangeButton.boundingBox())!.x);
+  // The sidebar animates to its rail at this width; measure once that layout has settled.
+  await expect.poll(async () => {
+    const titleRight = await team.getByRole("heading", { name: "AI conversations", level: 2 }).evaluate((heading) => {
+      const text = document.createRange();
+      text.selectNodeContents(heading);
+      return text.getBoundingClientRect().right;
+    });
+    return titleRight - (await rangeButton.boundingBox())!.x;
+  }).toBeLessThanOrEqual(0);
   await expect(team.getByText(/\d{4}\s–\s/)).toBeHidden();
   // On a phone, a title with a long word has the picker under it rather than over it.
   await team.setViewportSize({ width: 375, height: 812 });

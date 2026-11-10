@@ -8,6 +8,7 @@ import { createContext, type DragEvent, type ReactNode, useContext, useEffect, u
 import { toast } from "sonner";
 
 import { CollectionDialog, TabDialog } from "@/components/docs";
+import { DocsTreeFold } from "@/components/docs-tree-fold";
 import { LucideIcon } from "@/components/icon-field";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -282,6 +283,8 @@ export function DocsWorkspace({
       : at && at !== "new" && at !== "insights"
         ? { kind: "article", slug: at }
         : null;
+  // An article's editor, a new one's too.
+  const editing = current?.kind === "article" || at === "new";
   const currentCollection =
     current?.kind === "collection" ? current.slug : current?.kind === "article" ? (collections.find((c) => c.articles.some((a) => a.slug === current.slug))?.slug ?? null) : null;
   const branch = (chains.get(currentCollection ?? "") ?? []).map((c) => c.id);
@@ -632,7 +635,12 @@ export function DocsWorkspace({
     <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
       <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:flex-row">
         {/* Beside every Docs page, to go between them. */}
-        <aside className="border-b lg:w-64 lg:shrink-0 lg:border-r lg:border-b-0">
+        <aside className="border-b lg:w-64 lg:shrink-0 lg:border-r lg:border-b-0 lg:[:root[data-docs-tree-folded]_&]:w-12">
+          {/* Folded (from laptop width up, `data-docs-tree-folded` on <html>: DocsTreeFold): a rail with the button that
+              opens the tree again, where the tree's own was. */}
+          <div className="hidden justify-center p-2 lg:sticky lg:top-12 lg:[:root[data-docs-tree-folded]_&]:flex">
+            <DocsTreeFold open />
+          </div>
           <button
             type="button"
             aria-expanded={browsing}
@@ -643,14 +651,17 @@ export function DocsWorkspace({
             <ChevronRightIcon aria-hidden className={cn("size-4 transition-transform", browsing && "rotate-90")} />
             Browse docs
           </button>
-          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", browsing ? "flex" : "hidden")}>
-            {/* Back to the docs' home, which shows them all at a glance. */}
-            <Row draggable={false} drop={undefined} handlers={{}} className="pl-2">
-              <Link href={base} aria-current={pathname === base ? "page" : undefined} className={rowLink}>
-                <LayoutGridIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                Overview
-              </Link>
-            </Row>
+          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", "lg:[:root[data-docs-tree-folded]_&]:hidden", browsing ? "flex" : "hidden")}>
+            {/* Back to the docs' home, which shows them all at a glance; beside it, from laptop width up, the tree's fold. */}
+            <div className="flex items-center gap-1">
+              <Row draggable={false} drop={undefined} handlers={{}} className="min-w-0 flex-1 pl-2">
+                <Link href={base} aria-current={pathname === base ? "page" : undefined} className={rowLink}>
+                  <LayoutGridIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  Overview
+                </Link>
+              </Row>
+              <DocsTreeFold open={false} className="max-lg:hidden" />
+            </div>
             <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
               {tabs.length > 0 ? (
                 <>
@@ -688,8 +699,9 @@ export function DocsWorkspace({
             </div>
           </div>
         </aside>
-        {/* One column for every Docs page (lists, forms, the editor): one left edge, a reading width, centred. */}
-        <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8">{children}</div>
+        {/* One column for every Docs page (lists, forms), centred: a reading width. An article's editor: as wide as the portal's
+            widest article (46rem, one with sections; ArticleForm narrows to 43rem for one without), so it reads as it will publish. */}
+        <div className={cn("mx-auto flex w-full min-w-0 flex-1 flex-col gap-6 p-6 md:px-8", editing ? "max-w-[50rem]" : "max-w-3xl")}>{children}</div>
       </div>
       {adding && (
         <CollectionDialog

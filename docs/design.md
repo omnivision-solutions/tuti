@@ -163,8 +163,11 @@ the list picks none to approve at once.
   A page of three panes (the sidebar, a column of its own, the page: Settings,
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
   width, the labelled sidebar open beside its own column from 1280px up; under 1280px it
-  folds to its rail, its column taking the room. The Inbox (its panes fill the window) and
-  Customize (its rail and the portal's preview) always fold it. Every other page has it open. A pane's column is
+  folds to its rail, its column taking the room. The Inbox (its panes fill the window),
+  Customize (its rail and the portal's preview) and an article's editor (the text is the page; the docs' tree stays
+  beside it) always fold it. The docs' tree folds too, from laptop width up, on its own button at its top ("Hide the docs
+  tree"; a rail with "Show the docs tree" in its place), remembered per browser on every Docs page (`DocsTreeFold`:
+  `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). Every other page has it open. A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
@@ -251,7 +254,8 @@ the list picks none to approve at once.
   icons under it, so the bar fits the 26rem the top bar keeps for it), then Save (filled once there's something to save, else an outline) and a
   draft's Publish; View on portal (in words), Unpublish and Delete are under "More actions". Its header is the way back (its collection), the
   state as a pill (`ArticleStateBadge`: Draft neutral, Unpublished changes in the highlight, as it needs the team, Published soft green; never a post status's colour) and the date; a new
-  article's collection is picked beside its Draft pill. Its text sits in the Docs column (max-w-3xl) at the reading size
+  article's collection is picked beside its Draft pill. Its text is as wide as the portal will show it (46rem with sections, as it opened, 43rem without;
+  other Docs pages max-w-3xl), so it wraps as it will publish, at the reading size
   in the full text colour; the title field wraps. Verify is a panel from the
   right (`?verify`, as History is `?history`) with Verify and, folded, how it works and what it sends where, then
   each run, newest first (its commit, what's still true, out of date and can't tell as tinted chips, its
