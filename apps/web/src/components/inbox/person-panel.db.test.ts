@@ -58,3 +58,18 @@ test("someone who marked the project's email as spam says so: replies aren't ema
   // Only that project's.
   expect(await panel(other, ids[1]!, true)).not.toContain(notice);
 });
+
+test("beside a conversation, their company, plan and seats show before Details, else their first properties; the rest is under it", async () => {
+  const project = await createProject(await signUp());
+  const card = async (externalId: string, properties: Record<string, string | number>) => {
+    const userId = await upsertProjectUser(project.id, externalId, { name: externalId, properties });
+    const html = renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true }, besides: 1 }));
+    const [before, details] = html.split("<details");
+    const values = (part: string) => [...part!.matchAll(/<dd[^>]*>([^<]*)<\/dd>/g)].map((m) => m[1]);
+    return { shown: values(before!), under: values(details!) };
+  };
+  // The key ones first, whatever their order or capitals; then the others, in theirs.
+  expect(await card("lee-1", { role: "admin", seats: 40, Company: "Initech", region: "EU" })).toEqual({ shown: ["Initech", "40", "admin"], under: ["EU"] });
+  // None of them: their first three (as they're kept: jsonb orders keys by length, then bytes).
+  expect(await card("lee-2", { zone: "EU", role: "admin", tier: "gold", team: "Ops" })).toEqual({ shown: ["admin", "Ops", "gold"], under: ["EU"] });
+});

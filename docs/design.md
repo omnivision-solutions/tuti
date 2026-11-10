@@ -185,9 +185,16 @@ the list picks none to approve at once.
   there rather than in the list's empty state too). On phones the list is alone.
   A conversation opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
-  Beside it, the posts it's linked to (a card of its own, "Link post…" in it), then the
-  person (a sheet where the conversation's pane is narrow, the linked posts staying in it); a post's
-  sidebar lists its linked conversations. A changelog entry's editor has a sidebar
+  The message is what the page is for, so the rest stays out of its way: in the top bar Close is
+  the one word, Assign and Snooze icons (their names in tooltips; snoozed, till when in words),
+  then the toggle for the column beside the messages and "…" (Link a post…, Summarize, Mark as
+  spam, …); in the reply box Send is the one filled button, Send and close in its menu, and Attach,
+  Insert article and Draft with AI icons. Beside the messages (unless its toggle hid it),
+  the posts it's linked to (a card only once there are some, or some look related), then the person
+  as one card: name, address, and their company, plan and seats (else their first properties), the
+  rest (id, groups, other properties, posts, votes, other conversations) under Details. Where the pane
+  is narrow the person is a sheet, the linked posts staying in the column; a post's sidebar lists its
+  linked conversations. A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes
   ("Link post…"), its cover image, how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
@@ -463,7 +470,7 @@ Use these instead of hand-rolling layout:
   heading for screen readers only (`sr-only`).
   In the app on phones the actions are a "More actions" menu from the top bar (`PageActions`). A page whose
   every visit needs them (a conversation's Assign, Snooze and Close) shows them
-  in a row under its header on phones as well, still in the menu (in reach once
+  in a row under its header on phones as well (named there, icons in the top bar), still in the menu (in reach once
   the row has scrolled away). An editor whose
   main action must stay in reach (Save and Publish) pins `actions` (`pinActions`): to a
   bar at the bottom of the screen on phones, the menu keeping `more`, and to the top bar

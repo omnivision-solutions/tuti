@@ -10,10 +10,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { cn } from "@/lib/utils";
 import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/property-formats";
+import type { PropertyValue } from "@tuti/shared/user-properties";
 import { viewsOf } from "@/server/operations/users";
 
 /** Beside a conversation; their own page lists them all (up to 500). */
 const SHOWN = 5;
+/** Beside a conversation, the properties shown before "Details": these first, when they have them, then the others in order. */
+const KEY_PROPERTIES = ["company", "plan", "seats"];
+const KEY_SHOWN = 3;
 
 /** A part of what they did. `card`: on their own page, a card of its own with a heading. */
 function Section({ title, count, card = false, big = false, children }: { title: string; count?: number; card?: boolean; big?: boolean; children: ReactNode }) {
@@ -193,6 +197,49 @@ export async function PersonPanel({
     meta: <PostStatusBadge status={p.status} />,
   });
 
+  // Beside a conversation, under Details (on their own page, the header has the id).
+  const identity = view && !page && <p className="text-xs break-all text-muted-foreground">id {view.id}</p>;
+  const groupBadges = view && view.groups.length > 0 && (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {view.groups.map((key) => (
+        <Badge key={key} variant="secondary" className="h-auto max-w-full shrink whitespace-normal break-words">
+          {names.get(key) ?? key}
+        </Badge>
+      ))}
+    </div>
+  );
+  const properties = (entries: [string, PropertyValue][], title?: string) => {
+    if (entries.length === 0) {
+      return null;
+    }
+    const list = (
+      <dl aria-label={title ? undefined : "Properties"} className="grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
+        {entries.map(([name, value]) => (
+          <div key={name} className="contents">
+            <dt className="break-all text-muted-foreground">{headings.get(name)}</dt>
+            <dd className="min-w-0 break-words">{formatProperty(formats, name, value)}</dd>
+          </div>
+        ))}
+      </dl>
+    );
+    return title ? (
+      <Section title={title} big={page}>
+        {list}
+      </Section>
+    ) : (
+      list
+    );
+  };
+  // Beside a conversation: who they are at a glance (their company, plan and seats, or their first properties), the rest
+  // under Details.
+  const allProperties = Object.entries(view?.properties ?? {});
+  const keyProperties = [
+    ...KEY_PROPERTIES.flatMap((key) => allProperties.filter(([name]) => name.toLowerCase() === key)),
+    ...allProperties.filter(([name]) => !KEY_PROPERTIES.includes(name.toLowerCase())),
+  ].slice(0, KEY_SHOWN);
+  const keyNames = new Set(keyProperties.map(([name]) => name));
+  const otherProperties = allProperties.filter(([name]) => !keyNames.has(name));
+
   const profile = (
     <>
       <section className="flex flex-col gap-1 empty:hidden" aria-label="Who">
@@ -210,36 +257,16 @@ export async function PersonPanel({
           </p>
         )}
         {blocked && <p className="text-xs text-muted-foreground">Marked your email as spam, so replies aren&apos;t emailed to them any more.</p>}
-        {view && !page && <p className="text-xs break-all text-muted-foreground">id {view.id}</p>}
         {!user && <p className="text-xs text-muted-foreground">Known only by this address.</p>}
         {lookalike && (
           <p className="text-xs break-words text-muted-foreground">
             Maybe {lookalike.name} (not signed in){lookalike.id && <span className="break-all">, id {lookalike.id}</span>}
           </p>
         )}
-        {view && view.groups.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {view.groups.map((key) => (
-              <Badge key={key} variant="secondary" className="h-auto max-w-full shrink whitespace-normal break-words">
-                {names.get(key) ?? key}
-              </Badge>
-            ))}
-          </div>
-        )}
+        {page && groupBadges}
       </section>
 
-      {view && Object.keys(view.properties).length > 0 && (
-        <Section title="Properties" big={page}>
-          <dl className="grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
-            {Object.entries(view.properties).map(([name, value]) => (
-              <div key={name} className="contents">
-                <dt className="break-all text-muted-foreground">{headings.get(name)}</dt>
-                <dd className="min-w-0 break-words">{formatProperty(formats, name, value)}</dd>
-              </div>
-            ))}
-          </dl>
-        </Section>
-      )}
+      {page ? properties(allProperties, "Properties") : properties(keyProperties)}
     </>
   );
   const activity = (
@@ -295,9 +322,21 @@ export async function PersonPanel({
       </div>
     </div>
   ) : (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-3">
       {profile}
-      {activity}
+      <details className="group flex flex-col">
+        <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">Details</summary>
+        <div className="mt-3 flex flex-col gap-5">
+          {(identity || groupBadges) && (
+            <div className="flex flex-col gap-1">
+              {identity}
+              {groupBadges}
+            </div>
+          )}
+          {properties(otherProperties, "Properties")}
+          {activity}
+        </div>
+      </details>
     </div>
   );
 }

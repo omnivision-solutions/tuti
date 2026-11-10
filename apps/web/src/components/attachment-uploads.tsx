@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 
 import { fileSize } from "@/components/inbox/message-attachments";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** Asks the server where to upload a file (the team's reply, the widget): the URL to PUT it to, the type it was signed with, and its id. */
 export type StartUpload = (file: { filename: string; contentType: string; size: number }) => Promise<{ error: string } | { id: string; contentType: string; uploadUrl: string }>;
@@ -83,7 +84,8 @@ export function UploadList({ uploads, remove }: Pick<ReturnType<typeof useUpload
 }
 
 /** "Attach files": picks files for `attach`. */
-export function AttachButton({ attach }: { attach: (files: FileList | null) => void }) {
+/** `iconOnly`: the paperclip alone, its name in a tooltip (on hover and keyboard focus) (the Inbox's reply box, where Send is the one word). */
+export function AttachButton({ attach, iconOnly = false }: { attach: (files: FileList | null) => void; iconOnly?: boolean }) {
   const picker = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -98,10 +100,19 @@ export function AttachButton({ attach }: { attach: (files: FileList | null) => v
           event.target.value = "";
         }}
       />
-      <Button type="button" variant="ghost" size="sm" onClick={() => picker.current?.click()}>
-        <PaperclipIcon />
-        Attach files
-      </Button>
+      {iconOnly ? (
+        <Tooltip>
+          <TooltipTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label="Attach files" onClick={() => picker.current?.click()} />}>
+            <PaperclipIcon />
+          </TooltipTrigger>
+          <TooltipContent>Attach files</TooltipContent>
+        </Tooltip>
+      ) : (
+        <Button type="button" variant="ghost" size="sm" onClick={() => picker.current?.click()}>
+          <PaperclipIcon />
+          Attach files
+        </Button>
+      )}
     </>
   );
 }

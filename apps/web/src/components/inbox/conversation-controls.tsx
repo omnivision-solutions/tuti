@@ -1,11 +1,13 @@
 "use client";
 
+import { AlarmClockIcon, UserPlusIcon } from "lucide-react";
 import { useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { actOn } from "@/components/inbox/list-keys";
 import { initial } from "@/lib/format";
 import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails, snoozeConversation, summarizeWithAi } from "@/server/inbox";
@@ -68,6 +70,13 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
   );
 }
 
+/**
+ * An icon in the top bar (its name in a tooltip, which opens on hover and on keyboard focus, and to the ear), so Close is the one word there; on phones, where the
+ * actions are a row under the title and a menu, the name too.
+ */
+const ICON_ACTION = "topbar:w-7 topbar:px-0";
+const Label = ({ children }: { children: string }) => <span className="topbar:sr-only">{children}</span>;
+
 type Teammate = { userId: string; name: string; image: string | null };
 
 function TeammateAvatar({ teammate }: { teammate: Teammate }) {
@@ -97,22 +106,39 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
   const self = team.find((m) => m.userId === me);
   // Assigned to someone no longer on the team: removing a member unassigns theirs, but an assignment racing that can stay.
   const former = !!assigneeId && !assignee;
+  const name = assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign";
+  const button = (
+    <Button
+      // Still with someone who left the team (rare): said in words, not as the icon an unassigned one has.
+      variant={former ? "outline" : "ghost"}
+      size="sm"
+      className={former ? undefined : ICON_ACTION}
+      disabled={pending}
+      focusableWhenDisabled
+      aria-label={name}
+    />
+  );
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label={assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign"} />}
-      >
-        {assignee ? (
-          <>
-            <TeammateAvatar teammate={assignee} />
-            <span className="max-w-32 truncate">{assignee.name}</span>
-          </>
-        ) : former ? (
-          "Former teammate"
-        ) : (
-          "Assign"
-        )}
-      </DropdownMenuTrigger>
+      {/* One button whoever has it, so the keyboard's focus stays on it as that changes. */}
+      <Tooltip>
+        <TooltipTrigger render={<DropdownMenuTrigger render={button} />}>
+          {assignee ? (
+            <>
+              <TeammateAvatar teammate={assignee} />
+              <span className="max-w-32 truncate topbar:sr-only">{assignee.name}</span>
+            </>
+          ) : former ? (
+            "Former teammate"
+          ) : (
+            <>
+              <UserPlusIcon />
+              <Label>Assign</Label>
+            </>
+          )}
+        </TooltipTrigger>
+        <TooltipContent>{name}</TooltipContent>
+      </Tooltip>
       {/* As wide as the longest name, but never wider than the screen: a long one wraps. */}
       <DropdownMenuContent align="end" className="w-max max-w-[calc(100vw-2rem)]">
         {self && assigneeId !== me && <DropdownMenuItem onClick={() => assign(self)}>Assign to me</DropdownMenuItem>}
@@ -172,9 +198,31 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
     });
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled />}>
-        {snoozedUntil ? (inBrowser ? `Snoozed till ${snoozeTime(new Date(snoozedUntil))}` : "Snoozed") : "Snooze"}
-      </DropdownMenuTrigger>
+      {/* Snoozed, it says till when (in words: it's what the conversation is now); not, an icon. One button either way, so
+          the keyboard's focus stays on it as it snoozes or wakes. */}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              render={<Button variant={snoozedUntil ? "outline" : "ghost"} size="sm" className={snoozedUntil ? undefined : ICON_ACTION} disabled={pending} focusableWhenDisabled />}
+            />
+          }
+        >
+          {snoozedUntil ? (
+            inBrowser ? (
+              `Snoozed till ${snoozeTime(new Date(snoozedUntil))}`
+            ) : (
+              "Snoozed"
+            )
+          ) : (
+            <>
+              <AlarmClockIcon />
+              <Label>Snooze</Label>
+            </>
+          )}
+        </TooltipTrigger>
+        <TooltipContent>{snoozedUntil ? "Snooze again, or wake it now" : "Snooze"}</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => snooze(new Date(Date.now() + 3 * 3_600_000))}>In 3 hours</DropdownMenuItem>
         <DropdownMenuItem onClick={() => snooze(morning(1))}>Tomorrow, 9:00</DropdownMenuItem>

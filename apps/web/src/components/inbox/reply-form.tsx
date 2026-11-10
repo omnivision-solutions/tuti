@@ -1,6 +1,6 @@
 "use client";
 
-import { FileTextIcon, SparklesIcon } from "lucide-react";
+import { ChevronDownIcon, FileTextIcon, SparklesIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -8,14 +8,19 @@ import { AttachButton, type Upload, UploadList, useUploads } from "@/components/
 import { actOn } from "@/components/inbox/list-keys";
 import { InsertArticleDialog, type InsertableArticle } from "@/components/inbox/insert-article";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
+
+/** Why Draft with AI is off, while the project is out of AI credits. */
+const PAUSED = "This project is out of AI credits";
 
 /**
  * What's written in each conversation's reply and note, the files attached that had uploaded (and the names of those
@@ -100,6 +105,8 @@ export function ReplyForm({
     }
   }, [drafts]);
   const errorId = useId();
+  const shortcutId = useId();
+  const pausedId = useId();
   const note = kind === "note";
   // What the team saw as they started this reply: held while it's being written or has files attached (a message arriving
   // meanwhile, which the page's live refresh shows above, may go unread), the page's latest again once the box is empty
@@ -235,45 +242,102 @@ export function ReplyForm({
       {/* On a phone, the send buttons go to a row of their own (on the right) rather than past the screen's edge. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          <AttachButton attach={files.attach} />
+          <AttachButton attach={files.attach} iconOnly />
           {!note && articles && (
             <>
-              <Button type="button" variant="ghost" size="sm" disabled={pending} title={`Insert article (${shortcut})`}
-                // A click from the reply leaves the focus there, so its cursor is where the link goes.
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={openPicker}
-              >
-                <FileTextIcon />
-                Insert article
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={pending}
+                      aria-label="Insert article"
+                      // Its shortcut to screen readers too, as the tooltip shows it.
+                      aria-describedby={shortcutId}
+                      // A click from the reply leaves the focus there, so its cursor is where the link goes.
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={openPicker}
+                    />
+                  }
+                >
+                  <FileTextIcon />
+                  <span id={shortcutId} className="sr-only">
+                    {shortcut}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{`Insert article (${shortcut})`}</TooltipContent>
+              </Tooltip>
               <InsertArticleDialog projectSlug={projectSlug} number={number} open={inserting} onOpenChange={setInserting} onPick={insert} finalFocus={textarea} />
             </>
           )}
           {draftWithAi !== "off" && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={drafting || pending || draftWithAi === "paused"}
-              title={draftWithAi === "paused" ? "This project is out of AI credits" : undefined}
-              onClick={draft}
-            >
-              <SparklesIcon />
-              {drafting ? "Drafting…" : "Draft with AI"}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size={drafting ? "sm" : "icon-sm"}
+                    disabled={drafting || pending || draftWithAi === "paused"}
+                    // Out of credits, still reached from the keyboard, where its tooltip says why it's off.
+                    focusableWhenDisabled
+                    aria-label={drafting ? undefined : "Draft with AI"}
+                    // Why it's off, to screen readers too, as the tooltip shows it.
+                    aria-describedby={draftWithAi === "paused" ? pausedId : undefined}
+                    onClick={draft}
+                  />
+                }
+              >
+                <SparklesIcon />
+                {/* Said while it works: it takes a few seconds. */}
+                {drafting && "Drafting…"}
+                {draftWithAi === "paused" && (
+                  <span id={pausedId} className="sr-only">
+                    {PAUSED}
+                  </span>
+                )}
+              </TooltipTrigger>
+              <TooltipContent>{draftWithAi === "paused" ? "Draft with AI: this project is out of AI credits" : "Draft with AI"}</TooltipContent>
+            </Tooltip>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {/* Answered, and done with: closed with the reply (not left waiting on them). Both keep the keyboard's focus while it
-              sends: a plain Send leaves the conversation open, with nothing else to take it. */}
-          {!note && (
-            <Button type="button" variant="outline" disabled={pending || drafting || files.uploading} focusableWhenDisabled onClick={() => send(true)}>
-              Send and close
-            </Button>
-          )}
-          <Button type="submit" disabled={pending || drafting || files.uploading} focusableWhenDisabled>
+        {/* Send, the one button in words, and in its menu Send and close: answered, and done with, closed with the reply (not
+            left waiting on them). Both keep the keyboard's focus while it sends: a plain Send leaves the conversation open, with
+            nothing else to take it. */}
+        <div className="ml-auto flex items-center">
+          <Button type="submit" className={note ? undefined : "rounded-r-none"} disabled={pending || drafting || files.uploading} focusableWhenDisabled>
             {pending ? "Sending…" : note ? "Add note" : "Send"}
           </Button>
+          {!note && (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          size="icon"
+                          className="rounded-l-none border-l border-l-primary-foreground/25"
+                          aria-label="More ways to send"
+                          disabled={pending || drafting || files.uploading}
+                          focusableWhenDisabled
+                        />
+                      }
+                    />
+                  }
+                >
+                  <ChevronDownIcon />
+                </TooltipTrigger>
+                <TooltipContent>More ways to send</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-max">
+                <DropdownMenuItem onClick={() => send(true)}>Send and close</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
     </form>
