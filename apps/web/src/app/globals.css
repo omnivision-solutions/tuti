@@ -615,7 +615,7 @@
     position: static;
   }
   @media (height < 40rem) {
-    main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-pinned-actions]) {
+    main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-pins-actions]) {
       position: static;
     }
   }

@@ -196,8 +196,15 @@ test("after setup, Settings → Import brings what's in Featurebase across any t
   for (const width of [1440, 390]) {
     await owner.setViewportSize({ width, height: 900 });
     await expect(owner.locator("main > header")).toHaveCSS("display", width === 390 ? "flex" : "none");
-    await progress.evaluate((element) => element.scrollIntoView({ block: "start" }));
-    await expect.soft.poll(() => progress.evaluate((element) => Math.round(element.getBoundingClientRect().y - parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop)))).toBe(8);
+    // Scrolled again on each try, so a toolbar that settles late is measured with the box moved for it.
+    await expect
+      .soft.poll(() =>
+        progress.evaluate((element) => {
+          element.scrollIntoView({ block: "start" });
+          return Math.round(element.getBoundingClientRect().y - parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop));
+        }),
+      )
+      .toBe(8);
   }
   await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
   await owner.setViewportSize(viewport);
