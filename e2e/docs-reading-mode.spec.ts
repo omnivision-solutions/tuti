@@ -109,6 +109,9 @@ test("tree-less short articles and search results keep their capped widths", asy
   await expect(reader.getByRole("heading", { name: "Calendar basics", level: 1 })).toBeVisible();
   await expect(tree).toBeHidden();
   expect.soft((await reader.getByRole("article").boundingBox())!.width).toBe(71 * 16);
+  // Capped, but from the logo's left edge like every other docs page.
+  const logo = (await reader.locator("header").getByRole("link", { name: "Acme", exact: true }).boundingBox())!;
+  expect(Math.abs((await reader.getByRole("article").boundingBox())!.x - logo.x)).toBeLessThanOrEqual(1);
   await checkpoint(reader, "docs-tree-less-short-article-1440", { fullPage: false });
 
   await reader.goto("/docs?q=calendar");
@@ -116,6 +119,7 @@ test("tree-less short articles and search results keep their capped widths", asy
   await expect(tree).toBeHidden();
   // Search also has no current page; that doesn't make it an overview or give it the full 79rem.
   expect.soft((await reader.locator("[data-docs-layout] > div").boundingBox())!.width).toBe(71 * 16);
+  expect(Math.abs((await reader.locator("[data-docs-layout] > div").boundingBox())!.x - logo.x)).toBeLessThanOrEqual(1);
   await checkpoint(reader, "docs-tree-less-search-results-1440", { fullPage: false });
 });
 
