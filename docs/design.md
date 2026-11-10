@@ -544,7 +544,7 @@ Use these instead of hand-rolling layout:
     three tabs and More (reading as the one of the rest that's open, as the Inbox's), so Needs triage stays in sight,
     the search is narrower ("Search") and Filters its icon. Picked rows' bar takes the whole row. Boards, used less, is in the header's "…"
     menu, New post the one button beside it. On a narrower page the tabs are above the search and Filters (and, on phones,
-    "+ New").
+    "+ New"); while rows are picked, their bar replaces only that search line, keeping the status tabs visible and usable.
   - A post's vote count, first in its row, has the vote arrow over it (and
     "votes" for screen readers), so it doesn't read as a bare number (`VoteCount`, `VoteBox`).
   - Compact actions (a badge, one or two small buttons) stay on the right.

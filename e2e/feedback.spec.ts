@@ -1088,7 +1088,7 @@ test("Feedback's search field follows Clear search and browser history", async (
   await search.fill("light");
   await search.press("Enter");
   await expect(team.getByText("No posts match your search", { exact: true })).toBeVisible();
-  await expect(team.getByRole("status").filter({ hasText: "Search found" })).toHaveText("Search found no posts");
+  await expect(team.getByRole("status").filter({ hasText: "Search for" })).toHaveText("Search for “light” found no posts");
   // A draft edit after submitting must be cleared too, rather than submitted by the next Enter.
   await search.fill("lighter");
   await team.getByRole("link", { name: "Clear search", exact: true }).click();
@@ -1146,7 +1146,7 @@ test("Feedback's search keeps newer typing while its results load", async ({ bro
   await expect(search).toHaveValue("dark");
   await expect(search).toBeFocused();
   // No new page to announce: a screen reader hears what the search found.
-  await expect(team.getByRole("status").filter({ hasText: "Search found" })).toHaveText("Search found 1 post");
+  await expect(team.getByRole("status").filter({ hasText: "Search for" })).toHaveText("Search for “exp” found 1 post");
   await checkpoint(team, "team-feedback-search-newer-draft");
   // History is different from our own results: it resets a focused draft too, even when that draft starts with q.
   await team.goBack();
@@ -1156,6 +1156,33 @@ test("Feedback's search keeps newer typing while its results load", async ({ bro
   await expect(team).toHaveURL(/\?q=exp$/);
   await expect(search).toHaveValue("exp");
   await team.unroute(held);
+});
+
+test("Feedback announces each search even when the result count stays the same", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await team.goto(`/app/${slug}/feedback`);
+  const search = team.getByRole("searchbox", { name: "Search feedback" });
+  const announcement = team.getByRole("status").filter({ hasText: /^Search / });
+  await search.fill("dark");
+  await search.press("Enter");
+  await expect(team).toHaveURL(/\?q=dark$/);
+  await expect(announcement).toContainText("1 post");
+  const firstAnnouncement = await announcement.textContent();
+  await search.fill("export");
+  await search.press("Enter");
+  await expect(team).toHaveURL(/\?q=export$/);
+  await expect(team.getByRole("link", { name: "Export to PDF", exact: true })).toBeVisible();
+  await expect(announcement).not.toHaveText(firstAnnouncement!);
+  expect(firstAnnouncement).toBe("Search for “dark” found 1 post");
+  await expect(announcement).toHaveText("Search for “export” found 1 post");
+  await checkpoint(team, "team-feedback-search-announcement");
 });
 
 for (const action of ["Completed", "Merge"] as const) {
@@ -1551,6 +1578,11 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const metaColor = (title: string) => row(title).locator("time").locator("..").evaluate((meta) => getComputedStyle(meta).color);
   expect(await metaColor("Calendar sync")).not.toBe(await metaColor("Dark mode"));
   await checkpoint(team, "team-feedback-bulk");
+  // At a page width of 64rem and up, the bar still replaces the whole single toolbar row.
+  await team.setViewportSize({ width: 1920, height: 1080 });
+  await expect(team.getByRole("navigation", { name: "Statuses" })).toHaveCount(0);
+  await expect(bar).toContainText("2 selected");
+  await checkpoint(team, "team-feedback-bulk-wide");
   // On a phone too, the bar is one row the filters' height: the list stays where it was.
   await team.setViewportSize({ width: 390, height: 844 });
   await expect.poll(async () => (await row("Night theme").boundingBox())!.y).toBe(phoneTop);
@@ -1690,15 +1722,20 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(team.getByRole("region", { name: /^Post #/ })).toBeVisible();
   await team.keyboard.press("Escape");
 
-  // While rows are picked the bar is in the tabs' and filters' place: the statuses are back once they're cleared.
+  // At 1280px with the labelled sidebar, the toolbar is two rows: picking keeps the tabs usable above the bar.
   await expect(bar).toContainText("1 selected");
-  await expect(team.getByRole("navigation", { name: "Statuses" })).toHaveCount(0);
-  // Another view (the sidebar's Feedback: Needs triage): what was picked isn't any more (none of it may be listed).
-  await team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: /^Feedback/ }).click();
-  await team.waitForURL((url) => url.pathname.endsWith("/feedback") && url.search === "");
-  await expect(bar).toHaveCount(0);
-  await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Planned/ }).click();
+  const statuses = team.getByRole("navigation", { name: "Statuses" });
+  await expect(statuses).toBeVisible();
+  const tabsBox = (await statuses.boundingBox())!;
+  const barBox = (await bar.boundingBox())!;
+  expect(barBox.y - (tabsBox.y + tabsBox.height)).toBeGreaterThanOrEqual(0);
+  expect(barBox.y - (tabsBox.y + tabsBox.height)).toBeLessThanOrEqual(24);
+  await checkpoint(team, "team-feedback-bulk-statuses-laptop");
+  // A status tab still works while rows are picked, and changing it clears the picks.
+  await statuses.getByRole("link", { name: /^Planned/ }).focus();
+  await team.keyboard.press("Enter");
   await team.waitForURL(/status=planned/);
+  await expect(bar).toHaveCount(0);
   // A tab of one status doesn't say it on every row: a small button opens the menu.
   await expect(row("Calendar sync").getByRole("button", { name: "Status: Planned" })).toBeVisible();
   await expect(row("Calendar sync").getByText("Planned", { exact: true })).toHaveCount(0);
@@ -1895,9 +1932,20 @@ test("Feedback's picked rows' bar keeps the filters' place on a phone, the list 
   const first = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
   const top = (await first.boundingBox())!.y;
   await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
-  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toContainText("1 selected");
+  const bar = team.getByRole("toolbar", { name: "Selected posts" });
+  await expect(bar).toContainText("1 selected");
   expect((await first.boundingBox())!.y).toBe(top);
+  const statuses = team.getByRole("navigation", { name: "Statuses" });
+  await expect(statuses).toBeVisible();
+  const tabsBox = (await statuses.boundingBox())!;
+  const barBox = (await bar.boundingBox())!;
+  expect(barBox.y - (tabsBox.y + tabsBox.height)).toBeGreaterThanOrEqual(0);
+  expect(barBox.y - (tabsBox.y + tabsBox.height)).toBeLessThanOrEqual(24);
   await checkpoint(team, "team-feedback-bulk-wrapped-filters-phone");
+  await statuses.getByRole("link", { name: /^Planned/ }).click();
+  await team.waitForURL(/status=planned/);
+  await expect(bar).toHaveCount(0);
+  await expect(team.getByText("No posts match", { exact: true })).toBeVisible();
 });
 
 test("Completed's question fits a phone, whatever the post's title (a long link)", async ({ browser }) => {

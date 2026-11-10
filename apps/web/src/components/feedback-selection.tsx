@@ -188,9 +188,10 @@ const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
  * voters), Move to board, Merge (into the one kept, the most voted for by default), Clear. Each post is done
  * as on its own; what fails is said and the rest still go. In place of `children` (the list's filters): both in
  * one grid cell, the filters hidden (and out of reach) while the bar shows, so the cell keeps the taller one's
- * height and the list doesn't move.
+ * height and the list doesn't move. Below 64rem the navigation stays usable above that cell; at 64rem and up,
+ * the bar spans the whole toolbar and hides its navigation too.
  */
-export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: string; boards: { slug: string; name: string }[]; children: ReactNode }) {
+export function FeedbackBulk({ projectSlug, boards, navigation, children }: { projectSlug: string; boards: { slug: string; name: string }[]; navigation: ReactNode; children: ReactNode }) {
   const { picked, clear, pending, startTransition } = useSelection();
   const router = useRouter();
   const [completing, setCompleting] = useState(false);
@@ -242,13 +243,20 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
       row.removeEventListener("focusin", focusClearOfFade);
     };
   }, [picked.length]);
-  const filters = (hidden: boolean) => (
-    <div ref={filtersRef} className={hidden ? "invisible" : undefined} inert={hidden}>
-      {children}
+  const toolbar = (bar?: ReactNode) => (
+    <div className="grid min-w-0 grid-cols-1 items-end gap-3 @min-[64rem]/page:grid-cols-[minmax(0,1fr)_auto] @min-[64rem]/page:gap-4 @min-[64rem]/page:shadow-[inset_0_-1px_0_var(--color-border)]">
+      {/* Visibility also removes wide-screen tabs from keyboard and accessibility navigation; narrow tabs stay usable. */}
+      <div className={cn("min-w-0 [grid-area:1/1]", bar && "@min-[64rem]/page:invisible")}>
+        {navigation}
+      </div>
+      <div ref={filtersRef} className={cn("min-w-0 [grid-area:2/1] @min-[64rem]/page:[grid-area:1/2]", bar && "invisible")} inert={!!bar}>
+        {children}
+      </div>
+      {bar}
     </div>
   );
   if (picked.length === 0) {
-    return <div className="grid grid-cols-1 items-end *:[grid-area:1/1]">{filters(false)}</div>;
+    return toolbar();
   }
   const count = `${picked.length} ${picked.length === 1 ? "post" : "posts"}`;
   // Who completing them emails, at most (one person asking for two is counted twice).
@@ -273,145 +281,142 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
 
   // In a narrow list column (a phone, a post open beside it), shorter words (the same names for screen readers): the
   // bar stays one row.
-  return (
-    <div className="grid grid-cols-1 items-end *:[grid-area:1/1]">
-      {filters(true)}
-      <div
-        role="toolbar"
-        aria-label="Selected posts"
-        onFocus={() => (barHeld.current = true)}
-        onBlur={(event) => {
-          if (event.target.isConnected && !event.currentTarget.contains(event.relatedTarget)) {
-            barHeld.current = false;
-          }
-        }}
-        // Narrower still (a post open beside the list on a small laptop): the count stays whole, the actions scroll
-        // sideways, faded at the end that has more (as the tabs do; room kept for their focus rings, the bar no taller).
-        className="flex items-center gap-2 text-sm @max-md:gap-1.5">
-        <span className="shrink-0 font-medium">{picked.length} selected</span>
-        <div ref={actionsRef} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 [scrollbar-width:none] *:scroll-mx-12", FADE_AT_MORE)}>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Set status" />}>
-              <span className="@max-md:hidden">Set status</span>
-              <span className="@md:hidden">Status</span>
-              <ChevronDownIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-auto min-w-40">
-              {STATUSES.map((status) => (
-                <DropdownMenuItem key={status} onClick={() => (status === "COMPLETED" ? setCompleting(true) : setStatus(status))}>
-                  <StatusDot status={status} />
-                  {STATUS_LABELS[status]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Move to board" />}>
-              <span className="@max-md:hidden">Move to board</span>
-              <span className="@md:hidden">Board</span>
-              <ChevronDownIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-auto min-w-40">
-              {boards.map((board) => (
-                <DropdownMenuItem key={board.slug} onClick={() => each(picked, (post) => movePost(projectSlug, post.id, board.slug), `${count} moved to ${board.name}`)}>
-                  {board.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {/* Sample posts merge with sample ones only, the team's with theirs (mergePosts refuses the rest): no Merge for a mix. */}
-          {picked.length > 1 && new Set(picked.map((post) => post.sample)).size === 1 && (
-            <Button
-              variant="outline"
-              size="sm"
+  return toolbar(
+    <div
+      role="toolbar"
+      aria-label="Selected posts"
+      onFocus={() => (barHeld.current = true)}
+      onBlur={(event) => {
+        if (event.target.isConnected && !event.currentTarget.contains(event.relatedTarget)) {
+          barHeld.current = false;
+        }
+      }}
+      // Narrower still (a post open beside the list on a small laptop): the count stays whole, the actions scroll
+      // sideways, faded at the end that has more (as the tabs do; room kept for their focus rings, the bar no taller).
+      className="flex min-w-0 items-center gap-2 text-sm [grid-area:2/1] @max-md:gap-1.5 @min-[64rem]/page:[grid-area:1/1/2/3]">
+      <span className="shrink-0 font-medium">{picked.length} selected</span>
+      <div ref={actionsRef} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 [scrollbar-width:none] *:scroll-mx-12", FADE_AT_MORE)}>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Set status" />}>
+            <span className="@max-md:hidden">Set status</span>
+            <span className="@md:hidden">Status</span>
+            <ChevronDownIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-auto min-w-40">
+            {STATUSES.map((status) => (
+              <DropdownMenuItem key={status} onClick={() => (status === "COMPLETED" ? setCompleting(true) : setStatus(status))}>
+                <StatusDot status={status} />
+                {STATUS_LABELS[status]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={pending} focusableWhenDisabled aria-label="Move to board" />}>
+            <span className="@max-md:hidden">Move to board</span>
+            <span className="@md:hidden">Board</span>
+            <ChevronDownIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-auto min-w-40">
+            {boards.map((board) => (
+              <DropdownMenuItem key={board.slug} onClick={() => each(picked, (post) => movePost(projectSlug, post.id, board.slug), `${count} moved to ${board.name}`)}>
+                {board.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {/* Sample posts merge with sample ones only, the team's with theirs (mergePosts refuses the rest): no Merge for a mix. */}
+        {picked.length > 1 && new Set(picked.map((post) => post.sample)).size === 1 && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            focusableWhenDisabled
+            onClick={() => {
+              // The most voted for, each time it opens.
+              setKeep(null);
+              setMerging(true);
+            }}
+          >
+            Merge…
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" disabled={pending} focusableWhenDisabled onClick={clear} className="ml-auto @max-md:size-7 @max-md:px-0">
+          <XIcon className="@md:hidden" />
+          <span className="@max-md:sr-only">Clear</span>
+        </Button>
+      </div>
+
+      <AlertDialog open={completing} onOpenChange={setCompleting}>
+        <AlertDialogContent closeDisabled={pending}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark {count} as Completed?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {emailing
+                ? `This emails up to ${emailing} ${emailing === 1 ? "person" : "people"} who asked for them that it shipped, as when one post is completed.`
+                : "Nobody is emailed."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
               disabled={pending}
-              focusableWhenDisabled
               onClick={() => {
-                // The most voted for, each time it opens.
-                setKeep(null);
-                setMerging(true);
+                setCompleting(false);
+                setStatus("COMPLETED");
               }}
             >
-              Merge…
-            </Button>
-          )}
-          <Button variant="ghost" size="sm" disabled={pending} focusableWhenDisabled onClick={clear} className="ml-auto @max-md:size-7 @max-md:px-0">
-            <XIcon className="@md:hidden" />
-            <span className="@max-md:sr-only">Clear</span>
-          </Button>
-        </div>
+              Mark completed
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-        <AlertDialog open={completing} onOpenChange={setCompleting}>
-          <AlertDialogContent closeDisabled={pending}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Mark {count} as Completed?</AlertDialogTitle>
-              <AlertDialogDescription>
-                {emailing
-                  ? `This emails up to ${emailing} ${emailing === 1 ? "person" : "people"} who asked for them that it shipped, as when one post is completed.`
-                  : "Nobody is emailed."}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={pending}
-                onClick={() => {
-                  setCompleting(false);
-                  setStatus("COMPLETED");
-                }}
-              >
-                Mark completed
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-  
-        <AlertDialog open={merging} onOpenChange={setMerging}>
-          <AlertDialogContent closeDisabled={pending}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Merge {count} into one?</AlertDialogTitle>
-              <AlertDialogDescription>
-                The others&apos; votes (counted once per person) and comments move to the one you keep, and their links point to it. This
-                can&apos;t be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <fieldset className="flex flex-col gap-2 text-sm">
-              <legend className="mb-1 font-medium">Keep</legend>
-              {picked.map((post) => (
-                <label key={post.id} className="flex items-baseline gap-2">
-                  <input type="radio" name="keep" checked={post.id === kept.id} onChange={() => setKeep(post.id)} className="accent-primary" />
-                  <span>
-                    #{post.number} {post.title} <span className="text-muted-foreground">· {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}</span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-            {/* Comments that will be seen by people who couldn't see them, as the post page's Merge dialog says. */}
-            {picked
-              .filter((post) => post.id !== kept.id)
-              .flatMap((post) => {
-                const exposure = mergeExposure(post, kept, kept.number);
-                return exposure ? [<p key={post.id} className="text-sm text-muted-foreground">#{post.number}: {exposure}</p>] : [];
-              })}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={pending}
-                onClick={() => {
-                  setMerging(false);
-                  each(
-                    picked.filter((post) => post.id !== kept.id),
-                    (post) => mergePost(projectSlug, post.id, kept.id),
-                    `Merged into #${kept.number}`,
-                  );
-                }}
-              >
-                Merge into #{kept.number}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+      <AlertDialog open={merging} onOpenChange={setMerging}>
+        <AlertDialogContent closeDisabled={pending}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge {count} into one?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The others&apos; votes (counted once per person) and comments move to the one you keep, and their links point to it. This
+              can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <fieldset className="flex flex-col gap-2 text-sm">
+            <legend className="mb-1 font-medium">Keep</legend>
+            {picked.map((post) => (
+              <label key={post.id} className="flex items-baseline gap-2">
+                <input type="radio" name="keep" checked={post.id === kept.id} onChange={() => setKeep(post.id)} className="accent-primary" />
+                <span>
+                  #{post.number} {post.title} <span className="text-muted-foreground">· {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          {/* Comments that will be seen by people who couldn't see them, as the post page's Merge dialog says. */}
+          {picked
+            .filter((post) => post.id !== kept.id)
+            .flatMap((post) => {
+              const exposure = mergeExposure(post, kept, kept.number);
+              return exposure ? [<p key={post.id} className="text-sm text-muted-foreground">#{post.number}: {exposure}</p>] : [];
+            })}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={() => {
+                setMerging(false);
+                each(
+                  picked.filter((post) => post.id !== kept.id),
+                  (post) => mergePost(projectSlug, post.id, kept.id),
+                  `Merged into #${kept.number}`,
+                );
+              }}
+            >
+              Merge into #{kept.number}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

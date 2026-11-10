@@ -189,67 +189,66 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
           <div className={cn("@container flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
             {/* One row above the list on a page 64rem wide or more, whether or not a post is open beside it (then three
                 statuses and More, a narrower search and Filters as its icon): the status tabs (scrolling sideways when they're short of room),
-                then the search and Filters; the bar for picked rows in the whole row's place. On phones the tabs above them. */}
-            <FeedbackBulk projectSlug={slug} boards={project.boards}>
-              <div className="flex flex-col gap-3 @min-[64rem]/page:flex-row @min-[64rem]/page:items-end @min-[64rem]/page:gap-4 @min-[64rem]/page:shadow-[inset_0_-1px_0_var(--color-border)]">
-                <SubNav
-                  label="Statuses"
-                  current={href(tab)}
-                  className="min-w-0 @min-[64rem]/page:mt-0 @min-[64rem]/page:flex-1 @min-[64rem]/page:shadow-none"
-                  items={(open === null ? tabs : tabs.slice(0, BESIDE_POST)).map(tabItem)}
-                  // Beside an open post the list's column is narrower: the first statuses as tabs, the rest under More
-                  // (which reads as the one of them open), so the row fits and Needs triage stays in sight.
-                  more={open === null ? undefined : { label: "More", items: tabs.slice(BESIDE_POST).map(tabItem) }}
-                />
-                <div className="min-w-0 @min-[64rem]/page:shrink-0 @min-[64rem]/page:pb-1.5">
-                  <div className="flex min-w-0 gap-2">
-                    <FeedbackSearch action={`/app/${slug}/feedback`} q={q} compact={open !== null}>
-                      {board && <input type="hidden" name="board" value={board} />}
-                      {group && <input type="hidden" name="group" value={group.key} />}
-                      {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
-                      {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
-                    </FeedbackSearch>
-                    {/* Searching doesn't load a new page, so a screen reader hears what it found here (polite, there from the start). */}
-                    <p role="status" className="sr-only">
-                      {q ? (listed.length === 0 ? "Search found no posts" : listed.length === 1 && !more ? "Search found 1 post" : `Search found ${listed.length}${more ? " posts, and more to load" : " posts"}`) : ""}
-                    </p>
-                    <FiltersFold compact={open !== null} set={[board, group, filters.sort !== "top" && filters.sort].filter(Boolean).length}>
-                      <ListFilters
-                        filters={[
-                          {
-                            name: "board",
-                            label: "Board",
-                            value: board ?? "all",
-                            options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
-                          },
-                          ...(project.readerGroups.length > 0
-                            ? [
-                                {
-                                  name: "group",
-                                  label: "Voters",
-                                  // "*" can't be a group's key (a group named "All" has "all").
-                                  value: group?.key ?? "*",
-                                  options: [{ value: "*", label: "All voters" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
-                                },
-                              ]
-                            : []),
-                          sortFilter(filters.sort, TEAM_SORTS),
-                        ]}
-                      />
-                    </FiltersFold>
-                    {/* On phones, where the header's actions are a menu: New post in sight. */}
-                    <a
-                      href={`${await portalAddress(slug)}/feedback`}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="New post"
-                      className={buttonVariants({ className: "sm:hidden" })}
-                    >
-                      <PlusIcon />
-                      New
-                      <span className="sr-only"> post (on your portal)</span>
-                    </a>
-                  </div>
+                then the search and Filters; the bar for picked rows in the whole row's place. Below 64rem the tabs stay usable above the bar. */}
+            <FeedbackBulk projectSlug={slug} boards={project.boards} navigation={
+              <SubNav
+                label="Statuses"
+                current={href(tab)}
+                className="min-w-0 @min-[64rem]/page:mt-0 @min-[64rem]/page:flex-1 @min-[64rem]/page:shadow-none"
+                items={(open === null ? tabs : tabs.slice(0, BESIDE_POST)).map(tabItem)}
+                // Beside an open post the list's column is narrower: the first statuses as tabs, the rest under More
+                // (which reads as the one of them open), so the row fits and Needs triage stays in sight.
+                more={open === null ? undefined : { label: "More", items: tabs.slice(BESIDE_POST).map(tabItem) }}
+              />
+            }>
+              <div className="min-w-0 @min-[64rem]/page:pb-1.5">
+                <div className="flex min-w-0 gap-2">
+                  <FeedbackSearch action={`/app/${slug}/feedback`} q={q} compact={open !== null}>
+                    {board && <input type="hidden" name="board" value={board} />}
+                    {group && <input type="hidden" name="group" value={group.key} />}
+                    {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
+                    {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
+                  </FeedbackSearch>
+                  {/* Searching doesn't load a new page, so a screen reader hears what it found here (polite, there from the start). */}
+                  <p role="status" className="sr-only">
+                    {q ? `Search for “${q}” found ${listed.length === 0 ? "no posts" : listed.length === 1 && !more ? "1 post" : `${listed.length}${more ? " posts, and more to load" : " posts"}`}` : ""}
+                  </p>
+                  <FiltersFold compact={open !== null} set={[board, group, filters.sort !== "top" && filters.sort].filter(Boolean).length}>
+                    <ListFilters
+                      filters={[
+                        {
+                          name: "board",
+                          label: "Board",
+                          value: board ?? "all",
+                          options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
+                        },
+                        ...(project.readerGroups.length > 0
+                          ? [
+                              {
+                                name: "group",
+                                label: "Voters",
+                                // "*" can't be a group's key (a group named "All" has "all").
+                                value: group?.key ?? "*",
+                                options: [{ value: "*", label: "All voters" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
+                              },
+                            ]
+                          : []),
+                        sortFilter(filters.sort, TEAM_SORTS),
+                      ]}
+                    />
+                  </FiltersFold>
+                  {/* On phones, where the header's actions are a menu: New post in sight. */}
+                  <a
+                    href={`${await portalAddress(slug)}/feedback`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="New post"
+                    className={buttonVariants({ className: "sm:hidden" })}
+                  >
+                    <PlusIcon />
+                    New
+                    <span className="sr-only"> post (on your portal)</span>
+                  </a>
                 </div>
               </div>
             </FeedbackBulk>
