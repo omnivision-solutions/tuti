@@ -1795,9 +1795,13 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await team.getByRole("link", { name: last, exact: true }).click();
   await expect(pane.getByRole("heading", { name: last })).toBeInViewport();
   // Its first row (Close, Open full page) clear of the app's bar (3rem), not under it.
-  const header = (await team.locator("header").first().boundingBox())!;
-  expect((await pane.getByRole("link", { name: "Close" }).boundingBox())!.y).toBeGreaterThanOrEqual(header.y + header.height);
-  expect((await pane.getByRole("link", { name: "Close" }).boundingBox())!.y).toBeCloseTo(header.y + header.height + 8, 0);
+  // Measured until the pane's scroll and the bar settle: 8px below the bar.
+  await expect
+    .poll(async () => {
+      const header = (await team.locator("header").first().boundingBox())!;
+      return Math.round((await pane.getByRole("link", { name: "Close" }).boundingBox())!.y - (header.y + header.height));
+    })
+    .toBe(8);
   // Closed, the list is back where it was: at the row just triaged.
   await pane.getByRole("link", { name: "Close" }).click();
   await expect(team.getByRole("link", { name: last, exact: true })).toBeInViewport();
