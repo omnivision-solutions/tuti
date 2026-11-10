@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { ChevronRightIcon, FolderIcon } from "lucide-react";
+import { ChevronRightIcon, FolderIcon, GripVerticalIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -38,7 +38,7 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
   const latest = await prisma.articleRevision.findFirst({
     where: { article: { projectId, collectionId: collection.id, deletedAt: null } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: { createdAt: true, author: { select: { name: true } } },
+    select: { createdAt: true, codeChangeActionId: true, author: { select: { name: true } } },
   });
   const base = `/app/${slug}/docs`;
 
@@ -49,7 +49,7 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
         collection={{ slug: collection.slug, name: collection.name, description: collection.description, icon: collection.icon, knownIcon: collection.knownIcon }}
         hasChildren={inside.length > 0}
       />
-      {rowDetails && <div className="docs-collection-summary flex gap-5.5 items-baseline text-muted-foreground text-[13.5px] [&_b]:[font:650_21px_var(--font-heading)] [&_b]:text-foreground [&_b]:mr-0.75 [&_small]:text-[13px] max-sm:gap-3 max-sm:flex-wrap max-sm:text-[13px] max-sm:[&_b]:text-[20px]"><span><b>{collection.articles.reduce((sum, a) => sum + (rowDetails.stats.get(rowDetails.detailsOf.get(a.slug)?.id ?? "")?.views ?? 0), 0).toLocaleString("en")}</b> views</span><span><b>{collection.articles.reduce((sum, a) => sum + (rowDetails.stats.get(rowDetails.detailsOf.get(a.slug)?.id ?? "")?.helpful ?? 0), 0)}</b> helpful votes</span><small>Last 30 days</small>{latest && <small className="ml-auto max-sm:basis-full">Last edited {timeAgo(latest.createdAt)} by {latest.author?.name ?? "a former teammate"}</small>}</div>}
+      {rowDetails && <div className="docs-collection-summary flex gap-5.5 items-baseline text-muted-foreground text-[13.5px] [&_b]:[font:650_21px_var(--font-heading)] [&_b]:text-foreground [&_b]:mr-0.75 [&_small]:text-[13px] max-sm:gap-3 max-sm:flex-wrap max-sm:text-[13px] max-sm:[&_b]:text-[20px]"><span><b>{collection.articles.filter((a) => !rowDetails.detailsOf.get(a.slug)?.sample).reduce((sum, a) => sum + (rowDetails.stats.get(rowDetails.detailsOf.get(a.slug)?.id ?? "")?.views ?? 0), 0).toLocaleString("en")}</b> views</span><span><b>{collection.articles.filter((a) => !rowDetails.detailsOf.get(a.slug)?.sample).reduce((sum, a) => sum + (rowDetails.stats.get(rowDetails.detailsOf.get(a.slug)?.id ?? "")?.helpful ?? 0), 0)}</b> helpful votes</span><small>Last 30 days</small>{latest && <small className="ml-auto max-sm:basis-full">Last edited {timeAgo(latest.createdAt)} by {latest.author?.name ?? (latest.codeChangeActionId ? "Autopilot" : "a former teammate")}</small>}</div>}
       {collection.articles.length === 0 && inside.length === 0 ? (
         <EmptyState title="Nothing in this collection yet" description="Add an article or a collection to it, or move some here in the tree." />
       ) : (
@@ -72,7 +72,7 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
           </DocsArticleOrder>
         </Card>
       )}
-      <p className="text-[12px] text-muted-foreground">Drag rows to reorder them; readers see this order.</p>
+      <p className="-mt-4 flex items-center gap-1.5 text-xs text-muted-foreground"><GripVerticalIcon aria-hidden className="size-3.5" />Drag rows to reorder them; readers see this order.</p>
     </>
   );
 }

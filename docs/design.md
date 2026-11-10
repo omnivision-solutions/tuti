@@ -170,8 +170,8 @@ the list picks none to approve at once.
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
   width, the labelled sidebar open beside its own column from 1280px up; under 1280px it
   folds to its rail, its column taking the room. The Inbox (its panes fill the window),
-  Customize (its rail and the portal's preview) and an article's editor (the text is the page; the docs' tree stays
-  beside it) always fold it. The docs' tree folds too, from laptop width up, on its own button at its top ("Hide the docs
+  Customize (its rail and the portal's preview) and every Docs page (its own tree and page panes need
+  the room) always fold it. The docs' tree folds too, from laptop width up, on its own button at its top ("Hide the docs
   tree"; a rail with "Show the docs tree" in its place), remembered per browser on every Docs page (`DocsTreeFold`:
   `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). Every other page has it open. A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).

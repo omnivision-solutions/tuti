@@ -38,6 +38,9 @@ describe("verification annotations", () => {
       verificationRanges(doc("🗓 Each plan has 5 seats."), [...findings]),
     ).toEqual([{ from: 4, to: 25, number: 1, verdict: "outdated" }]);
   });
+  it("annotates a paraphrased finding without changing its number or verdict", () => {
+    expect(verificationRanges(doc("Every plan includes 5 seats for your team."), [{ statement: "Your team gets 5 seats with every plan", verdict: "outdated" }])).toMatchObject([{ from: 1, number: 1, verdict: "outdated" }]);
+  });
   it("does not underline the fix in place of the checked sentence", () => {
     expect(
       verificationRanges(doc("Each plan has 10 seats. You pay monthly."), [

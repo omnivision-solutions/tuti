@@ -294,7 +294,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await editor.click();
   await owner.keyboard.press("ControlOrMeta+End");
   await owner.keyboard.type(" On every device.");
-  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).filter({ visible: true }).click();
   await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
   // (Through its History panel and back, the way back stays.)
   await owner.getByRole("button", { name: "History", exact: true }).click();
@@ -1032,7 +1032,7 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(owner.locator("[data-sonner-toast]").getByText("Save your changes first", { exact: true })).toBeVisible();
   await expect(confirm).toHaveCount(0);
-  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).filter({ visible: true }).click();
   await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(confirm).toContainText("It includes 2 edits Autopilot suggested; they go live too.");
@@ -1108,7 +1108,7 @@ test("an editor open as Autopilot's edit lands: saving the same paragraph is ref
   await expect(editor).toContainText("Pick a theme from the menu in the corner.");
   await expect(owner.getByText("It was saved since you opened it. Your text is kept")).toBeVisible();
   // …then saves: refused, their text still there, the newest shown beside it.
-  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).filter({ visible: true }).click();
   await expect(owner.getByText("Autopilot changed the same part of the article since you opened it. Your text is kept")).toBeVisible();
   await expect(editor).toContainText("Pick a theme from the menu in the corner.");
   const newest = owner.getByRole("region", { name: "The newest version, with Autopilot's edit" });
@@ -1123,7 +1123,7 @@ test("an editor open as Autopilot's edit lands: saving the same paragraph is ref
   await editor.click();
   await owner.keyboard.press("ControlOrMeta+End");
   await owner.keyboard.type(" Dark is there too.");
-  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).filter({ visible: true }).click();
   await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
   await expect(editor).toContainText("Pick a theme from the menu in the corner. Dark is there too.");
   await expect(newest).toHaveCount(0);
@@ -1190,7 +1190,7 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   await expect(other.getByText("Saved", { exact: true }).first()).toBeVisible();
   await other.close();
   await owner.getByLabel("Name").fill("Olive O. Owner");
-  await owner.getByRole("button", { name: "Save", exact: true }).first().click();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).first().click();
   await expect(asTheyHappen).toBeChecked();
   await off.check();
   await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();

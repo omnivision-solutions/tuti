@@ -5,7 +5,7 @@ import { AccessForm, DeleteTabButton, TabSettingsForm } from "@/components/docs"
 import { articleRowDetails, TabContents } from "@/components/docs-article-rows";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
+import { DocsPageHeader } from "@/components/docs-page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { accessChoices } from "@/server/docs-queries";
@@ -37,7 +37,7 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
 
   return (
     <>
-      <PageHeader
+      <DocsPageHeader
         title={tab.name}
         // An article in no collection is on the first tab; on another, a new one starts in its first collection.
         actions={<AddContentMenu parent={null} tab={tab.slug} article={first ? null : (top[0]?.slug ?? false)} />}

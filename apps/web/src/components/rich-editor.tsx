@@ -1,5 +1,7 @@
 "use client";
 
+import { IconTooltip } from "@/components/icon-tooltip";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -35,7 +37,6 @@ import {
   AlignLeftIcon,
   AlignRightIcon,
   AppWindowIcon,
-  ChevronDownIcon,
   BoldIcon,
   CodeIcon,
   FootprintsIcon,
@@ -453,15 +454,15 @@ export function RichEditor({
       >
         {/* Not over text it can't read: its commands would change what's shown (none of it is sent). */}
         {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} className="border-b px-1 py-1" />}
-        {editor && toolbarHost && !unreadable && createPortal(<>
-          <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} expanded />
+        {editor && toolbarHost && createPortal(<>
+          {!unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} expanded />}
           {toolbarEnd}
         </>, toolbarHost)}
         <EditorContent editor={editor} />
-        {editor && bare && (
+        {editor && bare && !unreadable && (
           <>
             <div ref={menus} />
-            {!toolbarId && <SelectionBar editor={editor} onPrompt={setPrompt} host={menusHost} />}
+            <SelectionBar editor={editor} onPrompt={setPrompt} host={menusHost} label={toolbarId ? "Text selection" : "Formatting"} />
             <SlashMenu
               editor={editor}
               host={menusHost}
@@ -777,7 +778,7 @@ function SlashMenu({
 }
 
 /** Formatting over selected text, and an image's, a table's or a code block's controls while one is picked. */
-function SelectionBar({ editor, onPrompt, host }: { editor: Editor; onPrompt: (kind: Prompt) => void; host: () => HTMLElement }) {
+function SelectionBar({ editor, onPrompt, host, label }: { label: string; editor: Editor; onPrompt: (kind: Prompt) => void; host: () => HTMLElement }) {
   // In a table or code with nothing selected, the bar sits above it rather than over the line being written.
   const table = useCallback(() => {
     const { selection } = editor.state;
@@ -809,13 +810,13 @@ function SelectionBar({ editor, onPrompt, host }: { editor: Editor; onPrompt: (k
       className="z-50"
       ref={bar}
     >
-      <Toolbar editor={editor} onPrompt={onPrompt} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
+      <Toolbar label={label} editor={editor} onPrompt={onPrompt} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
     </BubbleMenu>
   );
 }
 
 /** `onImage`: picks images to upload (with uploads set up). */
-function Toolbar({ editor, onPrompt, onImage, className, expanded = false }: { editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; className?: string; expanded?: boolean }) {
+function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label = "Formatting" }: { label?: string; editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; className?: string; expanded?: boolean }) {
   const active = useEditorState({
     editor,
     selector: ({ editor }) => ({
@@ -835,15 +836,18 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false }: { e
   const chain = () => editor.chain().focus();
 
   return (
-    <div role="toolbar" aria-label="Formatting" className={cn("flex flex-wrap items-center gap-0.5", className)}>
+    <div role="toolbar" aria-label={label} className={cn("flex flex-wrap items-center gap-0.5", className)}>
       {!active.image && !active.codeBlock && (
         <>
           {expanded && <>
-            <span className="relative flex shrink-0 items-center"><select aria-label="Text style" className={cn("docs-format-select appearance-none pr-4 max-w-[75px] text-[13px] p-1 bg-docs-surface border-0 rounded-[6px] max-sm:max-w-[52px] max-sm:text-[12px]", active.heading === "text" ? "w-12" : "w-18.75")} value={active.heading} onChange={(event) => {
-              if (event.target.value === "h2") chain().setHeading({ level: 2 }).run();
-              else if (event.target.value === "h3") chain().setHeading({ level: 3 }).run();
+            <Select items={[{ value: "text", label: "Text" }, { value: "h2", label: "Heading" }, { value: "h3", label: "Subheading" }]} value={active.heading} onValueChange={(value) => {
+              if (value === "h2") chain().setHeading({ level: 2 }).run();
+              else if (value === "h3") chain().setHeading({ level: 3 }).run();
               else chain().setParagraph().run();
-            }}><option value="text">Text</option><option value="h2">Heading</option><option value="h3">Subheading</option></select><ChevronDownIcon aria-hidden className="pointer-events-none absolute right-0 size-3" /></span>
+            }}>
+              <SelectTrigger size="sm" aria-label="Text style" className="h-7.5 w-auto gap-1 border-0 bg-transparent px-1 text-xs shadow-none dark:bg-transparent [&>svg]:size-3"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="text">Text</SelectItem><SelectItem value="h2">Heading</SelectItem><SelectItem value="h3">Subheading</SelectItem></SelectContent>
+            </Select>
             <span className="docs-toolbar-separator w-0.25 h-4 bg-border m-[0_3px] shrink-0" />
           </>}
           <Tool icon={BoldIcon} label="Bold" active={active.bold} onClick={() => chain().toggleBold().run()} />
@@ -870,8 +874,9 @@ function Toolbar({ editor, onPrompt, onImage, className, expanded = false }: { e
               "[&_>_summary]:cursor-pointer [&_>_summary]:list-none [&_>_div]:absolute [&_>_div]:top-[100%] [&_>_div]:left-[0] [&_>_div]:w-37.5",
               "[&_>_div]:p-1.25 [&_>_div]:border [&_>_div]:border-border [&_>_div]:rounded-[8px] [&_>_div]:bg-popover",
               "[&_>_div]:shadow-[0_2px_8px_var(--docs-edge)] [&_button]:block [&_button]:p-1.5 [&_button]:w-full [&_button]:text-left",
-              "max-sm:[&_>_summary_span]:hidden",
-            )} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }} onClick={(event) => { if ((event.target as Element).closest("button")) event.currentTarget.open = false; }}><summary>+ <span>Insert</span></summary><div>
+
+            )} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }} onClick={(event) => { if ((event.target as Element).closest("button")) event.currentTarget.open = false; }}><summary>+ <span className="max-sm:sr-only">Insert</span></summary><div>
+              <button type="button" onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>Table</button>
               <button type="button" onClick={() => chain().setCodeBlock().run()}>Code block</button>
               <button type="button" onClick={() => chain().setHorizontalRule().run()}>Divider</button>
               <button type="button" onClick={() => onPrompt("video")}>Video</button>
@@ -955,19 +960,18 @@ function Tool({
   onClick: () => void;
 }) {
   return (
-    <Button
+    <IconTooltip label={label}><Button
       type="button"
       variant={active ? "secondary" : "ghost"}
       size="icon-sm"
       aria-label={label}
       aria-pressed={active}
-      title={label}
       // Keep focus (and the selection) in the text while clicking; keyboard users still reach it with Tab.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
     >
       <Icon />
-    </Button>
+    </Button></IconTooltip>
   );
 }
 

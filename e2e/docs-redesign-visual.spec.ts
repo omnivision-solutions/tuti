@@ -50,11 +50,13 @@ test("Docs surfaces in laptop light, laptop dark and phone layouts", async ({ br
   const text = (text: string) => ({ type: "text", text });
   const p = (value: string) => ({ type: "paragraph", content: [text(value)] });
   const rich = (parts: (string | [string, string])[]) => ({ type: "paragraph", content: parts.map((part) => typeof part === "string" ? text(part) : { ...text(part[0]), marks: [{ type: part[1] }] }) });
-  const callout = { type: "blockquote", content: [rich(["Two-way sync is in progress. ", ["Follow it on the roadmap", "bold"], " to hear when it ships."])] };
+  const link = (value: string, href: string) => ({ ...text(value), marks: [{ type: "link", attrs: { href } }] });
+  const callout = { type: "blockquote", content: [{ type: "paragraph", content: [text("Two-way sync is in progress. "), link("Follow it on the roadmap", "https://acme.example/roadmap"), text(" to hear when it ships.")] }] };
   const h = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: [text(value)] });
   const sync = {
     type: "doc",
     content: [
+      p("Bring your Google events into Acme Calendar."),
       p("Acme Calendar can import a Google calendar once, as a file. Changes made later in Google don’t show up here."),
       h("Export from Google"),
       {
@@ -103,13 +105,13 @@ test("Docs surfaces in laptop light, laptop dark and phone layouts", async ({ br
   for (const article of ["time-zones", "change-the-theme"]) await api(`/articles/${article}`, { body: "Open Settings to adjust your calendar." }, "PATCH");
   await api("/articles", { title: "Old calendar guide", body: "An older guide." });
   await api("/articles/old-calendar-guide", undefined, "DELETE");
-  const repo = `acme/calendar-${randomUUID().slice(0, 8)}`;
+  const repo = "acme/app";
   await connectGithub(team, slug, { repositories: [{ id: randomInt(1_000_000, 2_000_000_000), fullName: repo }] });
   const snapshot = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/repository`, {
     method: "POST",
     body: JSON.stringify({
       repo,
-      commit: "c0ffee1234567",
+      commit: "4be1c0f1234567",
       files: {
         "src/billing/plans.ts": "export const SEATS_PER_PLAN = 10;",
         "src/billing/seats.ts": "export const PRORATE = true;",
@@ -142,12 +144,13 @@ test("Docs surfaces in laptop light, laptop dark and phone layouts", async ({ br
   // A teammate keeps editing the checked wording while the suggested fix waits for review.
   const { revisions } = await api("/articles/plans-and-seats/revisions", undefined, "GET") as unknown as { revisions: { id: string }[] };
   await api("/articles/plans-and-seats", { revision: revisions[0]!.id, content: { type: "doc", content: [
+    p("What each plan includes, and how seats are billed."),
     rich(["Each plan has 5 seats. Add seats from ", ["Billing", "bold"], " at any time."]),
     p("You pay for the rest of the month for each seat you add."),
     p("People are admins or members. Admins manage billing and seats; members use the calendar."),
     h("Change your plan"),
     rich(["Open ", ["Billing", "bold"], ", pick ", ["Change plan", "bold"], " and choose the one you need. The new price starts on your next invoice."]),
-    { type: "blockquote", content: [p("Need more than 50 seats? Contact support for a yearly plan.")] },
+    { type: "blockquote", content: [{ type: "paragraph", content: [text("Need more than 50 seats? "), link("Contact support", "https://acme.example/support"), text(" for a yearly plan.")] }] },
     { type: "paragraph" },
   ] }, description: "What each plan includes, and how seats are billed." }, "PATCH");
   // Fictional readership and save times make every state visible in the design fixture.
@@ -193,7 +196,7 @@ test("Docs surfaces in laptop light, laptop dark and phone layouts", async ({ br
       await expect(team.locator(".docs-workspace")).toBeVisible();
       if (path.includes("google") || path.includes("plans")) {
         await expect(team.locator("#article-title textarea")).toBeVisible();
-        await expect(team.locator('.docs-editor-actions button[aria-label="Save"]')).toHaveText("Saved");
+        await expect(team.locator('.docs-editor-actions .docs-article-save')).toHaveText("Saved");
       }
       if (path.endsWith("/settings")) {
         await team.getByRole("region", { name: "Access", exact: true }).getByRole("radio", { name: "Signed-in readers", exact: true }).check();
@@ -213,7 +216,7 @@ test("Docs surfaces in laptop light, laptop dark and phone layouts", async ({ br
         await expect(finding.getByRole("link", { name: "Review it" })).toBeVisible();
         await expect(team.locator('[data-verdict="unclear"]')).toHaveCount(1);
         await expect(team.locator('[data-verdict="outdated"]')).toHaveCount(1);
-        await expect(team.locator('.docs-editor-page [aria-label^="Finding "]')).toHaveText(["1", "2"]);
+        await expect(team.locator('.docs-editor-page [data-finding] > [aria-hidden="true"]')).toHaveText(["1", "2"]);
       }
       if (width === 1440) {
         await expect(team.getByRole("button", { name: "Developers", exact: true })).toBeVisible();

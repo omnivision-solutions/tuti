@@ -1,10 +1,10 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SettingsIcon } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useContext, useState } from "react";
 import { toast } from "sonner";
 
+import { ToolsContext } from "@/components/article-tools";
 import { CollectionSelect } from "@/components/collection-select";
 import { type ArticlePlace, PlaceFields, useArticleEditor } from "@/components/docs";
 import { Button } from "@/components/ui/button";
@@ -107,14 +107,8 @@ function NewPlace() {
  */
 export function ArticleSettings({ saved, inline = false }: { saved?: Saved; inline?: boolean }) {
   const [open, setOpen] = useState(false);
-  const pathname = usePathname();
-  const search = useSearchParams();
-  const router = useRouter();
-  const close = () => {
-    const next = new URLSearchParams(search);
-    next.delete("settings");
-    router.replace(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false });
-  };
+  const tools = useContext(ToolsContext);
+  const close = () => tools?.select(null);
   if (inline && saved) return <SavedSettings {...saved} inline onSaved={close} />;
   return (
     // A panel from the right, beside the article (which stays as it was underneath).
@@ -257,7 +251,7 @@ function SavedSettings({
               )}
             </Field>
             <Field>
-              <FieldLabel htmlFor="article-description">Meta description</FieldLabel>
+              <FieldLabel htmlFor="article-description">Search description</FieldLabel>
               <Textarea
                 id="article-description"
                 name="description"
@@ -267,7 +261,7 @@ function SavedSettings({
                 placeholder="From the text when left empty"
                 aria-describedby="article-description-hint"
               />
-              <FieldDescription id="article-description-hint">Shown under the title in search results.</FieldDescription>
+              <FieldDescription id="article-description-hint">Shows in search results and link previews.</FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="article-keywords">Keywords</FieldLabel>

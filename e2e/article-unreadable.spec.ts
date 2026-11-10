@@ -40,6 +40,10 @@ test("an article with something this editor doesn't know opens read-only, shows 
       await expect(editor).toHaveAttribute("contenteditable", "false");
       await expect(editor).toHaveAttribute("aria-readonly", "true");
       await expect(editor).toHaveAccessibleDescription(/Reload the page to edit it/);
+      await team.getByRole("toolbar", { name: "Article tools" }).getByRole("button", { name: "History", exact: true }).click();
+      const tools = team.getByRole("complementary", { name: "Article tools" });
+      await expect(tools.getByRole("heading", { name: "History", exact: true })).toBeVisible();
+      await tools.getByRole("button", { name: "Collapse article tools" }).click();
       // Still reached with Tab from the title, so it can be read (and its note heard).
       await team.getByLabel("Title").focus();
       // The title now shares its row with Save and Publish; the body remains in the keyboard order.
@@ -53,7 +57,7 @@ test("an article with something this editor doesn't know opens read-only, shows 
       await team.keyboard.type(" More.");
       expect(await submitGetsPastTheEditor(team)).toBe(false);
       // Save itself (the top bar's) is held too, and focuses the note so a screen reader reads it again.
-      await team.getByRole("button", { name: "Save", exact: true }).click();
+      await team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).click();
       await expect(team.getByRole("alert").filter({ hasText: "Reload the page to edit it" })).toBeFocused();
       expect(await articleContent(slug, "getting-started")).toEqual(stored);
     });

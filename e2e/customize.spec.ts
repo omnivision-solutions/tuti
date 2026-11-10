@@ -174,7 +174,7 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   }).toPass({ timeout: 20_000 });
 
   // The sidebar is folded on Customize (its rail and the portal's preview need the room), again each time it opens; from
-  // 1280px up a page of panes (Docs, Settings: a column of its own) keeps it open beside its column, and under 1280px folds it.
+  // Docs always folds it; Settings keeps it open from 1280px and folds it below that.
   await owner.goto(`/app/${slug}/customize/branding`);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
@@ -182,7 +182,7 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await sidebar.getByRole("link", { name: "Docs", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs`);
-  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   await owner.setViewportSize({ width: 1100, height: 720 });
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   await owner.setViewportSize({ width: 1280, height: 720 });

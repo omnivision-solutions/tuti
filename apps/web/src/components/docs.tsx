@@ -159,7 +159,7 @@ export function ArticleSaveButton({ label = "Save", outline = false, filled = fa
     <Button
       type="submit"
       form={ARTICLE_FORM}
-      aria-label={label}
+      className="docs-article-save"
       disabled={pending}
       variant={outline || (!filled && !unsaved) ? "outline" : "default"}
     >
@@ -184,7 +184,6 @@ export function ArticleForm({
   mediaUrls,
   defaultTitle,
   sections = false,
-  description,
   findings,
 }: {
   findings?: import("@/components/verification-marks").VerificationFinding[];
@@ -196,7 +195,6 @@ export function ArticleForm({
    * page", any other 43rem, and so does its editor, so the text wraps as it will publish.
    */
   sections?: boolean;
-  description?: string;
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
 }) {
@@ -335,7 +333,7 @@ export function ArticleForm({
       id={ARTICLE_FORM}
       {...keepingFields(action)}
       onInput={changed}
-      className={cn("docs-article-form w-full m-[0_auto] p-[32px_36px_56px] box-content max-w-[min(43rem,_calc(100%_-_72px))] pt-7 [&_>_[data-slot='field-group']]:gap-4", wide ? "max-w-[min(46rem,calc(100%_-_72px))]" : "max-w-[min(43rem,calc(100%_-_72px))]")}
+      className={cn("docs-article-form [&_.tiptap>p:first-child]:text-[17px] [&_.tiptap>p:first-child]:text-muted-foreground [&_.tiptap>p:first-child]:leading-[1.6] w-full m-[0_auto] p-[32px_36px_56px] box-content max-w-[min(43rem,_calc(100%_-_72px))] pt-7 [&_>_[data-slot='field-group']]:gap-4", wide ? "max-w-[min(46rem,calc(100%_-_72px))]" : "max-w-[min(43rem,calc(100%_-_72px))]")}
     >
       {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
       {!article && <PlaceFields place={place} />}
@@ -360,16 +358,20 @@ export function ArticleForm({
           )}
         </div>
         {state.newest ? <NewestVersion newest={state.newest} /> : seenSaved && <NewestVersion newest={seenSaved} merged />}
-        {description && <p className="docs-article-description mb-2 text-[17px] leading-[1.6] text-muted-foreground max-sm:text-[14px]">{description}</p>}
         {!article && (
+          <Field>
+          <FieldLabel htmlFor="new-article-description">Search description</FieldLabel>
           <Textarea
+            id="new-article-description"
             name="description"
-            aria-label="Description"
+            aria-describedby="new-article-description-hint"
             maxLength={300}
-            placeholder="What it helps with, e.g. inviting your team"
-            className="docs-new-description dark:bg-transparent border-0 rounded-none p-0 shadow-none ring-0 bg-transparent text-[14px] min-h-5.5 text-muted-foreground [&:focus-visible]:shadow-none [&:focus-visible]:ring-0 [&:focus-visible]:border-[transparent] [&::placeholder]:text-muted-foreground [&::placeholder]:[opacity:1]"
+            placeholder="A short summary for search results"
+            className="docs-new-description text-sm"
             rows={1}
           />
+          <FieldDescription id="new-article-description-hint">Shows in search results and link previews.</FieldDescription>
+          </Field>
         )}
         {!article && (
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -614,8 +616,8 @@ export function ArticleChanges({
 
   const controls = (
     <details open={compact ? undefined : true} className={compact ? "docs-change-menu relative right-[auto] top-[auto] z-20 [&:not([open])]:relative [&:not([open])]:top-[auto] [&:not([open])]:right-[auto] [&[open]]:w-auto [&[open]]:p-0 [&[open]]:bg-transparent [&[open]]:border-0 [&[open]]:rounded-[8px] [&[open]]:relative [&_>_button]:mt-2 [&[open]_>_button]:flex [&[open]_>_button]:w-47.5 [&[open]_>_button]:justify-start [&[open]_>_button]:m-0 [&[open]_>_button]:bg-popover [&[open]_>_button]:border [&[open]_>_button]:border-border [&[open]_>_button]:absolute [&[open]_>_button]:left-[0] [&[open]_>_button]:top-8 [&[open]_>_button]:z-30 [&[open]_>_button:last-child]:top-16.5" : "contents"}>
-      <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle text-[12.5px] text-highlight-foreground list-none cursor-pointer inline-flex items-center gap-1.5 p-[3px_9px] bg-highlight rounded-[30px] max-sm:text-[12px] max-sm:gap-1 max-sm:px-2" : "hidden"}>
-        <span className="size-1.5 rounded-full bg-highlight-foreground" />
+      <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle text-xs text-foreground list-none cursor-pointer inline-flex items-center gap-1.5 p-[3px_9px] bg-highlight rounded-[30px] max-sm:text-xs max-sm:gap-1 max-sm:px-2" : "hidden"}>
+        <span aria-hidden className="size-1.5 rounded-full bg-status-under-review" />
         Unpublished changes
         <ChevronDownIcon aria-hidden className="size-3" />
       </summary>
@@ -668,7 +670,7 @@ export function ArticleChanges({
     >
       <div className={compact ? "sr-only" : "flex min-w-0 flex-1 flex-col gap-0.5"}>
         <h2 id="article-changes-title" className="flex items-center gap-2 text-sm font-semibold">
-          <span aria-hidden className="size-2 shrink-0 rounded-full bg-highlight-foreground" />
+          <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-under-review" />
           Unpublished changes
         </h2>
         <p className="text-sm text-muted-foreground">Saved {saved}. Readers see the published version until you publish them.</p>
@@ -709,7 +711,7 @@ export function RestoreVersionButton({
         }
       }}
     >
-      <AlertDialogTrigger render={<Button variant="outline" size="sm" className="h-[27px] px-2 text-[12px]" disabled={pending} />}>Restore this version</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button variant="outline" size="sm" className="h-[27px] px-2 text-xs" disabled={pending} />}>Restore this version</AlertDialogTrigger>
       <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle>Restore this version?</AlertDialogTitle>
@@ -847,7 +849,7 @@ function CollectionFields({
             defaultValue={collection?.description}
             placeholder="Optional, shown in your docs"
           />
-          {separateIcon && <small className="docs-description-count absolute bottom-1.5 right-2.25 text-muted-foreground text-[11px]">{descriptionLength} / 300</small>}
+          {separateIcon && <small className="docs-description-count absolute bottom-1.5 right-2.25 text-muted-foreground text-xs">{descriptionLength} / 300</small>}
         </div>
       </Field>
     </>
@@ -988,7 +990,7 @@ export function CollectionSettingsForm({
         "sm:[&_[data-slot='card-content']_fieldset]:pl-40.25 sm:[&_[data-slot='card-content']_fieldset_>_legend]:absolute",
         "sm:[&_[data-slot='card-content']_fieldset_>_legend]:left-[0] sm:[&_[data-slot='card-content']_fieldset_>_legend]:top-1",
         "sm:[&_[data-slot='card-content']_fieldset_>_legend]:w-36.25 sm:[&_[data-slot='card-content']_fieldset_fieldset]:pl-0",
-        "dark:[&_input]:bg-docs-surface dark:[&_textarea]:bg-docs-surface dark:[&_[data-slot='select-trigger']]:bg-docs-surface",
+
         "[&_[data-slot='field']:has(.docs-description-count)_>_div]:min-w-0",
       )}
     >
@@ -1042,7 +1044,7 @@ export function CollectionSettingsForm({
       {actionsHost &&
         createPortal(
           <>
-            {unsaved > 0 && <span className="mr-auto inline-flex items-center gap-1.5 text-[12px] text-highlight-foreground"><span aria-hidden className="size-1 rounded-full bg-highlight-foreground" />{unsaved} unsaved {unsaved === 1 ? "change" : "changes"}</span>}
+            {unsaved > 0 && <span className="mr-auto inline-flex items-center gap-1.5 text-xs text-highlight-foreground"><span aria-hidden className="size-1 rounded-full bg-status-under-review" />{unsaved} unsaved {unsaved === 1 ? "change" : "changes"}</span>}
             <Link href={backHref} className="docs-cancel p-[6px_8px] text-[13px] text-muted-foreground">
               Cancel
             </Link>
@@ -1434,7 +1436,7 @@ export function TabDialog({ projectSlug, first = false, open: controlledOpen, on
         <PlusIcon aria-hidden className="text-muted-foreground" />
         New tab
       </DialogTrigger>}
-      <DialogContent finalFocus={renderTrigger ? undefined : () => document.querySelector<HTMLElement>(".docs-tab-switcher")}>
+      <DialogContent finalFocus={renderTrigger ? undefined : () => Array.from(document.querySelectorAll<HTMLElement>(".docs-tab-switcher")).find((element) => element.getClientRects().length > 0)}>
         <form {...keepingFields(action)}>
           <DialogHeader>
             <DialogTitle>New tab</DialogTitle>

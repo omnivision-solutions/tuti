@@ -64,7 +64,9 @@ test("in the first run the team brings its help center across by its address: it
   await owner.getByRole("link", { name: "See docs" }).click();
   await owner.waitForURL(`**/app/${slug}/docs`);
   await expect(owner.getByText("Billing & plans").first()).toBeVisible();
-  await expect(owner.getByRole("region", { name: "Waiting to publish" }).getByRole("listitem").filter({ hasText: "Install Acme" })).toContainText("Draft");
+  const queue = owner.getByRole("region", { name: "Waiting to publish" });
+  await queue.getByRole("button", { name: /^Show \d+ more$/ }).click();
+  await expect(queue.getByRole("listitem").filter({ hasText: "Install Acme" }).getByRole("button", { name: "Publish", exact: true })).toBeVisible();
   await checkpoint(owner, "help-center-drafts");
 
   // An old path goes to its new page.

@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import { Fragment } from "react";
 import { prisma } from "@tuti/db";
-import { editsInChanges, DELETED_ARTICLE_DAYS } from "@tuti/jobs";
+import { DELETED_ARTICLE_DAYS } from "@tuti/jobs";
 import { ExternalLinkIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -22,6 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { VerifyAll } from "@/components/verify-all";
+import { plural } from "@/lib/autopilot-words";
 import { timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { getMembership } from "@/server/membership";
@@ -82,7 +83,13 @@ export default async function TeamDocsPage(
   // At a glance: how many are out, read and found helpful (Reporting's window), and how many wait to be published.
   const articles = [...rowDetails.detailsOf.values()];
   const published = articles.filter((a) => a.publishedAt).length;
-  const waiting = await Promise.all(
+  // One query for the whole queue. Waiting edits must be reviewed before a draft can go live.
+  const edits = await prisma.articleRevision.findMany({
+    where: { articleId: { in: articles.filter((a) => !a.publishedAt).map((a) => a.id) }, codeChangeAction: { status: { in: ["PENDING", "STALE", "SCHEDULED"] } } },
+    select: { articleId: true }, distinct: ["articleId"],
+  });
+  const needsReview = new Set(edits.map((edit) => edit.articleId));
+  const waiting = (
     articles
       .filter((a) => !a.publishedAt || a.changes)
       .toSorted(
@@ -90,7 +97,7 @@ export default async function TeamDocsPage(
           (rowDetails.savedAt.get(b.id) ?? b.updatedAt).getTime() -
           (rowDetails.savedAt.get(a.id) ?? a.updatedAt).getTime(),
       )
-      .map(async (a) => ({
+      .map((a) => ({
         slug: a.slug,
         title: a.title,
         published: Boolean(a.publishedAt),
@@ -100,10 +107,8 @@ export default async function TeamDocsPage(
           )?.name ?? "Not in a collection",
         saved: timeAgo(rowDetails.savedAt.get(a.id) ?? a.updatedAt),
         savedAt: (a.changes?.updatedAt ?? a.updatedAt).toISOString(),
-        edits: a.publishedAt
-          ? []
-          : (await editsInChanges(a.id)).map((edit) => edit.actionId),
-      })),
+        reviewRequired: !a.publishedAt && needsReview.has(a.id),
+      }))
   );
   const mostRead = articles
     .filter((a) => a.publishedAt && !a.sample)
@@ -124,7 +129,7 @@ export default async function TeamDocsPage(
     <>
       <DocsPageHeader
         title="Overview"
-        description={`${articles.length} articles in ${docs.collections.length} collections`}
+        description={`${plural(articles.length, "article")} in ${plural(docs.collections.length, "collection")}`}
         actions={
           <>
             <a
@@ -149,7 +154,7 @@ export default async function TeamDocsPage(
         "[&_>_a]:flex [&_>_a]:flex-col [&_>_a]:gap-0.5 [&_b]:font-heading [&_b]:text-[30px] [&_b]:leading-[1.2] [&_b]:font-[650]",
         "[&_b]:tracking-[-0.03em] [&_span]:text-muted-foreground [&_span]:text-[13px] [&_small]:text-muted-foreground [&_small]:text-[13px]",
         "[&_>_small]:ml-auto [&_>_small]:[align-self:end] max-sm:gap-8 max-sm:pb-5.5 max-sm:flex-wrap max-sm:gap-x-8 max-sm:gap-y-3.5",
-        "max-sm:[&_b]:text-[27px] max-sm:[&_>_small]:basis-full max-sm:[&_>_small]:text-[12px] max-sm:[&_>_small]:ml-0",
+        "max-sm:[&_b]:text-[27px] max-sm:[&_>_small]:basis-full max-sm:[&_>_small]:text-xs max-sm:[&_>_small]:ml-0",
       )}>
         {[
           { value: published, label: "Live articles" },
@@ -192,7 +197,7 @@ export default async function TeamDocsPage(
             <h2 id="most-read-title">
               Most read <small>{INSIGHTS_DAYS} days</small>
             </h2>
-            <span className="docs-read-columns [&_>_span]:w-14.5 [&_>_span]:shrink-0 [&_>_span]:text-right [&_>_span]:tabular-nums [&_>_span]:text-[12px] flex gap-3 text-muted-foreground">
+            <span className="docs-read-columns [&_>_span]:w-14.5 [&_>_span]:shrink-0 [&_>_span]:text-right [&_>_span]:tabular-nums [&_>_span]:text-xs flex gap-3 text-muted-foreground">
               <span>Views</span>
               <span>Helpful</span>
             </span>
@@ -236,7 +241,7 @@ export default async function TeamDocsPage(
         <ShieldCheckIcon className="size-5 text-primary" />
         <div>
           <h2>Verify all articles against your code</h2>
-          <p>Checks the {published} published articles; fixes wait for you in Autopilot.</p>
+          <p>Checks {plural(published, "published article")}; fixes wait for you in Autopilot.</p>
         </div>
         <VerifyAll
           projectSlug={slug}
@@ -247,7 +252,7 @@ export default async function TeamDocsPage(
       </section>
       <footer className="docs-live-footer flex items-center gap-1.75 text-[13px] text-muted-foreground [&_a]:flex [&_a]:items-center [&_a]:gap-1.25 [&_a]:ml-auto max-sm:flex-wrap max-sm:[&_a]:ml-0 max-sm:[&_a]:basis-full">
         <span className="size-1.5 rounded-full bg-primary" />
-        {published} articles live{docs.tabs[0] && ` · ${docs.tabs[0].name} tab`}
+        {plural(published, "article")} live{docs.tabs[0] && ` · ${docs.tabs[0].name} tab`}
         <a href={`${portal}/docs`} target="_blank" rel="noreferrer">
           {portal.replace(/^https?:\/\//, "")}/docs <ExternalLinkIcon className="size-3" />
         </a>

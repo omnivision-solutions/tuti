@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useSyncExternalStore } from "react";
 
 import { ARTICLE_SENTENCE_JUMP, focusArticleSentence } from "@/components/article-sentence-jump";
+import { IconTooltip } from "@/components/icon-tooltip";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
@@ -16,7 +17,7 @@ const TOOLS = {
   Verify: ShieldCheckIcon,
 };
 type Tool = keyof typeof TOOLS;
-const ToolsContext = createContext<{
+export const ToolsContext = createContext<{
   active: Tool | null;
   select: (tool: Tool | null) => void;
 } | null>(null);
@@ -49,28 +50,39 @@ export function ArticleTools({
     () => true,
   );
   const active = search.has("history") ? "History" : search.has("verify") ? "Verify" : search.has("settings") ? "Settings" : null;
+  const card = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const focusOnOpen = useRef(false);
   const restoreFocus = useRef<Tool | null>(null);
   const jumpAfterClose = useRef<string | null>(null);
   const select = (tool: Tool | null) => {
     if (!tool) restoreFocus.current = active;
+    else if (!active) focusOnOpen.current = true;
     const next = new URLSearchParams(search);
     for (const key of ["settings", "history", "verify", "revision"]) next.delete(key);
     if (tool) next.set(tool.toLowerCase(), "");
     router.replace(`${pathname}${next.size ? `?${next.toString().replace(/(settings|history|verify)=(?=&|$)/g, "$1")}` : ""}`, { scroll: false });
   };
   useEffect(() => {
+    if (active && desktop && focusOnOpen.current) {
+      heading.current?.focus();
+      focusOnOpen.current = false;
+    }
     if (!active && restoreFocus.current) {
       document.querySelector<HTMLButtonElement>(`[data-article-tools] button[aria-label="${restoreFocus.current}"]`)?.focus();
       restoreFocus.current = null;
     }
-  }, [active]);
+  }, [active, desktop]);
   useEffect(() => {
     if (!desktop || !active) return;
     const escape = (event: KeyboardEvent) => {
-      const overlayOpen = Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="listbox"]')).some(
+      if (event.defaultPrevented || !card.current?.contains(event.target as Node)) return;
+      // A picker's own Escape can close its popup before this document listener runs.
+      if ((event.target as Element).closest("[aria-haspopup]")) return;
+      const overlayOpen = Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"]')).some(
         (overlay) => overlay.getClientRects().length > 0,
       );
-      if (event.key === "Escape" && !overlayOpen) select(null);
+      if (event.key === "Escape" && !overlayOpen) { event.preventDefault(); select(null); }
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
@@ -89,10 +101,10 @@ export function ArticleTools({
   const content = active && (
     <>
       <div className="docs-tools-heading flex items-center justify-between p-[20px_18px_10px] [&_h2]:[font:600_17px_var(--font-sans)]">
-        {desktop ? <h2>{active}</h2> : <SheetTitle tabIndex={-1} className="outline-none">{active === "Settings" ? "Article settings" : active}</SheetTitle>}
-        <Button variant="ghost" size="icon-sm" aria-label="Collapse article tools" title="Collapse article tools" onClick={() => select(null)}>
+        {desktop ? <h2 ref={heading} tabIndex={-1} className="outline-none">{active}</h2> : <SheetTitle tabIndex={-1} className="outline-none">{active === "Settings" ? "Article settings" : active}</SheetTitle>}
+        <IconTooltip label="Collapse article tools"><Button variant="ghost" size="icon-sm" aria-label="Collapse article tools" onClick={() => select(null)}>
           <PanelRightCloseIcon />
-        </Button>
+        </Button></IconTooltip>
       </div>
       <nav aria-label="Article tool panels" className={cn(
         "docs-tool-tabs flex gap-0.5 p-[0_12px_12px] [&_button]:gap-1.25 [&_button]:h-7.5 [&_button]:p-[0_7px] [&_button]:text-[13px]",
@@ -119,7 +131,7 @@ export function ArticleTools({
         "[&_fieldset_>_label]:bg-transparent [&_[data-slot='field-label']]:text-[13px] [&_form]:text-[13px] [&_[aria-label='Versions']]:gap-1",
         "[&_[aria-label='Versions']_li]:pb-1.5 [&_[aria-label='Versions']_[data-slot='avatar']]:w-6.5",
         "[&_[aria-label='Versions']_[data-slot='avatar']]:h-6.5 [&_[aria-label='Versions']_[data-slot='avatar']]:z-[1]",
-        "[&_[aria-label='Versions']_[data-slot='badge']]:text-[12px] [&_[aria-label='Versions']_>_li]:relative",
+        "[&_[aria-label='Versions']_[data-slot='badge']]:text-xs [&_[aria-label='Versions']_>_li]:relative",
         "[&_[aria-label='Versions']_>_li]:pb-4.25 [&_[aria-label='Versions']_>_li:not(:last-child)::before]:[content:'']",
         "[&_[aria-label='Versions']_>_li:not(:last-child)::before]:absolute [&_[aria-label='Versions']_>_li:not(:last-child)::before]:top-9.5",
         "[&_[aria-label='Versions']_>_li:not(:last-child)::before]:bottom-0 [&_[aria-label='Versions']_>_li:not(:last-child)::before]:left-3.25",
@@ -146,7 +158,7 @@ export function ArticleTools({
         {children}
         {desktop ? (
           active && (
-            <aside aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden max-xl:w-75 min-w-0 min-h-0 rounded-[14px] bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+            <aside ref={card} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden max-xl:w-75 min-w-0 min-h-0 rounded-[14px] bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
               {content}
             </aside>
           )
@@ -168,9 +180,9 @@ export function ArticleTools({
               "[&[data-tool='Verify']]:h-auto! [&_.docs-tools-heading]:pt-2.25 [&_.docs-tools-heading]:pb-1.5 [&_.docs-tool-tabs]:pb-2.25",
               "[&_.docs-tools-scroll]:p-[2px_20px_20px]",
               "[&_.docs-tools-scroll_[aria-label='Versions']_a_>_span:last-child_>_span:first-child]:text-[13px]",
-              "[&_.docs-tools-scroll_[aria-label='Versions']_a_>_span:last-child_>_span:last-child]:text-[11.5px]",
-              "[&_.docs-version-diff_[data-slot='button']]:h-6.75 [&_.docs-version-diff_[data-slot='button']]:text-[11.5px]",
-              "[&_.docs-verify-again]:top-5.5 [&_.docs-version-diff_button]:h-6.75 [&_.docs-version-diff_button]:text-[11.5px]",
+              "[&_.docs-tools-scroll_[aria-label='Versions']_a_>_span:last-child_>_span:last-child]:text-xs",
+              "[&_.docs-version-diff_[data-slot='button']]:h-6.75 [&_.docs-version-diff_[data-slot='button']]:text-xs",
+              "[&_.docs-verify-again]:top-5.5 [&_.docs-version-diff_button]:h-6.75 [&_.docs-version-diff_button]:text-xs",
             )} data-tool={active}>
               {content}
             </SheetContent>
@@ -188,18 +200,16 @@ export function ArticleToolButtons() {
   return (
     <div data-article-tools role="toolbar" aria-label="Article tools" className="docs-tool-icons flex gap-0.75 ml-auto [&[data-open='true']]:hidden max-lg:[&[data-open='true']]:flex max-sm:gap-0" data-open={Boolean(tools.active)}>
       {Object.entries(TOOLS).map(([name, Icon]) => (
-        <Button
-          key={name}
+        <IconTooltip key={name} label={name}><Button
           type="button"
           variant="ghost"
           size="icon-sm"
           aria-label={name}
-          title={name}
           aria-expanded={tools.active === name}
           onClick={() => tools.select(name as Tool)}
         >
           <Icon />
-        </Button>
+        </Button></IconTooltip>
       ))}
     </div>
   );

@@ -1,3 +1,4 @@
+import pg from "pg";
 import { randomUUID } from "node:crypto";
 
 import { expect, test, type Browser } from "@playwright/test";
@@ -46,7 +47,7 @@ test("an article editor keeps Save and Publish visible while its text scrolls", 
   await expect(team.getByRole("textbox", { name: "Article", exact: true })).toBeVisible();
   await team.locator(".docs-editor-scroll").evaluate((pane) => pane.scrollTo(0, 700));
   expect(await team.locator(".docs-editor-scroll").evaluate((pane) => pane.scrollTop)).toBeGreaterThanOrEqual(700);
-  await expect(team.getByRole("button", { name: "Save", exact: true })).toBeInViewport();
+  await expect(team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ })).toBeInViewport();
   await expect(team.getByRole("button", { name: "Publish", exact: true })).toBeInViewport();
   await checkpoint(team, "docs-editor-sticky-actions", { fullPage: false });
 });
@@ -63,7 +64,7 @@ test("a short window keeps Save and Publish in reach while editing the end of a 
   await team.keyboard.type("Invite the rest of your team.");
   await expect(article.locator("p").last()).toContainText("Invite the rest of your team.");
   expect(await team.locator(".docs-editor-scroll").evaluate((pane) => pane.scrollTop)).toBeGreaterThan(700);
-  const save = team.getByRole("button", { name: "Save", exact: true });
+  const save = team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ });
   await expect.soft(save).toBeInViewport();
   await expect.soft(team.getByRole("button", { name: "Publish", exact: true })).toBeInViewport();
   await expect(team.getByRole("toolbar", { name: "Formatting", exact: true })).toBeInViewport();
@@ -82,7 +83,7 @@ test("typing in a phone article editor keeps its title, parent link and Save in 
   const back = team.locator('[data-slot="docs-page-header"]').getByRole("link", { name: "Docs", exact: true });
   const title = team.getByRole("textbox", { name: "Title", exact: true });
   const article = team.getByRole("textbox", { name: "Article", exact: true });
-  const save = team.getByRole("button", { name: "Save", exact: true });
+  const save = team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ });
   await expect(save).toBeInViewport();
 
   for (const [field, text] of [[title, "Invite your whole team"], [article, "Owners can send invitations from Settings."]] as const) {
@@ -110,14 +111,16 @@ test("a new article’s collection and pinned formatting survive navigation betw
   await expect(team.getByRole("combobox", { name: "In collection", exact: true })).toContainText("Billing");
   await expect(team.getByRole("toolbar", { name: "Formatting", exact: true })).toBeInViewport();
   await team.getByRole("textbox", { name: "Title", exact: true }).fill("Your first invoice");
-  await team.getByRole("textbox", { name: "Description", exact: true }).fill("Download and read your invoices.");
+  await team.getByRole("textbox", { name: "Search description", exact: true }).fill("Download and read your invoices.");
   const text = team.getByRole("textbox", { name: "Article", exact: true });
   await text.fill("Open Billing to download it.");
   const style = team.getByRole("combobox", { name: "Text style" });
-  await style.selectOption("h2");
+  await style.click();
+  await team.getByRole("option", { name: "Heading", exact: true }).click();
   await expect(text.getByRole("heading", { name: "Open Billing to download it.", level: 2 })).toBeVisible();
-  await expect(style).toHaveValue("h2");
-  await style.selectOption("text");
+  await expect(style).toContainText("Heading");
+  await style.click();
+  await team.getByRole("option", { name: "Text", exact: true }).click();
   await expect(text.locator("p").first()).toHaveText("Open Billing to download it.");
   await text.locator("p").first().click();
   const list = team.getByRole("toolbar", { name: "Formatting", exact: true }).getByRole("button", { name: "Bulleted list", exact: true });
@@ -128,7 +131,9 @@ test("a new article’s collection and pinned formatting survive navigation betw
   await team.getByRole("button", { name: "Save draft", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/your-first-invoice`);
   await expect(team.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Your first invoice");
-  await expect(team.getByText("Download and read your invoices.", { exact: true })).toBeVisible();
+  await expect(team.locator(".docs-editor-scroll")).not.toContainText("Download and read your invoices.");
+  await team.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(team.getByRole("textbox", { name: "Search description" })).toHaveValue("Download and read your invoices.");
   await checkpoints(testInfo)(team, "docs-new-collection-navigation");
 });
 
@@ -167,7 +172,7 @@ test("the article text matches the portal's width at 1440px, with and without se
     await team.keyboard.type("Owners can manage the team.");
   }
   await expect(text.locator("h2")).toHaveCount(2);
-  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).click();
   await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
   // Wait for the refreshed article to reach the form: its new sections must not rewrap the open editor.
   await expect(revision).not.toHaveValue(before);
@@ -324,4 +329,119 @@ test("the phone Docs sheet keeps app navigation reachable without a breadcrumb b
   await expect(app).toBeVisible();
   await app.getByRole("link", { name: "Settings", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/settings/general`);
+});
+
+test("article tool focus stays in the card when opened, Escape respects writing and menus, and settings restore focus", async ({ browser }, testInfo) => {
+  const { team, slug } = await editor(browser);
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  await expect(team.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  const buttons = team.getByRole("toolbar", { name: "Article tools" });
+  await buttons.getByRole("button", { name: "Settings", exact: true }).click();
+  const card = team.getByRole("complementary", { name: "Article tools" });
+  await expect(card.getByRole("heading", { name: "Settings", exact: true })).toBeFocused();
+  for (const name of ["Title", "Article"]) {
+    const input = team.getByRole("textbox", { name, exact: true });
+    await input.focus();
+    await team.keyboard.press("Escape");
+    await expect(input).toBeFocused();
+    await expect(card).toBeVisible();
+  }
+  const collection = card.getByRole("combobox", { name: "Collection", exact: true });
+  await collection.click();
+  await expect(team.getByRole("listbox")).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(card).toBeVisible();
+  await expect(collection).toBeFocused();
+  const description = card.getByRole("textbox", { name: "Search description" });
+  await description.fill("A summary for search results.");
+  await description.evaluate((field) => field.addEventListener("keydown", (event) => event.preventDefault(), { once: true }));
+  await team.keyboard.press("Escape");
+  await expect(description).toBeFocused();
+  await expect(card).toBeVisible();
+  await expect(description).toHaveAccessibleDescription("Shows in search results and link previews.");
+  await card.getByRole("button", { name: "Save changes" }).click();
+  await expect(team.getByText("Settings saved")).toBeVisible();
+  await expect(buttons.getByRole("button", { name: "Settings", exact: true })).toBeFocused();
+  await expect(team.locator(".docs-editor-scroll")).not.toContainText("A summary for search results.");
+  await buttons.getByRole("button", { name: "History", exact: true }).click();
+  await expect(card.getByRole("heading", { name: "History", exact: true })).toBeFocused();
+  await team.keyboard.press("Escape");
+  await expect(buttons.getByRole("button", { name: "History", exact: true })).toBeFocused();
+  await checkpoints(testInfo)(team, "docs-tools-keyboard-focus", { fullPage: false });
+});
+
+test("table and code context controls remain reachable on small laptops and phones", async ({ browser }, testInfo) => {
+  const { team, slug } = await editor(browser);
+  for (const width of [1100, 390]) {
+    await team.setViewportSize({ width, height: 900 });
+    await team.goto(`/app/${slug}/docs/invite-your-team`);
+    const article = team.getByRole("textbox", { name: "Article", exact: true });
+    const formatting = team.getByRole("toolbar", { name: "Formatting", exact: true });
+    await article.click();
+    await formatting.locator("summary").filter({ hasText: "Insert" }).click();
+    await formatting.locator(".docs-insert-menu").getByRole("button", { name: "Table", exact: true }).click();
+    await expect(formatting.getByRole("group", { name: "Table", exact: true })).toBeVisible();
+    await formatting.getByRole("button", { name: "Add row", exact: true }).click();
+    await expect(article.locator("tr")).toHaveCount(4);
+    await formatting.getByRole("button", { name: "Delete table", exact: true }).click();
+    await article.click();
+    await formatting.locator("summary").filter({ hasText: "Insert" }).click();
+    await formatting.locator(".docs-insert-menu").getByRole("button", { name: "Code block", exact: true }).click();
+    await expect(formatting.getByRole("group", { name: "Code", exact: true })).toBeVisible();
+    await formatting.getByRole("button", { name: "File name", exact: true }).click();
+    await expect(team.getByRole("dialog", { name: "Name the code", exact: true })).toBeVisible();
+    await team.keyboard.press("Escape");
+  }
+  await checkpoints(testInfo)(team, "docs-phone-context-tools", { fullPage: false });
+});
+
+test("phone tabs have one switcher popover, restore visible focus, and tablet navigation opens the app sidebar", async ({ browser }, testInfo) => {
+  const { team, slug, api } = await editor(browser);
+  await api("/tabs", { name: "Guides" });
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}/docs/tabs/guides`);
+  await expect(team.locator('[data-slot="docs-page-header"]')).toBeVisible();
+  await team.getByRole("button", { name: "Browse docs" }).click();
+  const tree = team.getByRole("dialog", { name: "Docs navigation" });
+  await tree.locator(".docs-tab-switcher").click();
+  await expect(team.getByRole("list", { name: "Tabs", exact: true })).toHaveCount(1);
+  await team.getByRole("button", { name: "New tab", exact: true }).click();
+  const dialog = team.getByRole("dialog", { name: "New tab", exact: true });
+  await expect(dialog).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(tree.locator(".docs-tab-switcher")).toBeFocused();
+  await tree.getByRole("link", { name: "Overview", exact: true }).click();
+  await team.setViewportSize({ width: 850, height: 900 });
+  await team.getByRole("button", { name: "Browse docs" }).click();
+  await tree.getByRole("button", { name: "App navigation", exact: true }).click();
+  await expect(tree).toBeHidden();
+  await expect(team.locator('[data-slot="sidebar"][data-state]')).toHaveAttribute("data-state", "expanded");
+  await checkpoints(testInfo)(team, "docs-tablet-app-navigation", { fullPage: false });
+});
+
+test("the publish queue leaves unseen Autopilot edits for review and singularises safe publishing", async ({ browser }, testInfo) => {
+  const { team, slug, api } = await editor(browser);
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`WITH action AS (
+      INSERT INTO code_change_action (id, "articleId", kind, probability, status, payload)
+      SELECT gen_random_uuid()::text, a.id, 'ARTICLE_EDIT', 1, 'PENDING', '{}'::jsonb FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = 'invite-your-team' RETURNING id, "articleId"
+    ) INSERT INTO article_revision (id, "articleId", title, body, "codeChangeActionId") SELECT gen_random_uuid()::text, "articleId", 'Invite your team', 'Unseen suggested words.', id FROM action`, [slug]);
+  } finally { await db.end(); }
+  await api("/articles", { title: "First steps", body: "Open Settings." });
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: "Waiting to publish" });
+  const blocked = queue.getByRole("listitem").filter({ hasText: "Invite your team" });
+  await expect(blocked.getByRole("button", { name: "Publish", exact: true })).toHaveCount(0);
+  await expect(blocked.getByRole("link", { name: "Review", exact: true })).toBeVisible();
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  const confirm = team.getByRole("alertdialog", { name: "Publish 1 article?", exact: true });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+  await expect(team.getByText("Articles published", { exact: true })).toBeVisible();
+  await expect(queue.getByRole("listitem")).toHaveCount(1);
+  await expect(queue.getByRole("button", { name: "Publish all", exact: true })).toHaveCount(0);
+  await expect(team.locator(".docs-live-footer")).toContainText("1 article live");
+  await checkpoints(testInfo)(team, "docs-unseen-edits-need-review", { fullPage: false });
 });

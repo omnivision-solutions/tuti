@@ -1,3 +1,4 @@
+import { matchingSentence } from "@/lib/docs-review";
 import type { Node } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -23,6 +24,9 @@ export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
     .forEach((finding, index) => {
       const wanted = normalize(finding.statement);
       if (!wanted) return;
+      const blocks: { node: Node; pos: number }[] = [];
+      doc.descendants((node, pos) => { if (node.isTextblock) blocks.push({ node, pos }); });
+      const paraphrase = matchingSentence(finding.statement, blocks.map(({ node }) => node.textContent));
       let found = false;
       doc.descendants((node, pos) => {
         if (!node.isTextblock || found) return;
@@ -45,9 +49,9 @@ export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
           }
         });
         const start = text.indexOf(wanted);
-        if (start < 0) return;
-        const from = positions[start]!;
-        const to = positions[start + wanted.length - 1]! + 1;
+        if (start < 0 && blocks[paraphrase]?.pos !== pos) return;
+        const from = positions[Math.max(0, start)]!;
+        const to = positions[start < 0 ? positions.length - 1 : start + wanted.length - 1]! + 1;
         ranges.push({
           from,
           to,
@@ -77,9 +81,15 @@ export function verificationPlugin(findings: VerificationFinding[]) {
           range.from,
           () => {
             const marker = document.createElement("span");
-            marker.textContent = String(range.number);
-            marker.setAttribute("aria-label", `Finding ${range.number}`);
-            marker.className = `absolute -left-6 mt-1 inline-flex size-4 items-center justify-center rounded-sm text-[10px] font-semibold ${range.verdict === "outdated" ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground"}`;
+            const number = document.createElement("span");
+            number.textContent = String(range.number);
+            number.setAttribute("aria-hidden", "true");
+            const label = document.createElement("span");
+            label.className = "sr-only";
+            label.textContent = `Finding ${range.number}: ${range.verdict === "outdated" ? "out of date" : "can't tell"}`;
+            marker.append(number, label);
+            marker.dataset.finding = String(range.number);
+            marker.className = `absolute -left-6 mt-1 inline-flex size-4 items-center justify-center rounded-sm text-xs font-semibold ${range.verdict === "outdated" ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground"}`;
             return marker;
           },
           { side: -1 },

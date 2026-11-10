@@ -1,10 +1,10 @@
 "use client";
 
 import { cn } from "cn";
-import { BookOpenIcon, ChevronRightIcon, ChevronDownIcon, ChevronsUpDownIcon, ExternalLinkIcon, FolderIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { BookOpenIcon, ChevronRightIcon, ChevronDownIcon, ChevronsUpDownIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
@@ -13,7 +13,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { CollectionDialog, TabDialog } from "@/components/docs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DocsTreeFold } from "@/components/docs-tree-fold";
-import { LucideIcon } from "@/components/icon-field";
+import { SampleBadge } from "@/components/sample-badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,7 +28,7 @@ import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import type { AccessChoices } from "@/server/docs-queries";
 import { moveArticle, moveCollection, moveTab } from "@/server/docs";
 
-export type TreeArticle = { slug: string; title: string; published: boolean };
+export type TreeArticle = { slug: string; title: string; published: boolean; changes?: boolean; sample?: boolean };
 export type TreeCollection = {
   slug: string;
   name: string;
@@ -37,10 +37,16 @@ export type TreeCollection = {
   /** At the top level, the tab it's in (null without tabs). */
   tab: string | null;
   /** Its Lucide icon's name, if the installed Lucide has it. */
-  icon: string | null;
+  icon: ReactNode;
   articles: TreeArticle[];
 };
 export type TreeTab = { slug: string; name: string };
+
+const subscribeDesktop = (changed: () => void) => {
+  const query = matchMedia("(min-width: 1024px)");
+  query.addEventListener("change", changed);
+  return () => query.removeEventListener("change", changed);
+};
 
 type Kind = "tab" | "collection" | "article";
 /** A row things can be dropped on: a tab, a collection, an article (in `collection`), or the articles in no collection. */
@@ -111,7 +117,7 @@ export function AddContentMenu({
 
 export function NewCollectionButton({ parent }: { parent: string }) {
   const workspace = useContext(DocsWorkspaceContext)!;
-  return <Button variant="ghost" size="sm" disabled={workspace.depthOf(parent) >= MAX_COLLECTION_DEPTH} className="text-muted-foreground" onClick={() => workspace.newCollection({ parent })}><FolderIcon />New collection</Button>;
+  return <Button variant="ghost" size="sm" disabled={workspace.depthOf(parent) >= MAX_COLLECTION_DEPTH} className="h-8 gap-1.5 px-0 text-xs text-muted-foreground [&_svg]:size-3.5" onClick={() => workspace.newCollection({ parent })}><FolderIcon />New collection</Button>;
 }
 
 /** A row's handle: dragging its row moves it, and its menu moves it up, down, or to another place (from the keyboard too). */
@@ -197,7 +203,7 @@ function Row({
       data-drop={drop}
       className={cn(
         // A quiet Docs selection across the full row, including its controls.
-        "group/row relative flex min-h-8 items-center gap-0.5 rounded-lg pr-1 text-sm hover:bg-accent/60 has-[a[aria-current=page]]:bg-docs-selection has-[a[aria-current=page]]:text-primary has-[a[aria-current=page]]:[&_svg]:text-primary",
+        "group/row relative flex min-h-8 items-center gap-0.5 rounded-lg pr-1 text-sm hover:bg-accent/60 has-[a[aria-current=page]]:bg-docs-selection has-[a[aria-current=page]]:text-foreground has-[a[aria-current=page]]:[&_svg]:text-primary",
         "data-[drop=after]:shadow-[inset_0_-2px_0_0_var(--color-primary)] data-[drop=before]:shadow-[inset_0_2px_0_0_var(--color-primary)]",
         "data-[drop=into]:bg-accent data-[drop=into]:ring-2 data-[drop=into]:ring-primary",
         className,
@@ -268,7 +274,8 @@ export function DocsWorkspace({
   const [browsing, setBrowsing] = useState(false);
   const [tabsOpen, setTabsOpen] = useState(false);
   const [newTab, setNewTab] = useState(false);
-  const { setOpenMobile } = useSidebar();
+  const { setOpenMobile, setOpen: setAppOpen, isMobile } = useSidebar();
+  const desktop = useSyncExternalStore(subscribeDesktop, () => matchMedia("(min-width: 1024px)").matches, () => true);
   const openingApp = useRef(false);
   const openingSearch = useRef(false);
   // Where "New collection" adds one, while its dialog is open.
@@ -489,9 +496,12 @@ export function DocsWorkspace({
               aria-current={current?.kind === "article" && current.slug === article.slug ? "page" : undefined}
               className={rowLink}
             >
+              {collection === null && <FileTextIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
               <span title={article.title} className={cn("min-w-0 truncate", !article.published && "text-muted-foreground")}>
                 {article.title}
               </span>
+              {article.sample && <SampleBadge />}
+              {article.changes && <span className="size-1.5 shrink-0 rounded-full bg-status-under-review"><span className="sr-only">Unpublished changes</span></span>}
               {!article.published && <span className="shrink-0 rounded-full bg-muted px-1.5 text-xs leading-5 text-muted-foreground">Draft</span>}
             </Link>
           </Row>
@@ -561,7 +571,7 @@ export function DocsWorkspace({
                     aria-current={current?.kind === "collection" && current.slug === collection.slug ? "page" : undefined}
                     className={rowLink}
                   >
-                    {collection.icon ? <LucideIcon name={collection.icon} className="text-muted-foreground" /> : <FolderIcon className="size-4 shrink-0 text-muted-foreground" />}
+                    {collection.icon ? collection.icon : <FolderIcon className="size-4 shrink-0 text-muted-foreground" />}
                     <span title={collection.name} className="min-w-0 truncate">
                       {collection.name}
                     </span>
@@ -659,7 +669,7 @@ export function DocsWorkspace({
     <div className={cn(
       "docs-tree-content flex min-h-0 flex-1 flex-col gap-3.5 p-[0_10px_14px] overflow-y-auto [scrollbar-width:thin] [&_nav]:flex-1",
       "[&_nav_[data-tab-label]]:text-[14px] [&_a]:text-[13.5px] [&_[aria-current='page']]:bg-docs-selection",
-      "[&_[aria-current='page']]:text-primary [&_.group-label]:text-[12px] [&_.group-label]:font-medium [&_.group-label]:normal-case",
+      "[&_[aria-current='page']]:text-foreground [&_.group-label]:text-xs [&_.group-label]:font-medium [&_.group-label]:normal-case",
       "[&_.group-label]:tracking-[0] [&_li_li_a]:text-[13px]",
       "[&_a[aria-current='page']]:bg-transparent",
     )} onClick={(event) => { if ((event.target as Element).closest("a")) setBrowsing(false); }}>
@@ -718,11 +728,11 @@ export function DocsWorkspace({
       )} data-editing={editing}>
         <aside className="docs-tree-pane docs-surface w-68.5 shrink-0 flex flex-col lg:[:root[data-docs-tree-folded]_&]:w-12 max-lg:hidden min-w-0 min-h-0 rounded-[14px] bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
           <div className="docs-tree-folded hidden p-[10px_6px] lg:[:root[data-docs-tree-folded]_&]:flex lg:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
-          <div className="docs-tree-expanded flex flex-col min-h-0 h-full lg:[:root[data-docs-tree-folded]_&]:hidden">{navigation}</div>
+          <div className="docs-tree-expanded flex flex-col min-h-0 h-full lg:[:root[data-docs-tree-folded]_&]:hidden">{desktop && navigation}</div>
         </aside>
         <button type="button" aria-label="Browse docs" aria-expanded={browsing} onClick={() => setBrowsing(true)} className="docs-phone-trigger hidden bg-secondary text-foreground max-lg:flex max-lg:absolute max-lg:top-5.75 max-lg:right-7 max-lg:z-20 max-lg:items-center max-lg:gap-1.25 max-lg:h-7 max-lg:p-[0_7px] max-lg:text-[13px] max-lg:text-muted-foreground max-lg:rounded-[6px] max-sm:top-3 max-sm:right-4"><BookOpenIcon className="size-3.5" />Docs</button>
-        {pathname === base && activeTab && <span className="hidden max-sm:block absolute right-8 top-7 text-[12px] text-muted-foreground">{activeTab.name}</span>}
-        <Sheet open={browsing} onOpenChange={setBrowsing} onOpenChangeComplete={(open) => { if (!open && openingApp.current) { openingApp.current = false; setOpenMobile(true); } if (!open && openingSearch.current) { openingSearch.current = false; window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); } }}>
+        {pathname === base && activeTab && <span className="hidden max-sm:block absolute right-8 top-7 text-xs text-muted-foreground">{activeTab.name}</span>}
+        <Sheet open={browsing && !desktop} onOpenChange={setBrowsing} onOpenChangeComplete={(open) => { if (!open && openingApp.current) { openingApp.current = false; if (isMobile) setOpenMobile(true); else setAppOpen(true); } if (!open && openingSearch.current) { openingSearch.current = false; window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); } }}>
           <SheetContent overlayClassName="bg-(--docs-overlay) supports-backdrop-filter:backdrop-blur-none" side="bottom" className={cn(
             "docs-tree-sheet [&::before]:[content:''] [&::before]:shrink-0 [&::before]:w-8 [&::before]:h-1 [&::before]:rounded-[4px]",
             "[&::before]:bg-input [&::before]:m-[8px_auto_0] max-lg:[inset:64px_8px_8px]! max-lg:h-auto! max-lg:max-h-[calc(100dvh_-_72px)]",
@@ -731,7 +741,7 @@ export function DocsWorkspace({
             "[&_>_[data-slot='sheet-close']]:top-5.5 [&_>_[data-slot='sheet-close']]:right-3.5",
           )}>
             <SheetTitle className="sr-only">Docs navigation</SheetTitle>
-            {navigation}
+            {!desktop && navigation}
           </SheetContent>
         </Sheet>
         <div className={cn(

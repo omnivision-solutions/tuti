@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeftIcon } from "lucide-react";
+import { matchingSentence } from "@/lib/docs-review";
 import { toast } from "sonner";
 
 export const ARTICLE_SENTENCE_JUMP = "docs:jump-to-sentence";
@@ -8,16 +9,12 @@ export const ARTICLE_SENTENCE_JUMP = "docs:jump-to-sentence";
 /** A checked sentence may no longer be in the latest editor text. */
 export function focusArticleSentence(sentence: string) {
   const editor = document.querySelector<HTMLElement>('#article-form [contenteditable="true"]');
-  const normalize = (text: string) =>
-    text
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}\s]/gu, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  const normalized = normalize(sentence);
-  const target =
-    normalized &&
-    [...(editor?.querySelectorAll<HTMLElement>("p, li, h2, h3") ?? [])].find((block) => normalize(block.textContent ?? "").includes(normalized));
+  const blocks = [...(editor?.querySelectorAll<HTMLElement>("p, li, h2, h3") ?? [])].filter((block) => !block.querySelector("p, li, h2, h3"));
+  const target = blocks[matchingSentence(sentence, blocks.map((block) => {
+    const text = block.cloneNode(true) as HTMLElement;
+    text.querySelectorAll("[data-finding]").forEach((marker) => marker.remove());
+    return text.textContent ?? "";
+  }))];
   if (!target || !editor) {
     toast.info("This sentence has changed in the editor.");
     return;

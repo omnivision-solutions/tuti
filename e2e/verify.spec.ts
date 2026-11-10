@@ -31,8 +31,8 @@ test("Verify checks an article against the repository: its history, and its fix 
   await nextModelReply(
     JSON.stringify({
       statements: [
-        { statement: "Each plan has 5 seats", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." },
-        { statement: "People are admins or members", verdict: "current", evidence: ["docs/roles.md"], note: "Roles are admin and member." },
+        { statement: "Every plan has 5 seats for the team", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." },
+        { statement: "People are either members or admins", verdict: "current", evidence: ["docs/roles.md"], note: "Roles are admin and member." },
       ],
       reason: "Plans have 10 seats now, not 5.",
       sections: { "1": "Each plan has 10 seats.\n\nPeople are admins or members." },
@@ -59,14 +59,18 @@ test("Verify checks an article against the repository: its history, and its fix 
   await expect(run).toContainText(`${repo}@c0ffee1`);
   await expect(run).toContainText("1 statement still true · 1 out of date · 0 it can't tell");
   await expect(run).toContainText("Its fix waits for you");
-  const outdated = run.getByRole("listitem").filter({ hasText: "Each plan has 5 seats" });
+  await expect(run).toContainText("“5 seats” becomes “10 seats”");
+  const current = run.locator(".docs-current-findings");
+  await expect(current).toBeHidden();
+  await expect(run.getByText("Still true (1)", { exact: true }).locator("svg")).toHaveCSS("rotate", "none");
+  const outdated = run.getByRole("listitem").filter({ hasText: "Every plan has 5 seats for the team" });
   await expect(outdated.getByRole("link", { name: "Review it" })).toBeVisible();
   await expect(run.locator("details").filter({ has: owner.getByText("Still true (1)", { exact: true }) }).last().getByRole("link", { name: "Review it" })).toHaveCount(0);
-  await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeVisible();
+  await expect(run.getByText("Every plan has 5 seats for the team", { exact: true })).toBeVisible();
   await run.getByText("What it found").click();
-  await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeHidden();
+  await expect(run.getByText("Every plan has 5 seats for the team", { exact: true })).toBeHidden();
   await run.getByText("What it found").click();
-  await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeVisible();
+  await expect(run.getByText("Every plan has 5 seats for the team", { exact: true })).toBeVisible();
   await expect(run.getByText("src/seats.ts")).toBeVisible();
   await run.getByRole("button", { name: "Jump to sentence" }).click();
   await expect(owner.getByText("This sentence has changed in the editor.")).toBeVisible();
@@ -74,6 +78,14 @@ test("Verify checks an article against the repository: its history, and its fix 
   await run.locator(".docs-current-findings").getByRole("button", { name: "Jump to sentence" }).click();
   await expect(owner.getByRole("textbox", { name: "Article", exact: true })).toBeFocused();
   await expect.poll(() => owner.evaluate(() => window.getSelection()?.toString())).toBe("People are admins or members.");
+  // A restored, flagged source paragraph still matches its paraphrased finding: marker text isn't article content.
+  const firstParagraph = owner.getByRole("textbox", { name: "Article", exact: true }).locator("p").first();
+  await firstParagraph.fill("Each plan has 5 seats.");
+  await expect(firstParagraph.locator("[data-finding='1']")).toBeVisible();
+  await outdated.getByRole("button", { name: "Jump to sentence" }).click();
+  await expect(owner.getByRole("textbox", { name: "Article", exact: true })).toBeFocused();
+  await expect.poll(() => owner.evaluate(() => window.getSelection()?.toString())).toContain("Each plan has 5 seats.");
+  await firstParagraph.fill("Each plan has 10 seats.");
   // (Once the toast has gone, so the panel's title shows.)
   await expect(toast).toBeHidden({ timeout: 10_000 });
   await checkpoint(owner, "verify-history", { fullPage: false });

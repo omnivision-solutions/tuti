@@ -54,8 +54,8 @@ export default async function NewArticlePage(
         "[&_[aria-labelledby='new-article-place']]:border-0 [&_[aria-labelledby='new-article-place']]:shadow-none [&_[aria-labelledby='new-article-place']]:ring-0",
         "[&_[aria-labelledby='new-article-place']]:bg-transparent max-sm:[&_.docs-article-form]:pt-7.75",
         "max-sm:[&_.docs-heading-actions_[data-slot='button']]:w-auto max-sm:[&_.docs-heading-actions_[data-slot='button']]:px-2",
-        "max-sm:[&_.docs-heading-actions_[data-slot='button']]:text-[12px] max-sm:[&_.docs-format-row_[aria-label='Code']]:inline-flex",
-        "max-sm:[&_.docs-format-row_[aria-label='Quote']]:inline-flex max-sm:[&_.docs-format-row_[aria-label='Table']]:inline-flex min-w-0",
+        "max-sm:[&_.docs-heading-actions_[data-slot='button']]:text-xs max-sm:[&_.docs-format-row_button[aria-label='Code']]:inline-flex",
+        "max-sm:[&_.docs-format-row_[aria-label='Quote']]:inline-flex max-sm:[&_.docs-format-row_button[aria-label='Table']]:inline-flex min-w-0",
         "min-h-0 rounded-[14px] bg-docs-surface",
         "shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]",
       )}>
@@ -77,10 +77,10 @@ export default async function NewArticlePage(
           "[&_>_[aria-label='Formatting']]:flex-nowrap [&_>_[aria-label='Formatting']]:min-w-0 [&_>_[aria-label='Formatting']]:overflow-x-auto",
           "[&_>_[aria-label='Formatting']]:[scrollbar-width:none] [&_[data-slot='button']]:min-w-7.25 [&_[data-slot='button']]:h-7.5",
           "[&_[data-slot='button']]:text-muted-foreground [&_svg]:w-4 [&_svg]:h-4 max-xl:px-3 max-xl:gap-1 max-xl:[&_[aria-label='Quote']]:hidden",
-          "max-xl:[&_[aria-label='Code']]:hidden max-xl:[&_[aria-label='Table']]:hidden max-sm:px-2.5 max-sm:gap-0.75 max-sm:min-h-11",
+          "max-xl:[&_button[aria-label='Code']]:hidden max-xl:[&_button[aria-label='Table']]:hidden max-sm:px-2.5 max-sm:gap-0.75 max-sm:min-h-11",
           "max-sm:[&_>_[aria-label='Formatting']]:gap-0 max-sm:[&_[data-slot='button']]:min-w-6.25 max-sm:[&_[data-slot='button']]:h-7",
           "max-sm:[&_[data-slot='button']]:p-0 max-sm:[&_svg]:w-3.75 max-sm:[&_svg]:h-3.75 max-sm:[&_.docs-toolbar-separator]:mx-0.5",
-          "max-sm:[&_[aria-label='Quote']]:hidden max-sm:[&_[aria-label='Code']]:hidden max-sm:[&_[aria-label='Table']]:hidden",
+          "max-sm:[&_[aria-label='Quote']]:hidden max-sm:[&_button[aria-label='Code']]:hidden max-sm:[&_button[aria-label='Table']]:hidden",
           "[&_[data-slot='button']:has(svg:only-child)]:w-7.25 [&_[data-slot='button']:has(svg:only-child)]:px-0",
           "max-sm:[&_[data-slot='button']:has(svg:only-child)]:w-6.25",
         )} />

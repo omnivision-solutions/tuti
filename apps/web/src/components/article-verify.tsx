@@ -1,3 +1,5 @@
+import { prisma } from "@tuti/db";
+import { fixSummary } from "@/lib/docs-review";
 import { cn } from "cn";
 import { ChevronRightIcon, CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
@@ -69,6 +71,11 @@ export async function ArticleVerify({
   provider: string;
 }) {
   const runs = await articleVerifications(article.id);
+  const fixes = await prisma.codeChangeAction.findMany({ where: { articleId: article.id, id: { in: runs.flatMap((run) => run.fix ? [run.fix.id] : []) } }, select: { id: true, payload: true } });
+  const summaries = new Map(fixes.map((fix) => {
+    const payload = fix.payload as { before?: string; body?: string };
+    return [fix.id, typeof payload.before === "string" && typeof payload.body === "string" ? fixSummary(payload.before, payload.body) : null];
+  }));
   return (
     <>
       {runs.length === 0 || unavailable ? (
@@ -86,7 +93,7 @@ export async function ArticleVerify({
           )}
         </Card>
       ) : (
-        <div className="docs-verify-again flex justify-end mb-3.5 absolute top-4.5 right-13.25 m-0 z-[1] [&_button]:h-6.75 [&_button]:text-[11.5px] [&_button]:px-2">
+        <div className="docs-verify-again flex justify-end mb-3.5 absolute top-4.5 right-13.25 m-0 z-[1] [&_button]:h-6.75 [&_button]:text-xs [&_button]:px-2">
           <VerifyButton projectSlug={projectSlug} slug={article.slug} again />
         </div>
       )}
@@ -117,7 +124,7 @@ export async function ArticleVerify({
             <CardContent className="flex flex-col gap-4">
               {(run.state === "done" || run.state === "changed") && run.statements.length > 0 && (
                 // The counts, each in its verdict's colour; said as one sentence to the ear.
-                <p className="docs-verify-counts flex flex-wrap gap-2 justify-between [&_>_span:not(.sr-only)]:bg-transparent [&_>_span:not(.sr-only)]:border-0 [&_>_span:not(.sr-only)]:rounded-none [&_>_span:not(.sr-only)]:p-0 [&_>_span:not(.sr-only)]:shadow-none [&_>_span:not(.sr-only)]:ring-0 [&_>_span:not(.sr-only)]:text-[11px] [&_>_span:not(.sr-only)_>_span]:hidden [&_>_span:nth-child(2)]:text-highlight-foreground">
+                <p className="docs-verify-counts flex flex-wrap gap-2 justify-between [&_>_span:not(.sr-only)]:bg-transparent [&_>_span:not(.sr-only)]:border-0 [&_>_span:not(.sr-only)]:rounded-none [&_>_span:not(.sr-only)]:p-0 [&_>_span:not(.sr-only)]:shadow-none [&_>_span:not(.sr-only)]:ring-0 [&_>_span:not(.sr-only)]:text-xs [&_>_span:not(.sr-only)_>_span]:hidden [&_>_span:nth-child(2)]:text-muted-foreground">
                   <span className="sr-only">
                     {plural(run.counts.current, "statement")} still true · {run.counts.outdated} out of date · {run.counts.unclear} it can&apos;t tell
                   </span>
@@ -152,7 +159,7 @@ export async function ArticleVerify({
                             )}
                           >
                             <span aria-hidden className="grid size-4 place-items-center rounded-sm">{i + 1}</span>
-                            {VERDICTS[statement.verdict].label}
+                            <span className="sr-only">Finding {i + 1}: </span>{VERDICTS[statement.verdict].label}
                           </span>
                           {/* Each claim as a sentence, whatever case it was written down in. */}
                           <span className="font-medium break-words first-letter:uppercase">{statement.statement}</span>
@@ -161,13 +168,13 @@ export async function ArticleVerify({
                             <span className="font-mono text-xs break-all text-muted-foreground">{statement.evidence.join(", ")}</span>
                           )}
                           {statement.verdict !== "current" && <ArticleSentenceJump sentence={statement.statement} />}
-                          {run.fix && statement === run.statements.find((item) => item.verdict === "outdated") && <VerificationFix fix={run.fix} projectSlug={projectSlug} articleId={article.id} />}
+                          {run.fix && statement === run.statements.find((item) => item.verdict === "outdated") && <VerificationFix summary={summaries.get(run.fix.id)} fix={run.fix} projectSlug={projectSlug} articleId={article.id} />}
                         </li>
                       ))}
                   </ul>
                   {run.counts.current > 0 && (
                     <Folded summary={`Still true (${run.counts.current})`}>
-                      <ul className="docs-current-findings flex flex-col gap-4 [padding-block:12px] text-[13px] [&_p]:text-muted-foreground [&_p]:[font-weight:normal] [&_code]:text-muted-foreground [&_code]:[font-weight:normal] [&_code]:text-[11px]">
+                      <ul className="docs-current-findings flex flex-col gap-4 [padding-block:12px] text-[13px] [&_p]:text-muted-foreground [&_p]:[font-weight:normal] [&_code]:text-muted-foreground [&_code]:[font-weight:normal] [&_code]:text-xs">
                         {run.statements
                           .filter((statement) => statement.verdict === "current")
                           .map((statement, i) => (
@@ -183,7 +190,7 @@ export async function ArticleVerify({
                   )}
                 </Folded>
               )}
-              {run.fix && !run.statements.some((statement) => statement.verdict === "outdated") && <VerificationFix fix={run.fix} projectSlug={projectSlug} articleId={article.id} />}
+              {run.fix && !run.statements.some((statement) => statement.verdict === "outdated") && <VerificationFix summary={summaries.get(run.fix.id)} fix={run.fix} projectSlug={projectSlug} articleId={article.id} />}
             </CardContent>
           ) : null}
         </Card>
@@ -201,19 +208,19 @@ export async function ArticleVerify({
   );
 }
 
-function VerificationFix({ fix, projectSlug, articleId }: { fix: NonNullable<VerificationView["fix"]>; projectSlug: string; articleId: string }) {
-  return <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-2 rounded-lg bg-highlight px-3 py-2.5 text-[13px] text-highlight-foreground">
-    <span>{fixStatus(fix)}</span>
-    {fix.status === "waiting" && <Link href={`/app/${projectSlug}/autopilot/articles/${articleId}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-7 px-2 text-[12px]")}>Review it</Link>}
+function VerificationFix({ fix, projectSlug, articleId, summary }: { summary?: string | null; fix: NonNullable<VerificationView["fix"]>; projectSlug: string; articleId: string }) {
+  return <div className="mt-2 flex w-full items-center justify-between gap-2 text-xs">
+    <span className="flex min-w-0 flex-col gap-1"><span>{fixStatus(fix)}</span>{summary && <span className="text-muted-foreground">{summary}</span>}</span>
+    {fix.status === "waiting" && <Link href={`/app/${projectSlug}/autopilot/articles/${articleId}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-7 px-2 text-xs")}>Review it</Link>}
   </div>;
 }
 
 /** Folded away until asked for: a chevron (as the docs' tree has) that turns as it opens. */
 function Folded({ summary, open = false, children }: { summary: string; open?: boolean; children: ReactNode }) {
   return (
-    <details open={open} className="group w-full text-[13px] leading-[1.5]">
+    <details open={open} className="w-full text-[13px] leading-[1.5] [&[open]>summary>svg]:rotate-90">
       <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRightIcon aria-hidden className="size-4 transition-transform group-open:rotate-90" />
+        <ChevronRightIcon aria-hidden className="size-4 transition-transform" />
         {summary}
       </summary>
       <div className="mt-2">{children}</div>

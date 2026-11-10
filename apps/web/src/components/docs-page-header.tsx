@@ -4,6 +4,7 @@ import { cn } from "cn";
 
 import { EllipsisIcon } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { IconTooltip } from "@/components/icon-tooltip";
 import { Button } from "@/components/ui/button";
 
 import { BackLink } from "@/components/back-link";
@@ -34,9 +35,9 @@ export function DocsMore({ children }: { children: ReactNode }) {
   }, [open]);
   return (
     <div ref={root} className="docs-more relative text-[13px] [&_>_button]:grid [&_>_button]:place-items-center [&_>_button]:w-7 [&_>_button]:h-8 [&_>_button]:cursor-pointer [&_>_button]:rounded-[7px] [&_>_button]:text-muted-foreground [&_>_button]:list-none [&_>_button:hover]:bg-secondary">
-      <Button ref={toggle} type="button" variant="ghost" size="icon-sm" aria-label="More actions" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <IconTooltip label="More actions"><Button ref={toggle} type="button" variant="ghost" size="icon-sm" aria-label="More actions" aria-expanded={open} onClick={() => setOpen(!open)}>
         <EllipsisIcon className="size-4" />
-      </Button>
+      </Button></IconTooltip>
       <div
         hidden={!open}
         className="docs-more-menu absolute right-[0] top-[100%] z-30 flex flex-col items-stretch w-55 p-1.25 border border-border rounded-[10px] bg-popover shadow-[0_10px_32px_color-mix(in_oklch,_var(--foreground)_14%,_transparent)] [&_>_*]:justify-start"
@@ -81,7 +82,7 @@ export function DocsPageHeader({
           </div>
         </div>
         <div className={cn(
-          "docs-heading-actions flex items-center gap-1.75 shrink-0 [&_[data-slot='button']]:h-8.5 [&_[data-slot='button']]:text-[13.5px]",
+          "docs-heading-actions flex items-center gap-1.75 sm:[&>_.docs-live-link]:mr-3.25 shrink-0 [&_[data-slot='button']]:h-8.5 [&_[data-slot='button']]:text-[13.5px]",
           "max-sm:w-full max-sm:justify-end max-sm:gap-1.5 max-sm:[&_>_.docs-live-link]:mr-auto max-sm:[&_>_.docs-live-link_span]:text-[0px]",
           "max-sm:[&_>_.docs-live-link_span::after]:[content:'Open'] max-sm:[&_>_.docs-live-link_span::after]:text-[13px]",
         )}>

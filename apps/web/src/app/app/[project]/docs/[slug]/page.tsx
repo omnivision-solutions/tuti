@@ -22,6 +22,7 @@ import { ArticleHistory } from "@/components/article-history";
 import { ArticleVerify } from "@/components/article-verify";
 import { ArticleTools } from "@/components/article-tools";
 import { DocsMore } from "@/components/docs-page-header";
+import { buttonVariants } from "@/components/ui/button";
 import { BackLink } from "@/components/back-link";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDay, timeAgo } from "@/lib/format";
@@ -196,6 +197,7 @@ export default async function ArticlePage(
               projectSlug={slug}
               article={article}
               current={edited}
+              limit={typeof search.versions === "string" ? Math.min(1000, Math.max(10, Number(search.versions) || 10)) : 10}
               keep={keep}
               selectedId={
                 typeof search.revision === "string"
@@ -226,7 +228,7 @@ export default async function ArticlePage(
           "[&_.article-text_blockquote]:pr-4 [&_.article-text_blockquote]:pl-10 [&_.article-text_blockquote]:text-soft-foreground",
           "[&_.article-text_blockquote]:text-[14px] [&_.article-text_blockquote]:before:absolute [&_.article-text_blockquote]:before:left-3",
           "[&_.article-text_blockquote]:before:top-3.5 [&_.article-text_blockquote]:before:text-primary",
-          "[&_.article-text_blockquote]:before:content-['i'] [&_.article-text_blockquote]:before:flex [&_.article-text_blockquote]:before:size-3.5 [&_.article-text_blockquote]:before:items-center [&_.article-text_blockquote]:before:justify-center [&_.article-text_blockquote]:before:rounded-full [&_.article-text_blockquote]:before:border [&_.article-text_blockquote]:before:border-current [&_.article-text_blockquote]:before:font-mono [&_.article-text_blockquote]:before:text-[10px] [&_.article-text_blockquote]:before:leading-none docs-surface flex flex-col flex-1 min-w-0 overflow-hidden",
+          "[&_.article-text_blockquote]:before:content-['i'] [&_.article-text_blockquote]:before:flex [&_.article-text_blockquote]:before:size-3.5 [&_.article-text_blockquote]:before:items-center [&_.article-text_blockquote]:before:justify-center [&_.article-text_blockquote]:before:rounded-full [&_.article-text_blockquote]:before:border [&_.article-text_blockquote]:before:border-current [&_.article-text_blockquote]:before:font-mono [&_.article-text_blockquote]:before:text-xs [&_.article-text_blockquote]:before:leading-none docs-surface flex flex-col flex-1 min-w-0 overflow-hidden",
           "max-lg:[&_.docs-article-form]:px-7 max-lg:[&_.docs-article-form]:max-w-[min(43rem,_calc(100%_-_56px))]",
           "max-sm:rounded-[14px]",
           "max-sm:[&_.docs-article-form]:p-[20px_23px_48px] max-sm:[&_.docs-article-form]:max-w-[calc(100%_-_46px)]",
@@ -253,9 +255,9 @@ export default async function ArticlePage(
               <div id="article-title" className="flex-1 min-w-[0] [&_textarea]:text-[29px] [&_textarea]:leading-[1.16] [&_textarea]:font-[650] [&_textarea]:tracking-[-0.03em] max-sm:basis-[100%] max-sm:[&_textarea]:text-[27px] max-sm:[&_textarea]:max-w-[300px] max-sm:[&_textarea]:leading-[1.14]" />
               <div className={cn(
                 "docs-editor-actions [&_[data-slot='button']]:h-8.5 [&_[data-slot='button']]:text-[13.5px] flex items-center gap-1.5 shrink-0 pt-0.25",
-                "[&_button[aria-label='Save']]:text-muted-foreground [&_button[aria-label='Save']]:bg-transparent",
-                "[&_button[aria-label='Save']]:shadow-none [&_button[aria-label='Save']]:ring-0 [&_button[aria-label='Save']]:border-[transparent] [&_button[aria-label='Save']]:p-[0_3px]",
-                "[&_button[aria-label='Save']]:text-[13px] max-sm:w-full max-sm:justify-end max-sm:[&_button[aria-label='Save']]:mr-auto",
+                "[&_.docs-article-save]:text-muted-foreground [&_.docs-article-save]:bg-transparent",
+                "[&_.docs-article-save]:shadow-none [&_.docs-article-save]:ring-0 [&_.docs-article-save]:border-[transparent] [&_.docs-article-save]:p-[0_3px]",
+                "[&_.docs-article-save]:text-[13px] max-sm:w-full max-sm:justify-end max-sm:[&_.docs-article-save]:mr-auto",
               )}>
                 <ArticleSaveButton outline={article.publishedAt === null} />
                 {article.publishedAt === null && (
@@ -286,6 +288,12 @@ export default async function ArticlePage(
                   />
                 )}
                 <DocsMore>
+                  {article.publishedAt && listing !== "hidden" && listing !== "ai_only" && (
+                    <Link href={url} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                      <ExternalLinkIcon />
+                      View on help center
+                    </Link>
+                  )}
                   {article.publishedAt !== null && (
                     <ArticleActions
                       projectSlug={slug}
@@ -308,9 +316,9 @@ export default async function ArticlePage(
               </div>
             </div>
             <div className={cn(
-              "docs-editor-state flex items-center gap-3 flex-wrap mt-3.5 text-[12px] text-muted-foreground [&_.docs-live-link]:ml-auto",
-              "[&_[data-slot='badge']]:text-[12.5px] max-sm:gap-1.75 max-sm:text-[11px] max-sm:gap-x-1.75 max-sm:[&_.docs-live-link]:ml-0",
-              "max-sm:[&_.docs-live-link]:text-[12px] max-sm:[&_>_span:not(#article-state-tools)]:[order:3]",
+              "docs-editor-state flex items-center gap-3 flex-wrap mt-3.5 text-xs text-muted-foreground [&_.docs-live-link]:ml-auto",
+              "[&_[data-slot='badge']]:text-xs max-sm:gap-1.75 max-sm:text-xs max-sm:gap-x-1.75 max-sm:[&_.docs-live-link]:ml-0",
+              "max-sm:[&_.docs-live-link]:text-xs max-sm:[&_>_span:not(#article-state-tools)]:[order:3]",
               "max-sm:[&_>_span:not(#article-state-tools)]:ml-auto",
             )}>
               {article.changes ? (
@@ -335,7 +343,7 @@ export default async function ArticlePage(
                     href={url}
                     target="_blank"
                     rel="noreferrer"
-                    title="View on help center"
+                    aria-label="View on help center"
                     className="docs-live-link inline-flex gap-1.5 items-center text-muted-foreground text-[13px] whitespace-nowrap [&:hover]:text-primary"
                   >
                     <ExternalLinkIcon className="size-3.5" />
@@ -349,10 +357,10 @@ export default async function ArticlePage(
             "[&_>_[aria-label='Formatting']]:flex-nowrap [&_>_[aria-label='Formatting']]:min-w-0 [&_>_[aria-label='Formatting']]:overflow-x-auto",
             "[&_>_[aria-label='Formatting']]:[scrollbar-width:none] [&_[data-slot='button']]:min-w-7.25 [&_[data-slot='button']]:h-7.5",
             "[&_[data-slot='button']]:text-muted-foreground [&_svg]:w-4 [&_svg]:h-4 max-xl:px-3 max-xl:gap-1 max-xl:[&_[aria-label='Quote']]:hidden",
-            "max-xl:[&_[aria-label='Code']]:hidden max-xl:[&_[aria-label='Table']]:hidden max-sm:px-2.5 max-sm:gap-0.75 max-sm:min-h-11",
+            "max-xl:[&_button[aria-label='Code']]:hidden max-xl:[&_button[aria-label='Table']]:hidden max-sm:px-2.5 max-sm:gap-0.75 max-sm:min-h-11",
             "max-sm:[&_>_[aria-label='Formatting']]:gap-0 max-sm:[&_[data-slot='button']]:min-w-6.25 max-sm:[&_[data-slot='button']]:h-7",
             "max-sm:[&_[data-slot='button']]:p-0 max-sm:[&_svg]:w-3.75 max-sm:[&_svg]:h-3.75 max-sm:[&_.docs-toolbar-separator]:mx-0.5",
-            "max-sm:[&_[aria-label='Quote']]:hidden max-sm:[&_[aria-label='Code']]:hidden max-sm:[&_[aria-label='Table']]:hidden",
+            "max-sm:[&_[aria-label='Quote']]:hidden max-sm:[&_button[aria-label='Code']]:hidden max-sm:[&_button[aria-label='Table']]:hidden",
             "[&_[data-slot='button']:has(svg:only-child)]:w-7.25 [&_[data-slot='button']:has(svg:only-child)]:px-0",
             "max-sm:[&_[data-slot='button']:has(svg:only-child)]:w-6.25",
           )} />
@@ -370,7 +378,6 @@ export default async function ArticlePage(
               }}
               mediaUrls={await mediaUrls(displayDoc(edited))}
               // As the portal measures it (portal-docs' `outlined`).
-              description={article.description}
               findings={showsVerify ? (await articleVerifications(article.id))[0]?.statements : undefined}
               sections={docHeadings(displayDoc(edited)).length >= 2}
             />

@@ -1,3 +1,4 @@
+import { changedParagraphs } from "@/lib/docs-review";
 import { diffBlocks } from "@tuti/content";
 import { displayDoc } from "@/server/content";
 import { plural } from "@/lib/autopilot-words";
@@ -48,25 +49,32 @@ export async function ArticleHistory({
   current,
   selectedId,
   keep = "",
+  limit = 10,
 }: {
   projectSlug: string;
   /** More of the page's address its links keep (`&from=autopilot`). */
   keep?: string;
+  limit?: number;
   article: { id: string; slug: string; publishedAt: Date | null };
   current: Version;
   selectedId: string | undefined;
 }) {
   const revisions = await articleRevisions(article.id);
-  const photos = await authorPhotos(revisions.map((r) => r.id));
+  const shown = revisions.slice(0, Math.max(10, limit, revisions.findIndex((r) => r.id === selectedId) + 1));
+  const photos = await authorPhotos(shown.map((r) => r.id));
   const selected = revisions.find((revision) => revision.id === selectedId) ?? (selectedId === undefined ? revisions[1] : undefined);
+  const diff = selected && await ArticleDiff({ before: selected, after: current, around: 0, same: "No changes: it's the same as the current version." });
+  const fullDiff = selected && await ArticleDiff({ before: selected, after: current, same: "No changes: it's the same as the current version." });
   return (
     <>
       {/* Each save: who, when, and what it was called then; the open one marked, the newest the current. */}
       <ol aria-label="Versions" className="flex flex-col gap-1">
-        {revisions.map((revision, index) => (
+        {shown.map((revision, index) => {
+          const changed = revisions[index + 1] ? changedParagraphs(diffBlocks(displayDoc(revisions[index + 1]!), displayDoc(revision))) : 0;
+          return (
           <li key={revision.id}>
             <Link
-              href={`?history&revision=${revision.id}${keep}`}
+              href={`?history&revision=${revision.id}&versions=${shown.length}${keep}`}
               scroll={false}
               aria-current={revision === selected ? "true" : undefined}
               className="flex items-start gap-2.5 rounded-lg py-2.5 outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring"
@@ -83,7 +91,7 @@ export async function ArticleHistory({
                   {index === 0 && <Badge>Current</Badge>}
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {[revision.author?.name ?? "Someone whose account is gone", revisions[index + 1] ? plural(diffBlocks(displayDoc(revisions[index + 1]!), displayDoc(revision)).filter((block) => block.kind !== "same").length, "line") + " changed" : "first version", revision.title !== current.title && `Titled “${revision.title}”`]
+                  {[revision.author?.name ?? "Someone whose account is gone", revisions[index + 1] ? (changed ? plural(changed, "paragraph") + " changed" : null) : "first version", revision.title !== current.title && `Titled “${revision.title}”`]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>
@@ -95,11 +103,11 @@ export async function ArticleHistory({
                   Changes since this version
                 </h3>
                 {selected === revisions[0] && <p className="mb-2 text-xs text-muted-foreground">This is the current version.</p>}
-                <ArticleDiff before={selected} after={current} around={0} same="No changes: it's the same as the current version." />
+                {diff}
                 <details className="mt-3">
                   <summary className="cursor-pointer text-xs text-muted-foreground">Show full comparison</summary>
                   <div className="mt-3">
-                    <ArticleDiff before={selected} after={current} same="No changes: it's the same as the current version." />
+                    {fullDiff}
                   </div>
                 </details>
                 {selected !== revisions[0] && (
@@ -115,8 +123,9 @@ export async function ArticleHistory({
               </section>
             )}
           </li>
-        ))}
+        ); })}
       </ol>
+      {shown.length < revisions.length && <Link className="text-xs text-muted-foreground underline" scroll={false} href={`?history&versions=${shown.length + 10}${keep}`}>Show earlier versions</Link>}
       {revisions.length === 1 && (
         <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
           <HistoryIcon aria-hidden className="size-6 text-muted-foreground" />

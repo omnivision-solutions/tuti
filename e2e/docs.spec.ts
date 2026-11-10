@@ -547,12 +547,12 @@ test("the team writes a docs article in a collection, publishes it, and a visito
     // Done once the save's response is in (a toast from the first save may still be showing at the second).
     const saved = team.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
     const before = await editor.elementHandle();
-    await team.getByRole("button", { name: "Save", exact: true }).click();
+    await team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).click();
     await saved;
     // The saved article comes back as a new form (it's keyed on the content), maybe a moment after
     // the save's response: edit that one, not the old editor on its way out.
     await expect.poll(() => before!.evaluate((element) => element.isConnected)).toBe(false);
-    await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+    await expect(team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ })).toBeEnabled();
   }
   await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
   const original = "Owners and admins send invites from the Team page.";
@@ -803,6 +803,7 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   await team.getByRole("button", { name: "Browse docs" }).click();
   await checkpoint(team, "team-docs-structure-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
+  await expect(team.getByRole("dialog", { name: "Docs navigation" })).toBeHidden();
 
   // The portal follows: Billing first with Invoices in it, then Getting started in its new order.
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -1062,7 +1063,9 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(dialog).not.toContainText("Your collections go in this first one");
   await dialog.getByLabel("Name").fill("API");
   await dialog.getByRole("button", { name: "Add tab" }).click();
-  await expect(team.locator(".docs-tab-switcher")).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await openTabs();
+  await expect(team.getByRole("list", { name: "Tabs", exact: true }).getByRole("listitem")).toContainText(["Guides", "API"]);
   await team.keyboard.press("Escape");
 
   // Move across tabs from each collection's keyboard menu.
@@ -1392,7 +1395,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   // Saved state lives in the title row; Settings is an icon on the pinned formatting row.
   const bar = (name: string) => team.getByRole("button", { name, exact: true });
   await expect(team.locator("#article-toolbar").getByRole("button", { name: "Settings" })).toBeVisible();
-  await expect(bar("Save")).toContainText("Saved");
+  await expect(bar("Saved")).toBeVisible();
   await expect(team.getByRole("button", { name: "Delete" })).toBeHidden();
   await expect(team.getByRole("combobox", { name: "Collection" })).toHaveCount(0);
   await expect(team.getByRole("checkbox", { name: /^Show the updated date/ })).toHaveCount(0);
@@ -1402,9 +1405,9 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("No collection");
   await expect(dialog.getByRole("checkbox", { name: /^Show the updated date/ })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
-  // The shared card takes 330px (300px at this laptop width), and leaves the text beside it.
+  // The shared card takes 330px here (300px below 1280px), and leaves the text beside it.
   await expect(team.getByRole("complementary", { name: "Article tools" })).toBeVisible();
-  expect((await team.getByRole("complementary", { name: "Article tools" }).boundingBox())!.width).toBe(330);
+  await expect.poll(async () => Math.round((await team.getByRole("complementary", { name: "Article tools" }).boundingBox())!.width)).toBe(330);
   await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveCount(0);
   // Published, with the box off: its address stays as it is, and the checkbox says so.
   await expect(dialog.getByRole("checkbox", { name: /^Custom slug/ })).toHaveAccessibleName(/Its address stays as it is; links to it keep working\.$/);
@@ -1418,12 +1421,16 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await expect(dialog.getByText("“insights” is reserved; pick another")).toBeVisible();
   await expect(dialog.getByRole("textbox", { name: "Keywords" })).toHaveValue("add a colleague, seats");
   await slugBox.fill("invites");
-  await dialog.getByRole("textbox", { name: "Meta description" }).fill("Add teammates to your project, and what they can do.");
+  await dialog.getByRole("textbox", { name: "Search description" }).fill("Add teammates to your project, and what they can do.");
   await checkpoint(team, "team-docs-article-settings", { fullPage: false });
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await team.waitForURL(`**/app/${slug}/docs/invites`);
   // (Under "More actions" in an editor.)
-  await expect(team.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
+  await expect(team.getByRole("link", { name: "View on help center", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
+
+  await bar("More actions").click();
+  await expect(team.locator(".docs-more-menu").getByRole("link", { name: "View on help center", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
+  await team.keyboard.press("Escape");
 
   // On a phone, the toolbar opens the same settings in a scrolling sheet.
   await team.setViewportSize({ width: 390, height: 844 });
@@ -1520,7 +1527,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
     await saveHeld;
     await route.fulfill({ response });
   });
-  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).click();
   await expect(team.getByLabel("Tone", { exact: true })).toBeDisabled();
   releaseSave();
   await expect(team.getByText("AI answers saved")).toBeVisible();
@@ -2018,7 +2025,7 @@ test("a collection's settings are one page: its name, description, icon and plac
   await expect(access.getByRole("radio", { name: "Signed-in readers" })).toBeChecked();
   await expect(details.getByLabel("Name")).toHaveValue("Invoices");
   await expect(details.getByLabel("Description")).toHaveValue("Paying and downloading invoices.");
-  await expect(details.getByRole("button", { name: "Change icon (receipt)" })).toBeVisible();
+  await expect(details.getByRole("button", { name: "receipt Change icon" })).toBeVisible();
   await expect(details.getByRole("combobox", { name: "Parent collection" })).toContainText("Getting started");
 
   // Changed elsewhere again, then a save of the description alone: it doesn't undo it.
@@ -2061,7 +2068,7 @@ test("a collection's settings are one page: its name, description, icon and plac
   await savedTyped;
   await team.reload();
   await expect(details.getByLabel("Description")).toHaveValue("Typed, not saved yet.");
-  await expect(details.getByRole("button", { name: "Change icon (wallet)" })).toBeVisible();
+  await expect(details.getByRole("button", { name: "wallet Change icon" })).toBeVisible();
 
   // Moved in the tree, then Parent picked as it shows (away and back): the choice made is what's saved.
   await tree.getByRole("button", { name: "Move Invoices" }).click();
@@ -2353,17 +2360,17 @@ test("an article's editor bar: saved state, Publish and the pinned tools fit fro
   // A draft: Publish is the filled one, Save an outline beside it.
   await team.goto(`/app/${slug}/docs/a-draft`);
   const primary = await fill("Publish");
-  expect(await fill("Save")).not.toBe(primary);
+  expect(await fill("Saved")).not.toBe(primary);
 
   // Published, as saved: the quiet Saved control becomes Save when typing changes the article.
   await team.goto(`/app/${slug}/docs/inviting-your-team-to-a-project-with-a-long-title`);
-  expect(await fill("Save")).not.toBe(primary);
+  expect(await fill("Saved")).not.toBe(primary);
   await team.getByRole("textbox", { name: "Article" }).click();
   await team.keyboard.press("ControlOrMeta+End");
   await team.keyboard.type(" Now.");
-  await expect(team.getByRole("button", { name: "Save", exact: true })).toHaveText("Save");
+  await expect(team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ })).toHaveText("Save");
   expect(await fill("Save")).not.toBe(primary);
-  await team.getByRole("button", { name: "Save", exact: true }).click();
+  await team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).click();
   await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
 
   // From a tablet up, the page owns its toolbar: no bar above it and no horizontal overflow.
@@ -2372,7 +2379,7 @@ test("an article's editor bar: saved state, Publish and the pinned tools fit fro
     await expect(team.locator("main > header")).toBeHidden();
     const settings = team.getByRole("button", { name: "Settings" });
     await expect(settings).toBeInViewport();
-    await expect(team.getByRole("button", { name: "Save", exact: true })).toBeInViewport();
+    await expect(team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ })).toBeInViewport();
     expect(await team.evaluate(() => document.documentElement.scrollWidth), `at ${width}px`).toBeLessThanOrEqual(width);
   }
 });

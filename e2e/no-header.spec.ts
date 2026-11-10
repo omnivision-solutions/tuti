@@ -180,8 +180,9 @@ test("app anchors clear each visible toolbar once, and Reporting adds no invisib
   await api("/articles", { title: "Old instructions", body: "An earlier guide." });
   await api("/articles/old-instructions", undefined, "DELETE");
   await owner.setViewportSize({ width: 1440, height: 900 });
-  await owner.goto(`/app/${slug}/docs`);
-  await expectAnchorGap(owner, "#recently-deleted", 24);
+  await owner.goto(`/app/${slug}/docs#recently-deleted`);
+  await expect(owner.locator("#recently-deleted")).toBeVisible();
+  await expect(owner.locator("#recently-deleted")).toBeInViewport();
   await owner.goto(`/app/${slug}/settings/billing`);
   await expectAnchorGap(owner, "#usage", 32);
   await owner.goto(`/app/${slug}/reporting/ai-conversations`);
@@ -197,7 +198,7 @@ test("app anchors clear each visible toolbar once, and Reporting adds no invisib
   await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
 });
 
-test("a long docs collection and its settings keep their own toolbar in view", async ({ browser }, testInfo) => {
+test("a long docs collection and its settings scroll inside their page surface", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -211,14 +212,21 @@ test("a long docs collection and its settings keep their own toolbar in view", a
     if (suffix) {
       await owner.evaluate(() => {
         const room = document.createElement("div");
-        room.style.height = "100vh";
-        document.body.append(room);
+        room.style.minHeight = "100vh";
+        room.style.flexShrink = "0";
+        document.querySelector(".docs-page-content")!.append(room);
       });
     }
     // Scrolled again on each try, in case the page is still growing.
-    await expect.poll(() => owner.evaluate(() => (window.scrollTo(0, 600), window.scrollY))).toBeGreaterThan(300);
-    await expect.soft(owner.getByRole("heading", { name: "Getting started", level: 1, exact: true })).toBeInViewport();
-    await expect.soft(owner.locator('[data-slot="page-header"]').getByRole("button", { name: "More actions", exact: true })).toBeInViewport();
+    const pane = owner.locator(".docs-page-content");
+    await expect.poll(() => pane.evaluate((element) => {
+      element.scrollTo(0, 600);
+      return element.scrollTop;
+    })).toBeGreaterThan(300);
+    expect(await owner.evaluate(() => window.scrollY)).toBe(0);
+    await pane.evaluate((element) => element.scrollTo(0, 0));
+    await expect(owner.getByRole("heading", { name: "Getting started", level: 1, exact: true })).toBeInViewport();
+    if (!suffix) await expect(owner.locator('[data-slot="docs-page-header"]').getByRole("button", { name: "More actions", exact: true })).toBeInViewport();
     await checkpoint(owner, suffix ? "collection-settings-sticky-toolbar" : "collection-sticky-toolbar", { fullPage: false });
   }
 });

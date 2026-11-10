@@ -1,5 +1,6 @@
 "use client";
 
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { cn } from "cn";
 import { SmilePlusIcon } from "lucide-react";
 import type { IconName } from "lucide-react/dynamic";
@@ -54,17 +55,16 @@ export function IconField({
     return (
       <div className="relative shrink-0">
         <input type="hidden" name="icon" value={value ?? ""} />
-        <Popover open={open} onOpenChange={setOpen}>
+        <Tooltip><Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
             render={
-              <Button
+              <TooltipTrigger render={<Button
                 type="button"
                 variant={named ? "ghost" : "outline"}
                 size={named ? "sm" : "icon"}
-                title={icon ? "Change icon" : "Add icon"}
-                aria-label={icon ? `Change icon (${icon.replaceAll("-", " ")})` : "Add icon"}
+                aria-label={icon ? named ? `${icon.replaceAll("-", " ")} Change icon` : `Change icon (${icon.replaceAll("-", " ")})` : "Add icon"}
                 className={cn(!icon && "border-dashed text-muted-foreground")}
-              />
+              />} />
             }
           >
             {icon ? <LucideIcon name={icon} className={named ? "text-primary" : undefined} /> : <SmilePlusIcon aria-hidden />}
@@ -99,7 +99,7 @@ export function IconField({
               </Button>
             )}
           </PopoverContent>
-        </Popover>
+        </Popover><TooltipContent>{icon ? "Change icon" : "Add icon"}</TooltipContent></Tooltip>
       </div>
     );
   }
@@ -109,7 +109,7 @@ export function IconField({
       <div className="flex flex-wrap gap-2">
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
-            render={<Button type="button" variant="outline" size="sm" aria-label={icon ? `Change icon (${icon.replaceAll("-", " ")})` : undefined} />}
+            render={<Button type="button" variant="outline" size="sm" aria-label={icon ? named ? `${icon.replaceAll("-", " ")} Change icon` : `Change icon (${icon.replaceAll("-", " ")})` : undefined} />}
           >
             {icon ? (
               <>

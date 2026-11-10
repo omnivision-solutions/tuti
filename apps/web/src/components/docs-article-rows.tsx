@@ -63,7 +63,7 @@ export type ArticleState = "draft" | "changes" | "published";
 /** The one look of an article's state: a dot in its colour (Draft neutral, Unpublished changes the highlight: it needs the team, Published soft green; never a post status's colour), and its words. */
 export const ARTICLE_STATES: Record<ArticleState, { label: string; dot: string; tint: string }> = {
   draft: { label: "Draft", dot: "bg-muted-foreground", tint: "bg-muted" },
-  changes: { label: "Unpublished changes", dot: "bg-highlight-foreground", tint: "bg-highlight" },
+  changes: { label: "Unpublished changes", dot: "bg-status-under-review", tint: "bg-highlight" },
   published: { label: "Published", dot: "bg-primary", tint: "bg-soft" },
 };
 
@@ -156,9 +156,9 @@ export function ArticleGroup({
 /** The last row of a collection's articles: write another in it. */
 export function NewArticleRow({ href, beside }: { href: string; beside?: ReactNode }) {
   return (
-    <li className="flex items-center gap-4">
-      <Link href={href} className="flex items-center gap-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
-        <PlusIcon aria-hidden className="size-4" />
+    <li className="flex min-h-10! items-center gap-4">
+      <Link href={href} className="flex h-8 items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+        <PlusIcon aria-hidden className="size-3.5" />
         New article
       </Link>
       {beside}
@@ -173,7 +173,7 @@ export function NewArticleRow({ href, beside }: { href: string; beside?: ReactNo
  */
 export function DocsArticleRows({
   projectSlug,
-  details: { detailsOf, stats, badge },
+  details: { detailsOf, stats, badge, savedAt },
   articles,
   reorder = false,
 }: {
@@ -216,7 +216,7 @@ export function DocsArticleRows({
         </div>
         <span className={STATUS}>
           {(state || article?.publishedAt) && (
-            <span className={cn("inline-flex items-center gap-1.5 text-[13px]", state === "changes" ? "text-highlight-foreground" : state === "draft" ? "text-muted-foreground" : "text-primary")}>
+            <span className={cn("inline-flex items-center gap-1.5 text-[13px]", "text-muted-foreground")}>
               <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", ARTICLE_STATES[state ?? "published"].dot)} />
               {ARTICLE_STATES[state ?? "published"].label}
             </span>
@@ -237,7 +237,7 @@ export function DocsArticleRows({
           {read?.helpful ? read.helpful.toLocaleString("en") : "–"}
           <span className="sr-only"> {read?.helpful ?? 0} found it helpful</span>
         </span>
-        <span className="docs-updated hidden w-20 shrink-0 text-right text-[13px] text-muted-foreground max-sm:hidden">{article ? timeAgo(article.updatedAt) : "–"}</span>
+        <span className="docs-updated hidden w-20 shrink-0 text-right text-[13px] text-muted-foreground max-sm:hidden">{article ? timeAgo(savedAt.get(article.id) ?? article.updatedAt) : "–"}</span>
       </li>
     );
   });

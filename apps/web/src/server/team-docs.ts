@@ -11,7 +11,7 @@ import { type AccessChoices, collectionPath, inTreeOrder, namedLevel, readingOrd
 import { tabSelect, tabView } from "./operations/docs";
 import { insightsSince } from "./operations/docs-insights";
 
-const articleSelect = { slug: true, title: true, publishedAt: true, order: true } as const;
+const articleSelect = { slug: true, title: true, publishedAt: true, order: true, sample: true, changes: { select: { articleId: true } } } as const;
 
 /**
  * The team's docs as the app's Docs pages show them (the tree beside them, a tab's or a collection's
@@ -64,10 +64,12 @@ export const teamDocs = cache(async (projectId: string) => {
 export type TeamDocs = Awaited<ReturnType<typeof teamDocs>>;
 
 /** An article as the tree and the pages list it. */
-export const treeArticle = (article: { slug: string; title: string; publishedAt: Date | null }) => ({
+export const treeArticle = (article: { slug: string; title: string; publishedAt: Date | null; sample?: boolean; changes?: { articleId: string } | null }) => ({
   slug: article.slug,
   title: article.title,
   published: article.publishedAt !== null,
+  changes: Boolean(article.changes),
+  sample: article.sample,
 });
 
 /** Who can read a level, as a row's badge ("Signed-in", "Enterprise, Pro"; null: it inherits), with the groups' names from `access`. */
