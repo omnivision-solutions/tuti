@@ -70,7 +70,7 @@ async function articleViews(articleId: string | null, review: TargetReview) {
     <div className="flex flex-col gap-3 break-words">
       {runs.map((run, i) =>
         run.changed ? (
-          <div key={i} data-change={count++} className="flex scroll-mt-32 flex-col gap-1 rounded-md data-current:ring-2 data-current:ring-ring data-current:ring-offset-2 data-current:ring-offset-card">
+          <div key={i} data-change={count++} className="flex scroll-mt-20 flex-col gap-1 rounded-md data-current:ring-2 data-current:ring-ring data-current:ring-offset-2 data-current:ring-offset-card">
             {run.blocks.map(({ kind, doc }, j) =>
               kind === "removed" ? (
                 <del key={j} className="block rounded-md bg-destructive/10 px-2 py-1 text-destructive-foreground">

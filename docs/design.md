@@ -158,9 +158,9 @@ the list picks none to approve at once.
   From tablet width up there is no separate app header: the page starts at the top of the shell. Its own
   `PageHeader` keeps the title, description, metadata and actions together and, in windows at least 40rem tall, sticks
   to the top as the page scrolls; a post's back/previous/next row sticks with it. Editors keep Save and Publish beside
-  their page context, in the same sticky header. Shorter or zoomed windows let these headers scroll away to leave room
-  for the content. An article's back link and draft state share one compact block beside its actions, with a lower
-  divider; the toolbar and text share a reading column, at the portal's width. The sidebar's visible "Toggle Sidebar"
+  their page context, in the same sticky header at any window height. Shorter or zoomed windows let other headers scroll
+  away to leave room for the content. An article's back link and draft state share one compact block beside its actions,
+  with a lower divider; the toolbar and text share a reading column, at the portal's width. The sidebar's visible "Toggle Sidebar"
   button sits beside the project switcher when expanded and at the top of the icon rail when collapsed. The edge rail
   and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. On phones a compact sticky row keeps the menu and project/section path, the page's title
   once its heading scrolls away, and `PageActions` at its right end. An editor's primary actions (`pinActions`) stay

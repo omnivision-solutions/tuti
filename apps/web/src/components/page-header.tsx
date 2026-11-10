@@ -43,7 +43,7 @@ export function PageHeader({
     </PageActions>
   );
   return (
-    <div data-slot="page-header" className={cn("flex shrink-0 flex-col gap-1.5", titleInForm && "topbar:grid topbar:grid-cols-[minmax(0,1fr)_auto] topbar:items-center topbar:border-b", className)}>
+    <div data-slot="page-header" data-pinned-actions={pinActions || undefined} className={cn("flex shrink-0 flex-col gap-1.5", titleInForm && "topbar:grid topbar:grid-cols-[minmax(0,1fr)_auto] topbar:items-center topbar:border-b", className)}>
       {back && (
         <BackLink href={back.href} className={cn("mb-1 max-w-full [&>span]:truncate", titleInForm && "topbar:col-start-1 topbar:row-start-1 topbar:mb-0 topbar:self-center")}>
           {back.label}

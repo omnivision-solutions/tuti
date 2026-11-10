@@ -67,8 +67,16 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   // The one out of date isn't in the changes, and the page says so above them, with Write it again.
   await expect(owner.getByText("One of its edits was written on an earlier version of the article, so it isn't in the changes below.", { exact: false })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Write it again" })).toHaveCount(1);
-  // Scrolled under the page's sticky toolbar (a short window), a chip goes behind it, not over it.
-  await owner.setViewportSize({ width: 1280, height: 300 });
+  // In a window tall enough for the sticky toolbar, a chip scrolled underneath goes behind it, not over it.
+  await owner.setViewportSize({ width: 1280, height: 640 });
+  await expect(owner.locator('[data-slot="page-header"]')).toHaveCSS("position", "sticky");
+  // This short article still needs enough document below it to scroll its chips under the toolbar.
+  await owner.evaluate(() => {
+    const room = document.createElement("div");
+    room.dataset.scrollRoom = "";
+    room.style.height = "100vh";
+    document.querySelector("main")!.append(room);
+  });
   const underHeader = await chips
     .getByRole("button", { name: /^PR #/ })
     .first()
@@ -82,6 +90,7 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
     });
   expect(underHeader).toEqual({ under: true, behind: true });
   await checkpoint(owner, "chips-under-header", { fullPage: false });
+  await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
   await owner.evaluate(() => window.scrollTo(0, 0));
   await owner.setViewportSize({ width: 1280, height: 720 });
   await checkpoint(owner, "chips-collapsed", { fullPage: false });

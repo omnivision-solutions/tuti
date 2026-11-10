@@ -221,6 +221,17 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(view.getByRole("insertion").first().locator("strong")).toHaveText("Dark");
   await expect(view.getByRole("deletion").first()).toContainText("Pick Light in Settings.");
   await expect(view.getByText("Themes apply at once.")).toBeVisible();
+  // Change targets clear the local Changes toolbar and its gap (5rem), beyond the document's page toolbar offset.
+  await owner.evaluate(() => {
+    const room = document.createElement("div");
+    room.dataset.scrollRoom = "";
+    room.style.height = "200vh";
+    document.body.append(room);
+  });
+  const change = view.locator('[data-change="1"]');
+  await change.evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+  await expect.soft.poll(() => change.evaluate((element) => Math.round(element.getBoundingClientRect().y - parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop)))).toBe(80);
+  await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
   // Stepping between the changes: the one stepped to is marked.
   await expect(view.getByText("Change 1 of 2")).toBeVisible();
   await view.getByRole("button", { name: "Next change" }).click();

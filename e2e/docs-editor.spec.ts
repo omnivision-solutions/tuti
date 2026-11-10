@@ -51,6 +51,29 @@ test("an article editor keeps Save and Publish visible while its text scrolls", 
   await checkpoint(team, "docs-editor-sticky-actions", { fullPage: false });
 });
 
+test("a short window keeps Save and Publish in reach while editing the end of a long article", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { team, slug, api } = await editor(browser);
+  await api("/articles/invite-your-team", { body: "Owners send invites from Settings.\n\n".repeat(80) }, "PATCH");
+  await team.setViewportSize({ width: 1024, height: 450 });
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  const article = team.getByRole("textbox", { name: "Article", exact: true });
+  await article.click();
+  await team.keyboard.press("ControlOrMeta+End");
+  await team.keyboard.type("Invite the rest of your team.");
+  await expect(article.locator("p").last()).toContainText("Invite the rest of your team.");
+  expect(await team.evaluate(() => window.scrollY)).toBeGreaterThan(700);
+  const save = team.getByRole("button", { name: "Save", exact: true });
+  await expect.soft(save).toBeInViewport();
+  await expect.soft(team.getByRole("button", { name: "Publish", exact: true })).toBeInViewport();
+  await expect.poll(() => team.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
+  await checkpoint(team, "docs-editor-short-window-actions", { fullPage: false });
+  await save.click();
+  await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  await team.reload();
+  await expect(article.locator("p").last()).toContainText("Invite the rest of your team.");
+});
+
 test("the article text matches the portal's width at 1440px, with and without sections", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const { team, slug, api } = await editor(browser);

@@ -600,9 +600,9 @@
   }
 }
 /* The app uses the page's own heading and actions as its toolbar. Portals keep their own header. The padding
-   covers text passing underneath without changing the header's initial spacing. Short or zoomed windows let the
-   toolbar scroll away to preserve reading room. Phones keep the compact menu row. */
-@media (width >= 48rem) and (height >= 40rem) {
+   covers text passing underneath without changing the header's initial spacing. Short or zoomed windows let ordinary
+   toolbars scroll away to preserve reading room; editors keep their pinned actions. Phones keep the compact menu row. */
+@media (width >= 48rem) {
   main[data-slot="sidebar-inset"] [data-slot="page-header"]:not(.inbox-list-title) {
     position: sticky;
     top: 0;
@@ -613,6 +613,11 @@
   }
   main[data-slot="sidebar-inset"] [data-slot="post-header"] [data-slot="page-header"] {
     position: static;
+  }
+  @media (height < 40rem) {
+    main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-pinned-actions]) {
+      position: static;
+    }
   }
 }
 
