@@ -31,7 +31,7 @@ export function PlanPicker({ projectSlug, plans }: { projectSlug: string; plans:
   const [interval, setBilled] = useState<"month" | "year">("month");
   const { upgrade, pending, error } = useUpgrade(projectSlug);
   return (
-    <div id="plans" className="flex scroll-mt-20 flex-col gap-4">
+    <div id="plans" className="flex scroll-mt-8 flex-col gap-4">
       <BilledToggle value={interval} onChange={setBilled} yearlyNote={YEARLY_NOTE} />
       <div className="grid gap-4 md:grid-cols-3">
         {(["FREE", "PRO", "BUSINESS"] as const).map((plan) => (

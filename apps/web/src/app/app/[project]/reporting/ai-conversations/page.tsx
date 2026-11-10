@@ -63,8 +63,8 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
         ]}
       />
       <section aria-labelledby="ai-history" className="flex flex-col gap-3">
-        {/* Newer and Older come back here (under the top bar), focus too, so the new page is read from its start. */}
-        <HashHeading key={page} id="ai-history" className="scroll-mt-20 font-heading text-base font-medium outline-none">
+        {/* Newer and Older come back here, with focus too: a small gap below any visible toolbar. */}
+        <HashHeading key={page} id="ai-history" className="scroll-mt-8 font-heading text-base font-medium outline-none">
           Latest conversations
         </HashHeading>
         <SubNav

@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL } from "./env";
+import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { afterIntersections, apiFor, createProject, signUp } from "./helpers";
 import { verifyEmail } from "./mail";
 
@@ -115,4 +115,56 @@ test("an open feedback pane stays below the page toolbar while the list scrolls"
   const box = (await toolbar.boundingBox())!;
   expect((await close.boundingBox())!.y).toBeGreaterThanOrEqual(box.y + box.height);
   await checkpoint(owner, "feedback-pane-below-toolbar", { fullPage: false });
+});
+
+// Give a section at the end of a short fixture page room to align as it does above a longer list.
+async function expectAnchorGap(page: Page, selector: string, gap: number, stickyToolbar = true) {
+  await page.evaluate(() => {
+    const room = document.createElement("div");
+    room.style.height = "200vh";
+    document.body.append(room);
+  });
+  const target = page.locator(selector);
+  await target.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await expect.soft.poll(async () => {
+    const header = stickyToolbar ? await page.locator('[data-slot="page-header"]:visible').last().boundingBox() : null;
+    return Math.round((await target.boundingBox())!.y - (header ? header.y + header.height : 0));
+  }).toBe(gap);
+}
+
+test("app anchors clear each visible toolbar once, and Reporting adds no invisible toolbar", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await verifyEmail(owner);
+  const api = await apiFor(owner, slug);
+  await api("/articles", { title: "Old instructions", body: "An earlier guide." });
+  await api("/articles/old-instructions", undefined, "DELETE");
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/docs`);
+  await expectAnchorGap(owner, "#recently-deleted", 24);
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await expectAnchorGap(owner, "#usage", 32);
+  await owner.goto(`/app/${slug}/reporting/ai-conversations`);
+  await expect.soft(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+  await expectAnchorGap(owner, "#ai-history", 32, false);
+  // Turning to a phone still reserves the compact menu row; returning to desktop clears that reservation.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "48px");
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+  // The Inbox list title scrolls within its pane rather than sticking over the document.
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+});
+
+test("billing's plan and usage anchors keep only their gap below the toolbar", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  await verifyEmail(owner);
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await expectAnchorGap(owner, "#plans", 32);
+  await expectAnchorGap(owner, "#usage", 32);
 });

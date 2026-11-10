@@ -865,6 +865,19 @@ test("the views, the list and the open conversation side by side, each scrolling
   await owner.setViewportSize({ width: 900, height: 900 });
   await expect(messages.last()).toBeInViewport();
 
+  // Below laptop width the details clear the conversation's taller sticky toolbar while the window scrolls.
+  await owner.setViewportSize({ width: 1000, height: 800 });
+  await owner.evaluate(() => window.scrollTo(0, 600));
+  const details = owner.locator("#conversation-details");
+  await expect(details).toBeVisible();
+  await expect.poll(async () => {
+    const header = (await conversation.locator('[data-slot="page-header"]').boundingBox())!;
+    return (await details.boundingBox())!.y - header.y - header.height;
+  }).toBeGreaterThanOrEqual(16);
+  const detailsBox = (await details.boundingBox())!;
+  expect(detailsBox.y + detailsBox.height).toBeLessThanOrEqual(800);
+  await checkpoint(owner, "inbox-tablet-details-clear-toolbar", { fullPage: false });
+
   // On a phone, one at a time: the conversation, its way back to the list, then the list.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/inbox/1`);

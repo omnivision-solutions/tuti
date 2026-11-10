@@ -372,7 +372,7 @@ test("on a laptop Customize fits the window, and each pane scrolls on its own", 
       const bars = (await titleBar.boundingBox())!;
       for (let presses = 0; presses < 10 && !(await darkLogo.evaluate((button) => button === document.activeElement)); presses++) {
         await owner.keyboard.press("Shift+Tab");
-        expect(await owner.evaluate(() => document.activeElement!.getBoundingClientRect().top)).toBeGreaterThanOrEqual(bars.y + bars.height);
+        expect.soft(await owner.evaluate(() => document.activeElement!.getBoundingClientRect().top)).toBeGreaterThanOrEqual(bars.y + bars.height);
       }
       await expect(darkLogo).toBeFocused();
     }

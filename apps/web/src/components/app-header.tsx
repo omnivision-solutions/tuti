@@ -64,7 +64,10 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     const phone = window.matchMedia("(width < 48rem)");
     let toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"]')!;
     // Focused fields and anchor targets must clear the actual toolbar, including wrapped titles and editor actions.
-    const measure = () => document.documentElement.style.setProperty("--app-toolbar-height", `${phone.matches ? ref.current!.offsetHeight : toolbar.offsetHeight}px`);
+    const measure = () => {
+      const height = phone.matches ? ref.current!.offsetHeight : getComputedStyle(toolbar).position === "sticky" ? toolbar.offsetHeight : 0;
+      document.documentElement.style.setProperty("--app-toolbar-height", `${height}px`);
+    };
     const sizes = new ResizeObserver(measure);
     sizes.observe(toolbar);
     sizes.observe(ref.current!);

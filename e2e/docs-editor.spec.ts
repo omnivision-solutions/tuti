@@ -38,6 +38,19 @@ test("the app sidebar folds for saved and new article editors and opens elsewher
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
 });
 
+test("an article editor keeps Save and Publish visible while its text scrolls", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const { team, slug, api } = await editor(browser);
+  await api("/articles/invite-your-team", { body: "Owners send invites from Settings.\n\n".repeat(80) }, "PATCH");
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  await expect(team.getByRole("textbox", { name: "Article", exact: true })).toBeVisible();
+  await team.evaluate(() => window.scrollTo(0, 700));
+  expect(await team.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(700);
+  await expect(team.getByRole("button", { name: "Save", exact: true })).toBeInViewport();
+  await expect(team.getByRole("button", { name: "Publish", exact: true })).toBeInViewport();
+  await checkpoint(team, "docs-editor-sticky-actions", { fullPage: false });
+});
+
 test("the article text matches the portal's width at 1440px, with and without sections", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const { team, slug, api } = await editor(browser);
@@ -100,7 +113,7 @@ test("the article text matches the portal's width at 1440px, with and without se
   const history = team.getByRole("dialog", { name: "History", exact: true });
   await expect(history).toBeVisible();
   await expect.poll(async () => Math.round((await history.boundingBox())!.width)).toBe(36 * 16);
-  expect(await column.boundingBox()).toEqual(beforeHistory);
+  await expect.poll(() => column.boundingBox()).toEqual(beforeHistory);
   // The panel hides the page from role queries, while the editor keeps its layout behind it.
   const article = team.locator('#article-form [role="textbox"][aria-label="Article"]');
   await expect.poll(async () => Math.round((await article.boundingBox())!.width)).toBe(46 * 16);

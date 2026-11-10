@@ -325,7 +325,7 @@
     scroll-padding-top: var(--portal-header-height, 12rem);
   }
   /* The app's own toolbar can wrap. Focus and anchor targets clear its measured height. */
-  html:has(main[data-slot="sidebar-inset"]) {
+  html:has([data-slot="sidebar-inset"]) {
     scroll-padding-top: var(--app-toolbar-height, 0px);
   }
   /* Customize below laptop width scrolls under its own title row (and the menu row on phones). */
