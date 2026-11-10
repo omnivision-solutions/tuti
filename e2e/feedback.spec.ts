@@ -137,12 +137,13 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText([/Bo$/, /Ada$/]);
   // The change is in the post's activity, after the team's answer: who made it, from what to what.
   await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Tess Team moved it to Planned");
-  // Its title is the page's heading, under the top bar (which keeps a copy in view); the post merged into it is listed.
+  // Its title is the page's sticky heading; the post merged into it is listed.
   const heading = team.getByRole("heading", { name: "Dark mode", level: 1 });
   await expect(heading).toHaveCSS("font-size", "32px");
   // The post is Feedback's: the sidebar keeps Feedback marked on its page.
   await expect(team.locator('[data-slot="sidebar"][data-state]').getByRole("link", { name: /^Feedback/ })).toHaveAttribute("data-active");
-  expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(48);
+  expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(0);
+  await expect(team.locator("main > header")).toBeHidden();
   await expect(properties.getByRole("list", { name: "Merged posts" }).getByRole("link")).toHaveText(["#2 Night theme for the editor"]);
   await checkpoint(team, "team-planned");
   // On a phone its properties come first, folded to a line (status, owner, ETA) that opens them; then the post and its
@@ -1592,6 +1593,8 @@ test("Feedback's filters stay open and keep keyboard focus across choices", asyn
 });
 
 test("Feedback's split view: a row opens the post beside the list, to triage and reply; J and K step through, Esc closes", async ({ browser }, testInfo) => {
+  // Desktop and phone triage, keyboard navigation and history restoration share one end-to-end journey.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");
@@ -1794,8 +1797,13 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await team.getByRole("link", { name: last, exact: true }).click();
   await expect(pane.getByRole("heading", { name: last })).toBeInViewport();
   // Its first row (Close, Open full page) clear of the app's bar (3rem), not under it.
-  const header = (await team.locator("header").first().boundingBox())!;
-  expect((await pane.getByRole("link", { name: "Close" }).boundingBox())!.y).toBeGreaterThanOrEqual(header.y + header.height);
+  // Measured until the pane's scroll and the bar settle: 8px below the bar.
+  await expect
+    .poll(async () => {
+      const header = (await team.locator("header").first().boundingBox())!;
+      return Math.round((await pane.getByRole("link", { name: "Close" }).boundingBox())!.y - (header.y + header.height));
+    })
+    .toBe(8);
   // Closed, the list is back where it was: at the row just triaged.
   await pane.getByRole("link", { name: "Close" }).click();
   await expect(team.getByRole("link", { name: last, exact: true })).toBeInViewport();

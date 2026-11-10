@@ -56,6 +56,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
@@ -107,7 +108,12 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <ProjectSwitcher projects={projects} current={current} />
+        <div className="flex min-w-0 items-center gap-1 group-data-[collapsible=icon]:flex-col">
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:w-full">
+            <ProjectSwitcher projects={projects} current={current} />
+          </div>
+          <SidebarTrigger title="Toggle Sidebar" className="hidden shrink-0 md:inline-flex group-data-[collapsible=icon]:order-first" />
+        </div>
         {/* On a project's pages, where ⌘K is (not Account settings or New project). */}
         {onProject && <SearchButton />}
       </SidebarHeader>

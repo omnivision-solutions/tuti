@@ -1381,7 +1381,9 @@ test("an article's settings: its own address (the old one redirects), keywords r
   const [settingsBox, saveBox, publishBox] = await Promise.all(
     [bar("Settings"), bar("Save"), team.locator('button[aria-label="More actions"]:visible')].map(async (button) => (await button.boundingBox())!),
   );
-  expect(settingsBox.y).toBeLessThan(48);
+  const toolbar = (await team.locator('[data-slot="page-header"]').boundingBox())!;
+  expect(settingsBox.y).toBeGreaterThanOrEqual(toolbar.y);
+  expect(settingsBox.y + settingsBox.height).toBeLessThanOrEqual(toolbar.y + toolbar.height);
   expect(Math.round(saveBox.y)).toBe(Math.round(settingsBox.y));
   expect(settingsBox.x).toBeLessThan(saveBox.x);
   expect(saveBox.x).toBeLessThan(publishBox.x);
@@ -2346,7 +2348,7 @@ test("a link in an article to another of the portal's articles stays on the port
   await expect(reader.getByRole("heading", { name: "Invoices" })).toBeInViewport();
 });
 
-test("an article's editor bar: one filled button, Save filled only once there's something to save, and it fits beside the bar's path", async ({ browser }) => {
+test("an article's editor bar: one filled button, Save filled only once there's something to save, and its toolbar fits from tablet width up", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
@@ -2371,12 +2373,13 @@ test("an article's editor bar: one filled button, Save filled only once there's 
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
 
-  // From a tablet up, the bar's buttons sit clear of its path ("Acme / Docs").
+  // From a tablet up, the page owns its toolbar: no bar above it and no horizontal overflow.
   for (const width of [768, 1024, 1280]) {
     await team.setViewportSize({ width, height: 900 });
-    const path = team.locator('[data-slot="bar-path"]');
+    await expect(team.locator("main > header")).toBeHidden();
     const settings = team.getByRole("button", { name: "Settings" });
-    const [pathBox, settingsBox] = [(await path.boundingBox())!, (await settings.boundingBox())!];
-    expect(pathBox.x + pathBox.width, `at ${width}px`).toBeLessThanOrEqual(settingsBox.x);
+    await expect(settings).toBeInViewport();
+    await expect(team.getByRole("button", { name: "Save", exact: true })).toBeInViewport();
+    expect(await team.evaluate(() => document.documentElement.scrollWidth), `at ${width}px`).toBeLessThanOrEqual(width);
   }
 });

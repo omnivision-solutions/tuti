@@ -108,7 +108,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
               : { href: `/app/${slug}/docs`, label: "Docs" }
         }
         // The form's title field shows it, right under this.
-        title={<span className="sr-only">{article.title}</span>}
+        title={article.title}
+        titleInForm
         meta={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <ArticleStateBadge state={!article.publishedAt ? "draft" : article.changes ? "changes" : "published"} />
@@ -148,9 +149,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
                 preview: article.publishedAt ? previewUrl(access, `/docs/${article.slug}`) : undefined,
               }}
             />
-            {/* Settings and its panels: one quiet look, Save the one fill. The bar keeps 26rem over the top bar's end (the path
-                stops before it): History and Verify are named from a wide laptop up, icons (named on hover and to the
-                ear) under it. */}
+            {/* Settings and its panels stay quiet beside Save. History and Verify have names from a wide laptop up,
+                icons (named on hover and to the ear) under it. */}
             <Link href={`?history${keep}`} scroll={false} aria-label="History" title="History" className={buttonVariants({ variant: "ghost" })}>
               <HistoryIcon aria-hidden />
               <span className="hidden xl:inline">History</span>

@@ -59,8 +59,8 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
   };
   return (
     <section aria-label="The article" className="rounded-xl border bg-card">
-      {/* Stays under the top bar while the article scrolls. */}
-      <div className="sticky top-12 z-10 flex flex-wrap items-center gap-2 rounded-t-xl border-b bg-card px-3 py-2">
+      {/* Stays under the page's toolbar (the menu row on phones) while the article scrolls. */}
+      <div className="sticky top-12 topbar:top-(--app-toolbar-height) z-10 flex flex-wrap items-center gap-2 rounded-t-xl border-b bg-card px-3 py-2">
         <Tabs value={view} onValueChange={(value) => setView(value as "changes" | "article")}>
           <TabsList aria-label="Show">
             <TabsTrigger value="changes">Changes</TabsTrigger>

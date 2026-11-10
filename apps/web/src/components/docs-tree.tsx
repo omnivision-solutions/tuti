@@ -638,7 +638,7 @@ export function DocsWorkspace({
         <aside className="border-b lg:w-64 lg:shrink-0 lg:border-r lg:border-b-0 lg:[:root[data-docs-tree-folded]_&]:w-12">
           {/* Folded (from laptop width up, `data-docs-tree-folded` on <html>: DocsTreeFold): a rail with the button that
               opens the tree again, where the tree's own was. */}
-          <div className="hidden justify-center p-2 lg:sticky lg:top-12 lg:[:root[data-docs-tree-folded]_&]:flex">
+          <div className="hidden justify-center p-2 lg:sticky lg:top-0 lg:[:root[data-docs-tree-folded]_&]:flex">
             <DocsTreeFold open />
           </div>
           <button
@@ -651,7 +651,7 @@ export function DocsWorkspace({
             <ChevronRightIcon aria-hidden className={cn("size-4 transition-transform", browsing && "rotate-90")} />
             Browse docs
           </button>
-          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", "lg:[:root[data-docs-tree-folded]_&]:hidden", browsing ? "flex" : "hidden")}>
+          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-0 lg:flex lg:max-h-dvh lg:overflow-y-auto", "lg:[:root[data-docs-tree-folded]_&]:hidden", browsing ? "flex" : "hidden")}>
             {/* Back to the docs' home, which shows them all at a glance; beside it, from laptop width up, the tree's fold. */}
             <div className="flex items-center gap-1">
               <Row draggable={false} drop={undefined} handlers={{}} className="min-w-0 flex-1 pl-2">
@@ -699,9 +699,9 @@ export function DocsWorkspace({
             </div>
           </div>
         </aside>
-        {/* One column for every Docs page (lists, forms), centred: a reading width. An article's editor: as wide as the portal's
-            widest article (46rem, one with sections; ArticleForm narrows to 43rem for one without), so it reads as it will publish. */}
-        <div className={cn("mx-auto flex w-full min-w-0 flex-1 flex-col gap-6 p-6 md:px-8", editing ? "max-w-[50rem]" : "max-w-3xl")}>{children}</div>
+        {/* Lists stay at a reading width. An editor's toolbar and text share one column; its text matches the portal
+            (46rem with sections, 43rem without). */}
+        <div className={cn("mx-auto flex w-full min-w-0 flex-1 flex-col gap-6 p-6 md:px-8", editing ? "max-w-[50rem] topbar:gap-8" : "max-w-3xl")}>{children}</div>
       </div>
       {adding && (
         <CollectionDialog

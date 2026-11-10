@@ -324,14 +324,21 @@
   html:has([data-portal-top]) {
     scroll-padding-top: var(--portal-header-height, 12rem);
   }
-  /* Customize below laptop width: the page scrolls under the app's top bar and the settings' title bar (CustomizeShell). */
+  /* The app's own toolbar can wrap. Focus and anchor targets clear its measured height. */
+  html:has([data-slot="sidebar-inset"]) {
+    scroll-padding-top: var(--app-toolbar-height, 0px);
+  }
+  /* Customize below laptop width scrolls under its own title row (and the menu row on phones). */
   @media (width < 64rem) {
     html:has([data-slot="customize-settings"]) {
-      scroll-padding-top: 6rem;
+      scroll-padding-top: 3rem;
     }
   }
   /* A page's actions pinned to the bottom on phones (PageActions): a field focused near the bottom scrolls above them. */
   @media (width < 48rem) {
+    html:has([data-slot="customize-settings"]) {
+      scroll-padding-top: 6rem;
+    }
     html:has([data-pinned-actions]) {
       scroll-padding-bottom: 6rem;
     }
@@ -592,11 +599,31 @@
     @apply my-0 min-h-7 font-semibold text-foreground;
   }
 }
-/* An editor's actions fixed over the top bar's right end (PageHeader's `pinActions`/`barActions`): the bar's path is cut
-   short before them, not run under them. */
+/* The app uses the page's own heading and actions as its toolbar. Portals keep their own header. The padding
+   covers text passing underneath without changing the header's initial spacing. Short or zoomed windows let ordinary
+   toolbars scroll away to preserve reading room; editors keep their pinned actions. Phones keep the compact menu row. */
 @media (width >= 48rem) {
-  main:has([data-bar-actions]) [data-slot="bar-path"] {
-    max-width: calc(100% - 26rem);
+  main[data-slot="sidebar-inset"] [data-slot="page-header"]:not(.inbox-list-title) {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--background);
+    padding-block: 0.75rem;
+    margin-block: -0.75rem;
+  }
+  main[data-slot="sidebar-inset"] [data-slot="post-header"] [data-slot="page-header"] {
+    position: static;
+  }
+  @media (width < 64rem) {
+    /* Above the stacked Autopilot list, the title's column is only as tall as the title itself. */
+    main[data-slot="sidebar-inset"] [data-autopilot-listed] > [data-slot="page-header"] {
+      position: static;
+    }
+  }
+  @media (height < 40rem) {
+    main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-pins-actions]) {
+      position: static;
+    }
   }
 }
 

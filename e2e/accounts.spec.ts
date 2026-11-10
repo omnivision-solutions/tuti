@@ -141,9 +141,12 @@ test("the strip asking to verify an email stays on every page until the email is
   // Account settings offers to send the email again too, beside the address.
   await olive.goto("/app/account");
   await expect(olive.getByText("Not verified")).toBeVisible();
-  // Account settings aren't the project's: the top bar doesn't name it.
+  // On phones, Account settings' path names Tuti rather than the last project.
+  await olive.setViewportSize({ width: 390, height: 844 });
   await expect(olive.locator("header").first()).toContainText("Tuti");
   await expect(olive.locator("header").first()).not.toContainText("Acme");
+  await olive.setViewportSize({ width: 1280, height: 720 });
+  await expect(olive.locator("main > header")).toBeHidden();
   await expect(olive.getByRole("paragraph").filter({ hasText: "Not verified" }).getByRole("button", { name: "Resend email" })).toBeVisible();
   // Verified in another tab, the strip and Account settings stop asking once this tab is back in focus.
   const otherTab = await olive.context().newPage();

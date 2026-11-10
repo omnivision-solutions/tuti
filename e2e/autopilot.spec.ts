@@ -186,6 +186,27 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("checkbox")).toHaveCount(0);
   await checkpoint(owner, "autopilot");
 
+  // The tablet list follows a short title section: it scrolls normally, with no phantom toolbar clearance.
+  await owner.setViewportSize({ width: 1000, height: 800 });
+  await owner.goto(`/app/${slug}/autopilot`);
+  await expect(list.getByRole("link", { name: title, exact: true })).toBeVisible();
+  await expect.soft(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+  // Give this small fixture the scrolling room a longer list has.
+  await list.evaluate((element) => {
+    const room = document.createElement("div");
+    room.dataset.scrollRoom = "";
+    room.style.height = "200vh";
+    element.append(room);
+  });
+  await owner.evaluate(() => window.scrollTo(0, 500));
+  expect(await owner.evaluate(() => window.scrollY)).toBe(500);
+  await expect(owner.getByRole("heading", { name: "Autopilot", level: 1, exact: true })).not.toBeInViewport();
+  await expect.soft(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+  await checkpoint(owner, "autopilot-tablet-list-without-phantom-toolbar", { fullPage: false });
+  await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
+  await owner.evaluate(() => window.scrollTo(0, 0));
+  await owner.setViewportSize({ width: 1280, height: 720 });
+
   // The post's review has what's needed to decide: what its users asked, and that the same pull request's article
   // edit still waits.
   await list.getByRole("link", { name: title }).click();
@@ -221,6 +242,17 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(view.getByRole("insertion").first().locator("strong")).toHaveText("Dark");
   await expect(view.getByRole("deletion").first()).toContainText("Pick Light in Settings.");
   await expect(view.getByText("Themes apply at once.")).toBeVisible();
+  // Change targets clear the local Changes toolbar and its gap (5rem), beyond the document's page toolbar offset.
+  await owner.evaluate(() => {
+    const room = document.createElement("div");
+    room.dataset.scrollRoom = "";
+    room.style.height = "200vh";
+    document.body.append(room);
+  });
+  const change = view.locator('[data-change="1"]');
+  await change.evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+  await expect.soft.poll(() => change.evaluate((element) => Math.round(element.getBoundingClientRect().y - parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop)))).toBe(80);
+  await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
   // Stepping between the changes: the one stepped to is marked.
   await expect(view.getByText("Change 1 of 2")).toBeVisible();
   await view.getByRole("button", { name: "Next change" }).click();

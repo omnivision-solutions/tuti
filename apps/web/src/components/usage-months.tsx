@@ -14,7 +14,7 @@ export async function UsageMonths({ projectId }: { projectId: string }) {
   const inCredits = creditsEnabled();
 
   return (
-    <section id="usage" aria-labelledby="usage-heading" className="flex scroll-mt-20 flex-col gap-4">
+    <section id="usage" aria-labelledby="usage-heading" className="flex scroll-mt-8 flex-col gap-4">
       <div className="flex flex-col gap-1">
         <h2 id="usage-heading" className="font-heading text-base font-medium">
           Usage

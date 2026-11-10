@@ -184,6 +184,31 @@ test("after setup, Settings → Import brings what's in Featurebase across any t
   await expect(owner.getByText("Importing again brings only what's new since: nothing comes twice.")).toBeVisible();
   await checkpoint(owner, "settings-import-done");
 
+  // The document clears the toolbar; progress needs only an 8px gap on desktop and phones.
+  const viewport = owner.viewportSize()!;
+  await owner.evaluate(() => {
+    const room = document.createElement("div");
+    room.dataset.scrollRoom = "";
+    room.style.height = "200vh";
+    document.body.append(room);
+  });
+  const progress = owner.getByRole("list", { name: "What's brought across", exact: true }).locator("..");
+  for (const width of [1440, 390]) {
+    await owner.setViewportSize({ width, height: 900 });
+    await expect(owner.locator("main > header")).toHaveCSS("display", width === 390 ? "flex" : "none");
+    // Scrolled again on each try, so a toolbar that settles late is measured with the box moved for it.
+    await expect
+      .soft.poll(() =>
+        progress.evaluate((element) => {
+          element.scrollIntoView({ block: "start" });
+          return Math.round(element.getBoundingClientRect().y - parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop));
+        }),
+      )
+      .toBe(8);
+  }
+  await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
+  await owner.setViewportSize(viewport);
+
   await owner.getByRole("textbox", { name: "API key" }).fill(FAKE_FEATUREBASE_KEY);
   await owner.getByRole("button", { name: "Import again" }).click();
   await expect(status).toContainText("Nothing brought across.", { timeout: 15_000 });

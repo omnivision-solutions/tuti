@@ -865,6 +865,19 @@ test("the views, the list and the open conversation side by side, each scrolling
   await owner.setViewportSize({ width: 900, height: 900 });
   await expect(messages.last()).toBeInViewport();
 
+  // Below laptop width the details clear the conversation's taller sticky toolbar while the window scrolls.
+  await owner.setViewportSize({ width: 1000, height: 800 });
+  await owner.evaluate(() => window.scrollTo(0, 600));
+  const details = owner.locator("#conversation-details");
+  await expect(details).toBeVisible();
+  await expect.poll(async () => {
+    const header = (await conversation.locator('[data-slot="page-header"]').boundingBox())!;
+    return (await details.boundingBox())!.y - header.y - header.height;
+  }).toBeGreaterThanOrEqual(16);
+  const detailsBox = (await details.boundingBox())!;
+  expect(detailsBox.y + detailsBox.height).toBeLessThanOrEqual(800);
+  await checkpoint(owner, "inbox-tablet-details-clear-toolbar", { fullPage: false });
+
   // On a phone, one at a time: the conversation, its way back to the list, then the list.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/inbox/1`);
@@ -1307,10 +1320,11 @@ test("on a phone, a long conversation's title shows in the top bar once it's scr
     text.textContent = "Can I export to PDF?";
   });
   await expect(barTitle).toHaveText("Can I export to PDF?");
-  // Wider than a phone (turned on its side), the bar still says it while it's up under the bar.
+  // Wider than a phone, the page's own header holds the title; the phone row is hidden.
   await owner.setViewportSize({ width: 900, height: 844 });
   await afterIntersections(owner);
-  await expect(barTitle).toHaveText("Can I export to PDF?");
+  await expect(owner.locator("main > header")).toBeHidden();
+  await expect(owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" })).toBeInViewport();
   await owner.setViewportSize({ width: 390, height: 844 });
   // Back at the top, the title is on the page: the bar has the project's name again.
   await owner.getByRole("heading", { level: 1, name: "Can I export to PDF?" }).scrollIntoViewIfNeeded();

@@ -61,45 +61,92 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     if (!heading) {
       return;
     }
-    const bar = ref.current!.offsetHeight;
     const phone = window.matchMedia("(width < 48rem)");
+    const tall = window.matchMedia("(height >= 40rem)");
+    let toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"]')!;
+    // Focused fields and anchor targets must clear the actual toolbar, including wrapped titles and editor actions.
+    const measure = () => {
+      // A query-only navigation can remount the page's header without rerunning this effect.
+      if (!toolbar.isConnected) {
+        turned();
+        return;
+      }
+      // Reserve the row as it approaches the top, but only its remaining coverage if its parent pushes it offscreen.
+      const height = phone.matches
+        ? ref.current!.offsetHeight
+        : getComputedStyle(toolbar).position === "sticky"
+          ? Math.max(0, Math.min(toolbar.offsetHeight, toolbar.getBoundingClientRect().bottom))
+          : 0;
+      // Only when it changes: a new value restyles the whole page.
+      const root = document.documentElement.style;
+      if (root.getPropertyValue("--app-toolbar-height") !== `${height}px`) {
+        root.setProperty("--app-toolbar-height", `${height}px`);
+      }
+    };
+    // Scrolling measures at most once a frame.
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    const sizes = new ResizeObserver(measure);
+    sizes.observe(toolbar);
+    sizes.observe(ref.current!);
+    measure();
     let under = false;
     const show = () => setScrolled({ pathname, title: under ? heading!.textContent : null });
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        // Gone up under the bar, not down past the screen's bottom. Not one that takes no room: only for screen readers
-        // (a changelog entry's or help article's on phones, its title field showing the title), or taken off the page.
-        under = entry.boundingClientRect.height > 1 && !entry.isIntersecting && entry.boundingClientRect.top < bar;
-        show();
-      },
-      { rootMargin: `-${bar}px 0px 0px 0px` },
-    );
-    // Renamed while it's up there (a help article's title, saved): the page's refresh changes its text in place.
+    let observer: IntersectionObserver;
+    // Renamed while it's up there: the page's refresh changes its text in place.
     const renamed = new MutationObserver(show);
     const watch = () => {
+      // A desktop load has no bar height. Measure afresh when turning to a phone.
+      const bar = ref.current!.offsetHeight;
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          // Gone upwards, not below the screen or hidden for screen readers (an editor's title field says it).
+          under = entry.boundingClientRect.height > 1 && !entry.isIntersecting && entry.boundingClientRect.top < bar;
+          show();
+        },
+        { rootMargin: `-${bar}px 0px 0px 0px` },
+      );
       observer.observe(heading!);
       renamed.observe(heading!, { childList: true, characterData: true, subtree: true });
     };
-    // Across phone width (a phone turned, a window narrowed) the page reflows, maybe to its other heading: watched afresh.
+    // A width change or a remounted toolbar needs the current heading and all its observers afresh.
     const turned = () => {
+      const next = pick();
+      if (!next) {
+        return;
+      }
       observer.disconnect();
       renamed.disconnect();
-      heading = pick() ?? heading;
+      sizes.unobserve(toolbar);
+      heading = next;
+      toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"]')!;
+      sizes.observe(toolbar);
+      measure();
       watch();
     };
     watch();
     phone.addEventListener("change", turned);
+    // Stickiness can change without the toolbar resizing when only the window height changes.
+    tall.addEventListener("change", measure);
+    window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       observer.disconnect();
       renamed.disconnect();
       phone.removeEventListener("change", turned);
+      tall.removeEventListener("change", measure);
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+      sizes.disconnect();
+      document.documentElement.style.removeProperty("--app-toolbar-height");
     };
   }, [pathname]);
 
   return (
-    // At the top as the page scrolls; a page's title and actions sit in it (PageHeader). From tablet width up
-    // it's fixed to the window as they are, so the page bouncing at its top (a Mac's scroll) can't pull them apart.
-    <header ref={ref} className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-4 topbar:fixed topbar:right-0 topbar:left-(--app-sidebar) topbar:transition-[left] topbar:duration-200 topbar:ease-linear">
+    // Phones keep a compact menu and path, with PageActions over its right end. Wider screens use the page's own header.
+    <header ref={ref} className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background pr-12 pl-4 topbar:hidden">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-center" />
       {/* Where the page is: the project, then its part ("Acme / Feedback"; Customize's section there), till the page's

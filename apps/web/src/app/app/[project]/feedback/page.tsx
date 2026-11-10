@@ -396,7 +396,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
         </FeedbackSelection>
         {/* Keyed by the post: each one starts at the top of the pane (scrolling on its own), wherever the last was. */}
         {open !== null && (
-          <aside key={open} aria-label="Post" className="lg:sticky lg:top-18 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto lg:border-l lg:pl-6">
+          <aside key={open} aria-label="Post" className="lg:sticky lg:top-[calc(var(--app-toolbar-height,0px)+1.5rem)] lg:max-h-[calc(100dvh-var(--app-toolbar-height,0px)-3rem)] lg:overflow-y-auto lg:border-l lg:pl-6">
             <FeedbackPane projectSlug={slug} projectId={project.id} askingProperty={project.askingProperty} formats={formats} number={open} close={withPost(null)} />
           </aside>
         )}

@@ -155,11 +155,17 @@ the list picks none to approve at once.
   team's Roadmap, Users' tables; and pages of panes). Feedback, a page of panes, caps itself at 72rem while
   no post is open beside its list, so its rows stay scannable on a wide screen. It keeps the shell's left edge
   whether or not a post is open, so the clicked row stays in place.
-  The top bar stays at the top as the page scrolls; it holds the sidebar's
-  button and where the page is, the project then its part ("Acme Calendar / Feedback"; `sectionOf`; the page's title once its heading has scrolled up
-  under it); an editor's Save and Publish (`pinActions`) sit in it from tablet width up,
-  fixed to the window as it is. The page's title, its description and its actions are on
-  the page (`PageHeader`).
+  From tablet width up there is no separate app header: the page starts at the top of the shell. Its own
+  `PageHeader` keeps the title, description, metadata and actions together and, in windows at least 40rem tall, sticks
+  to the top as the page scrolls; a post's back/previous/next row sticks with it. Editors keep Save and Publish beside
+  their page context, in the same sticky header at any window height. Shorter or zoomed windows let other headers scroll
+  away to leave room for the content. An article's back link and draft state share one compact block beside its actions,
+  with a lower divider; the toolbar and text share a reading column, at the portal's width. The sidebar's visible "Toggle Sidebar"
+  button sits beside the project switcher when expanded and at the top of the icon rail when collapsed. The edge rail
+  and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. On phones a compact sticky row keeps the menu and project/section path, the page's title
+  once its heading scrolls away, and `PageActions` at its right end. An editor's primary actions (`pinActions`) stay
+  at the bottom on phones. Customize has its own section heading and Save changes row; it sticks at the top on
+  wider screens and below the menu row on phones. Pane heights and sticky menus use the full window on wider screens.
   A page of three panes (the sidebar, a column of its own, the page: Settings,
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
   width, the labelled sidebar open beside its own column from 1280px up; under 1280px it
@@ -171,7 +177,7 @@ the list picks none to approve at once.
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
-  its own under the header (the page itself doesn't; `InboxPanes`); the views always
+  its own from the top of the shell (the page itself doesn't; `InboxPanes`); the views always
   the row of tabs above the list, in the same place whether or not a conversation is open
   (they never move as one opens or closes): Needs reply, Mine and Unassigned as tabs, the
   rest (Waiting on user, Snoozed, Closed, Spam) under More, which reads as the one of them
@@ -195,7 +201,7 @@ the list picks none to approve at once.
   there rather than in the list's empty state too). On phones the list is alone.
   A conversation opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
-  The message is what the page is for, so the rest stays out of its way: in the top bar Close is
+  The message is what the page is for, so the rest stays out of its way: beside the title Close is
   the one word, Assign and Snooze icons (their names in tooltips; snoozed, till when in words),
   then the toggle for the column beside the messages and "…" (Link a post…, Summarize, Mark as
   spam, …); in the reply box Send is the one filled button, Send and close in its menu, and Attach,
@@ -208,16 +214,17 @@ the list picks none to approve at once.
   beside the text (under it on phones): its tags as chips, the posts it completes
   ("Link post…"), its cover image, how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
-  "View as reader"; Save sits with Publish in the top bar (at the bottom of the screen on phones),
+  "View as reader"; Save sits with Publish in the page's sticky toolbar (at the bottom of the screen on phones),
   and on phones the title shows once, the one to edit. The cover shows under the title in the
   text's column, as readers see it. One way into AI: while the text is still the pull requests'
-  titles, the top bar's Draft with AI (the main action); once it's written, Edit with AI's menu
+  titles, the toolbar's Draft with AI (the main action); once it's written, Edit with AI's menu
   over the text, Draft with AI in it.
   Autopilot's column is what it updates, under To review (updates waiting for the
   team or going out by themselves) and Reviewed, each in two sections, Feedback (posts
   on every board) then Help center (articles, and new articles' drafts), the ones that
   reach the most people first; and Activity, every merged pull request (those with
   nothing to do folded away at the end, To review pointing to those not read yet).
+  On tablets the list sits below a short title section, which scrolls with it and reserves no sticky toolbar space.
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
   once nothing of it waits, the next one to review opens by itself. One going out by itself says when in its bar,
@@ -250,8 +257,8 @@ the list picks none to approve at once.
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
-  An article's editor has Settings, History and Verify in its top bar (ghost; History and Verify named from 1280px up,
-  icons under it, so the bar fits the 26rem the top bar keeps for it), then Save (filled once there's something to save, else an outline) and a
+  An article's editor has Settings, History and Verify in its sticky toolbar (ghost; History and Verify named from 1280px up,
+  icons under it, so the actions fit beside the page context), then Save (filled once there's something to save, else an outline) and a
   draft's Publish; View on portal (in words), Unpublish and Delete are under "More actions". Its header is the way back (its collection), the
   state as a pill (`ArticleStateBadge`: Draft neutral, Unpublished changes in the highlight, as it needs the team, Published soft green; never a post status's colour) and the date; a new
   article's collection is picked beside its Draft pill. Its text is as wide as the portal will show it (46rem with sections, as it opened, 43rem without;
@@ -491,14 +498,14 @@ Use these instead of hand-rolling layout:
   The actions sit beside the title and description, on the right, from tablet width up.
   `more` is the actions used less often, behind "More actions".
   An editor whose title field shows the title (an article, a changelog entry) keeps the
-  heading for screen readers only (`sr-only`).
+  heading for screen readers only (`titleInForm`), with the back link and actions in one compact row.
   In the app on phones the actions are a "More actions" menu from the top bar (`PageActions`). A page whose
   every visit needs them (a conversation's Assign, Snooze and Close) shows them
-  in a row under its header on phones as well (named there, icons in the top bar), still in the menu (in reach once
+  in a row under its header on phones as well (named there, icons beside the title on wider screens), still in the menu (in reach once
   the row has scrolled away). An editor whose
   main action must stay in reach (Save and Publish) pins `actions` (`pinActions`): to a
-  bar at the bottom of the screen on phones, the menu keeping `more`, and to the top bar
-  from tablet width up (`barActions`: the top bar alone);
+  bar at the bottom of the screen on phones, the menu keeping `more`, and beside the title
+  in the page’s sticky header from tablet width up;
   the bar steps aside while text is being typed (the keyboard is up then).
   Where Tuti's own chat launcher shows in the app (its cloud), what's held at the
   bottom of the screen keeps its buttons clear of the launcher's corner
