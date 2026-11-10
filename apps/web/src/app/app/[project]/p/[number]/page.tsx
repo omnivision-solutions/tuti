@@ -160,7 +160,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           properties, the post, the rest of the sidebar (each placed by its order, the columns' boxes dropped). */}
       {/* The whole width (data-wide): the post's column up to a reading width, the sidebar beside it. */}
       <div data-wide className="grid gap-6 lg:grid-cols-[minmax(0,48rem)_18rem] lg:grid-rows-[auto_1fr] lg:items-start lg:justify-center lg:gap-12">
-          <div data-slot="post-header" className="flex min-w-0 flex-col gap-6 topbar:sticky topbar:top-0 topbar:z-10 topbar:bg-background lg:col-start-1 lg:row-start-1">
+          <div data-slot="post-header" className="flex min-w-0 flex-col gap-6 topbar:[@media(height>=40rem)]:sticky topbar:top-0 topbar:z-10 topbar:bg-background lg:col-start-1 lg:row-start-1">
         {/* Back to the list, and the newer and older post at the other end of the same row (away from the title, so they
           don't read as votes). */}
       <div className="flex items-center justify-between gap-2 -mb-3">

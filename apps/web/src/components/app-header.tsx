@@ -62,6 +62,7 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
       return;
     }
     const phone = window.matchMedia("(width < 48rem)");
+    const tall = window.matchMedia("(height >= 40rem)");
     let toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"]')!;
     // Focused fields and anchor targets must clear the actual toolbar, including wrapped titles and editor actions.
     const measure = () => {
@@ -104,10 +105,13 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     };
     watch();
     phone.addEventListener("change", turned);
+    // Stickiness can change without the toolbar resizing when only the window height changes.
+    tall.addEventListener("change", measure);
     return () => {
       observer.disconnect();
       renamed.disconnect();
       phone.removeEventListener("change", turned);
+      tall.removeEventListener("change", measure);
       sizes.disconnect();
       document.documentElement.style.removeProperty("--app-toolbar-height");
     };

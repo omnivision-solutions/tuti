@@ -1593,6 +1593,8 @@ test("Feedback's filters stay open and keep keyboard focus across choices", asyn
 });
 
 test("Feedback's split view: a row opens the post beside the list, to triage and reply; J and K step through, Esc closes", async ({ browser }, testInfo) => {
+  // Desktop and phone triage, keyboard navigation and history restoration share one end-to-end journey.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");

@@ -99,6 +99,45 @@ test("a long post keeps its title and actions in view, and phones keep the menu 
   await checkpoint(owner, "phone-navigation-and-actions", { fullPage: false });
 });
 
+test("short windows let a wrapped post header scroll away and give comments the full height", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const title = "Export the filtered report for the entire team as a CSV download";
+  await api("/posts", { board: "feature-requests", title, body: "Our team needs the full report.\n\n".repeat(30) });
+  await api("/posts/1/comments", { body: "Please include the complete report for everyone on the team.\n\n".repeat(30) });
+  await owner.setViewportSize({ width: 1024, height: 900 });
+  await owner.goto(`/app/${slug}/p/1`);
+  const heading = owner.getByRole("heading", { name: title, level: 1 });
+  const toolbar = owner.locator('[data-slot="post-header"]');
+  await expect(toolbar).toHaveCSS("position", "sticky");
+  await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
+
+  // Resizing only the height must also clear the measured sticky offset.
+  await owner.setViewportSize({ width: 1024, height: 450 });
+  expect((await heading.boundingBox())!.height).toBeGreaterThan(40);
+  await expect.soft(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+  const comments = owner.getByRole("region", { name: "Comments", exact: true });
+  await comments.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await expect.soft(heading).not.toBeInViewport();
+  await expect.soft.poll(async () => (await comments.boundingBox())!.y).toBeLessThanOrEqual(24);
+  await checkpoint(owner, "short-window-comments-without-sticky-header", { fullPage: false });
+
+  // Standalone PageHeaders follow the same height guard, on a short initial load and after resizing.
+  await owner.goto(`/app/${slug}/feedback`);
+  const pageToolbar = owner.locator('[data-slot="page-header"]');
+  await expect(pageToolbar).not.toHaveCSS("position", "sticky");
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+  await owner.setViewportSize({ width: 1024, height: 900 });
+  await expect(pageToolbar).toHaveCSS("position", "sticky");
+  await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
+  await owner.setViewportSize({ width: 1024, height: 450 });
+  await expect(pageToolbar).not.toHaveCSS("position", "sticky");
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+});
+
 test("an open feedback pane stays below the page toolbar while the list scrolls", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

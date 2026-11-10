@@ -156,9 +156,10 @@ the list picks none to approve at once.
   no post is open beside its list, so its rows stay scannable on a wide screen. It keeps the shell's left edge
   whether or not a post is open, so the clicked row stays in place.
   From tablet width up there is no separate app header: the page starts at the top of the shell. Its own
-  `PageHeader` keeps the title, description, metadata and actions together and sticks to the top as the page scrolls;
-  a post's back/previous/next row sticks with it. Editors keep Save and Publish beside their page context, in the same
-  sticky header. An article's back link and draft state share one compact block beside its actions, with a lower
+  `PageHeader` keeps the title, description, metadata and actions together and, in windows at least 40rem tall, sticks
+  to the top as the page scrolls; a post's back/previous/next row sticks with it. Editors keep Save and Publish beside
+  their page context, in the same sticky header. Shorter or zoomed windows let these headers scroll away to leave room
+  for the content. An article's back link and draft state share one compact block beside its actions, with a lower
   divider; the toolbar and text share a reading column, at the portal's width. The sidebar's visible "Toggle Sidebar"
   button sits beside the project switcher when expanded and at the top of the icon rail when collapsed. The edge rail
   and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. On phones a compact sticky row keeps the menu and project/section path, the page's title
