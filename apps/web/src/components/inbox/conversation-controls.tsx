@@ -1,6 +1,6 @@
 "use client";
 
-import { AlarmClockIcon, UserPlusIcon } from "lucide-react";
+import { AlarmClockIcon, CheckIcon, ChevronDownIcon, UserPlusIcon } from "lucide-react";
 import { useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { actOn } from "@/components/inbox/list-keys";
+import { cn } from "@/lib/utils";
+import { CONVERSATION_STATUS_STYLES } from "@/lib/conversation-statuses";
 import { initial } from "@/lib/format";
 import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails, snoozeConversation, summarizeWithAi } from "@/server/inbox";
 
@@ -37,6 +39,7 @@ export function CloseButton({ projectSlug, number, closed }: Props & { closed: b
         })
       }
     >
+      {!closed && <CheckIcon aria-hidden />}
       {closed ? "Reopen" : "Close"}
     </Button>
   );
@@ -48,9 +51,7 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
   const [pending, startTransition] = useTransition();
   const label = status === "waiting" ? "waiting on user" : "open";
   return (
-    <Button
-      variant="ghost"
-      size="sm"
+    <DropdownMenuItem
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
@@ -66,16 +67,12 @@ export function MarkStatusButton({ projectSlug, number, status }: Props & { stat
       }
     >
       Mark as {label}
-    </Button>
+    </DropdownMenuItem>
   );
 }
 
-/**
- * An icon in the top bar (its name in a tooltip, which opens on hover and on keyboard focus, and to the ear), so Close is the one word there; on phones, where the
- * actions are a row under the title and a menu, the name too.
- */
-const ICON_ACTION = "topbar:w-7 topbar:px-0";
-const Label = ({ children }: { children: string }) => <span className="topbar:sr-only">{children}</span>;
+/** Quiet label/value pickers in the conversation details card and sheet. */
+const TRIAGE_VALUE = "inbox-triage-value h-auto min-h-8 w-full min-w-0 justify-start border-0 bg-transparent px-1 py-0.5 text-left text-xs leading-5 whitespace-normal shadow-none [&>svg:first-child]:hidden group-[.inbox-details-sheet]/details:min-h-8.75 group-[.inbox-details-sheet]/details:text-[0.875rem]";
 
 type Teammate = { userId: string; name: string; image: string | null };
 
@@ -106,13 +103,13 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
   const self = team.find((m) => m.userId === me);
   // Assigned to someone no longer on the team: removing a member unassigns theirs, but an assignment racing that can stay.
   const former = !!assigneeId && !assignee;
-  const name = assignee ? `Assigned to ${assignee.name}` : former ? "Assigned to a former teammate" : "Assign";
+  const name = assignee ? `Assigned to ${assignee.name}` : former ? "Former teammate, assign conversation" : "Unassigned, assign conversation";
   const button = (
     <Button
       // Still with someone who left the team (rare): said in words, not as the icon an unassigned one has.
       variant={former ? "outline" : "ghost"}
       size="sm"
-      className={former ? undefined : ICON_ACTION}
+      className={TRIAGE_VALUE}
       disabled={pending}
       focusableWhenDisabled
       aria-label={name}
@@ -126,16 +123,17 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
           {assignee ? (
             <>
               <TeammateAvatar teammate={assignee} />
-              <span className="max-w-32 truncate topbar:sr-only">{assignee.name}</span>
+              <span className="min-w-0 truncate">{assignee.name}</span>
             </>
           ) : former ? (
             "Former teammate"
           ) : (
             <>
               <UserPlusIcon />
-              <Label>Assign</Label>
+              <span>Unassigned</span>
             </>
           )}
+          <ChevronDownIcon className="ml-auto size-3" />
         </TooltipTrigger>
         <TooltipContent>{name}</TooltipContent>
       </Tooltip>
@@ -156,7 +154,6 @@ export function AssignMenu({ projectSlug, number, assigneeId, me, team }: Props 
   );
 }
 
-/** Marks a conversation as spam (it leaves the other views, and nobody is told about it) or takes it back. */
 /** When a snooze ends, in the team member's own time: "Tue 3 Nov, 09:00" (and its year, when not this one's). */
 const snoozeTime = (at: Date) =>
   at.toLocaleString("en-GB", {
@@ -204,7 +201,15 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
         <TooltipTrigger
           render={
             <DropdownMenuTrigger
-              render={<Button variant={snoozedUntil ? "outline" : "ghost"} size="sm" className={snoozedUntil ? undefined : ICON_ACTION} disabled={pending} focusableWhenDisabled />}
+              render={
+                <Button
+                  variant={snoozedUntil ? "outline" : "ghost"}
+                  size="sm"
+                  className={cn(TRIAGE_VALUE, !snoozedUntil && "text-muted-foreground")}
+                  disabled={pending}
+                  focusableWhenDisabled
+                />
+              }
             />
           }
         >
@@ -217,9 +222,10 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
           ) : (
             <>
               <AlarmClockIcon />
-              <Label>Snooze</Label>
+              <span>Not snoozed</span>
             </>
           )}
+          <ChevronDownIcon className="ml-auto size-3" />
         </TooltipTrigger>
         <TooltipContent>{snoozedUntil ? "Snooze again, or wake it now" : "Snooze"}</TooltipContent>
       </Tooltip>
@@ -237,9 +243,7 @@ export function SnoozeMenu({ projectSlug, number, snoozedUntil }: Props & { snoo
 export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button
-      variant="ghost"
-      size="sm"
+    <DropdownMenuItem
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
@@ -255,7 +259,7 @@ export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolea
       }
     >
       {spam ? "Not spam" : "Mark as spam"}
-    </Button>
+    </DropdownMenuItem>
   );
 }
 
@@ -263,9 +267,7 @@ export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolea
 export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: string; on: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button
-      variant="ghost"
-      size="sm"
+    <DropdownMenuItem
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
@@ -279,7 +281,7 @@ export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: 
       }
     >
       {on ? "Stop emailing me new conversations" : "Email me new conversations"}
-    </Button>
+    </DropdownMenuItem>
   );
 }
 
@@ -287,11 +289,8 @@ export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: 
 export function SummarizeButton({ projectSlug, number, paused }: Props & { paused: boolean }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button
-      variant="ghost"
-      size="sm"
+    <DropdownMenuItem
       disabled={pending || paused}
-      title={paused ? "This project is out of AI credits" : undefined}
       onClick={() =>
         startTransition(async () => {
           const result = await summarizeWithAi(projectSlug, number);
@@ -303,7 +302,37 @@ export function SummarizeButton({ projectSlug, number, paused }: Props & { pause
         })
       }
     >
-      {pending ? "Summarizing…" : "Summarize with AI"}
-    </Button>
+      {pending ? "Summarizing…" : paused ? "Summarize with AI: out of AI credits" : "Summarize with AI"}
+    </DropdownMenuItem>
+  );
+}
+
+export function ConversationStatusMenu({ projectSlug, number, status, answered }: Props & { status: "OPEN" | "WAITING" | "CLOSED"; answered: boolean }) {
+  const [pending, startTransition] = useTransition();
+  const set = (value: "open" | "waiting" | "closed") =>
+    startTransition(async () => {
+      const moved = actOn(number, value === "closed");
+      const result = await setConversationStatus(projectSlug, number, value);
+      if (result.error) toast.error(result.error);
+      else {
+        toast.success(value === "closed" ? "Closed" : value === "open" ? "Reopened" : "Marked as waiting on user");
+        moved();
+      }
+    });
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<Button variant="ghost" size="sm" className={TRIAGE_VALUE} aria-label={`${status === "OPEN" ? "Needs reply" : status === "WAITING" ? "Waiting on user" : "Closed"}, change status`} disabled={pending} focusableWhenDisabled />}
+      >
+        <span aria-hidden className={cn("inbox-status-dot size-1.5 flex-none rounded-full", CONVERSATION_STATUS_STYLES[status].dot)} />
+        {status === "OPEN" ? "Needs reply" : status === "WAITING" ? "Waiting on user" : "Closed"}
+        <ChevronDownIcon className="ml-auto size-3" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {status !== "OPEN" && <DropdownMenuItem onClick={() => set("open")}>Needs reply</DropdownMenuItem>}
+        {status === "OPEN" && answered && <DropdownMenuItem onClick={() => set("waiting")}>Waiting on user</DropdownMenuItem>}
+        {status !== "CLOSED" && <DropdownMenuItem onClick={() => set("closed")}>Closed</DropdownMenuItem>}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

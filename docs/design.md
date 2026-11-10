@@ -26,6 +26,8 @@ cute at the expense of clarity.
 - **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
   ~11px (`rounded-xl`), pills fully round. On the public portal `--radius` is 0.625rem: controls 10px,
   cards 14px, through the same `rounded-lg` and `rounded-xl`. The portal board search variant below uses the larger corners.
+  A workspace's panes, the large surfaces that sit on the page's canvas side by side (the Inbox's list, conversation
+  and details; the composer card; Docs' tree, page and article tools), are a step larger, `rounded-2xl` (~14px), so they read as panes, not as cards inside one.
 - **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`).
   Fields (`Input`, `Textarea`, `SelectTrigger`) sit on the card's colour in light (white) and on the
   page's in dark (a step below the card), with the `input` border, their placeholder lighter than a value; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
@@ -181,12 +183,11 @@ the list picks none to approve at once.
   the row of tabs above the list, in the same place whether or not a conversation is open
   (they never move as one opens or closes): Needs reply, Mine and Unassigned as tabs, the
   rest (Waiting on user, Snoozed, Closed, Spam) under More, which reads as the one of them
-  open, so the row fits the list's width (`SubNav`'s `more`); the list a third
-  of the width (22–25rem), the conversation the rest; on phones and
-  tablets the list or the conversation, its Back to the list. A row reads in two
-  lines, as Featurebase's: who and their company on one (cut short, in full on hover) with,
+  open, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide, the conversation the rest; on phones and
+  tablets the list or the conversation, its Back to the list. A row reads in three
+  lines: who and their company on one (cut short, in full on hover) with,
   at the right, the assignee's face (their name on hover, and in the row's name to the ear) and its age, short ("4m": how long they've waited, or since
-  the latest message); the subject and the latest message's first line on the other, cut
+  the latest message); the subject and the latest message's first line on separate lines, cut
   short, after a small "Needs reply" (the highlight colour) when it needs one (not in the Needs
   reply view, where every row would say it; in Snoozed, when it's back first). Its number is in the conversation, and read out
   with the row.
@@ -195,22 +196,27 @@ the list picks none to approve at once.
   marked; J and K open the next and the previous one. Until one opens, the pane
   beside the list has the Inbox's numbers (`StatTile`, as Home's): who's waiting
   for a reply and the longest wait (the Needs reply tab's count, opening it), the
-  usual first reply (the widget's, "Not enough yet" before five answers) and the
+  usual first reply (the widget's, "—" with "Not enough yet" below before five answers) and the
   week's new conversations (those two without sample content), with "Open a conversation to
   reply here" under them (an empty Inbox: that new ones show up here, said
   there rather than in the list's empty state too). On phones the list is alone.
   A conversation opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
-  The message is what the page is for, so the rest stays out of its way: beside the title Close is
-  the one word, Assign and Snooze icons (their names in tooltips; snoozed, till when in words),
-  then the toggle for the column beside the messages and "…" (Link a post…, Summarize, Mark as
-  spam, …); in the reply box Send is the one filled button, Send and close in its menu, and Attach,
-  Insert article and Draft with AI icons. Beside the messages (unless its toggle hid it),
-  the posts it's linked to (a card only once there are some, or some look related), then the person
-  as one card: name, address, and their company, plan and seats (else their first properties), the
-  rest (id, groups, other properties, posts, votes, other conversations) under Details. Where the pane
-  is narrow the person is a sheet, the linked posts staying in the column; a post's sidebar lists its
-  linked conversations. A changelog entry's editor has a sidebar
+  The Inbox uses rounded list, conversation and details surfaces on a warm canvas, separated by space.
+  Rows put who, the subject and the latest message on separate lines. Messages are plain text plus attachments,
+  in chat bubbles with the author's avatar and time; internal notes have the highlight tint. The composer is one card.
+  Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
+  details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
+  kept for the browser; on phones and smaller tablets its toggle opens the same controls and context in a sheet.
+  Linked posts and Looks related start open. Customer details, Company, Other conversations from this person,
+  Recent page visits, Events and Conversation attributes start folded, each with an icon, count and chevron.
+  Other conversations expand to a title, a muted status · number · date line and one line of the latest message.
+  Day dividers group each message by its own day in the viewer’s time zone, with "Today · <date>" or "Yesterday · <date>" when applicable. The widget-off notice is
+  13px muted text, and More sits at the end of the views row. Inbox layout uses component Tailwind utilities;
+  its canvas, surface, bubble fills and shadow use the `inbox-*` tokens in `globals.css`.
+  Company keeps company, plan and seats together; Customer details keeps identity, other properties, groups, posts and votes reachable; visits and events show zero until
+  recorded. The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
+  A changelog entry's editor has a sidebar
   beside the text (under it on phones): its tags as chips, the posts it completes
   ("Link post…"), its cover image, how it's announced (Email subscribers, Mark it new: picked
   there, so Publish only confirms; published, what happened and how many people were told),
@@ -499,9 +505,8 @@ Use these instead of hand-rolling layout:
   An editor whose title field shows the title (an article, a changelog entry) keeps the
   heading for screen readers only (`titleInForm`), with the back link and actions in one compact row.
   In the app on phones the actions are a "More actions" menu from the top bar (`PageActions`). A page whose
-  every visit needs them (a conversation's Assign, Snooze and Close) shows them
-  in a row under its header on phones as well (named there, icons beside the title on wider screens), still in the menu (in reach once
-  the row has scrolled away). An editor whose
+  every visit needs them keeps them in reach. Inbox conversations use their own title row (Close, More actions and details);
+  Assign and Snooze are in the details card or phone sheet. An editor whose
   main action must stay in reach (Save and Publish) pins `actions` (`pinActions`): to a
   bar at the bottom of the screen on phones, the menu keeping `more`, and beside the title
   in the page’s sticky header from tablet width up;

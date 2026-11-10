@@ -204,5 +204,5 @@ export async function openPersonDetails(page: Page) {
   await page
     .getByRole("complementary", { name: "About them" })
     .locator("details")
-    .evaluate((details: HTMLDetailsElement) => (details.open = true));
+    .evaluateAll((sections) => sections.forEach((section) => { (section as HTMLDetailsElement).open = true; }));
 }

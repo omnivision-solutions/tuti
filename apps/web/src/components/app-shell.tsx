@@ -76,7 +76,7 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
       onOpenChange={folded ? setPeek : setOpen}
     >
       {sidebar}
-      <SidebarInset>
+      <SidebarInset className="has-[.inbox-workspace]:bg-inbox-canvas max-md:has-[.inbox-workspace]:[&>header]:hidden">
         {!DOCS.test(pathname) && header}
         {customizing ? (
           // From laptop width up, the window's height: the page doesn't scroll, each of its panes does
@@ -89,7 +89,7 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
           // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up. On
           // phones, room at the bottom for actions pinned there (PageActions), and for Tuti's own chat launcher (AppWidget; not in the Inbox or on Customize).
-          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 lg:has-data-fills-window:h-dvh lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24">
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 lg:has-data-fills-window:h-dvh lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24 has-[>.inbox-workspace]:py-4 has-[>.inbox-workspace]:pr-4 has-[>.inbox-workspace]:pl-12 max-lg:has-[>.inbox-workspace]:h-dvh max-lg:has-[>.inbox-workspace]:min-h-0 max-lg:has-[>.inbox-workspace]:flex-none max-lg:has-[>.inbox-workspace]:gap-4 max-lg:has-[>.inbox-workspace]:p-2">
             {banners}
             {children}
           </div>

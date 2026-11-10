@@ -59,17 +59,26 @@ test("someone who marked the project's email as spam says so: replies aren't ema
   expect(await panel(other, ids[1]!, true)).not.toContain(notice);
 });
 
-test("beside a conversation, their company, plan and seats show before Details, else their first properties; the rest is under it", async () => {
+test("Inbox properties are retained in collapsed Company and Customer details sections, while Users shows them all", async () => {
   const project = await createProject(await signUp());
-  const card = async (externalId: string, properties: Record<string, string | number>) => {
+  const panel = async (externalId: string, properties: Record<string, string | number>) => {
     const userId = await upsertProjectUser(project.id, externalId, { name: externalId, properties });
-    const html = renderToStaticMarkup(await PersonPanel({ projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true }, besides: 1 }));
-    const [before, details] = html.split("<details");
-    const values = (part: string) => [...part!.matchAll(/<dd[^>]*>([^<]*)<\/dd>/g)].map((m) => m[1]);
-    return { shown: values(before!), under: values(details!) };
+    const props = { projectId: project.id, slug: project.slug, person: { userId, email: null, emailVerified: true }, besides: 1 };
+    const html = renderToStaticMarkup(await PersonPanel(props));
+    const sections = [...html.matchAll(/<details([^>]*)>([\s\S]*?)<\/details>/g)];
+    const values = (body: string) => [...body.matchAll(/<dd[^>]*>([^<]*)<\/dd>/g)].map((m) => m[1]);
+    const section = (title: string) => {
+      const match = sections.find(([, , body]) => body!.includes(`>${title}</span>`))!;
+      expect(match).toBeDefined();
+      expect(match[1]).not.toContain("open");
+      return values(match[2]!);
+    };
+    const page = renderToStaticMarkup(await PersonPanel({ ...props, page: true }));
+    expect(values(page).sort()).toEqual(Object.values(properties).map(String).sort());
+    return { company: section("Company"), customer: section("Customer details") };
   };
-  // The key ones first, whatever their order or capitals; then the others, in theirs.
-  expect(await card("lee-1", { role: "admin", seats: 40, Company: "Initech", region: "EU" })).toEqual({ shown: ["Initech", "40", "admin"], under: ["EU"] });
-  // None of them: their first three (as they're kept: jsonb orders keys by length, then bytes).
-  expect(await card("lee-2", { zone: "EU", role: "admin", tier: "gold", team: "Ops" })).toEqual({ shown: ["admin", "Ops", "gold"], under: ["EU"] });
+  // The key properties keep their order and case-insensitive grouping, under Company.
+  expect(await panel("lee-1", { role: "admin", seats: 40, Company: "Initech", plan: "Business", region: "EU" })).toEqual({ company: ["Initech", "Business", "40"], customer: ["admin", "EU"] });
+  // With no business properties, every property remains under Customer details.
+  expect(await panel("lee-2", { zone: "EU", role: "admin", tier: "gold", team: "Ops" })).toEqual({ company: [], customer: ["admin", "Ops", "gold", "EU"] });
 });

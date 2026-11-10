@@ -726,7 +726,7 @@ export function DocsWorkspace({
         "[&_nav[aria-label='Collection']]:shadow-none [&_nav[aria-label='Collection']]:ring-0 [&_nav[aria-label='Collection']_[aria-current='page']]:text-primary",
         "[&_nav[aria-label=Collection]]:border-b-0 [&_nav[aria-label=Collection]]:shadow-none [&_nav[aria-label=Collection]]:ring-0",
       )} data-editing={editing}>
-        <aside className="docs-tree-pane docs-surface w-68.5 shrink-0 flex flex-col lg:[:root[data-docs-tree-folded]_&]:w-12 max-lg:hidden min-w-0 min-h-0 rounded-[14px] bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+        <aside className="docs-tree-pane docs-surface w-68.5 shrink-0 flex flex-col lg:[:root[data-docs-tree-folded]_&]:w-12 max-lg:hidden min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
           <div className="docs-tree-folded hidden p-[10px_6px] lg:[:root[data-docs-tree-folded]_&]:flex lg:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
           <div className="docs-tree-expanded flex flex-col min-h-0 h-full lg:[:root[data-docs-tree-folded]_&]:hidden">{desktop && navigation}</div>
         </aside>
@@ -745,10 +745,10 @@ export function DocsWorkspace({
           </SheetContent>
         </Sheet>
         <div className={cn(
-          "docs-page-content min-w-0 min-h-0 rounded-[14px] bg-docs-surface",
+          "docs-page-content min-w-0 min-h-0 rounded-2xl bg-docs-surface",
           "shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)] flex flex-1 flex-col gap-6",
           "overflow-y-auto p-[28px_32px] [scrollbar-width:thin] max-lg:p-6 max-lg:[&_>_.docs-page-header:first-child:not(:has(>_a))]:pt-6",
-          "max-sm:rounded-[14px] max-sm:p-[20px_16px] max-sm:gap-5.5 [&_>_*]:shrink-0",
+          "max-sm:rounded-2xl max-sm:p-[20px_16px] max-sm:gap-5.5 [&_>_*]:shrink-0",
           "max-sm:[&:has(.docs-overview-stats)_>_.docs-page-header:first-child:not(:has(>_a))]:pt-10",
         )}>{children}</div>
       </div>
