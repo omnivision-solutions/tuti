@@ -17,6 +17,8 @@ import {
   MessageCircleIcon,
   SearchIcon,
   SparklesIcon,
+  ThumbsDownIcon,
+  ThumbsUpIcon,
   Undo2Icon,
   UsersIcon,
   ZapIcon,
@@ -49,7 +51,7 @@ function Tick({ size = 15 }: { size?: number }) {
   return (
     <svg aria-hidden width={size} height={size} viewBox="0 0 16 16" className="tick flex-none">
       <circle cx="8" cy="8" r="8" fill="currentColor" />
-      <path d="M4.6 8.2l2.2 2.2 4.6-4.8" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.6 8.2l2.2 2.2 4.6-4.8" stroke="var(--primary-foreground)" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -215,7 +217,7 @@ function HeroApp() {
           </div>
           <ul className="olist">
             <Outcome title="Article fixed" meta="Exporting your data · 3 lines" tag={<span className="tag t-upd">In 22h</span>} />
-            <Outcome title="New article written" meta="Scheduling exports · Data & exports" tag={<span className="tag t-upd">In 22h</span>} />
+            <Outcome title="New article written" meta="Scheduling exports · Data & exports" tag={<span className="tag t-upd">Draft in 22h</span>} />
             <li className="wait">
               <span className="ck">
                 <HandIcon aria-hidden size={12} />
@@ -301,7 +303,7 @@ function Breaks() {
                 <span className="st">{oldState}</span>
                 {before}
               </div>
-              <span className="barrow" aria-label="becomes">
+              <span className="barrow" aria-hidden>
                 <ArrowRightIcon aria-hidden size={18} strokeWidth={2.2} />
               </span>
               <div className="bcell new">
@@ -531,17 +533,16 @@ function Control() {
             </div>
             <div className="ib">
               <div className="sj">3 updates from yesterday&apos;s merges</div>
-              <div className="lead">One needs you. Two go live tonight.</div>
+              <div className="lead">One needs you. Two go out tonight.</div>
               <div className="qi hot">
                 <div className="top">
                   <LightbulbIcon aria-hidden size={16} />
                   Complete “Bulk edit”<span className="tag t-wait">Needs approval</span>
                 </div>
-                <div className="qwhy">Emails 63 people who asked. Over your 25-person rule.</div>
+                <div className="qwhy">Emails 63 people who asked. It waits for your OK.</div>
                 <div className="btns">
                   <span className="sb p">Approve</span>
-                  <span className="sb">Publish now</span>
-                  <span className="sb">Stop</span>
+                  <span className="sb">Edit</span>
                 </div>
               </div>
               <div className="qi">
@@ -553,17 +554,17 @@ function Control() {
                   <del className="del">Edit posts one at a time.</del> <ins className="ins">Select several posts to edit them together.</ins>
                 </div>
                 <div className="btns">
-                  <span className="sb dark">Publish now</span>
+                  <span className="sb ink">Publish now</span>
                   <span className="sb">Stop</span>
                 </div>
               </div>
               <div className="qi">
                 <div className="top">
                   <FilePlusIcon aria-hidden size={16} />
-                  New article: Bulk editing posts<span className="tag t-upd">Live in 13h</span>
+                  New article: Bulk editing posts<span className="tag t-upd">Draft in 13h</span>
                 </div>
                 <div className="btns">
-                  <span className="sb dark">Publish now</span>
+                  <span className="sb ink">Publish now</span>
                   <span className="sb">Stop</span>
                 </div>
               </div>
@@ -654,7 +655,7 @@ function HelpCenter({ docs, dogfood }: { docs: string; dogfood: boolean }) {
                   <SearchIcon aria-hidden size={18} />
                   How do I turn on two-factor sign-in?
                   {/* ⌘ drawn: no font here has it. */}
-                  <span className="kbd" aria-label="Command K">
+                  <span className="kbd" aria-hidden>
                     <svg aria-hidden width="11" height="11" viewBox="0 0 24 24">
                       <path d="M9 9V6a3 3 0 10-3 3h12a3 3 0 10-3-3v12a3 3 0 103-3H6a3 3 0 103 3V9z" fill="none" stroke="currentColor" strokeWidth="2" />
                     </svg>
@@ -678,9 +679,9 @@ function HelpCenter({ docs, dogfood }: { docs: string; dogfood: boolean }) {
                   </div>
                 </div>
                 <div className="foot">
-                  <span>Not what you needed?</span>
-                  <b>Post as feedback</b>
-                  <b>Ask a person</b>
+                  <span>Was it helpful?</span>
+                  <ThumbsUpIcon aria-hidden size={15} />
+                  <ThumbsDownIcon aria-hidden size={15} />
                 </div>
               </div>
               <div className="cols3">
@@ -827,10 +828,10 @@ function FeatureRequests() {
 
 function Switch({ start }: { start: string }) {
   const objections = [
-    ["We'll lose our links.", "Old URLs redirect."],
+    ["We'll lose our links.", "Import by address: old URLs redirect."],
     ["Customers will get spammed.", "Imports are quiet. No emails sent."],
     ["Our articles are already wrong.", "Verify checks them against your code."],
-    ["We'll be stuck.", "Export your help center as Markdown."],
+    ["We'll be stuck.", "Every article is Markdown, and the API reads it all."],
   ];
   const sources = ["Featurebase", "Canny", "Frill", "Nolt", "Ferndesk", "Intercom"];
   return (
@@ -856,13 +857,13 @@ function Switch({ start }: { start: string }) {
           <div className="sub">Help center and feature requests. Contacts from Intercom.</div>
           <div className="srcgrid">
             {sources.map((source, i) => (
-              <div key={source} className={i === 0 ? "src on" : "src"}>
+              <div key={source} className="src">
                 <i className={`c${i + 1}`}>{source[0]}</i>
                 {source}
               </div>
             ))}
           </div>
-          <div className="urlin">
+          <div className="urlin on">
             <GlobeIcon aria-hidden size={16} />
             Or any public help center: <b>help.example.com</b>
           </div>
@@ -870,7 +871,6 @@ function Switch({ start }: { start: string }) {
             {(
               [
                 ["Articles and collections", 64],
-                ["Feature requests", 212],
                 ["Redirects for old URLs", 64],
                 ["Emails sent", 0],
               ] as const
@@ -945,7 +945,7 @@ function Pricing({ start }: { start: string }) {
         </div>
         {credits && (
           <div className="perseat">
-            Autopilot uses AI credits: starter on Free, {number(planCredits("PRO"))} on {PLAN_PRICES.PRO.name}, {number(planCredits("BUSINESS"))} on {PLAN_PRICES.BUSINESS.name}.
+            Autopilot uses AI credits: {freeCredits() > 0 && "starter on Free, "}{number(planCredits("PRO"))} on {PLAN_PRICES.PRO.name}, {number(planCredits("BUSINESS"))} on {PLAN_PRICES.BUSINESS.name}.
           </div>
         )}
       </div>
