@@ -1,23 +1,29 @@
 "use client";
 
 import Form from "next/form";
-import { type ReactNode, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { SearchIcon } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 
 /**
  * A board's search: a form that navigates without a reload (so an idea being written on the page stays),
  * its box showing the address's search (`q`), after Back too. One element throughout, so it keeps focus.
- * `children`: the hidden fields that go with the search.
+ * `children`: the hidden fields that go with the search. It searches as it's typed (a pause after the last key), and on Enter.
  */
 export function BoardSearch({ action, q, children }: { action: string; q: string; children?: ReactNode }) {
+  const router = useRouter();
   const [value, setValue] = useState(q);
   const [shown, setShown] = useState(q);
   // What this box last searched for (as the page reads it: trimmed, at most 255 characters).
   const [submitted, setSubmitted] = useState<string | null>(null);
+  // A search waiting for the typing to pause, and what this box last searched for (for the effect below).
+  const typing = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const own = useRef<string | null>(null);
+  // The address the last search made as it was typed went to: while it's still the page's, the next one replaces it.
+  const typed = useRef<string | null>(null);
   if (shown !== q) {
     setShown(q);
     setSubmitted(null);
@@ -26,25 +32,85 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
       setValue(q);
     }
   }
+  // The address's search changed some other way (Back, a link): a search still waiting for a pause doesn't undo it.
+  useEffect(() => {
+    if (q !== own.current) {
+      clearTimeout(typing.current);
+    }
+  }, [q]);
+  // A link picked while a search waits (a sort tab, a status): that's where they're going; the search doesn't follow it.
+  useEffect(() => {
+    const restored = () => {
+      clearTimeout(typing.current);
+      own.current = null;
+      typed.current = null;
+      setSubmitted(null);
+      setValue(new URL(window.location.href).searchParams.get("q")?.trim().slice(0, 255) ?? "");
+    };
+    const picked = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest("a[href]")) {
+        clearTimeout(typing.current);
+      }
+    };
+    // Back can change only the sort or status, leaving `q` (and its effect above) unchanged.
+    window.addEventListener("popstate", restored);
+    document.addEventListener("click", picked, true);
+    return () => {
+      window.removeEventListener("popstate", restored);
+      document.removeEventListener("click", picked, true);
+      clearTimeout(typing.current);
+    };
+  }, []);
+  const searched = (words: string) => {
+    clearTimeout(typing.current);
+    const trimmed = words.trim().slice(0, 255);
+    own.current = trimmed;
+    setSubmitted(trimmed);
+  };
   return (
     <Form
       action={action}
       scroll={false}
       role="search"
-      className={cn("relative flex shrink-0 transition-[width] focus-within:w-40 sm:w-56", value ? "w-40" : "w-10")}
-      onSubmit={() => setSubmitted(value.trim().slice(0, 255))}
+      className="relative flex w-full"
+      onSubmit={() => {
+        typed.current = null;
+        searched(value);
+      }}
     >
       {children}
       <Input
         type="search"
         name="q"
         value={value}
-        onChange={(event) => setValue(event.target.value)}
+        onChange={(event) => {
+          setValue(event.target.value);
+          // Not for each key: once they pause, and not again for words it searched for already.
+          const form = event.target.form;
+          clearTimeout(typing.current);
+          typing.current = setTimeout(() => {
+            if (!form || event.target.value.trim().slice(0, 255) === (submitted ?? q)) {
+              return;
+            }
+            searched(event.target.value);
+            // One step back for a run of typing: the first search it makes is a new entry, the next ones take its place, so
+            // Back goes to where the typing started (the board, a search made with Enter, a tab, a status, a link's search).
+            const params = new URLSearchParams([...new FormData(form)].map(([name, field]) => [name, String(field)]));
+            const href = new URL(`${action}?${params}`, window.location.href).href;
+            if (typed.current === window.location.href) {
+              router.replace(href, { scroll: false });
+            } else {
+              router.push(href, { scroll: false });
+            }
+            typed.current = href;
+          }, 350);
+        }}
         placeholder="Search ideas"
         aria-label="Search ideas"
-        className="h-9 rounded-lg pl-9 max-sm:not-focus:placeholder:text-transparent"
+        // 16px on phones: iOS zooms into a smaller field as it's focused.
+        className="h-10 rounded-xl bg-background pl-10 text-base sm:h-11 md:text-[0.9375rem]"
       />
-      <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+      <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
     </Form>
   );
 }

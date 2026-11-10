@@ -440,7 +440,7 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
   await expect(team.getByRole("region", { name: "Planned" })).toHaveCount(0);
 });
 
-test("a board opens on the ideas not done yet, with completed ones in Recently shipped, and its box finds similar ideas", async ({ browser }, testInfo) => {
+test("a board opens on the ideas not done yet, the latest shipped in one line, the status menu with counts; its box finds similar ideas", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -455,17 +455,30 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/feedback/feature-requests");
   const main = visitor.getByRole("main");
-  // The list has what's not done yet; what shipped is in its own card.
+  // The list has what's not done yet; the latest shipped is one line beside it, with the day it shipped.
   await expect(main.getByRole("link", { name: "Dark mode" })).toBeVisible();
   const shipped = main.getByRole("region", { name: "Recently shipped" });
-  await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
-  // With its votes and the day it shipped.
-  await expect(shipped.getByRole("listitem").filter({ hasText: "Export to CSV" })).toContainText(/1 vote · shipped \d{1,2} [A-Z][a-z]{2,3}$/);
-  await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
-  // The card says they shipped: no Completed badge on each, so a title has the room to wrap by word, not mid-word.
-  await expect(shipped).not.toContainText("Completed");
-  expect((await shipped.getByRole("link", { name: "Email notifications arrive twice" }).boundingBox())!.width).toBeGreaterThan(120);
+  await expect(shipped).toHaveText(/^Shipped \d{1,2} [A-Z][a-z]{2,3}: Email notifications arrive twice$/);
+  await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(0);
   await checkpoint(visitor, "portal-board-recently-shipped");
+  // Every one that shipped is in the status menu: each status with its ideas on the board, the one shown ticked.
+  const status = main.getByRole("button", { name: /^Status: / });
+  await expect(status).toHaveAccessibleName("Status: Not done yet, 1 idea");
+  await status.click();
+  const menu = visitor.getByRole("menu");
+  await expect(menu.getByRole("menuitem")).toHaveText(["Not done yet1", "Open1", "Completed2", "Every idea3"]);
+  await expect(menu.getByRole("menuitem", { name: /^Not done yet/ })).toHaveAttribute("aria-current", "true");
+  await checkpoint(visitor, "portal-board-status-menu");
+  await menu.getByRole("menuitem", { name: /^Completed/ }).click();
+  await visitor.waitForURL(/\?status=completed$/);
+  await expect(main.getByRole("listitem").getByRole("heading", { level: 2 })).toHaveCount(2);
+  await expect(main.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+  await expect(status).toHaveAccessibleName("Status: Completed, 2 ideas");
+  // Back to the default list from the menu: no status in the address.
+  await status.click();
+  await menu.getByRole("menuitem", { name: /^Not done yet/ }).click();
+  await visitor.waitForURL(/\/feedback\/feature-requests$/);
+  await expect(main.getByRole("listitem").getByRole("heading", { level: 2 })).toHaveText(["Dark mode"]);
   await visitor.setViewportSize({ width: 390, height: 844 });
   await checkpoint(visitor, "portal-board-recently-shipped-phone");
   await visitor.setViewportSize({ width: 1280, height: 720 });
@@ -504,13 +517,26 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
     `/continue?${new URLSearchParams({ redirect: "/feedback/feature-requests?sort=new&title=Dark+theme" })}`,
   );
   await noScript.close();
-  // Every status, asked for by address, lists the completed one too.
-  await visitor.goto("/feedback/feature-requests?status=all");
+  // Every idea (the menu's last), lists the completed ones too, without the shipped line.
+  await status.click();
+  await menu.getByRole("menuitem", { name: /^Every idea/ }).click();
+  await visitor.waitForURL(/[?&]status=all$/);
   await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
   await expect(shipped).toHaveCount(0);
-  // The default list asked for by name (or with a status it doesn't know) has the card too.
+  // The default list asked for by name (or with a status it doesn't know) has the line too.
   await visitor.goto("/feedback/feature-requests?status=active");
-  await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+  await expect(shipped.getByRole("link", { name: "Email notifications arrive twice" })).toBeVisible();
+  // A status with no ideas on the board isn't in the menu (none Open once Dark mode is planned).
+  await api("/posts/1", { status: "planned" }, "PATCH");
+  await visitor.goto("/feedback/feature-requests");
+  await status.click();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Not done yet1", "Planned1", "Completed2", "Every idea3"]);
+  await visitor.keyboard.press("Escape");
+  // Under a search the counts (the board's, not the search's) aren't said.
+  await visitor.goto("/feedback/feature-requests?q=dark");
+  await expect(status).toHaveAccessibleName("Status: Every idea");
+  await status.click();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Not done yet", "Planned", "Completed", "Every idea"]);
 });
 
 test("a board's posts are rows, in Trending, Top or New order, and its search narrows them", async ({ browser }, testInfo) => {
@@ -606,13 +632,35 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
   await expect(main.getByText("No ideas match", { exact: true })).toBeVisible();
   await expect(main.getByRole("status").filter({ hasText: "No ideas match" })).toHaveText('No ideas match "nothing like it"');
+  // Not there: New idea says so, and the empty list has the way to post it too; both open the box.
+  await expect(visitor.getByRole("complementary", { name: "About this board" }).getByRole("button", { name: "Not here? Post it" })).toBeVisible();
+  await checkpoint(visitor, "portal-board-search-no-match");
+  await main.getByRole("button", { name: "Post it as a new idea" }).click();
+  await expect(visitor.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
+  await visitor.keyboard.press("Escape");
   // Back shows the search in the address, not the last one typed.
   await visitor.goBack();
   await visitor.waitForURL(/\?q=sync$/);
   await expect(main.getByRole("searchbox", { name: "Search ideas" })).toHaveValue("sync");
-  // Words typed while a search loads stay in the box when its results land: its request held until they're typed.
+  // Under a search's results, the way to post it if it isn't among them.
+  await expect(visitor.getByRole("complementary", { name: "About this board" }).getByRole("button", { name: "New idea" })).toBeVisible();
+  await main.getByRole("button", { name: "Post it", exact: true }).click();
+  await expect(visitor.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
+  await visitor.keyboard.press("Escape");
+  // It searches as it's typed, once they pause: no Enter needed, and the box keeps focus. The page's clock is ours from here,
+  // so a pause is one we make.
+  await visitor.clock.install();
+  await visitor.reload();
   const box = main.getByRole("searchbox", { name: "Search ideas" });
   const found = main.getByRole("status").filter({ hasText: /match/ });
+  await box.fill("slack");
+  await visitor.clock.runFor(1000);
+  await visitor.waitForURL(/\?q=slack$/);
+  await expect(titles).toHaveText(["Slack alerts"]);
+  await expect(found).toHaveText('1 idea matches "slack"');
+  await expect(box).toBeFocused();
+  // Words typed while a search loads stay in the box when its results land (its request held until they're typed), and
+  // once they pause it searches for them.
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
   const held = (url: URL) => url.searchParams.get("q") === "calendar";
@@ -625,14 +673,91 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await box.press("Enter");
   await box.pressSequentially(" sync");
   await expect(box).toHaveValue("calendar sync");
-  // Still loading: the results are the last search's.
-  await expect(found).toHaveText('2 ideas match "sync"');
   release();
   await expect(found).toHaveText('1 idea matches "calendar"');
+  await expect(box).toHaveValue("calendar sync");
+  await visitor.clock.runFor(1000);
+  await visitor.waitForURL(/\?q=calendar\+sync$/);
+  await expect(found).toHaveText('1 idea matches "calendar sync"');
   await expect(titles).toHaveText(["Calendar sync"]);
   await expect(box).toHaveValue("calendar sync");
   await expect(box).toBeFocused();
   await visitor.unroute(held);
+  // Searches made as it's typed are one step back: Back from them goes to the board, not to each pause's words.
+  await visitor.goto("/feedback/feature-requests");
+  await box.fill("dark");
+  await visitor.clock.runFor(1000);
+  await visitor.waitForURL(/\?q=dark$/);
+  await box.pressSequentially(" mode");
+  await visitor.clock.runFor(1000);
+  await visitor.waitForURL(/\?q=dark\+mode$/);
+  await expect(titles).toHaveText(["Dark mode"]);
+  await visitor.goBack();
+  await visitor.waitForURL(/\/feedback\/feature-requests$/);
+  await expect(box).toHaveValue("");
+  await expect(titles).toHaveText(["Calendar sync", "Slack alerts", "Dark mode"]);
+  // Back while a search waits for a pause: the box doesn't search again, undoing it.
+  await visitor.goForward();
+  await visitor.waitForURL(/\?q=dark\+mode$/);
+  await box.press("End");
+  await box.pressSequentially("s");
+  await visitor.goBack();
+  await visitor.waitForURL(/\/feedback\/feature-requests$/);
+  // The pause comes after Back: nothing searched, nothing asked of the server for it, the address as Back left it.
+  const searches: string[] = [];
+  visitor.on("request", (request) => {
+    if (new URL(request.url()).searchParams.has("q")) searches.push(request.url());
+  });
+  await visitor.clock.runFor(1000);
+  await visitor.waitForLoadState("networkidle");
+  expect(searches).toEqual([]);
+  await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
+  await expect(box).toHaveValue("");
+  // A tab picked while a search waits for a pause is what the visitor gets: the waiting search is dropped.
+  await box.fill("dark");
+  await tabs.getByRole("link", { name: "Top" }).click();
+  await visitor.waitForURL(/\?sort=top$/);
+  await visitor.clock.runFor(1000);
+  await visitor.waitForLoadState("networkidle");
+  await expect(visitor).toHaveURL(/\?sort=top$/);
+  await tabs.getByRole("link", { name: "Trending" }).click();
+  await visitor.waitForURL(/\/feedback\/feature-requests$/);
+  await box.fill("");
+  // Typing on from a search made with Enter: Back goes to that search, not past it.
+  await box.fill("slack");
+  await box.press("Enter");
+  await visitor.waitForURL(/\?q=slack$/);
+  await box.pressSequentially(" alerts");
+  await visitor.clock.runFor(1000);
+  await visitor.waitForURL(/\?q=slack\+alerts$/);
+  await visitor.goBack();
+  await visitor.waitForURL(/\?q=slack$/);
+  await expect(box).toHaveValue("slack");
+  // So does a tab picked between pauses: Back from the typing goes to that tab.
+  await box.pressSequentially(" bot");
+  await visitor.clock.runFor(1000);
+  await visitor.waitForURL(/\?q=slack\+bot$/);
+  await tabs.getByRole("link", { name: "Top" }).click();
+  await visitor.waitForURL(/\?sort=top&q=slack\+bot$/);
+  await box.press("End");
+  await box.press("Backspace");
+  await box.press("Backspace");
+  await box.press("Backspace");
+  await box.press("Backspace");
+  await visitor.clock.runFor(1000);
+  await visitor.waitForURL(/\?sort=top&q=slack$/);
+  await visitor.goBack();
+  await visitor.waitForURL(/\?sort=top&q=slack\+bot$/);
+  // Back to another order with the same search also cancels a waiting search (the query itself hasn't changed).
+  await tabs.getByRole("link", { name: "New" }).click();
+  await visitor.waitForURL(/\?sort=new&q=slack\+bot$/);
+  await box.fill("calendar");
+  await visitor.goBack();
+  await visitor.waitForURL(/\?sort=top&q=slack\+bot$/);
+  await visitor.clock.runFor(1000);
+  await visitor.waitForLoadState("networkidle");
+  await expect(visitor).toHaveURL(/\?sort=top&q=slack\+bot$/);
+  await expect(box).toHaveValue("slack bot");
   // A search within the ideas not done yet (an old address asking for them) has no Recently shipped beside it either.
   await visitor.goto("/feedback/feature-requests?status=active&q=calendar");
   await expect(titles).toHaveText(["Calendar sync"]);
@@ -659,6 +784,9 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
       await page.setViewportSize({ width, height: 844 });
       await page.goto("/feedback/feature-requests");
       await expect(page.getByRole("main").getByRole("link", { name: "Dark mode" })).toBeVisible();
+      if (width === 390) {
+        await expect(page.getByRole("searchbox", { name: "Search ideas" })).toHaveCSS("font-size", "16px");
+      }
       const sized = page.getByRole("main").getByRole("listitem").filter({ has: page.getByRole("link", { name: "Dark mode" }) });
       const title = (await sized.getByRole("link", { name: "Dark mode" }).boundingBox())!;
       const vote = (await sized.getByRole("link", { name: /^Sign in to vote/ }).boundingBox())!;
@@ -669,7 +797,7 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   }
 });
 
-test("on wide screens a board has a sidebar: the boards with their counts, Recently shipped and Get updates; your votes are filled in, and Mine lists yours", async ({
+test("on wide screens a board has a sidebar: the boards with their counts and the latest shipped; Get updates is a bell in its card; your votes are filled in, and Mine lists yours", async ({
   browser,
 }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -709,7 +837,7 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   const background = (button: typeof voted) => button.evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(await background(voted)).not.toBe(await background(notVoted));
 
-  // The sidebar, beside the list: the boards with their ideas not done yet (this one marked), Recently shipped, Get updates.
+  // The sidebar, beside the list: New idea, the boards with their ideas not done yet (this one marked), the latest shipped.
   const sidebar = ada.getByRole("complementary", { name: "About this board" });
   const boards = sidebar.getByRole("navigation", { name: "Boards" });
   await expect(boards.getByRole("link")).toHaveCount(2);
@@ -726,8 +854,11 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   // It's in the page twice (under the list for phones), yet each id is once.
   const ids = await ada.evaluate(() => [...document.querySelectorAll("[id]")].map((element) => element.id));
   expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
-  // Get updates says what reaches her: not confirmed yet, the shipped email wouldn't, so it asks her to confirm (the link comes back here).
-  const updates = sidebar.getByRole("region", { name: "Get updates" });
+  // Get updates (a button in the board's card, a popover) says what reaches her: not confirmed yet, the shipped email
+  // wouldn't, so it asks her to confirm (the link comes back here).
+  const updates = ada.getByRole("dialog", { name: "Get updates" });
+  await expect(sidebar.getByRole("button", { name: "Get updates" })).toHaveCount(0);
+  await main.getByRole("button", { name: "Get updates" }).click();
   await expect(updates).toContainText("Confirm your email to hear when ideas you vote on ship.");
   await expect(updates).not.toContainText("get an email when it ships");
   const emailsBefore = countEmailsTo(ada.email);
@@ -736,10 +867,14 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   const confirm = await latestEmailTo(ada.email, { after: emailsBefore });
   await ada.goto(confirm.text.split(/\s+/).find((word) => word.includes("/api/auth/verify-email"))!);
   await ada.waitForURL(/\/feedback\/feature-requests$/);
+  await main.getByRole("button", { name: "Get updates" }).click();
   await expect(updates).toContainText("Vote for an idea to get an email when it ships.");
   await expect(updates.getByRole("button", { name: "Resend email" })).toHaveCount(0);
-  await expect(updates.getByRole("link", { name: "Changelog" })).toHaveAttribute("href", "/changelog");
+  await expect(updates.getByRole("link", { name: "Read the changelog" })).toHaveAttribute("href", "/changelog");
   await expect(updates.getByRole("link", { name: "RSS" })).toHaveAttribute("href", "/changelog/rss.xml");
+  await checkpoint(ada, "portal-board-get-updates");
+  await ada.keyboard.press("Escape");
+  await expect(updates).toHaveCount(0);
   const list = (await rowOf("Dark mode").boundingBox())!;
   const side = (await sidebar.boundingBox())!;
   expect(side.x).toBeGreaterThanOrEqual(list.x + list.width);
@@ -767,10 +902,13 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   await visitor.goto("/feedback/feature-requests?sort=mine");
   const visitorTabs = visitor.getByRole("main").getByRole("navigation", { name: "Sort" });
   await expect(visitorTabs.getByRole("link")).toHaveText(["Trending", "Top", "New"]);
-  await expect(visitor.getByRole("region", { name: "Get updates" })).toContainText("Vote for an idea to hear when it ships.");
+  await visitor.getByRole("main").getByRole("button", { name: "Get updates" }).click();
+  const visitorUpdates = visitor.getByRole("dialog", { name: "Get updates" });
+  await expect(visitorUpdates).toContainText("Vote for an idea to hear when it ships.");
   // And the changelog by email, beside its page and feed.
-  await expect(visitor.getByRole("region", { name: "Get updates" }).getByRole("textbox", { name: "Email" })).toBeVisible();
-  await expect(visitor.getByRole("region", { name: "Get updates" }).getByRole("button", { name: "Subscribe" })).toBeVisible();
+  await expect(visitorUpdates.getByRole("textbox", { name: "Email" })).toBeVisible();
+  await expect(visitorUpdates.getByRole("button", { name: "Subscribe" })).toBeVisible();
+  await visitor.keyboard.press("Escape");
   await expect(visitorTabs.getByRole("link", { name: "Trending" })).toHaveAttribute("aria-current", "page");
   await expect(visitor.getByRole("main").getByRole("listitem").getByRole("heading", { level: 2 })).toHaveCount(3);
   // A search finds the shipped one too: its votes as text, no button to vote for what's done.
@@ -780,7 +918,7 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
   await expect(shippedRow.getByText(/^\d+ votes?$/)).toBeAttached();
   await expect(visitor.getByRole("main").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("link", { name: /^Sign in to vote/ })).toBeVisible();
 
-  // On a phone no sidebar: the boards' row is above, Recently shipped under the list, and nothing runs off the side. Light and dark.
+  // On a phone no sidebar: the boards' row is above, the latest shipped and Get updates under the list, and nothing runs off the side. Light and dark.
   const signedIn = await ada.context().storageState();
   for (const colorScheme of ["light", "dark"] as const) {
     const page = await (await browser.newContext({ colorScheme, baseURL: portalUrl(slug), storageState: signedIn })).newPage();
@@ -794,6 +932,9 @@ test("on wide screens a board has a sidebar: the boards with their counts, Recen
         const phoneList = (await page.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" }).boundingBox())!;
         const phoneShipped = (await page.getByRole("region", { name: "Recently shipped" }).boundingBox())!;
         expect(phoneShipped.y).toBeGreaterThan(phoneList.y);
+        // Get updates too: the title's row has New idea only.
+        const phoneUpdates = (await page.getByRole("main").getByRole("button", { name: "Get updates" }).boundingBox())!;
+        expect(phoneUpdates.y).toBeGreaterThan(phoneShipped.y);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await checkpoint(page, `portal-board-sidebar-${width === 390 ? "phone" : "desktop"}-${colorScheme}`);

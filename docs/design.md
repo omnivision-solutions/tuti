@@ -267,7 +267,8 @@ the list picks none to approve at once.
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
 redesign). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed) are underline tabs (`SubNav`), as the board's sort tabs, so the
-  portal's lists read the same way. The portal roadmap's three columns, one at a time on phones, are a segmented control:
+  portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
+  count): a second row of chips or tabs would put more between the visitor and the list. The portal roadmap's three columns, one at a time on phones, are a segmented control:
   three fixed parts of one board that always fit, side by side on wider screens. A row of tabs
   never wraps (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
   into view, faded at the end that has more (`useScrollingRow`; the portal's
@@ -331,18 +332,24 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
     the pages' container (max-w-6xl; 82rem on a docs article with "On this page" beside it). On phones the header is one line (mark and name, Sign in or the account, the
     menu): the parts are in the menu. Under it the current part's row (boards, docs tabs) when it has two or more
     (none on a post's page, nor beside a board's rail). A "Powered by tuti" footer under a line.
-  - **A board**: a card with its name (34px), its line (the team's description, else "Vote for the ideas you want
-    most, or share your own."), then under a line the sort tabs with icons (Trending flame, Top trending, New clock,
-    Mine) and the search with its icon. Then the rows, open on the page and inset to the card's text: the status label
-    above the title (none for Open), a 17px title, two lines of excerpt, a byline (initial, name, when, comments), a
-    boxed vote on the right (`VoteButton shape="box"`: chevron over the count, 52×58; voted, soft green with a green
-    edge; a completed idea's a green-tinted box with a check). Under the default list "That's all N ideas still to come in <board>. Share
-    yours". The rail: **New idea** (the page's one filled button; it opens the board's form in a dialog, `NewIdea`, open
-    as the page loads with `?title=` or `?new`; signed out its title and "Sign in to post", which comes back with the
-    title; without JavaScript the old box is in the page), Boards in a card (the open one soft green), Recently shipped
-    (a check, the title, "11 votes · shipped 6 Oct"), and under a line Get updates (a bell, an RSS icon button, one line
-    for where the reader stands, the changelog by email on one row, "Read the changelog"). Phones: New idea beside the
-    title, no card, the search an icon that widens as it's used.
+  - **A board** (the visitor's job: is my idea here? then vote or post it): a card with its name (34px), its line (the team's
+    description, else "Vote for the ideas you want most, or share your own."), and at its top right **Get updates** (an
+    outline with a bell; a popover with where the reader stands, the changelog by email, "Read the changelog" and RSS).
+    Then the search, first and full width (it searches as it's typed, after a pause; Enter too), then under a line the
+    sort tabs with icons (Trending flame, Top trending, New clock, Mine) and at the row's end the **status menu**, a quiet
+    button saying what the list shows and how many ("Not done yet 8"; a status in its icon and colour): a menu of links
+    with counts, Not done yet (the default), each status with ideas on the board, then Every idea. Then the rows, open on
+    the page and inset to the card's text: the status label above the title (none for Open), a 17px title, two lines of
+    excerpt, a byline (initial, name, when, comments), a boxed vote on the right (`VoteButton shape="box"`: chevron over
+    the count, 52×58; voted, soft green with a green edge; a completed idea's a green-tinted box with a check). Under the
+    default list "That's all N ideas still to come in <board>. Share yours"; under a search's results "Not here? Post it".
+    The rail, nothing else competing with the list: **New idea** (the page's one filled button; it opens the board's form
+    in a dialog, `NewIdea`, open as the page loads with `?title=` or `?new`; signed out its title and "Sign in to post",
+    which comes back with the title; without JavaScript the old box is in the page; after a search that found nothing it
+    reads "Not here? Post it", and the empty list has "Post it as a new idea"), Boards in a card (the open one soft green),
+    and the latest shipped idea as one line ("Shipped 9 Nov: <title>"; the rest under Completed in the status menu).
+    Phones: New idea beside the title, no card, the status menu's count without its words, the shipped line and Get
+    updates under the list.
   - **A post**: back link, a 38px title (28px on phones), the byline, then the status pill and "Expected <month>" with a
     calendar, the body at 17px. The rail is one card: **Upvote** filled with the count after a rule (`shape="upvote"`;
     voted, "Upvoted" in soft green), Subscribe an outline with "Get an email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces, Board and Posted as

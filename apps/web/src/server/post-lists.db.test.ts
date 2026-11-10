@@ -11,7 +11,7 @@ import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, boardsWithCounts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postsLikeConversation, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
+import { boardPosts, boardStatusCounts, boardsWithCounts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postsLikeConversation, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 import { SIGNED_OUT_VIEWER, TEAM_VIEWER } from "./post-visibility";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
@@ -159,6 +159,8 @@ test("a portal board's sidebar counts each board's ideas not done yet, and Mine 
     [ideas.name, 3],
     ["Bugs", 1],
   ]);
+  // The board's status menu: each status's ideas on it, merged ones and the other board's left out.
+  expect(await boardStatusCounts(ideas.id, SIGNED_OUT_VIEWER)).toEqual({ OPEN: 2, PLANNED: 1, COMPLETED: 1, CLOSED: 1 });
   const mine = async (userId: string, options = {}) =>
     (await boardPosts(ideas, parsePostFilters({}, TEAM_SORTS, "new"), { team: false, userId: userId ?? null }, { mine: true, ...options })).posts.map((p) => p.title);
   // Hers: posted (shipped too) or voted for, on this board, newest first; not Max's, nor the merged one, nor the other board's.

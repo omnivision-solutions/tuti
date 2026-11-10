@@ -52,13 +52,13 @@ export function NewIdea({
   );
 }
 
-/** "New idea", the board's primary: opens the page's NewIdea. */
-export function NewIdeaButton({ className, size }: { className?: string; size?: "lg" }) {
+/** "New idea", the board's primary: opens the page's NewIdea (`label`: other words for it, as "Not here? Post it" after a search that found nothing). */
+export function NewIdeaButton({ className, size, label = "New idea" }: { className?: string; size?: "lg"; label?: string }) {
   const open = useContext(OpenContext);
   return (
     <Button onClick={() => open?.()} size={size} className={cn("font-semibold", className)}>
       <PlusIcon />
-      New idea
+      {label}
     </Button>
   );
 }

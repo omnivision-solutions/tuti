@@ -304,6 +304,16 @@ export function boardsWithCounts(projectId: string, viewer: PostViewer) {
   });
 }
 
+/** A portal board's ideas `viewer` sees by status (not merged ones), for its status menu: how many in each, none for a status without any. */
+export async function boardStatusCounts(boardId: string, viewer: PostViewer): Promise<Partial<Record<PostStatus, number>>> {
+  const rows = await prisma.post.groupBy({
+    by: ["status"],
+    where: { boardId, duplicateOfId: null, ...visiblePosts(viewer) },
+    _count: { _all: true },
+  });
+  return Object.fromEntries(rows.map((row) => [row.status, row._count._all]));
+}
+
 /** A board's completed posts `viewer` sees, the latest completed first (as the roadmap's Completed: older ones by their last change), for its "Recently shipped" card. */
 export function recentlyShipped(boardId: string, viewer: PostViewer) {
   // When each shipped: its activity's latest Completed, or for one completed before status changes were kept, its last change.
