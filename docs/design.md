@@ -147,7 +147,9 @@ the list picks none to approve at once.
   (`app/app/layout.tsx`, `components/app-shell.tsx`), in one of three
   columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, Home, a post), max-w-2xl for a form
   by itself (`data-narrow` on it: New project, Setup, Account), or the whole width (`data-wide`: the
-  team's Roadmap, Users' tables; and pages of panes).
+  team's Roadmap, Users' tables; and pages of panes). Feedback, a page of panes, caps itself at 72rem while
+  no post is open beside its list, so its rows stay scannable on a wide screen. It keeps the shell's left edge
+  whether or not a post is open, so the clicked row stays in place.
   The top bar stays at the top as the page scrolls; it holds the sidebar's
   button and where the page is, the project then its part ("Acme Calendar / Feedback"; `sectionOf`; the page's title once its heading has scrolled up
   under it); an editor's Save and Publish (`pinActions`) sit in it from tablet width up,
@@ -531,7 +533,8 @@ Use these instead of hand-rolling layout:
     clear of the fade (`showMore`, `FADE_AT_MORE`, `wheelSideways`,
     `focusClearOfFade`, as `SubNav`'s tabs). The bar's buttons
     keep focus while an action runs (`focusableWhenDisabled`); when the bar goes
-    away (the action done, Clear), focus moves to the first filter. Each is done as it is
+    away (the action done, Clear), focus moves to the first filter (Feedback: its Filters button, once its
+    transitions are done: `invisible` takes `visibility` with them, and a hidden button can't take focus). Each is done as it is
     for one; what fails is said, the rest still go. What emails people
     (Completed) or can't be undone (Merge) asks first, naming how many.
   - Feedback's rows (`PickedRow`), the same at every width: the votes in a small bordered box (`VoteBox`); the
@@ -539,9 +542,16 @@ Use these instead of hand-rolling layout:
     at the right the owner's face (tablet width up) and the status menu, a quiet "⋯" (`PostStatusMenu
     badge={false}`): the tab says the status, and All, when it mixes them, is grouped under each status (its dot,
     name and count) in the tabs' order. Where no tab or group heading names the status (Possible duplicates, a tab
-    only while there are some; All while it isn't grouped: one status, or more to load) the pill opens the menu. The list takes its column's whole width; a post opens beside it. The search sits
-    in the filter row; on phones the filters are one "Filters" button (a popover, Boards in it too) beside the
-    search and "+ New".
+    only while there are some; All while it isn't grouped: one status, or more to load) the pill opens the menu. By itself the page (header, toolbar, list)
+    is a column of at most 72rem at the shell's left edge, so a row's title and its "⋯" stay close on a wide screen; a post open
+    beside it, the whole width, with the same left edge. Above the list, on a page 64rem wide or more (the page's width, not the list's: the same
+    with a post open or not), one toolbar row (the job is triage: nothing else between the tabs and the rows): the status tabs on the left (scrolling sideways when short of room), the search and one "Filters"
+    button on the right (a popover with Board, Voters and the sort; how many are set on it). The row is the same height
+    whether or not a post is open (the list never moves as one opens): beside a post the statuses are the first
+    three tabs and More (reading as the one of the rest that's open, as the Inbox's), so Needs triage stays in sight,
+    the search is narrower ("Search") and Filters its icon. Picked rows' bar takes the whole row. Boards, used less, is in the header's "…"
+    menu, New post the one button beside it. On a narrower page the tabs are above the search and Filters (and, on phones,
+    "+ New"); while rows are picked, their bar replaces only that search line, keeping the status tabs visible and usable.
   - A post's vote count, first in its row, has the vote arrow over it (and
     "votes" for screen readers), so it doesn't read as a bare number (`VoteCount`, `VoteBox`).
   - Compact actions (a badge, one or two small buttons) stay on the right.

@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { seenAs } from "@tuti/jobs";
-import { ExternalLinkIcon, LayoutListIcon, MessageSquareIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { ExternalLinkIcon, LayoutListIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -8,6 +8,7 @@ import { CopyButton } from "@/components/copy-button";
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
+import { FeedbackSearch } from "@/components/feedback-search";
 import { FeedbackBulk, FeedbackSelection, FiltersFold, PickedRow, SelectPost, VoteBox } from "@/components/feedback-selection";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
@@ -18,7 +19,6 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { SampleBadge } from "@/components/sample-badge";
 import { asking, initial, timeAgo } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
@@ -43,6 +43,9 @@ const TABS = [
   ["in-progress", "In progress"],
   ["completed", "Completed"],
 ] as const;
+
+/** How many status tabs fit beside an open post; the others are under More. */
+const BESIDE_POST = 3;
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
@@ -137,31 +140,44 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
     ...(counts.duplicates > 0 || tab === "duplicates" ? [{ key: "duplicates", title: "Possible duplicates", count: counts.duplicates }] : []),
   ];
 
+  const tabItem = (t: (typeof tabs)[number]) => ({
+    href: href(t.key),
+    title: (
+      <>
+        {t.title} <span className="text-muted-foreground tabular-nums">{t.count}</span>
+      </>
+    ),
+  });
+
   return (
-    <>
+    // The list by itself: rows no wider than 72rem, so a title and its votes stay close on a wide screen; a post open
+    // beside it, the whole width. Keep the shell's left edge in both views so the clicked row stays put.
+    // The page's width (not the list's, which narrows as a post opens) decides whether the toolbar is one row: the same
+    // with or without a post open, so the list never moves as one opens.
+    <div className={cn("@container/page flex flex-col gap-6", open === null && "w-full max-w-[72rem]")}>
       <PageHeader
         title="Feedback"
         // On phones the list comes up sooner without it.
         description={<span className="max-sm:hidden">Ideas and problems your users posted, by status.</span>}
+        // The roadmap is in the sidebar; the boards, used less, in the "…" menu.
+        more={
+          <Link href={`/app/${slug}/feedback/boards`} className={buttonVariants({ variant: "ghost" })}>
+            <LayoutListIcon />
+            Boards
+          </Link>
+        }
         actions={
-          <>
-            {/* The roadmap is in the sidebar; the boards, used less, a quiet button. */}
-            <Link href={`/app/${slug}/feedback/boards`} className={buttonVariants({ variant: "ghost" })}>
-              <LayoutListIcon />
-              Boards
-            </Link>
-            {/* Posts are written on the portal, where users write theirs (as ⌘K's New post). Not primary beside an open post's own. */}
-            <a
-              href={`${await portalAddress(slug)}/feedback`}
-              target="_blank"
-              rel="noreferrer"
-              className={buttonVariants({ variant: open === null ? "default" : "outline" })}
-            >
-              <PlusIcon />
-              New post
-              <span className="sr-only"> (on your portal)</span>
-            </a>
-          </>
+          // Posts are written on the portal, where users write theirs (as ⌘K's New post). Not primary beside an open post's own.
+          <a
+            href={`${await portalAddress(slug)}/feedback`}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonVariants({ variant: open === null ? "default" : "outline" })}
+          >
+            <PlusIcon />
+            New post
+            <span className="sr-only"> (on your portal)</span>
+          </a>
         }
       />
 
@@ -169,79 +185,71 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       {/* The list (its whole column until a post opens) and, beside it, the post a row opened; on a phone, one or the other. */}
       <div data-slot="pane-layout" className={cn("flex flex-col gap-6", open !== null && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start")}>
         {/* Rows picked for Set status, Move to board and Merge, the bar in the filters' place once some are. */}
-        <FeedbackSelection key={listKey.toString()} listed={listed.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
+        <FeedbackSelection listKey={listKey.toString()} listed={listed.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
           <div className={cn("@container flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
-            <SubNav
-              label="Statuses"
-              current={href(tab)}
-              items={tabs.map((t) => ({
-                href: href(t.key),
-                title: (
-                  <>
-                    {t.title} <span className="text-muted-foreground tabular-nums">{t.count}</span>
-                  </>
-                ),
-              }))}
-            />
-
-            {/* Rows picked: the bar for them in the filters' place. */}
-            <FeedbackBulk projectSlug={slug} boards={project.boards}>
-              <div className="flex gap-2 sm:items-center">
-              <FiltersFold
-                set={[board, group, filters.sort !== "top" && filters.sort].filter(Boolean).length}
-                // On phones the header's actions are a menu: Boards here too.
-                extra={
-                  <Link href={`/app/${slug}/feedback/boards`} className={buttonVariants({ variant: "ghost", className: "mt-1 w-full justify-start" })}>
-                    <LayoutListIcon />
-                    Boards
-                  </Link>
-                }
-              >
-              <ListFilters
-                filters={[
-                  {
-                    name: "board",
-                    label: "Board",
-                    value: board ?? "all",
-                    options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
-                  },
-                  ...(project.readerGroups.length > 0
-                    ? [
-                        {
-                          name: "group",
-                          label: "Voters",
-                          // "*" can't be a group's key (a group named "All" has "all").
-                          value: group?.key ?? "*",
-                          options: [{ value: "*", label: "All voters" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
-                        },
-                      ]
-                    : []),
-                  sortFilter(filters.sort, TEAM_SORTS),
-                ]}
+            {/* One row above the list on a page 64rem wide or more, whether or not a post is open beside it (then three
+                statuses and More, a narrower search and Filters as its icon): the status tabs (scrolling sideways when they're short of room),
+                then the search and Filters; the bar for picked rows in the whole row's place. Below 64rem the tabs stay usable above the bar. */}
+            <FeedbackBulk projectSlug={slug} boards={project.boards} navigation={
+              <SubNav
+                label="Statuses"
+                current={href(tab)}
+                className="min-w-0 @min-[64rem]/page:mt-0 @min-[64rem]/page:flex-1 @min-[64rem]/page:shadow-none"
+                items={(open === null ? tabs : tabs.slice(0, BESIDE_POST)).map(tabItem)}
+                // Beside an open post the list's column is narrower: the first statuses as tabs, the rest under More
+                // (which reads as the one of them open), so the row fits and Needs triage stays in sight.
+                more={open === null ? undefined : { label: "More", items: tabs.slice(BESIDE_POST).map(tabItem) }}
               />
-              </FiltersFold>
-              <div className="flex min-w-0 flex-1 gap-2 sm:ml-auto sm:flex-none">
-              <form role="search" className="relative flex min-w-0 flex-1 sm:w-60 sm:flex-none">
-              {board && <input type="hidden" name="board" value={board} />}
-              {group && <input type="hidden" name="group" value={group.key} />}
-              {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
-              {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
-              <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input type="search" name="q" defaultValue={q} placeholder="Search feedback" aria-label="Search feedback" className="h-9 pl-8" />
-            </form>
-              {/* On phones, where the header's actions are a menu: New post in sight, as an icon. */}
-              <a
-                href={`${await portalAddress(slug)}/feedback`}
-                target="_blank"
-                rel="noreferrer"
-                title="New post"
-                className={buttonVariants({ className: "sm:hidden" })}
-              >
-                <PlusIcon />
-                New
-                <span className="sr-only"> post (on your portal)</span>
-              </a>
-              </div>
+            }>
+              <div className="min-w-0 @min-[64rem]/page:pb-1.5">
+                <div className="flex min-w-0 gap-2">
+                  <FeedbackSearch action={`/app/${slug}/feedback`} q={q} compact={open !== null}>
+                    {board && <input type="hidden" name="board" value={board} />}
+                    {group && <input type="hidden" name="group" value={group.key} />}
+                    {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
+                    {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
+                  </FeedbackSearch>
+                  {/* Searching doesn't load a new page, so a screen reader hears what it found here (polite, there from the start). */}
+                  <p role="status" className="sr-only">
+                    {q ? `Search for “${q}” found ${listed.length === 0 ? "no posts" : listed.length === 1 && !more ? "1 post" : `${listed.length}${more ? " posts, and more to load" : " posts"}`}` : ""}
+                  </p>
+                  <FiltersFold compact={open !== null} set={[board, group, filters.sort !== "top" && filters.sort].filter(Boolean).length}>
+                    <ListFilters
+                      filters={[
+                        {
+                          name: "board",
+                          label: "Board",
+                          value: board ?? "all",
+                          options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
+                        },
+                        ...(project.readerGroups.length > 0
+                          ? [
+                              {
+                                name: "group",
+                                label: "Voters",
+                                // "*" can't be a group's key (a group named "All" has "all").
+                                value: group?.key ?? "*",
+                                options: [{ value: "*", label: "All voters" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
+                              },
+                            ]
+                          : []),
+                        sortFilter(filters.sort, TEAM_SORTS),
+                      ]}
+                    />
+                  </FiltersFold>
+                  {/* On phones, where the header's actions are a menu: New post in sight. */}
+                  <a
+                    href={`${await portalAddress(slug)}/feedback`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="New post"
+                    className={buttonVariants({ className: "sm:hidden" })}
+                  >
+                    <PlusIcon />
+                    New
+                    <span className="sr-only"> post (on your portal)</span>
+                  </a>
+                </div>
               </div>
             </FeedbackBulk>
             {posts.length === 0 ? (
@@ -393,6 +401,6 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
           </aside>
         )}
       </div>
-    </>
+    </div>
   );
 }

@@ -13,7 +13,8 @@ const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-5xl (one form by
  * itself, `data-narrow`: New project, Setup, Account, max-w-2xl), centred in the room beside the sidebar. Customize's sections and pages of panes (their own column, data-slot="pane-layout") take the
- * whole width instead, as do pages that need the room (`data-wide`: Users' tables, the team's Roadmap columns).
+ * whole width instead (Feedback caps its own at 72rem until a post opens beside the list), as do pages that need the
+ * room (`data-wide`: Users' tables, the team's Roadmap columns).
  * The labelled sidebar is open on every page but Customize (its own rail of sections and the portal's preview), the
  * Inbox (its panes fill the window) and, under 1280px, the pages of panes (PANES), whose own column takes its room: there
  * it's folded to its rail (it opens again on its own trigger, and is as it was on the way back).
