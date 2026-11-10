@@ -31,6 +31,7 @@ import { GithubMark } from "@/components/github-mark";
 import { TutiMark } from "@/components/tuti-logo";
 import { PLAN_PRICES } from "@/lib/plans";
 
+import { freePlanCopy } from "./free-plan";
 import "./landing.css";
 
 /**
@@ -92,9 +93,6 @@ export function Landing({ start, docs, dogfood }: Links & { dogfood: boolean }) 
   );
 }
 
-/** Whether a new Free project's Autopilot runs: no AI credits to pay, or Free starts with some. */
-const autopilotOnFree = () => !creditsEnabled() || freeCredits() > 0;
-
 function Hero({ start, docs, live }: Links & { live: boolean }) {
   return (
     <section className="hero">
@@ -103,7 +101,7 @@ function Hero({ start, docs, live }: Links & { live: boolean }) {
           <div>
             {plansEnabled() && (
               <span className="pill">
-                <b>Free plan</b> {autopilotOnFree() ? "Autopilot included, no credit card" : "No credit card"}
+                <b>Free plan</b> {freePlanCopy().pill}
               </span>
             )}
             <h1 className="display">
@@ -906,7 +904,7 @@ function Pricing({ start }: { start: string }) {
     {
       name: "Free",
       price: null,
-      lines: [!credits ? "Autopilot" : freeCredits() > 0 ? "Autopilot, starter AI credits" : "Autopilot, on AI credits", articles(articleLimit("FREE")), "Feedback, roadmap, changelog, inbox", "3 team members"],
+      lines: [freePlanCopy().autopilot, articles(articleLimit("FREE")), "Feedback, roadmap, changelog, inbox", "3 team members"],
     },
     {
       name: PLAN_PRICES.PRO.name,
@@ -926,7 +924,7 @@ function Pricing({ start }: { start: string }) {
         <div className="sh center">
           <span className="kicker">Pricing</span>
           <h2 className="display">Autopilot on every plan.</h2>
-          <p>{autopilotOnFree() ? "Free too." : "It runs on AI credits."} Per project, never per seat.</p>
+          <p>{freePlanCopy().pricing} Per project, never per seat.</p>
         </div>
         <div className="plans">
           {plans.map((plan) => (

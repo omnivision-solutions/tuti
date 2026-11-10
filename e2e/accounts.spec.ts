@@ -98,6 +98,8 @@ test("a team member switches projects, edits their account, signs out and back i
   // From the keyboard: a click aimed while the menu is still opening can land on Theme, whose submenu then covers Sign out.
   await olive.getByRole("menuitem", { name: "Sign out" }).press("Enter");
   await olive.waitForURL(`${APP_URL}/`);
+  // Signed out, the home page: Free projects start with AI credits here (AI_CREDITS_FREE), so Autopilot comes with Free.
+  await expect(olive.getByText("Autopilot included, no credit card")).toBeVisible();
   await olive.goto("/sign-in");
   // The form is the way in here: the header has no Sign in or Start free of its own.
   await expect(olive.getByRole("banner").getByRole("link", { name: "Start free" })).toHaveCount(0);
