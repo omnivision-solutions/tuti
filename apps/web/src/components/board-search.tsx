@@ -2,7 +2,7 @@
 
 import Form from "next/form";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { SearchIcon } from "lucide-react";
 
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 
 /**
  * A board's search: a form that navigates without a reload (so an idea being written on the page stays),
- * its box showing the address's search (`q`), after Back too. One element throughout, so it keeps focus.
+ * its box following changes to the address's search (`q`). One element throughout, so it keeps focus.
  * `children`: the hidden fields that go with the search. It searches as it's typed (a pause after the last key), and on Enter.
  */
 export function BoardSearch({ action, q, children }: { action: string; q: string; children?: ReactNode }) {
@@ -22,28 +22,12 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
   // A search waiting for the typing to pause, and what this box last searched for (for the effect below).
   const typing = useRef<ReturnType<typeof setTimeout>>(undefined);
   const own = useRef<string | null>(null);
-  const landed = useRef(q);
-  const queued = useRef<{ words: string; form: HTMLFormElement } | null>(null);
-  // One history entry for a run of typing. Its first push must land before any replace can follow it.
-  const typed = useRef(false);
-  const searched = useCallback((words: string) => {
+  const searched = (words: string) => {
     clearTimeout(typing.current);
     const trimmed = words.trim().slice(0, 255);
     own.current = trimmed;
     setSubmitted(trimmed);
-  }, []);
-  const search = useCallback((words: string, form: HTMLFormElement) => {
-    searched(words);
-    const params = new URLSearchParams([...new FormData(form)].map(([name, field]) => [name, String(field)]));
-    params.set("q", words);
-    const href = new URL(`${action}?${params}`, window.location.href).href;
-    if (typed.current) {
-      router.replace(href, { scroll: false });
-    } else {
-      typed.current = true;
-      router.push(href, { scroll: false });
-    }
-  }, [action, router, searched]);
+  };
   if (shown !== q) {
     setShown(q);
     setSubmitted(null);
@@ -54,35 +38,29 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
   }
   // The address's search changed some other way (Back, a link): a search still waiting for a pause doesn't undo it.
   useEffect(() => {
-    landed.current = q;
     if (q !== own.current) {
       clearTimeout(typing.current);
-      queued.current = null;
-    } else if (queued.current) {
-      const { words, form } = queued.current;
-      queued.current = null;
-      search(words, form);
     }
-  }, [q, search]);
-  // A link picked while a search waits (a sort tab, a status): that's where they're going; the search doesn't follow it.
+  }, [q]);
+  // Back/Forward cancel waiting typing; only a changed q replaces an unsent draft.
   useEffect(() => {
     const restored = () => {
       clearTimeout(typing.current);
-      queued.current = null;
       own.current = null;
-      typed.current = false;
       setSubmitted(null);
-      setValue(new URL(window.location.href).searchParams.get("q")?.trim().slice(0, 255) ?? "");
     };
     const picked = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest("a[href]")) {
-        clearTimeout(typing.current);
-        queued.current = null;
-        own.current = null;
-        typed.current = false;
+      // Opening another tab or downloading leaves this page's search running.
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (link && (!link.getAttribute("target") || link.getAttribute("target") === "_self") && !link.hasAttribute("download")) {
+        // A link chooses its search even when q stays the same and its effect won't run.
+        restored();
+        setValue(new URL(link.getAttribute("href")!, window.location.href).searchParams.get("q")?.trim().slice(0, 255) ?? "");
       }
     };
-    // Back can change only the sort or status, leaving `q` (and its effect above) unchanged.
     window.addEventListener("popstate", restored);
     document.addEventListener("click", picked, true);
     return () => {
@@ -97,11 +75,7 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
       scroll={false}
       role="search"
       className="relative flex w-full"
-      onSubmit={() => {
-        queued.current = null;
-        typed.current = false;
-        searched(value);
-      }}
+      onSubmit={() => searched(value)}
     >
       {children}
       <Input
@@ -113,20 +87,16 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
           // Not for each key: once they pause, and not again for words it searched for already.
           const form = event.target.form;
           clearTimeout(typing.current);
-          queued.current = null;
           typing.current = setTimeout(() => {
             const words = event.target.value.trim().slice(0, 255);
-            if (!form || words === (own.current ?? landed.current)) {
+            if (!form || words === (submitted ?? q)) {
               return;
             }
-            // One step back for a run of typing: the first search it makes is a new entry, the next ones take its place, so
-            // Back goes to where the typing started (the board, a search made with Enter, a tab, a status, a link's search).
-            if (own.current !== null && landed.current !== own.current) {
-              // Replacing a pending push can cancel it. Wait for its results, then use the latest paused words.
-              queued.current = { words, form };
-              return;
-            }
-            search(words, form);
+            searched(words);
+            const params = new URLSearchParams([...new FormData(form)].map(([name, field]) => [name, String(field)]));
+            params.set("q", words);
+            // Typing updates this entry; only an explicit form submission adds one.
+            router.replace(new URL(`${action}?${params}`, window.location.href).href, { scroll: false });
           }, 350);
         }}
         placeholder="Search ideas"

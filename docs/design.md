@@ -340,7 +340,10 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   - **A board** (the visitor's job: is my idea here? then vote or post it): a card with its name (34px), its line (the team's
     description, else "Vote for the ideas you want most, or share your own."), and at its top right **Get updates** (an
     outline with a bell; a popover with where the reader stands, the changelog by email, "Read the changelog" and RSS).
-    Then the Portal board search variant above, first and full width (it searches as it's typed, after a pause; Enter too), then under a line the
+    Then the Portal board search variant above, first and full width: after a typing pause it replaces the current URL
+    without adding a history entry; Enter submits a new entry. Back and Forward cancel waiting typing and update the
+    box only when the URL's search changes, keeping unsent words through sort- or status-only history changes. Links
+    restore the destination's search; opening a link elsewhere leaves this page's search alone. Then under a line the
     sort tabs with icons (Trending flame, Top trending, New clock, Mine) and at the row's end the **status menu**, a quiet
     button saying what the list shows and how many ("Not done yet 8"; a status in its icon and colour): a menu of links
     with counts, Not done yet (the default), each status with ideas on the board, then Every idea. Then the rows, open on

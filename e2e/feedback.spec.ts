@@ -539,131 +539,251 @@ test("a board opens on the ideas not done yet, the latest shipped in one line, t
   await expect(menu.getByRole("menuitem")).toHaveText(["Not done yet", "Planned", "Completed", "Every idea"]);
 });
 
-for (const via of ["pending searches", "sort tabs", "status menu"] as const) {
-  test(`a board's typed-search run starts again after ${via}`, async ({ browser }, testInfo) => {
+for (const via of ["another page", "sort tabs", "the status menu"] as const) {
+  test(`typing replaces the current board entry after visiting ${via}`, async ({ browser }, testInfo) => {
     const checkpoint = checkpoints(testInfo);
     const slug = `e2e-${randomUUID().slice(0, 8)}`;
     const team = await signUp(browser, APP_URL, "Tess Team");
     await createProject(team, "Acme", slug);
     const api = await apiFor(team, slug);
     await api("/posts", { board: "feature-requests", title: "Dark mode" });
-    await api("/posts", { board: "feature-requests", title: "Dark icons" });
-    await api("/posts/2", { status: "completed" }, "PATCH");
+    if (via === "the status menu") {
+      await api("/posts", { board: "feature-requests", title: "Dark icons" });
+      await api("/posts/2", { status: "completed" }, "PATCH");
+    }
     const visitor = await newPerson(browser, portalUrl(slug));
     await visitor.clock.install();
-    await visitor.goto("/feedback/feature-requests");
+    await visitor.goto("/roadmap");
+    await visitor.goto("/feedback/feature-requests?q=dark");
     const main = visitor.getByRole("main");
     const box = main.getByRole("searchbox", { name: "Search ideas" });
-
-    if (via === "pending searches") {
-      // Both pauses finish before the first response lands. The second search waits for the first to land, then replaces it.
-      let releaseFirst!: () => void;
-      let releaseSecond!: () => void;
-      let deliveredFirst!: () => void;
-      const first = new Promise<void>((resolve) => (releaseFirst = resolve));
-      const second = new Promise<void>((resolve) => (releaseSecond = resolve));
-      const delivered = new Promise<void>((resolve) => (deliveredFirst = resolve));
-      await visitor.route((url) => ["dark", "dark mode"].includes(url.searchParams.get("q") ?? ""), async (route) => {
-        const q = new URL(route.request().url()).searchParams.get("q");
-        const response = await route.fetch();
-        await (q === "dark" ? first : second);
-        await route.fulfill({ response }).catch(() => {});
-        if (q === "dark") deliveredFirst();
-      });
-      const requestedFirst = visitor.waitForRequest((request) => new URL(request.url()).searchParams.get("q") === "dark");
-      await box.fill("dark");
-      await visitor.clock.runFor(400);
-      await requestedFirst;
-      const requestedSecond = visitor.waitForRequest((request) => new URL(request.url()).searchParams.get("q") === "dark mode");
-      await box.fill("dark mode");
-      await visitor.clock.runFor(400);
-      releaseFirst();
-      await delivered;
-      await visitor.waitForURL(/\?q=dark$/);
-      await expect(box).toHaveValue("dark mode");
-      await requestedSecond;
-      releaseSecond();
-      await visitor.waitForURL(/\?q=dark\+mode$/);
-      await expect(main.getByRole("status").filter({ hasText: /matches/ })).toHaveText('1 idea matches "dark mode"');
-      await visitor.goBack();
-      await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
-      await expect(box).toHaveValue("");
+    if (via === "sort tabs") {
+      const tabs = main.getByRole("navigation", { name: "Sort" });
+      await tabs.getByRole("link", { name: "Top" }).click();
+      await visitor.waitForURL(/\?sort=top&q=dark$/);
+      await tabs.getByRole("link", { name: "Trending" }).click();
+    } else if (via === "the status menu") {
+      const status = main.getByRole("button", { name: /^Status: / });
+      await status.click();
+      await visitor.getByRole("menuitem", { name: "Completed", exact: true }).click();
+      await visitor.waitForURL(/\?q=dark&status=completed$/);
+      await status.click();
+      await visitor.getByRole("menuitem", { name: "Every idea", exact: true }).click();
+    }
+    await visitor.waitForURL(/\?q=dark$/);
+    await box.fill("dark mode");
+    await visitor.clock.runFor(400);
+    await visitor.waitForURL(/\?q=dark\+mode$/);
+    await box.fill("dark icons");
+    await visitor.clock.runFor(400);
+    await visitor.waitForURL(/\?q=dark\+icons$/);
+    await checkpoint(visitor, `portal-board-replace-${via.replaceAll(" ", "-")}`);
+    // Back cancels another waiting pause and goes straight to the page or tab before this entry.
+    await box.fill("not searched");
+    await visitor.goBack();
+    if (via === "another page") {
+      await expect(visitor).toHaveURL(/\/roadmap$/);
     } else {
-      await box.fill("dark");
-      await visitor.clock.runFor(400);
-      await visitor.waitForURL(/\?q=dark$/);
-      if (via === "sort tabs") {
-        const tabs = main.getByRole("navigation", { name: "Sort" });
-        await tabs.getByRole("link", { name: "Top" }).click();
-        await visitor.waitForURL(/\?sort=top&q=dark$/);
-        await tabs.getByRole("link", { name: "Trending" }).click();
-      } else {
-        const status = main.getByRole("button", { name: /^Status: / });
-        await status.click();
-        await visitor.getByRole("menuitem", { name: "Completed", exact: true }).click();
-        await visitor.waitForURL(/\?q=dark&status=completed$/);
-        await status.click();
-        await visitor.getByRole("menuitem", { name: "Every idea", exact: true }).click();
-      }
-      await visitor.waitForURL(/\?q=dark$/);
-      await expect(box).toHaveValue("dark");
-      await box.fill("dark mode");
-      await visitor.clock.runFor(400);
-      await visitor.waitForURL(/\?q=dark\+mode$/);
-      await visitor.goBack();
-      await expect(visitor).toHaveURL(/\?q=dark$/);
+      await expect(visitor).toHaveURL(via === "sort tabs" ? /\?sort=top&q=dark$/ : /\?q=dark&status=completed$/);
       await expect(box).toHaveValue("dark");
     }
-    await checkpoint(visitor, `portal-board-history-${via.replaceAll(" ", "-")}`);
+    await visitor.clock.runFor(1000);
+    await visitor.waitForLoadState("networkidle");
+    await visitor.goForward();
+    await expect(visitor).toHaveURL(/\?q=dark\+icons$/);
+    await expect(box).toHaveValue("dark icons");
   });
 }
 
-for (const via of ["Top", "Enter"] as const) {
-  test(`leaving a pending typed search with ${via} leaves no extra board entry`, async ({ browser }, testInfo) => {
+test("Enter adds one board search entry", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.clock.install();
+  await visitor.goto("/roadmap");
+  await visitor.goto("/feedback/feature-requests?q=dark");
+  const box = visitor.getByRole("searchbox", { name: "Search ideas" });
+  await box.fill("dark mode");
+  await box.press("Enter");
+  await visitor.waitForURL(/\?q=dark\+mode$/);
+  await visitor.clock.runFor(1000);
+  await expect(box).toBeFocused();
+  await checkpoint(visitor, "portal-board-enter");
+  await visitor.goBack();
+  await expect(visitor).toHaveURL(/\?q=dark$/);
+  await expect(box).toHaveValue("dark");
+  await visitor.goBack();
+  await expect(visitor).toHaveURL(/\/roadmap$/);
+});
+
+for (const via of ["sort", "status"] as const) {
+  test(`same-query Back and Forward through ${via} keep an unsent search draft`, async ({ browser }, testInfo) => {
     const checkpoint = checkpoints(testInfo);
     const slug = `e2e-${randomUUID().slice(0, 8)}`;
     const team = await signUp(browser, APP_URL, "Tess Team");
     await createProject(team, "Acme", slug);
     const api = await apiFor(team, slug);
     await api("/posts", { board: "feature-requests", title: "Dark mode" });
+    if (via === "status") await api("/posts/1", { status: "completed" }, "PATCH");
     const visitor = await newPerson(browser, portalUrl(slug));
     await visitor.clock.install();
-    // A known page before the board: two Backs after the explicit navigation must reach it.
-    await visitor.goto("/roadmap");
-    await visitor.goto("/feedback/feature-requests");
+    await visitor.goto("/feedback/feature-requests?q=dark");
+    const box = visitor.getByRole("searchbox", { name: "Search ideas" });
+    if (via === "sort") {
+      const tabs = visitor.getByRole("navigation", { name: "Sort" });
+      await tabs.getByRole("link", { name: "Top" }).click();
+      await visitor.waitForURL(/\?sort=top&q=dark$/);
+      await tabs.getByRole("link", { name: "New", exact: true }).click();
+      await visitor.waitForURL(/\?sort=new&q=dark$/);
+    } else {
+      const status = visitor.getByRole("button", { name: /^Status: / });
+      await status.click();
+      await visitor.getByRole("menuitem", { name: "Completed", exact: true }).click();
+      await visitor.waitForURL(/\?q=dark&status=completed$/);
+      await status.click();
+      await visitor.getByRole("menuitem", { name: "Every idea", exact: true }).click();
+      await visitor.waitForURL(/\?q=dark$/);
+    }
+    await box.fill("unsent words");
+    await visitor.goBack();
+    await expect(visitor).toHaveURL(via === "sort" ? /\?sort=top&q=dark$/ : /\?q=dark&status=completed$/);
+    await visitor.clock.runFor(1000);
+    await visitor.waitForLoadState("networkidle");
+    await expect(visitor).toHaveURL(via === "sort" ? /\?sort=top&q=dark$/ : /\?q=dark&status=completed$/);
+    await expect(box).toHaveValue("unsent words");
+    await visitor.goForward();
+    await expect(visitor).toHaveURL(via === "sort" ? /\?sort=new&q=dark$/ : /\?q=dark$/);
+    await expect(box).toHaveValue("unsent words");
+    await checkpoint(visitor, `portal-board-same-query-${via}`);
+  });
+}
+
+for (const via of ["sort", "status"] as const) {
+  test(`a ${via} link during pending typing restores the URL's search`, async ({ browser }, testInfo) => {
+    const checkpoint = checkpoints(testInfo);
+    const slug = `e2e-${randomUUID().slice(0, 8)}`;
+    const team = await signUp(browser, APP_URL, "Tess Team");
+    await createProject(team, "Acme", slug);
+    const api = await apiFor(team, slug);
+    await api("/posts", { board: "feature-requests", title: "Dark mode" });
+    if (via === "status") {
+      await api("/posts", { board: "feature-requests", title: "Dark icons" });
+      await api("/posts/2", { status: "completed" }, "PATCH");
+    }
+    const visitor = await newPerson(browser, portalUrl(slug));
+    await visitor.clock.install();
+    await visitor.goto("/feedback/feature-requests?q=dark");
     const box = visitor.getByRole("searchbox", { name: "Search ideas" });
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
-    await visitor.route((url) => url.searchParams.get("q") === "dark", async (route) => {
+    await visitor.route((url) => url.searchParams.get("q") === "dark mode", async (route) => {
       await released;
-      // Following the link or submitting can cancel the typed request.
       await route.continue().catch(() => {});
     });
     try {
-      const requested = visitor.waitForRequest((request) => new URL(request.url()).searchParams.get("q") === "dark");
-      await box.fill("dark");
+      const requested = visitor.waitForRequest((request) => new URL(request.url()).searchParams.get("q") === "dark mode");
+      await box.fill("dark mode");
       await visitor.clock.runFor(400);
       await requested;
-      if (via === "Top") {
+      if (via === "sort") {
         await visitor.getByRole("navigation", { name: "Sort" }).getByRole("link", { name: "Top" }).click();
-        await visitor.waitForURL(/\?sort=top$/);
+        await visitor.waitForURL(/\?sort=top&q=dark$/);
       } else {
-        await box.press("Enter");
+        await visitor.getByRole("button", { name: /^Status: / }).click();
+        await visitor.getByRole("menuitem", { name: "Completed", exact: true }).click();
+        await visitor.waitForURL(/\?q=dark&status=completed$/);
       }
+      await expect(box).toHaveValue("dark");
       release();
-      if (via === "Enter") await visitor.waitForURL(/\?q=dark$/);
+      await visitor.clock.runFor(1000);
       await visitor.waitForLoadState("networkidle");
-      await visitor.goBack();
-      await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
-      await expect(box).toHaveValue("");
-      await checkpoint(visitor, `portal-board-pending-${via.toLowerCase()}-back`);
-      await visitor.goBack();
-      await expect(visitor).toHaveURL(/\/roadmap$/);
+      await expect(visitor).toHaveURL(via === "sort" ? /\?sort=top&q=dark$/ : /\?q=dark&status=completed$/);
+      await expect(box).toHaveValue("dark");
+      // A link also restores q when typing has not reached its pause yet.
+      await box.fill("not searched");
+      if (via === "sort") {
+        await visitor.getByRole("navigation", { name: "Sort" }).getByRole("link", { name: "New", exact: true }).click();
+        await visitor.waitForURL(/\?sort=new&q=dark$/);
+      } else {
+        await visitor.getByRole("button", { name: /^Status: / }).click();
+        await visitor.getByRole("menuitem", { name: "Every idea", exact: true }).click();
+        await visitor.waitForURL(/\?q=dark$/);
+      }
+      await visitor.clock.runFor(1000);
+      await visitor.waitForLoadState("networkidle");
+      await expect(visitor).toHaveURL(via === "sort" ? /\?sort=new&q=dark$/ : /\?q=dark$/);
+      await expect(box).toHaveValue("dark");
+      await checkpoint(visitor, `portal-board-pending-${via}-link`);
     } finally {
       release();
     }
   });
 }
+
+test("Ctrl-clicking a sort tab keeps this page's pending search", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.clock.install();
+  await visitor.goto("/feedback/feature-requests?q=dark");
+  const box = visitor.getByRole("searchbox", { name: "Search ideas" });
+  await box.fill("dark mode");
+  const opened = visitor.context().waitForEvent("page");
+  await visitor.getByRole("navigation", { name: "Sort" }).getByRole("link", { name: "Top" }).click({ modifiers: ["Control"] });
+  const otherTab = await opened;
+  await otherTab.close();
+  await visitor.clock.runFor(400);
+  await visitor.waitForURL(/\?q=dark\+mode$/);
+  await expect(box).toHaveValue("dark mode");
+  await checkpoint(visitor, "portal-board-control-click");
+});
+
+test("a later typed search can overtake a pending search", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.clock.install();
+  await visitor.goto("/roadmap");
+  await visitor.goto("/feedback/feature-requests");
+  const box = visitor.getByRole("searchbox", { name: "Search ideas" });
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await visitor.route((url) => url.searchParams.get("q") === "dark", async (route) => {
+    await released;
+    await route.continue().catch(() => {});
+  });
+  try {
+    const requested = visitor.waitForRequest((request) => new URL(request.url()).searchParams.get("q") === "dark");
+    await box.fill("dark");
+    await visitor.clock.runFor(400);
+    await requested;
+    await box.fill("dark mode");
+    await visitor.clock.runFor(400);
+    // The first request stays held: a later pause never waits for it to finish.
+    await visitor.waitForURL(/\?q=dark\+mode$/);
+    await expect(box).toHaveValue("dark mode");
+    await expect(visitor.getByRole("main").getByRole("status").filter({ hasText: /matches/ })).toHaveText('1 idea matches "dark mode"');
+    release();
+    await visitor.waitForLoadState("networkidle");
+    await checkpoint(visitor, "portal-board-overtaken-search");
+    await visitor.goBack();
+    await expect(visitor).toHaveURL(/\/roadmap$/);
+  } finally {
+    release();
+  }
+});
 
 test("a board's posts are rows, in Trending, Top or New order, and its search narrows them", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -809,81 +929,6 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await expect(box).toHaveValue("calendar sync");
   await expect(box).toBeFocused();
   await visitor.unroute(held);
-  // Searches made as it's typed are one step back: Back from them goes to the board, not to each pause's words.
-  await visitor.goto("/feedback/feature-requests");
-  await box.fill("dark");
-  await visitor.clock.runFor(1000);
-  await visitor.waitForURL(/\?q=dark$/);
-  await box.pressSequentially(" mode");
-  await visitor.clock.runFor(1000);
-  await visitor.waitForURL(/\?q=dark\+mode$/);
-  await expect(titles).toHaveText(["Dark mode"]);
-  await visitor.goBack();
-  await visitor.waitForURL(/\/feedback\/feature-requests$/);
-  await expect(box).toHaveValue("");
-  await expect(titles).toHaveText(["Calendar sync", "Slack alerts", "Dark mode"]);
-  // Back while a search waits for a pause: the box doesn't search again, undoing it.
-  await visitor.goForward();
-  await visitor.waitForURL(/\?q=dark\+mode$/);
-  await box.press("End");
-  await box.pressSequentially("s");
-  await visitor.goBack();
-  await visitor.waitForURL(/\/feedback\/feature-requests$/);
-  // The pause comes after Back: nothing searched, nothing asked of the server for it, the address as Back left it.
-  const searches: string[] = [];
-  visitor.on("request", (request) => {
-    if (new URL(request.url()).searchParams.has("q")) searches.push(request.url());
-  });
-  await visitor.clock.runFor(1000);
-  await visitor.waitForLoadState("networkidle");
-  expect(searches).toEqual([]);
-  await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
-  await expect(box).toHaveValue("");
-  // A tab picked while a search waits for a pause is what the visitor gets: the waiting search is dropped.
-  await box.fill("dark");
-  await tabs.getByRole("link", { name: "Top" }).click();
-  await visitor.waitForURL(/\?sort=top$/);
-  await visitor.clock.runFor(1000);
-  await visitor.waitForLoadState("networkidle");
-  await expect(visitor).toHaveURL(/\?sort=top$/);
-  await tabs.getByRole("link", { name: "Trending" }).click();
-  await visitor.waitForURL(/\/feedback\/feature-requests$/);
-  await box.fill("");
-  // Typing on from a search made with Enter: Back goes to that search, not past it.
-  await box.fill("slack");
-  await box.press("Enter");
-  await visitor.waitForURL(/\?q=slack$/);
-  await box.pressSequentially(" alerts");
-  await visitor.clock.runFor(1000);
-  await visitor.waitForURL(/\?q=slack\+alerts$/);
-  await visitor.goBack();
-  await visitor.waitForURL(/\?q=slack$/);
-  await expect(box).toHaveValue("slack");
-  // So does a tab picked between pauses: Back from the typing goes to that tab.
-  await box.pressSequentially(" bot");
-  await visitor.clock.runFor(1000);
-  await visitor.waitForURL(/\?q=slack\+bot$/);
-  await tabs.getByRole("link", { name: "Top" }).click();
-  await visitor.waitForURL(/\?sort=top&q=slack\+bot$/);
-  await box.press("End");
-  await box.press("Backspace");
-  await box.press("Backspace");
-  await box.press("Backspace");
-  await box.press("Backspace");
-  await visitor.clock.runFor(1000);
-  await visitor.waitForURL(/\?sort=top&q=slack$/);
-  await visitor.goBack();
-  await visitor.waitForURL(/\?sort=top&q=slack\+bot$/);
-  // Back to another order with the same search also cancels a waiting search (the query itself hasn't changed).
-  await tabs.getByRole("link", { name: "New" }).click();
-  await visitor.waitForURL(/\?sort=new&q=slack\+bot$/);
-  await box.fill("calendar");
-  await visitor.goBack();
-  await visitor.waitForURL(/\?sort=top&q=slack\+bot$/);
-  await visitor.clock.runFor(1000);
-  await visitor.waitForLoadState("networkidle");
-  await expect(visitor).toHaveURL(/\?sort=top&q=slack\+bot$/);
-  await expect(box).toHaveValue("slack bot");
   // A search within the ideas not done yet (an old address asking for them) has no Recently shipped beside it either.
   await visitor.goto("/feedback/feature-requests?status=active&q=calendar");
   await expect(titles).toHaveText(["Calendar sync"]);
