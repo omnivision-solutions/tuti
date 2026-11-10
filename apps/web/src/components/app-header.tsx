@@ -78,12 +78,11 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
           ? Math.max(0, Math.min(toolbar.offsetHeight, toolbar.getBoundingClientRect().bottom))
           : 0;
       // Only when it changes: a new value restyles the whole page.
-      if (height !== last) {
-        last = height;
-        document.documentElement.style.setProperty("--app-toolbar-height", `${height}px`);
+      const root = document.documentElement.style;
+      if (root.getPropertyValue("--app-toolbar-height") !== `${height}px`) {
+        root.setProperty("--app-toolbar-height", `${height}px`);
       }
     };
-    let last = -1;
     // Scrolling measures at most once a frame.
     let frame = 0;
     const onScroll = () => {
