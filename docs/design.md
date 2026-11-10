@@ -24,13 +24,18 @@ cute at the expense of clarity.
   favicon `app/icon.svg`). The current drawing is a placeholder until we have
   a proper illustration.
 - **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
-  ~11px (`rounded-xl`), pills fully round. Nothing else. On the public portal `--radius` is 0.625rem: controls 10px,
-  cards 14px, through the same `rounded-lg` and `rounded-xl`.
+  ~11px (`rounded-xl`), pills fully round. On the public portal `--radius` is 0.625rem: controls 10px,
+  cards 14px, through the same `rounded-lg` and `rounded-xl`. The portal board search variant below uses the larger corners.
 - **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`).
   Fields (`Input`, `Textarea`, `SelectTrigger`) sit on the card's colour in light (white) and on the
   page's in dark (a step below the card), with the `input` border, their placeholder lighter than a value; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
   line above its buttons, never a grey band. The primary
   button is flat: one fill, its border the same colour, a soft shadow; no bevel or edge.
+- **Portal board search:** a larger, filled field (`BoardSearch`), full width as the first step in finding an existing
+  idea: 40px high on phones (`h-10`), 44px from 640px (`sm:h-11`), with 14px portal corners (`rounded-xl`) and the
+  page's fill in light and dark (`bg-background`). Its search icon sits inside on the left. Text is 16px below 768px
+  to avoid iOS focus zoom, 15px from 768px (`text-base md:text-[0.9375rem]`). This named variant deliberately differs from
+  the standard control's height, radius and light-mode fill; it gives the board's search room to lead the list.
 - **Surfaces:** a ladder: the sidebar (a step darker than the page in light), the page (`background`, a soft
   cream), cards on it (`card`: white in light, a step lighter than the page in dark)
   with a `border` ring and a soft shadow (`Card`, `StatTile`), never a card without its edge.
@@ -335,7 +340,7 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   - **A board** (the visitor's job: is my idea here? then vote or post it): a card with its name (34px), its line (the team's
     description, else "Vote for the ideas you want most, or share your own."), and at its top right **Get updates** (an
     outline with a bell; a popover with where the reader stands, the changelog by email, "Read the changelog" and RSS).
-    Then the search, first and full width (it searches as it's typed, after a pause; Enter too), then under a line the
+    Then the Portal board search variant above, first and full width (it searches as it's typed, after a pause; Enter too), then under a line the
     sort tabs with icons (Trending flame, Top trending, New clock, Mine) and at the row's end the **status menu**, a quiet
     button saying what the list shows and how many ("Not done yet 8"; a status in its icon and colour): a menu of links
     with counts, Not done yet (the default), each status with ideas on the board, then Every idea. Then the rows, open on

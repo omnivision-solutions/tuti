@@ -22,8 +22,8 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
   // A search waiting for the typing to pause, and what this box last searched for (for the effect below).
   const typing = useRef<ReturnType<typeof setTimeout>>(undefined);
   const own = useRef<string | null>(null);
-  // The address the last search made as it was typed went to: while it's still the page's, the next one replaces it.
-  const typed = useRef<string | null>(null);
+  // One history entry for a run of typing, even while its first navigation is still pending.
+  const typed = useRef(false);
   if (shown !== q) {
     setShown(q);
     setSubmitted(null);
@@ -43,13 +43,14 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
     const restored = () => {
       clearTimeout(typing.current);
       own.current = null;
-      typed.current = null;
+      typed.current = false;
       setSubmitted(null);
       setValue(new URL(window.location.href).searchParams.get("q")?.trim().slice(0, 255) ?? "");
     };
     const picked = (event: MouseEvent) => {
       if (event.target instanceof Element && event.target.closest("a[href]")) {
         clearTimeout(typing.current);
+        typed.current = false;
       }
     };
     // Back can change only the sort or status, leaving `q` (and its effect above) unchanged.
@@ -74,7 +75,7 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
       role="search"
       className="relative flex w-full"
       onSubmit={() => {
-        typed.current = null;
+        typed.current = false;
         searched(value);
       }}
     >
@@ -97,12 +98,13 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
             // Back goes to where the typing started (the board, a search made with Enter, a tab, a status, a link's search).
             const params = new URLSearchParams([...new FormData(form)].map(([name, field]) => [name, String(field)]));
             const href = new URL(`${action}?${params}`, window.location.href).href;
-            if (typed.current === window.location.href) {
-              router.replace(href, { scroll: false });
-            } else {
-              router.push(href, { scroll: false });
+            if (!typed.current) {
+              // Reserve the entry now: Next can cancel a pending push when the next search replaces it, otherwise
+              // replacing the board itself. Its patched history API keeps this copy of the starting route for Back.
+              window.history.pushState(null, "", window.location.href);
+              typed.current = true;
             }
-            typed.current = href;
+            router.replace(href, { scroll: false });
           }, 350);
         }}
         placeholder="Search ideas"

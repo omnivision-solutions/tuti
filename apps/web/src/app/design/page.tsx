@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { BackLink } from "@/components/back-link";
+import { BoardSearch } from "@/components/board-search";
 import { DnsRecords, SetupStep, SetupSteps, SetupValue, WaitingNotice } from "@/components/dns-setup";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow, VoteCount } from "@/components/item-list";
@@ -123,6 +124,13 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
                   <FieldLabel htmlFor={`${mode}-title`}>Title</FieldLabel>
                   <Input id={`${mode}-title`} placeholder="Short, descriptive title" />
                   <FieldDescription>Helper text sits under the field.</FieldDescription>
+                </Field>
+                <Field>
+                  <p className="text-sm font-medium">Portal board search</p>
+                  <div className="[--radius:0.625rem]">
+                    <BoardSearch action="/design" q="" />
+                  </div>
+                  <FieldDescription>40px on phones, 44px from 640px; 14px corners and the page&apos;s fill.</FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel>Board</FieldLabel>

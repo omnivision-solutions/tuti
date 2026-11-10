@@ -539,6 +539,83 @@ test("a board opens on the ideas not done yet, the latest shipped in one line, t
   await expect(menu.getByRole("menuitem")).toHaveText(["Not done yet", "Planned", "Completed", "Every idea"]);
 });
 
+for (const via of ["pending searches", "sort tabs", "status menu"] as const) {
+  test(`a board's typed-search run starts again after ${via}`, async ({ browser }, testInfo) => {
+    const checkpoint = checkpoints(testInfo);
+    const slug = `e2e-${randomUUID().slice(0, 8)}`;
+    const team = await signUp(browser, APP_URL, "Tess Team");
+    await createProject(team, "Acme", slug);
+    const api = await apiFor(team, slug);
+    await api("/posts", { board: "feature-requests", title: "Dark mode" });
+    await api("/posts", { board: "feature-requests", title: "Dark icons" });
+    await api("/posts/2", { status: "completed" }, "PATCH");
+    const visitor = await newPerson(browser, portalUrl(slug));
+    await visitor.clock.install();
+    await visitor.goto("/feedback/feature-requests");
+    const main = visitor.getByRole("main");
+    const box = main.getByRole("searchbox", { name: "Search ideas" });
+
+    if (via === "pending searches") {
+      // Both pauses finish before the first response lands. Release responses in order: they still make one step back.
+      let releaseFirst!: () => void;
+      let releaseSecond!: () => void;
+      let deliveredFirst!: () => void;
+      const first = new Promise<void>((resolve) => (releaseFirst = resolve));
+      const second = new Promise<void>((resolve) => (releaseSecond = resolve));
+      const delivered = new Promise<void>((resolve) => (deliveredFirst = resolve));
+      await visitor.route((url) => ["dark", "dark mode"].includes(url.searchParams.get("q") ?? ""), async (route) => {
+        const q = new URL(route.request().url()).searchParams.get("q");
+        const response = await route.fetch();
+        await (q === "dark" ? first : second);
+        await route.fulfill({ response }).catch(() => {});
+        if (q === "dark") deliveredFirst();
+      });
+      const requestedFirst = visitor.waitForRequest((request) => new URL(request.url()).searchParams.get("q") === "dark");
+      await box.fill("dark");
+      await visitor.clock.runFor(400);
+      await requestedFirst;
+      const requestedSecond = visitor.waitForRequest((request) => new URL(request.url()).searchParams.get("q") === "dark mode");
+      await box.fill("dark mode");
+      await visitor.clock.runFor(400);
+      await requestedSecond;
+      releaseFirst();
+      await delivered;
+      releaseSecond();
+      await visitor.waitForURL(/\?q=dark\+mode$/);
+      await expect(main.getByRole("status").filter({ hasText: /matches/ })).toHaveText('1 idea matches "dark mode"');
+      await visitor.goBack();
+      await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
+      await expect(box).toHaveValue("");
+    } else {
+      await box.fill("dark");
+      await visitor.clock.runFor(400);
+      await visitor.waitForURL(/\?q=dark$/);
+      if (via === "sort tabs") {
+        const tabs = main.getByRole("navigation", { name: "Sort" });
+        await tabs.getByRole("link", { name: "Top" }).click();
+        await visitor.waitForURL(/\?sort=top&q=dark$/);
+        await tabs.getByRole("link", { name: "Trending" }).click();
+      } else {
+        const status = main.getByRole("button", { name: /^Status: / });
+        await status.click();
+        await visitor.getByRole("menuitem", { name: "Completed", exact: true }).click();
+        await visitor.waitForURL(/\?q=dark&status=completed$/);
+        await status.click();
+        await visitor.getByRole("menuitem", { name: "Every idea", exact: true }).click();
+      }
+      await visitor.waitForURL(/\?q=dark$/);
+      await expect(box).toHaveValue("dark");
+      await box.fill("dark mode");
+      await visitor.clock.runFor(400);
+      await visitor.waitForURL(/\?q=dark\+mode$/);
+      await visitor.goBack();
+      await expect(visitor).toHaveURL(/\?q=dark$/);
+      await expect(box).toHaveValue("dark");
+    }
+    await checkpoint(visitor, `portal-board-history-${via.replaceAll(" ", "-")}`);
+  });
+}
+
 test("a board's posts are rows, in Trending, Top or New order, and its search narrows them", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
