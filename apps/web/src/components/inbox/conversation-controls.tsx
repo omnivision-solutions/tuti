@@ -291,7 +291,6 @@ export function SummarizeButton({ projectSlug, number, paused }: Props & { pause
   return (
     <DropdownMenuItem
       disabled={pending || paused}
-      title={paused ? "This project is out of AI credits" : undefined}
       onClick={() =>
         startTransition(async () => {
           const result = await summarizeWithAi(projectSlug, number);
@@ -303,7 +302,7 @@ export function SummarizeButton({ projectSlug, number, paused }: Props & { pause
         })
       }
     >
-      {pending ? "Summarizing…" : "Summarize with AI"}
+      {pending ? "Summarizing…" : paused ? "Summarize with AI: out of AI credits" : "Summarize with AI"}
     </DropdownMenuItem>
   );
 }
