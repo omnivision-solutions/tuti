@@ -24,8 +24,8 @@ async function sendAndClose(page: Page) {
 }
 
 test("conversations from the API land in the inbox, where the team replies, assigns, closes and marks spam", async ({ browser }, testInfo) => {
-  // The whole flow, dozens of pages (each Inbox page with its list beside the conversation): near 30 seconds on a busy runner.
-  test.setTimeout(60_000);
+  // The whole flow visits dozens of pages and captures each stage on a shared runner.
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -78,7 +78,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows.first().getByRole("link")).toHaveText("e2e-asker@example.com");
   await expect(rows.first()).not.toContainText("Globex");
   await expect(rows.first()).toContainText("Do you have a discount for nonprofits?");
-  await expect(rows.last().getByRole("link")).toHaveText("Sam Smith · Initech");
+  await expect(rows.last().getByRole("link")).toHaveText("Sam Smith Initech");
   await expect(rows.last()).toContainText("Can't export to CSV · The export button does nothing on the reports page.");
   // Its number to the ear (and in the conversation), not a line of its own.
   await expect(rows.last().getByRole("link").first()).toHaveAccessibleName(/\(#1\)$/);
@@ -1918,7 +1918,7 @@ test("with an address for the project, an email to it lands in the inbox without
   await (await apiFor(owner, slug))("/users", { users: [{ id: "kim-1", name: "Kim Lee", email: "e2e-kim@example.com", properties: { company: "Hooli" } }] });
   await owner.goto(`/app/${slug}/inbox`);
   const kimLink = owner.getByRole("link", { name: "Kim Lee, Hooli: Invoice missing (#1)" });
-  await expect(kimLink).toHaveText("Kim Lee · Hooli");
+  await expect(kimLink).toHaveText("Kim Lee Hooli");
   await checkpoint(owner, "inbox-row-email-name");
   await kimLink.click();
   await expect(meta(owner)).toContainText("Kim Lee");

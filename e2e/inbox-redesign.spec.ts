@@ -7,7 +7,14 @@ import { apiFor, createProject, signUp } from "./helpers";
 
 test("inbox cards keep triage in details, context folded, and phone details in a sheet", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
-  const checkpoint = checkpoints(testInfo);
+  const capture = checkpoints(testInfo);
+  const checkpoint = async (...args: Parameters<typeof capture>) => {
+    await args[0].mouse.move(0, 0);
+    await args[0].evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    });
+    await capture(...args);
+  };
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme Calendar", slug);
@@ -75,6 +82,15 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await api("/conversations/1/messages", { body: "The whole team. The CSV option would be perfect.", author: { id: "demo-sam" } });
   await owner.goto(`/app/${slug}/inbox/1`);
   const details = owner.getByRole("complementary", { name: "Conversation details", exact: true });
+  const assertTeamAtRight = async () => {
+    const messages = owner.getByRole("list", { name: "Messages" });
+    await expect(messages.locator(".team:not(.note) .inbox-chat-avatar")).toHaveCount(2);
+    const messageBox = (await messages.boundingBox())!;
+    for (const avatar of await messages.locator(".team:not(.note) .inbox-chat-avatar").all()) {
+      const box = (await avatar.boundingBox())!;
+      expect(box.x + box.width).toBeCloseTo(messageBox.x + messageBox.width, 0);
+    }
+  };
   await expect(details).toBeVisible();
   const folded = ["Customer details", "Company", "Other conversations from this person", "Recent page visits", "Events", "Conversation attributes"];
   for (const name of folded) {
@@ -90,6 +106,13 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await expect(details.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
   await owner.reload();
   await expect(details).toBeVisible();
+  await assertTeamAtRight();
+  await details.getByRole("button", { name: "Link a post to this conversation" }).click();
+  const linkDialog = owner.getByRole("dialog", { name: "Link a post" });
+  await expect(linkDialog).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(linkDialog).toBeHidden();
+  await expect(details.getByRole("button", { name: "Link a post to this conversation" })).toBeFocused();
   await checkpoint(owner, "laptop-light", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "laptop-dark", { fullPage: false });
@@ -98,6 +121,7 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await checkpoint(owner, "section-expanded-dark", { fullPage: false });
   await owner.getByRole("button", { name: "Hide details" }).click();
   await expect(details).toBeHidden();
+  await assertTeamAtRight();
   await checkpoint(owner, "panel-collapsed-dark", { fullPage: false });
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.emulateMedia({ colorScheme: "light" });
@@ -113,6 +137,11 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "phone-details-dark", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "light" });
+  await sheet.getByRole("button", { name: "Link a post to this conversation" }).click();
+  await expect(linkDialog).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(linkDialog).toBeHidden();
+  await expect(sheet.getByRole("button", { name: "Link a post to this conversation" })).toBeFocused();
   await sheet.getByRole("button", { name: "Close", exact: true }).click();
   await expect(sheet).toBeHidden();
   await expect(title.getByRole("button", { name: "Show details" })).toBeFocused();

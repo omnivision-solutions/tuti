@@ -361,7 +361,7 @@ export async function PersonPanel({
         {keyProperties.length ? properties(keyProperties) : <p className="text-sm text-muted-foreground">No company details.</p>}
       </DetailSection>
       <DetailSection title="Other conversations from this person" count={otherCount} icon={MessagesSquareIcon}>
-        <Section title="Other conversations" count={otherCount}>
+        <section aria-label="Other conversations" className="inbox-other-conversations">
           <Links
             items={others.map((c) => ({
               href: inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages) : `/app/${slug}/inbox/${c.number}`,
@@ -375,7 +375,7 @@ export async function PersonPanel({
             }))}
             empty="None."
           />
-        </Section>
+        </section>
       </DetailSection>
     </aside>
   );

@@ -70,7 +70,8 @@ export function DetailsToggle({ hidden: server }: { hidden: boolean }) {
       size="icon-sm"
       aria-label={label}
       title={label}
-      aria-expanded={beside && !hidden}
+      aria-expanded={beside ? !hidden : undefined}
+      aria-haspopup={beside ? undefined : "dialog"}
       aria-controls={beside ? "conversation-details" : undefined}
       onClick={() => {
         if (!beside) {

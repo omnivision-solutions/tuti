@@ -1,7 +1,7 @@
 "use client";
 
 import type { PostStatus } from "@tuti/db";
-import { LinkIcon, SparklesIcon, XIcon } from "lucide-react";
+import { LinkIcon, PlusIcon, SparklesIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -132,6 +132,7 @@ export function ConversationPosts({
               </li>
             ))}
           </ul>
+          <LinkPostButton projectSlug={projectSlug} number={number} linked={posts.map((post) => post.number)} inline />
         </DetailSection>
         <section aria-label="Looks related">
           <DetailSection title="Looks related" count={related.length} icon={SparklesIcon} open>
@@ -147,8 +148,9 @@ export function ConversationPosts({
                     </span>
                   </div>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="xs"
+                    className="inbox-related-link"
                     aria-label={`Link “${post.title}”`}
                     data-link={post.number}
                     // Keeps the keyboard's focus while it saves (and after, if it failed).
@@ -156,6 +158,7 @@ export function ConversationPosts({
                     disabled={pending}
                     onClick={() => link(post.number, true)}
                   >
+                    <LinkIcon aria-hidden />
                     Link
                   </Button>
                 </li>
@@ -172,7 +175,7 @@ export function ConversationPosts({
  * "Link a post…", in the conversation's top bar menu: searches the project's posts (findPostsToLink) as it's typed in,
  * to pick the one this is about (it shows on the post, beside its voters). `linked`: those it's linked to already.
  */
-export function LinkPostButton({ projectSlug, number, linked }: { projectSlug: string; number: number; linked: number[] }) {
+export function LinkPostButton({ projectSlug, number, linked, inline = false }: { projectSlug: string; number: number; linked: number[]; inline?: boolean }) {
   const [open, setOpen] = useState(false);
   const { pending, link } = useLink(projectSlug, number);
   const search = usePostSearch((q) => findPostsToLink(projectSlug, q));
@@ -184,13 +187,23 @@ export function LinkPostButton({ projectSlug, number, linked }: { projectSlug: s
         search.restart(next);
       }}
     >
-      <DialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>
-        <LinkIcon />
-        Link a post…
+      <DialogTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={pending}
+            className={inline ? "inbox-link-post" : undefined}
+            aria-label={inline ? "Link a post to this conversation" : undefined}
+          />
+        }
+      >
+        {inline ? <PlusIcon /> : <LinkIcon />}
+        {inline ? "Link a post" : "Link a post…"}
       </DialogTrigger>
       {/* Opened from "More actions", which closes as it opens: the focus goes back to that button, not to this one
           (hidden in its closed menu). */}
-      <DialogContent finalFocus={() => moreActions() ?? true}>
+      <DialogContent finalFocus={inline ? undefined : () => moreActions() ?? true}>
         <DialogHeader>
           <DialogTitle>Link a post</DialogTitle>
           <DialogDescription>Pick the post this conversation is about. It shows on the post, beside its voters.</DialogDescription>

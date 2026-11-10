@@ -1047,3 +1047,161 @@ body:has(.inbox-details-sheet) [data-slot="sheet-overlay"] {
   order: -1;
   margin-bottom: 4px;
 }
+
+/* Match the resting list and the wider conversation when details are folded. */
+.inbox-views [aria-current] {
+  color: var(--primary);
+  font-weight: 600;
+}
+.inbox-row > div:first-child {
+  align-items: flex-start;
+  gap: 10px;
+}
+.inbox-row-company {
+  font-size: 13px;
+  margin-left: 3px;
+}
+.inbox-needs-reply a,
+.inbox-needs-reply .inbox-row-subject {
+  font-weight: 650;
+}
+.inbox-row > div:last-child {
+  align-self: stretch;
+}
+.inbox-row > div:last-child > a {
+  position: relative;
+  height: 100%;
+  align-items: flex-start;
+}
+.inbox-row [data-assignee] {
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  width: 18px;
+  height: 18px;
+}
+.inbox-row:has([data-assignee]) .inbox-row-preview {
+  padding-right: 24px;
+}
+.inbox-message.team:not(.note) {
+  justify-content: flex-start;
+}
+.inbox-list-empty {
+  margin-top: 72px;
+}
+.inbox-link-post {
+  display: flex;
+  width: fit-content;
+  margin-top: 10px;
+  padding: 0;
+  height: auto;
+  min-height: 24px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+.inbox-link-post > svg {
+  width: 14px;
+  height: 14px;
+}
+.inbox-related-link {
+  margin-left: auto;
+  align-self: flex-end;
+  color: var(--primary);
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  padding-inline: 0;
+  font-weight: 400;
+}
+.inbox-related-link > svg {
+  width: 13px;
+  height: 13px;
+}
+.inbox-other-conversations li {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-block: 2px 12px;
+}
+.inbox-other-conversations li > a {
+  font-size: 13px;
+  font-weight: 550;
+}
+@media (min-width: 1200px) {
+  main[data-slot="sidebar-inset"] .inbox-thread[data-details="hidden"] [data-slot="page-header"].inbox-conversation-head {
+    padding-inline: 32px;
+  }
+  .inbox-thread[data-details="hidden"] .inbox-title-row h1 {
+    font-size: 27px;
+  }
+  .inbox-thread[data-details="hidden"] .inbox-messages-and-composer {
+    padding-inline: 36px;
+  }
+  .inbox-thread[data-details="hidden"] .inbox-composer-wrap {
+    margin-inline: -8px;
+  }
+  .inbox-thread[data-details="hidden"] .inbox-message.note {
+    margin-inline: 70px;
+  }
+}
+@media (max-width: 767px) {
+  .inbox-list-empty {
+    margin-top: 150px;
+  }
+}
+
+.inbox-row time {
+  font-weight: 400;
+}
+.inbox-bubble .inbox-note-by {
+  font-size: 13px;
+  line-height: 18px;
+}
+.note .inbox-bubble {
+  padding: 8px 12px;
+}
+.inbox-row > div:first-child > [data-slot="avatar"] {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+  margin-top: 2px;
+}
+.inbox-row:not(.inbox-needs-reply) .inbox-row-subject {
+  font-weight: 400;
+}
+.inbox-list-footer kbd {
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding-inline: 4px;
+  line-height: 16px;
+}
+.inbox-messages-on {
+  text-decoration: none;
+}
+.inbox-triage-value[aria-label="Snooze"] {
+  color: var(--muted-foreground);
+}
+.inbox-details-sheet [data-slot="sheet-header"] {
+  min-height: 48px;
+  padding: 8px 18px 10px;
+  justify-content: center;
+}
+.inbox-details-sheet [data-slot="sheet-close"] {
+  top: 20px;
+  right: 18px;
+  width: 30px;
+  height: 30px;
+}
+@media (max-width: 767px) {
+  .inbox-conversation-head > a {
+    margin-bottom: 12px;
+  }
+  .inbox-conversation-meta {
+    margin-top: 10px;
+  }
+  .inbox-bubble {
+    padding: 9px 11px;
+  }
+}

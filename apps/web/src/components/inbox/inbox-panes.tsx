@@ -246,7 +246,10 @@ export async function InboxPanes({
         )}
         {conversations.length > 0 && (
           <div className="inbox-list-context">
-            Latest message first<span>{counts[views.indexOf(view)]} conversations</span>
+            Latest message first
+            <span>
+              {counts[views.indexOf(view)]} {counts[views.indexOf(view)] === 1 ? "conversation" : "conversations"}
+            </span>
           </div>
         )}
         <ListKeys
@@ -289,7 +292,7 @@ export async function InboxPanes({
                       // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
                       // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
                       // A dense list: rows a little tighter than other lists', so twice as many fit.
-                      className="inbox-row relative isolate items-start"
+                      className={cn("inbox-row relative isolate items-start", needsReply && "inbox-needs-reply")}
                       leading={
                         <Avatar className="size-8">
                           {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
@@ -310,7 +313,7 @@ export async function InboxPanes({
                           {/* In full on hover (over the link's cover, still inside the link); not read out again after the link's name. */}
                           <span aria-hidden className="relative z-10" title={`${name}${company ? ` · ${company}` : ""}`}>
                             {name}
-                            {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
+                            {company && <span className="inbox-row-company font-normal text-muted-foreground"> {company}</span>}
                           </span>
                         </Link>
                       }
@@ -401,9 +404,14 @@ export async function InboxPanes({
               )}
               <h1>{none ? "You’re all caught up." : "Open a conversation"}</h1>
               <p>
-                {none
-                  ? "Nothing needs a reply. New conversations from your widget, email and API will appear here."
-                  : "Open a conversation to reply here: click it, or press J."}
+                {none ? (
+                  <>
+                    Nothing needs a reply. New conversations <br />
+                    from your widget, email and API will appear here.
+                  </>
+                ) : (
+                  "Open a conversation to reply here: click it, or press J."
+                )}
               </p>
               {none && (
                 <Link href={inboxHref(slug, "waiting")} className={buttonVariants({ variant: "outline", size: "sm" })}>
