@@ -34,6 +34,11 @@
 }
 
 @theme inline {
+  --color-inbox-canvas: var(--inbox-canvas);
+  --color-inbox-customer: var(--inbox-customer);
+  --color-inbox-team: var(--inbox-team);
+  --color-inbox-note: var(--inbox-note);
+  --shadow-inbox: var(--inbox-shadow);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   /* After each font, the symbols none of them has (--font-symbols, app/layout.tsx), so they never show as an empty box. */
@@ -117,6 +122,16 @@
  */
 :root,
 .light {
+  /* Inbox cards keep the approved warm canvas and chat fills. */
+  --inbox-canvas: #f7f4ee;
+  --inbox-customer: #f8f4f1;
+  --inbox-team: color-mix(in srgb, var(--soft) 70%, var(--card));
+  --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--inbox-surface));
+  --inbox-surface: var(--card);
+  --inbox-muted: var(--muted-foreground);
+  --inbox-secondary: var(--secondary);
+  --inbox-shadow: 0 1px 3px oklch(0 0 0 / 0.035), 0 0 0 1px color-mix(in oklch, var(--border) 35%, transparent);
+  --inbox-overlay: oklch(0.08 0.01 160 / 0.44);
   --background: oklch(0.982 0.008 88.6);
   --foreground: oklch(0.216 0.006 56);
   --card: oklch(1 0 0);
@@ -189,6 +204,15 @@
 }
 
 .dark {
+  --inbox-canvas: var(--background);
+  --inbox-customer: oklch(0.292 0.016 160);
+  --inbox-team: oklch(0.325 0.052 157);
+  --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--inbox-surface));
+  --inbox-surface: oklch(0.218 0.013 160.1);
+  --inbox-muted: oklch(0.76 0.016 160);
+  --inbox-secondary: oklch(0.257 0.017 163.3);
+  --inbox-shadow: 0 0 0 1px color-mix(in oklch, var(--border) 32%, transparent);
+  --inbox-overlay: oklch(0.08 0.01 160 / 0.44);
   --background: oklch(0.185 0.01 158.9);
   --foreground: oklch(0.966 0.006 153.8);
   --card: oklch(0.248 0.014 160.1);
@@ -603,7 +627,7 @@
    covers text passing underneath without changing the header's initial spacing. Short or zoomed windows let ordinary
    toolbars scroll away to preserve reading room; editors keep their pinned actions. Phones keep the compact menu row. */
 @media (width >= 48rem) {
-  main[data-slot="sidebar-inset"] [data-slot="page-header"]:not(.inbox-list-title) {
+  main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-inbox-header]) {
     position: sticky;
     top: 0;
     z-index: 10;

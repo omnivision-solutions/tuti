@@ -32,6 +32,27 @@ export function formatDay(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 }
 
+/** A calendar day in the viewer's explicit time zone, independent of the server's zone and DST. */
+export function conversationDayKey(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)!.value);
+  return Date.UTC(value("year"), value("month") - 1, value("day"));
+}
+
+/** Under the composer: where replies go. In the widget they're emailed only if unseen there for a minute (the reply job's EMAIL_UNSEEN_AFTER_MS). */
+export function emailHint(recipient: string | undefined, inWidget: boolean): string {
+  const name = recipient?.split(" ")[0] ?? "them";
+  return inWidget ? `Emailed to ${name} if they haven't seen it in the widget within a minute.` : `Replies are emailed to ${name}.`;
+}
+
+/** Inbox day divider, relative to the viewer's calendar day. */
+export function conversationDay(date: Date, timeZone: string, now = new Date()): string {
+  const days = (conversationDayKey(now, timeZone) - conversationDayKey(date, timeZone)) / 86_400_000;
+  const relative = days === 0 ? "Today · " : days === 1 ? "Yesterday · " : "";
+  const year = (d: Date) => d.toLocaleDateString("en-GB", { year: "numeric", timeZone });
+  return relative + date.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone, ...(relative || year(date) === year(now) ? {} : { year: "numeric" }) });
+}
+
 /** A month, like "November 2026" (UTC, as formatDate): a post's ETA. */
 export function formatMonth(date: Date): string {
   return date.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });

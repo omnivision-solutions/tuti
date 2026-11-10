@@ -1,6 +1,31 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, etaOnPortal, etaToast, firstLine, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
+import { asking, askingTotal, conversationDay, emailHint, etaOnPortal, etaToast, firstLine, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
+
+test.each([
+  ["2026-11-10T00:01:00Z", "2026-11-10T23:59:00Z", "Today · 10 November"],
+  ["2026-11-09T23:59:00Z", "2026-11-10T00:01:00Z", "Yesterday · 9 November"],
+  ["2025-12-31T18:00:00Z", "2026-01-01T02:00:00Z", "Yesterday · 31 December"],
+  ["2026-11-08T12:00:00Z", "2026-11-10T12:00:00Z", "8 November"],
+  ["2026-11-11T12:00:00Z", "2026-11-10T12:00:00Z", "11 November"],
+  ["2025-11-12T12:00:00Z", "2026-11-10T12:00:00Z", "12 November 2025"],
+])("conversation day %s, relative to %s", (date, now, label) => {
+  expect(conversationDay(new Date(date), "UTC", new Date(now))).toBe(label);
+});
+
+test.each([
+  ["2026-03-08T07:30:00Z", "2026-03-09T19:00:00Z", "America/Los_Angeles", "7 March"],
+  ["2026-03-08T08:30:00Z", "2026-03-09T19:00:00Z", "America/Los_Angeles", "Yesterday · 8 March"],
+  ["2026-11-10T23:30:00Z", "2026-11-11T01:00:00Z", "America/Los_Angeles", "Today · 10 November"],
+  ["2026-11-10T23:30:00Z", "2026-11-11T01:00:00Z", "Asia/Tokyo", "Today · 11 November"],
+])("conversation days use calendar boundaries in %s / %s / %s", (date, now, zone, label) => {
+  expect(conversationDay(new Date(date), zone, new Date(now))).toBe(label);
+});
+
+test("the composer's email hint says a widget reply is emailed only if unseen there", () => {
+  expect(emailHint("Sam Smith", false)).toBe("Replies are emailed to Sam.");
+  expect(emailHint("Sam Smith", true)).toBe("Emailed to Sam if they haven't seen it in the widget within a minute.");
+});
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);

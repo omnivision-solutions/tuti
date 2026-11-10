@@ -1,23 +1,27 @@
 import { type PostStatus, prisma } from "@tuti/db";
 import { historySince, visibleConversations } from "@tuti/jobs";
 import Link from "next/link";
+import { BuildingIcon, UserIcon, MessagesSquareIcon } from "lucide-react";
+import { DetailSection } from "@/components/inbox/detail-section";
 import type { ReactNode } from "react";
 
 import { inboxHref, inInboxView, type View } from "@/components/inbox/inbox-panes";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
+import { ConversationStatusText } from "./conversation-status";
 import { cn } from "@/lib/utils";
 import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/property-formats";
 import type { PropertyValue } from "@tuti/shared/user-properties";
 import { viewsOf } from "@/server/operations/users";
+import { latestMessages } from "@/server/operations/conversations";
+import { ViewerDate } from "@/components/inbox/viewer-date";
+import { firstLine } from "@/lib/format";
 
 /** Beside a conversation; their own page lists them all (up to 500). */
 const SHOWN = 5;
-/** Beside a conversation, the properties shown before "Details": these first, when they have them, then the others in order. */
+/** The business properties grouped under Company in the Inbox. */
 const KEY_PROPERTIES = ["company", "plan", "seats"];
-const KEY_SHOWN = 3;
 
 /** A part of what they did. `card`: on their own page, a card of its own with a heading. */
 function Section({ title, count, card = false, big = false, children }: { title: string; count?: number; card?: boolean; big?: boolean; children: ReactNode }) {
@@ -154,13 +158,21 @@ export async function PersonPanel({
       where: theirs,
       orderBy: { lastMessageAt: "desc" },
       take,
-      select: { id: true, number: true, subject: true, status: true },
+      select: { id: true, number: true, subject: true, status: true, lastMessageAt: true },
     }),
     prisma.conversation.count({ where: theirs }),
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { propertyFormats: true } }),
   ]);
   const formats = storedPropertyFormats(propertyFormats);
-  const inView = inbox ? await inInboxView(projectId, inbox.userId, inbox.view, others.map((c) => c.id)) : new Set<number>();
+  const otherMessages = page ? new Map() : await latestMessages(others.map((c) => c.id));
+  const inView = inbox
+    ? await inInboxView(
+        projectId,
+        inbox.userId,
+        inbox.view,
+        others.map((c) => c.id),
+      )
+    : new Set<number>();
   const lookalike = !userId && email ? await maybeUser(projectId, email) : null;
   const sso = user?.ssoIdentity;
   const view = sso && user ? (await viewsOf(projectId, [{ ...sso, user: { name: user.name, image: user.image } }]))[0]! : null;
@@ -230,23 +242,16 @@ export async function PersonPanel({
       list
     );
   };
-  // Beside a conversation: who they are at a glance (their company, plan and seats, or their first properties), the rest
-  // under Details.
+  // Company keeps its business properties together; Customer details holds all the others.
   const allProperties = Object.entries(view?.properties ?? {});
-  const keyProperties = [
-    ...KEY_PROPERTIES.flatMap((key) => allProperties.filter(([name]) => name.toLowerCase() === key)),
-    ...allProperties.filter(([name]) => !KEY_PROPERTIES.includes(name.toLowerCase())),
-  ].slice(0, KEY_SHOWN);
+  const keyProperties = KEY_PROPERTIES.flatMap((key) => allProperties.filter(([name]) => name.toLowerCase() === key));
   const keyNames = new Set(keyProperties.map(([name]) => name));
   const otherProperties = allProperties.filter(([name]) => !keyNames.has(name));
 
   const profile = (
     <>
       <section className="flex flex-col gap-1 empty:hidden" aria-label="Who">
-        {page && user ? (
-          // On their own page the header has their face, name, address and id.
-          null
-        ) : (
+        {page && user ? null : ( // On their own page the header has their face, name, address and id.
           <p className="font-medium break-words">{user?.name ?? person.name ?? shownEmail ?? "Unknown"}</p>
         )}
         {shownEmail && !(page && user) && (
@@ -266,7 +271,7 @@ export async function PersonPanel({
         {page && groupBadges}
       </section>
 
-      {page ? properties(allProperties, "Properties") : properties(keyProperties)}
+      {page ? properties(allProperties, "Properties") : null}
     </>
   );
   const activity = (
@@ -296,7 +301,7 @@ export async function PersonPanel({
             meta: (
               <>
                 #{c.number}
-                <Badge variant={c.status === "OPEN" ? "outline" : "secondary"}>{CONVERSATION_STATUS_LABELS[c.status.toLowerCase() as ConversationStatusName]}</Badge>
+                <ConversationStatusText status={c.status} />
               </>
             ),
           }))}
@@ -322,21 +327,62 @@ export async function PersonPanel({
       </div>
     </div>
   ) : (
-    <div className="flex flex-col gap-3">
-      {profile}
-      <details className="group flex flex-col">
-        <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">Details</summary>
-        <div className="mt-3 flex flex-col gap-5">
-          {(identity || groupBadges) && (
-            <div className="flex flex-col gap-1">
-              {identity}
-              {groupBadges}
-            </div>
-          )}
+    <aside aria-label="About them">
+      <DetailSection
+        title="Customer details"
+        count={
+          Number(!!(user?.name ?? person.name)) +
+          Number(!!shownEmail) +
+          Number(!!view) +
+          otherProperties.length +
+          (view?.groups.length ?? 0) +
+          postCount +
+          voteCount
+        }
+        icon={UserIcon}
+      >
+        <div className="flex flex-col gap-3">
+          {profile}
+          {identity}
+          {groupBadges}
           {properties(otherProperties, "Properties")}
-          {activity}
+          {user && (
+            <>
+              <Section title="Posts" count={postCount}>
+                <Links items={posts.map(postLink)} empty="No posts." />
+              </Section>
+              <Section title="Votes" count={voteCount}>
+                <Links items={votes.map((v) => postLink(v.post))} empty="No votes on others' posts." />
+              </Section>
+            </>
+          )}
         </div>
-      </details>
-    </div>
+      </DetailSection>
+      <DetailSection title="Company" count={keyProperties.length} icon={BuildingIcon}>
+        {keyProperties.length ? properties(keyProperties) : <p className="text-sm text-muted-foreground">No company details.</p>}
+      </DetailSection>
+      <DetailSection title="Other conversations from this person" count={otherCount} icon={MessagesSquareIcon}>
+        <section aria-label="Other conversations" className="inbox-other-conversations">
+          {others.length === 0 ? <p className="text-sm text-muted-foreground">None.</p> : (
+            <ul className="flex min-w-0 flex-col gap-1">
+              {others.map((c) => (
+                <li key={c.number} className="flex min-w-0 flex-col items-start gap-1 pt-0.5 pb-3 text-xs">
+                  <Link
+                    href={inView.has(c.number) && inbox ? inboxHref(slug, inbox.view, c.number, inbox.pages) : `/app/${slug}/inbox/${c.number}`}
+                    className="max-w-full font-[550] wrap-anywhere hover:underline"
+                  >
+                    {c.subject}
+                  </Link>
+                  <p className="text-muted-foreground">
+                    <ConversationStatusText status={c.status} /> · #{c.number} · <ViewerDate at={c.lastMessageAt.toISOString()} />
+                  </p>
+                  <p className="max-w-full truncate text-muted-foreground">{firstLine(otherMessages.get(c.id)?.body ?? "")}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </DetailSection>
+    </aside>
   );
 }

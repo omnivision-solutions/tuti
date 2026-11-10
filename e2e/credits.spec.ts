@@ -60,6 +60,13 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await expect(owner.getByRole("button", { name: "Edit with AI" })).toHaveAttribute("title", "This project is out of AI credits");
   await checkpoint(owner, "team-changelog-out-of-credits");
 
+  // The inbox's Summarize says why it's off, in the menu itself (a disabled item shows no tooltip).
+  await api("/conversations", { email: `e2e-kim-${id}@example.com`, subject: "Invoices", body: "Where's my invoice?" });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await owner.getByRole("button", { name: "More actions" }).first().click();
+  await expect(owner.getByRole("menuitem", { name: "Summarize with AI: out of AI credits" })).toBeDisabled();
+  await owner.keyboard.press("Escape");
+
   // A merge waits, paused, for the team to resume it.
   const number = randomInt(1_000, 1_000_000);
   const pr = `Add a dark theme ${id}`;
