@@ -49,17 +49,18 @@ const useSelection = () => {
  * Feedback's rows picked for Set status, Move to board and Merge (FeedbackBulk), kept as the list re-renders,
  * as the list has them now (`listed`: their titles and votes as they are). One that leaves the list (a new
  * status from its row, merged from the pane) is let go, not picked again if it comes back. While an action runs
- * (`pending`), the picks stay as they are.
+ * (`pending`), the picks stay as they are. Changing the view (`listKey`) clears the picks without remounting the
+ * filters, so their popover and keyboard focus stay where they were.
  */
-export function FeedbackSelection({ listed, children }: { listed: Picked[]; children: ReactNode }) {
+export function FeedbackSelection({ listKey, listed, children }: { listKey: string; listed: Picked[]; children: ReactNode }) {
   const [chosen, setChosen] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
   // The list changed: picks no longer in it are let go (as it renders, React's way to adjust state to props).
   const ids = listed.map((post) => post.id).join(" ");
-  const [seen, setSeen] = useState(ids);
-  if (seen !== ids) {
-    setSeen(ids);
-    setChosen((picks) => picks.filter((id) => listed.some((post) => post.id === id)));
+  const [seen, setSeen] = useState({ listKey, ids });
+  if (seen.listKey !== listKey || seen.ids !== ids) {
+    setSeen({ listKey, ids });
+    setChosen((picks) => seen.listKey !== listKey ? [] : picks.filter((id) => listed.some((post) => post.id === id)));
   }
   const picked = listed.filter((post) => chosen.includes(post.id));
   const toggle = (post: Picked, on: boolean) => setChosen((now) => (on ? [...now.filter((id) => id !== post.id), post.id] : now.filter((id) => id !== post.id)));
@@ -162,7 +163,7 @@ export function FiltersFold({ set, compact = false, children }: { set: number; /
         <span className={compact ? "sr-only" : undefined}>Filters</span>
         {set > 0 && <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">{set}</span>}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 [&_[data-slot=select-trigger]]:w-full [&>div>div]:flex-col [&>div>div]:items-stretch">
+      <PopoverContent aria-label="Filters" align="end" className="w-64 [&_[data-slot=select-trigger]]:w-full [&>div>div]:flex-col [&>div>div]:items-stretch">
         {children}
       </PopoverContent>
     </Popover>

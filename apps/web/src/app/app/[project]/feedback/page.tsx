@@ -151,10 +151,10 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
 
   return (
     // The list by itself: rows no wider than 72rem, so a title and its votes stay close on a wide screen; a post open
-    // beside it, the whole width.
+    // beside it, the whole width. Keep the shell's left edge in both views so the clicked row stays put.
     // The page's width (not the list's, which narrows as a post opens) decides whether the toolbar is one row: the same
     // with or without a post open, so the list never moves as one opens.
-    <div className={cn("@container/page flex flex-col gap-6", open === null && "mx-auto w-full max-w-[72rem]")}>
+    <div className={cn("@container/page flex flex-col gap-6", open === null && "w-full max-w-[72rem]")}>
       <PageHeader
         title="Feedback"
         // On phones the list comes up sooner without it.
@@ -185,7 +185,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       {/* The list (its whole column until a post opens) and, beside it, the post a row opened; on a phone, one or the other. */}
       <div data-slot="pane-layout" className={cn("flex flex-col gap-6", open !== null && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start")}>
         {/* Rows picked for Set status, Move to board and Merge, the bar in the filters' place once some are. */}
-        <FeedbackSelection key={listKey.toString()} listed={listed.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
+        <FeedbackSelection listKey={listKey.toString()} listed={listed.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
           <div className={cn("@container flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
             {/* One row above the list on a page 64rem wide or more, whether or not a post is open beside it (then three
                 statuses and More, a narrower search and Filters as its icon): the status tabs (scrolling sideways when they're short of room),

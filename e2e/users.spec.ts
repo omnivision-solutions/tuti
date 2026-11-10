@@ -289,6 +289,9 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await owner.getByRole("combobox", { name: "Voters" }).click();
   await owner.getByRole("option", { name: "Voted by Enterprise" }).click();
   await expect(owner).toHaveURL(/\?group=enterprise$/);
+  await expect(owner.getByRole("dialog", { name: "Filters" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("dialog", { name: "Filters" })).toHaveCount(0);
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("SSO");
   await rows.getByRole("link", { name: "SSO" }).click();
