@@ -41,7 +41,7 @@ test("a reader gets an article with room to read, turns on reading mode to read 
   await expect(reading).toHaveAttribute("aria-pressed", "false");
   // An icon, named on focus as on hover.
   await reading.focus();
-  await expect(reader.getByText("Reading mode: hide the docs menu and read the article alone")).toBeVisible();
+  await expect(reader.getByText("Reading mode: hide the columns beside the article and read it alone")).toBeVisible();
   await reader.keyboard.press("Enter");
   await expect(reading).toHaveAttribute("aria-pressed", "true");
   await expect(tree).toBeHidden();

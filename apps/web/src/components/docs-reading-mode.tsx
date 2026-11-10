@@ -38,7 +38,7 @@ export function ReadingModeToggle() {
       >
         <BookOpenIcon aria-hidden />
       </TooltipTrigger>
-      <TooltipContent>{on ? "Reading mode: show the docs menu again" : "Reading mode: hide the docs menu and read the article alone"}</TooltipContent>
+      <TooltipContent>{on ? "Reading mode: show the columns beside the article again" : "Reading mode: hide the columns beside the article and read it alone"}</TooltipContent>
     </Tooltip>
   );
 }
