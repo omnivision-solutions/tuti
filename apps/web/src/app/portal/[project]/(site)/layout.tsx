@@ -17,6 +17,7 @@ import { PortalMenu, PortalMenuProvider } from "@/components/portal-menu";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
+import { DOCS_READING_SCRIPT } from "@/lib/docs-reading";
 import { appUrl, portalUrl, resolveHost } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
 import { hidesLauncher } from "@/lib/widget-launcher";
@@ -110,6 +111,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
     <PortalBaseProvider base={base} slug={slug}>
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
       {!onApp && <ColorSchemeScript scheme={brand.colorScheme} />}
+      {/* Docs' reading mode, if this reader turned it on: before the page shows, so the docs columns don't flash. */}
+      <script dangerouslySetInnerHTML={{ __html: DOCS_READING_SCRIPT }} />
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts and search get lines of their own (search on tablets too). */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
@@ -118,8 +121,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalTop>
         {/* On phones the parts' tabs sit on its bottom edge, under room for the first line. */}
         <header className="portal-header border-b">
-        {/* Its contents as wide as the pages under it, the same on every page. */}
-        <div className="mx-auto flex min-h-14 max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:min-h-16 sm:gap-x-8 sm:px-6">
+        {/* Its contents as wide as the pages under it: wider on a docs article with "On this page" beside it (DocsLayout). */}
+        <div className="mx-auto flex min-h-14 max-w-6xl [:root:has([data-docs-wide])_&]:max-w-[82rem] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 sm:min-h-16 sm:gap-x-8 sm:px-6">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           {/* On phones it takes what the buttons leave (a long name is cut short), so they share its line. */}
           <div className="flex min-w-0 max-sm:grow max-sm:basis-0">

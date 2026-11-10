@@ -328,7 +328,7 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
     underlined on the header's bottom edge; Sign in an outline at the end; 64px tall (56px on phones). Its contents in
-    the pages' container (max-w-6xl). On phones the header is one line (mark and name, Sign in or the account, the
+    the pages' container (max-w-6xl; 82rem on a docs article with "On this page" beside it). On phones the header is one line (mark and name, Sign in or the account, the
     menu): the parts are in the menu. Under it the current part's row (boards, docs tabs) when it has two or more
     (none on a post's page, nor beside a board's rail). A "Powered by tuti" footer under a line.
   - **A board**: a card with its name (34px), its line (the team's description, else "Vote for the ideas you want
@@ -396,15 +396,26 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
     one row, the description, how many articles the reader may open at the bottom; two per row), Popular articles as a
     card in two columns (three or more, a tab's own), the articles in no collection, and "Can't find it?" (Contact us)
     where the project answers messages. The overview takes the container's width.
+  - **Content first.** A page's core content gets the room it needs before anything goes beside it: a long read (an
+    article with sections) about 70 characters a line, 64 at least from 1280px up. Short pages and lists stay as compact as
+    reads best (a wider short article or collection only stretched, in blind reviews): the measure is what the visitor
+    came for, not a share of the screen. Side columns
+    are slim and quiet (muted type, nothing heavier than a hairline competing with the content); what a reader may want but
+    didn't come for sits one click away (a menu, a disclosure) rather than in another column.
   - **An article**: the tab's tree on the left (`DocsLayout`, 16rem, a line beside it the page's height): each
     collection a row with its icon that opens (`<details>`), the page's own open with a line down its articles and the
-    current one soft green; the articles in no collection under a line. Then "Docs › <collection>" with Copy page at
-    the row's end, a 42px title, "Updated <date> · N min read" (about 200 words a minute), and the text at 17px
-    (`article-text` on top of `rich-text`): 26px section headings, steps numbered in soft green circles, inline code on
+    current one soft green; the articles in no collection under a line. Then "Docs › <collection>" with Reading mode (a ghost book icon, named in its tooltip; from tablet
+    width, on an article with sections) and Copy page at
+    the row's end, a 42px title, "Updated <date> · N min read" (about 200 words a minute), and the text at 17px (`article-text` on top of `rich-text`): 26px section headings, steps numbered in soft green circles, inline code on
     a sunken chip, code blocks as cards (a labelled one with its label in a strip, and Copy: `CodeCopyButtons`), quotes
     as callouts (an info-blue rule and icon on the card's surface). At its end: "Was this helpful?" (Yes and No with
-    thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, outlines). "On this
-    page" on the right on wide screens (the section being read marked). A collection's page: its icon and name, a card
+    thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, outlines). With two or more
+    sections, "On this page" on the right from 1280px (13rem, the section being read marked) and the page grows with
+    the screen (the header to 82rem) so the text keeps 65–70 characters a line between the two (a 46rem column; 64ch
+    at 1280px); below 1280px "On this page" is a compact menu under the title. Without sections the text is a 43rem
+    column centred beside the tree: wider only stretched short pages. **Reading mode** hides the tree and "On this page", leaving the article alone; the same
+    button (pressed, soft green) brings them back. Remembered per browser (`localStorage`, set on `<html>` before the
+    page shows, `lib/docs-reading.ts`). A collection's page: its icon and name, a card
     of its articles (rows with a chevron), then a card per collection in it.
 - **Widget panel** (`/widget` on the portal, framed on customers' sites; floating on the portal it stays below the portal's
   header, `--portal-header-height`, so the header's buttons stay in reach): a
