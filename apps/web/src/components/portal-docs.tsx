@@ -1,7 +1,7 @@
 import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { prisma } from "@tuti/db";
-import { ArrowLeftIcon, ArrowRightIcon, ChevronRightIcon, LockIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, LockIcon } from "lucide-react";
 import type { Metadata, ResolvingMetadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
@@ -10,6 +10,7 @@ import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { articleLinks } from "@/components/article-links";
 import { StillStuck, type SupportContact } from "@/components/docs-assistant";
 import { DocsHomeHeader, PopularArticles, PopularChips } from "@/components/docs-home";
+import { ReadingModeToggle } from "@/components/docs-reading-mode";
 import { DocsSearchBox } from "@/components/docs-search-box";
 import { OnThisPage } from "@/components/on-this-page";
 import { DocsSidebarLinks, IfSidebarLinks, PortalFooter } from "@/components/portal-look";
@@ -349,7 +350,7 @@ export async function DocsArticle({
   // How long it takes to read, at about 200 words a minute.
   const minutes = markdown ? Math.max(1, Math.round(markdown.split(/\s+/).filter(Boolean).length / 200)) : null;
   return (
-    <DocsLayout tree={tree} current={slug} headings={headings}>
+    <DocsLayout tree={tree} current={slug} headings={headings} reading={!!readable && outlined(headings)}>
       <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
         <div className="flex flex-col gap-3">
           {/* The way up (Docs, then its collection, when it has a page for this reader; an unlisted article may be all it
@@ -369,7 +370,13 @@ export async function DocsArticle({
               </Link>
             </nav>
             {readable && markdown && (
-              <div className="max-sm:hidden">
+              <div className="flex items-center gap-2 max-sm:hidden">
+                {/* On an article with sections (one long enough to want it), from tablet width, where the tree is beside it. */}
+                {outlined(headings) && (
+                  <span className="max-md:hidden">
+                    <ReadingModeToggle />
+                  </span>
+                )}
                 <ArticleActions markdown={markdown} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
               </div>
             )}
@@ -394,14 +401,14 @@ export async function DocsArticle({
               <ArticleActions markdown={markdown} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
             </div>
           )}
-          {/* Where "On this page" isn't beside it (below wide screens), its sections in a disclosure under the title. */}
+          {/* Where "On this page" isn't beside it (below wide screens), a compact menu under the title. */}
           {readable && outlined(headings) && (
-            <details className="group/toc mt-1 border-y text-[0.9375rem] xl:hidden">
-              <summary className="flex cursor-pointer list-none items-center justify-between py-2.5 font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
+            <details className={cn("group/toc mt-1 text-sm xl:hidden", READING_HIDES)}>
+              <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
                 On this page
-                <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open/toc:rotate-90" />
+                <ChevronDownIcon aria-hidden className="size-4 transition-transform group-open/toc:rotate-180" />
               </summary>
-              <ul className="-mx-2 flex flex-col pb-2">
+              <ul className="mt-2 flex w-fit max-w-full min-w-64 flex-col rounded-lg border bg-card p-1.5 shadow-sm">
                 {headings.map((heading) => (
                   <li key={heading.id}>
                     <a href={`#${heading.id}`} className={cn("block rounded-md px-2 py-1.5 text-muted-foreground hover:text-foreground", heading.level === 3 && "pl-5")}>
@@ -570,6 +577,9 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
  * menu instead), the page, and on an article its `headings` on the right ("On this page", on wide
  * screens, with two or more).
  */
+/** What reading mode hides (from tablet width: on phones the tree is in the menu anyway). */
+const READING_HIDES = "md:[:root[data-docs-reading]_&]:hidden";
+
 /** Whether an article with `headings` gets "On this page" beside it (on wide screens). */
 const outlined = (headings: Heading[]) => headings.length >= 2;
 
@@ -577,31 +587,37 @@ export function DocsLayout({
   tree,
   current,
   headings = [],
+  reading = false,
   children,
 }: {
   /** Null for none (a tab's overview, whose cards are its collections). */
   tree: DocsTree | null;
   current: string | null;
   headings?: Heading[];
+  /** An article's page with sections: in reading mode (ReadingModeToggle) the tree and "On this page" go. */
+  reading?: boolean;
   children: React.ReactNode;
 }) {
   const shown = tree && (tree.collections.length > 0 || tree.uncollected.length > 0) ? tree : null;
   // Without a tree (a tab's overview), the team's sidebar links alone, where it has some.
   const nav = shown ? <DocsTree tree={shown} current={current} /> : <DocsSidebarLinks />;
   const column = (node: React.ReactNode) => (shown ? node : <IfSidebarLinks>{node}</IfSidebarLinks>);
+  // An article with sections, "On this page" beside it: wider (the header too), so between the tree and its sections the
+  // text still gets 65 to 70 characters a line. Other pages keep the header's width, the text centred beside the tree.
+  const wide = !!shown && outlined(headings);
   return (
     // At least the window's height (flex-1 in <main>), so the tree's line runs to the bottom on a short page.
-    // In the header's container (its contents' width: 72rem less its padding), so the tree's left edge is the logo's.
-    <div data-docs-layout className="mx-auto flex w-full max-w-[71rem] flex-1 gap-10">
+    // In the header's container (its contents' width: 72rem, 82rem when wide, less its padding), so the tree's left edge is the logo's.
+    <div data-docs-layout data-docs-wide={wide ? "" : undefined} className={cn("mx-auto flex w-full flex-1", wide ? "max-w-[79rem] gap-8" : "max-w-[71rem] gap-10")}>
       {/* From the header to the bottom of the page, with a line beside it; the tree scrolls on its own, under the header. */}
       {column(
-        <aside className="-my-10 hidden w-64 shrink-0 border-r md:block">
+        <aside className={cn("-my-10 hidden w-64 shrink-0 border-r md:block", reading && READING_HIDES)}>
           <div className="sticky top-[var(--portal-header-height,0px)] max-h-[calc(100dvh-var(--portal-header-height,0px))] overflow-y-auto py-8 pr-4 [scrollbar-width:thin]">
             {nav}
           </div>
         </aside>
       )}
-      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", shown ? "max-w-[43rem]" : "max-w-[71rem]")}>
+      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", wide ? "max-w-[46rem]" : shown ? "max-w-[43rem]" : "max-w-[71rem]")}>
         {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
@@ -618,7 +634,7 @@ export function DocsLayout({
         <PortalFooter docs />
       </div>
       {outlined(headings) && (
-        <aside className="hidden w-56 shrink-0 xl:block">
+        <aside className={cn("hidden w-52 shrink-0 xl:block", reading && READING_HIDES)}>
           {/* Stays in view as the article scrolls, under the header. */}
           <div className="sticky top-[calc(var(--portal-header-height,0px)+1.5rem)] flex max-h-[calc(100dvh-var(--portal-header-height,0px)-3rem)] flex-col gap-6 overflow-y-auto">
             <OnThisPage headings={headings} />

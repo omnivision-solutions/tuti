@@ -180,7 +180,7 @@ export function PartRow({
   }
   return (
     <div className={cn("border-b [:root:has([data-portal-not-found])_&]:hidden", className)}>
-      <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-6xl gap-1 px-4 sm:px-6", SCROLLING_ROW)} aria-label={label}>
+      <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-6xl gap-1 [:root:has([data-docs-wide])_&]:max-w-[82rem] px-4 sm:px-6", SCROLLING_ROW)} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link
             key={href}
