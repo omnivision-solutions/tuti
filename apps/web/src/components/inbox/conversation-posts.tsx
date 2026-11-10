@@ -59,7 +59,7 @@ export function ConversationPosts({
   // Only while the focus is still where it was (on the button, or lost with its row) and in the same conversation: not
   // after they've moved on (opened a post, another conversation, hid the details). A failed one leaves it on its button.
   const section = useRef<HTMLElement>(null);
-  const moved = useRef<{ conversation: number; post: number; linked: boolean; next: number | null; saved: boolean } | null>(null);
+  const moved = useRef<{ conversation: number; post: number; linked: boolean; next: number | null; saved: boolean; from: Element | null } | null>(null);
   useEffect(() => {
     const change = moved.current;
     if (!change || change.conversation !== number) {
@@ -71,7 +71,8 @@ export function ConversationPosts({
     }
     moved.current = null;
     const focused = document.activeElement;
-    if (focused && focused !== document.body && !section.current?.contains(focused)) {
+    // On the button they pressed, or lost with its row; not once they've moved to anything else, in the card or not.
+    if (focused && focused !== document.body && focused !== change.from) {
       return;
     }
     const targets = change.linked ? [`[data-unlink="${change.post}"]`] : [...(change.next === null ? [] : [`[data-unlink="${change.next}"]`]), `[data-link="${change.post}"]`];
@@ -81,7 +82,7 @@ export function ConversationPosts({
 
   const link = (post: number, linked: boolean) => {
     const at = posts.findIndex((p) => p.number === post);
-    const change = { conversation: number, post, linked, next: linked ? null : ((posts[at + 1] ?? posts[at - 1])?.number ?? null), saved: false };
+    const change = { conversation: number, post, linked, next: linked ? null : ((posts[at + 1] ?? posts[at - 1])?.number ?? null), saved: false, from: document.activeElement };
     moved.current = change;
     save(post, linked, (ok) => {
       if (moved.current === change) {

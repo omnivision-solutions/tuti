@@ -587,6 +587,22 @@ test("unlinking a post moves the keyboard's focus to the next one's Unlink, and 
   // Once the refreshed page has it: its Unlink gone (the card's hidden, so looked for in the page itself).
   await expect(owner.locator("[data-unlink]")).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Show details" })).toBeFocused();
+
+  // While an Unlink saves they Tab on to another post in the card: the focus stays where they went.
+  await owner.getByRole("button", { name: "Show details" }).click();
+  await api("/conversations/1/posts", { post: 1 });
+  await api("/conversations/1/posts", { post: 2 });
+  await owner.reload();
+  await expect(linkedPosts.getByRole("link")).toHaveCount(2);
+  await hold();
+  await linkedPosts.getByRole("button", { name: "Unlink “Dark mode”" }).press("Enter");
+  const other = linkedPosts.getByRole("link", { name: "Shared calendars" });
+  await other.focus();
+  release();
+  await expect(owner.getByText("Unlinked #1").last()).toBeVisible();
+  await owner.unrouteAll({ behavior: "ignoreErrors" });
+  await expect(linkedPosts.getByRole("link")).toHaveText(["Shared calendars"]);
+  await expect(other).toBeFocused();
 });
 
 test("the top bar's Assign and Snooze and the reply box's tools are icons, named to screen readers and in a tooltip on hover and keyboard focus; on a phone Assign and Snooze say their words", async ({ browser }) => {
