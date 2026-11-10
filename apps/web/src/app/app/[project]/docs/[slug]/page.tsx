@@ -23,7 +23,7 @@ import { ArticleTools } from "@/components/article-tools";
 import { DocsMore } from "@/components/docs-page-header";
 import { BackLink } from "@/components/back-link";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
-import { formatDate, timeAgo } from "@/lib/format";
+import { formatDay, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { displayDoc } from "@/server/content";
 import {
@@ -296,7 +296,7 @@ export default async function ArticlePage(
               )}
               <span>
                 {article.publishedAt
-                  ? `Published ${formatDate(article.publishedAt)}`
+                  ? `Published ${formatDay(article.publishedAt)} ${article.publishedAt.getUTCFullYear()}`
                   : `Edited ${timeAgo(newest?.createdAt ?? article.updatedAt)}`}
                 {article.publishedAt &&
                   listing !== "everywhere" &&

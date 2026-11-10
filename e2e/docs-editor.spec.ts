@@ -311,7 +311,15 @@ test("the phone Docs sheet keeps app navigation reachable without a breadcrumb b
   await team.goto(`/app/${slug}/docs`);
   await expect(team.locator("main > header")).toHaveCount(0);
   await team.getByRole("button", { name: "Browse docs" }).click();
-  await team.getByRole("dialog", { name: "Docs navigation" }).getByRole("button", { name: "App navigation" }).click();
+  const docs = team.getByRole("dialog", { name: "Docs navigation" });
+  const search = docs.getByRole("button", { name: "Search docs" });
+  const close = docs.getByRole("button", { name: "Close", exact: true });
+  await expect(search).toBeInViewport();
+  await expect(close).toBeInViewport();
+  const searchBox = (await search.boundingBox())!;
+  const closeBox = (await close.boundingBox())!;
+  expect(searchBox.x + searchBox.width).toBeLessThanOrEqual(closeBox.x);
+  await docs.getByRole("button", { name: "App navigation" }).click();
   const app = team.getByRole("dialog", { name: "Sidebar" });
   await expect(app).toBeVisible();
   await app.getByRole("link", { name: "Settings", exact: true }).click();

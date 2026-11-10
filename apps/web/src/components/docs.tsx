@@ -4,7 +4,7 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import { editedSections } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { cn } from "cn";
-import { CheckIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useEditorSlot } from "@/components/use-editor-slot";
@@ -156,8 +156,23 @@ export function ArticleSaveButton({ label = "Save", outline = false, filled = fa
   const { pending, unsaved } = useArticleEditor();
   return (
     // Quiet (an outline) while there's nothing to save; still a button (on an article it can't edit it points to why).
-    <Button type="submit" form={ARTICLE_FORM} aria-label={label} disabled={pending} variant={outline || (!filled && !unsaved) ? "outline" : "default"}>
-      {pending ? "Saving…" : label === "Save" && !unsaved ? <><CheckIcon className="size-3.5" />Saved</> : label}
+    <Button
+      type="submit"
+      form={ARTICLE_FORM}
+      aria-label={label}
+      disabled={pending}
+      variant={outline || (!filled && !unsaved) ? "outline" : "default"}
+    >
+      {pending ? (
+        "Saving…"
+      ) : label === "Save" && !unsaved ? (
+        <>
+          <CheckIcon className="size-3.5" />
+          Saved
+        </>
+      ) : (
+        label
+      )}
     </Button>
   );
 }
@@ -285,33 +300,41 @@ export function ArticleForm({
   useEffect(() => setUnsaved(dirty), [setUnsaved, dirty]);
 
   const titleInput = (
-<textarea
-            ref={titleField}
-            aria-label="Title"
-            rows={1}
-            value={title}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-              }
-            }}
-            onChange={(event) => {
-              // One line, pasted too (Enter adds none above).
-              setTitle(event.currentTarget.value.replace(/[\r\n]+/g, " "));
-              setTitleChanged(true);
-              titleChanges.current++;
-            }}
-            placeholder="Article title"
-            required
-            autoComplete="off"
-            aria-invalid={state.error ? true : undefined}
-            aria-describedby={state.error ? "article-error" : undefined}
-            className={cn(BARE_TITLE, "resize-none text-3xl leading-tight font-semibold [field-sizing:content] placeholder:text-muted-foreground/70 sm:text-[2.25rem]")}
-          />
+    <textarea
+      ref={titleField}
+      aria-label="Title"
+      rows={1}
+      value={title}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+        }
+      }}
+      onChange={(event) => {
+        // One line, pasted too (Enter adds none above).
+        setTitle(event.currentTarget.value.replace(/[\r\n]+/g, " "));
+        setTitleChanged(true);
+        titleChanges.current++;
+      }}
+      placeholder="Article title"
+      required
+      autoComplete="off"
+      aria-invalid={state.error ? true : undefined}
+      aria-describedby={state.error ? "article-error" : undefined}
+      className={cn(
+        BARE_TITLE,
+        "resize-none text-3xl leading-tight font-semibold [field-sizing:content] placeholder:text-muted-foreground/70 sm:text-[2.25rem]",
+      )}
+    />
   );
 
   return (
-    <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed} className={cn("docs-article-form", wide ? "max-w-[46rem]" : "max-w-[43rem]")}>
+    <form
+      id={ARTICLE_FORM}
+      {...keepingFields(action)}
+      onInput={changed}
+      className={cn("docs-article-form", wide ? "max-w-[46rem]" : "max-w-[43rem]")}
+    >
       {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
       {!article && <PlaceFields place={place} />}
       {/* The version this text was made on, and after a refusal the newest one shown beside it: the next save (merged
@@ -321,7 +344,7 @@ export function ArticleForm({
       {own && <input type="hidden" name="own" value={own} />}
       <FieldGroup key={shown}>
         {/* Written as it's published: the title, then the text, no boxes. */}
-        <div className="flex flex-col gap-1">
+        <div className="docs-title-field flex flex-col gap-1">
           {/* A saved article's title is sent only once changed here (since it opened or last saved): one left alone keeps
               whatever it's renamed to meanwhile, and a change back to how it opened still counts. */}
           {(!opened || titleChanged) && <input type="hidden" name="title" value={title} />}
@@ -329,13 +352,29 @@ export function ArticleForm({
           {titleHost ? createPortal(titleInput, titleHost) : !article ? titleInput : null}
           {state.error && <FieldError id="article-error">{state.error}</FieldError>}
           {newer && dirty && !state.newest && !seenSaved && (
-            <p className="text-sm text-muted-foreground">It was saved since you opened it. Your text is kept: save it to see whether anything needs merging.</p>
+            <p className="text-sm text-muted-foreground">
+              It was saved since you opened it. Your text is kept: save it to see whether anything needs merging.
+            </p>
           )}
         </div>
         {state.newest ? <NewestVersion newest={state.newest} /> : seenSaved && <NewestVersion newest={seenSaved} merged />}
         {description && <p className="docs-article-description">{description}</p>}
-        {!article && <Textarea name="description" aria-label="Description" maxLength={300} placeholder="What it helps with, e.g. inviting your team" className="docs-new-description" rows={1} />}
-        {!article && <div className="flex items-center gap-3 text-xs text-muted-foreground"><span>Draft</span><ArticlePlaceLine /></div>}
+        {!article && (
+          <Textarea
+            name="description"
+            aria-label="Description"
+            maxLength={300}
+            placeholder="What it helps with, e.g. inviting your team"
+            className="docs-new-description"
+            rows={1}
+          />
+        )}
+        {!article && (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span>Draft</span>
+            <ArticlePlaceLine />
+          </div>
+        )}
         <RichEditor
           toolbarId="article-toolbar"
           toolbarEnd={<ArticleToolButtons />}
@@ -571,43 +610,46 @@ export function ArticleChanges({
   );
 
   const controls = (
-<details open={compact ? undefined : true} className={compact ? "docs-change-menu" : "contents"}><summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle" : "hidden"}><span className="size-1.5 rounded-full bg-highlight-foreground" />Unpublished changes<span aria-hidden>⌄</span></summary>
-        <AlertDialog>
-          <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>
-          <AlertDialogContent closeDisabled={pending}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Discard changes?</AlertDialogTitle>
-              <AlertDialogDescription>
-                The article goes back to the published version. The changes stay in its history, so you can restore them.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(discardArticleChanges, "Changes discarded")}>
-                Discard changes
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        <Dialog open={reviewing} onOpenChange={setReviewing}>
-          <DialogTrigger render={<Button variant="outline" disabled={pending} />}>Review changes</DialogTrigger>
-          <DialogContent className="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Review changes</DialogTitle>
-              <DialogDescription>
-                Against the published version: paragraphs taken out are struck through, new ones are highlighted.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="max-h-[60vh] overflow-y-auto">{diff}</div>
-            <DialogFooter>
-              <Button variant="outline" disabled={pending} onClick={() => setReviewing(false)}>
-                Close
-              </Button>
-              {publish}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        </details>
+    <details open={compact ? undefined : true} className={compact ? "docs-change-menu" : "contents"}>
+      <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle" : "hidden"}>
+        <span className="size-1.5 rounded-full bg-highlight-foreground" />
+        Unpublished changes
+        <ChevronDownIcon aria-hidden className="size-3" />
+      </summary>
+      <AlertDialog>
+        <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>
+        <AlertDialogContent closeDisabled={pending}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The article goes back to the published version. The changes stay in its history, so you can restore them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(discardArticleChanges, "Changes discarded")}>
+              Discard changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <Dialog open={reviewing} onOpenChange={setReviewing}>
+        <DialogTrigger render={<Button variant="outline" disabled={pending} />}>Review changes</DialogTrigger>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Review changes</DialogTitle>
+            <DialogDescription>Against the published version: paragraphs taken out are struck through, new ones are highlighted.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto">{diff}</div>
+          <DialogFooter>
+            <Button variant="outline" disabled={pending} onClick={() => setReviewing(false)}>
+              Close
+            </Button>
+            {publish}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </details>
   );
 
   return (
@@ -615,7 +657,11 @@ export function ArticleChanges({
     <section
       role="region"
       aria-labelledby="article-changes-title"
-      className={compact ? "docs-changes-actions" : "flex flex-col gap-3 rounded-xl bg-highlight px-4 py-3 ring-1 ring-highlight-foreground/25 sm:flex-row sm:items-center"}
+      className={
+        compact
+          ? "docs-changes-actions"
+          : "flex flex-col gap-3 rounded-xl bg-highlight px-4 py-3 ring-1 ring-highlight-foreground/25 sm:flex-row sm:items-center"
+      }
     >
       <div className={compact ? "sr-only" : "flex min-w-0 flex-1 flex-col gap-0.5"}>
         <h2 id="article-changes-title" className="flex items-center gap-2 text-sm font-semibold">
@@ -660,7 +706,7 @@ export function RestoreVersionButton({
         }
       }}
     >
-      <AlertDialogTrigger render={<Button disabled={pending} />}>Restore this version</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Restore this version</AlertDialogTrigger>
       <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle>Restore this version?</AlertDialogTitle>
@@ -744,14 +790,29 @@ type CollectionSettings = {
 };
 
 /** A collection's name (with `error`, a refused save's), icon and description, as form fields; `collection` gives their values. */
-function CollectionFields({ id, collection, error, onIconChange, separateIcon = false }: { id: string; collection?: CollectionSettings; error?: string; onIconChange?: () => void; separateIcon?: boolean }) {
+function CollectionFields({
+  id,
+  collection,
+  error,
+  onIconChange,
+  separateIcon = false,
+}: {
+  id: string;
+  collection?: CollectionSettings;
+  error?: string;
+  onIconChange?: () => void;
+  separateIcon?: boolean;
+}) {
+  const [descriptionLength, setDescriptionLength] = useState(collection?.description.length ?? 0);
   return (
     <>
       {/* Its icon beside its name, as the tree shows them. */}
       <Field data-invalid={error ? true : undefined}>
         <FieldLabel htmlFor={`collection-name-${id}`}>{separateIcon ? "Name" : "Name and icon"}</FieldLabel>
         <div className="flex items-center gap-2">
-          {!separateIcon && <IconField compact defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />}
+          {!separateIcon && (
+            <IconField compact named={separateIcon} defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
+          )}
           <Input
             id={`collection-name-${id}`}
             name="name"
@@ -763,18 +824,29 @@ function CollectionFields({ id, collection, error, onIconChange, separateIcon = 
         </div>
         {error && <FieldError>{error}</FieldError>}
       </Field>
-      <Field>
+      {separateIcon && (
+        <Field>
+          <FieldLabel>Icon</FieldLabel>
+          <div>
+            <IconField compact named={separateIcon} defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
+          </div>
+        </Field>
+      )}
+      <Field className={separateIcon ? "docs-description-field" : undefined}>
         <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
-        <Textarea
-          id={`collection-description-${id}`}
-          name="description"
-          rows={2}
-          maxLength={300}
-          defaultValue={collection?.description}
-          placeholder="Optional, shown in your docs"
-        />
+        <div className="relative">
+          <Textarea
+            id={`collection-description-${id}`}
+            name="description"
+            rows={2}
+            maxLength={300}
+            onChange={(event) => setDescriptionLength(event.target.value.length)}
+            defaultValue={collection?.description}
+            placeholder="Optional, shown in your docs"
+          />
+          {separateIcon && <small className="docs-description-count">{descriptionLength} / 300</small>}
+        </div>
       </Field>
-      {separateIcon && <Field><FieldLabel>Icon</FieldLabel><div><IconField compact defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} /></div></Field>}
     </>
   );
 }
@@ -897,7 +969,13 @@ export function CollectionSettingsForm({
         </CardHeader>
         <CardContent>
           <FieldGroup>
-            <CollectionFields separateIcon id={collection.slug} collection={collection} error={state.error} onIconChange={() => touched.current.add("icon")} />
+            <CollectionFields
+              separateIcon
+              id={collection.slug}
+              collection={collection}
+              error={state.error}
+              onIconChange={() => touched.current.add("icon")}
+            />
             <ParentField
               id={`collection-${collection.slug}`}
               parents={parents}
@@ -919,7 +997,11 @@ export function CollectionSettingsForm({
             id={`collection-access-${collection.slug}`}
             projectSlug={projectSlug}
             groups={access.groups}
-            inherit={{ label: `Inherit from ${inheritsFrom}`, description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}
+            inherit={{
+              label: `Inherit from ${inheritsFrom}`,
+              description: access.inherits[above] ?? access.inherits[""]!,
+              shows: access.shows[above] ?? "hide",
+            }}
             defaultAccess={level.access}
             defaultGroups={level.groups}
             defaultNoAccess={level.noAccess}
@@ -927,7 +1009,18 @@ export function CollectionSettingsForm({
           />
         </CardContent>
       </Card>
-      {actionsHost && createPortal(<><Link href={backHref} className="docs-cancel">Cancel</Link><Button type="submit" form="collection-settings" disabled={pending}>{pending ? "Saving…" : "Save"}</Button></>, actionsHost)}
+      {actionsHost &&
+        createPortal(
+          <>
+            <Link href={backHref} className="docs-cancel">
+              Cancel
+            </Link>
+            <Button type="submit" form="collection-settings" disabled={pending}>
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </>,
+          actionsHost,
+        )}
     </form>
   );
 }
@@ -977,7 +1070,6 @@ export function AccessForm({
     </form>
   );
 }
-
 
 /**
  * Adds a collection, at the top level (of a tab, with tabs) or in one of `parents`: the dialog a
@@ -1051,7 +1143,11 @@ export function CollectionDialog({
               id="collection-access-new"
               projectSlug={projectSlug}
               groups={access.groups}
-              inherit={{ label: "Inherit", description: access.inherits[parent ?? tab ?? ""] ?? access.inherits[""]!, shows: access.shows[parent ?? tab ?? ""] ?? "hide" }}
+              inherit={{
+                label: "Inherit",
+                description: access.inherits[parent ?? tab ?? ""] ?? access.inherits[""]!,
+                shows: access.shows[parent ?? tab ?? ""] ?? "hide",
+              }}
             />
           </FieldGroup>
           <DialogFooter>

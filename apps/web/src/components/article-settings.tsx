@@ -78,7 +78,9 @@ function Place({
           labelledBy="article-collection-label"
           describedBy={published ? "article-collection-description" : undefined}
         />
-        {published && <FieldDescription id="article-collection-description">A new collection goes live when you publish the changes.</FieldDescription>}
+        {published && (
+          <FieldDescription id="article-collection-description">A new collection goes live when you publish the changes.</FieldDescription>
+        )}
       </Field>
       <Toggle
         checked={place.showUpdatedDate}
@@ -119,8 +121,7 @@ export function ArticleSettings({ saved, inline = false }: { saved?: Saved; inli
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger render={<Button variant="ghost" />}>
         <SettingsIcon aria-hidden />
-        {/* On a phone's bottom bar, the gear alone (named to the ear), so Save has room. */}
-        <span className="phonebar:sr-only">Settings</span>
+        <span>Settings</span>
       </SheetTrigger>
       <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md">
         {saved ? (
@@ -169,7 +170,15 @@ type Saved = {
 };
 
 /** A saved article's panel (opened again: as saved, not as left). */
-function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved, inline = false }: Saved & { onSaved: () => void; inline?: boolean }) {
+function SavedSettings({
+  projectSlug,
+  article,
+  groups,
+  inherit,
+  preview,
+  onSaved,
+  inline = false,
+}: Saved & { onSaved: () => void; inline?: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveArticleSettings(projectSlug, article.slug, prev, formData);
     if (!result.error) {
@@ -186,7 +195,11 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
 
   return (
     <form {...keepingFields(action)} className="flex min-h-0 flex-1 flex-col">
-      {!inline && <SheetHeader className="border-b"><SheetTitle>Article settings</SheetTitle></SheetHeader>}
+      {!inline && (
+        <SheetHeader className="border-b">
+          <SheetTitle>Article settings</SheetTitle>
+        </SheetHeader>
+      )}
       <FieldGroup className={inline ? "gap-5" : "min-h-0 flex-1 overflow-y-auto p-4"}>
         <Place place={place} loaded={loaded} onChange={setPlace} published={article.published} />
         <FieldSeparator />
@@ -268,7 +281,12 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
               />
               <FieldDescription id="article-keywords-hint">Terms a customer might search for when they need this article.</FieldDescription>
             </Field>
-            <Toggle name="noindex" checked={article.noindex} label="Block search indexing" description="Asks search engines not to list this article." />
+            <Toggle
+              name="noindex"
+              checked={article.noindex}
+              label="Block search indexing"
+              description="Asks search engines not to list this article."
+            />
           </FieldGroup>
         </FieldSet>
         {state.error && <FieldError id="article-settings-error">{state.error}</FieldError>}

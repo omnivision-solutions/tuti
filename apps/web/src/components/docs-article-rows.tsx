@@ -7,6 +7,7 @@ import { cache, type ReactNode } from "react";
 import { DeleteCollectionButton } from "@/components/docs";
 import { AddContentMenu } from "@/components/docs-tree";
 import { LucideIcon } from "@/components/icon-field";
+import { CollectionIcon } from "@/components/collection-icon";
 import { DocsPageHeader } from "@/components/docs-page-header";
 import { portalAddress } from "@/server/custom-domains";
 import { SubNav } from "@/components/sub-nav";
@@ -346,7 +347,7 @@ export async function CollectionHeader({
       <DocsPageHeader
         back={{ href: `/app/${projectSlug}/docs`, label: "Docs" }}
         title={collection.name}
-        icon={collection.knownIcon && collection.icon ? <LucideIcon name={collection.icon} /> : <FolderIcon />}
+        icon={collection.knownIcon && collection.icon ? <CollectionIcon name={collection.icon} /> : <FolderIcon />}
         description={collection.description || undefined}
         actions={settings ? <div id="collection-actions" /> : <><a href={`${portal}/docs/${collection.slug}`} target="_blank" rel="noreferrer" className="docs-live-link"><ExternalLinkIcon className="size-3.5" /><span>View on help center</span></a><AddContentMenu parent={collection.slug} article={collection.slug} /></>}
         more={settings ? undefined : <DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={hasChildren} />}

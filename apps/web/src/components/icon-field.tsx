@@ -32,12 +32,15 @@ export function IconField({
   known = true,
   onChange,
   compact = false,
+  named = false,
 }: {
   defaultValue: string | null;
   known?: boolean;
   onChange?: () => void;
   /** A 36px square beside a name field (the icon, or a placeholder); Remove icon is in its picker. */
   compact?: boolean;
+  /** Show the current icon name and a Change label in a separate settings row. */
+  named?: boolean;
 }) {
   const [value, setValue] = useState(defaultValue);
   // `onChange`: picked or removed (its hidden field changes without an event of its own).
@@ -56,15 +59,21 @@ export function IconField({
             render={
               <Button
                 type="button"
-                variant="outline"
-                size="icon"
+                variant={named ? "ghost" : "outline"}
+                size={named ? "sm" : "icon"}
                 title={icon ? "Change icon" : "Add icon"}
                 aria-label={icon ? `Change icon (${icon.replaceAll("-", " ")})` : "Add icon"}
                 className={cn(!icon && "border-dashed text-muted-foreground")}
               />
             }
           >
-            {icon ? <LucideIcon name={icon} /> : <SmilePlusIcon aria-hidden />}
+            {icon ? <LucideIcon name={icon} className={named ? "text-primary" : undefined} /> : <SmilePlusIcon aria-hidden />}
+            {named && (
+              <>
+                <span className="capitalize">{icon?.replaceAll("-", " ") ?? "No icon"}</span>
+                <span className="ml-3 text-muted-foreground">Change</span>
+              </>
+            )}
           </PopoverTrigger>
           <PopoverContent aria-label="Pick an icon" initialFocus={false}>
             <IconPicker

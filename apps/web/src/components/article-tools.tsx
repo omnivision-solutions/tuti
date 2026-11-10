@@ -135,7 +135,7 @@ export function ArticleTools({
             open={Boolean(active)}
             onOpenChange={(open) => !open && select(null)}
           >
-            <SheetContent side="bottom" showCloseButton={false} className="docs-tools-sheet">
+            <SheetContent side="bottom" showCloseButton={false} className="docs-tools-sheet" data-tool={active}>
               {content}
             </SheetContent>
           </Sheet>

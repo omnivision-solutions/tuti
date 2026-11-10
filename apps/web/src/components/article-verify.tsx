@@ -116,11 +116,11 @@ export async function ArticleVerify({
             <CardContent className="flex flex-col gap-4">
               {(run.state === "done" || run.state === "changed") && run.statements.length > 0 && (
                 // The counts, each in its verdict's colour; said as one sentence to the ear.
-                <p className="flex flex-wrap gap-2">
+                <p className="docs-verify-counts flex flex-wrap gap-2">
                   <span className="sr-only">
                     {plural(run.counts.current, "statement")} still true · {run.counts.outdated} out of date · {run.counts.unclear} it can&apos;t tell
                   </span>
-                  {(["current", "outdated", "unclear"] as const).map((verdict) => (
+                  {(["outdated", "unclear", "current"] as const).map((verdict) => (
                     <span
                       key={verdict}
                       aria-hidden

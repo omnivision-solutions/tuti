@@ -1973,6 +1973,7 @@ test("a collection's settings are one page: its name, description, icon and plac
   // Its details: renamed, the page follows.
   await details.getByLabel("Name").fill("Invoices");
   await details.getByLabel("Description").fill("Paying and downloading invoices.");
+  await expect(details.getByText(`${"Paying and downloading invoices.".length} / 300`, { exact: true })).toBeVisible();
   await details.getByRole("button", { name: "Add icon" }).click();
   const picker = team.getByRole("dialog", { name: "Pick an icon" });
   await picker.getByRole("searchbox", { name: "Search icons" }).fill("receipt");
