@@ -73,4 +73,12 @@ test("a reader gets an article with room to read, turns on reading mode to read 
   await page.getByRole("link", { name: "Import a file" }).click();
   await reader.waitForURL(/#import-a-file$/);
   await expect(page.getByRole("heading", { name: "Import a file" })).toBeInViewport();
+  // In reading mode too: the compact menu isn't beside the article, so it stays, the one way to a section.
+  await reader.goto(`/docs/${article}`);
+  await reader.getByRole("button", { name: "Reading mode" }).click();
+  await expect(reader.getByRole("button", { name: "Reading mode" })).toHaveAttribute("aria-pressed", "true");
+  await sections.click();
+  await page.getByRole("link", { name: "Import a file" }).click();
+  await reader.waitForURL(/#import-a-file$/);
+  await expect(page.getByRole("heading", { name: "Import a file" })).toBeInViewport();
 });
