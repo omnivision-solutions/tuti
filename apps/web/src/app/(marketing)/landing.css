@@ -58,10 +58,10 @@
     font-size: 15.5px; letter-spacing: -0.005em; white-space: nowrap; transition: transform 0.15s, background-color 0.15s;
   }
   .btn-primary {
-    background: var(--g); color: var(--primary-foreground);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 1px 2px rgba(10, 46, 24, 0.4), 0 8px 20px -6px rgba(21, 128, 61, 0.55);
+    background: var(--g); color: var(--primary-foreground); border: 1px solid var(--g);
+    box-shadow: 0 8px 20px -8px color-mix(in oklch, var(--g) 55%, transparent);
   }
-  .btn-primary:hover { background: var(--color-primary-hover); }
+  .btn-primary:hover { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
   .btn-ghost { background: var(--paper); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 1px 2px rgba(13, 26, 18, 0.05); }
   .btn-ghost:hover { background: var(--accent); }
   .btn-light { background: var(--card); color: var(--forest); }
@@ -132,7 +132,7 @@
   .actions { display: flex; align-items: center; gap: 8px; margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--line2); }
   .actions .note { font-size: 13px; color: var(--mute); margin-right: auto; display: flex; align-items: center; gap: 7px; }
   .sb { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
-  .sb.p { background: var(--g); border-color: var(--g); color: var(--primary-foreground); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, 0 1px 2px rgba(0, 0, 0, 0.2); }
+  .sb.p { background: var(--g); border-color: var(--g); color: var(--primary-foreground); box-shadow: 0 1px 2px color-mix(in oklch, var(--g) 30%, transparent); }
   .sb.ink { background: var(--ink); border-color: var(--ink); color: var(--primary-foreground); }
   .merged { color: var(--merged); }
   .rail { padding: 22px; background: var(--sub); }
