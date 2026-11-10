@@ -403,7 +403,7 @@ function Autopilot({ start, docs, live }: Links & { live: boolean }) {
             <span className="num">03</span>
             <h3>Feature requests closed, with your OK.</h3>
             <p>Everyone who asked gets an email.</p>
-            <div className="mail" role="img" aria-label="The email everyone who asked gets: Good news, Two-factor sign-in is here">
+            <div className="mail" role="img" aria-label="The message everyone who asked gets: Good news, Two-factor sign-in is here">
               <div className="mh">
                 <span>From Acme</span>
                 <span>to 28 people</span>
@@ -527,7 +527,7 @@ function Control() {
           </div>
         </div>
         <div className="relative">
-          <div className="inbox" role="img" aria-label="Autopilot email: one feature request needs approval, one article edit goes live in 24 hours, one new article drafted">
+          <div className="inbox" role="img" aria-label="Autopilot's review message: one feature request needs approval, one article edit goes live in 24 hours, one new article drafted">
             <div className="ih">
               <span className="lg">
                 <TutiMark className="size-6" />
@@ -858,7 +858,7 @@ function Switch({ start }: { start: string }) {
             <Start start={start} />
           </div>
         </div>
-        <div className="importer" role="img" aria-label="Importing into Acme from Featurebase, Canny, Frill, Nolt, Ferndesk, Intercom or a help center address: articles, feature requests and redirects, with no emails sent">
+        <div className="importer" role="img" aria-label="Importing into Acme from Featurebase, Canny, Frill, Nolt, Ferndesk, Intercom or a help center address: articles, feature requests and redirects, with nothing sent to customers">
           <div className="h">Import into Acme</div>
           <div className="sub">Help center and feature requests. Contacts from Intercom.</div>
           <div className="srcgrid">
