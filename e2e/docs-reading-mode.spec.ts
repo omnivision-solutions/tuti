@@ -172,6 +172,10 @@ test("a reader gets an article with room to read, turns on reading mode to read 
   await expect(onThisPage).toBeHidden();
   await expect(page.getByRole("heading", { name: "Import a file" })).toBeVisible();
   await checkpoint(reader, "portal-docs-article-reading-mode", { fullPage: false });
+  // Read alone, it's centred in the layout, not left at the tree's edge.
+  const layout = (await reader.locator("[data-docs-layout]").boundingBox())!;
+  const alone = (await page.boundingBox())!;
+  expect(Math.abs(alone.x - layout.x - (layout.x + layout.width - alone.x - alone.width))).toBeLessThanOrEqual(1);
   // The sections stay one click away: the compact menu under the title takes the column's place.
   await page.getByText("On this page", { exact: true }).click();
   await page.getByRole("link", { name: "Import a file" }).click();
