@@ -1083,6 +1083,8 @@ test("Feedback's search field follows Clear search and browser history", async (
   await search.fill("dark");
   await search.press("Enter");
   await expect(team).toHaveURL(/\?q=dark$/);
+  await expect(team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Needs triage/ })).toHaveAttribute("href", `/app/${slug}/feedback?q=dark`);
+  await expect(search).toBeFocused();
   await search.fill("light");
   await search.press("Enter");
   await expect(team.getByText("No posts match your search", { exact: true })).toBeVisible();
@@ -1106,6 +1108,50 @@ test("Feedback's search field follows Clear search and browser history", async (
   await team.goForward();
   await expect(team).toHaveURL(`/app/${slug}/feedback`);
   await expect(search).toHaveValue("");
+});
+
+test("Feedback's search keeps newer typing while its results load", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await team.goto(`/app/${slug}/feedback`);
+  const search = team.getByRole("searchbox", { name: "Search feedback" });
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const held = (url: URL) => url.pathname === `/app/${slug}/feedback` && url.searchParams.get("q") === "exp";
+  await team.route(held, async (route) => {
+    await released;
+    await route.continue().catch(() => {});
+  });
+  try {
+    await search.fill("exp");
+    await search.press("Enter");
+    // Type through the keyboard, without focusing the locator again.
+    await team.keyboard.type("ort");
+    await expect(search).toHaveValue("export");
+    await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
+  } finally {
+    release();
+  }
+  await expect(team).toHaveURL(/\?q=exp$/);
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toHaveCount(0);
+  await expect(team.getByRole("link", { name: "Export to PDF", exact: true })).toBeVisible();
+  await expect(search).toHaveValue("export");
+  await expect(search).toBeFocused();
+  await checkpoint(team, "team-feedback-search-newer-draft");
+  // History is different from our own results: it resets a focused draft too, even when that draft starts with q.
+  await team.goBack();
+  await expect(team).toHaveURL(`/app/${slug}/feedback`);
+  await expect(search).toHaveValue("");
+  await team.goForward();
+  await expect(team).toHaveURL(/\?q=exp$/);
+  await expect(search).toHaveValue("exp");
+  await team.unroute(held);
 });
 
 for (const action of ["Completed", "Merge"] as const) {

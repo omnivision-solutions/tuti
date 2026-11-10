@@ -1,7 +1,6 @@
 import { prisma } from "@tuti/db";
 import { seenAs } from "@tuti/jobs";
-import { ExternalLinkIcon, LayoutListIcon, MessageSquareIcon, PlusIcon, SearchIcon } from "lucide-react";
-import Form from "next/form";
+import { ExternalLinkIcon, LayoutListIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -9,6 +8,7 @@ import { CopyButton } from "@/components/copy-button";
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
+import { FeedbackSearch } from "@/components/feedback-search";
 import { FeedbackBulk, FeedbackSelection, FiltersFold, PickedRow, SelectPost, VoteBox } from "@/components/feedback-selection";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
@@ -19,7 +19,6 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { SampleBadge } from "@/components/sample-badge";
 import { asking, initial, timeAgo } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
@@ -204,14 +203,12 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                 />
                 <div className="min-w-0 @min-[64rem]/page:shrink-0 @min-[64rem]/page:pb-1.5">
                   <div className="flex min-w-0 gap-2">
-                    <Form action={`/app/${slug}/feedback`} scroll={false} role="search" className={cn("relative flex min-w-0 flex-1 @min-[64rem]/page:flex-none", open === null ? "@min-[64rem]/page:w-60" : "@min-[64rem]/page:w-40")}>
+                    <FeedbackSearch action={`/app/${slug}/feedback`} q={q} compact={open !== null}>
                       {board && <input type="hidden" name="board" value={board} />}
                       {group && <input type="hidden" name="group" value={group.key} />}
                       {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
                       {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
-                      <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input key={q ?? ""} type="search" name="q" defaultValue={q} placeholder={open === null ? "Search feedback" : "Search"} aria-label="Search feedback" className="h-9 pl-8" />
-                    </Form>
+                    </FeedbackSearch>
                     <FiltersFold compact={open !== null} set={[board, group, filters.sort !== "top" && filters.sort].filter(Boolean).length}>
                       <ListFilters
                         filters={[
