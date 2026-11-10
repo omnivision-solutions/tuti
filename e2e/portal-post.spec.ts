@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -52,7 +52,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
       // The team's reply: "Team" by the name, on a tint.
       const reply = activity.getByRole("listitem").filter({ hasText: "Thanks! We're on it." });
       await expect(reply.getByText("Team", { exact: true })).toBeVisible();
-      await expect(reply).not.toHaveCSS("background-image", "none");
+      await expect(reply.locator(":scope > div").first()).not.toHaveCSS("background-image", "none");
       // Its status history, after the reply: the change and when, not who made it.
       await expect(activity.getByRole("listitem").last()).toHaveText(/^Moved to Planned · /);
       // When the team expects it, beside its status.
@@ -302,4 +302,125 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await cy.goto(darkPath);
   await expect(cy.getByRole("heading", { level: 1 })).toHaveText(dark);
   await expect(cy.getByRole("button", { name: /subscribe/i })).toHaveCount(0);
+});
+
+test("a post's thread: replies under their comment, likes with counts, Oldest or Newest first; the same on the team's post page", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const comment = async (page: Page, text: string) => {
+    const box = page.getByRole("textbox", { name: "Comment" });
+    await expect(async () => {
+      await box.fill(text);
+      await expect(box).toHaveText(text, { timeout: 1000 });
+    }).toPass();
+    await page.getByRole("button", { name: "Comment", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Comments" }).getByText(text)).toBeVisible();
+  };
+
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto("/feedback/feature-requests");
+  await postFeedback(ada, "Dark mode");
+  await ada.goto("/feedback/feature-requests/dark-mode-1");
+  await comment(ada, "Please, for late nights.");
+  const bo = await signUp(browser, portalUrl(slug), "Bo");
+  await bo.goto("/feedback/feature-requests/dark-mode-1");
+  await comment(bo, "And a schedule for it.");
+
+  // Signed out: the counts, and Reply and Like ask them to sign in.
+  const visitor = await (await browser.newContext({ baseURL: portalUrl(slug) })).newPage();
+  await visitor.goto("/feedback/feature-requests/dark-mode-1");
+  await expect(visitor.getByRole("link", { name: "Reply to Ada, sign in to reply" })).toBeVisible();
+  await visitor.getByRole("link", { name: "Like Ada's comment (0 likes), sign in to like" }).click();
+  await visitor.waitForURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === "/feedback/feature-requests/dark-mode-1");
+  await visitor.context().close();
+
+  // Bo answers Ada: the box opens focused; Cancel puts the focus back on Reply.
+  const replyToAda = bo.getByRole("button", { name: "Reply to Ada" });
+  await replyToAda.click();
+  const replyBox = bo.getByRole("textbox", { name: "Reply" });
+  await expect(replyBox).toBeFocused();
+  await expect(replyToAda).toHaveAttribute("aria-expanded", "true");
+  await bo.getByRole("button", { name: "Cancel" }).click();
+  await expect(replyBox).toHaveCount(0);
+  await expect(replyToAda).toBeFocused();
+  await expect(replyToAda).toHaveAttribute("aria-expanded", "false");
+  // The reply sits under her comment, indented, and the focus is back on Reply once it's posted.
+  await replyToAda.click();
+  await expect(replyBox).toBeFocused();
+  await replyBox.fill("Same here, my eyes thank you.");
+  await bo.getByRole("button", { name: "Reply", exact: true }).click();
+  const replies = bo.getByRole("list", { name: "Replies to Ada" });
+  await expect(replies.getByRole("listitem")).toHaveText([/Same here, my eyes thank you\./]);
+  await expect(replyBox).toHaveCount(0);
+  await expect(replyToAda).toBeFocused();
+  const adas = bo.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Please, for late nights." }).first();
+  expect((await replies.boundingBox())!.x).toBeGreaterThanOrEqual((await adas.boundingBox())!.x + 40);
+  await expect(bo.getByRole("heading", { name: "3 comments" })).toBeVisible();
+
+  // Reply on Bo's reply answers Ada's comment, and the box says it's Bo being answered; Reply on Ada's names her again.
+  await ada.reload();
+  await ada.getByRole("list", { name: "Replies to Ada" }).getByRole("button", { name: "Reply to Bo" }).click();
+  const adasBox = ada.getByRole("textbox", { name: "Reply" });
+  await expect(adasBox).toBeFocused();
+  await expect(adasBox.locator("[data-placeholder]")).toHaveAttribute("data-placeholder", "Reply to Bo…");
+  await ada.getByRole("button", { name: "Reply to Ada" }).click();
+  await expect(adasBox).toBeFocused();
+  await expect(adasBox.locator("[data-placeholder]")).toHaveAttribute("data-placeholder", "Reply to Ada…");
+  await ada.getByRole("button", { name: "Cancel" }).click();
+
+  // Ada likes Bo's reply, and takes it back, then likes it again: one each.
+  const like = ada.getByRole("button", { name: /^Like Bo's comment/ }).first();
+  await like.click();
+  await expect(like).toHaveAttribute("aria-pressed", "true");
+  await expect(like).toHaveText("1");
+  // From the keyboard too, once the like is saved: the focus stays on it while it saves.
+  await expect(like).toHaveAttribute("aria-disabled", "false");
+  await like.focus();
+  await ada.keyboard.press("Enter");
+  await expect(like).toBeFocused();
+  await expect(like).toHaveText("Like");
+  await like.click();
+  await expect(like).toHaveText("1");
+  // Saved (the button is back once it is).
+  await expect(like).toHaveAttribute("aria-disabled", "false");
+  await ada.reload();
+  await expect(ada.getByRole("button", { name: "Like Bo's comment (1 like)" }).first()).toHaveAttribute("aria-pressed", "true");
+
+  // Newest first: Bo's comment leads, the reply stays under Ada's; kept in the address.
+  await ada.getByRole("button", { name: "Sort comments: Oldest first" }).click();
+  await ada.getByRole("menuitemradio", { name: "Newest first" }).click();
+  await ada.waitForURL((url) => url.searchParams.get("sort") === "newest");
+  const thread = ada.getByRole("region", { name: "Comments" }).locator(":scope ol > li");
+  await expect(thread.first()).toContainText("And a schedule for it.");
+  await expect(ada.getByRole("list", { name: "Replies to Ada" })).toContainText("Same here");
+  await checkpoint(ada, "portal-post-thread-newest");
+  await ada.reload();
+  await expect(ada.getByRole("button", { name: "Sort comments: Newest first" })).toBeVisible();
+
+  // The team's post page: the same thread; the team likes and replies too, and its notes have neither.
+  await team.goto(`/app/${slug}/p/1`);
+  await expect(team.getByRole("list", { name: "Replies to Ada" })).toContainText("Same here");
+  await team.getByRole("button", { name: /^Like Ada's comment/ }).click();
+  await expect(team.getByRole("button", { name: /^Like Ada's comment/ })).toHaveText("1");
+  // Bo's own comment (the last; Bo's reply to Ada is under hers).
+  await team.getByRole("button", { name: "Reply to Bo" }).last().click();
+  await team.getByRole("textbox", { name: "Reply" }).fill("It's next on our list.");
+  await team.getByRole("button", { name: "Reply", exact: true }).click();
+  await expect(team.getByRole("list", { name: "Replies to Bo" })).toContainText("It's next on our list.");
+  await team.getByRole("tab", { name: "Internal note" }).click();
+  await team.getByRole("textbox", { name: "Comment" }).fill("Big customers want this.");
+  await team.getByRole("button", { name: "Add note" }).click();
+  const note = team.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Big customers want this." });
+  await expect(note).toBeVisible();
+  await expect(note.getByRole("button")).toHaveCount(0);
+  await checkpoint(team, "team-post-thread");
+
+  // On the portal the team's reply is the team's, under Bo's comment, and Ada's like counts.
+  await ada.goto("/feedback/feature-requests/dark-mode-1");
+  await expect(ada.getByRole("list", { name: "Replies to Bo" }).getByText("Team", { exact: true })).toBeVisible();
+  await expect(ada.getByRole("button", { name: /^Like Ada's comment/ })).toHaveText("1");
+  await checkpoint(ada, "portal-post-thread");
 });

@@ -47,6 +47,7 @@ model User {
   postSubscriptions  PostSubscription[]
   comments           Comment[]
   changelogReactions ChangelogReaction[]
+  commentLikes       CommentLike[]
   changelogSeen      ChangelogSeen[]
   ssoIdentity        SsoIdentity?
 
@@ -1416,16 +1417,37 @@ model Comment {
   /// Written with a portal's session (server/session.ts, signedInAsReader): a reader's comment even if its author is on
   /// the team, so it isn't shown as the team's.
   asReader         Boolean   @default(false)
+  /// The top-level comment it replies to (replies are one level deep). Its parent gone (its author's account
+  /// deleted, Autopilot's comment undone): it stays, as a comment of its own.
+  parentId         String?
 
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  post        Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
-  author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  post        Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author      User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent      Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies     Comment[]     @relation("CommentReplies")
   replyEmails ReplyEmail[]
+  likes       CommentLike[]
 
   @@index([postId, createdAt])
+  @@index([parentId])
   @@index([authorId])
   @@index([votersEmailDueAt])
   @@map("comment")
+}
+
+/// Someone's like of a comment: one each.
+model CommentLike {
+  commentId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+  @@map("comment_like")
 }
 
 /// The team's reply emailed to one of the post's voters (Email voters): claimed before sending, so a retry or

@@ -3,7 +3,7 @@
 import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { Plugin, type Transaction } from "@tiptap/pm/state";
+import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import {
@@ -87,6 +87,9 @@ export type EditorUploads = { projectSlug: string; mediaUrls: MediaUrls };
  * look of long writing: no box and no toolbar, the text set as it's published; blocks come from a
  * menu that typing / at the start of a line opens, and formatting from a bar over selected text.
  */
+/** An editor's placeholder as its props say it now (see "placeholderNow"). */
+const PLACEHOLDER_NOW = new PluginKey<null>("placeholderNow");
+
 export function RichEditor({
   profile,
   name,
@@ -225,6 +228,8 @@ export function RichEditor({
     return true;
   };
 
+  // The placeholder as its props say it now, recorded by "placeholderNow" (the editor's extensions are made once).
+  const [hint] = useState(() => ({ text: placeholder ?? "" }));
   // Each new document, recorded before the placeholder builds its hints for it (they're built as the state is made).
   const [drawn] = useState<{ doc: ProseMirrorNode | null }>(() => ({ doc: null }));
   const editor = useEditor({
@@ -249,6 +254,26 @@ export function RichEditor({
           }),
         ],
       }),
+      // A new placeholder, sent in a transaction (a reply box names whose Reply opened it).
+      Extension.create({
+        name: "placeholderNow",
+        priority: 1000,
+        addProseMirrorPlugins: () => [
+          new Plugin({
+            key: PLACEHOLDER_NOW,
+            state: {
+              init: () => null,
+              apply: (tr) => {
+                const next = tr.getMeta(PLACEHOLDER_NOW) as string | undefined;
+                if (next !== undefined) {
+                  hint.text = next;
+                }
+                return null;
+              },
+            },
+          }),
+        ],
+      }),
       Placeholder.configure({
         // Inside blocks too, for a step's title and body; not in lists or tables (no hint there).
         includeChildren: true,
@@ -262,7 +287,7 @@ export function RichEditor({
             return "Summary";
           }
           if (editor.isEmpty || !bare) {
-            return editor.isEmpty ? (placeholder ?? "") : "";
+            return editor.isEmpty ? hint.text : "";
           }
           // Only lines get hints, not the blocks holding them (a new, empty steps block).
           if (!node.isTextblock) {
@@ -341,6 +366,15 @@ export function RichEditor({
       onChange?.(editor);
     },
   });
+
+  // A new placeholder in an open editor: drawn again.
+  useEffect(() => {
+    if (editor && !editor.isDestroyed && hint.text !== (placeholder ?? "")) {
+      // The selection set again: Placeholder draws its hints anew only when the document or the selection changes.
+      const { tr } = editor.state;
+      editor.view.dispatch(tr.setSelection(editor.state.selection).setMeta(PLACEHOLDER_NOW, placeholder ?? "").setMeta("addToHistory", false));
+    }
+  }, [editor, hint, placeholder]);
 
   useEffect(() => {
     const description = [unreadable && unreadableNote, !unreadable && invalid && describedBy, hintId].filter(Boolean).join(" ");

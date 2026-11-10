@@ -1570,8 +1570,11 @@ async function putBackPost(
 ) {
   if (undo.commentId) {
     const commentId = undo.commentId;
-    // Together, so a retry after a failure can't leave the count one too high.
+    // Together, so a retry after a failure can't leave the count one too high. The post locked first, as every writer of
+    // its comments takes it (a reply or a like holds the comment through its foreign key, then wants the post): deleting
+    // the comment first and updating the post after could deadlock with one.
     await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ${post.id} FOR NO KEY UPDATE`;
       const { count: deleted } = await tx.comment.deleteMany({ where: { id: commentId, postId: post.id } });
       if (deleted) {
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { decrement: 1 } } });

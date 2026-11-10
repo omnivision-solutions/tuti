@@ -1,5 +1,5 @@
 import { isEmptyDoc } from "@tuti/content";
-import { prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { enqueue, seenAs } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
@@ -12,6 +12,29 @@ import { type Actor, defineOperation, OperationError } from "./define";
 import { actorPostViewer, fromApiVisibility, seesBoard, VISIBILITIES } from "../post-visibility";
 import { findVisiblePost, postNumber, postSummarySelect, projectPortal, summary } from "./read";
 import { onTeam, signedInAsReader } from "../session";
+
+/** A comment that isn't (or is no longer) on the post: replied to or liked. */
+export const noSuchComment = () => new OperationError(404, "not_found", "There's no such comment on this post");
+
+/**
+ * A write that names a comment (a reply's parent, a like's comment) and failed its foreign key (P2003) because the comment
+ * was deleted meanwhile (its author's account deleted, Autopilot's comment undone): "There's no such comment". Any other
+ * failure is thrown as it is.
+ */
+export async function orNoSuchComment<T>(commentId: string | (() => string), write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2003" &&
+      !(await prisma.comment.findUnique({ where: { id: typeof commentId === "string" ? commentId : commentId() }, select: { id: true } }))
+    ) {
+      throw noSuchComment();
+    }
+    throw error;
+  }
+}
 
 /** Longest plain text a post or comment may have (rich content is capped by size too). */
 export const MAX_TEXT_LENGTH = 5000;
@@ -150,7 +173,7 @@ export const createPost = defineOperation({
 export const createComment = defineOperation({
   name: "comments.create",
   summary:
-    "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note (`internal: true`): only the team sees it, never on the portal, in emails or webhooks. The team's reply can be emailed to the post's voters too (`emailVoters: true`)",
+    "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note (`internal: true`): only the team sees it, never on the portal, in emails or webhooks. The team's reply can be emailed to the post's voters too (`emailVoters: true`). `replyTo`: a comment's id, to reply to it (replies are one level deep: a reply to a reply goes under the comment it replies to)",
   method: "POST",
   path: "/posts/{number}/comments",
   scope: "write",
@@ -163,6 +186,8 @@ export const createComment = defineOperation({
     internal: z.boolean().optional(),
     /** The team's reply emailed to the post's voters too (those who may still read it and haven't unsubscribed). The team's only; not with a note. */
     emailVoters: z.boolean().optional(),
+    /** The id of the post's comment it replies to (comments.list); a reply's id puts it under that reply's comment. Not with a note. */
+    replyTo: z.string().min(1).max(64).optional(),
   }),
   example: { body: "Thanks! This is planned for next month." },
   run: async (context, input) => {
@@ -181,6 +206,13 @@ export const createComment = defineOperation({
     }
     if (input.internal && input.emailVoters) {
       throw new OperationError(400, "invalid_input", "An internal note isn't emailed to anyone");
+    }
+    if (input.internal && input.replyTo) {
+      throw new OperationError(400, "invalid_input", "An internal note can't reply to a comment");
+    }
+    // Refused before anything is written (a project user made for `author`); read again under the post's lock below.
+    if (input.replyTo && !(await prisma.comment.count({ where: { id: input.replyTo, postId: post.id } }))) {
+      throw noSuchComment();
     }
     // Notes, and replies emailed to voters, are the team's own: written by a team member, or the team's key as
     // itself (keys are the team's, as actorReader has them).
@@ -213,19 +245,39 @@ export const createComment = defineOperation({
 
     // Written with a portal's session: a reader's, never shown as the team's, whoever wrote it.
     const asReader = await signedInAsReader(userId);
-    const comment = await saving(() =>
+    let target = input.replyTo;
+    const write = () =>
       prisma.$transaction(async (tx) => {
+        // The post locked first, as every writer of its comments takes it (votes.set, comments.like, a merge, Autopilot's
+        // Undo): a reply's foreign key holds its parent comment, so taking the post after it could deadlock with an Undo
+        // deleting that comment. A merge meanwhile moved its comments: comment there instead.
+        const [locked] = await tx.$queryRaw<{ duplicateOfId: string | null }[]>`
+          SELECT "duplicateOfId" FROM post WHERE id = ${post.id} FOR NO KEY UPDATE`;
+        if (locked?.duplicateOfId) {
+          throw new OperationError(409, "merged", "This post was merged into another one; comment there instead");
+        }
+        // One level deep: a reply to a reply goes under the comment that one replies to.
+        const parent = input.replyTo
+          ? await tx.comment.findFirst({ where: { id: input.replyTo, postId: post.id }, select: { id: true, parentId: true } })
+          : null;
+        if (input.replyTo && !parent) {
+          throw noSuchComment();
+        }
+        const parentId = parent ? (parent.parentId ?? parent.id) : null;
+        target = parentId ?? target;
         const created = await tx.comment.create({
           // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't).
           // Not for sample content (Home's "Add sample content"): no webhook, and its voters aren't emailed.
-          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, ...(input.emailVoters && !post.sample && seenAs(post) !== "TEAM" && { votersEmailDueAt: new Date() }) },
-          select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
+          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, asReader, parentId, ...(input.emailVoters && !post.sample && seenAs(post) !== "TEAM" && { votersEmailDueAt: new Date() }) },
+          select: { id: true, body: true, content: true, createdAt: true, parentId: true, author: { select: { name: true } } },
         });
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });
         await attachMedia(tx, projectId, text.mediaIds);
         return created;
-      }),
-    );
+      });
+    // Its parent deleted by a writer that doesn't lock the post (its author's account): "There's no such comment".
+    // The comment its foreign key names: the top-level one, for a reply to a reply.
+    const comment = await saving(() => (target ? orNoSuchComment(() => target!, write) : write()));
     const team = await onTeam(projectId, userId);
     const created = {
       id: comment.id,
@@ -233,6 +285,7 @@ export const createComment = defineOperation({
       body: comment.body,
       content: displayDoc(comment),
       createdAt: comment.createdAt.toISOString(),
+      replyTo: comment.parentId,
     };
     const { url, number, title } = summary(post, portal);
     if (post.sample) {

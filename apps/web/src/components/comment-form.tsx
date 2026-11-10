@@ -43,6 +43,8 @@ const drafts = {
  *
  * `uploads`: images can be added (pasted, dropped or picked), as in a post; without it (signed out, or no media
  * storage), text only.
+ *
+ * `replyTo`: a reply to that comment (its box opened by Reply, focused, `onDone` once posted, with Cancel: `onCancel`).
  */
 export function CommentForm({
   postId,
@@ -51,8 +53,16 @@ export function CommentForm({
   voters = 0,
   signedIn,
   uploads,
+  replyTo,
+  autoFocus,
+  onDone,
+  onCancel,
 }: {
   postId: string;
+  replyTo?: string;
+  autoFocus?: boolean;
+  onDone?: () => void;
+  onCancel?: () => void;
   placeholder?: string;
   notes?: boolean;
   voters?: number | "paused";
@@ -60,7 +70,7 @@ export function CommentForm({
   uploads?: EditorUploads;
 }) {
   const portal = signedIn !== undefined;
-  const draftKey = `tuti:comment-draft:${postId}`;
+  const draftKey = `tuti:comment-draft:${postId}${replyTo ? `:${replyTo}` : ""}`;
   // The draft in storage couldn't be read here (onCreate below): it isn't saved over while this page is open.
   // A stored draft this page can't read: kept as it is until a new comment is written here (then that's the draft).
   const draftUnreadable = useRef(false);
@@ -86,6 +96,7 @@ export function CommentForm({
       // The next one is a reply again, emailing nobody, unless switched on again.
       setInternal(false);
       setEmailVoters(false);
+      onDone?.();
     }
     return result;
   }, {});
@@ -93,6 +104,7 @@ export function CommentForm({
   return (
     <form {...keepingFields(action)} className="flex flex-col gap-2">
       <input type="hidden" name="postId" value={postId} />
+      {replyTo && <input type="hidden" name="replyTo" value={replyTo} />}
       {/* The team's form: a reply (to everyone who sees the post) or an internal note, picked above the box. */}
       {notes && (
         <>
@@ -119,6 +131,9 @@ export function CommentForm({
             if (draft && !draftUnreadable.current) {
               editor.commands.setContent(draft, { emitUpdate: true });
             }
+            if (autoFocus) {
+              editor.commands.focus("end");
+            }
           }}
           onChange={(editor) => {
             if (!portal) {
@@ -141,7 +156,7 @@ export function CommentForm({
           profile="comment"
           uploads={uploads}
           name="content"
-          label="Comment"
+          label={replyTo ? "Reply" : "Comment"}
           placeholder={placeholder}
           invalid={!!state.error}
           describedBy={errorId}
@@ -173,8 +188,13 @@ export function CommentForm({
               Email voters <span className="text-muted-foreground">({votersNote(voters)})</span>
             </label>
           ))}
+        {onCancel && (
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         <Button type="submit" disabled={pending}>
-          {pending ? "Posting…" : internal ? "Add note" : emailVoters ? "Comment and email" : "Comment"}
+          {pending ? "Posting…" : replyTo ? "Reply" : internal ? "Add note" : emailVoters ? "Comment and email" : "Comment"}
         </Button>
       </div>
     </form>

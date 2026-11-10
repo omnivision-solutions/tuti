@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 
 import type { FormState } from "./form-state";
 import { createComment as createCommentOperation, createPost as createPostOperation } from "./operations/create";
-import { setSubscription, setVote } from "./operations/more";
+import { likeComment, setSubscription, setVote } from "./operations/more";
 import { asAnyone, call } from "./operations/run";
 
 /** Posts on a portal board; see the posts.create operation. */
@@ -85,6 +85,22 @@ export async function addComment(_prev: FormState, formData: FormData): Promise<
         body: value("body"),
         ...(value("internal") === "on" && { internal: true }),
         ...(value("emailVoters") === "on" && { emailVoters: true }),
+        replyTo: value("replyTo") || undefined,
       }),
+  );
+}
+
+/** Likes a comment, or takes the like back, for the signed-in user; see the comments.like operation. */
+export async function setCommentLike(commentId: string, liked: boolean): Promise<FormState> {
+  let found: { number: number; id: string } | null = null;
+  return asAnyone(
+    "Sign in to like comments",
+    "Comment not found",
+    async () => {
+      const comment = await prisma.comment.findUnique({ where: { id: String(commentId) }, select: { projectId: true, post: { select: { number: true } } } });
+      found = comment && { number: comment.post.number, id: String(commentId) };
+      return comment && { id: comment.projectId };
+    },
+    (context) => call(likeComment, context, { number: found!.number, id: found!.id, liked: liked === true }),
   );
 }

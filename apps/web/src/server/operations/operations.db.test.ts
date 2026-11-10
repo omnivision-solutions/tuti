@@ -111,6 +111,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "comments.list": () => ({ number: 1 }),
   "posts.create": () => ({ board: "feature-requests", title: "From the matrix" }),
   "comments.create": () => ({ number: 1, body: "From the matrix" }),
+  "comments.like": (f) => ({ number: 1, id: f.commentId, liked: true }),
   "posts.update": () => ({ number: 1, status: "planned" }),
   "conversations.list": () => ({ status: "open" }),
   "companies.list": () => ({}),
@@ -330,6 +331,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
       },
     });
   }
+  const comment = await prisma.comment.create({ data: { projectId: project.id, postId: first!.id, authorId: owner.id, body: "A comment to like" } });
   const link = await prisma.postLink.create({
     data: {
       projectId: project.id,
@@ -393,6 +395,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   return {
     marker,
     linkId: link.id,
+    commentId: comment.id,
     suggestionId: suggestion.id,
     revisionId: revision.id,
     questionId: question.id,

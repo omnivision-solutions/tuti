@@ -350,6 +350,13 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
     same actions in a row under the body (Copy link and Share as icon buttons), the voters under them. Signed out, one
     "Join the conversation" bar (Sign in) above the thread instead of a comment box. In the thread, the team's replies
     on a soft green fade with a green rule and the Team badge, status changes as rows with the status's icon and pill.
+  - **Comment threads** (the portal's post and the team's): "N comments" with "Oldest first ▾" at its right (Newest
+    first; kept in the address as `?sort=newest`, shown once there are two). Under each comment **Reply** and a heart
+    with its count ("Like" at none; liked, filled green); signed out, both are links to sign in, as voting is. Replies
+    are one level deep: indented to the comment's words, oldest first under it whichever way the thread is sorted;
+    Reply on a reply answers the same comment. Reply opens one box under the thread's last reply ("Reply to <name>…",
+    Cancel and Reply). A comment whose parent is gone (its author's account deleted, Autopilot's comment undone) stays,
+    as a comment of its own. Internal notes have neither: only the team sees them.
   - **The roadmap**: a 48px title, its line with "Sign in to vote." after it, New idea at the right (to a board's
     dialog, or a pick of boards), the boards as chips (All boards first), a line, then three open columns headed by
     the status's icon, name and count, its meaning and a line; a card per idea (the board, the title, two lines,

@@ -5,7 +5,7 @@ import { PROJECT_USE_KEYS } from "@/lib/project-uses";
 import { MAX_PROPERTY_FORMATS, propertyFormat, type PropertyFormats, storedPropertyFormats } from "@/lib/property-formats";
 import { portalAddress } from "@/server/custom-domains";
 
-import { author, authorId } from "./create";
+import { author, authorId, noSuchComment, orNoSuchComment } from "./create";
 import { defineOperation, OperationError } from "./define";
 import { findVisiblePost, postNumber } from "./read";
 
@@ -198,6 +198,44 @@ export const setVote = defineOperation({
       return updated.voteCount;
     });
     return { number: post.number, voted: input.voted, votes };
+  },
+});
+
+export const likeComment = defineOperation({
+  name: "comments.like",
+  summary: "Like a post's comment or take the like back (one each), as the key's creator or on behalf of someone from your app",
+  method: "POST",
+  path: "/posts/{number}/comments/{id}/like",
+  scope: "write",
+  access: "anyone",
+  input: z.object({ number: postNumber, id: z.string().min(1).max(64), liked: z.boolean(), author }),
+  example: { liked: true, author: { id: "user-42" } },
+  run: async (context, input) => {
+    const post = await findVisiblePost(context.actor, context.projectId, input.number);
+    if (post.duplicateOf) {
+      throw new OperationError(409, "merged", "This post was merged into another one; like its comments there instead");
+    }
+    const userId = await authorId(context, input.author);
+    // Its comment deleted by a writer that doesn't lock the post (its author's account): "There's no such comment".
+    return orNoSuchComment(input.id, () => prisma.$transaction(async (tx) => {
+      // Locked as setVote locks it: a like during a merge waits for it, then finds the post merged (its comments moved).
+      const [locked] = await tx.$queryRaw<{ duplicateOfId: string | null }[]>`
+        SELECT "duplicateOfId" FROM post WHERE id = ${post.id} FOR NO KEY UPDATE`;
+      if (locked?.duplicateOfId) {
+        throw new OperationError(409, "merged", "This post was merged into another one; like its comments there instead");
+      }
+      // A comment, never a note (notes are their own table): only the team sees those.
+      const comment = await tx.comment.findFirst({ where: { id: input.id, postId: post.id }, select: { id: true } });
+      if (!comment) {
+        throw noSuchComment();
+      }
+      if (input.liked) {
+        await tx.commentLike.createMany({ data: { commentId: comment.id, userId }, skipDuplicates: true });
+      } else {
+        await tx.commentLike.deleteMany({ where: { commentId: comment.id, userId } });
+      }
+      return { id: comment.id, liked: input.liked, likes: await tx.commentLike.count({ where: { commentId: comment.id } }) };
+    }));
   },
 });
 

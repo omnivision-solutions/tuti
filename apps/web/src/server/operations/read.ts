@@ -2,6 +2,7 @@ import { Prisma, prisma, type PostStatus } from "@tuti/db";
 import { postSummary, postSummarySelect } from "@tuti/jobs";
 import { z } from "zod";
 
+import { COMMENT_SORTS, threads } from "@/lib/comment-threads";
 import { postOrderBy } from "@/lib/post-filters";
 
 import { displayDoc } from "../content";
@@ -154,26 +155,39 @@ export const getPost = defineOperation({
 
 export const listComments = defineOperation({
   name: "comments.list",
-  summary: "List a post's comments, oldest first: to the team (an API key, a team member) with its internal notes (`internal: true`)",
+  summary:
+    "List a post's comments, oldest first (`sort: \"newest\"`: newest first), each followed by its replies (`replyTo`: the comment's id), oldest first; with how many like each (`likes`) and whether the caller does (`liked`). To the team (an API key, a team member) with its internal notes (`internal: true`)",
   method: "GET",
   path: "/posts/{number}/comments",
   scope: "read",
   access: "anyone",
-  input: z.object({ number: postNumber }),
-  run: async ({ actor, projectId }, { number }) => {
+  input: z.object({ number: postNumber, sort: z.enum(COMMENT_SORTS).default("oldest") }),
+  example: { sort: "newest" },
+  run: async ({ actor, projectId }, { number, sort }) => {
     const post = await findVisiblePost(actor, projectId, number);
     const ofTeam = (await actorReader(actor, projectId)) === null;
+    // Liked by whoever calls (a key: its creator, as it votes).
+    const caller = actor.kind === "user" ? actor.userId : actor.createdById;
     const select = { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true } } } as const;
     const [comments, notes, team] = await Promise.all([
-      prisma.comment.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select: { ...select, asReader: true } }),
-      ofTeam ? prisma.postNote.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select }) : [],
+      // In the order they were written (the id breaks a tie: two in the same millisecond), as threads keeps it.
+      prisma.comment.findMany({
+        where: { postId: post.id },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { ...select, asReader: true, parentId: true, _count: { select: { likes: true } }, likes: { where: { userId: caller }, select: { userId: true } } },
+      }),
+      ofTeam ? prisma.postNote.findMany({ where: { postId: post.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select }) : [],
       prisma.teamMember.findMany({ where: { projectId }, select: { userId: true } }),
     ]);
     const teamIds = new Set(team.map((m) => m.userId));
+    const all = [
+      ...comments.map((c) => ({ ...c, internal: false, likes: c._count.likes, liked: c.likes.length > 0 })),
+      // The team's notes between them, in order; never replied to or liked.
+      ...notes.map((n) => ({ ...n, internal: true, asReader: false, parentId: null, likes: 0, liked: false })),
+    ];
     return {
-      // The team's notes between them, in order.
-      comments: [...comments.map((c) => ({ ...c, internal: false })), ...notes.map((n) => ({ ...n, internal: true, asReader: false }))]
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      comments: threads(all, sort)
+        .flatMap((thread) => [thread.item, ...thread.replies])
         .map((c) => ({
           id: c.id,
           // A team member's comment written with a portal's session is a reader's (signedInAsReader).
@@ -181,6 +195,9 @@ export const listComments = defineOperation({
           body: c.body,
           content: displayDoc(c),
           createdAt: c.createdAt.toISOString(),
+          replyTo: c.parentId,
+          likes: c.likes,
+          liked: c.liked,
           ...(c.internal && { internal: true }),
         })),
     };
