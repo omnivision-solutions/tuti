@@ -604,7 +604,8 @@ export function DocsLayout({
   const column = (node: React.ReactNode) => (shown ? node : <IfSidebarLinks>{node}</IfSidebarLinks>);
   // An article with sections, "On this page" beside it: wider (the header too), so between the tree and its sections the
   // text still gets 65 to 70 characters a line. Other pages keep the header's width, the text centred beside the tree.
-  const wide = !!shown && outlined(headings);
+  // Whatever is beside it (the tree, the team's sidebar links, or nothing): the widths add up to 79rem with a 16rem column.
+  const wide = outlined(headings);
   return (
     // At least the window's height (flex-1 in <main>), so the tree's line runs to the bottom on a short page.
     // In the header's container (its contents' width: 72rem, 82rem when wide, less its padding), so the tree's left edge is the logo's.
@@ -618,7 +619,7 @@ export function DocsLayout({
         </aside>
       )}
       {/* An article with sections keeps its measure even without a tree (and in reading mode): never wider lines. */}
-      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", outlined(headings) ? "max-w-[46rem]" : shown ? "max-w-[43rem]" : "max-w-[71rem]")}>
+      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", wide ? "max-w-[46rem]" : shown ? "max-w-[43rem]" : "max-w-[71rem]")}>
         {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
