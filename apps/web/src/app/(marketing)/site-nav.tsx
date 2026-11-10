@@ -12,10 +12,10 @@ import { SECTIONS } from "./sections";
 
 const links = (pricing: boolean): readonly (readonly [string, string])[] => [...SECTIONS, ...(pricing ? [["Pricing", "/pricing"] as const] : [])];
 
-/** The site's links on wider screens, beside the logo. Smaller ones get `MobileNav`. */
+/** The site's links on wide screens (from `lg`: five links don't fit a tablet's header), beside the logo. Smaller ones get `MobileNav`. */
 export function SiteNav({ pricing }: { pricing: boolean }) {
   return (
-    <nav aria-label="Site" className="flex gap-7 text-[0.90625rem] font-medium text-foreground/85 max-md:hidden">
+    <nav aria-label="Site" className="flex gap-7 text-[0.90625rem] font-medium whitespace-nowrap text-foreground/85 max-lg:hidden">
       {links(pricing).map(([label, href]) => (
         <Link key={href} href={href} className="hover:text-foreground">
           {label}
@@ -29,7 +29,7 @@ export function SiteNav({ pricing }: { pricing: boolean }) {
  * The site's links on phones and tablets: a menu button that opens them under the header, with the sign-in buttons
  * full width at the bottom.
  */
-export function MobileNav({ pricing, signedIn }: { pricing: boolean; signedIn: boolean }) {
+export function MobileNav({ pricing, signedIn, docs }: { pricing: boolean; signedIn: boolean; docs: string }) {
   // Open on the page it was opened on, so going anywhere else (Back, a link in the page) closes it.
   const pathname = usePathname();
   const [openOn, setOpenOn] = useState<string | null>(null);
@@ -59,16 +59,19 @@ export function MobileNav({ pricing, signedIn }: { pricing: boolean; signedIn: b
         aria-label={open ? "Close menu" : "Menu"}
         ref={button}
         onClick={() => setOpenOn(open ? null : pathname)}
-        className={buttonVariants({ variant: "outline", size: "icon-lg", className: "md:hidden" })}
+        className={buttonVariants({ variant: "outline", size: "icon-lg", className: "lg:hidden" })}
       >
         {open ? <XIcon /> : <MenuIcon />}
       </button>
-      <nav id="mobile-nav" aria-label="Site" hidden={!open} className="absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-4rem)] overflow-y-auto border-b bg-background px-4 pb-6 shadow-lg sm:px-6 md:hidden">
+      <nav id="mobile-nav" aria-label="Site" hidden={!open} className="absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-4rem)] overflow-y-auto border-b bg-background px-4 pb-6 shadow-lg sm:px-6 lg:hidden">
         {links(pricing).map(([label, href]) => (
           <Link key={href} href={href} onClick={close} className={row}>
             {label}
           </Link>
         ))}
+        <a href={docs} onClick={close} className={row}>
+          Docs
+        </a>
         <div className="mt-6 flex flex-col gap-2">
           {signedIn ? (
             <Link href="/app" onClick={close} className={buttonVariants({ size: "lg" })}>

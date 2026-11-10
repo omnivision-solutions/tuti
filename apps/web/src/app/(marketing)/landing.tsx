@@ -92,6 +92,9 @@ export function Landing({ start, docs, dogfood }: Links & { dogfood: boolean }) 
   );
 }
 
+/** Whether a new Free project's Autopilot runs: no AI credits to pay, or Free starts with some. */
+const autopilotOnFree = () => !creditsEnabled() || freeCredits() > 0;
+
 function Hero({ start, docs, live }: Links & { live: boolean }) {
   return (
     <section className="hero">
@@ -100,7 +103,7 @@ function Hero({ start, docs, live }: Links & { live: boolean }) {
           <div>
             {plansEnabled() && (
               <span className="pill">
-                <b>Free plan</b> Autopilot included, no credit card
+                <b>Free plan</b> {autopilotOnFree() ? "Autopilot included, no credit card" : "No credit card"}
               </span>
             )}
             <h1 className="display">
@@ -903,7 +906,7 @@ function Pricing({ start }: { start: string }) {
     {
       name: "Free",
       price: null,
-      lines: [credits && freeCredits() > 0 ? "Autopilot, starter AI credits" : "Autopilot", articles(articleLimit("FREE")), "Feedback, roadmap, changelog, inbox", "3 team members"],
+      lines: [!credits ? "Autopilot" : freeCredits() > 0 ? "Autopilot, starter AI credits" : "Autopilot, on AI credits", articles(articleLimit("FREE")), "Feedback, roadmap, changelog, inbox", "3 team members"],
     },
     {
       name: PLAN_PRICES.PRO.name,
@@ -923,7 +926,7 @@ function Pricing({ start }: { start: string }) {
         <div className="sh center">
           <span className="kicker">Pricing</span>
           <h2 className="display">Autopilot on every plan.</h2>
-          <p>Free too. Per project, never per seat.</p>
+          <p>{autopilotOnFree() ? "Free too." : "It runs on AI credits."} Per project, never per seat.</p>
         </div>
         <div className="plans">
           {plans.map((plan) => (
@@ -961,7 +964,7 @@ function Pricing({ start }: { start: string }) {
 function Faq() {
   const items = [
     ["Will it publish without me?", "Edits go live after 24 hours unless you stop them. Unsure or widely seen changes wait for you."],
-    ["What does Tuti read from GitHub?", "Only repositories you pick. Each merged pull request, once."],
+    ["What does Tuti read from GitHub?", "Only repositories you pick: each merged pull request, and the code, to check your articles against."],
     ["What if it gets something wrong?", "Stop it, edit it, or undo it."],
     ["What if we're not on GitHub?", "Autopilot needs GitHub. Everything else works without it."],
     ["Is this developer documentation?", "No. It's the help center your customers read."],

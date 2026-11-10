@@ -5,12 +5,14 @@ import { TutiLogo } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
 import { getSession } from "@/server/session";
 
+import { docsUrl, REPO_URL } from "./links";
 import { SECTIONS } from "./sections";
 import { MobileNav, SignedOutLinks, SiteNav } from "./site-nav";
 
 /** Apex site: marketing and team sign-in/up, every page under one header and footer. */
 export default async function MarketingLayout({ children }: LayoutProps<"/">) {
   const session = await getSession();
+  const docs = await docsUrl();
 
   return (
     <>
@@ -29,7 +31,7 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
             ) : (
               <SignedOutLinks />
             )}
-            <MobileNav pricing={plansEnabled()} signedIn={!!session} />
+            <MobileNav pricing={plansEnabled()} signedIn={!!session} docs={docs} />
           </div>
         </div>
       </header>
@@ -55,6 +57,15 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
                   Pricing
                 </Link>
               )}
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <p className="mb-1 font-semibold text-foreground">Resources</p>
+              <a href={docs} className="hover:text-foreground">
+                Docs
+              </a>
+              <a href={REPO_URL} className="hover:text-foreground">
+                GitHub
+              </a>
             </div>
             {plansEnabled() && (
               <div className="flex flex-col gap-2.5">
