@@ -347,7 +347,8 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
     underlined on the header's bottom edge; Sign in an outline at the end; 64px tall (56px on phones). Its contents in
-    the pages' container (max-w-6xl; 82rem on a docs article with "On this page" beside it). On phones the header is one line (mark and name, Sign in or the account, the
+    the pages' container (max-w-6xl; 82rem on every docs page from 1280px, and on docs articles with sections below 1280px too).
+    On phones the header is one line (mark and name, Sign in or the account, the
     menu): the parts are in the menu. Under it the current part's row (boards, docs tabs) when it has two or more
     (none on a post's page, nor beside a board's rail). A "Powered by tuti" footer under a line.
   - **A board** (the visitor's job: is my idea here? then vote or post it): a card with its name (34px), its line (the team's

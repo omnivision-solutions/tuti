@@ -241,7 +241,7 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
     case "overview":
       // Its cards are the collections: no tree beside them.
       return (
-        <DocsLayout tree={null} current={null}>
+        <DocsLayout tree={null} current={null} overview>
           <DocsOverview project={project} docs={docs} tab={tab} />
         </DocsLayout>
       );
@@ -586,6 +586,7 @@ const outlined = (headings: Heading[]) => headings.length >= 2;
 export function DocsLayout({
   tree,
   current,
+  overview = false,
   headings = [],
   reading = false,
   children,
@@ -593,6 +594,8 @@ export function DocsLayout({
   /** Null for none (a tab's overview, whose cards are its collections). */
   tree: DocsTree | null;
   current: string | null;
+  /** A tab's overview: its collection cards fill the container from desktop width up. */
+  overview?: boolean;
   headings?: Heading[];
   /** An article's page with sections: in reading mode (ReadingModeToggle) the tree and "On this page" go. */
   reading?: boolean;
@@ -617,9 +620,9 @@ export function DocsLayout({
           </div>
         </aside>
       )}
-      {/* An article with sections keeps its measure even without a tree (and in reading mode): never wider lines. The
-          overview (no tree, no current page) takes the container's width. */}
-      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", sections ? "max-w-[46rem]" : shown ? "max-w-[43rem] xl:ml-0" : current === null ? "max-w-[71rem] xl:max-w-none" : "max-w-[71rem]")}>
+      {/* An article with sections keeps its measure even without a tree (and in reading mode): never wider lines.
+          Only the overview takes the container's width; tree-less search results and short articles keep their cap. */}
+      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-6", sections ? "max-w-[46rem]" : shown ? "max-w-[43rem] xl:ml-0" : overview ? "max-w-[71rem] xl:max-w-none" : "max-w-[71rem]")}>
         {column(
           <>
             {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}

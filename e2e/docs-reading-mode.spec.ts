@@ -91,6 +91,34 @@ test("navigating between articles with and without sections keeps the docs align
   await checkpoint(reader, "docs-overview-with-sidebar-links-1440", { fullPage: false });
 });
 
+test("tree-less short articles and search results keep their capped widths", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/tabs", { name: "Guides" });
+  // The project's only published article is unlisted: no tree, and the first tab has no listed articles.
+  const { slug: article } = await api("/articles", { title: "Calendar basics", content: { type: "doc", content: [paragraph(long)] }, listing: "unlisted" });
+  await api(`/articles/${article}/publish`, {});
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.setViewportSize({ width: 1440, height: 900 });
+  const tree = reader.getByRole("navigation", { name: "Docs", exact: true });
+  await reader.goto(`/docs/${article}`);
+  await expect(reader.getByRole("heading", { name: "Calendar basics", level: 1 })).toBeVisible();
+  await expect(tree).toBeHidden();
+  expect.soft((await reader.getByRole("article").boundingBox())!.width).toBe(71 * 16);
+  await checkpoint(reader, "docs-tree-less-short-article-1440", { fullPage: false });
+
+  await reader.goto("/docs?q=calendar");
+  await expect(reader.getByRole("heading", { name: "Results for “calendar”", level: 1 })).toBeVisible();
+  await expect(tree).toBeHidden();
+  // Search also has no current page; that doesn't make it an overview or give it the full 79rem.
+  expect.soft((await reader.locator("[data-docs-layout] > div").boundingBox())!.width).toBe(71 * 16);
+  await checkpoint(reader, "docs-tree-less-search-results-1440", { fullPage: false });
+});
+
 test("a reader gets an article with room to read, turns on reading mode to read it alone, and it stays on", async ({ browser }, testInfo) => {
   test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
