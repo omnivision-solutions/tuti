@@ -43,7 +43,8 @@ export function conversationDayKey(date: Date, timeZone: string): number {
 export function conversationDay(date: Date, timeZone: string, now = new Date()): string {
   const days = (conversationDayKey(now, timeZone) - conversationDayKey(date, timeZone)) / 86_400_000;
   const relative = days === 0 ? "Today · " : days === 1 ? "Yesterday · " : "";
-  return relative + date.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone });
+  const year = (d: Date) => d.toLocaleDateString("en-GB", { year: "numeric", timeZone });
+  return relative + date.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone, ...(relative || year(date) === year(now) ? {} : { year: "numeric" }) });
 }
 
 /** A month, like "November 2026" (UTC, as formatDate): a post's ETA. */

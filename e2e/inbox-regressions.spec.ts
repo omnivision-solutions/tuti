@@ -32,6 +32,15 @@ test("blocked recipients have no composer promise that replies are emailed", asy
   await expect(owner.getByText(/^Replies are emailed to/)).toHaveCount(0);
 });
 
+test("sample conversations have no composer promise that replies are emailed: the reply job skips them", async ({ browser }) => {
+  const { owner, slug, url } = await inbox(browser);
+  await owner.goto(url);
+  await expect(owner.getByText(/^Replies are emailed to/)).toBeVisible();
+  await update(`UPDATE conversation c SET sample = true FROM project p WHERE c."projectId" = p.id AND p.slug = $1`, [slug]);
+  await owner.reload();
+  await expect(owner.getByText(/^Replies are emailed to/)).toHaveCount(0);
+});
+
 test("each message day is grouped in the viewer's time zone", async ({ browser }) => {
   const { owner, slug, api, url } = await inbox(browser);
   await api("/conversations/1/messages", { body: "Second message" });

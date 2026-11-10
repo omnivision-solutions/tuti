@@ -8,6 +8,7 @@ test.each([
   ["2025-12-31T18:00:00Z", "2026-01-01T02:00:00Z", "Yesterday · 31 December"],
   ["2026-11-08T12:00:00Z", "2026-11-10T12:00:00Z", "8 November"],
   ["2026-11-11T12:00:00Z", "2026-11-10T12:00:00Z", "11 November"],
+  ["2025-11-12T12:00:00Z", "2026-11-10T12:00:00Z", "12 November 2025"],
 ])("conversation day %s, relative to %s", (date, now, label) => {
   expect(conversationDay(new Date(date), "UTC", new Date(now))).toBe(label);
 });

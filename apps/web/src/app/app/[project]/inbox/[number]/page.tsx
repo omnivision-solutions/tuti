@@ -1,5 +1,5 @@
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, cappedProjects, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
+import { aiPaused, cappedProjects, historySince, inSomePlansHistory, NEW_PROJECT_EMAILS_PER_DAY, replyRecipient, UNUSED_UPLOAD_HOURS, visibleConversations } from "@tuti/jobs";
 import { aiEnabled, historyDays, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { EyeIcon, ClockIcon, ListIcon, LockKeyholeIcon, MailIcon } from "lucide-react";
@@ -326,7 +326,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             <div className="inbox-composer-wrap sticky bottom-0 mt-auto -mx-1.5 bg-card pt-1.25 pb-2.5 max-lg:-mx-0.5 min-[75rem]:group-data-[details=hidden]/thread:-mx-2">
               <ReplyForm
                 recipient={personName}
-                emailed={emailable && !!supportDomain()}
+                emailed={"to" in (await replyRecipient(conversation.id))}
                 projectSlug={slug}
                 number={conversation.number}
                 userId={membership.userId}
