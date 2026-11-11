@@ -17,9 +17,10 @@ import { usePortalHref } from "@/components/portal-base";
 
 /**
  * "Forgot your password?" on the app and on portals (server/password-reset.ts). `failed`: a reset link didn't work.
- * `portal`: on the app, asked for that portal; `next`: the sign-in's way back, kept by "Back to sign in".
+ * `portal`: on the app, asked for that portal; `next`: the sign-in's way back, kept by "Back to sign in". `pages`: where
+ * the sign-in page is, the app's under /app/auth, a portal's at its root.
  */
-export function ForgotPasswordForm({ failed, portal, next }: { failed: boolean; portal?: string; next?: string }) {
+export function ForgotPasswordForm({ failed, portal, next, pages = "" }: { failed: boolean; portal?: string; next?: string; pages?: string }) {
   const at = usePortalHref();
   const [error, setError] = useState<string>();
   const [sentTo, setSentTo] = useState<string>();
@@ -72,7 +73,7 @@ export function ForgotPasswordForm({ failed, portal, next }: { failed: boolean; 
             <Button type="submit" disabled={pending} className="w-full">
               {pending ? "…" : "Email me a link"}
             </Button>
-            <Link href={at(next ? `/sign-in?${new URLSearchParams({ next })}` : "/sign-in")} className="text-sm text-foreground underline underline-offset-4">
+            <Link href={at(`${pages}/sign-in${next ? `?${new URLSearchParams({ next })}` : ""}`)} className="text-sm text-foreground underline underline-offset-4">
               Back to sign in
             </Link>
           </CardFooter>

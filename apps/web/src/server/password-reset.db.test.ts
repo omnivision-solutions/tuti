@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import ForgotPasswordPage from "@/app/(marketing)/forgot-password/page";
-import ContinuePage from "@/app/(marketing)/continue/page";
-import ResetPasswordPage from "@/app/(marketing)/reset-password/page";
-import SignInPage from "@/app/(marketing)/sign-in/page";
+import ForgotPasswordPage from "@/app/app/(account-pages)/auth/forgot-password/page";
+import ContinuePage from "@/app/app/(account-pages)/auth/continue/page";
+import ResetPasswordPage from "@/app/app/(account-pages)/auth/reset-password/page";
+import SignInPage from "@/app/app/(account-pages)/auth/sign-in/page";
 import PortalSignInPage from "@/app/portal/[project]/(site)/sign-in/page";
 import { AuthForm } from "@/components/auth-form";
 import { ForgotPasswordForm, NewPasswordForm } from "@/components/password-reset-forms";
@@ -29,7 +29,7 @@ import { widgetStartConversation } from "./widget-inbox";
 const OLD_PASSWORD = "correct horse battery staple"; // what signUp() sets
 const NEW_PASSWORD = "a brand new password";
 const APP_HOST = "tuti.localhost:3100";
-const FAILED = "/forgot-password?link=failed";
+const FAILED = "/app/auth/forgot-password?link=failed";
 
 let project: Awaited<ReturnType<typeof createProject>>;
 let user: TestUser;
@@ -73,16 +73,16 @@ function ask(email: string, host = APP_HOST, portal?: string) {
  * card signed in as the account and gives where its button goes, and that it doesn't redirect anywhere by itself.
  */
 async function backThroughCard(location: string, portal: string, account: TestUser, password: string) {
-  expect(location).toMatch(/^\/sign-in\?/);
+  expect(location).toMatch(/^\/app\/auth\/sign-in\?/);
   const signIn = new URL(location, `http://${APP_HOST}`);
   expect(signIn.searchParams.get("reset")).toBe("done");
   const next = new URL(signIn.searchParams.get("next")!, `http://${APP_HOST}`);
-  expect([next.pathname, next.searchParams.get("portal")]).toEqual(["/continue", portal]);
+  expect([next.pathname, next.searchParams.get("portal")]).toEqual(["/app/auth/continue", portal]);
   // Signed in with the new password, on the app.
   const { headers } = await auth.api.signInEmail({ body: { email: account.email, password }, headers: new Headers({ host: APP_HOST }), returnHeaders: true });
   actAs({ ...account, cookie: headers.getSetCookie().map((c) => c.split(";")[0]).join("; ") });
   request.host = APP_HOST;
-  const card = await ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(next.searchParams)) } as PageProps<"/continue">).catch(
+  const card = await ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(next.searchParams)) } as PageProps<"/app/auth/continue">).catch(
     (error: { digest?: string }) => ({ redirected: error.digest }),
   );
   expect(card).not.toHaveProperty("redirected");
@@ -130,7 +130,7 @@ async function teamRunPortals() {
 /** Opens `link` on the app's page: the account its form is for, or where it sent the browser instead. */
 async function view(link: URL) {
   const searchParams = Promise.resolve(Object.fromEntries(link.searchParams));
-  const page = ResetPasswordPage({ params: Promise.resolve({}), searchParams } as PageProps<"/reset-password">);
+  const page = ResetPasswordPage({ params: Promise.resolve({}), searchParams } as PageProps<"/app/auth/reset-password">);
   const rendered = await page.catch((error: unknown) => error);
   if ((rendered as { digest?: string }).digest?.startsWith("NEXT_REDIRECT;")) {
     return { location: await redirectTarget(Promise.reject(rendered)) };
@@ -164,13 +164,13 @@ test("an app user gets an email with a link to the app; it sets a new password o
   expect(message.text).toContain("your account on Tuti");
   expect(message.text).toContain(`expires in ${PASSWORD_RESET_MINUTES} minutes`);
   const link = await linkTo(user.email);
-  expect(link.origin + link.pathname).toBe(`http://${APP_HOST}/reset-password`);
+  expect(link.origin + link.pathname).toBe(`http://${APP_HOST}/app/auth/reset-password`);
 
   // Opening it changes nothing (mail scanners open links too) and names the account.
   expect(await view(link)).toEqual({ email: user.email });
   expect(await view(link)).toEqual({ email: user.email });
 
-  expect(await setPassword(link)).toEqual({ location: "/sign-in?reset=done" });
+  expect(await setPassword(link)).toEqual({ location: "/app/auth/sign-in?reset=done" });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
   expect(await signsInWith(user.email, OLD_PASSWORD)).toBe(false);
 
@@ -192,7 +192,7 @@ test("asked on a portal, its own domain or its team's site: from the portal, a l
     expect((await mailbox.latestTo(user.email)).text).toContain(`your account on ${portal.name}`);
     const link = await linkTo(user.email);
     // Never the portal's address: its team may run it, and the password is the account's everywhere.
-    expect(link.origin + link.pathname).toBe(`http://${APP_HOST}/reset-password`);
+    expect(link.origin + link.pathname).toBe(`http://${APP_HOST}/app/auth/reset-password`);
     expect(await view(link)).toEqual({ email: user.email });
     // Signing in on the app, then the card with the portal's address and its button: never there by itself.
     const set = await setPassword(link, `${NEW_PASSWORD} ${host}`);
@@ -214,16 +214,16 @@ test("a link is used on the app only, wherever it was asked", async () => {
   expect(await signsInWith(user.email, OLD_PASSWORD)).toBe(true);
 
   expect(await view(portalLink)).toEqual({ email: user.email });
-  expect(await setPassword(appLink)).toEqual({ location: "/sign-in?reset=done" });
+  expect(await setPassword(appLink)).toEqual({ location: "/app/auth/sign-in?reset=done" });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
   // Dead now, wherever it was asked: the app's "Forgot your password?", never a portal's address.
   expect(await view(portalLink)).toEqual({ location: FAILED });
   expect(await view(appLink)).toEqual({ location: FAILED });
 
   // Made-up or missing tokens go the same way.
-  expect(await view(new URL(`http://${APP_HOST}/reset-password?token=nope`))).toEqual({ location: FAILED });
-  expect(await view(new URL(`http://${APP_HOST}/reset-password`))).toEqual({ location: FAILED });
-  expect(await setPassword(new URL(`http://${APP_HOST}/reset-password?token=nope`))).toEqual({ location: FAILED });
+  expect(await view(new URL(`http://${APP_HOST}/app/auth/reset-password?token=nope`))).toEqual({ location: FAILED });
+  expect(await view(new URL(`http://${APP_HOST}/app/auth/reset-password`))).toEqual({ location: FAILED });
+  expect(await setPassword(new URL(`http://${APP_HOST}/app/auth/reset-password?token=nope`))).toEqual({ location: FAILED });
 });
 
 test("setting a new password uses up the account's other reset links too", async () => {
@@ -235,7 +235,7 @@ test("setting a new password uses up the account's other reset links too", async
   await ask(someoneElse.email);
   const theirs = await linkTo(someoneElse.email);
 
-  expect((await setPassword(second)) as { location: string }).toMatchObject({ location: expect.stringMatching(/^\/sign-in\?reset=done&next=%2Fcontinue/) });
+  expect((await setPassword(second)) as { location: string }).toMatchObject({ location: expect.stringMatching(/^\/app\/auth\/sign-in\?reset=done&next=%2Fapp%2Fauth%2Fcontinue/) });
   expect(await view(first)).toEqual({ location: FAILED });
   expect(await setPassword(first, "yet another password")).toEqual({ location: FAILED });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
@@ -277,7 +277,7 @@ test("setting it signs the account out everywhere, marks the email verified and 
   expect(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).toMatchObject({ emailVerified: false });
 
   await ask(user.email);
-  expect(await setPassword(await linkTo(user.email))).toEqual({ location: "/sign-in?reset=done" });
+  expect(await setPassword(await linkTo(user.email))).toEqual({ location: "/app/auth/sign-in?reset=done" });
   expect(await prisma.session.count({ where: { userId: user.id } })).toBe(0);
   expect(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).toMatchObject({ emailVerified: true });
   const notice = await mailbox.latestTo(user.email);
@@ -289,7 +289,7 @@ test("an account whose password was removed (opening a sign-in link before verif
   await prisma.account.deleteMany({ where: { userId: user.id, providerId: "credential" } });
   expect(await signsInWith(user.email, OLD_PASSWORD)).toBe(false);
   await ask(user.email, portalHost());
-  expect((await setPassword(await linkTo(user.email))) as { location: string }).toMatchObject({ location: expect.stringMatching(/^\/sign-in\?reset=done&next=%2Fcontinue/) });
+  expect((await setPassword(await linkTo(user.email))) as { location: string }).toMatchObject({ location: expect.stringMatching(/^\/app\/auth\/sign-in\?reset=done&next=%2Fapp%2Fauth%2Fcontinue/) });
   expect(await signsInWith(user.email, NEW_PASSWORD)).toBe(true);
 });
 
@@ -298,7 +298,7 @@ test("passwords that don't match or are too short are refused, and the link stil
   const link = await linkTo(user.email);
   expect(await setPassword(link, NEW_PASSWORD, { confirm: "something else" })).toEqual({ error: "The passwords don't match." });
   expect(await setPassword(link, "short")).toEqual({ error: "Password too short" });
-  expect(await setPassword(link)).toEqual({ location: "/sign-in?reset=done" });
+  expect(await setPassword(link)).toEqual({ location: "/app/auth/sign-in?reset=done" });
 });
 
 test("only hashes of the token and the address are stored, and the token is never logged", async () => {
@@ -415,7 +415,7 @@ test("without email set up there are no password resets", async () => {
   try {
     expect(await ask(user.email)).toEqual({ error: "Password resets aren't available here." });
     expect(await prisma.signInLink.count()).toBe(0);
-    const page = ForgotPasswordPage({ params: Promise.resolve({}), searchParams: Promise.resolve({}) } as PageProps<"/forgot-password">);
+    const page = ForgotPasswordPage({ params: Promise.resolve({}), searchParams: Promise.resolve({}) } as PageProps<"/app/auth/forgot-password">);
     expect(await page.catch((error: { digest?: string }) => error.digest)).toMatch(/^NEXT_HTTP_ERROR_FALLBACK;404/);
   } finally {
     process.env.SMTP_HOST = smtpHost;
@@ -515,20 +515,20 @@ test("the app host never sends anyone to a portal's address by itself: dead link
   expect(await emailSignInLink(onSite.slug, "/", form)).toEqual({ sentTo: user.email });
   const signInLink = new URL((await mailbox.latestTo(user.email)).text.split(/\s+/).find((word) => word.includes("/sign-in/link?"))!);
   const token = signInLink.searchParams.get("token")!;
-  expect(await view(new URL(`http://${APP_HOST}/reset-password?token=${token}`))).toEqual({ location: FAILED });
-  expect(await setPassword(new URL(`http://${APP_HOST}/reset-password?token=${token}`))).toEqual({ location: FAILED });
+  expect(await view(new URL(`http://${APP_HOST}/app/auth/reset-password?token=${token}`))).toEqual({ location: FAILED });
+  expect(await setPassword(new URL(`http://${APP_HOST}/app/auth/reset-password?token=${token}`))).toEqual({ location: FAILED });
 
   // Anyone can send people to the app's sign-in "on the way back" to any portal: nothing on it leaves the app's host.
   actAs(null);
   request.host = APP_HOST;
-  const page = await SignInPage({ params: Promise.resolve({}), searchParams: Promise.resolve({ next: `/continue?portal=${onSite.slug}` }) } as PageProps<"/sign-in">);
+  const page = await SignInPage({ params: Promise.resolve({}), searchParams: Promise.resolve({ next: `/app/auth/continue?portal=${onSite.slug}` }) } as PageProps<"/app/auth/sign-in">);
   const form2 = elements(page).find((element) => element.type === AuthForm) as React.ReactElement<React.ComponentProps<typeof AuthForm>>;
-  const crafted = `/continue?portal=${onSite.slug}`;
-  expect(form2.props.forgotPasswordHref).toBe(`/forgot-password?${new URLSearchParams({ portal: onSite.slug, next: crafted })}`);
+  const crafted = `/app/auth/continue?portal=${onSite.slug}`;
+  expect(form2.props.forgotPasswordHref).toBe(`/app/auth/forgot-password?${new URLSearchParams({ portal: onSite.slug, next: crafted })}`);
   expect(JSON.stringify(page)).not.toContain("site.example");
   // There, "Back to sign in" keeps that way back: only a path on the app, never another site.
   const forgot = async (next: string) => {
-    const rendered = await ForgotPasswordPage({ params: Promise.resolve({}), searchParams: Promise.resolve({ portal: onSite.slug, next }) } as PageProps<"/forgot-password">);
+    const rendered = await ForgotPasswordPage({ params: Promise.resolve({}), searchParams: Promise.resolve({ portal: onSite.slug, next }) } as PageProps<"/app/auth/forgot-password">);
     return (rendered as React.ReactElement<React.ComponentProps<typeof ForgotPasswordForm>>).props;
   };
   expect(await forgot(crafted)).toMatchObject({ portal: onSite.slug, next: crafted });

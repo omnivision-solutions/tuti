@@ -22,7 +22,7 @@ test("someone with a Tuti account continues on a portal with it", async ({ brows
   await checkpoint(ivy, "continue-as");
   // "Use another account" shows the sign-in form, though she's signed in.
   await ivy.getByRole("link", { name: "Use another account" }).click();
-  await ivy.waitForURL(`${APP_URL}/sign-in?**`);
+  await ivy.waitForURL(`${APP_URL}/app/auth/sign-in?**`);
   await expect(ivy.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   await ivy.goBack();
   await ivy.getByRole("button", { name: "Continue as Ivy" }).click();
@@ -35,7 +35,7 @@ test("someone with a Tuti account continues on a portal with it", async ({ brows
   const bo = await newPerson(browser, portalUrl(slug));
   await bo.goto("/sign-in");
   await bo.getByRole("link", { name: "Sign in with Tuti" }).click();
-  await bo.waitForURL(`${APP_URL}/sign-in?**`);
+  await bo.waitForURL(`${APP_URL}/app/auth/sign-in?**`);
   await bo.getByLabel("Email").fill(owner.email);
   await bo.getByLabel("Password").fill("correct horse battery staple");
   await bo.getByRole("button", { name: "Sign in" }).click();

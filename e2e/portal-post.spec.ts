@@ -86,7 +86,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await visitor.waitForURL((url) => url.pathname === "/sign-in" && url.searchParams.get("next") === "/feedback/feature-requests/dark-mode-1");
   await visitor.getByRole("link", { name: "Create an account" }).click();
   await fillSignUp(visitor, "Cy", `e2e-${randomUUID()}@example.com`);
-  await visitor.waitForURL((url) => url.pathname === "/continue");
+  await visitor.waitForURL((url) => url.pathname === "/app/auth/continue");
   await backToPortal(visitor);
   await visitor.waitForURL("**/feedback/feature-requests/dark-mode-1");
   const box = visitor.getByRole("textbox", { name: "Comment" });

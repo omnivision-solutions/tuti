@@ -3,7 +3,7 @@ import { POST_COMMENT_MAX, postVersion, queueAutopilotNotices, readAutopilotButt
 import { startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
+import { GET as act } from "@/app/app/(workspace)/[project]/autopilot/[id]/act/route";
 import { POST_COMMENT_LIMIT, postWaits } from "@/lib/autopilot-words";
 import { approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
 import {

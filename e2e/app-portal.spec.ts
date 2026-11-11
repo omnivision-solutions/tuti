@@ -41,10 +41,10 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   await owner.getByRole("menuitem", { name: "Account settings" }).click();
   await owner.waitForURL(`${APP_URL}/app/account`);
 
-  // The rest of the app is as it was: its home, and the API reference under /docs.
-  await owner.goto("/docs/api");
+  // The rest of the app is as it was: its home, and the API reference under /api/docs.
+  await owner.goto("/api/docs");
   await expect(owner.getByRole("heading", { level: 1 })).toBeVisible();
-  expect(owner.url()).toBe(`${APP_URL}/docs/api`);
+  expect(owner.url()).toBe(`${APP_URL}/api/docs`);
 
   // Its Tuti address shows it too (production sends people on to the app's domain, see
   // app-portal.db.test.ts; locally Next.js would make that redirect a loop).

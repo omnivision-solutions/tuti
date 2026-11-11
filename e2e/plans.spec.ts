@@ -234,11 +234,11 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
 test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign-in) agrees to the Terms of Service and Privacy Policy, linked there and in the footer; a self-hosted server has neither the line nor the links", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const page = await browser.newPage({ baseURL: CLOUD_URL });
-  await page.goto("/sign-up");
+  await page.goto("/app/auth/sign-up");
   await expect(page.getByText("By signing up, you agree to the Terms of Service and Privacy Policy.")).toBeVisible();
   await checkpoint(page, "sign-up-terms");
   // Sign-in's Continue with Google or GitHub signs up someone new, so it says so too.
-  await page.goto("/sign-in");
+  await page.goto("/app/auth/sign-in");
   await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
   await expect(page.getByText("By continuing, you agree to the Terms of Service and Privacy Policy.")).toBeVisible();
   await page.getByRole("main").getByRole("link", { name: "Terms of Service" }).click();
@@ -249,12 +249,13 @@ test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign
   await checkpoint(page, "privacy");
 
   const selfHosted = await browser.newPage({ baseURL: APP_URL });
-  await selfHosted.goto("/sign-up");
+  await selfHosted.goto("/app/auth/sign-up");
   await expect(selfHosted.getByRole("button", { name: "Sign up" })).toBeVisible();
   await expect(selfHosted.getByText("By signing up")).toHaveCount(0);
-  await selfHosted.goto("/sign-in");
+  await selfHosted.goto("/app/auth/sign-in");
   await expect(selfHosted.getByRole("button", { name: "Sign in" })).toBeVisible();
   await expect(selfHosted.getByText("By continuing")).toHaveCount(0);
+  await selfHosted.goto("/");
   await expect(selfHosted.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Terms" })).toHaveCount(0);
 });
 

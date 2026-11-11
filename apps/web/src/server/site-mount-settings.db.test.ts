@@ -150,7 +150,7 @@ test("links Tuti emails, and \"Continue as\", keep the path; a password reset's 
   } finally {
     request.host = "";
   }
-  expect((await mailbox.latestTo(owner.email)).text).toContain(`${appUrl().origin}/reset-password?token=`);
+  expect((await mailbox.latestTo(owner.email)).text).toContain(`${appUrl().origin}/app/auth/reset-password?token=`);
   expect((await mailbox.latestTo(owner.email)).text).not.toContain(site.origin);
   actAs(owner);
   const back = await redirectTarget(continueToPortal(project.slug, randomSecret(), "/roadmap"));

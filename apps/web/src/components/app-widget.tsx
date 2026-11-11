@@ -50,7 +50,7 @@ export function AppWidget({ slug }: { slug: string }) {
           of it (AppShell, by data-app-widget), as does what's held at the bottom of the screen (the `launcher:` variant).
           Its panel, once open, stays over everything. */}
       <style data-app-widget>{`body > button[aria-controls="tuti-widget"] { z-index: 40 !important; }`}</style>
-      <Script src="/widget.js" data-project={slug} onLoad={() => window.Tuti?.identify(getToken)} />
+      <Script src="/api/widget.js" data-project={slug} onLoad={() => window.Tuti?.identify(getToken)} />
     </>
   );
 }

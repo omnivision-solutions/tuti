@@ -114,7 +114,7 @@ export async function createInvitation(
   if (full !== null) {
     return { error: teamFull(full) };
   }
-  const url = `${appUrl().origin}/invite/${token}`;
+  const url = `${appUrl().origin}/app/auth/invite/${token}`;
   if (linkOnly) {
     refresh();
     return { url, emailSent: false, unverified: true };
@@ -203,7 +203,7 @@ async function sendUnsent(projectSlug: string, ids: string[] | null): Promise<Re
       const token = generateInvitationToken();
       const now = new Date();
       await tx.invitation.update({ where: { id: invitation.id }, data: { tokenHash: hashInvitationToken(token), sentAt: now, createdById: session.user.id, expiresAt: invitationExpiry(now.getTime()) } });
-      return { ...invitation, email: invitation.email!, url: `${appUrl().origin}/invite/${token}` };
+      return { ...invitation, email: invitation.email!, url: `${appUrl().origin}/app/auth/invite/${token}` };
     });
     if (claim === "gone") {
       refresh();

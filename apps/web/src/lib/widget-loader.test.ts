@@ -278,7 +278,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   };
   page.document.body = new FakeElement("body", page);
   const script = new FakeElement("script", page);
-  script.src = "https://app.tuti.example/widget.js";
+  script.src = "https://app.tuti.example/api/widget.js";
   script.setAttribute("data-project", "acme");
   for (const [name, value] of Object.entries(attributes)) script.setAttribute(name, value);
   page.document.currentScript = script;
@@ -330,9 +330,9 @@ test("the launcher shows the team's name, colour, corner and icon once the app h
 
 test("the team's own icon is an image; one that doesn't load, an image without its address, or an unknown icon, is the chat bubble", async () => {
   const launcher = { label: "Help", color: null, position: "bottom-right" };
-  const own = loadWidget({ latest: { latest: null, launcher: { ...launcher, icon: "image", iconUrl: "https://app.tuti.example/media/m1/w480.webp?s=x" } } });
+  const own = loadWidget({ latest: { latest: null, launcher: { ...launcher, icon: "image", iconUrl: "https://app.tuti.example/api/media/m1/w480.webp?s=x" } } });
   await settled();
-  expect(own.button!.icon).toEqual({ src: "https://app.tuti.example/media/m1/w480.webp?s=x" });
+  expect(own.button!.icon).toEqual({ src: "https://app.tuti.example/api/media/m1/w480.webp?s=x" });
   expect((own.button!.children[0] as FakeElement).alt).toBe("");
   // One that doesn't load is the chat bubble.
   (own.button!.children[0] as FakeElement & { onerror(): void }).onerror();

@@ -9,7 +9,7 @@ import { docsUrl, REPO_URL } from "./links";
 import { SECTIONS } from "./sections";
 import { MobileNav, SignedOutLinks, SiteNav } from "./site-nav";
 
-/** Apex site: marketing and team sign-in/up, every page under one header and footer. */
+/** Apex site: the marketing pages, under one header and footer (the app's sign-in pages have their own, under /app/auth). */
 export default async function MarketingLayout({ children }: LayoutProps<"/">) {
   const session = await getSession();
   const docs = await docsUrl();

@@ -40,7 +40,7 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   const gina = await newPerson(browser, APP_URL);
   const email = `e2e-${randomUUID()}@example.com`;
   const google = { sub: randomUUID(), email, name: "Gina Google" };
-  await gina.goto("/sign-up");
+  await gina.goto("/app/auth/sign-up");
   await expect(gina.getByRole("button", { name: "Continue with GitHub" })).toBeVisible();
   await checkpoint(gina, "sign-up");
 
@@ -72,15 +72,15 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   await expect(gina.getByText("Not verified")).toHaveCount(0);
   // No password to change: one can be set by email.
   await expect(gina.getByText("You sign in with Google.")).toBeVisible();
-  await expect(gina.getByRole("link", { name: "set one by email" })).toHaveAttribute("href", "/forgot-password");
+  await expect(gina.getByRole("link", { name: "set one by email" })).toHaveAttribute("href", "/app/auth/forgot-password");
   await checkpoint(gina, "account-without-password");
 
   // Signed out, Continue with Google on the sign-in page is the same account, and `next` is where it goes.
   await signOut(gina);
-  await gina.goto("/sign-in?next=/app/account");
+  await gina.goto("/app/auth/sign-in?next=/app/account");
   await nextSignIn(gina, "google", google);
   await gina.getByRole("button", { name: "Continue with Google" }).click();
-  // Its path: "**/app/account" would match the page it starts on (/sign-in?next=/app/account), before Google's answer.
+  // Its path: "**/app/account" would match the page it starts on (/app/auth/sign-in?next=/app/account), before Google's answer.
   await gina.waitForURL((url) => url.pathname === "/app/account");
   // Signing in again (the same Google account) keeps nothing of Google's either.
   expect(await storedTokens(email, "google")).toEqual([{ accessToken: null, refreshToken: null, idToken: null }]);
@@ -92,7 +92,7 @@ test("someone with a verified account continues with GitHub and is signed in to 
   await olive.goto(linkIn(await latestEmailTo(olive.email, { subject: /verify/i }), `${APP_URL}/api/auth/verify-email`));
   await signOut(olive);
 
-  await olive.goto("/sign-in");
+  await olive.goto("/app/auth/sign-in");
   await nextSignIn(olive, "github", { email: olive.email, name: "Olive on GitHub" });
   await olive.getByRole("button", { name: "Continue with GitHub" }).click();
   await olive.waitForURL(/\/app$/);
@@ -108,13 +108,13 @@ test("Continue with Google doesn't sign in to an account whose address isn't ver
   // Someone signed up with this address (not verified): continuing with Google as it doesn't sign in to that account.
   const ivy = await signUp(browser, APP_URL, "Ivy");
   await signOut(ivy);
-  await ivy.goto("/sign-in");
+  await ivy.goto("/app/auth/sign-in");
   await nextSignIn(ivy, "google", { email: ivy.email, name: "Ivy" });
   await ivy.getByRole("button", { name: "Continue with Google" }).click();
   await ivy.waitForURL("**/sign-in?**");
   await expect(ivy.getByText("This email already has a Tuti account that isn't verified yet.", { exact: false })).toBeVisible();
   // Setting a password by email verifies the address: the way through.
-  await expect(ivy.getByRole("link", { name: "Set a password by email" })).toHaveAttribute("href", "/forgot-password");
+  await expect(ivy.getByRole("link", { name: "Set a password by email" })).toHaveAttribute("href", "/app/auth/forgot-password");
   await checkpoint(ivy, "account-not-verified");
   await ivy.goto("/app");
   await ivy.waitForURL("**/sign-in");
@@ -123,13 +123,13 @@ test("Continue with Google doesn't sign in to an account whose address isn't ver
 test("an address Google hasn't verified signs nobody in", async ({ browser }) => {
   const visitor = await newPerson(browser, APP_URL);
   const email = `e2e-${randomUUID()}@example.com`;
-  await visitor.goto("/sign-up");
+  await visitor.goto("/app/auth/sign-up");
   await nextSignIn(visitor, "google", { email, name: "Una", verified: false });
   await visitor.getByRole("button", { name: "Continue with Google" }).click();
   await visitor.waitForURL("**/sign-up?**");
   await expect(visitor.getByText("Signing in with Google needs an email address Google has verified.", { exact: false })).toBeVisible();
   // No account was made: its owner can still sign up with it.
-  await visitor.goto("/sign-up");
+  await visitor.goto("/app/auth/sign-up");
   await fillSignUp(visitor, "Una", email);
   await visitor.waitForURL(/\/app$/);
 });

@@ -130,7 +130,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   // Custom code that adds the widget its own way (here without its launcher): it gives way to the portal's own, which Ask AI
   // and the reader's sign-in here need. One launcher, the portal's. On the Tuti address, where their code doesn't run, the
   // portal's is there too.
-  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
+  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/api/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
   await owner.getByRole("button", { name: "Save changes" }).click();
   // Saved once it has nothing left to save (the first save's toast may still be up).
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
@@ -145,7 +145,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   const api = await apiFor(owner, slug);
   await api("/widget", { onPortal: false }, "PATCH");
   await owner.goto(`/app/${slug}/customize/custom-code`);
-  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`);
+  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/api/widget.js" data-project="${slug}" async></script>`);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await visitor.goto("/feedback/feature-requests");
@@ -155,7 +155,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${domainUrl}/widget`);
   // Added without its launcher (data-hide-launcher), it brings none back.
-  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
+  await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/api/widget.js" data-project="${slug}" data-hide-launcher async></script>`);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await visitor.goto("/feedback/feature-requests");
@@ -164,7 +164,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   // Nor hidden through TutiSettings.
   await owner
     .getByLabel("Custom HTML")
-    .fill(`<script>window.TutiSettings = { hideLauncher: true };</script><script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`);
+    .fill(`<script>window.TutiSettings = { hideLauncher: true };</script><script src="${APP_URL}/api/widget.js" data-project="${slug}" async></script>`);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await visitor.goto("/feedback/feature-requests");
@@ -176,9 +176,9 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(visitor).toHaveURL(`${domainUrl}/sign-in?next=%2Ffeedback%2Ffeature-requests`);
   // The account is made on the app (a password is never typed on the team's domain), and back.
   await visitor.getByRole("link", { name: "Create an account" }).click();
-  await visitor.waitForURL((url) => url.origin === APP_URL && url.pathname === "/sign-up");
+  await visitor.waitForURL((url) => url.origin === APP_URL && url.pathname === "/app/auth/sign-up");
   await fillSignUp(visitor, "Ada", `e2e-${randomUUID()}@example.com`);
-  await visitor.waitForURL((url) => url.pathname === "/continue");
+  await visitor.waitForURL((url) => url.pathname === "/app/auth/continue");
   await backToPortal(visitor);
   await expect(visitor).toHaveURL(`${domainUrl}/feedback/feature-requests`);
   await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();

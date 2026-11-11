@@ -43,7 +43,7 @@ test("an owner invites someone by email, who signs up from the email and joins",
   const email = await latestEmailTo(inviteeEmail);
   expect(email.subject).toBe("Olive Owner invited you to Acme on Tuti");
   const invitee = await newPerson(browser, APP_URL);
-  await invitee.goto(linkIn(email, `${APP_URL}/invite/`));
+  await invitee.goto(linkIn(email, `${APP_URL}/app/auth/invite/`));
   await expect(invitee.getByText(`This invite is for ${inviteeEmail}`)).toBeVisible();
   await checkpoint(invitee, "invite-page-signed-out");
 
@@ -152,7 +152,7 @@ test("an invite for someone else says so", async ({ browser }, testInfo) => {
   await expect(owner.getByText(`Invite sent to ${inviteeEmail}`)).toBeVisible();
 
   const someoneElse = await signUp(browser, APP_URL, "Mallory");
-  await someoneElse.goto(linkIn(await latestEmailTo(inviteeEmail), `${APP_URL}/invite/`));
+  await someoneElse.goto(linkIn(await latestEmailTo(inviteeEmail), `${APP_URL}/app/auth/invite/`));
   await expect(someoneElse.getByText(`You're signed in as ${someoneElse.email}`)).toBeVisible();
   await expect(someoneElse.getByRole("button", { name: "Accept invite" })).toHaveCount(0);
   await checkpoint(someoneElse, "invite-page-other-account");

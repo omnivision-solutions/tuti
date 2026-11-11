@@ -16,7 +16,7 @@ Feedback, Help center (your docs) and Messages, are at the bottom of the panel, 
 script tag anywhere in your pages:
 
 ```html
-<script src="https://tuti.so/widget.js" data-project="acme" async></script>
+<script src="https://tuti.so/api/widget.js" data-project="acme" async></script>
 ```
 
 `data-project` is your project's URL name. The panel is your portal's `/widget` page in
@@ -87,14 +87,14 @@ already inert when it covers the page stay inert. With a modal of yours open (he
 
 ```html
 <!-- Launcher (the default) -->
-<script src="https://tuti.so/widget.js" data-project="acme" async></script>
+<script src="https://tuti.so/api/widget.js" data-project="acme" async></script>
 
 <!-- Sidebar -->
-<script src="https://tuti.so/widget.js" data-project="acme" data-display="sidebar" async></script>
+<script src="https://tuti.so/api/widget.js" data-project="acme" data-display="sidebar" async></script>
 
 <!-- Inline -->
 <div data-tuti-inline></div>
-<script src="https://tuti.so/widget.js" data-project="acme" data-display="inline" async></script>
+<script src="https://tuti.so/api/widget.js" data-project="acme" data-display="inline" async></script>
 ```
 
 or before the script loads:
@@ -133,7 +133,7 @@ The panel and inline panels take it, on every page the panel opens, and so does 
 you gave it a colour in Customize → Widget (it's the same in both).
 
 ```html
-<script src="https://tuti.so/widget.js" data-project="acme" data-theme="dark" async></script>
+<script src="https://tuti.so/api/widget.js" data-project="acme" data-theme="dark" async></script>
 ```
 
 If your site switches between light and dark without reloading, tell the widget with
@@ -145,7 +145,7 @@ unless it has its own colour.
 To leave out Tuti's button and open the panel from your own, add `data-hide-launcher`:
 
 ```html
-<script src="https://tuti.so/widget.js" data-project="acme" data-hide-launcher async></script>
+<script src="https://tuti.so/api/widget.js" data-project="acme" data-hide-launcher async></script>
 <button onclick="Tuti.open()">Feedback</button>
 ```
 

@@ -19,7 +19,7 @@ export const planPriceText = (plan: keyof typeof PLAN_PRICES, interval: "month" 
 export const BADGE_PRICE = 49;
 
 /**
- * How tuti.so/license describes a licence's price and billing, from the intervals it's sold in:
+ * How tuti.so/app/license describes a licence's price and billing, from the intervals it's sold in:
  * "$49 a month" and "each month or each year", or "billed yearly" when only yearly is.
  */
 export function licenseBilling({ month, year }: { month: boolean; year: boolean }): { price: string; billed: string } {

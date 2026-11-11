@@ -38,7 +38,7 @@ export async function CompaniesTable({
         title="No companies yet"
         description="Your users' company property puts them here, from your app's sign-in token or the API (users.sync)."
         action={
-          <a href="/docs/api#users.sync" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <a href="/api/docs#users.sync" className={buttonVariants({ variant: "outline", size: "sm" })}>
             Syncing users
           </a>
         }

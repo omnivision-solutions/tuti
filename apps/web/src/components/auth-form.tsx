@@ -27,7 +27,8 @@ import type { SocialProvider, SocialSignInError } from "@/lib/social-sign-in";
  * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account".
  * `social` (the apex only) puts Continue with Google / GitHub above the form; `socialError` says why one didn't work.
  * `description` replaces the line under the title, and `forgotPasswordHref` where "Forgot your password?" goes (on the app,
- * on the way back to a portal: that portal's, so the reset comes back there).
+ * on the way back to a portal: that portal's, so the reset comes back there). `pages` is where the other sign-in pages are:
+ * the app's under /app/auth, a portal's at its root.
  */
 export function AuthForm({
   mode,
@@ -44,6 +45,7 @@ export function AuthForm({
   title,
   mark,
   teamHref,
+  pages = "",
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -60,6 +62,7 @@ export function AuthForm({
   title?: string;
   mark?: React.ReactNode;
   teamHref?: string;
+  pages?: string;
 }) {
   const at = usePortalHref();
   const authClient = usePortalAuthClient();
@@ -150,7 +153,7 @@ export function AuthForm({
                 {socialError.reset && (
                   <>
                     {" "}
-                    <Link href={forgotPasswordHref ?? "/forgot-password"}>Set a password by email</Link>
+                    <Link href={forgotPasswordHref ?? at(`${pages}/forgot-password`)}>Set a password by email</Link>
                   </>
                 )}
               </AlertDescription>
@@ -187,7 +190,7 @@ export function AuthForm({
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                   <FieldLabel htmlFor="password">Password</FieldLabel>
                   {forgotPassword && !isSignUp && (
-                    <Link href={forgotPasswordHref ?? at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+                    <Link href={forgotPasswordHref ?? at(`${pages}/forgot-password`)} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
                       Forgot your password?
                     </Link>
                   )}
@@ -253,7 +256,7 @@ export function AuthForm({
               {isSignUp ? "Have an account? " : "New here? "}
               <Link
                 href={at(
-                  `${isSignUp ? "/sign-in" : "/sign-up"}?${new URLSearchParams({
+                  `${pages}/${isSignUp ? "sign-in" : "sign-up"}?${new URLSearchParams({
                     ...(next && { next }),
                     ...(defaultEmail && { email: defaultEmail }),
                   })}`,

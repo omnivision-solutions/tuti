@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
-import ContinuePage from "@/app/(marketing)/continue/page";
+import ContinuePage from "@/app/app/(account-pages)/auth/continue/page";
 import { GET as startContinue } from "@/app/portal/[project]/(site)/continue/route";
 import { forgetCustomDomain } from "@/server/custom-domains";
 import { getOwnerProject } from "@/server/membership";
@@ -67,7 +67,7 @@ test("the portal sets a state cookie and sends the browser to the app host with 
     params: Promise.resolve({ project: slug }),
   });
   const location = new URL(response.headers.get("location")!);
-  expect(location.origin + location.pathname).toBe("http://tuti.localhost:3100/continue");
+  expect(location.origin + location.pathname).toBe("http://tuti.localhost:3100/app/auth/continue");
   expect(location.searchParams.get("portal")).toBe(slug);
   expect(location.searchParams.get("redirect")).toBe("/feedback/ideas");
   const state = location.searchParams.get("state");
@@ -103,7 +103,7 @@ test("the \"Continue to\" card shows where it goes: the portal's address, its te
     actAs(ada);
     request.host = APP_HOST;
     return textOf(
-      await ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve({ portal: slug, state: randomSecret(), redirect: "/" }) } as PageProps<"/continue">),
+      await ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve({ portal: slug, state: randomSecret(), redirect: "/" }) } as PageProps<"/app/auth/continue">),
     );
   };
   expect(await card()).toContain(`Use your Tuti account on ${(await prisma.project.findUniqueOrThrow({ where: { slug } })).name}'s portal, at ${portalHost()}.`);

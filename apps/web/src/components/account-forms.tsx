@@ -110,7 +110,7 @@ function PasswordForm({ noPassword }: { noPassword?: NoPassword }) {
               <>
                 {" "}
                 To use a password too,{" "}
-                <Link href="/forgot-password" className="text-foreground underline underline-offset-4">
+                <Link href="/app/auth/forgot-password" className="text-foreground underline underline-offset-4">
                   set one by email
                 </Link>
                 .

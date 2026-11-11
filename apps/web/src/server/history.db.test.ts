@@ -11,8 +11,8 @@ import { widgetToken } from "@/lib/widget-session";
 import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 
 import { OperationError } from "./operations/define";
-import ConversationPage from "@/app/app/[project]/inbox/[number]/page";
-import TeamPostPage from "@/app/app/[project]/p/[number]/page";
+import ConversationPage from "@/app/app/(workspace)/[project]/inbox/[number]/page";
+import TeamPostPage from "@/app/app/(workspace)/[project]/p/[number]/page";
 import { PersonPanel } from "@/components/inbox/person-panel";
 
 import { searchApp } from "./app-search";

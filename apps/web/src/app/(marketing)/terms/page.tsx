@@ -13,7 +13,7 @@ export default function TermsPage() {
     <LegalPage title="Terms of Service" updated="6 November 2026">
       <p>
         These terms cover your use of Tuti&apos;s hosted service at tuti.so, including the app, the portals, the widget and the
-        API, and licences bought at tuti.so/license (the &quot;Service&quot;). By creating an account or using the Service you agree to them. If you use it for an
+        API, and licences bought at tuti.so/app/license (the &quot;Service&quot;). By creating an account or using the Service you agree to them. If you use it for an
         organisation, you agree for that organisation and confirm you may do so. Our{" "}
         <Link href="/privacy" className="font-medium text-primary underline-offset-4 hover:underline">
           Privacy Policy
@@ -80,7 +80,7 @@ export default function TermsPage() {
 
       <h2>Licences for self-hosted Tuti</h2>
       <p>
-        A licence bought at tuti.so/license lets one project on one installation hide &quot;Powered by tuti&quot;, as
+        A licence bought at tuti.so/app/license lets one project on one installation hide &quot;Powered by tuti&quot;, as
         the additional terms to Tuti&apos;s licence allow. It&apos;s billed and renews like a plan (above): monthly or
         yearly through Stripe, until you cancel, running to the end of the paid period. Your installation fetches and
         renews its licence key from tuti.so; when the licence ends, its key isn&apos;t renewed, and once it expires the badge returns.

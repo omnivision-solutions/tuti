@@ -107,5 +107,5 @@ export async function setNewPassword(form: FormData): Promise<{ error: string } 
   // Signing in with it on the app, saying it's changed. Asked for a portal: then the "Continue to <project>" card, with the
   // portal's address, for this account to click on; never off the app by itself (a team may run that address).
   const next = reset.askedOn ? await signedWayBack(reset.askedOn, "/", reset.userId) : null;
-  return { location: `/sign-in?${new URLSearchParams({ reset: "done", ...(next && { next }) })}` };
+  return { location: `/app/auth/sign-in?${new URLSearchParams({ reset: "done", ...(next && { next }) })}` };
 }
