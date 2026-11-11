@@ -210,10 +210,10 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
       <MarkRead slug={slug} number={number} seen={conversation.messages.at(-1)?.createdAt.toISOString() ?? null} unread={read?.unread ?? false} />
       <ConversationPane open detailsHidden={detailsHidden}>
-        <header data-slot="page-header" data-inbox-header className="inbox-conversation-head inbox-surface col-start-1 row-start-1 rounded-b-none px-6 py-3 shadow-none @max-[57rem]/app:px-3.5 @max-[57rem]/app:pt-3.5 @min-[77rem]/app:group-data-[details=hidden]/thread:px-8 [&>a]:mb-2.25 [&>a]:text-xs [&>a]:leading-5 max-md:[&>a]:mb-3 min-w-0 min-h-0 bg-card rounded-t-2xl max-md:rounded-t-xl">
+        <header data-slot="page-header" data-inbox-header className="@container/conversation-head inbox-conversation-head inbox-surface col-start-1 row-start-1 rounded-b-none px-6 py-3 shadow-none @max-[57rem]/app:px-3.5 @max-[57rem]/app:pt-3.5 @min-[77rem]/app:group-data-[details=hidden]/thread:px-8 [&>a]:mb-2.25 [&>a]:text-xs [&>a]:leading-5 max-md:[&>a]:mb-3 min-w-0 min-h-0 bg-card rounded-t-2xl max-md:rounded-t-xl">
           <BackLink href={inboxHref(slug, view, null, pages)}>Inbox</BackLink>
-          <div className="inbox-title-row flex items-start justify-between gap-3 @max-[57rem]/app:gap-2 [&>h1]:min-w-0 [&>h1]:text-[1.5625rem] [&>h1]:leading-[1.2] [&>h1]:font-[650] [&>h1]:tracking-[-0.025em] [&>h1]:wrap-anywhere @max-[57rem]/app:[&>h1]:flex-1 @max-[57rem]/app:[&>h1]:text-[1.4375rem] @max-[57rem]/app:[&>h1]:leading-[1.18] @min-[77rem]/app:group-data-[details=hidden]/thread:[&>h1]:text-[1.6875rem]">
-            <h1>{conversation.subject}</h1>
+          <div className="inbox-title-row flex items-start justify-between gap-3 @max-[57rem]/app:gap-2 [&>h1]:min-w-0 [&>h1]:flex-1 [&>h1]:text-[1.5625rem] [&>h1]:leading-[1.2] [&>h1]:font-[650] [&>h1]:tracking-[-0.025em] [&>h1]:wrap-anywhere @max-[57rem]/app:[&>h1]:text-[1.4375rem] @max-[57rem]/app:[&>h1]:leading-[1.18] @min-[77rem]/app:group-data-[details=hidden]/thread:[&>h1]:text-[1.6875rem]">
+            <h1 title={conversation.subject}>{conversation.subject}</h1>
             <div className="inbox-title-actions flex flex-none items-center gap-0.5 @max-[57rem]/app:gap-px [&>button]:h-8 [&>button:first-child]:gap-1 [&>button:first-child]:px-2.25 max-md:[&>button:first-child]:px-1.75 [&>button:first-child>svg]:size-3.5">
               <CloseButton projectSlug={slug} number={conversation.number} closed={conversation.status === "CLOSED"} />
               <ConversationMore>

@@ -200,7 +200,7 @@ test("long names and subjects fit both laptop widths with wrapping details label
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const teammate = "Olive Owner with a very long name that still fits the assignment control";
   const person = "Sam Smith with a very long customer name that stays inside the list";
-  const subject = "Can I export the reports for all our calendars across the entire company for the weekly planning meeting?";
+  const subject = "Can I export all calendars across the entire company, including archived calendars and the complete history, so we can review every team together at our weekly planning meeting?";
   const owner = await signUp(browser, APP_URL, teammate);
   await createProject(owner, "Acme Calendar", slug);
   await verifyEmail(owner);
@@ -220,7 +220,10 @@ test("long names and subjects fit both laptop widths with wrapping details label
     await details.locator("summary", { hasText: "Other conversations from this person" }).click();
     await expect(details.getByRole("link", { name: `${subject} The previous question.` })).toBeVisible();
     const title = owner.locator(".inbox-title-row");
-    await expect(title.getByRole("heading", { name: subject, exact: true })).toBeVisible();
+    const heading = title.getByRole("heading", { name: subject, exact: true });
+    await expect(heading).toBeVisible();
+    await expect(heading).toHaveAttribute("title", subject);
+    expect(await heading.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
     await expect(title.getByRole("button", { name: "Close", exact: true })).toBeInViewport();
     expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
     for (const box of [title, details, details.locator("summary", { hasText: "Other conversations from this person" })]) {

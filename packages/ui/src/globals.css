@@ -793,3 +793,10 @@
   color: var(--color-soft-foreground);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-primary) 35%, transparent);
 }
+
+/* Pointer capture keeps resizing outside the gap; descendants keep the same cursor and cannot select text. */
+:root[data-pane-resizing],
+:root[data-pane-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}

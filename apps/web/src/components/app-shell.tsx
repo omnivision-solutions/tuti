@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { type ReactNode, useLayoutEffect, useState } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { restorePaneWidths } from "@/lib/pane-width";
 import { DOCS_TREE_FOLDED_ATTRIBUTE, DOCS_TREE_FOLDED_KEY } from "@/lib/docs-tree-fold";
 
 /**
@@ -24,6 +25,7 @@ const DOCS = /^\/app\/[^/]+\/docs(\/|$)/;
 export function AppShell({ sidebar, header, banners, children, defaultSidebarOpen = false }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode; defaultSidebarOpen?: boolean }) {
   // The inline script covers full loads; client entry from marketing or sign-in restores the fold before paint too.
   useLayoutEffect(() => {
+    restorePaneWidths();
     try {
       document.documentElement.toggleAttribute(DOCS_TREE_FOLDED_ATTRIBUTE, localStorage.getItem(DOCS_TREE_FOLDED_KEY) === "1");
     } catch {
@@ -50,7 +52,7 @@ export function AppShell({ sidebar, header, banners, children, defaultSidebarOpe
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
           // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height when its columns fit. On
           // phones, room at the bottom for actions pinned there (PageActions), and for Tuti's own chat launcher (AppWidget; not in the Inbox or on Customize).
-          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 @min-[57rem]/app:has-data-fills-window:h-dvh @min-[57rem]/app:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24 has-[>.inbox-workspace]:py-4 has-[>.inbox-workspace]:pr-4 has-[>.inbox-workspace]:pl-12 @max-[57rem]/app:has-[>.inbox-workspace]:h-dvh @max-[57rem]/app:has-[>.inbox-workspace]:min-h-0 @max-[57rem]/app:has-[>.inbox-workspace]:flex-none @max-[57rem]/app:has-[>.inbox-workspace]:gap-4 @max-[57rem]/app:has-[>.inbox-workspace]:p-2">
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 @min-[57rem]/app:has-data-fills-window:h-dvh @min-[57rem]/app:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24 has-[>.inbox-workspace]:@container/inbox has-[>.inbox-workspace]:py-4 has-[>.inbox-workspace]:pr-4 has-[>.inbox-workspace]:pl-12 @max-[57rem]/app:has-[>.inbox-workspace]:h-dvh @max-[57rem]/app:has-[>.inbox-workspace]:min-h-0 @max-[57rem]/app:has-[>.inbox-workspace]:flex-none @max-[57rem]/app:has-[>.inbox-workspace]:gap-4 @max-[57rem]/app:has-[>.inbox-workspace]:p-2">
             {banners}
             {children}
           </div>

@@ -5,7 +5,6 @@ import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useInsetBreakpoint } from "@/hooks/use-inset-breakpoint";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 
 const listeners = new Set<() => void>();
@@ -18,10 +17,33 @@ const subscribe = (listener: () => void) => {
 const hiddenNow = () => document.cookie.split("; ").includes(`${DETAILS_HIDDEN_COOKIE}=1`);
 const useHidden = (server: boolean) => useSyncExternalStore(subscribe, hiddenNow, () => server);
 const OPEN_DETAILS = "tuti:conversation-details";
+// CSS decides from the actual Inbox container; the toggle and sheet use the same decision.
+const wide = () => {
+  const workspace = document.querySelector(".inbox-workspace");
+  return !!workspace && getComputedStyle(workspace).getPropertyValue("--inbox-details-beside").trim() === "1";
+};
+const subscribeWidth = (listener: () => void) => {
+  const sizes = new ResizeObserver(listener);
+  const workspace = document.querySelector(".inbox-workspace");
+  if (workspace) sizes.observe(workspace);
+  let fontSize = document.documentElement.style.fontSize;
+  const font = new MutationObserver((records) => {
+    const next = document.documentElement.style.fontSize;
+    // Width preference writes do not change whether details fit.
+    if (next === fontSize && records.every((record) => record.attributeName !== "class")) return;
+    fontSize = next;
+    listener();
+  });
+  font.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
+  return () => {
+    sizes.disconnect();
+    font.disconnect();
+  };
+};
 
 export function ConversationDetails({ hidden, children }: { hidden: boolean; children: ReactNode }) {
   return (
-    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_18.75rem] grid-rows-[auto_minmax(0,1fr)] gap-x-3 data-[details=hidden]:grid-cols-[minmax(0,1fr)] @max-[77rem]/app:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
+    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @min-[77rem]/app:@min-[calc(480px_+_38.5rem)]/inbox:grid-cols-[minmax(480px,1fr)_minmax(15rem,18.75rem)] grid-rows-[auto_minmax(0,1fr)] gap-x-3 data-[details=hidden]:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
       {children}
     </div>
   );
@@ -30,7 +52,7 @@ export function ConversationDetails({ hidden, children }: { hidden: boolean; chi
 /** The same details and controls, in a card when the inset has room and a sheet otherwise. */
 export function DetailsPanel({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const beside = useInsetBreakpoint(77);
+  const beside = useSyncExternalStore(subscribeWidth, wide, () => true);
   // Reset during the breakpoint render so narrowing cannot resurrect a sheet from the previous phone view.
   if (beside && open) setOpen(false);
   useEffect(() => {
@@ -40,7 +62,7 @@ export function DetailsPanel({ children }: { children: ReactNode }) {
   }, []);
   return (
     <>
-      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details inbox-surface col-start-2 row-span-2 row-start-1 flex flex-col overflow-hidden group-data-[details=hidden]/thread:hidden @max-[77rem]/app:hidden min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
+      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details inbox-surface col-start-2 row-span-2 row-start-1 hidden @min-[77rem]/app:@min-[calc(480px_+_38.5rem)]/inbox:flex flex-col overflow-hidden group-data-[details=hidden]/thread:hidden min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
         <h2 className="px-4.5 pt-5 pb-3 font-sans text-sm leading-[normal] font-semibold">Conversation details</h2>
         <div className="inbox-details-scroll min-h-0 overflow-y-auto px-4.5 pb-4.5 [scrollbar-width:thin] group-[.inbox-details-sheet]/details:px-5">{children}</div>
       </aside>
@@ -59,7 +81,7 @@ export function DetailsPanel({ children }: { children: ReactNode }) {
 
 export function DetailsToggle({ hidden: server }: { hidden: boolean }) {
   const hidden = useHidden(server);
-  const beside = useInsetBreakpoint(77);
+  const beside = useSyncExternalStore(subscribeWidth, wide, () => true);
   const label = !beside || hidden ? "Show details" : "Hide details";
   return (
     <Button
