@@ -76,3 +76,13 @@ it.each([
   expect(scroll).toHaveBeenCalled();
   expect(window.getSelection()?.anchorNode).toBe(target);
 });
+
+it("keeps hard-break boundaries when jumping past an earlier prefixed clause", () => {
+  const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+  editor.innerHTML = "<p>非公開の記事は。</p><p>見出し<br>公開の記事は</p>";
+  const target = editor.querySelectorAll("p")[1]!;
+  const scroll = vi.spyOn(target, "scrollIntoView");
+  focusArticleSentence("公開の記事は");
+  expect(scroll).toHaveBeenCalled();
+  expect(window.getSelection()?.anchorNode).toBe(target);
+});

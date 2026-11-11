@@ -7,6 +7,7 @@ export async function publishBatch<T>(articles: T[], publish: (article: T) => Pr
   const published: T[] = [];
   const failed: PublishFailure<T>[] = [];
   const unattempted: PublishFailure<T>[] = [];
+  let stopped: PublishFailure<T> | null = null;
   for (const [index, article] of articles.entries()) {
     let result: PublishResult;
     try {
@@ -18,11 +19,12 @@ export async function publishBatch<T>(articles: T[], publish: (article: T) => Pr
       published.push(article);
       continue;
     }
-    failed.push({ article, error: result.error, code: result.code });
     if (stopsBatch.has(result.code ?? "")) {
+      stopped = { article, error: result.error, code: result.code };
       unattempted.push(...articles.slice(index + 1).map((remaining) => ({ article: remaining, error: `Not attempted: ${result.error}`, code: result.code })));
       break;
     }
+    failed.push({ article, error: result.error, code: result.code });
   }
-  return { published, failed, unattempted };
+  return { published, failed, unattempted, stopped };
 }

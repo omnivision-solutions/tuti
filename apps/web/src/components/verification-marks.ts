@@ -12,6 +12,23 @@ const key = new PluginKey("verificationHighlights");
 
 /** Match the checked words across formatting spans, without annotating a replacement claim. */
 export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
+  // Match and map the same text, including inline leaves and hard-break separators.
+  const blocks: { source: string; positions: number[] }[] = [];
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return;
+    let source = "";
+    const positions: number[] = [];
+    node.descendants((child, offset) => {
+      if (!child.isText && !child.isLeaf) return;
+      const value = child.type.name === "hardBreak" ? "\n" : child.textContent;
+      source += value;
+      for (let characterIndex = 0; characterIndex < value.length; characterIndex++) {
+        positions.push(pos + 1 + offset + (child.isText ? characterIndex : 0));
+      }
+    });
+    blocks.push({ source, positions });
+  });
+  const texts = blocks.map(({ source }) => source);
   const ranges: {
     from: number;
     to: number;
@@ -23,33 +40,17 @@ export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
     .forEach((finding, index) => {
       const wanted = normalize(finding.source ?? finding.statement);
       if (!wanted) return;
-      const blocks: { node: Node; pos: number }[] = [];
-      doc.descendants((node, pos) => { if (node.isTextblock) blocks.push({ node, pos }); });
-      const texts = blocks.map(({ node }) => node.textContent);
       const exact = findSentenceQuote(finding.source ?? finding.statement, texts);
       const chosen = exact?.index ?? matchingSentence(finding.source ?? finding.statement, texts);
-      doc.descendants((node, pos) => {
-        if (!node.isTextblock || blocks[chosen]?.pos !== pos) return;
-        let source = "";
-        const positions: number[] = [];
-        node.descendants((child, offset) => {
-          if (!child.isText) return;
-          const value = child.text ?? "";
-          source += value;
-          for (let characterIndex = 0; characterIndex < value.length; characterIndex++) {
-            positions.push(pos + 1 + offset + characterIndex);
-          }
-        });
-        const match = exact ?? sentenceQuoteRange(source, source);
-        if (!match) return;
-        const from = positions[match.from]!;
-        const to = positions[match.to - 1]! + 1;
-        ranges.push({
-          from,
-          to,
-          number: index + 1,
-          verdict: finding.verdict as "outdated" | "unclear",
-        });
+      const block = blocks[chosen];
+      if (!block) return;
+      const match = exact ?? sentenceQuoteRange(block.source, block.source);
+      if (!match) return;
+      ranges.push({
+        from: block.positions[match.from]!,
+        to: block.positions[match.to - 1]! + 1,
+        number: index + 1,
+        verdict: finding.verdict as "outdated" | "unclear",
       });
     });
   return ranges;

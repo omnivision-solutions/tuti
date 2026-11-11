@@ -394,23 +394,24 @@ test("Publish all closes with partial success after a server action loses its co
   await expect(queue.getByRole("listitem")).toHaveCount(2);
   const unattempted = queue.getByRole("listitem").filter({ hasText: "Invite your team" });
   await expect(unattempted.getByRole("button", { name: "Publish", exact: true })).toBeVisible();
+  await expect(queue.getByRole("listitem").filter({ hasText: "Unreachable draft" }).getByRole("button", { name: "Publish", exact: true })).toBeVisible();
   await expect(queue.getByRole("button", { name: "Publish all", exact: true })).toBeVisible();
-  await expect(queue.getByRole("link", { name: "Review article", exact: true })).toHaveCount(1);
+  await expect(queue.getByRole("link", { name: "Review article", exact: true })).toHaveCount(0);
   await expect(queue.getByRole("link", { name: "Unreachable draft", exact: true })).toBeFocused();
   await expect(team.locator(".docs-live-footer")).toContainText("1 article live");
   expect(requests).toBe(2);
   await checkpoints(testInfo)(team, "docs-publish-connection-failure", { fullPage: false });
   await queue.getByRole("button", { name: "Publish all", exact: true }).click();
-  const retry = team.getByRole("alertdialog", { name: "Publish 1 article?", exact: true });
+  const retry = team.getByRole("alertdialog", { name: "Publish 2 articles?", exact: true });
   await retry.getByRole("button", { name: "Publish all", exact: true }).click();
   await expect(retry).toBeHidden();
   await expect(unattempted).toHaveCount(0);
-  await expect(queue.getByRole("listitem")).toHaveCount(1);
-  await expect(team.locator(".docs-live-footer")).toContainText("2 articles live");
-  expect(requests).toBe(3);
+  await expect(queue.getByRole("listitem")).toHaveCount(0);
+  await expect(team.locator(".docs-live-footer")).toContainText("3 articles live");
+  expect(requests).toBe(4);
 });
 
-test("Publish all stops at the article limit, reports partial success and excludes failed rows from retries", async ({ browser }) => {
+test("Publish all stops at the article limit, reports partial success and keeps refused rows publishable", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, CLOUD_URL, "Tess Team");
   await createProject(team, "Acme", slug, cloudPortalUrl);
@@ -437,8 +438,9 @@ test("Publish all stops at the article limit, reports partial success and exclud
   await expect(confirm).toBeHidden();
   await expect(queue.getByRole("listitem")).toHaveCount(2);
   await expect(queue.getByRole("listitem").filter({ hasText: "Last draft" }).getByRole("button", { name: "Publish", exact: true })).toBeVisible();
+  await expect(queue.getByRole("listitem").filter({ hasText: "Limit draft" }).getByRole("button", { name: "Publish", exact: true })).toBeVisible();
   await expect(queue.getByRole("button", { name: "Publish all", exact: true })).toBeVisible();
-  await expect(queue.getByRole("link", { name: "Review article", exact: true })).toHaveCount(1);
+  await expect(queue.getByRole("link", { name: "Review article", exact: true })).toHaveCount(0);
   await expect(queue.getByRole("link", { name: "Limit draft", exact: true })).toBeFocused();
   await expect(team.locator(".docs-live-footer")).toContainText("50 articles live");
 });

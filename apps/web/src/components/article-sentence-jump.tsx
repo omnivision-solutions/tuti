@@ -13,6 +13,7 @@ export function focusArticleSentence(sentence: string) {
   const texts = blocks.map((block) => {
     const text = block.cloneNode(true) as HTMLElement;
     text.querySelectorAll("[data-finding]").forEach((marker) => marker.remove());
+    text.querySelectorAll("br").forEach((lineBreak) => lineBreak.replaceWith("\n"));
     return text.textContent ?? "";
   });
   const exact = findSentenceQuote(sentence, texts);

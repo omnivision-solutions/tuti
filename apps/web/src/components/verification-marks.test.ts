@@ -1,4 +1,5 @@
 import { schemaFor } from "@tuti/content";
+import { Schema } from "@tiptap/pm/model";
 import { describe, expect, it } from "vitest";
 import { verificationRanges } from "./verification-marks";
 
@@ -37,6 +38,32 @@ describe("verification annotations", () => {
     expect(
       verificationRanges(doc("🗓 Each plan has 5 seats."), [...findings]),
     ).toEqual([{ from: 4, to: 25, number: 1, verdict: "outdated" }]);
+  });
+  it.each(["", "Before the break"])("keeps exact quote offsets after a hard break following %s", (prefix) => {
+    const quote = "Each plan has 5 seats";
+    const content = schema.nodeFromJSON({ type: "doc", content: [{ type: "paragraph", content: [
+      ...(prefix ? [{ type: "text", text: prefix }] : []),
+      { type: "hardBreak" },
+      { type: "text", text: "Each plan has " },
+      { type: "text", text: "5 seats", marks: [{ type: "bold" }] },
+    ] }] });
+    const ranges = verificationRanges(content, [{ statement: quote, verdict: "outdated" }]);
+    const from = 1 + prefix.length + 1;
+    expect(ranges).toEqual([{ from, to: from + quote.length, number: 1, verdict: "outdated" }]);
+    expect(content.textBetween(ranges[0]!.from, ranges[0]!.to)).toBe(quote);
+  });
+  it("maps non-text inline leaves with textContent without shifting a quote or producing NaN", () => {
+    const withLabel = new Schema({
+      nodes: schema.spec.nodes.addBefore("text", "inlineLabel", { inline: true, group: "inline", atom: true, leafText: () => "Context. " }),
+      marks: schema.spec.marks,
+    });
+    const quote = "Each plan has 5 seats";
+    const content = withLabel.nodeFromJSON({ type: "doc", content: [{ type: "paragraph", content: [
+      { type: "inlineLabel" }, { type: "text", text: quote },
+    ] }] });
+    expect(verificationRanges(content, [{ statement: quote, verdict: "outdated" }])).toEqual([
+      { from: 2, to: 2 + quote.length, number: 1, verdict: "outdated" },
+    ]);
   });
   it("annotates a paraphrased finding without changing its number or verdict", () => {
     expect(verificationRanges(doc("Every plan includes 5 seats for your team."), [{ statement: "Your team gets 5 seats with every plan", verdict: "outdated" }])).toMatchObject([{ from: 1, number: 1, verdict: "outdated" }]);

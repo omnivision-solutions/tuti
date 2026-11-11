@@ -68,7 +68,7 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
   const publish = () => {
     if (!selection) return;
     start(async () => {
-      const { published, failed, unattempted } = await publishBatch(selection.articles, (article) => article.published
+      const { published, failed, unattempted, stopped } = await publishBatch(selection.articles, (article) => article.published
         ? publishArticleChanges(projectSlug, article.slug, article.savedAt, article.revision)
         : publishArticle(projectSlug, article.slug, undefined, article.revision));
       setNeedsReview((previous) => {
@@ -81,13 +81,14 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
         for (const failure of failed) if (failure.code !== "edits_required" && failure.code !== "changed") next.set(failure.article.slug, failure.error);
         return next;
       });
-      const reviewSlug = failed[0]?.article.slug;
-      if (failed.length) setExpanded(true);
+      const notices = [...failed, ...(stopped ? [stopped] : []), ...unattempted];
+      const reviewSlug = notices[0]?.article.slug;
+      if (notices.length) setExpanded(true);
       setCompletion({ reviewSlug, published, index: selection.index });
       setOpen(false);
-      const notify = failed.length ? toast.warning : toast.success;
+      const notify = notices.length ? toast.warning : toast.success;
       notify(`Published ${plural(published.length, "article")}`, {
-        description: failed.length ? <ul className="space-y-1">{[...failed, ...unattempted].map(({ article, error, code }) => <li key={article.slug}>
+        description: notices.length ? <ul className="space-y-1">{notices.map(({ article, error, code }) => <li key={article.slug}>
           {article.title}: {code === "edits_required" ? "An Autopilot edit needs review first." : code === "changed" ? "Changed since you opened this page. Review before publishing." : error}
           {(code === "edits_required" || code === "changed") && <> <Link className="underline underline-offset-4" href={`/app/${projectSlug}/docs/${article.slug}`}>Review article</Link></>}
         </li>)}</ul> : undefined,

@@ -5,9 +5,8 @@ it("keeps earlier successes and stops further requests when publishing throws", 
   const publish = vi.fn().mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("Connection dropped"));
   expect(await publishBatch(["first", "unreachable", "unattempted"], publish)).toEqual({
     published: ["first"],
-    failed: [
-      { article: "unreachable", error: "Couldn't reach the server", code: "unreachable" },
-    ],
+    failed: [],
+    stopped: { article: "unreachable", error: "Couldn't reach the server", code: "unreachable" },
     unattempted: [
       { article: "unattempted", error: "Not attempted: Couldn't reach the server", code: "unreachable" },
     ],
@@ -28,17 +27,17 @@ it("continues after a deleted article or review hold and records what went live"
       { article: "held", error: "Review the edit", code: "edits_required" },
     ],
     unattempted: [],
+    stopped: null,
   });
   expect(publish.mock.calls).toEqual([["first"], ["deleted"], ["held"], ["last"]]);
 });
 
-it.each(["article_limit", "forbidden", "unauthorized"])("stops on %s and accounts for successes and unattempted articles", async (code) => {
+it.each(["article_limit", "forbidden", "unauthorized", "unreachable"])("stops on %s without treating its article as an article-specific failure", async (code) => {
   const publish = vi.fn().mockResolvedValueOnce({}).mockResolvedValueOnce({ error: "Publishing is unavailable", code });
   expect(await publishBatch(["first", "refused", "unattempted"], publish)).toEqual({
     published: ["first"],
-    failed: [
-      { article: "refused", error: "Publishing is unavailable", code },
-    ],
+    failed: [],
+    stopped: { article: "refused", error: "Publishing is unavailable", code },
     unattempted: [
       { article: "unattempted", error: "Not attempted: Publishing is unavailable", code },
     ],
