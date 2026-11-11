@@ -72,6 +72,8 @@ test("the deploy or join cutoff keeps historical, team-started and message-less 
   const ids = conversations.map((c) => c.id);
   const membership = await prisma.teamMember.findUniqueOrThrow({ where: { projectId_userId: { projectId: project.id, userId: owner.id } } });
   expect(membership.readsSince).toBeInstanceOf(Date);
+  // The recent question a second after the cutoff, not in the same millisecond, whatever the clocks do.
+  await prisma.conversationMessage.updateMany({ where: { conversationId: recent!.id }, data: { createdAt: new Date(membership.readsSince.getTime() + 1000) } });
   // A stored read timestamp before the cutoff must not bring the historical backlog back.
   await prisma.conversationRead.create({ data: { conversationId: old!.id, userId: owner.id, readAt: new Date("1999-01-01T00:00:00Z") } });
   const states = await conversationReads(ids, owner.id);
@@ -90,6 +92,8 @@ test("the deploy or join cutoff keeps historical, team-started and message-less 
   await prisma.conversation.update({ where: { id: old!.id }, data: { status: "CLOSED", spam: true } });
   expect((await conversationReads(ids, owner.id)).get(old!.id)?.unread).toBe(false);
   const newcomer = await addMember(project.id, "MEMBER");
+  // Joined after the recent question (pinned a second past the owner's cutoff above).
+  await prisma.teamMember.update({ where: { id: newcomer.memberId }, data: { readsSince: new Date(membership.readsSince.getTime() + 2000) } });
   expect((await conversationReads(ids, newcomer.id)).get(recent!.id)?.unread).toBe(false);
   const joined = (await prisma.teamMember.findUniqueOrThrow({ where: { id: newcomer.memberId } })).readsSince;
   const after = await addMessage(recent!.id, project.id, { author: "USER", authorId: null, channel: "EMAIL", body: "A question after joining" });
