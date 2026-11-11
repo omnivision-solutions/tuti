@@ -86,14 +86,14 @@ test("bolding an article leaves the collapsed sidebar and its cookie alone", asy
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   const cookie = async () => (await team.context().cookies()).find((item) => item.name === "sidebar_state");
   const before = await cookie();
-  await team.getByRole("textbox", { name: "Title", exact: true }).press("Control+b");
+  await team.getByRole("textbox", { name: "Title", exact: true }).press("ControlOrMeta+b");
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   expect(await cookie()).toEqual(before);
   await article.click();
   await article.press("ControlOrMeta+Home");
-  await article.press("Control+Shift+ArrowRight");
+  for (let i = 0; i < "Owners".length; i++) await article.press("Shift+ArrowRight");
   await expect.poll(() => team.evaluate(() => window.getSelection()?.toString().trim())).toBe("Owners");
-  await article.press("Control+b");
+  await article.press("ControlOrMeta+b");
   await expect(article.locator("strong")).toHaveText("Owners");
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   expect(await cookie()).toEqual(before);
