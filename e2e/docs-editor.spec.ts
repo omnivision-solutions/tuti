@@ -266,7 +266,6 @@ test("folding and unfolding the docs tree keeps keyboard focus on the button tha
   await expect(hide).toHaveAttribute("aria-expanded", "true");
 });
 
-
 test("article tools collapse into the pinned toolbar and restore without a preview", async ({ browser }, testInfo) => {
   const { team, slug } = await editor(browser);
   await team.goto(`/app/${slug}/docs/invite-your-team`);
@@ -300,7 +299,6 @@ test("article tools collapse into the pinned toolbar and restore without a previ
   await expect(navigation).toBeHidden();
   await expect(team.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
 });
-
 
 test("the overview expands its publish queue and confirms publishing the saved articles", async ({ browser }, testInfo) => {
   const { team, slug, api } = await editor(browser);
@@ -424,6 +422,8 @@ test("Publish all stops at the article limit, reports partial success and keeps 
     await db.query(`INSERT INTO article (id, "projectId", slug, title, "publishedAt", "updatedAt")
       SELECT gen_random_uuid()::text, p.id, 'existing-' || n, 'Existing ' || n, now(), now()
       FROM project p CROSS JOIN generate_series(1, 49) n WHERE p.slug = $1`, [slug]);
+    // An import may be queued before its first body/revision arrives; it still needs batch error codes.
+    await db.query(`DELETE FROM article_revision WHERE "articleId" IN (SELECT a.id FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = 'limit-draft')`, [slug]);
   } finally { await db.end(); }
   await team.goto(`/app/${slug}/docs`);
   const queue = team.getByRole("region", { name: "Waiting to publish" });
@@ -444,7 +444,6 @@ test("Publish all stops at the article limit, reports partial success and keeps 
   await expect(queue.getByRole("link", { name: "Limit draft", exact: true })).toBeFocused();
   await expect(team.locator(".docs-live-footer")).toContainText("50 articles live");
 });
-
 
 test("the phone Docs sheet keeps app navigation reachable without a breadcrumb bar", async ({ browser }) => {
   const { team, slug } = await editor(browser);
@@ -811,3 +810,59 @@ for (const published of [true, false]) {
     await expect(queue.getByRole("link", { name: "Review Autopilot edit", exact: true })).toHaveCount(0);
   });
 }
+
+test("Publish all holds an imported draft whose first revision arrived after confirmation", async ({ browser }, testInfo) => {
+  const { team, slug, api } = await editor(browser);
+  await throttleQueue(team);
+  const refresh = await holdQueueRefresh(team);
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`INSERT INTO article (id, "projectId", slug, title, "updatedAt") SELECT gen_random_uuid()::text, id, 'imported-draft', 'Imported draft', now() FROM project WHERE slug = $1`, [slug]);
+  } finally { await db.end(); }
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: "Waiting to publish" });
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  const confirm = team.getByRole("alertdialog", { name: "Publish 2 articles?", exact: true });
+  await api("/articles/imported-draft", { body: "The arriving body, not yet reviewed." }, "PATCH");
+  await api("/articles", { title: "Later article", body: "Not in the confirmed batch." });
+  refresh();
+  await expect(team.locator('.docs-publish-queue [data-queue-article="later-article"]')).toBeVisible();
+  await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+  await expect(confirm).toBeHidden();
+  await expect(queue.getByRole("listitem")).toHaveCount(2);
+  const imported = queue.getByRole("listitem").filter({ hasText: "Imported draft" });
+  await expect(imported.getByRole("link", { name: "Review changes", exact: true })).toBeVisible();
+  await expect(imported.getByRole("button", { name: "Publish", exact: true })).toHaveCount(0);
+  await expect(queue.getByRole("link", { name: "Imported draft", exact: true })).toBeFocused();
+  await expect(team.locator(".docs-live-footer")).toContainText("1 article live");
+  await checkpoints(testInfo)(team, "docs-import-first-revision-held");
+});
+
+test("History keeps the chosen comparison when showing earlier versions", async ({ browser }, testInfo) => {
+  const { team, slug } = await editor(browser);
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`INSERT INTO article_revision (id, "articleId", title, body, "createdAt")
+      SELECT gen_random_uuid()::text, a.id, a.title, 'Earlier paragraph ' || n || '.', now() - n * interval '1 minute'
+      FROM article a JOIN project p ON p.id = a."projectId" CROSS JOIN generate_series(1, 13) n
+      WHERE p.slug = $1 AND a.slug = 'invite-your-team'`, [slug]);
+  } finally { await db.end(); }
+  await team.goto(`/app/${slug}/docs/invite-your-team?history`);
+  const tools = team.getByRole("complementary", { name: "Article tools" });
+  const versions = tools.getByRole("link", { name: /^Saved / });
+  await expect(versions).toHaveCount(10);
+  const chosen = versions.nth(3);
+  const revision = new URL((await chosen.getAttribute("href"))!, APP_URL).searchParams.get("revision")!;
+  await chosen.click();
+  const comparison = tools.getByRole("region", { name: "Changes since this version" });
+  await expect(comparison).toContainText("Earlier paragraph 3.");
+  await tools.getByRole("link", { name: "Show earlier versions", exact: true }).click();
+  await expect(versions).toHaveCount(14);
+  await expect(team).toHaveURL(new RegExp(`revision=${revision}`));
+  await expect(comparison).toContainText("Earlier paragraph 3.");
+  await expect(versions.nth(3)).toHaveAttribute("aria-current", "true");
+  await expect(tools.getByRole("link", { name: "Show earlier versions", exact: true })).toHaveCount(0);
+  await checkpoints(testInfo)(team, "docs-history-more-keeps-comparison");
+});

@@ -125,7 +125,7 @@ export async function ArticleHistory({
           </li>
         ); })}
       </ol>
-      {shown.length < revisions.length && <Link className="text-xs text-muted-foreground underline" scroll={false} href={`?history&versions=${shown.length + 10}${keep}`}>Show earlier versions</Link>}
+      {shown.length < revisions.length && <Link className="text-xs text-muted-foreground underline" scroll={false} href={`?history${selected ? `&revision=${selected.id}` : ""}&versions=${shown.length + 10}${keep}`}>Show earlier versions</Link>}
       {revisions.length === 1 && (
         <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
           <HistoryIcon aria-hidden className="size-6 text-muted-foreground" />

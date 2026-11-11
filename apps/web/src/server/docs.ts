@@ -215,33 +215,33 @@ export async function saveArticleSettings(projectSlug: string, slug: string, _st
   return result;
 }
 
-/** Publish a draft; `edits`: the reviewed Autopilot edits going live with it; `revision`: the newest version the queue reviewed. */
-export async function publishArticle(projectSlug: string, slug: string, edits?: string[], revision?: string): Promise<FormState & { code?: string }> {
+/** Publish a draft; `edits`: the reviewed Autopilot edits going live with it; `revision`: the newest version the queue reviewed, null if none existed; `withErrorCodes`: return batch error codes. */
+export async function publishArticle(projectSlug: string, slug: string, edits?: string[], revision?: string | null, withErrorCodes = false): Promise<FormState & { code?: string }> {
   let code: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     try {
-      await call(publishOperation, context, { slug: String(slug), ...(Array.isArray(edits) && { edits: edits.map(String) }), ...(revision !== undefined && { revision: String(revision) }) });
+      await call(publishOperation, context, { slug: String(slug), ...(Array.isArray(edits) && { edits: edits.map(String) }), ...(revision !== undefined && { revision: revision === null ? null : String(revision) }) });
     } catch (error) {
       if (error instanceof OperationError) code = error.code;
       throw error;
     }
   });
-  // Revision-aware queue callers need batch error codes; preserve other callers' existing error shapes.
-  return revision !== undefined && result.error ? { ...result, code: code ?? "forbidden" } : code === "edits_required" ? { ...result, code } : result;
+  // The queue requests batch error codes even when no revision exists; keep legacy callers’ error shapes.
+  return withErrorCodes && result.error ? { ...result, code: code ?? "forbidden" } : code === "edits_required" ? { ...result, code } : result;
 }
 
 /** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */
-export async function publishArticleChanges(projectSlug: string, slug: string, savedAt?: string, revision?: string): Promise<FormState & { code?: string }> {
+export async function publishArticleChanges(projectSlug: string, slug: string, savedAt?: string, revision?: string | null, withErrorCodes = false): Promise<FormState & { code?: string }> {
   let code: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     try {
-      await call(publishChangesOperation, context, { slug: String(slug), savedAt: savedAt === undefined ? undefined : String(savedAt), ...(revision !== undefined && { revision: String(revision) }) });
+      await call(publishChangesOperation, context, { slug: String(slug), savedAt: savedAt === undefined ? undefined : String(savedAt), ...(revision !== undefined && { revision: revision === null ? null : String(revision) }) });
     } catch (error) {
       if (error instanceof OperationError) code = error.code;
       throw error;
     }
   });
-  return revision !== undefined && result.error ? { ...result, code: code ?? "forbidden" } : code === "changed" ? { ...result, code } : result;
+  return withErrorCodes && result.error ? { ...result, code: code ?? "forbidden" } : code === "changed" ? { ...result, code } : result;
 }
 
 /** "Discard changes": back to the published version, if the changes are still those saved at `savedAt`. */

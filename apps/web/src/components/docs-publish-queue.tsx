@@ -31,7 +31,7 @@ type WaitingArticle = {
   published: boolean;
   savedAt: string;
   reviewRequired: boolean;
-  revision?: string;
+  revision: string | null;
 };
 
 /** Keep the confirmed versions and review decisions while live updates refresh the rows. */
@@ -69,8 +69,8 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
     if (!selection) return;
     start(async () => {
       const { published, failed, unattempted, stopped } = await publishBatch(selection.articles, (article) => article.published
-        ? publishArticleChanges(projectSlug, article.slug, article.savedAt, article.revision)
-        : publishArticle(projectSlug, article.slug, undefined, article.revision));
+        ? publishArticleChanges(projectSlug, article.slug, article.savedAt, article.revision, true)
+        : publishArticle(projectSlug, article.slug, undefined, article.revision, true));
       setNeedsReview((previous) => {
         const next = new Map(previous);
         for (const failure of failed) if (failure.code === "edits_required" || failure.code === "changed") next.set(failure.article.slug, failure.code);

@@ -83,7 +83,11 @@ test("Docs' list: in reading order, each article's publishing state, views and h
   const html = await render(await TeamDocsLayout({ params, children: await TeamDocsPage({ params } as never) } as never));
   const text = html.replace(/<[^>]+>/g, "|");
   // The strip's totals: the live articles' views and helpful votes in the window only.
-  const strip = text.slice(text.indexOf("Live articles"), text.indexOf("Waiting to publish|"));
+  const stripStart = text.indexOf("Live articles");
+  const stripEnd = text.indexOf("Waiting to publish ", stripStart);
+  expect(stripStart).toBeGreaterThanOrEqual(0);
+  expect(stripEnd).toBeGreaterThan(stripStart);
+  const strip = text.slice(stripStart, stripEnd);
   expect(strip).toMatch(/\|5\|+Views/);
   expect(strip).toMatch(/\|2\|+Helpful votes/);
   // What waits to be published: the draft and the one with changes, newest saved first (the changes; the draft's move
@@ -190,4 +194,16 @@ test("History shows ten versions at a time and keeps earlier versions reachable"
   expect((earlier.match(/<li>/g) ?? [])).toHaveLength(14);
   expect(earlier).not.toContain("Show earlier versions");
   expect(earlier).not.toContain("first version");
+  // Paginating keeps the explicitly chosen comparison, including its return context.
+  const selected = await prisma.articleRevision.findFirstOrThrow({ where: { articleId: article.id, body: "Paragraph 4." } });
+  const chosen = await render(await ArticleHistory({ ...props, selectedId: selected.id, keep: "&from=autopilot" }));
+  const href = chosen.match(/href="([^"]+)"[^>]*>Show earlier versions<\/a>/)?.[1];
+  expect(href).toBeDefined();
+  const query = new URL(href!.replaceAll("&amp;", "&"), "https://example.com").searchParams;
+  expect(query.get("revision")).toBe(selected.id);
+  expect(query.get("from")).toBe("autopilot");
+  expect(query.get("versions")).toBe("20");
+  const expanded = await render(await ArticleHistory({ ...props, selectedId: query.get("revision") ?? undefined, limit: Number(query.get("versions")) }));
+  expect(expanded).toContain("Paragraph 4.");
+  expect(expanded).not.toContain("Paragraph 1.");
 });
