@@ -420,7 +420,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.setViewportSize({ width: 768, height: 1024 });
   await team.goto(`/app/${slug}/reporting/ai-conversations?range=year`);
   // The title's text ends before the picker starts: the dates beside the button wait for a laptop's width.
-  // The sidebar animates to its rail at this width; measure once that layout has settled.
+  // Measure once the responsive layout has settled.
   await expect.poll(async () => {
     const titleRight = await team.getByRole("heading", { name: "AI conversations", level: 2 }).evaluate((heading) => {
       const text = document.createRange();
@@ -607,7 +607,7 @@ test("the team reviews article history, changes visibility and restores a delete
   await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
   await checkpoint(visitor, "portal-docs-article-updated");
 
-  // Its history (an icon in the top bar), in a panel from the right over the article, shows what changed since the first version.
+  // Its history opens in the shared card beside the article and shows what changed since the first version.
   await team.getByRole("button", { name: "History", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team?history`);
   const historyPanel = team.getByRole("complementary", { name: "Article tools" });
@@ -1429,7 +1429,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("No collection");
   await expect(dialog.getByRole("checkbox", { name: /^Show the updated date/ })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
-  // The shared card takes 330px here (300px below 1280px), and leaves the text beside it.
+  // The inset reaches 77rem with the collapsed rail: the shared card takes 330px beside the text.
   await expect(team.getByRole("complementary", { name: "Article tools" })).toBeVisible();
   await expect.poll(async () => Math.round((await team.getByRole("complementary", { name: "Article tools" }).boundingBox())!.width)).toBe(330);
   await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveCount(0);

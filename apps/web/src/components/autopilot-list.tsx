@@ -154,7 +154,7 @@ export function AutopilotPanes({
       router.push(`/app/${projectSlug}/autopilot/${opening.id}`);
     }
   }, [opening, router, projectSlug]);
-  // Coming into Autopilot from laptop width up, To review opens its first (not when sent here with a notice), so the page
+  // Coming into Autopilot with at least 61rem beside the app sidebar, To review opens its first (not when sent here with a notice), so the page
   // beside the list isn't empty while something waits. Once: back to the list from inside it (← Autopilot), it stays.
   const first = ids[0];
   const notice = useSearchParams().has("gone");
@@ -164,7 +164,10 @@ export function AutopilotPanes({
       return;
     }
     arrived.current = true;
-    if (selected === null && tab === "review" && first && !notice && window.matchMedia("(min-width: 64rem)").matches) {
+    // Read the CSS layout once: opening a first item only makes sense while its list fits beside it.
+    const panes = aside.current?.parentElement;
+    const beside = panes && getComputedStyle(panes).flexDirection === "row";
+    if (selected === null && tab === "review" && first && !notice && beside) {
       autoOpening.current = first;
       router.replace(`/app/${projectSlug}/autopilot/${first}`);
     }
@@ -259,17 +262,17 @@ export function AutopilotPanes({
         : toReview.length > 0 && "Pick a post or an article to review";
   return (
     <Decided value={() => setDecided(selected)}>
-    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:flex-row">
+    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t @min-[61rem]/app:flex-row">
       <aside
         ref={aside}
         aria-label="Changes"
         // On phones and tablets: the list, or the page open; none to list, the page says why.
-        className={cn("px-6 pb-6 lg:w-80 lg:shrink-0 xl:w-96 lg:border-r lg:p-0", !listed && "max-lg:hidden")}
+        className={cn("px-6 pb-6 @min-[61rem]/app:w-80 @min-[61rem]/app:shrink-0 @min-[77rem]/app:w-96 @min-[61rem]/app:border-r @min-[61rem]/app:p-0", !listed && "@max-[61rem]/app:hidden")}
       >
         <Tabs
           value={tab}
           onValueChange={pick}
-          className="lg:sticky lg:top-0 lg:max-h-dvh lg:overflow-y-auto lg:p-4">
+          className="@min-[61rem]/app:sticky @min-[61rem]/app:top-0 @min-[61rem]/app:max-h-dvh @min-[61rem]/app:overflow-y-auto @min-[61rem]/app:p-4">
           <TabsList className="w-full">
             <TabsTrigger value="review" className="flex-1">
               {/* Counted as the sidebar and Home count them: sample content left out (its rows say Sample). */}
@@ -308,9 +311,9 @@ export function AutopilotPanes({
         </Tabs>
       </aside>
       {/* Above the list on phones and tablets, only as tall as the page's title while the list shows. */}
-      <div data-autopilot-listed={listed || undefined} className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8 max-lg:order-first", listed && "max-lg:flex-none")}>
+      <div data-autopilot-listed={listed || undefined} className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8 @max-[61rem]/app:order-first", listed && "@max-[61rem]/app:flex-none")}>
         {children}
-        {listed && hint && <EmptyState className="max-lg:hidden" title={hint} />}
+        {listed && hint && <EmptyState className="@max-[61rem]/app:hidden" title={hint} />}
       </div>
     </div>
     </Decided>

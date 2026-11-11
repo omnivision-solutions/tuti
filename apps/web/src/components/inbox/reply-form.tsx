@@ -197,7 +197,7 @@ export function ReplyForm({
     <>
       <form
         ref={form}
-        className="inbox-composer flex flex-col gap-0 rounded-xl border border-input bg-card p-2.5 shadow-[0_2px_7px] shadow-black/3.5 max-lg:p-2 [&_button[type=submit]]:h-8 [&_button[type=submit]]:text-xs [&_button[aria-label='More_ways_to_send']]:h-8 [&_button[aria-label='More_ways_to_send']]:text-xs"
+        className="inbox-composer flex flex-col gap-0 rounded-xl border border-input bg-card p-2.5 shadow-[0_2px_7px] shadow-black/3.5 @max-[57rem]/app:p-2 [&_button[type=submit]]:h-8 [&_button[type=submit]]:text-xs [&_button[aria-label='More_ways_to_send']]:h-8 [&_button[aria-label='More_ways_to_send']]:text-xs"
         onSubmit={(event) => {
           event.preventDefault();
           send();
@@ -299,7 +299,7 @@ export function ReplyForm({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="inbox-ai-draft px-1.75 text-xs leading-5 text-muted-foreground max-[75rem]:[&>span:not(.sr-only)]:hidden"
+                      className="inbox-ai-draft px-1.75 text-xs leading-5 text-muted-foreground @max-[77rem]/app:[&>span:not(.sr-only)]:hidden"
                       disabled={drafting || pending || draftWithAi === "paused"}
                       // Out of credits, still reached from the keyboard, where its tooltip says why it's off.
                       focusableWhenDisabled

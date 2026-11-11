@@ -173,8 +173,7 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
 
-  // The sidebar folds on Customize (its rail and the portal's preview need the room), again each time it opens.
-  // Docs always folds it; Settings keeps it open from 1280px and folds it below that.
+  // The sidebar starts collapsed and keeps the user's choice through Customize, Docs, Settings and resizing.
   await owner.goto(`/app/${slug}/customize/branding`);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
@@ -182,9 +181,9 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await sidebar.getByRole("link", { name: "Docs", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs`);
-  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await owner.setViewportSize({ width: 1100, height: 720 });
-  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await owner.setViewportSize({ width: 1280, height: 720 });
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
   // Settings opens on General.
@@ -203,16 +202,10 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(menu.getByRole("heading")).toContainText(["Project", "Users", "Support"]);
   await expect(menu.getByRole("link")).toContainText(["General", "Team & roles", "Access", "Single sign-on", "Domain", "Groups", "Who's asking", "User properties"]);
   await checkpoint(owner, "settings-panes", { fullPage: false });
-  // Customize opens from there folded too, without opening on the way (its link goes to /customize, then its first section).
-  await sidebar.evaluate((el) => {
-    new MutationObserver(() => {
-      if (el.getAttribute("data-state") === "expanded") el.setAttribute("data-opened", "");
-    }).observe(el, { attributes: true, attributeFilter: ["data-state"] });
-  });
+  // Customize keeps the open sidebar through its redirect to the first section too.
   await sidebar.getByRole("link", { name: "Customize", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/customize/branding`);
-  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
-  await expect(sidebar).not.toHaveAttribute("data-opened");
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await owner.goto(`/app/${slug}/settings/general`);
   // User properties is in the menu before any user has one, and says where they come from.
   await menu.getByRole("link", { name: "User properties" }).click();

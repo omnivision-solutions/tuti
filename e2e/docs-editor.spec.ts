@@ -34,7 +34,7 @@ async function holdQueueRefresh(page: Page) {
   return release;
 }
 
-test("the app sidebar folds for saved and new article editors and opens elsewhere", async ({ browser }) => {
+test("the app sidebar keeps the user's choice in saved and new article editors and settings", async ({ browser }) => {
   const { team, slug } = await editor(browser);
   const sidebar = team.locator('[data-slot="sidebar"][data-state]');
   const tree = team.getByRole("navigation", { name: "Docs", exact: true });
@@ -290,8 +290,13 @@ test("article tools collapse into the pinned toolbar and restore without a previ
   await checkpoints(testInfo)(team, "docs-shared-tools");
   await team.setViewportSize({ width: 390, height: 844 });
   const sheet = team.getByRole("dialog", { name: "Verify", exact: true });
+  await expect(tools).toBeHidden();
+  await expect(toolbar.getByRole("button", { name: "Verify", exact: true })).toHaveAttribute("aria-expanded", "false");
+  await expect(sheet).toBeHidden();
+  await toolbar.getByRole("button", { name: "Verify", exact: true }).click();
   await expect(sheet).toBeVisible();
   await sheet.getByRole("button", { name: "Collapse article tools" }).click();
+  await expect(sheet).toBeHidden();
   await team.getByRole("button", { name: "Browse docs", exact: true }).click();
   const navigation = team.getByRole("dialog", { name: "Docs navigation" });
   await expect(navigation.getByRole("link", { name: "Overview", exact: true })).toBeVisible();

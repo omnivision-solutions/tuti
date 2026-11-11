@@ -1873,6 +1873,9 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(team.getByText("Board created")).toBeVisible();
 
   await team.goto(`/app/${slug}/feedback?status=all`);
+  // Exercise the narrow list beside the labelled sidebar: open it explicitly instead of relying on the page default.
+  await team.locator('[data-slot="sidebar-trigger"]:visible').click();
+  await expect.poll(async () => (await team.locator('[data-slot="sidebar-container"]').boundingBox())!.width).toBe(240);
   const bar = team.getByRole("toolbar", { name: "Selected posts" });
   const row = (title: string) => team.getByRole("main").getByRole("listitem").filter({ hasText: title });
   await expect(bar).toHaveCount(0);

@@ -15,6 +15,8 @@ test("pages use their own toolbar above tablet width and the sidebar rail works 
   await verifyEmail(owner);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   const rail = owner.locator('[data-slot="sidebar-rail"]');
+  await sidebar.locator('[data-slot="sidebar-trigger"]').click();
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
   for (const width of [768, 1024, 1440]) {
     await owner.setViewportSize({ width, height: 900 });
     await owner.goto(`/app/${slug}`);
@@ -42,14 +44,16 @@ test("pages use their own toolbar above tablet width and the sidebar rail works 
     await owner.keyboard.press("ControlOrMeta+b");
     await expect(sidebar).toHaveAttribute("data-state", "collapsed");
     await owner.keyboard.press("ControlOrMeta+b");
-    // Pane pages still fold below 1280px; their rail can open them and Home restores its expanded sidebar.
+    // Pane pages preserve the same choice below 1280px too.
     if (width < 1280) {
       await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
-      await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+      await expect(sidebar).toHaveAttribute("data-state", "expanded");
       await rail.focus();
       await owner.keyboard.press("Enter");
-      await expect(sidebar).toHaveAttribute("data-state", "expanded");
+      await expect(sidebar).toHaveAttribute("data-state", "collapsed");
       await sidebar.getByRole("link", { name: "Home", exact: true }).click();
+      await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+      await owner.keyboard.press("ControlOrMeta+b");
       await expect(sidebar).toHaveAttribute("data-state", "expanded");
     }
   }
