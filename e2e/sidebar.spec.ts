@@ -73,6 +73,74 @@ test("the sidebar starts collapsed and remembers the user's choice across pages 
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
 });
 
+for (const section of ["Settings", "Reporting", "Autopilot"]) {
+  test(`${section} keeps room for its content with the sidebar open at tablet width`, async ({ browser }, testInfo) => {
+    const checkpoint = checkpoints(testInfo);
+    const slug = `e2e-${randomUUID().slice(0, 8)}`;
+    const team = await signUp(browser, APP_URL, "Example Team");
+    await createProject(team, "Example", slug);
+    await team.setViewportSize({ width: 768, height: 900 });
+    const sidebar = team.locator('[data-slot="sidebar"][data-state]');
+    await sidebar.locator('[data-slot="sidebar-trigger"]').click();
+    await team.goto(`/app/${slug}/${section === "Settings" ? "settings/general" : section.toLowerCase()}`);
+    const panes = team.locator('[data-slot="pane-layout"]');
+    const content = panes.locator(":scope > div:last-child");
+    await expect(sidebar).toHaveAttribute("data-state", "expanded");
+    await expect(panes).toHaveCSS("flex-direction", "column");
+    await expect.poll(async () => (await content.boundingBox())!.width).toBeGreaterThanOrEqual(480);
+    if (section === "Settings") {
+      await expect.poll(async () => (await team.getByRole("textbox", { name: "Project name", exact: true }).boundingBox())!.width).toBeGreaterThanOrEqual(400);
+    }
+    expect(await team.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+    await checkpoint(team, `${section.toLowerCase()}-opened-sidebar-tablet`, { fullPage: false });
+    if (section !== "Autopilot") {
+      await panes.locator("aside summary").click();
+      const menu = panes.getByRole("navigation", { name: section, exact: true });
+      await expect(menu).toBeVisible();
+      await menu.getByRole("link", { name: section === "Settings" ? "Team & roles" : "Articles", exact: true }).click();
+      await team.waitForURL(`**/${section === "Settings" ? "settings/team" : "reporting/articles"}`);
+      await expect(panes.locator("aside details")).not.toHaveAttribute("open");
+    }
+    if (section === "Autopilot") {
+      await team.setViewportSize({ width: 1024, height: 900 });
+      await team.reload();
+      await expect(panes).toHaveCSS("flex-direction", "column");
+      await expect.poll(async () => (await content.boundingBox())!.width).toBeGreaterThanOrEqual(700);
+    }
+    // Wider insets restore the menu beside the content, preserving the open sidebar.
+    await team.setViewportSize({ width: 1440, height: 900 });
+    await expect(panes).toHaveCSS("flex-direction", "row");
+    await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  });
+}
+
+test("a collapsed rail preserves the Docs tree and Customize columns at 1024px", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Example Team");
+  await createProject(team, "Example", slug);
+  await team.setViewportSize({ width: 1024, height: 768 });
+  const sidebar = team.locator('[data-slot="sidebar"][data-state]');
+  await team.goto(`/app/${slug}/docs`);
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await expect(team.getByRole("navigation", { name: "Docs", exact: true })).toBeVisible();
+  await expect(team.getByRole("button", { name: "Browse docs", exact: true })).toBeHidden();
+  await checkpoint(team, "docs-collapsed-sidebar-1024", { fullPage: false });
+  await team.goto(`/app/${slug}/customize/branding`);
+  const menu = team.getByRole("navigation", { name: "Customize", exact: true }).first();
+  const settings = team.locator('[data-slot="customize-settings"]');
+  const preview = team.locator('iframe[title="Portal preview"]');
+  await expect(menu).toBeVisible();
+  await expect(preview).toBeVisible();
+  await expect.poll(async () => (await preview.boundingBox())!.x - (await settings.boundingBox())!.x).toBeGreaterThanOrEqual(384);
+  expect((await settings.boundingBox())!.x).toBeGreaterThanOrEqual((await menu.boundingBox())!.x + (await menu.boundingBox())!.width);
+  await expect.poll(async () => (await preview.boundingBox())!.width).toBeGreaterThanOrEqual(360);
+  await expect(team.frameLocator('iframe[title="Portal preview"]').locator(".portal-header")).toBeVisible();
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  expect(await team.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+  await checkpoint(team, "customize-collapsed-sidebar-1024", { fullPage: false });
+});
+
 test("bolding an article leaves the collapsed sidebar and its cookie alone", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

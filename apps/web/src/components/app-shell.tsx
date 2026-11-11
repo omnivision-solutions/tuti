@@ -42,8 +42,8 @@ export function AppShell({ sidebar, header, banners, children, defaultSidebarOpe
         {customizing ? (
           // With enough room beside the sidebar, the window's height: the page doesn't scroll, each of its panes does
           // (the banners too, past a third of it, so the panes keep their room).
-          <div className="flex flex-1 flex-col @min-[64rem]/app:h-svh @min-[64rem]/app:flex-none">
-            <div className="flex flex-col gap-4 p-4 empty:hidden @min-[64rem]/app:max-h-1/3 @min-[64rem]/app:overflow-y-auto">{banners}</div>
+          <div className="flex flex-1 flex-col @min-[61rem]/app:h-svh @min-[61rem]/app:flex-none">
+            <div className="flex flex-col gap-4 p-4 empty:hidden @min-[61rem]/app:max-h-1/3 @min-[61rem]/app:overflow-y-auto">{banners}</div>
             {children}
           </div>
         ) : (

@@ -174,7 +174,9 @@ the list picks none to approve at once.
   width. The app sidebar starts collapsed to the same icon rail on every page. Only its toggle or Ctrl/⌘+B opens
   or collapses it; that choice stays across navigation, screen widths and reloads (the existing `sidebar_state`
   cookie, kept for seven days). Phones keep their off-canvas sheet, which closes on navigation.
-  The docs' tree folds independently, when the sidebar inset has at least 64rem, on its own button at its top ("Hide the docs
+  Inset thresholds translated from viewport breakpoints subtract the 3rem rail: 64rem becomes 61rem,
+  and 80rem becomes 77rem, preserving the layout at the default rail width.
+  The docs' tree folds independently, when the sidebar inset has at least 61rem, on its own button at its top ("Hide the docs
   tree"; a rail with "Show the docs tree" in its place), remembered per browser on every Docs page (`DocsTreeFold`:
   `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
@@ -234,7 +236,9 @@ the list picks none to approve at once.
   on every board) then Help center (articles, and new articles' drafts), the ones that
   reach the most people first; and Activity, every merged pull request (those with
   nothing to do folded away at the end, To review pointing to those not read yet).
-  On tablets the list sits below a short title section, which scrolls with it and reserves no sticky toolbar space.
+  With at least 61rem of sidebar inset, its list sits beside the page (20rem wide, 24rem from 77rem of inset).
+  With less room, the list or the picked page fills the width; the list sits below a short title section,
+  which scrolls with it and reserves no sticky toolbar space. Opening the first review follows this same layout.
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
   once nothing of it waits, the next one to review opens by itself. One going out by itself says when in its bar,
@@ -269,10 +273,10 @@ the list picks none to approve at once.
   newest version beside it, to merge by hand; the next Save goes on top of it.
   The team Docs workspace uses rounded tree, page and tools surfaces on the canvas, separated by 12px gaps,
   with no breadcrumb bar or embedded preview. Its tree is 274px and owns the Docs title, search and navigation;
-  below 64rem of sidebar inset width the Docs button opens it as a sheet, including App navigation. Subpages have a small parent link.
+  below 61rem of sidebar inset width the Docs button opens it as a sheet, including App navigation. Subpages have a small parent link.
   An article's editable title sits beside Saved (Save while there are edits) and Publish; its publishing state
   and live Open link sit below. The formatting row stays pinned while the article body scrolls. Settings,
-  History and Verify share one collapsible card (20.625rem, 18.75rem below 80rem of sidebar inset width), opening from icons at the
+  History and Verify share one collapsible card (20.625rem, 18.75rem below 77rem of sidebar inset width), opening from icons at the
   end of the formatting row. Below 76rem of inset width the tools use a bottom sheet so the editor keeps its room,
   even with the app sidebar open. Collapsing the card returns its space to the document. These layout thresholds
   follow the inset and the current root font size in both CSS and JavaScript.
@@ -313,9 +317,10 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   into view, faded at the end that has more (`useScrollingRow`; the portal's
   parts and their rows too). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
-  one button above the page on phones); it opens on General. Reporting has one
+  one button above the page below 48rem of sidebar inset); it opens on General. Reporting has one
   too (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
-  small and uppercase, each page with its icon), each page its numbers (`Stat`, a
+  small and uppercase, each page with its icon), using the same 48rem inset threshold to put its menu
+  above the report when the app sidebar leaves less room. Each page has its numbers (`Stat`, a
   labelled group; as Ferndesk's, its change on as many days just before as a badge, `soft` when
   better, `destructive` when worse, `secondary` when neither, with an arrow so it isn't colour
   alone, and a line of the range's days in its chart's colour: `countTrend`, `shareTrend` in
@@ -342,7 +347,7 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   (`SignedOutLinks`): the form is the way in. On phones no keyboard hints (`Ctrl K`).
 - **Customize** (`/app/<project>/customize/<section>`): the whole width.
   `CustomizeShell`: Customize's sections in a rail on
-  the far left when the sidebar inset has at least 64rem (a menu above the panel with less room; no index page, no
+  the far left when the sidebar inset has at least 61rem (a menu above the panel with less room; no index page, no
   Back), the section's settings in a panel beside it (title; cards inside),
   the portal it changes on the right in a browser frame, at desktop or phone
   width, light or dark. Below that inset width the settings and preview stack and the page scrolls;

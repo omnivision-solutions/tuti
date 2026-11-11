@@ -9,8 +9,8 @@ import type { SettingsGroup } from "@/lib/settings-pages";
 import { cn } from "@/lib/utils";
 
 /**
- * Settings' menu (and Reporting's, `label`): its pages in groups, a column of its own beside the page from tablet width up. On
- * phones it folds into "<page>" above the page, opened to move to another. `carry`: a query parameter its links keep (Reporting's range).
+ * Settings' menu (and Reporting's, `label`): its pages in groups, a column beside the page with at least 48rem of sidebar inset.
+ * With less room it folds into "<page>" above the page, opened to move to another. `carry`: a query parameter its links keep (Reporting's range).
  */
 export function SettingsMenu({ groups, label = "Settings", carry }: { groups: SettingsGroup[]; label?: string; carry?: string }) {
   const kept = useSearchParams().get(carry ?? "");
@@ -47,11 +47,11 @@ export function SettingsMenu({ groups, label = "Settings", carry }: { groups: Se
 
   return (
     <>
-      <nav aria-label={label} className="max-md:hidden md:sticky md:top-0 md:max-h-dvh md:overflow-y-auto md:p-3">
+      <nav aria-label={label} className="@max-[48rem]/app:hidden @min-[48rem]/app:sticky @min-[48rem]/app:top-0 @min-[48rem]/app:max-h-dvh @min-[48rem]/app:overflow-y-auto @min-[48rem]/app:p-3">
         {list}
       </nav>
       {/* `key`: closed again after moving to another page. */}
-      <details key={current} className="group rounded-lg border md:hidden">
+      <details key={current} className="group rounded-lg border @min-[48rem]/app:hidden">
         <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
           {currentTitle ?? label}
           <ChevronDownIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />

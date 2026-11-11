@@ -207,12 +207,12 @@ function Row({
       {children}
       {count !== undefined && (
         // From laptop width up its buttons show on hover or focus, in the room they keep: its count sits there till then.
-        <span className="hidden px-1.5 text-xs text-muted-foreground tabular-nums @min-[64rem]/app:absolute @min-[64rem]/app:top-1/2 @min-[64rem]/app:right-2 @min-[64rem]/app:block @min-[64rem]/app:-translate-y-1/2 @min-[64rem]/app:group-focus-within/row:hidden @min-[64rem]/app:group-hover/row:hidden @min-[64rem]/app:group-has-data-popup-open/row:hidden">
+        <span className="hidden px-1.5 text-xs text-muted-foreground tabular-nums @min-[61rem]/app:absolute @min-[61rem]/app:top-1/2 @min-[61rem]/app:right-2 @min-[61rem]/app:block @min-[61rem]/app:-translate-y-1/2 @min-[61rem]/app:group-focus-within/row:hidden @min-[61rem]/app:group-hover/row:hidden @min-[61rem]/app:group-has-data-popup-open/row:hidden">
           {count}
         </span>
       )}
       {actions && (
-        <div className="flex shrink-0 items-center opacity-100 group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 @min-[64rem]/app:opacity-0">{actions}</div>
+        <div className="flex shrink-0 items-center opacity-100 group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 @min-[61rem]/app:opacity-0">{actions}</div>
       )}
     </div>
   );
@@ -270,7 +270,7 @@ export function DocsWorkspace({
   const [tabsOpen, setTabsOpen] = useState(false);
   const [newTab, setNewTab] = useState(false);
   const { setOpenMobile, setOpen: setAppOpen, isMobile } = useSidebar();
-  const desktop = useInsetBreakpoint(64);
+  const desktop = useInsetBreakpoint(61);
   const openingApp = useRef(false);
   const openingSearch = useRef(false);
   // Where "New collection" adds one, while its dialog is open.
@@ -714,18 +714,18 @@ export function DocsWorkspace({
         "docs-workspace relative flex gap-3 min-w-0 flex-1 m-[-24px_-24px_-24px_-24px] p-[16px_16px_16px_24px] bg-docs-canvas h-dvh",
         "[&[data-editing='true']_>_.docs-page-content]:p-0 [&[data-editing='true']_>_.docs-page-content]:bg-transparent",
         "[&[data-editing='true']_>_.docs-page-content]:shadow-none [&[data-editing='true']_>_.docs-page-content]:ring-0 [&[data-editing='true']_>_.docs-page-content]:overflow-visible md:ml-[-32px]",
-        "md:mr-[-32px] @max-[64rem]/app:p-3 @max-[64rem]/app:h-dvh max-sm:p-2 max-sm:m-[-24px] max-sm:h-dvh",
+        "md:mr-[-32px] @max-[61rem]/app:p-3 @max-[61rem]/app:h-dvh max-sm:p-2 max-sm:m-[-24px] max-sm:h-dvh",
         "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:left-6.5",
         "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:right-[auto]",
         "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:top-6 [&_nav[aria-label='Collection']]:border-b-0",
         "[&_nav[aria-label='Collection']]:shadow-none [&_nav[aria-label='Collection']]:ring-0 [&_nav[aria-label='Collection']_[aria-current='page']]:text-primary",
         "[&_nav[aria-label=Collection]]:border-b-0 [&_nav[aria-label=Collection]]:shadow-none [&_nav[aria-label=Collection]]:ring-0",
       )} data-editing={editing}>
-        <aside className="docs-tree-pane docs-surface w-68.5 shrink-0 flex flex-col @min-[64rem]/app:[:root[data-docs-tree-folded]_&]:w-12 @max-[64rem]/app:hidden min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
-          <div className="docs-tree-folded hidden p-[10px_6px] @min-[64rem]/app:[:root[data-docs-tree-folded]_&]:flex @min-[64rem]/app:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
-          <div className="docs-tree-expanded flex flex-col min-h-0 h-full @min-[64rem]/app:[:root[data-docs-tree-folded]_&]:hidden">{desktop && navigation}</div>
+        <aside className="docs-tree-pane docs-surface w-68.5 shrink-0 flex flex-col @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:w-12 @max-[61rem]/app:hidden min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+          <div className="docs-tree-folded hidden p-[10px_6px] @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:flex @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
+          <div className="docs-tree-expanded flex flex-col min-h-0 h-full @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:hidden">{desktop && navigation}</div>
         </aside>
-        <button type="button" aria-label="Browse docs" aria-expanded={browsing} onClick={() => setBrowsing(true)} className="docs-phone-trigger absolute top-5.75 right-7 z-20 hidden h-7 items-center gap-1.25 rounded-md bg-secondary p-[0_7px] text-[13px] text-muted-foreground @max-[64rem]/app:flex max-sm:top-3 max-sm:right-4"><BookOpenIcon className="size-3.5" />Docs</button>
+        <button type="button" aria-label="Browse docs" aria-expanded={browsing} onClick={() => setBrowsing(true)} className="docs-phone-trigger absolute top-5.75 right-7 z-20 hidden h-7 items-center gap-1.25 rounded-md bg-secondary p-[0_7px] text-[13px] text-muted-foreground @max-[61rem]/app:flex max-sm:top-3 max-sm:right-4"><BookOpenIcon className="size-3.5" />Docs</button>
         {pathname === base && activeTab && <span className="hidden max-sm:block absolute right-8 top-7 text-xs text-muted-foreground">{activeTab.name}</span>}
         <Sheet open={browsing && !desktop} onOpenChange={setBrowsing} onOpenChangeComplete={(open) => { if (!open && openingApp.current) { openingApp.current = false; if (isMobile) setOpenMobile(true); else setAppOpen(true); } if (!open && openingSearch.current) { openingSearch.current = false; window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); } }}>
           <SheetContent overlayClassName="bg-(--docs-overlay) supports-backdrop-filter:backdrop-blur-none" side="bottom" className={cn(
@@ -742,7 +742,7 @@ export function DocsWorkspace({
         <div className={cn(
           "docs-page-content min-w-0 min-h-0 rounded-2xl bg-docs-surface",
           "shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)] flex flex-1 flex-col gap-6",
-          "overflow-y-auto p-[28px_32px] [scrollbar-width:thin] @max-[64rem]/app:p-6 @max-[64rem]/app:[&_>_.docs-page-header:first-child:not(:has(>_a))]:pt-6",
+          "overflow-y-auto p-[28px_32px] [scrollbar-width:thin] @max-[61rem]/app:p-6 @max-[61rem]/app:[&_>_.docs-page-header:first-child:not(:has(>_a))]:pt-6",
           "max-sm:rounded-2xl max-sm:p-[20px_16px] max-sm:gap-5.5 [&_>_*]:shrink-0",
           "max-sm:[&:has(.docs-overview-stats)_>_.docs-page-header:first-child:not(:has(>_a))]:pt-10",
         )}>{children}</div>

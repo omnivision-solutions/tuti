@@ -278,11 +278,11 @@ export function CustomizeShell({
 
   return (
     <PreviewContext value={{ reload, version, draft, setDraft, register }}>
-      <div className="flex flex-1 flex-col @min-[64rem]/app:min-h-0 @min-[64rem]/app:flex-row">
+      <div className="flex flex-1 flex-col @min-[61rem]/app:min-h-0 @min-[61rem]/app:flex-row">
         <CustomizeRail projectSlug={projectSlug} section={section} />
-        <div data-slot="customize-settings" className="relative flex flex-col border-b @min-[64rem]/app:w-96 @min-[64rem]/app:shrink-0 @min-[64rem]/app:scroll-pt-12 @min-[64rem]/app:overflow-y-auto @min-[64rem]/app:border-r @min-[64rem]/app:border-b-0">
+        <div data-slot="customize-settings" className="relative flex flex-col border-b @min-[61rem]/app:w-96 @min-[61rem]/app:shrink-0 @min-[61rem]/app:scroll-pt-12 @min-[61rem]/app:overflow-y-auto @min-[61rem]/app:border-r @min-[61rem]/app:border-b-0">
           {/* Under the phone's menu row; at the top on wider screens, including when the pane scrolls itself. */}
-          <div className="sticky top-12 topbar:top-0 z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-4 @min-[64rem]/app:top-0">
+          <div className="sticky top-12 topbar:top-0 z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-4 @min-[61rem]/app:top-0">
             <h1 className="text-sm font-semibold">{title}</h1>
             {Object.keys(forms).length > 0 && (
               <Button type="button" size="sm" disabled={!dirty || pending} onClick={save} className="ml-auto">
@@ -293,7 +293,7 @@ export function CustomizeShell({
           <div className="flex flex-col gap-6 p-4">{children}</div>
         </div>
         {"custom" in preview ? (
-          <div className="flex min-h-[32rem] flex-1 flex-col bg-muted/40 p-4 @min-[64rem]/app:min-h-0 @min-[64rem]/app:overflow-y-auto">{preview.custom}</div>
+          <div className="flex min-h-[32rem] min-w-0 flex-1 flex-col bg-muted/40 p-4 @min-[61rem]/app:min-h-0 @min-[61rem]/app:overflow-y-auto">{preview.custom}</div>
         ) : (
           <PortalPreview version={version} draft={draft} {...preview} />
         )}
@@ -416,7 +416,7 @@ function PortalPreview({
   const page = path.replace(/[?#].*$/, "");
 
   return (
-    <div className="flex min-h-[36rem] flex-1 flex-col gap-3 bg-muted/40 p-4 @min-[64rem]/app:min-h-0">
+    <div className="flex min-h-[36rem] min-w-0 flex-1 flex-col gap-3 bg-muted/40 p-4 @min-[61rem]/app:min-h-0">
       <div className="flex justify-end gap-3">
         <Toggle label="Preview mode" options={THEMES} value={theme} onChange={setTheme} />
         <Toggle label="Preview size" options={DEVICES} value={device} onChange={setDevice} />
@@ -524,11 +524,11 @@ function CustomizeRail({ projectSlug, section }: { projectSlug: string; section:
   ));
   return (
     <>
-      <nav aria-label="Customize" className="hidden w-48 shrink-0 flex-col gap-4 overflow-y-auto border-r p-3 @min-[64rem]/app:flex">
+      <nav aria-label="Customize" className="hidden w-48 shrink-0 flex-col gap-4 overflow-y-auto border-r p-3 @min-[61rem]/app:flex">
         {groups}
       </nav>
       {/* `key`: closed again after moving to another section. */}
-      <details key={section} className="group border-b @min-[64rem]/app:hidden">
+      <details key={section} className="group border-b @min-[61rem]/app:hidden">
         <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
           Customize: {sectionTitle(section)}
           <ChevronDownIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />

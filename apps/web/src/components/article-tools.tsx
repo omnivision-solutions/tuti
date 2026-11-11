@@ -149,7 +149,7 @@ export function ArticleTools({
         {children}
         {desktop ? (
           active && (
-            <aside ref={card} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden @max-[76rem]/app:hidden @max-[80rem]/app:w-75 min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+            <aside ref={card} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden @max-[76rem]/app:hidden @max-[77rem]/app:w-75 min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
               {content}
             </aside>
           )

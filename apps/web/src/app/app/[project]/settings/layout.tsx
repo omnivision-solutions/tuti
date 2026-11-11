@@ -19,16 +19,16 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
   }
   // Three panes, as Docs: the menu a column of its own the page's height, the page beside it.
   return (
-    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t md:flex-row">
-      {/* On phones the page's heading comes first, above the menu (from tablet width up it's beside it, over the page). */}
-      <div className="px-6 pt-6 md:hidden">
+    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t @min-[48rem]/app:flex-row">
+      {/* With less than 48rem beside the sidebar, the page heading comes first, above the menu. */}
+      <div className="px-6 pt-6 @min-[48rem]/app:hidden">
         <PageHeader title="Settings" description="Your project, its team and the tools it connects to." />
       </div>
-      <aside className="px-6 pt-6 md:w-60 md:shrink-0 md:border-r md:p-0">
+      <aside className="px-6 pt-6 @min-[48rem]/app:w-60 @min-[48rem]/app:shrink-0 @min-[48rem]/app:border-r @min-[48rem]/app:p-0">
         <SettingsMenu groups={settingsGroups(slug, isAdminRole(membership.role))} />
       </aside>
-      <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8">
-        <div className="max-md:hidden md:contents">
+      <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 @min-[48rem]/app:px-8">
+        <div className="@max-[48rem]/app:hidden @min-[48rem]/app:contents">
           <PageHeader title="Settings" description="Your project, its team and the tools it connects to." />
         </div>
         {children}
