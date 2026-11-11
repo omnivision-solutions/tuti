@@ -1,5 +1,5 @@
 // Maintainers only: licences on Tuti's licence server (tuti.so), for support. Licences are bought on
-// tuti.so/license with Stripe; one bought there is on while its subscription is live, so cancel or
+// tuti.so/app/license with Stripe; one bought there is on while its subscription is live, so cancel or
 // refund that in Stripe instead (Stripe's next event about it would turn it back on).
 // Run against tuti.so's database (DATABASE_URL), e.g. with the maintainers' Infisical:
 //
