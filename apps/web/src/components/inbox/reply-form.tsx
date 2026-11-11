@@ -14,7 +14,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
-import { emailHint } from "@/lib/format";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
@@ -39,7 +38,6 @@ export function ReplyForm({
   projectSlug,
   recipient,
   emailed = false,
-  inWidget = false,
   number,
   userId,
   filesLastFor,
@@ -51,8 +49,6 @@ export function ReplyForm({
   projectSlug: string;
   recipient?: string;
   emailed?: boolean;
-  /** Readable in the widget: the reply job emails only what they haven't seen there within a minute. */
-  inWidget?: boolean;
   /** Who's signed in: their drafts are theirs. */
   userId: string;
   /** How long a file attached can still be sent (ms): unsent, the server deletes it after a while. */
@@ -376,7 +372,7 @@ export function ReplyForm({
       {emailed && !note && (
         <p className="inbox-composer-hint leading-normal mt-1.5 flex items-center justify-center gap-1.25 text-center text-xs text-muted-foreground [&>svg]:size-3.25">
           <MailIcon aria-hidden />
-          {emailHint(recipient, inWidget)}
+          Replies are emailed to {recipient?.split(" ")[0] ?? "them"}.
         </p>
       )}
     </>

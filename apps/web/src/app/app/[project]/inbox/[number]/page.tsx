@@ -327,8 +327,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             <div className="inbox-composer-wrap sticky bottom-0 mt-auto -mx-1.5 bg-card pt-1.25 pb-2.5 max-lg:-mx-0.5 min-[75rem]:group-data-[details=hidden]/thread:-mx-2">
               <ReplyForm
                 recipient={personName}
-                inWidget={!!(conversation.userId || conversation.visitorHash)}
-                emailed={!waitsForPause && "to" in (await replyRecipient(conversation.id))}
+                // Not for widget conversations: they're emailed only if unseen there for a minute, too fiddly to say here.
+                emailed={!conversation.userId && !conversation.visitorHash && !waitsForPause && "to" in (await replyRecipient(conversation.id))}
                 projectSlug={slug}
                 number={conversation.number}
                 userId={membership.userId}
