@@ -1,4 +1,4 @@
-import { plansEnabled } from "@tuti/shared";
+import { creditsEnabled, freeCredits, plansEnabled } from "@tuti/shared";
 import {
   ArrowRightIcon,
   BookOpenIcon,
@@ -881,7 +881,7 @@ function Widget() {
 
 function Autopilot() {
   return (
-    <section id="autopilot" className="dark">
+    <section id="autopilot" className="ap-band">
       <div className="wrap">
         <div className="center">
           <Eyebrow icon={<ZapIcon {...icon} />}>Autopilot</Eyebrow>
@@ -973,7 +973,9 @@ function Switch() {
 }
 
 function Pricing({ start }: { start: string }) {
-  const included = ["Help center", "AI answers", "Inbox", "Widget", "Feedback board", "Roadmap", "Changelog", "Autopilot"];
+  // AI answers and Autopilot are listed where every plan runs them: no AI credits to buy, or Free starts with some.
+  const ai = !creditsEnabled() || freeCredits() > 0;
+  const included = ["Help center", ...(ai ? ["AI answers"] : []), "Inbox", "Widget", "Feedback board", "Roadmap", "Changelog", ...(ai ? ["Autopilot"] : [])];
   return (
     <section id="pricing">
       <div className="wrap">

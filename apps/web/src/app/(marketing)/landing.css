@@ -13,10 +13,10 @@
   --line: var(--border);
   --line2: color-mix(in oklch, var(--border) 55%, var(--card));
   --g: var(--primary);
-  --g7: #166534;
+  --g7: var(--soft-foreground);
   --g8: #14532d;
   --g9: #0b2a18;
-  --g50: #effaf2;
+  --g50: var(--soft);
   --g100: #dcf3e3;
   --g200: #bbe7c8;
   --amber: #b45309;
@@ -430,18 +430,18 @@
   .code .s { color: #fde68a; }
   .code .a { color: #93c5fd; }
 
-  /* Autopilot: the dark band */
-  .dark { background: var(--g9); color: #e9f4ec; position: relative; overflow: hidden; padding-bottom: 100px; }
-  .dark::before {
+  /* Autopilot: the forest band */
+  .ap-band { background: var(--g9); color: #e9f4ec; position: relative; overflow: hidden; padding-bottom: 100px; }
+  .ap-band::before {
     content: ""; position: absolute; inset: 0; pointer-events: none;
     background:
       radial-gradient(700px 360px at 50% 0%, rgba(34, 197, 94, 0.22), transparent 70%),
       linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 48px 48px,
       linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 48px 48px;
   }
-  .dark .wrap { position: relative; }
-  .dark .eyebrow { color: #86efac; }
-  .dark .sub { color: #a7c2b0; }
+  .ap-band .wrap { position: relative; }
+  .ap-band .eyebrow { color: #86efac; }
+  .ap-band .sub { color: #a7c2b0; }
   .flow { margin-top: 60px; display: grid; justify-items: center; }
   .prbar {
     display: flex; align-items: center; gap: 12px; background: #fff; color: var(--ink); border-radius: 14px; padding: 12px 18px; font-size: 15px;
