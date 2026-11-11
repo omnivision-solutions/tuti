@@ -513,8 +513,16 @@ test("table and code context controls remain reachable on small laptops and phon
     const article = team.getByRole("textbox", { name: "Article", exact: true });
     const formatting = team.getByRole("toolbar", { name: "Formatting", exact: true });
     await article.click();
+    await expect(article).toBeFocused();
     await team.keyboard.press("ControlOrMeta+Home");
+    // Wait for ProseMirror to consume Home's native selectionchange before extending it:
+    // its delayed focus correction can otherwise restore the old caret over the new selection.
+    await expect.poll(() => article.evaluate((element) => {
+      const { selection } = (element as unknown as { editor: { state: { selection: { from: number; empty: boolean } } } }).editor.state;
+      return selection.from === 1 && selection.empty;
+    })).toBe(true);
     await team.keyboard.press("ControlOrMeta+Shift+ArrowRight");
+    await expect.poll(() => article.evaluate(() => window.getSelection()?.toString())).toBe("Owners");
     await expect(team.getByRole("toolbar", { name: "Text selection", exact: true })).toBeVisible();
     await team.keyboard.press("ArrowRight");
     await formatting.locator("summary").filter({ hasText: "Insert" }).click();
