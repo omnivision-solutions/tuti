@@ -171,8 +171,9 @@ the list picks none to approve at once.
   wider screens and below the menu row on phones. Pane heights and sticky menus use the full window on wider screens.
   A page of three panes (the sidebar, a column of its own, the page: Settings,
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
-  width. The app sidebar starts collapsed to the same icon rail on every page. Only its toggle or Ctrl/⌘+B opens
-  or collapses it; that choice stays across navigation, screen widths and reloads (the existing `sidebar_state`
+  width. The app sidebar starts collapsed to the same icon rail on every page. Only its toggle, Ctrl/⌘+B,
+  or App navigation in the Docs sheet can open it. The toggle and shortcut also collapse it; that choice stays
+  across navigation, screen widths and reloads (the existing `sidebar_state`
   cookie, kept for seven days). Phones keep their off-canvas sheet, which closes on navigation.
   Inset thresholds translated from viewport breakpoints subtract the 3rem rail: 64rem becomes 61rem,
   and 80rem becomes 77rem, preserving the layout at the default rail width.

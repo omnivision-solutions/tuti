@@ -6,6 +6,37 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 
+test("App navigation in the Docs sheet persists the sidebar choice at non-phone widths", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Example Team");
+  await createProject(team, "Example", slug);
+  await team.setViewportSize({ width: 900, height: 800 });
+  await team.goto(`/app/${slug}/docs`);
+  const sidebar = team.locator('[data-slot="sidebar"][data-state]');
+  const cookie = async () => (await team.context().cookies()).find((cookie) => cookie.name === "sidebar_state")?.value;
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  expect(await cookie()).toBeUndefined();
+  await team.getByRole("button", { name: "Browse docs", exact: true }).click();
+  const sheet = team.getByRole("dialog", { name: "Docs navigation", exact: true });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "App navigation", exact: true }).click();
+  await expect(sheet).toBeHidden();
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await expect.poll(cookie).toBe("true");
+  await team.reload();
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await expect(sheet).toBeHidden();
+  await checkpoint(team, "docs-app-navigation-opened-sidebar", { fullPage: false });
+  await sidebar.locator('[data-slot="sidebar-trigger"]').click();
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await expect.poll(cookie).toBe("false");
+  await team.reload();
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await expect(sheet).toBeHidden();
+  await checkpoint(team, "docs-app-navigation-collapsed-sidebar", { fullPage: false });
+});
+
 test("new and saved articles fit the same room beside the sidebar", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
