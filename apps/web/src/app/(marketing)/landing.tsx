@@ -985,7 +985,7 @@ function Pricing({ start }: { start: string }) {
               <br />
               Never per seat.
             </h2>
-            <p className="sub">One price per project, however big your team gets.</p>
+            <p className="sub">One price per project, not per seat.</p>
             <div className="ctas left">
               <Start start={start} arrow={false} />
               <Link className="btn btn-s" href="/pricing">
@@ -997,6 +997,7 @@ function Pricing({ start }: { start: string }) {
             <div className="big">
               $0<small>to start</small>
             </div>
+            <div className="cap in-every">In every plan</div>
             <ul className="inc">
               {included.map((item) => (
                 <li key={item}>

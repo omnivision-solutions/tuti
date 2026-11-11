@@ -1,15 +1,19 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, type RefObject, useState } from "react";
+
+import { SCROLLING_ROW, useScrollingRow } from "@/components/sub-nav";
 
 /** The hero's product window: a tab per part of Tuti, one picture showing at a time (the first before any script runs). */
 export function HeroTabs({ panels }: { panels: { label: string; icon: ReactNode; url: string; picture: ReactNode }[] }) {
   const [open, setOpen] = useState(0);
+  // Too narrow (a phone), the tabs scroll sideways, faded at the end with more, the open one in view (docs/design.md, Layout).
+  const row = useScrollingRow(open, panels.length) as RefObject<HTMLDivElement | null>;
   return (
     <div className="show">
-      <div className="tabs">
+      <div ref={row} className={`tabs ${SCROLLING_ROW}`}>
         {panels.map((panel, i) => (
-          <button key={panel.label} type="button" className="tab" aria-pressed={i === open} onClick={() => setOpen(i)}>
+          <button key={panel.label} type="button" className="tab scroll-mx-12" aria-pressed={i === open} data-active={i === open || undefined} onClick={() => setOpen(i)}>
             {panel.icon}
             {panel.label}
           </button>

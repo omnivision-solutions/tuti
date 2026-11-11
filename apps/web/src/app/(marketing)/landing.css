@@ -72,7 +72,8 @@
 
   /* The hero's product window */
   .show { margin: 64px auto 0; max-width: 1180px; position: relative; }
-  .tabs { display: flex; gap: 6px; justify-content: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 6px; justify-content: safe center; margin: 0 -28px 18px; padding: 2px 28px; }
+  .tab { flex: none; }
   .tab {
     display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px; border-radius: 12px; font-weight: 600; font-size: 15px;
     color: var(--muted); border: 1px solid transparent; cursor: pointer;
@@ -481,7 +482,8 @@
   .price .r { padding: 56px; background: linear-gradient(160deg, #eef8f1, #f8f7f2); border-left: 1px solid var(--line); }
   .big { font-size: 96px; letter-spacing: -0.05em; color: var(--ink); }
   .big small { font: 600 20px var(--font-sans); letter-spacing: 0; color: var(--muted); margin-left: 6px; }
-  .inc { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin-top: 22px; }
+  .in-every { margin: 26px 0 0; }
+  .inc { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin-top: 12px; }
   .inc li { display: flex; gap: 10px; align-items: center; font-weight: 600; }
   .inc li svg { color: var(--g); }
 
@@ -535,8 +537,8 @@
     .lead { font-size: 18px; margin-top: 18px; }
     .ctas { flex-direction: column; align-items: stretch; }
     .show { margin-top: 44px; }
-    .tabs { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; margin: 0 -20px 12px; padding: 2px 20px; scrollbar-width: none; }
-    .tab { flex: none; height: 38px; padding: 0 13px; font-size: 14px; }
+    .tabs { margin: 0 -20px 12px; padding: 2px 20px; }
+    .tab { height: 38px; padding: 0 13px; font-size: 14px; }
     .stage { padding: 6px; border-radius: 18px; }
     .stage::after { display: none; }
     .win { height: 540px; border-radius: 13px; }
