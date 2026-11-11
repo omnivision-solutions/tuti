@@ -26,6 +26,10 @@ for (const pane of [
     const handle = team.getByRole("separator", { name: pane.label });
     const column = team.locator(pane.selector);
     const width = () => column.evaluate((element) => element.getBoundingClientRect().width);
+    // The list reserves 480px for the conversation and the details card's preferred 300px plus its gap.
+    const maximum = async (viewport = 1280) => pane.name === "docs tree" ? pane.max : Math.max(pane.min, Math.min(pane.max,
+      (await team.locator(".inbox-workspace").boundingBox())!.width - 480 - 12 - (viewport >= 1200 ? 312 : 0)));
+    const initialMax = await maximum();
     const fits = async (viewport = 1280) => {
       expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport);
       for (const selector of [pane.name === "docs tree" ? ".docs-tree-expanded" : pane.selector, pane.name === "docs tree" ? ".docs-page-content" : ".inbox-thread"]) {
@@ -39,16 +43,18 @@ for (const pane of [
       if (pane.name === "conversation list") {
         if (viewport >= 1200) await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeVisible();
         else await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeHidden();
-        expect((await team.locator("#conversation").boundingBox())!.width).toBeGreaterThan(280);
+        expect((await team.locator("#conversation").boundingBox())!.width).toBeGreaterThanOrEqual(480);
         const title = (await team.getByRole("heading", { name: "How can I share a calendar with everyone on my team?" }).boundingBox())!;
         expect(title.height).toBeLessThan(150);
+        const close = (await team.getByRole("button", { name: "Close", exact: true }).boundingBox())!;
+        expect(Math.abs(close.y - title.y)).toBeLessThanOrEqual(1);
       }
     };
     await expect(handle).toBeVisible();
     await expect(handle).toHaveCSS("cursor", "col-resize");
     await expect(handle).toHaveAttribute("aria-orientation", "vertical");
     await expect(handle).toHaveAttribute("aria-valuemin", String(pane.min));
-    await expect(handle).toHaveAttribute("aria-valuemax", String(pane.max));
+    await expect(handle).toHaveAttribute("aria-valuemax", String(initialMax));
     expect(await width()).toBe(pane.default);
     const initialHandle = (await handle.boundingBox())!;
     const initialPane = (await column.boundingBox())!;
@@ -66,8 +72,8 @@ for (const pane of [
       await checkpoint(team, `${pane.name}-${theme}-default`, { fullPage: false });
       await handle.focus();
       await team.keyboard.press("End");
-      await expect(handle).toHaveAttribute("aria-valuenow", String(pane.max));
-      expect(await width()).toBe(pane.max);
+      await expect(handle).toHaveAttribute("aria-valuenow", String(initialMax));
+      expect(await width()).toBe(initialMax);
       await fits();
       await handle.hover();
       expect(await handle.locator("span").evaluate((element) => {
@@ -83,7 +89,7 @@ for (const pane of [
       expect(await width()).toBe(pane.default);
     }
     // A drag keeps the cursor and selection lock even outside the gap, and clamps at both ends.
-    for (const [delta, expected] of [[1500, pane.max], [-1500, pane.min]] as const) {
+    for (const [delta, expected] of [[1500, initialMax], [-1500, pane.min]] as const) {
       const box = (await handle.boundingBox())!;
       const x = box.x + box.width / 2;
       const y = box.y + box.height / 2;
@@ -106,11 +112,44 @@ for (const pane of [
     await team.keyboard.press("End");
     for (const viewport of [1024, 1200, 1280]) {
       await team.setViewportSize({ width: viewport, height: 900 });
-      expect(await width()).toBe(pane.max);
+      const expectedMax = await maximum(viewport);
+      await expect(handle).toHaveAttribute("aria-valuemax", String(expectedMax));
+      await team.keyboard.press("End");
+      expect(await width()).toBe(expectedMax);
       await fits(viewport);
     }
+    if (pane.name === "conversation list") {
+      // A preference chosen with ample room survives tighter windows and opening/closing details.
+      await team.setViewportSize({ width: 1600, height: 900 });
+      await expect(handle).toHaveAttribute("aria-valuemax", String(pane.max));
+      await team.keyboard.press("End");
+      await team.setViewportSize({ width: 1280, height: 900 });
+      await expect(handle).toHaveAttribute("aria-valuemax", String(initialMax));
+      expect(await width()).toBe(initialMax);
+      await fits();
+      await team.getByRole("button", { name: "Hide details", exact: true }).click();
+      await expect(handle).toHaveAttribute("aria-valuemax", String(pane.max));
+      expect(await width()).toBe(pane.max);
+      await team.getByRole("button", { name: "Show details", exact: true }).click();
+      await expect(handle).toHaveAttribute("aria-valuemax", String(initialMax));
+      expect(await width()).toBe(initialMax);
+      expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe(String(pane.max));
+      // With hydration blocked, CSS must clamp the oversized preference on the first render too.
+      await team.route(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/, (route) => route.abort());
+      await team.reload({ waitUntil: "load" });
+      expect(await width()).toBe(initialMax);
+      expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe(String(pane.max));
+      await team.unroute(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/);
+      await team.reload();
+      await team.setViewportSize({ width: 1600, height: 900 });
+      await expect(handle).toHaveAttribute("aria-valuenow", String(pane.max));
+      expect(await width()).toBe(pane.max);
+      await team.setViewportSize({ width: 1280, height: 900 });
+      await expect(handle).toHaveAttribute("aria-valuenow", String(initialMax));
+      await handle.focus();
+    }
     await team.keyboard.press("ArrowLeft");
-    const saved = pane.max - 10;
+    const saved = initialMax - 10;
     expect(await width()).toBe(saved);
 
     // Block hydration: the inline restoration must size the server HTML itself, before React can fix it.
@@ -141,10 +180,12 @@ for (const pane of [
     await team.goto(`/app/${slug}/${pane.path}`);
     // CSS defaults and the separator's px values agree even when the text is enlarged.
     await team.locator("html").evaluate((element) => { element.style.fontSize = "20px"; });
-    expect(await width()).toBe(pane.default);
+    const enlargedDefault = pane.name === "docs tree" ? pane.default : pane.min;
+    await expect(handle).toHaveAttribute("aria-valuenow", String(enlargedDefault));
+    expect(await width()).toBe(enlargedDefault);
     await handle.focus();
     await team.keyboard.press("ArrowRight");
-    expect(await width()).toBe(pane.default + 10);
+    expect(await width()).toBe(pane.name === "docs tree" ? pane.default + 10 : pane.min);
     await handle.dblclick();
     await team.locator("html").evaluate((element) => { element.style.removeProperty("font-size"); });
     for (const viewport of [{ width: 820, height: 1000 }, { width: 390, height: 844 }]) {

@@ -5,18 +5,47 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 
 import { PANE_WIDTHS, type ResizablePane } from "@/lib/pane-width";
 
-function subscribe(changed: () => void) {
-  const observer = new MutationObserver(changed);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
-  return () => observer.disconnect();
-}
-
 /** An overlay in the existing 12px pane gap: resizing never adds a column or moves the gap. */
 export function PaneResize({ pane, className }: { pane: ResizablePane; className: string }) {
   const config = PANE_WIDTHS[pane];
-  const width = useSyncExternalStore(subscribe, () => Number.parseFloat(document.documentElement.style.getPropertyValue(config.variable)) || config.default, () => config.default);
   const drag = useRef<{ x: number; width: number; pointer: number } | null>(null);
   const handle = useRef<HTMLDivElement>(null);
+  const subscribe = useCallback((changed: () => void) => {
+    const mutations = new MutationObserver(changed);
+    mutations.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+    const sizes = new ResizeObserver(changed);
+    const column = document.querySelector(config.selector);
+    if (column) sizes.observe(column);
+    const workspace = handle.current?.closest(".inbox-workspace");
+    if (workspace) {
+      sizes.observe(workspace);
+      mutations.observe(workspace, { attributes: true, attributeFilter: ["data-details"], childList: true, subtree: true });
+    }
+    window.addEventListener("resize", changed);
+    return () => {
+      mutations.disconnect();
+      sizes.disconnect();
+      window.removeEventListener("resize", changed);
+    };
+  }, [config]);
+  const snapshot = useCallback(() => {
+    let max: number = config.max;
+    const workspace = handle.current?.closest(".inbox-workspace");
+    if (workspace) {
+      // CSS reserves this room before hydration; measuring the rendered cards keeps ARIA and input in sync.
+      // Layout changes only clamp the rendered width, leaving the stored preference untouched.
+      const thread = workspace.querySelector(".inbox-thread");
+      const details = workspace.querySelector(".inbox-details");
+      const detailsWidth = details?.getBoundingClientRect().width ?? 0;
+      const detailsSpace = detailsWidth && thread ? detailsWidth + Number.parseFloat(getComputedStyle(thread).columnGap) : 0;
+      const gap = Number.parseFloat(getComputedStyle(workspace).columnGap);
+      max = Math.max(config.min, Math.min(max, Math.floor(workspace.getBoundingClientRect().width - gap - detailsSpace - 480)));
+    }
+    const preferred = Number.parseFloat(document.documentElement.style.getPropertyValue(config.variable)) || config.default;
+    return `${Math.min(max, preferred)},${max}`;
+  }, [config]);
+  const [width, max] = useSyncExternalStore(subscribe, snapshot, () => `${config.default},${config.max}`).split(",").map(Number);
+
   const stop = useCallback(() => {
     const pointer = drag.current?.pointer;
     drag.current = null;
@@ -35,7 +64,7 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
   }, [stop]);
   const setWidth = (value: number | null) => {
     const root = document.documentElement;
-    const next = value === null ? null : Math.round(Math.min(config.max, Math.max(config.min, value)));
+    const next = value === null ? null : Math.round(Math.min(max, Math.max(config.min, value)));
     if (next === null) root.style.removeProperty(config.variable);
     else root.style.setProperty(config.variable, `${next}px`);
     try {
@@ -54,7 +83,7 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
       aria-orientation="vertical"
       aria-valuenow={width}
       aria-valuemin={config.min}
-      aria-valuemax={config.max}
+      aria-valuemax={max}
       className={cn("pane-resize group/resize z-20 hidden w-2.5 touch-none cursor-col-resize items-center justify-center outline-none lg:flex", className)}
       onPointerDown={(event) => {
         if (event.button !== 0 || drag.current) return;
@@ -73,7 +102,7 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
       onLostPointerCapture={stop}
       onDoubleClick={() => setWidth(null)}
       onKeyDown={(event) => {
-        const next = { ArrowLeft: width - 10, ArrowRight: width + 10, Home: config.min, End: config.max }[event.key];
+        const next = { ArrowLeft: width - 10, ArrowRight: width + 10, Home: config.min, End: max }[event.key];
         if (next === undefined) return;
         event.preventDefault();
         setWidth(next);

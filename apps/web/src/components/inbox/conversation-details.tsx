@@ -26,7 +26,7 @@ const subscribeWidth = (listener: () => void) => {
 
 export function ConversationDetails({ hidden, children }: { hidden: boolean; children: ReactNode }) {
   return (
-    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(18rem,1fr)_minmax(15rem,18.75rem)] grid-rows-[auto_minmax(0,1fr)] gap-x-3 data-[details=hidden]:grid-cols-[minmax(0,1fr)] max-[75rem]:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
+    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(480px,1fr)_minmax(0,18.75rem)] grid-rows-[auto_minmax(0,1fr)] gap-x-3 data-[details=hidden]:grid-cols-[minmax(0,1fr)] max-[75rem]:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
       {children}
     </div>
   );

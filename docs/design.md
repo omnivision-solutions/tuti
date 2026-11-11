@@ -216,8 +216,9 @@ the list picks none to approve at once.
   its canvas, surface, bubble fills and shadow use the `inbox-*` tokens in `globals.css`.
   From laptop width up, the Docs tree (240–440px) and Inbox list (300–520px, 350px by default) resize from a 10px handle
   centred in their gap. Hover, focus and dragging highlight its line in primary; dragging keeps the resize cursor and
-  prevents selection across the page. A narrow conversation wraps its title actions below the subject, and its details
-  column can narrow to keep the messages readable. A narrow Docs page wraps its title actions too. Arrow keys resize by 10px, Home/End pick the limits, and double-click resets.
+  prevents selection across the page. The Inbox limit also reserves at least 480px for the conversation beside visible
+  details, recomputing as the window or details change without replacing the saved preference. Conversation actions stay
+  beside the subject, which takes at most two lines on desktop. A narrow Docs page wraps its title actions. Arrow keys resize by 10px, Home/End pick the limits, and double-click resets.
   Each width is remembered in the browser and restored before paint; folded trees and smaller screens have no handle.
   Company keeps company, plan and seats together; Customer details keeps identity, other properties, groups, posts and votes reachable; visits and events show zero until
   recorded. The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
