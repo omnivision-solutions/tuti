@@ -16,9 +16,9 @@ export function licensePrice(interval: PlanInterval): string | null {
   return licensePrivateKey() && process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET ? badgePrice(interval) : null;
 }
 
-/** tuti.so/license for a project on an installation, where Stripe sends the buyer back. */
+/** tuti.so/app/license for a project on an installation, where Stripe sends the buyer back. */
 export function licensePage(ids: { installation: string; project: string; claim?: string }, extra: Record<string, string> = {}): URL {
-  const url = new URL("/license", appUrl());
+  const url = new URL("/app/license", appUrl());
   url.search = new URLSearchParams({ ...ids, ...extra }).toString();
   return url;
 }

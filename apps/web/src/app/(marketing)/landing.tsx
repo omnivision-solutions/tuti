@@ -801,7 +801,7 @@ function Widget() {
           <h2>All of it, inside your product.</h2>
           <p className="sub">Help, messages, feedback and what’s new. One script tag.</p>
           <div className="code">
-            <span className="k">&lt;script</span> <span className="a">src</span>=<span className="s">&quot;https://tuti.so/widget.js&quot;</span>{" "}
+            <span className="k">&lt;script</span> <span className="a">src</span>=<span className="s">&quot;https://tuti.so/api/widget.js&quot;</span>{" "}
             <span className="a">data-project</span>=<span className="s">&quot;lumen&quot;</span> <span className="a">async</span>
             <span className="k">&gt;&lt;/script&gt;</span>
           </div>

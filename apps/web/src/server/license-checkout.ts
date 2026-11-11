@@ -27,7 +27,7 @@ function checkoutAllowed(now = Date.now()): boolean {
 }
 
 /**
- * "Buy a licence" on tuti.so/license (docs/plan.md, Licences): a Stripe Checkout page for the licence
+ * "Buy a licence" on tuti.so/app/license (docs/plan.md, Licences): a Stripe Checkout page for the licence
  * of one project on one installation, billed each month or each year (`interval`). Anyone with the page may pay for it; what they buy is
  * named by the ids in the link "Get a licence" opened. The subscription carries both ids, and Stripe's
  * webhook turns the licence on once it's paid (server/subscriptions.ts). The link's `claim` (its installation's

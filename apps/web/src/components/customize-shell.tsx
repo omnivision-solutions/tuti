@@ -21,7 +21,7 @@ import { keepingFields } from "@/lib/forms";
 import { CUSTOMIZE, PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/portal-base";
 import { isFromPortal, type PortalLook, PREVIEW_FRAME, type ToPortal, type WidgetLook } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
-import { CUSTOMIZE_GROUPS, sectionTitle } from "@/app/app/[project]/customize/sections";
+import { CUSTOMIZE_GROUPS, sectionTitle } from "@/app/app/(workspace)/[project]/customize/sections";
 import type { WidgetIcon } from "@/lib/widget-icons";
 import type { FormState } from "@/server/form-state";
 

@@ -95,7 +95,7 @@ test.beforeAll(async () => {
       : "";
     response.setHeader("content-type", "text/html");
     response.end(`<!doctype html><title>Customer site</title><h1>Customer site</h1>${inline}${identify}
-      <script src="${APP_URL}/widget.js" data-project="${path}"${scriptAttributes} async></script>`);
+      <script src="${APP_URL}/api/widget.js" data-project="${path}"${scriptAttributes} async></script>`);
   });
   await new Promise<void>((resolve) => site.listen(0, resolve));
 });
@@ -1691,7 +1691,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await owner.getByRole("button", { name: "Copy the widget's script tag" }).click();
   await expect(owner.getByText("Copied")).toBeVisible();
-  expect(await owner.evaluate(() => navigator.clipboard.readText())).toBe(`<script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`);
+  expect(await owner.evaluate(() => navigator.clipboard.readText())).toBe(`<script src="${APP_URL}/api/widget.js" data-project="${slug}" async></script>`);
   await owner.getByLabel("Button name").fill("Help & ideas");
   // The colour as hex beside its swatch, kept in step: #rgb is read as #rrggbb, and what isn't a colour says so.
   const hex = owner.getByLabel("Colour", { exact: true });

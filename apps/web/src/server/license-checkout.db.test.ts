@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { startStripeFake, type FakeStripeEvent, type StripeFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
-import LicensePage from "@/app/(marketing)/license/page";
+import LicensePage from "@/app/app/(account-pages)/license/page";
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
 import { EmptyState } from "@/components/empty-state";
 import { testLicensePrivateKey } from "@/test/license";
@@ -14,7 +14,7 @@ import { buyLicense } from "./license-checkout";
 import { refreshLicense } from "./license-server";
 
 /**
- * Self-hosted licences bought on tuti.so/license (docs/plan.md, Licences): Stripe Checkout for the
+ * Self-hosted licences bought on tuti.so/app/license (docs/plan.md, Licences): Stripe Checkout for the
  * project on the installation the link names, on while its subscription is live.
  */
 
@@ -101,7 +101,7 @@ test("or yearly, at the add-on's yearly price; without that price, a yearly one 
   ids.project = `proj-${randomUUID()}`;
   vi.stubEnv("STRIPE_PRICE_BADGE_YEARLY", "");
   const sessions = stripe.sessions.length;
-  expect(await buy("year")).toBe(`https://app.tuti.example/license?installation=${ids.installation}&project=${ids.project}`);
+  expect(await buy("year")).toBe(`https://app.tuti.example/app/license?installation=${ids.installation}&project=${ids.project}`);
   expect(stripe.sessions.length).toBe(sessions);
 });
 
@@ -118,7 +118,7 @@ test("cancelled in Stripe, renewals are refused, so the key lapses; bought again
 test("not sold twice: a licence that's on sends the buyer back to the page instead of Stripe", async () => {
   await bought();
   const sessions = stripe.sessions.length;
-  expect(await buy()).toBe(`https://app.tuti.example/license?installation=${ids.installation}&project=${ids.project}`);
+  expect(await buy()).toBe(`https://app.tuti.example/app/license?installation=${ids.installation}&project=${ids.project}`);
   expect(stripe.sessions.length).toBe(sessions);
 });
 
@@ -193,7 +193,7 @@ test("a link whose claim isn't one (not a hash, or cut short) is sent back to Tu
     const sessions = stripe.sessions.length;
     const back = new URL(await buy("month", claim));
     expect(stripe.sessions.length).toBe(sessions);
-    const page = (await LicensePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/license">)) as React.ReactElement<
+    const page = (await LicensePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/app/license">)) as React.ReactElement<
       React.ComponentProps<typeof EmptyState>
     >;
     expect(page.type).toBe(EmptyState);
@@ -205,7 +205,7 @@ test("Tuti's cloud sells and renews no licence for itself: hiding the badge ther
   vi.stubEnv("PLANS", "on");
   ids.installation = await installationId();
   const sessions = stripe.sessions.length;
-  expect(await buy()).toBe(`https://app.tuti.example/license?installation=${ids.installation}&project=${ids.project}`);
+  expect(await buy()).toBe(`https://app.tuti.example/app/license?installation=${ids.installation}&project=${ids.project}`);
   expect(stripe.sessions.length).toBe(sessions);
   // Nor one activated by hand.
   await prisma.license.create({ data: { installationId: ids.installation, projectId: ids.project } });
@@ -225,15 +225,15 @@ test("at most 20 checkouts in any minute across everyone (the page is public): m
   try {
     const sessions = stripe.sessions.length;
     at(0);
-    expect(await buyOne()).not.toContain("/license?");
+    expect(await buyOne()).not.toContain("/app/license?");
     at(50);
     for (let i = 0; i < 19; i++) {
-      expect(await buyOne()).not.toContain("/license?");
+      expect(await buyOne()).not.toContain("/app/license?");
     }
     expect(await buyOne()).toContain("failed=1");
     // A minute after the first: only its place is free again, as the other 19 are still in the last minute.
     at(61);
-    expect(await buyOne()).not.toContain("/license?");
+    expect(await buyOne()).not.toContain("/app/license?");
     expect(await buyOne()).toContain("failed=1");
     expect(stripe.sessions.length).toBe(sessions + 21);
   } finally {
@@ -244,9 +244,9 @@ test("at most 20 checkouts in any minute across everyone (the page is public): m
 test("without Stripe, or for ids that aren't ones, nothing is sold: back to the page, which says to email", async () => {
   vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", "");
   const sessions = stripe.sessions.length;
-  expect(await buy()).toContain("/license?");
+  expect(await buy()).toContain("/app/license?");
   vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", stripe.env.STRIPE_PRICE_BADGE_MONTHLY!);
   ids.project = "not an id";
-  expect(await buy()).toContain("/license?");
+  expect(await buy()).toContain("/app/license?");
   expect(stripe.sessions.length).toBe(sessions);
 });

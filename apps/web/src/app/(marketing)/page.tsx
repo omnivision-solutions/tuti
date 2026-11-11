@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default async function Home() {
   // Signed in, "Start free" is "Open app", to the app rather than sign-up.
-  const start = (await getSession()) ? "/app" : "/sign-up";
+  const start = (await getSession()) ? "/app" : "/app/auth/sign-up";
   const docs = await docsUrl();
   // "See a live help center": Tuti's own, on Tuti, where the server has one.
   return <Landing start={start} docs={docs.startsWith(REPO_URL) ? null : docs} />;

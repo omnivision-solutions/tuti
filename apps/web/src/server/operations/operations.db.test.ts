@@ -21,7 +21,7 @@ import { type Operation, type OperationName, operations } from "./index";
 
 /**
  * Every operation on the API surface (REST; MCP serves the same operations with
- * the same key check, see app/mcp/mcp.db.test.ts): a read-only key may run reads
+ * the same key check, see app/api/mcp/mcp.db.test.ts): a read-only key may run reads
  * and is refused writes without changing anything; a read and write key may run
  * everything; another project's key never reaches this project's data. In the
  * app, operations run through server actions, which the authorization matrix

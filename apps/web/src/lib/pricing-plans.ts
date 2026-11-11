@@ -111,7 +111,7 @@ export function pricingPlans(): PricingPlan[] {
         ...history("FREE"),
         versions("FREE"),
       ],
-      cta: { label: "Start free", href: "/sign-up" },
+      cta: { label: "Start free", href: "/app/auth/sign-up" },
     },
     {
       name: PLAN_PRICES.PRO.name,
@@ -129,7 +129,7 @@ export function pricingPlans(): PricingPlan[] {
         versions("PRO"),
         { text: "Reporting, up to a month" },
       ],
-      cta: { label: "Start with Pro", href: "/sign-up" },
+      cta: { label: "Start with Pro", href: "/app/auth/sign-up" },
       featured: true,
     },
     {
@@ -148,7 +148,7 @@ export function pricingPlans(): PricingPlan[] {
         { text: "Your help center under a path of your site" },
         { text: "Priority support" },
       ],
-      cta: { label: "Start with Business", href: "/sign-up" },
+      cta: { label: "Start with Business", href: "/app/auth/sign-up" },
     },
   ];
 }

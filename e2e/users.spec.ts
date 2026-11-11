@@ -18,7 +18,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.getByRole("link", { name: "Users", exact: true }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));
   await expect(owner.getByText("No users yet")).toBeVisible();
-  await expect(owner.getByRole("link", { name: "Syncing users" })).toHaveAttribute("href", "/docs/api#users.sync");
+  await expect(owner.getByRole("link", { name: "Syncing users" })).toHaveAttribute("href", "/api/docs#users.sync");
 
   // The team's app sends three users, and there's a group for enterprise customers.
   const api = await apiFor(owner, slug);

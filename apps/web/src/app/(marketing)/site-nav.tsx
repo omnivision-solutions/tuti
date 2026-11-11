@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { AUTH_PAGES } from "@/components/theme-provider";
 import { buttonVariants } from "@/components/ui/button";
 
 import { SECTIONS } from "./sections";
@@ -78,17 +77,14 @@ export function MobileNav({ pricing, signedIn, docs }: { pricing: boolean; signe
               Open app
             </Link>
           ) : (
-            // Not on the sign-in pages themselves (as the header's SignedOutLinks): the form is the way in there.
-            !AUTH_PAGES.has(pathname.split("/")[1] ?? "") && (
             <>
-              <Link href="/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg" })}>
+              <Link href="/app/auth/sign-in" onClick={close} className={buttonVariants({ variant: "outline", size: "lg" })}>
                 Sign in
               </Link>
-              <Link href="/sign-up" onClick={close} className={buttonVariants({ size: "lg" })}>
+              <Link href="/app/auth/sign-up" onClick={close} className={buttonVariants({ size: "lg" })}>
                 Start free
               </Link>
             </>
-            )
           )}
         </div>
       </nav>
@@ -96,19 +92,15 @@ export function MobileNav({ pricing, signedIn, docs }: { pricing: boolean; signe
   );
 }
 
-/** The header's Sign in and Start free, but not on the sign-in pages themselves: the form is the way in there. */
+/** The header's Sign in and Start free. */
 export function SignedOutLinks() {
-  const pathname = usePathname();
-  if (AUTH_PAGES.has(pathname.split("/")[1] ?? "")) {
-    return null;
-  }
   return (
     <>
-      <Link href="/sign-in" className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
+      <Link href="/app/auth/sign-in" className={buttonVariants({ variant: "ghost", className: "max-md:hidden" })}>
         Sign in
       </Link>
       {/* On phones too, beside the menu: the page's main action stays in reach. */}
-      <Link href="/sign-up" className={buttonVariants()}>
+      <Link href="/app/auth/sign-up" className={buttonVariants()}>
         Start free
       </Link>
     </>

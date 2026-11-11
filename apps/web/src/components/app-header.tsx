@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { CUSTOMIZE_GROUPS } from "@/app/app/[project]/customize/sections";
+import { CUSTOMIZE_GROUPS } from "@/app/app/(workspace)/[project]/customize/sections";
 import { type ProjectSummary, useCurrentProject } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";

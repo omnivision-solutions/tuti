@@ -10,7 +10,7 @@ test("someone buying a licence sees which installation and project it's for, and
   const installation = `e2e-installation-${randomUUID().slice(0, 8)}`;
   const project = `e2e-project-${randomUUID().slice(0, 8)}`;
   // Where "Get a licence" in Customize → Branding → Powered by tuti goes, on tuti.so.
-  await page.goto(`${APP_URL}/license?installation=${installation}&project=${project}`);
+  await page.goto(`${APP_URL}/app/license?installation=${installation}&project=${project}`);
   await expect(page.getByRole("heading", { name: 'Remove "Powered by tuti"' })).toBeVisible();
   await expect(page.getByRole("definition").filter({ hasText: installation })).toBeVisible();
   await expect(page.getByRole("definition").filter({ hasText: project })).toBeVisible();
@@ -30,6 +30,6 @@ test("someone buying a licence sees which installation and project it's for, and
   await checkpoint(page, "license-page-licensed");
 
   // Without the ids, it says where to start.
-  await page.goto(`${APP_URL}/license?installation=${installation}`);
+  await page.goto(`${APP_URL}/app/license?installation=${installation}`);
   await expect(page.getByText("Open this page from your Tuti")).toBeVisible();
 });

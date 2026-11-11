@@ -64,7 +64,7 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
   // The widget's script tag, to copy.
   await owner.waitForURL(`**/app/${slug}/setup?step=widget`);
   await expect(owner.getByText("Step 3 of 4")).toBeVisible();
-  const snippet = `<script src="${APP_URL}/widget.js" data-project="${slug}" async></script>`;
+  const snippet = `<script src="${APP_URL}/api/widget.js" data-project="${slug}" async></script>`;
   await expect(owner.getByText(snippet)).toBeVisible();
   await owner.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await owner.getByRole("button", { name: "Copy the widget's script tag" }).click();

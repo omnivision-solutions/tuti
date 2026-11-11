@@ -654,7 +654,7 @@ test("a team member who resets their password by the emailed link has verified t
     reset.set("token", link.searchParams.get("token")!);
     reset.set("password", "a brand new password");
     reset.set("confirm", "a brand new password");
-    expect(await setNewPassword(reset)).toEqual({ location: "/sign-in?reset=done" });
+    expect(await setNewPassword(reset)).toEqual({ location: "/app/auth/sign-in?reset=done" });
   } finally {
     request.host = "";
   }

@@ -51,7 +51,7 @@ export async function proxy(request: NextRequest) {
   const target = await requestTarget(host);
 
   if (target.kind === "portal") {
-    if (pathname.startsWith("/api/")) {
+    if (isSharedApi(pathname)) {
       return NextResponse.next();
     }
     // "Check setup" for a portal under a path of the team's site: the site forwards <path>/.well-known/tuti-site here.
@@ -138,10 +138,13 @@ export async function proxy(request: NextRequest) {
   return new NextResponse(null, { status: 404 });
 }
 
+/** The API, on every host: but not its reference (/api/docs), a page of the app's own. */
+const isSharedApi = (path: string) => path.startsWith("/api/") && path !== "/api/docs";
+
 /** A request under a portal's path on a site (`path`: the portal's own path of it). */
 function mounted(request: NextRequest, slug: string, mount: { origin: string; path: string }, path: string) {
   // Signing in there: the auth API, under the path too; and Tuti's icon.
-  if (path.startsWith("/api/") || path === "/icon.svg") {
+  if (isSharedApi(path) || path === "/icon.svg") {
     const url = request.nextUrl.clone();
     url.pathname = path;
     return NextResponse.rewrite(url, { request: { headers: fromSite(request, mount) } });

@@ -13,13 +13,10 @@ export function appPortalProject(): string | null {
 }
 
 /**
- * The app's own first path segments: Tuti's own portal can't be under one (APP_PORTAL_PROJECT=docs
- * would take /docs/api, the API reference; api, the API), so such a slug is ignored.
+ * The app's own first path segments: Tuti's own portal can't be under one (APP_PORTAL_PROJECT=api
+ * would take /api/docs, the API reference, and the API), so such a slug is ignored.
  */
-const APP_PATHS = new Set([
-  "app", "api", "docs", "mcp", "design", "sign-in", "sign-up", "forgot-password", "reset-password", "invite",
-  "continue", "license", "terms", "privacy", "portal", "widget.js", "_tuti", "_next",
-]);
+const APP_PATHS = new Set(["app", "api", "terms", "privacy", "portal", "_tuti", "_next"]);
 
 /** Where Tuti's own portal is on the app's domain, as a site mount, or null. */
 export function appPortalMount(): { slug: string; origin: string; path: string } | null {

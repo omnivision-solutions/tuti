@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { isValidElement, type ReactElement } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import ConversationPage from "@/app/app/[project]/inbox/[number]/page";
+import ConversationPage from "@/app/app/(workspace)/[project]/inbox/[number]/page";
 import * as reads from "@/server/conversation-reads";
 import { actAs, createProject, signUp } from "@/test/helpers";
 

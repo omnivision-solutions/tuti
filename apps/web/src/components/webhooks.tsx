@@ -101,7 +101,7 @@ export function Webhooks({ projectSlug, webhooks }: { projectSlug: string; webho
             </div>
             <span>
               Check the Tuti-Signature header of every request with it (
-              <a href="/docs/api#webhooks" className="underline underline-offset-4">
+              <a href="/api/docs#webhooks" className="underline underline-offset-4">
                 how
               </a>
               ).

@@ -168,7 +168,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(dialog).toBeVisible();
   // Bought on the licence server (tuti.so; this installation itself here) for this installation and project.
   const buy = new URL((await dialog.getByRole("link", { name: "Get a licence" }).getAttribute("href"))!);
-  expect(`${buy.origin}${buy.pathname}`).toBe(`${APP_URL}/license`);
+  expect(`${buy.origin}${buy.pathname}`).toBe(`${APP_URL}/app/license`);
   expect(buy.searchParams.get("installation")).toBeTruthy();
   expect(buy.searchParams.get("project")).toBeTruthy();
   await checkpoint(owner, "powered-by-licence-dialog", { fullPage: false });

@@ -1,7 +1,7 @@
 # Design system
 
 Tuti's look ("Parrot") and the rules for building screens. See every pattern
-live, in light and dark, at **`/design`** (dev only, e.g. https://dev.tuti.so/design).
+live, in light and dark, at **`/app/design`** (dev only, e.g. https://dev.tuti.so/app/design).
 Check new UI there and at phone width (390px) before shipping it.
 
 ## Brand
@@ -150,8 +150,10 @@ the list picks none to approve at once.
 
 ## Layout
 
-- **Admin app** (`/app`): every page lives in the sidebar shell
-  (`app/app/layout.tsx`, `components/app-shell.tsx`), in one of three
+- **Admin app** (`/app`): every signed-in page lives in the sidebar shell
+  (`app/app/(workspace)/layout.tsx`, `components/app-shell.tsx`); the pages for the signed out and the
+  operator's links (`/app/auth/*`, `/app/license`, `/app/admin/*`) sit outside it, under Tuti's logo
+  over a centred `<main>` (`app/app/(account-pages)/layout.tsx`). Shell pages sit in one of three
   columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, Home, a post), max-w-2xl for a form
   by itself (`data-narrow` on it: New project, Setup, Account), or the whole width (`data-wide`: the
   team's Roadmap, Users' tables; and pages of panes). Feedback, a page of panes, caps itself at 72rem while
@@ -351,8 +353,8 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
 - **Sign-in pages** (sign-in, sign-up, forgot and reset password, invitations): in the visitor's own
   light or dark, as the app is; the card's title in the heading font at 20px; the rest of the marketing site is light only (`forcedThemeFor`), though a page may set dark brand bands inside it (the home page's forest-green sections and final band, `landing.css`).
   Continue with Google and Continue with GitHub are both outline buttons with their marks, under
-  nothing louder than the form's own primary. The header there has no Sign in or Start free
-  (`SignedOutLinks`): the form is the way in. On phones no keyboard hints (`Ctrl K`).
+  nothing louder than the form's own primary. Their header (the account pages' layout, under `/app/auth`)
+  is Tuti's logo alone, no Sign in or Start free: the form is the way in. On phones no keyboard hints (`Ctrl K`).
 - **Customize** (`/app/<project>/customize/<section>`): the whole width.
   `CustomizeShell`: Customize's sections in a rail on
   the far left when the sidebar inset has at least 61rem (a menu above the panel with less room; no index page, no

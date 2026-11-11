@@ -94,7 +94,7 @@ export async function projectLicense(projectId: string): Promise<{ licensedUntil
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { licenseKey: true } }),
     prisma.installation.findUniqueOrThrow({ where: { singleton: 1 }, select: { id: true, latestSeenAt: true, licenseSecret: true } }),
   ]);
-  const buyUrl = new URL("/license", licenseServer());
+  const buyUrl = new URL("/app/license", licenseServer());
   buyUrl.search = new URLSearchParams({ installation: current.id, project: projectId, claim: licenseClaimHash(current.licenseSecret) }).toString();
   return { licensedUntil: projectLicensedUntil(project.licenseKey, projectId, current), buyUrl: buyUrl.toString() };
 }

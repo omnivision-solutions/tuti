@@ -2034,7 +2034,7 @@ test("on a server selling plans, a new project's email is capped in its first we
 
   // The operator's email: its link shows why, and its button resumes it.
   const operator = await (await browser.newContext()).newPage();
-  await operator.goto(linkIn(await latestEmailTo(APP_PORTAL_OWNER, { after: told, subject: /email is paused$/ }), `${CLOUD_URL}/resume-email?`));
+  await operator.goto(linkIn(await latestEmailTo(APP_PORTAL_OWNER, { after: told, subject: /email is paused$/ }), `${CLOUD_URL}/app/admin/email/resume?`));
   await expect(operator.getByText("Resume Acme's email?")).toBeVisible();
   await checkpoint(operator, "operator-resume-email");
   await operator.getByRole("button", { name: "Resume" }).click();
