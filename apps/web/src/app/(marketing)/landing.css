@@ -64,6 +64,9 @@
     box-shadow: 0 8px 20px -8px color-mix(in oklch, var(--g) 55%, transparent);
   }
   .btn-primary:hover { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+  /* A visible focus ring, set off from the button; light on the dark and green bands. */
+  .btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  :is(.band, .loop, .final, .plan.featured) .btn:focus-visible { outline-color: var(--primary-foreground); }
   .btn-ghost { background: var(--paper); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 1px 2px rgba(13, 26, 18, 0.05); }
   .btn-ghost:hover { background: var(--accent); }
   .btn-light { background: var(--card); color: var(--forest); }
