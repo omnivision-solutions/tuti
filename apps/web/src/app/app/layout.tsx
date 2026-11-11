@@ -10,6 +10,7 @@ import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { portalAddress } from "@/server/custom-domains";
 import { appWidgetProject } from "@/lib/app-portal";
 import { DOCS_TREE_FOLDED_SCRIPT } from "@/lib/docs-tree-fold";
+import { PANE_WIDTHS_SCRIPT } from "@/lib/pane-width";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { asksToVerifyEmail } from "@/lib/verify-email";
 import { pendingInvitationsFor } from "@/server/invitation-lookup";
@@ -38,8 +39,8 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
       sidebar={
         <>
           {/* Before any page shows: the docs tree folded where it was left folded (DocsTreeFold), on whichever app page
-              the browser first opens, so going to Docs later finds it as it was. */}
-          <script dangerouslySetInnerHTML={{ __html: DOCS_TREE_FOLDED_SCRIPT }} />
+              the browser first opens, so going to Docs later finds it as it was. Pane widths are restored here too. */}
+          <script dangerouslySetInnerHTML={{ __html: DOCS_TREE_FOLDED_SCRIPT + PANE_WIDTHS_SCRIPT }} />
           <AppSidebar
             projects={projects}
             fallbackSlug={fallbackSlug}

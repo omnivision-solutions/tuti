@@ -12,6 +12,7 @@ import { useSidebar } from "@/components/ui/sidebar";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { CollectionDialog, TabDialog } from "@/components/docs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PaneResize } from "@/components/pane-resize";
 import { DocsTreeFold } from "@/components/docs-tree-fold";
 import { SampleBadge } from "@/components/sample-badge";
 import { Button } from "@/components/ui/button";
@@ -676,7 +677,7 @@ export function DocsWorkspace({
 
             <Popover open={tabsOpen} onOpenChange={setTabsOpen}>
               <PopoverTrigger render={<Button variant="ghost" className="docs-tab-switcher w-full justify-between px-3 text-[14px] font-semibold shadow-none" />}>
-                <span className="flex items-center gap-2"><PanelsTopLeftIcon className="size-4 text-muted-foreground" />{activeTab?.name ?? "Help center"}</span><ChevronsUpDownIcon className="size-3.5 text-muted-foreground" />
+                <span className="flex min-w-0 items-center gap-2"><PanelsTopLeftIcon className="size-4 shrink-0 text-muted-foreground" /><span className="truncate">{activeTab?.name ?? "Help center"}</span></span><ChevronsUpDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
               </PopoverTrigger>
               <PopoverContent align="start" className="w-60" onClick={(event) => { if ((event.target as Element).closest("a")) { setTabsOpen(false); setBrowsing(false); } }}>
                 <ul aria-label="Tabs" className="flex flex-col gap-1">{tabSections}</ul>
@@ -726,9 +727,10 @@ export function DocsWorkspace({
         "[&_nav[aria-label='Collection']]:shadow-none [&_nav[aria-label='Collection']]:ring-0 [&_nav[aria-label='Collection']_[aria-current='page']]:text-primary",
         "[&_nav[aria-label=Collection]]:border-b-0 [&_nav[aria-label=Collection]]:shadow-none [&_nav[aria-label=Collection]]:ring-0",
       )} data-editing={editing}>
-        <aside className="docs-tree-pane docs-surface w-68.5 shrink-0 flex flex-col lg:[:root[data-docs-tree-folded]_&]:w-12 max-lg:hidden min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+        <aside className="docs-tree-pane docs-surface relative w-(--docs-tree-width,274px) shrink-0 flex flex-col lg:[:root[data-docs-tree-folded]_&]:w-12 max-lg:hidden min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
           <div className="docs-tree-folded hidden p-[10px_6px] lg:[:root[data-docs-tree-folded]_&]:flex lg:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
           <div className="docs-tree-expanded flex flex-col min-h-0 h-full lg:[:root[data-docs-tree-folded]_&]:hidden">{desktop && navigation}</div>
+          <PaneResize pane="docs" className="absolute inset-y-0 -right-[11px] lg:[:root[data-docs-tree-folded]_&]:hidden" />
         </aside>
         <button type="button" aria-label="Browse docs" aria-expanded={browsing} onClick={() => setBrowsing(true)} className="docs-phone-trigger hidden bg-secondary text-foreground max-lg:flex max-lg:absolute max-lg:top-5.75 max-lg:right-7 max-lg:z-20 max-lg:items-center max-lg:gap-1.25 max-lg:h-7 max-lg:p-[0_7px] max-lg:text-[13px] max-lg:text-muted-foreground max-lg:rounded-[6px] max-sm:top-3 max-sm:right-4"><BookOpenIcon className="size-3.5" />Docs</button>
         {pathname === base && activeTab && <span className="hidden max-sm:block absolute right-8 top-7 text-xs text-muted-foreground">{activeTab.name}</span>}
@@ -745,7 +747,7 @@ export function DocsWorkspace({
           </SheetContent>
         </Sheet>
         <div className={cn(
-          "docs-page-content min-w-0 min-h-0 rounded-2xl bg-docs-surface",
+          "docs-page-content @container/docs-page min-w-0 min-h-0 rounded-2xl bg-docs-surface",
           "shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)] flex flex-1 flex-col gap-6",
           "overflow-y-auto p-[28px_32px] [scrollbar-width:thin] max-lg:p-6 max-lg:[&_>_.docs-page-header:first-child:not(:has(>_a))]:pt-6",
           "max-sm:rounded-2xl max-sm:p-[20px_16px] max-sm:gap-5.5 [&_>_*]:shrink-0",

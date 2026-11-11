@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { type CSSProperties, type ReactNode, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { restorePaneWidths } from "@/lib/pane-width";
 import { DOCS_TREE_FOLDED_ATTRIBUTE, DOCS_TREE_FOLDED_KEY } from "@/lib/docs-tree-fold";
 
 /**
@@ -40,6 +41,7 @@ const subscribeNarrow = (listener: () => void) => {
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
   // The inline script covers full loads; client entry from marketing or sign-in restores the fold before paint too.
   useLayoutEffect(() => {
+    restorePaneWidths();
     try {
       document.documentElement.toggleAttribute(DOCS_TREE_FOLDED_ATTRIBUTE, localStorage.getItem(DOCS_TREE_FOLDED_KEY) === "1");
     } catch {

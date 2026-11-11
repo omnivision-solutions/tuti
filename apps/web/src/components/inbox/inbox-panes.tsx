@@ -14,6 +14,7 @@ import { ListKeys } from "@/components/inbox/list-keys";
 import { LoadMore } from "@/components/inbox/load-more";
 import { MessagesOffNotice } from "@/components/inbox/messages-off";
 import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
+import { PaneResize } from "@/components/pane-resize";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { SampleBadge } from "@/components/sample-badge";
 import { StatTile } from "@/components/stat-tile";
@@ -188,7 +189,7 @@ export async function InboxPanes({
 
   return (
     // Rounded panes fill the available window under any account banners.
-    <div data-slot="pane-layout" data-fills-window data-open={open !== null} className="inbox-workspace group/inbox grid flex-1 min-h-0 grid-cols-[21.875rem_minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)] gap-x-3 max-lg:flex max-lg:flex-col [--card:var(--inbox-surface)] dark:[--muted-foreground:var(--inbox-muted)] dark:[--secondary:var(--inbox-secondary)]">
+    <div data-slot="pane-layout" data-fills-window data-open={open !== null} className="inbox-workspace group/inbox grid flex-1 min-h-0 grid-cols-[var(--inbox-list-width,350px)_minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)] gap-x-3 max-lg:flex max-lg:flex-col [--card:var(--inbox-surface)] dark:[--muted-foreground:var(--inbox-muted)] dark:[--secondary:var(--inbox-secondary)]">
       <div className="inbox-phone-project hidden max-md:flex items-center gap-1.5 rounded-t-xl bg-card px-4 pt-2 text-xs text-muted-foreground group-data-[open=true]/inbox:hidden">
         <SidebarTrigger />
         <span>{membership.project.name}</span>
@@ -383,6 +384,8 @@ export async function InboxPanes({
           </span>
         </div>
       </div>
+
+      <PaneResize pane="inbox" className="col-start-1 row-start-1 row-span-3 translate-x-[11px] justify-self-end" />
 
       {stats ? (
         // Until a conversation opens (from laptop width up: on a phone the list is alone), how the Inbox is doing.

@@ -80,8 +80,8 @@ export function ArticleStateBadge({ state }: { state: ArticleState }) {
 
 /** The columns' widths, shared by the header and the rows so the numbers line up. */
 const NUMBER = "w-12 shrink-0 text-right tabular-nums sm:w-16";
-/** The state column, from tablet width up (on phones the state is a line under the title). */
-const STATUS = "hidden w-44 shrink-0 sm:block";
+/** The state column when the page has room; on phones and narrow Docs panes it sits under the title. */
+const STATUS = "hidden w-44 shrink-0 sm:block lg:@max-[40rem]/docs-page:hidden";
 
 /** A list of articles' column headings: what the numbers under them count. */
 export function ArticleColumns({ first = "Article" }: { first?: string }) {
@@ -204,7 +204,7 @@ export function DocsArticleRows({
             {access && <Badge variant="outline">{access}</Badge>}
           </div>
           {facts.length > 0 && (
-            <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground sm:hidden">
+            <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground sm:hidden lg:@max-[40rem]/docs-page:flex">
               {facts.map((fact, i) => (
                 <span key={fact} className="inline-flex items-center gap-1.5">
                   {i > 0 && <span aria-hidden>·</span>}

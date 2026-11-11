@@ -74,18 +74,18 @@ export function DocsPageHeader({
   icon?: ReactNode;
 }) {
   return (
-    <header className="docs-page-header flex flex-col gap-4.5 shrink-0 [&_>_a]:text-muted-foreground [&_>_a]:text-[13px]" data-slot="docs-page-header">
+    <header className="docs-page-header @container/docs-heading flex flex-col gap-4.5 shrink-0 [&_>_a]:text-muted-foreground [&_>_a]:text-[13px]" data-slot="docs-page-header">
       {back && <BackLink href={back.href}>{back.label}</BackLink>}
-      <div className="docs-heading-row flex items-start gap-4 justify-between max-sm:flex-wrap max-sm:gap-4">
+      <div className="docs-heading-row lg:@max-[40rem]/docs-heading:flex-wrap flex items-start gap-4 justify-between max-sm:flex-wrap max-sm:gap-4">
         <div className="docs-heading-copy flex items-start gap-3.25 min-w-0 [&_h1]:font-heading [&_h1]:text-[30px] [&_h1]:font-[650] [&_h1]:leading-[1.15] [&_h1]:tracking-[-0.03em] [&_p]:text-[14px] [&_p]:text-muted-foreground [&_p]:mt-1.75 max-sm:[&_h1]:text-[25px] max-sm:[&_p]:text-[14px]">
           {icon && <span className="docs-heading-icon grid place-items-center w-11 h-11 shrink-0 rounded-[12px] bg-soft text-soft-foreground [&_svg]:w-5.5 [&_svg]:h-5.5 max-sm:w-9 max-sm:h-9 max-sm:rounded-[10px]">{icon}</span>}
-          <div>
+          <div className="min-w-0 [&_h1]:wrap-anywhere">
             <h1>{title}</h1>
             {description && <p>{description}</p>}
           </div>
         </div>
         <div className={cn(
-          "docs-heading-actions flex items-center gap-1.75 sm:[&>_.docs-live-link]:mr-3.25 shrink-0 [&_[data-slot='button']]:h-8.5 [&_[data-slot='button']]:text-[13.5px]",
+          "docs-heading-actions lg:@max-[40rem]/docs-heading:w-full lg:@max-[40rem]/docs-heading:justify-end flex items-center gap-1.75 sm:[&>_.docs-live-link]:mr-3.25 shrink-0 [&_[data-slot='button']]:h-8.5 [&_[data-slot='button']]:text-[13.5px]",
           "max-sm:w-full max-sm:justify-end max-sm:gap-1.5 max-sm:[&_>_.docs-live-link]:mr-auto max-sm:[&_>_.docs-live-link_span]:text-[0px]",
           "max-sm:[&_>_.docs-live-link_span::after]:[content:'Open'] max-sm:[&_>_.docs-live-link_span::after]:text-[13px]",
         )}>

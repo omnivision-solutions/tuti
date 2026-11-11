@@ -214,6 +214,11 @@ the list picks none to approve at once.
   Day dividers group each message by its own day in the viewer’s time zone, with "Today · <date>" or "Yesterday · <date>" when applicable. The widget-off notice is
   13px muted text, and More sits at the end of the views row. Inbox layout uses component Tailwind utilities;
   its canvas, surface, bubble fills and shadow use the `inbox-*` tokens in `globals.css`.
+  From laptop width up, the Docs tree (240–440px) and Inbox list (300–520px, 350px by default) resize from a 10px handle
+  centred in their gap. Hover, focus and dragging highlight its line in primary; dragging keeps the resize cursor and
+  prevents selection across the page. A narrow conversation wraps its title actions below the subject, and its details
+  column can narrow to keep the messages readable. A narrow Docs page wraps its title actions too. Arrow keys resize by 10px, Home/End pick the limits, and double-click resets.
+  Each width is remembered in the browser and restored before paint; folded trees and smaller screens have no handle.
   Company keeps company, plan and seats together; Customer details keeps identity, other properties, groups, posts and votes reachable; visits and events show zero until
   recorded. The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
   A changelog entry's editor has a sidebar
@@ -264,7 +269,7 @@ the list picks none to approve at once.
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
   The team Docs workspace uses rounded tree, page and tools surfaces on the canvas, separated by 12px gaps,
-  with no breadcrumb bar or embedded preview. Its tree is 274px and owns the Docs title, search and navigation;
+  with no breadcrumb bar or embedded preview. Its tree defaults to 274px and owns the Docs title, search and navigation;
   on phones the Docs button opens it as a sheet, including App navigation. Subpages have a small parent link.
   An article's editable title sits beside Saved (Save while there are edits) and Publish; its publishing state
   and live Open link sit below. The formatting row stays pinned while the article body scrolls. Settings,
