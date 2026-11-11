@@ -10,6 +10,7 @@ import { apiFor, createProject, signUp } from "./helpers";
 /** Labels fit on one line, the counts share a right edge, and the popup ends at the trigger. */
 async function expectViewsMenu(page: Page) {
   const menu = page.getByRole("menu");
+  await menu.evaluate(async (popup) => { await Promise.all(popup.getAnimations({ subtree: true }).map((animation) => animation.finished)); });
   const trigger = page.getByRole("navigation", { name: "Views", exact: true }).getByRole("button", { name: "More", exact: true });
   const items = menu.getByRole("menuitem");
   const rightEdges: number[] = [];
@@ -105,6 +106,10 @@ test("Inbox list, composer and views at laptop and phone widths in light and dar
     await views.getByRole("button", { name: "More", exact: true }).click();
     await checkpoint(team, `views-phone-${theme}`, { fullPage: false });
     await expectViewsMenu(team);
-    await team.keyboard.press("Escape");
+    await team.getByRole("menuitem", { name: "Waiting on user 1234" }).click();
+    const selected = views.getByRole("button", { name: "Waiting on user 1234" });
+    await expect(selected).toHaveAttribute("aria-current", "page");
+    await expect.soft(selected).toHaveText(/^Waiting\s*1234$/);
+    await checkpoint(team, `view-count-phone-${theme}`, { fullPage: false });
   }
 });

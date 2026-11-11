@@ -183,7 +183,7 @@ the list picks none to approve at once.
   the row of tabs above the list, in the same place whether or not a conversation is open
   (they never move as one opens or closes): Needs reply, Mine and Unassigned as tabs, the
   rest (Waiting on user, Snoozed, Closed, Spam) under More, which reads as the one of them
-  open, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide, the conversation the rest; on phones and
+  open, with its short title and visible count, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide, the conversation the rest; on phones and
   tablets the list or the conversation, its Back to the list. A row reads in three
   lines: who and their company on one (cut short, in full on hover) with,
   at the right, the assignee's face (their name on hover, and in the row's name to the ear) and its age, short ("4m": how long they've waited, or since

@@ -1107,10 +1107,20 @@ test("with two-digit counts the views still fit, at every laptop width and on a 
       // showMore allows).
       await expect.poll(() => views.evaluate((row) => row.scrollWidth - row.clientWidth)).toBeLessThanOrEqual(1);
     }
-    // Open under More: its name alone, short, on the tab ("Waiting"), and in full with its count to the ear.
+    // Open under More: its short name and visible count, with the full name to the ear.
     const open = views.getByRole("button", { name: "Waiting on user 12" });
     await expect(open).toHaveAttribute("aria-current", "page");
-    await expect(open).toHaveText("Waiting");
+    await expect(open).toHaveText(/^Waiting\s*12$/);
+    await expect(open.getByText("12", { exact: true })).toBeVisible();
+    if (width === 390) {
+      for (const [view, title] of [["snoozed", "Snoozed"], ["closed", "Closed"], ["spam", "Spam"]]) {
+        await owner.goto(`/app/${slug}/inbox?view=${view}`);
+        const selected = views.getByRole("button", { name: `${title} 0` });
+        await expect(selected).toHaveAttribute("aria-current", "page");
+        await expect(selected).toHaveText(new RegExp(`^${title}\\s*0$`));
+        await expect(selected.getByText("0", { exact: true })).toBeVisible();
+      }
+    }
   }
 });
 

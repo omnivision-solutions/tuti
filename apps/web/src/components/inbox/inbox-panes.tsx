@@ -158,6 +158,7 @@ export async function InboxPanes({
   const userId = session.user.id;
 
   const views = Object.keys(VIEWS) as View[];
+  const moreOpen = views.indexOf(view) >= TABS;
   const tab = (v: View) => ({
     href: inboxHref(slug, v),
     title: (
@@ -165,8 +166,16 @@ export async function InboxPanes({
         <span className="min-w-0">{VIEWS[v].title}</span> <span className="shrink-0 text-muted-foreground tabular-nums">{counts[views.indexOf(v)]}</span>
       </>
     ),
-    // Open under More, its tab is its name alone, short ("Waiting"), so the row still fits; in full to the ear.
-    short: { title: v === "waiting" ? "Waiting" : VIEWS[v].title, name: `${VIEWS[v].title} ${counts[views.indexOf(v)]}` },
+    // Open under More: the short name and count stay visible, with the full name to the ear.
+    short: {
+      title: (
+        <>
+          <span>{v === "waiting" ? "Waiting" : VIEWS[v].title}</span>{" "}
+          <span className="shrink-0 text-muted-foreground tabular-nums">{counts[views.indexOf(v)]}</span>
+        </>
+      ),
+      name: `${VIEWS[v].title} ${counts[views.indexOf(v)]}`,
+    },
   });
   const history = await historySince(projectId);
   const [counts, conversations, member, { supportInbox, plan }, stats] = await Promise.all([
@@ -218,13 +227,13 @@ export async function InboxPanes({
         current={inboxHref(slug, view)}
         // The view the list shows: the page itself, or, with a conversation open, the one beside it.
         currentIs={open === null ? "page" : "true"}
-        className={cn("inbox-views col-start-1 row-start-2 border-0 bg-card px-3 pt-0 shadow-none [&>[aria-current]]:text-primary [&>[aria-current]]:font-semibold [&>button]:ml-auto", open !== null && "max-lg:hidden")}
+        className={cn("inbox-views col-start-1 row-start-2 border-0 bg-card px-3 pt-0 shadow-none [&>[aria-current]]:text-primary [&>[aria-current]]:font-semibold [&>button]:ml-auto", moreOpen && "[&>button]:gap-0.5", open !== null && "max-lg:hidden")}
         // The three worked through most as tabs; the rest under More, which fits the list's third of the window.
         items={views.slice(0, TABS).map(tab)}
         more={{ label: "More", items: views.slice(TABS).map(tab) }}
         // A little smaller and closer than other pages' tabs: four of them fit the list's third of the window (22rem at
         // its narrowest), a phone's width too, with two-digit counts.
-        itemClassName="px-1.5 text-[0.8125rem]"
+        itemClassName={cn("px-1.5 text-[0.8125rem]", moreOpen && "px-1")}
       />
 
       {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
@@ -273,7 +282,7 @@ export async function InboxPanes({
                   const text = message && rowLine(c.subject, message.body);
                   const by = message && rowBy(message, userId);
                   const line = text && (by ? `${by}: ${text}` : text);
-                  const unread = reads.get(c.id)!.unread;
+                  const unread = reads.get(c.id)?.unread ?? false;
                   // Spam waits on nobody, however it came in. Not said in Needs reply, where every row does.
                   const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
                   // One age per row: how long they've waited for the team, or since the latest message.
