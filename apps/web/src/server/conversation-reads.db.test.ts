@@ -12,6 +12,8 @@ test("read state belongs to each teammate, ignores team replies and notes, and o
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   const teammate = await addMember(project.id, "MEMBER");
+  // Joined well before what follows, so its messages are after the cutoff whatever the clock does.
+  await prisma.teamMember.update({ where: { id: teammate.memberId }, data: { readsSince: new Date("2001-01-01T00:00:00Z") } });
   const actor = { kind: "apiKey", keyId: "fixture", projectId: project.id, scope: "write", createdById: owner.id } as const;
   const context = { actor, projectId: project.id };
   await call(createConversation, context, { user: { id: "sam", name: "Sam", email: "e2e-sam@example.com" }, body: "Exporting reports" });
@@ -89,7 +91,10 @@ test("the deploy or join cutoff keeps historical, team-started and message-less 
   expect((await conversationReads(ids, owner.id)).get(old!.id)?.unread).toBe(false);
   const newcomer = await addMember(project.id, "MEMBER");
   expect((await conversationReads(ids, newcomer.id)).get(recent!.id)?.unread).toBe(false);
-  await addMessage(recent!.id, project.id, { author: "USER", authorId: null, channel: "EMAIL", body: "A question after joining" });
+  const joined = (await prisma.teamMember.findUniqueOrThrow({ where: { id: newcomer.memberId } })).readsSince;
+  const after = await addMessage(recent!.id, project.id, { author: "USER", authorId: null, channel: "EMAIL", body: "A question after joining" });
+  // A second after they joined, not in the same millisecond, whatever the clock does.
+  await prisma.conversationMessage.update({ where: { id: after.id }, data: { createdAt: new Date(joined.getTime() + 1000) } });
   expect((await conversationReads(ids, newcomer.id)).get(recent!.id)?.unread).toBe(true);
 });
 
