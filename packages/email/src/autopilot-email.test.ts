@@ -83,7 +83,7 @@ test("with nothing for customers, the subject counts everything done for the tea
 test("the logo comes from the app (no SVG in email), and not at all without its address", async () => {
   try {
     vi.stubEnv("APP_URL", "https://tuti.example");
-    expect(await render(autopilotEmail(props).body)).toContain('src="https://tuti.example/email-logo.png"');
+    expect(await render(autopilotEmail(props).body)).toContain('src="https://tuti.example/api/email-logo.png"');
     vi.stubEnv("APP_URL", undefined);
     expect(await render(autopilotEmail(props).body)).not.toContain("email-logo.png");
   } finally {

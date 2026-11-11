@@ -2,7 +2,7 @@
 
 import { type ReactNode, type RefObject, useState } from "react";
 
-import { SCROLLING_ROW, useScrollingRow } from "@/components/sub-nav";
+import { SCROLLING_ROW, useScrollingRow } from "@tuti/ui/scrolling-row";
 
 /** The hero's product window: a tab per part of Tuti, one picture showing at a time (the first before any script runs). */
 export function HeroTabs({ panels }: { panels: { label: string; icon: ReactNode; url: string; picture: ReactNode }[] }) {

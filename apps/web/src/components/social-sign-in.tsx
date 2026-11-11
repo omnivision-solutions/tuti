@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { GithubMark } from "@/components/github-mark";
+import { GithubMark } from "@tuti/ui/github-mark";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FieldSeparator } from "@/components/ui/field";

@@ -2,8 +2,23 @@
 
 import { CheckIcon } from "lucide-react";
 
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { PlanLine } from "@/lib/pricing-plans";
+import { Popover, PopoverContent, PopoverTrigger } from "./popover";
+
+/** One line of what a plan includes; `more` opens beside it, explaining the line. */
+export type PlanLine = { text: string; more?: { title: string; points: string[] } };
+
+export type PricingPlan = {
+  name: string;
+  /** Dollars a month, billed monthly and billed yearly; null for Free. */
+  price: { month: number; year: number } | null;
+  /** What every plan lists first, its own: Autopilot and its AI credits. */
+  highlights: PlanLine[];
+  /** The line between the highlights and the rest: "Everything in Free, plus:". */
+  intro?: string;
+  features: PlanLine[];
+  cta: { label: string; href: string };
+  featured?: boolean;
+};
 
 /** One line of what a plan includes; a line with more to say opens it in a card when clicked. */
 export function PlanLineItem({ line }: { line: PlanLine }) {

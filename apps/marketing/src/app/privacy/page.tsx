@@ -5,9 +5,6 @@ import { contact, LegalPage } from "../legal";
 
 export const metadata: Metadata = { title: "Privacy Policy · Tuti", description: "What personal data Tuti's hosted service at tuti.so collects, why, and your choices." };
 
-// Only on Tuti's cloud, a server setting, read when the page is asked for.
-export const dynamic = "force-dynamic";
-
 export default function PrivacyPage() {
   return (
     <LegalPage title="Privacy Policy" updated="6 November 2026">

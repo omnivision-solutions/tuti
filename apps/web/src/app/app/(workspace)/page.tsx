@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { CreateProjectForm } from "@/components/create-project-form";
 import { PageHeader } from "@/components/page-header";
-import { TutiMark } from "@/components/tuti-logo";
+import { TutiMark } from "@tuti/ui/tuti-logo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalTemplate } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";

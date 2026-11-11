@@ -24,11 +24,13 @@ releases close the feedback they fix and draft your changelog. See [the plan](do
 apps/
   web/        Next.js app (UI, server actions, Better Auth routes)
   worker/     Hatchet worker (background tasks)
+  marketing/  tuti.so's marketing site (home, pricing, terms, privacy); Tuti's cloud only
 packages/
   db/         Prisma schema, migrations and the shared client
   jobs/       Background job handlers and enqueue()
   shared/     Code shared by web + worker: job contracts, Hatchet client, env helpers
   testkit/    Test helpers and fakes (e.g. a local OpenAI embeddings server)
+  ui/         What the app and the marketing site share: styles, brand fonts, a few components
   typescript-config/
 ```
 
@@ -67,7 +69,7 @@ cp apps/web/.env.example apps/web/.env
 cp apps/worker/.env.example apps/worker/.env
 
 pnpm db:migrate   # apply migrations
-pnpm dev          # web on http://localhost:3100 + worker
+pnpm dev          # web on http://localhost:3100 + worker (+ the marketing site on :3000)
 ```
 
 The app is at http://localhost:3100 (`/app` after signing in); each project's portal
@@ -75,8 +77,20 @@ is at `http://<project>.localhost:3100`. In production these are `APP_URL` and
 `PORTAL_URL_TEMPLATE` (e.g. `https://tuti.so` and `https://{project}.tuti.so`, which
 needs a wildcard DNS record).
 
+A server's home (`/`) is its app. Tuti's cloud puts its marketing site there instead (below).
+
 Prefer a secrets manager? Tuti only reads env vars, so any tool works.
 See [docs/secrets.md](docs/secrets.md) (maintainers use Infisical via `pnpm env:pull`).
+
+### Production routing (Tuti's cloud)
+
+tuti.so is two apps on one domain. The domain's proxy (Cloudflare) sends `/app`, `/api`, `/_tuti` and
+`/help` (Tuti's own help center, `APP_PORTAL_PROJECT`) to the app (`apps/web`), and everything else to the
+marketing site (`apps/marketing`). The site's links into the app are plain paths on the same domain; its
+pricing comes from the app's `/api/plans`, so plans and limits stay the app's settings. It needs one
+variable, `APP_URL` (the app's address). Its image:
+`docker build -f apps/marketing/Dockerfile -t tuti-marketing .` (port 3000). In development each runs on
+its own port, and the site's links go to the app's dev server.
 
 ## Self-hosting
 
@@ -174,7 +188,7 @@ setting is logged as a likely typo. The values in use are logged at start, the c
 
 | Command | |
 |---|---|
-| `pnpm dev` | Run web + worker in watch mode |
+| `pnpm dev` | Run web, worker and the marketing site in watch mode |
 | `pnpm build` | Build all apps |
 | `pnpm test` | Unit tests (offline) |
 | `pnpm test:db` | Database tests on a throwaway Postgres (needs Docker) |

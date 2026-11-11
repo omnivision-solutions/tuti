@@ -4,13 +4,12 @@ import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { TermsAgreement } from "@/components/terms-agreement";
 import { BADGE_PRICE, licenseBilling } from "@/lib/plans";
 import { isCloudInstallation, LICENSE_CLAIM } from "@/server/license";
 import { buyLicense } from "@/server/license-checkout";
 import { LICENSE_ID, licensePrice } from "@/server/license-sales";
 import { licensePrivateKey } from "@/server/license-server";
-
-import { TermsAgreement } from "@/app/(marketing)/legal";
 
 export const metadata: Metadata = { title: 'Remove "Powered by tuti"', robots: { index: false } };
 

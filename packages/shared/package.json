@@ -14,7 +14,8 @@
     "./email-quotes": "./src/email-quotes.ts",
     "./signed": "./src/signed.ts",
     "./user-properties": "./src/user-properties.ts",
-    "./portal-redirects": "./src/portal-redirects.ts"
+    "./portal-redirects": "./src/portal-redirects.ts",
+    "./log": "./src/log.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

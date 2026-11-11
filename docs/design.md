@@ -44,7 +44,7 @@ cute at the expense of clarity.
 
 ## Tokens
 
-All colours are CSS variables in `apps/web/src/app/globals.css` (`:root`/`.light`
+All colours are CSS variables in `packages/ui/src/globals.css` (`:root`/`.light`
 and `.dark`), used through Tailwind (`bg-primary`, `text-muted-foreground`, …).
 Never hard-code a colour in a component; add a token if one is missing.
 
@@ -335,7 +335,7 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   is a small round pill, in the highlight colour where people wait on the team (the Inbox's open
   conversations), quiet otherwise (Feedback's to triage, Autopilot's to review).
 - **Sign-in pages** (sign-in, sign-up, forgot and reset password, invitations): in the visitor's own
-  light or dark, as the app is; the card's title in the heading font at 20px; the rest of the marketing site is light only (`forcedThemeFor`), though a page may set dark brand bands inside it (the home page's forest-green sections and final band, `landing.css`).
+  light or dark, as the app is; the card's title in the heading font at 20px; the rest of the marketing site (`apps/marketing`) is light only (it never sets the dark theme), though a page may set dark brand bands inside it (the home page's forest-green sections and final band, `landing.css`).
   Continue with Google and Continue with GitHub are both outline buttons with their marks, under
   nothing louder than the form's own primary. Their header (the account pages' layout, under `/app/auth`)
   is Tuti's logo alone, no Sign in or Start free: the form is the way in. On phones no keyboard hints (`Ctrl K`).

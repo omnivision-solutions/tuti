@@ -1318,9 +1318,7 @@ test("a reply kept in the tab is its writer's: a teammate signing in after them 
   await owner.evaluate(() => Object.assign(window, { sameTab: true }));
   await owner.getByRole("button", { name: /Olive Owner/ }).click();
   await owner.getByRole("menuitem", { name: "Sign out" }).press("Enter");
-  await owner.waitForURL(`${APP_URL}/`);
-  await owner.getByRole("link", { name: "Sign in" }).first().click();
-  await owner.waitForURL("**/sign-in");
+  await owner.waitForURL("**/app/auth/sign-in");
   await owner.getByLabel("Email").fill(tara.email);
   await owner.getByLabel("Password").fill("correct horse battery staple");
   await owner.getByRole("button", { name: "Sign in" }).click();

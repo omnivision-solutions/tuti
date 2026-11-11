@@ -231,7 +231,7 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   await expect(owner.getByRole("button", { name: "Date range: Last month" })).toBeVisible();
 });
 
-test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign-in) agrees to the Terms of Service and Privacy Policy, linked there and in the footer; a self-hosted server has neither the line nor the links", async ({ browser }, testInfo) => {
+test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign-in) agrees to the Terms of Service and Privacy Policy; a self-hosted server has no such line", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const page = await browser.newPage({ baseURL: CLOUD_URL });
   await page.goto("/app/auth/sign-up");
@@ -241,12 +241,9 @@ test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign
   await page.goto("/app/auth/sign-in");
   await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
   await expect(page.getByText("By continuing, you agree to the Terms of Service and Privacy Policy.")).toBeVisible();
-  await page.getByRole("main").getByRole("link", { name: "Terms of Service" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Terms of Service" })).toBeVisible();
-  await checkpoint(page, "terms");
-  await page.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeVisible();
-  await checkpoint(page, "privacy");
+  // The pages are the marketing site's (apps/marketing), on the same domain.
+  await expect(page.getByRole("main").getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms");
+  await expect(page.getByRole("main").getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy");
 
   const selfHosted = await browser.newPage({ baseURL: APP_URL });
   await selfHosted.goto("/app/auth/sign-up");
@@ -255,16 +252,15 @@ test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign
   await selfHosted.goto("/app/auth/sign-in");
   await expect(selfHosted.getByRole("button", { name: "Sign in" })).toBeVisible();
   await expect(selfHosted.getByText("By continuing")).toHaveCount(0);
-  await selfHosted.goto("/");
-  await expect(selfHosted.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Terms" })).toHaveCount(0);
 });
 
-test("Tuti's cloud's home page has a pricing section; a self-hosted server's has none", async ({ browser }) => {
+test("Tuti's cloud serves its plans to its marketing site; a self-hosted server sells none, and its home is the app", async ({ browser }) => {
   const cloud = await browser.newPage({ baseURL: CLOUD_URL });
-  await cloud.goto("/");
-  await expect(cloud.getByRole("heading", { name: /Free to start/ })).toBeVisible();
+  const plans = await cloud.request.get("/api/plans");
+  expect(plans.status()).toBe(200);
+  expect((await plans.json()).plans.map((plan: { name: string }) => plan.name)).toEqual(["Free", "Pro", "Business"]);
   const own = await browser.newPage({ baseURL: APP_URL });
+  expect((await own.request.get("/api/plans")).status()).toBe(404);
   await own.goto("/");
-  await expect(own.getByRole("heading", { level: 1 })).toContainText("in sync with your code");
-  await expect(own.getByRole("heading", { name: /Free to start/ })).toHaveCount(0);
+  await own.waitForURL("**/app/auth/sign-in");
 });

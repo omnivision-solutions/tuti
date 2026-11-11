@@ -6,7 +6,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { GithubAccountChoice } from "@/components/github-connection";
-import { GithubMark } from "@/components/github-mark";
+import { GithubMark } from "@tuti/ui/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";

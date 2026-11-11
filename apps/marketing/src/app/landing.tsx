@@ -1,4 +1,3 @@
-import { creditsEnabled, freeCredits, plansEnabled } from "@tuti/shared";
 import {
   ArrowRightIcon,
   BookOpenIcon,
@@ -25,10 +24,11 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { GithubMark } from "@/components/github-mark";
-import { TutiMark } from "@/components/tuti-logo";
+import { GithubMark } from "@tuti/ui/github-mark";
+import { TutiMark } from "@tuti/ui/tuti-logo";
 
 import { HeroTabs } from "./hero-tabs";
+import { DOCS, SIGN_UP } from "./links";
 import "./landing.css";
 
 /**
@@ -37,51 +37,49 @@ import "./landing.css";
  * unqualified: plan details live on /pricing (docs/design.md, Marketing copy). The mock UIs only show what's shipped.
  */
 
-/** Where the page's links go: `start` the app when signed in, else sign-up; `docs` Tuti's own help center, when it has one. */
-type Links = { start: string; docs: string | null };
-
-function Start({ start, ghost = false, arrow = true }: { start: string; ghost?: boolean; arrow?: boolean }) {
+// Links into the app are plain links (another app on this domain), not client navigation.
+function Start({ ghost = false, arrow = true }: { ghost?: boolean; arrow?: boolean }) {
   return (
-    <Link href={start} className={ghost ? "btn btn-s" : "btn btn-p"}>
-      {start === "/app" ? "Open app" : "Start free"}
+    <a href={SIGN_UP} className={ghost ? "btn btn-s" : "btn btn-p"}>
+      Start free
       {arrow && <ArrowRightIcon aria-hidden size={16} />}
-    </Link>
+    </a>
   );
 }
 
-function Ctas({ start, docs }: Links) {
+function Ctas() {
   return (
     <div className="ctas">
-      <Start start={start} />
-      {docs && (
-        <a className="btn btn-s" href={docs}>
-          See a live help center
-        </a>
-      )}
+      <Start />
+      {/* Tuti's own help center, on Tuti. */}
+      <a className="btn btn-s" href={DOCS}>
+        See a live help center
+      </a>
     </div>
   );
 }
 
-export function Landing({ start, docs }: Links) {
+/** `aiInEveryPlan`: whether every plan runs AI answers and Autopilot (the app's /api/plans); null without the app, then no pricing. */
+export function Landing({ aiInEveryPlan }: { aiInEveryPlan: boolean | null }) {
   return (
     <div data-full className="lp">
-      <Hero start={start} docs={docs} />
+      <Hero />
       <HelpCenter />
       <Inbox />
       <Feedback />
       <Widget />
       <Autopilot />
       <Switch />
-      {plansEnabled() && <Pricing start={start} />}
+      {aiInEveryPlan !== null && <Pricing ai={aiInEveryPlan} />}
       <Faq />
-      <Final start={start} docs={docs} />
+      <Final />
     </div>
   );
 }
 
 const icon = { "aria-hidden": true, size: 16 } as const;
 
-function Hero({ start, docs }: Links) {
+function Hero() {
   return (
     <header className="hero">
       <div className="wrap">
@@ -89,7 +87,7 @@ function Hero({ start, docs }: Links) {
           The help center that stays <em>in sync with your&nbsp;code.</em>
         </h1>
         <p className="lead">AI answers, an inbox and a feedback board. One tool, free to start.</p>
-        <Ctas start={start} docs={docs} />
+        <Ctas />
         <HeroTabs
           panels={[
             { label: "Help center", icon: <BookOpenIcon {...icon} />, url: "help.lumen.app", picture: <HelpPanel /> },
@@ -972,9 +970,8 @@ function Switch() {
   );
 }
 
-function Pricing({ start }: { start: string }) {
-  // AI answers and Autopilot are listed where every plan runs them: no AI credits to buy, or Free starts with some.
-  const ai = !creditsEnabled() || freeCredits() > 0;
+function Pricing({ ai }: { ai: boolean }) {
+  // AI answers and Autopilot are listed where every plan runs them.
   const included = ["Help center", ...(ai ? ["AI answers"] : []), "Inbox", "Widget", "Feedback board", "Roadmap", "Changelog", ...(ai ? ["Autopilot"] : [])];
   return (
     <section id="pricing">
@@ -989,7 +986,7 @@ function Pricing({ start }: { start: string }) {
             </h2>
             <p className="sub">One price per project, not per seat.</p>
             <div className="ctas left">
-              <Start start={start} arrow={false} />
+              <Start arrow={false} />
               <Link className="btn btn-s" href="/pricing">
                 See pricing
               </Link>
@@ -1024,7 +1021,7 @@ function Faq() {
     ["Where do AI answers come from?", "From your help center. Every answer links the articles it used."],
     ["Can I move from another tool?", "Yes. Import from Intercom, Featurebase, Ferndesk, Canny, Frill, Nolt or any help center by URL. Your old links redirect."],
     ["Can the help center use my domain?", "Yes, with your logo, colours and fonts."],
-    ...(plansEnabled() ? [["Is it really free?", "Yes. A free plan, not a trial. Upgrade when you need more."] as [string, string]] : []),
+    ["Is it really free?", "Yes. A free plan, not a trial. Upgrade when you need more."],
   ];
   return (
     <section className="flush">
@@ -1046,7 +1043,7 @@ function Faq() {
   );
 }
 
-function Final({ start, docs }: Links) {
+function Final() {
   return (
     <section className="final">
       <div className="wrap">
@@ -1056,7 +1053,7 @@ function Final({ start, docs }: Links) {
           <br />
           an answer.
         </h2>
-        <Ctas start={start} docs={docs} />
+        <Ctas />
       </div>
     </section>
   );

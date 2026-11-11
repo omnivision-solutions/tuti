@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow, VoteCount } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge, STATUS_LABELS } from "@/components/post-status-badge";
-import { TutiLogo, TutiMark } from "@/components/tuti-logo";
+import { TutiLogo, TutiMark } from "@tuti/ui/tuti-logo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";

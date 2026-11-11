@@ -1,6 +1,4 @@
-import Link from "next/link";
-
-import { TutiLogo } from "@/components/tuti-logo";
+import { TutiLogo } from "@tuti/ui/tuti-logo";
 
 // Rendered for each request, never at build time: their pages read the server's settings (email, licences), which a build doesn't have.
 export const dynamic = "force-dynamic";
@@ -10,9 +8,11 @@ export default function AccountPagesLayout({ children }: LayoutProps<"/app">) {
   return (
     <>
       <header className="mx-auto flex h-16 w-full max-w-[1240px] items-center px-5 md:px-8">
-        <Link href="/" aria-label="Tuti home">
+        {/* Home: the marketing site on Tuti's cloud (apps/marketing, another app, so not a client navigation), the app on a self-hosted server. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- `/` here is the app's only on a server without the site. */}
+        <a href="/" aria-label="Tuti home">
           <TutiLogo />
-        </Link>
+        </a>
       </header>
       {/* Centred down the window: a short page (sign-in, forgot password) sits in the middle, not under the header. */}
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-10 has-data-wide:max-w-5xl has-data-full:max-w-none has-data-full:p-0">{children}</main>

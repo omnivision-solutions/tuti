@@ -5,7 +5,7 @@ import { APP_WIDGET_SLUG, CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
 // On Tuti's cloud, whose team app shows its own project's widget (APP_WIDGET_PROJECT).
-test("Tuti's own widget in the team app signs people in with their account once SSO is on, and isn't on the marketing pages", async ({ browser }, testInfo) => {
+test("Tuti's own widget in the team app signs people in with their account once SSO is on, and isn't on the signed-out pages", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Tuti", APP_WIDGET_SLUG, cloudPortalUrl);
@@ -92,17 +92,17 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await checkpoint(owner, "app-widget-signed-in");
   await expect(owner.locator('script[src$="/widget.js"]')).toHaveCount(1);
 
-  // Signing out goes home without a reload, so the launcher stays: its panel is signed out too.
+  // Signing out goes to signing in without a reload, so the launcher stays: its panel is signed out too.
   await launcher.click();
   await owner.getByRole("button", { name: /Olive Owner/ }).click();
   await owner.getByRole("menuitem", { name: "Sign out" }).press("Enter");
-  await owner.waitForURL(`${CLOUD_URL}/`);
+  await owner.waitForURL(`${CLOUD_URL}/app/auth/sign-in`);
   await launcher.click();
   await expect(panel.getByRole("button", { name: "Sign in to post" })).toBeVisible();
 
-  // Not on the marketing pages: no script (the launcher would only come after it loads).
-  await owner.goto("/");
-  await expect(owner.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
+  // Not on the signed-out pages, loaded afresh: no script (the launcher would only come after it loads).
+  await owner.goto("/app/auth/sign-in");
+  await expect(owner.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
   await owner.goto(`${cloudPortalUrl(APP_WIDGET_SLUG)}/feedback/feature-requests`);
