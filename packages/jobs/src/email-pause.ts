@@ -61,7 +61,7 @@ export async function tellPaused(projectId: string) {
           projectName: project.name,
           reason,
           portalUrl: await portalAddress(project.slug),
-          url: `${app}/resume-email?token=${encodeURIComponent(resumeToken(projectId, project.emailPausedAt))}`,
+          url: `${app}/app/admin/email/resume?token=${encodeURIComponent(resumeToken(projectId, project.emailPausedAt))}`,
         }),
       });
       await tx.project.updateMany({ where: { id: projectId, emailPausedAt: project.emailPausedAt }, data: { emailPauseToldAt: new Date() } });

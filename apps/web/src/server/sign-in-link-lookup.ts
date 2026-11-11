@@ -60,5 +60,5 @@ export async function pendingPasswordReset(token: string) {
 }
 
 /** Where a reset link that didn't work sends people: "Forgot your password?", to ask for a new one. */
-export const FAILED_PASSWORD_RESET_PATH = "/forgot-password?link=failed";
+export const FAILED_PASSWORD_RESET_PATH = "/app/auth/forgot-password?link=failed";
 

@@ -36,7 +36,7 @@ export async function freeDocsSlug(
 
 /**
  * "new", "insights", "tabs" and "collections" are the team's pages under /app/<project>/docs (a tab's
- * and a collection's are under the last two), and /docs/api is the API reference (Tuti's own on the
+ * and a collection's are under the last two), and /docs/api is the API reference (Tuti's own is the
  * app's domain, and later each portal's from an OpenAPI file), so no article can have them.
  */
 export const RESERVED_ARTICLE_SLUGS = ["new", "insights", "api", "tabs", "collections"];

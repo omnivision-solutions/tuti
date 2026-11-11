@@ -156,7 +156,7 @@ async function sesEvent(projectId: string, eventType: "Send" | "Bounce" | "Compl
   expect(await postEvent(snsEvent(projectId, eventType, sentAt))).toBe(200);
 }
 const pausedAt = async (projectId: string) => (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
-const linkIn = (text: string) => new URL(text.split(/\s+/).find((word) => word.includes("/resume-email?"))!.replace(/[[\]]/g, "")).searchParams.get("token")!;
+const linkIn = (text: string) => new URL(text.split(/\s+/).find((word) => word.includes("/app/admin/email/resume?"))!.replace(/[[\]]/g, "")).searchParams.get("token")!;
 
 test("too many bounces pause the project's email: replies and shipped wait, sign-in links go, the operator and team are told; the operator's link resumes it", async () => {
   const { owner, project, team, aWeekOld } = await setup();

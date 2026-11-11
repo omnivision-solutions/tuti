@@ -3,7 +3,7 @@ import { docOf, hasTeammateEdit, lockProject } from "@tuti/jobs";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import TeamArticlePage from "@/app/app/[project]/docs/[slug]/page";
+import TeamArticlePage from "@/app/app/(workspace)/[project]/docs/[slug]/page";
 import { restoreArticle as restoreFromEditor, saveArticle } from "@/server/docs";
 
 import { ARTICLE_REVISIONS_KEPT, createArticle, createCollection, deleteArticle, publishArticle, restoreArticle, restoreTakesOut, updateArticle } from "@/server/operations/docs";

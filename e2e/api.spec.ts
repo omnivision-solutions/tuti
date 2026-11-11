@@ -66,8 +66,9 @@ test("an admin creates an API key, reads posts with it and revokes it", async ({
   expect((await owner.request.get(`/app/${slug}/settings/export/zip`)).status()).toBe(404);
 
   // The docs list every endpoint, generated from the same operations.
-  await owner.goto("/docs/api");
-  await expect(owner.getByRole("heading", { name: "API", level: 1 })).toBeVisible();
+  await owner.goto("/api/docs");
+  await expect(owner.getByRole("main").getByRole("heading", { name: "API", level: 1 })).toBeVisible();
+  await expect(owner.getByRole("banner").getByRole("link", { name: "Tuti home" })).toHaveAttribute("href", "/");
   await expect(owner.getByRole("heading", { name: /POST \/api\/v1\/posts$/ })).toBeVisible();
   await expect(owner.getByRole("heading", { name: "MCP (for AI assistants)" })).toBeVisible();
   await checkpoint(owner, "api-docs");

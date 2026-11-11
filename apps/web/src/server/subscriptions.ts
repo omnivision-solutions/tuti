@@ -77,7 +77,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
 }
 
 /**
- * A self-hosted project's licence bought on tuti.so/license (docs/plan.md, Licences): active while its
+ * A self-hosted project's licence bought on tuti.so/app/license (docs/plan.md, Licences): active while its
  * subscription is live, so its installation's renewals get keys; cancelled once it isn't, so its key
  * lapses. A second live subscription for a licence another one pays for changes nothing and is logged
  * for the operator to refund, like a plan's. Its claim hash (from the buy link) says which installation may claim it

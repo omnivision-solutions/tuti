@@ -93,11 +93,11 @@ test("its slug may be a reserved one (help), and only its owner (APP_PORTAL_OWNE
   expect(await redirectTarget(createProject(null as never, form()))).toBe("/app/help/setup");
 });
 
-test("a slug that's one of the app's own paths is ignored (docs would take /docs/api)", async () => {
-  vi.stubEnv("APP_PORTAL_PROJECT", "docs");
+test("a slug that's one of the app's own paths is ignored (api would take /api/docs)", async () => {
+  vi.stubEnv("APP_PORTAL_PROJECT", "api");
   const { appPortalMount } = await import("@/lib/app-portal");
   expect(appPortalMount()).toBeNull();
-  expect((await visit(app, "/docs/api")).headers.get("x-middleware-rewrite")).toBeNull();
+  expect((await visit(app, "/api/docs")).headers.get("x-middleware-rewrite")).toBeNull();
 });
 
 test("an ordinary slug named as Tuti's own portal is only its owner's to create, too", async () => {
@@ -116,13 +116,13 @@ test("the setting is a slug whatever its case, and an app path can't be created 
   expect(isUsableSlug("help")).toBe(true);
   expect(appPortalMount()).toMatchObject({ slug: "help", path: "/help" });
 
-  vi.stubEnv("APP_PORTAL_PROJECT", "docs");
+  vi.stubEnv("APP_PORTAL_PROJECT", "api");
   const maintainer = await signUp("Maintainer");
   await prisma.user.update({ where: { id: maintainer.id }, data: { emailVerified: true } });
   vi.stubEnv("APP_PORTAL_OWNER", maintainer.email);
   actAs(maintainer);
   const data = new FormData();
-  data.set("name", "Docs");
-  data.set("slug", "docs");
+  data.set("name", "API");
+  data.set("slug", "api");
   expect(await createProject(null as never, data)).toEqual({ error: "That URL is reserved" });
 });

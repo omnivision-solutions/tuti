@@ -5,11 +5,11 @@ import { prisma } from "@tuti/db";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import ReportingAiConversationsPage from "@/app/app/[project]/reporting/ai-conversations/page";
-import ReportingArticlesPage from "@/app/app/[project]/reporting/articles/page";
-import ReportingInboxPage from "@/app/app/[project]/reporting/inbox/page";
-import ReportingSearchesPage from "@/app/app/[project]/reporting/searches/page";
-import ReportingOverviewPage from "@/app/app/[project]/reporting/page";
+import ReportingAiConversationsPage from "@/app/app/(workspace)/[project]/reporting/ai-conversations/page";
+import ReportingArticlesPage from "@/app/app/(workspace)/[project]/reporting/articles/page";
+import ReportingInboxPage from "@/app/app/(workspace)/[project]/reporting/inbox/page";
+import ReportingSearchesPage from "@/app/app/(workspace)/[project]/reporting/searches/page";
+import ReportingOverviewPage from "@/app/app/(workspace)/[project]/reporting/page";
 import { type RangeKey, reportRange } from "@/lib/report-range";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 

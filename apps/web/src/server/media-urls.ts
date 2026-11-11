@@ -10,7 +10,7 @@ import { mediaStorage, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
  *   someone allowed to read it, that stop working within two hours (storage.ts).
  * - `lastingMediaUrl(s)`, for what outlives a page view (emails, link cards, exports):
  *   app links that send the reader on to a fresh presigned URL for as long as the
- *   image is in use (app/media/[id]/[file]). Anyone holding one can load the image,
+ *   image is in use (app/api/media/[id]/[file]). Anyone holding one can load the image,
  *   as with the email it's in.
  * Both are null when uploads aren't set up.
  */

@@ -248,7 +248,7 @@ export function PoweredBySettings({
   poweredBy: boolean;
   /** When the project's licence expires; null without one. */
   licensedUntil: Date | null;
-  /** tuti.so/license for this installation and project. */
+  /** tuti.so/app/license for this installation and project. */
   buyLicenseUrl: string;
   /** Where plans are sold; null elsewhere. */
   plan: BadgePlan | null;

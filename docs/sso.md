@@ -83,7 +83,7 @@ empty to take the button away.
 
 ## In the widget
 
-The widget (`<script src="https://tuti.so/widget.js" data-project="acme" async>`) runs on
+The widget (`<script src="https://tuti.so/api/widget.js" data-project="acme" async>`) runs on
 your site, where Tuti's own sign-in cookie can't reach it. Give it a way to get a fresh
 token from your server, and your signed-in users post from the widget as themselves:
 
@@ -94,7 +94,7 @@ token from your server, and your signed-in users post from the widget as themsel
     identify: () => fetch("/tuti-token").then((response) => response.text()),
   };
 </script>
-<script src="https://tuti.so/widget.js" data-project="acme" async></script>
+<script src="https://tuti.so/api/widget.js" data-project="acme" async></script>
 ```
 
 `/tuti-token` is a route in your app that signs a token as in step 2. After the script

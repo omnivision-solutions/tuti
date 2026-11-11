@@ -8,7 +8,7 @@ import { safeRedirectPath } from "@/lib/redirects";
 export async function GET(request: Request, { params }: RouteContext<"/portal/[project]/continue">) {
   const { project } = await params;
   const state = randomSecret();
-  const target = new URL("/continue", appUrl());
+  const target = new URL("/app/auth/continue", appUrl());
   target.searchParams.set("portal", project);
   target.searchParams.set("state", state);
   const { searchParams } = new URL(request.url);
