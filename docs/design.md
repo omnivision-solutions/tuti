@@ -190,7 +190,9 @@ the list picks none to approve at once.
   the latest message); the subject and the latest message's first line on separate lines, cut
   short, after a small "Needs reply" (the highlight colour) when it needs one (not in the Needs
   reply view, where every row would say it; in Snoozed, when it's back first). Its number is in the conversation, and read out
-  with the row.
+  with the row. Unread customer messages make the name and subject bold for each teammate; opening the
+  conversation makes them normal-weight in a softer foreground, with a muted preview. Team replies and notes
+  never make it unread. Needs reply is independent of whether it has been read.
   Every view lists the latest message first, Needs reply too. A conversation keeps
   its own address (`/inbox/<number>`), the list beside it where it was, its row
   marked; J and K open the next and the previous one. Until one opens, the pane

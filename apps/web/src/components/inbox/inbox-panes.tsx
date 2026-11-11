@@ -25,6 +25,7 @@ import { initial, longDuration, replyTime, rowBy, rowLine, shortDuration, timeAg
 import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
+import { conversationReads } from "@/server/conversation-reads";
 import { inboxStats } from "@/server/inbox-stats";
 import { awake, conversationPerson, latestMessages } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
@@ -185,6 +186,7 @@ export async function InboxPanes({
   const whereFrom = "New conversations show up here as they come in.";
   const latest = await latestMessages(conversations.map((c) => c.id));
   const companies = await conversationCompanies(projectId, conversations);
+  const reads = await conversationReads(conversations.map((c) => c.id), userId);
 
   return (
     // Rounded panes fill the available window under any account banners.
@@ -243,21 +245,13 @@ export async function InboxPanes({
             />
           </div>
         )}
-        {conversations.length > 0 && (
-          <div className="inbox-list-context leading-normal flex justify-between px-4.5 pt-5 pb-2 text-xs text-muted-foreground [&>span]:hidden max-md:[&>span]:inline">
-            Latest message first
-            <span>
-              {counts[views.indexOf(view)]} {counts[views.indexOf(view)] === 1 ? "conversation" : "conversations"}
-            </span>
-          </div>
-        )}
         <ListKeys
           place={`${slug}:${view}`}
           open={open}
           none={inboxHref(slug, view, null, pages)}
           aria-label="Conversations"
           // Relative: what's placed absolutely in it (a label for screen readers) stays in it, not past the page's end.
-          className="inbox-list-scroll relative min-h-0 flex-1 overflow-y-auto px-2 pt-0 pb-4.5"
+          className="inbox-list-scroll relative min-h-0 flex-1 overflow-y-auto px-2 pt-3 pb-4.5"
         >
           {conversations.length === 0 ? (
             // From laptop width up, an empty Inbox says new conversations show up here, beside the list, with its numbers.
@@ -279,6 +273,7 @@ export async function InboxPanes({
                   const text = message && rowLine(c.subject, message.body);
                   const by = message && rowBy(message, userId);
                   const line = text && (by ? `${by}: ${text}` : text);
+                  const unread = reads.get(c.id)!.unread;
                   // Spam waits on nobody, however it came in. Not said in Needs reply, where every row does.
                   const needsReply = view !== "spam" && c.status === "OPEN" && c.waitingSince !== null;
                   // One age per row: how long they've waited for the team, or since the latest message.
@@ -291,7 +286,7 @@ export async function InboxPanes({
                       // Relative: the name's link covers the whole row, so a click anywhere in it opens the conversation.
                       // Isolated: what's raised over the cover stays in the row, under the page's sticky header.
                       // A dense list: rows a little tighter than other lists', so twice as many fit.
-                      className={cn("inbox-row relative isolate items-start my-0.75 mx-0 rounded-xl border-0 px-2.5 py-3.75 first:mt-0.75 first:pt-3.75 last:mb-0.75 last:pb-3.75 data-selected:bg-secondary [&>div:first-child]:items-start [&>div:first-child]:gap-2.5 [&>div:last-child]:self-stretch", needsReply && "inbox-needs-reply [&_a]:font-[650] [&_.inbox-row-subject]:font-[650]")}
+                      className={cn("inbox-row relative isolate items-start my-0.75 mx-0 rounded-xl border-0 px-2.5 py-3.75 first:mt-0.75 first:pt-3.75 last:mb-0.75 last:pb-3.75 data-selected:bg-secondary [&>div:first-child]:items-start [&>div:first-child]:gap-2.5 [&>div:last-child]:self-stretch", unread ? "inbox-unread" : "inbox-read")}
                       leading={
                         <Avatar className="mt-0.5 size-7.5 text-xs">
                           {c.user?.image && <AvatarImage src={c.user.image} alt="" />}
@@ -306,8 +301,8 @@ export async function InboxPanes({
                           scroll={false}
                           data-row-link={c.number}
                           aria-current={c.number === open ? "page" : undefined}
-                          aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})${c.assignee ? `, assigned to ${c.assignee.name}` : ""}`}
-                          className="block truncate text-[0.875rem] font-medium after:absolute after:inset-0 hover:underline"
+                          aria-label={`${unread ? "Unread, " : ""}${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})${c.assignee ? `, assigned to ${c.assignee.name}` : ""}`}
+                          className={cn("block truncate text-[0.875rem] after:absolute after:inset-0 hover:underline", unread ? "font-[650] text-foreground" : "font-normal text-foreground/70")}
                         >
                           {/* In full on hover (over the link's cover, still inside the link); not read out again after the link's name. */}
                           <span aria-hidden className="relative z-10" title={`${name}${company ? ` · ${company}` : ""}`}>
@@ -328,9 +323,9 @@ export async function InboxPanes({
                             </Badge>
                           )}
                           {view === "snoozed" && c.snoozedUntil && `Back ${timeAgo(c.snoozedUntil)} · `}
-                          <span className="inbox-row-subject text-foreground block overflow-hidden text-ellipsis text-sm leading-5.5 font-normal">{c.subject}</span>
+                          <span className={cn("inbox-row-subject block overflow-hidden text-ellipsis text-sm leading-5.5", unread ? "font-[650] text-foreground" : "font-normal text-foreground/70")}>{c.subject}</span>
                           {line && (
-                            <span className={cn(c.assignee && "pr-6", "inbox-row-preview block overflow-hidden text-ellipsis text-xs leading-5")}>
+                            <span className={cn(c.assignee && "pr-6", "inbox-row-preview block overflow-hidden text-ellipsis text-xs leading-5 text-muted-foreground")}>
                               <span className="sr-only"> · </span>
                               {line}
                             </span>

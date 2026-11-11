@@ -262,6 +262,45 @@ export const getConversation = defineOperation({
   },
 });
 
+/** Acknowledges only the customer message shown on the open page, never a newer one that arrived meanwhile. */
+export const markConversationRead = defineOperation({
+  name: "conversations.markRead",
+  summary: "Mark a conversation read for the signed-in teammate (API keys cannot mark someone else's inbox read)",
+  method: "POST",
+  path: "/conversations/{number}/read",
+  scope: "write",
+  access: "team",
+  input: z.object({ number: conversationNumber, seen: z.iso.datetime().nullable() }),
+  run: async ({ actor, projectId }, { number, seen }) => {
+    if (actor.kind !== "user") {
+      throw new OperationError(403, "people_only", "Only signed-in teammates can mark conversations read");
+    }
+    const conversation = await findConversation(projectId, number);
+    await prisma.$transaction(async (tx) => {
+      // The same lock as addMessage: wait for a message already being saved before checking what the page showed.
+      await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
+      const readAt = new Date();
+      // Conditional upsert: refreshes, repeated acknowledgements and old tabs don't rewrite the row or move it back.
+      // If the displayed page is stale, leave the new customer message unread until a page actually shows it.
+      await tx.$executeRaw`
+        INSERT INTO conversation_read ("conversationId", "userId", "readAt")
+        SELECT ${conversation.id}, ${actor.userId}, ${readAt}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM conversation_message
+          WHERE "conversationId" = ${conversation.id} AND author = 'USER' AND NOT note
+            AND (${seen}::timestamp IS NULL OR "createdAt" > ${seen}::timestamp)
+        )
+        ON CONFLICT ("conversationId", "userId") DO UPDATE SET "readAt" = EXCLUDED."readAt"
+        WHERE conversation_read."readAt" < EXCLUDED."readAt" AND EXISTS (
+          SELECT 1 FROM conversation_message
+          WHERE "conversationId" = ${conversation.id} AND author = 'USER' AND NOT note
+            AND "createdAt" > conversation_read."readAt"
+        )`;
+    });
+    return {};
+  },
+});
+
 export const createConversation = defineOperation({
   name: "conversations.create",
   summary: "Start a conversation from someone in your app (`user`, by their id there) or an email address, with their first message",

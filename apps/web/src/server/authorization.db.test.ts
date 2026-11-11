@@ -453,6 +453,7 @@ const matrix: Matrix = {
     },
   },
   inbox: {
+    markConversationRead: { allowed: "MEMBER", call: (slug) => inbox.markConversationRead(slug, 1, new Date().toISOString()) },
     replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
     // Nothing in the docs is close to what was asked: no draft (and why), and the model isn't asked.
     draftReplyWithAi: {

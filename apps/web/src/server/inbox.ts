@@ -13,7 +13,7 @@ import { readerToSend, searchDocs } from "./docs-search";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
-import { linkConversationPost, CONVERSATION_STATUSES, replyToConversation, unlinkConversationPost, updateConversation } from "./operations/conversations";
+import { markConversationRead as markRead, linkConversationPost, CONVERSATION_STATUSES, replyToConversation, unlinkConversationPost, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { searchPosts } from "./post-lists";
 import { getSession } from "./session";
@@ -32,6 +32,13 @@ function conversationNumber(value: unknown) {
     throw new OperationError(400, "invalid_input", "Unknown conversation");
   }
   return parsed.data;
+}
+
+/** Opening a conversation acknowledges it for this teammate, after the page mounts (never during prefetch). */
+export async function markConversationRead(projectSlug: string, conversation: number, seen: string | null): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can mark conversations read", (context) =>
+    call(markRead, context, { number: conversationNumber(conversation), seen }),
+  );
 }
 
 export async function replyInConversation(

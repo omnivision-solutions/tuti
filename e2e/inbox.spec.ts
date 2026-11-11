@@ -912,7 +912,8 @@ test("the team member's own action taking the open conversation out of its view 
   await search.press("Enter");
   release();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/reporting$`));
-  await owner.unroute("**/*");
+  // Read acknowledgements may also be in flight: let their released handlers finish before removing the route.
+  await owner.unrouteAll({ behavior: "wait" });
   await expect(owner.getByRole("heading", { name: "Reporting", level: 1 })).toBeVisible();
   await owner.goBack();
   await expect(meta(owner)).toContainText("#3");
@@ -952,7 +953,8 @@ test("the team member's own action taking the open conversation out of its view 
   await row(5).click();
   answer();
   await expect(row(4)).toHaveCount(0);
-  await owner.unroute("**/*");
+  // Read acknowledgements may also be in flight: let their released handlers finish before removing the route.
+  await owner.unrouteAll({ behavior: "wait" });
   await api("/conversations", { email: "e2e-seventh@example.com", body: "A seventh question" });
   await expect(row(7)).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/5$`));
@@ -2348,4 +2350,39 @@ test("Tuti's chat launcher isn't in the Inbox, so the reply box's buttons are al
   await expect(launcher).toBeVisible();
   await checkpoint(owner, "changelog-phone-launcher", { fullPage: false });
   await expectClear(owner.locator("[data-pinned-actions]").getByRole("button"));
+});
+
+test("customer messages are bold until this teammate opens the conversation, then become unread again on another customer message", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "sam", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Exporting reports", body: "Can I export a spreadsheet?" });
+  await owner.goto(`/app/${slug}/inbox?view=unassigned`);
+  const row = owner.getByRole("region", { name: "Conversations", exact: true }).getByRole("listitem");
+  const link = row.locator("[data-row-link]");
+  const subject = row.locator(".inbox-row-subject");
+  await expect(link).toHaveAccessibleName(/unread/i);
+  await expect(link).toHaveCSS("font-weight", "650");
+  await expect(subject).toHaveCSS("font-weight", "650");
+  // Prefetching (including a hover) cannot mark a conversation as read.
+  await link.hover();
+  await expect(link).toHaveAccessibleName(/unread/i);
+  await checkpoint(owner, "inbox-unread-customer-message");
+  await link.click();
+  await expect(owner.getByRole("textbox", { name: "Reply", exact: true })).toBeVisible();
+  await expect(link).not.toHaveAccessibleName(/unread/i);
+  await expect(link).toHaveCSS("font-weight", "400");
+  await expect(subject).toHaveCSS("font-weight", "400");
+  await expect(row.getByText("Needs reply", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Needs reply 1" })).toBeVisible();
+  await checkpoint(owner, "inbox-read-still-needs-reply");
+  await owner.goto(`/app/${slug}/inbox?view=unassigned`);
+  await api("/conversations/1/messages", { body: "Any update?", author: { id: "sam" } });
+  await expect(link).toHaveAccessibleName(/unread/i, { timeout: 15_000 });
+  await expect(link).toHaveCSS("font-weight", "650");
+  await expect(subject).toHaveCSS("font-weight", "650");
+  await expect(row.locator(".inbox-row-preview")).toContainText("Any update?");
+  await checkpoint(owner, "inbox-unread-again");
 });
