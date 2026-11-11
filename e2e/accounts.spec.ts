@@ -113,6 +113,15 @@ test("a team member switches projects, edits their account, signs out and back i
   await olive.waitForURL(/\/app\//);
 });
 
+test("the app's sign-in and sign-up pages link to each other under /app/auth, keeping where to go next", async ({ page }) => {
+  const next = "/app/new";
+  await page.goto(`${APP_URL}/app/auth/sign-up?${new URLSearchParams({ next })}`);
+  const signIn = new URL(`${APP_URL}${await page.getByRole("link", { name: "Sign in", exact: true }).getAttribute("href")}`);
+  expect([signIn.pathname, signIn.searchParams.get("next")]).toEqual(["/app/auth/sign-in", next]);
+  await page.goto(`${APP_URL}/app/auth/sign-in`);
+  await expect(page.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", /^\/app\/auth\/sign-up\?/);
+});
+
 test("the strip asking to verify an email stays on every page until the email is verified", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
