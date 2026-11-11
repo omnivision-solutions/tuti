@@ -49,7 +49,7 @@ export default function ApiDocsPage() {
   const base = `${appUrl().origin}/api/v1`;
 
   return (
-    <article className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
+    <article className="flex flex-col gap-8">
       <header className="flex flex-col gap-3">
         <h1 className="text-3xl font-bold tracking-tight">API</h1>
         <p className="text-muted-foreground">
