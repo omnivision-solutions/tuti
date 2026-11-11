@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, conversationDay, emailHint, etaOnPortal, etaToast, firstLine, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
+import { asking, askingTotal, conversationDay, etaOnPortal, etaToast, firstLine, initial, longDuration, replyTime, rowBy, rowLine, shortDuration, subjectFrom, timeAgo, votersNote } from "./format";
 
 test.each([
   ["2026-11-10T00:01:00Z", "2026-11-10T23:59:00Z", "Today · 10 November"],
@@ -20,11 +20,6 @@ test.each([
   ["2026-11-10T23:30:00Z", "2026-11-11T01:00:00Z", "Asia/Tokyo", "Today · 11 November"],
 ])("conversation days use calendar boundaries in %s / %s / %s", (date, now, zone, label) => {
   expect(conversationDay(new Date(date), zone, new Date(now))).toBe(label);
-});
-
-test("the composer's email hint says a widget reply is emailed only if unseen there", () => {
-  expect(emailHint("Sam Smith", false)).toBe("Replies are emailed to Sam.");
-  expect(emailHint("Sam Smith", true)).toBe("Emailed to Sam if they haven't seen it in the widget within a minute.");
 });
 
 const now = new Date("2026-10-18T12:00:00Z");
