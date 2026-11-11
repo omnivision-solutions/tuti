@@ -193,7 +193,7 @@ the list picks none to approve at once.
   with the row. Unread customer messages make the name and subject bold for each teammate; opening the
   conversation makes them normal-weight in a softer foreground, with a muted preview. Team replies and notes
   never make it unread. Only customer messages after deployment or the teammate joining start unread;
-  opening acknowledges the latest customer message shown, using its timestamp. Needs reply is independent of whether it has been read.
+  opening acknowledges the latest customer message shown, using its timestamp, only while the page is visible and focused. Needs reply is independent of whether it has been read.
   Every view lists the latest message first, Needs reply too. A conversation keeps
   its own address (`/inbox/<number>`), the list beside it where it was, its row
   marked; J and K open the next and the previous one. Until one opens, the pane

@@ -34,7 +34,7 @@ function conversationNumber(value: unknown) {
   return parsed.data;
 }
 
-/** Opening a conversation acknowledges it for this teammate, after the page mounts (never during prefetch). */
+/** Viewing a visible, focused conversation acknowledges it for this teammate (never during prefetch). */
 export async function markConversationRead(projectSlug: string, conversation: number, seen: string | null): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can mark conversations read", (context) =>
     call(markRead, context, { number: conversationNumber(conversation), seen }),

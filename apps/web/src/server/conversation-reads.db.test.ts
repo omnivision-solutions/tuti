@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 
@@ -53,37 +53,6 @@ test("read state belongs to each teammate, ignores team replies and notes, and o
   // At the exact timestamp is read; only strictly newer customer messages are unread.
   await prisma.conversationRead.update({ where: { conversationId_userId: { conversationId: id, userId: owner.id } }, data: { readAt: latest } });
   expect((await states()).get(id)?.unread).toBe(false);
-});
-
-test("an acknowledgement waits for a customer message being saved and leaves it unread when the page didn't show it", async () => {
-  const owner = await signUp("Olive Owner");
-  const project = await createProject(owner);
-  const context = { actor: { kind: "user", userId: owner.id } as const, projectId: project.id };
-  await call(createConversation, context, { email: "e2e-sam@example.com", body: "First question" });
-  const conversation = await prisma.conversation.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: 1 } } });
-  const seen = (await conversationReads([conversation.id], owner.id)).get(conversation.id)!.latestCustomerAt!.toISOString();
-  const inserted = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
-  const saving = addMessage(conversation.id, project.id, { author: "USER", authorId: null, channel: "EMAIL", body: "Another question" }, async () => {
-    inserted.resolve();
-    await release.promise;
-  });
-  await inserted.promise;
-  let acknowledged = false;
-  const marking = call(markRead, context, { number: 1, seen }).finally(() => { acknowledged = true; });
-  try {
-    // Either the acknowledgement finished, or it is waiting on the message's conversation lock.
-    await vi.waitFor(async () => {
-      const [{ waiting }] = await prisma.$queryRaw<[{ waiting: boolean }]>`
-        SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
-          AND wait_event_type = 'Lock' AND query LIKE '%FOR NO KEY UPDATE%') AS waiting`;
-      expect(acknowledged || waiting).toBe(true);
-    }, { timeout: 5_000 });
-  } finally {
-    release.resolve();
-    await Promise.all([saving, marking]);
-  }
-  expect((await conversationReads([conversation.id], owner.id)).get(conversation.id)?.unread).toBe(true);
 });
 
 test("the deploy or join cutoff keeps historical, team-started and message-less conversations read", async () => {

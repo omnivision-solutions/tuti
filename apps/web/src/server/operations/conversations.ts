@@ -276,20 +276,17 @@ export const markConversationRead = defineOperation({
       throw new OperationError(403, "people_only", "Only signed-in teammates can mark conversations read");
     }
     const conversation = await findConversation(projectId, number);
-    await prisma.$transaction(async (tx) => {
-      // The same lock as addMessage: wait for a message already being saved before checking what the page showed.
-      await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
-      // Store message time, not this server's clock. Old tabs and repeated acknowledgements cannot move it back.
-      await tx.$executeRaw`
-        INSERT INTO conversation_read ("conversationId", "userId", "readAt")
-        SELECT ${conversation.id}, ${actor.userId}, "createdAt"
-        FROM conversation_message
-        WHERE "conversationId" = ${conversation.id} AND author = 'USER' AND NOT note
-          AND "createdAt" <= ${seen}::timestamp
-        ORDER BY "createdAt" DESC LIMIT 1
-        ON CONFLICT ("conversationId", "userId") DO UPDATE SET "readAt" = EXCLUDED."readAt"
-        WHERE conversation_read."readAt" < EXCLUDED."readAt"`;
-    });
+    // Store message time, not this server's clock. Old tabs and repeated acknowledgements cannot move it back.
+    // One atomic statement acknowledges only committed customer messages at or before what the page showed.
+    await prisma.$executeRaw`
+      INSERT INTO conversation_read ("conversationId", "userId", "readAt")
+      SELECT ${conversation.id}, ${actor.userId}, "createdAt"
+      FROM conversation_message
+      WHERE "conversationId" = ${conversation.id} AND author = 'USER' AND NOT note
+        AND "createdAt" <= ${seen}::timestamp
+      ORDER BY "createdAt" DESC LIMIT 1
+      ON CONFLICT ("conversationId", "userId") DO UPDATE SET "readAt" = EXCLUDED."readAt"
+      WHERE conversation_read."readAt" < EXCLUDED."readAt"`;
     return {};
   },
 });

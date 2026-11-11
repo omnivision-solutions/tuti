@@ -2386,3 +2386,69 @@ test("customer messages are bold until this teammate opens the conversation, the
   await expect(row.locator(".inbox-row-preview")).toContainText("Any update?");
   await checkpoint(owner, "inbox-unread-again");
 });
+
+test("customer messages stay unread in a hidden or unfocused conversation until it is visible and focused", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "sam", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Exporting reports", body: "Can I export a spreadsheet?" });
+  const list = await owner.context().newPage();
+  await list.goto(`/app/${slug}/inbox`);
+  const listed = list.locator('[data-row-link="1"]');
+  await owner.bringToFront();
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const opened = owner.locator('[data-row-link="1"]');
+  await expect(owner.getByRole("textbox", { name: "Reply", exact: true })).toBeVisible();
+  await expect(opened).not.toHaveAccessibleName(/unread/i);
+
+  // Control visibility and focus independently, without relying on the headless browser's tab focus behavior.
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    Object.defineProperty(document, "hasFocus", { configurable: true, value: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await api("/conversations/1/messages", { body: "A question while the tab is hidden", author: { id: "sam" } });
+  // LiveRefresh must actually render the new message while hidden before checking the durable state elsewhere.
+  await expect(owner.getByRole("list", { name: "Messages", exact: true })).toContainText("A question while the tab is hidden", { timeout: 15_000 });
+  await checkpoint(owner, "inbox-hidden-live-message");
+  await list.reload();
+  await expect(listed).toHaveAccessibleName(/unread/i);
+  await expect(listed).toHaveCSS("font-weight", "650");
+
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(document, "hasFocus", { configurable: true, value: () => false });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await list.reload();
+  await expect(listed).toHaveAccessibleName(/unread/i);
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "hasFocus", { configurable: true, value: () => true });
+    window.dispatchEvent(new Event("focus"));
+  });
+  await expect(opened).not.toHaveAccessibleName(/unread/i);
+  await list.reload();
+  await expect(listed).not.toHaveAccessibleName(/unread/i);
+
+  // Returning via visibilitychange alone also acknowledges the current seen timestamp.
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await api("/conversations/1/messages", { body: "Another question while hidden", author: { id: "sam" } });
+  await expect(owner.getByRole("list", { name: "Messages", exact: true })).toContainText("Another question while hidden", { timeout: 15_000 });
+  await list.reload();
+  await expect(listed).toHaveAccessibleName(/unread/i);
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(opened).not.toHaveAccessibleName(/unread/i);
+  await list.reload();
+  await expect(listed).not.toHaveAccessibleName(/unread/i);
+  await expect(listed).toHaveCSS("font-weight", "400");
+  await checkpoint(list, "inbox-visible-and-focused-read");
+});
