@@ -1,6 +1,6 @@
 # Tuti's marketing site (tuti.so's home, pricing and legal pages). Build from the repo root:
 #   docker build -f apps/marketing/Dockerfile -t tuti-marketing .
-# It needs one setting at run time, APP_URL: the app's address, for its plans (README, "Production routing").
+# It needs one setting at run time, APP_URL: the app's public address, for its plans (README, "Production routing").
 # Serves on $PORT (3000).
 FROM mirror.gcr.io/library/node:22-alpine AS base
 RUN apk add --no-cache libc6-compat

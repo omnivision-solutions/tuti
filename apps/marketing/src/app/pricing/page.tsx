@@ -1,9 +1,11 @@
+import { log } from "@tuti/shared/log";
 import { buttonVariants } from "@tuti/ui/button";
 import { cn } from "cn";
 import { CheckIcon } from "lucide-react";
 import type { Metadata } from "next";
 
-import { appPlans } from "../links";
+import { contact } from "../legal";
+import { appPlans, type Plans, SIGN_UP } from "../links";
 import { PricingTable } from "./pricing-table";
 
 export const metadata: Metadata = {
@@ -16,7 +18,11 @@ export const dynamic = "force-dynamic";
 
 /** tuti.so's pricing (docs/plan.md, Plans). */
 export default async function PricingPage() {
-  const { plans, enterprise, yearlyNote } = await appPlans();
+  // Without the app (down, or slow), the page still answers: start free, or ask.
+  const loaded = await appPlans().catch((error: unknown) => {
+    log.warn("The pricing page is shown without its plans: the app's plans didn't come", { error });
+    return null;
+  });
 
   return (
     // `data-wide`: the marketing layout gives the three plans the room for one row.
@@ -28,24 +34,40 @@ export default async function PricingPage() {
         </p>
       </section>
 
-      <PricingTable plans={plans} yearlyNote={yearlyNote} />
-
-      <section className="flex flex-col gap-5 rounded-2xl border bg-muted/40 p-7 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-3">
-          <h2 className="font-heading text-xl font-bold">Enterprise</h2>
-          <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-            <li className="font-semibold">Everything in Business, plus:</li>
-            {enterprise.features.map((feature) => (
-              <li key={feature} className="flex items-center gap-2">
-                <CheckIcon aria-hidden className="size-4 text-primary" strokeWidth={2.5} /> {feature}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <a href={enterprise.cta.href} className={cn(buttonVariants({ size: "lg", variant: "outline" }), "h-11 shrink-0 border-primary/60 text-base text-primary hover:text-primary")}>
-          {enterprise.cta.label}
-        </a>
-      </section>
+      {loaded ? (
+        <>
+          <PricingTable plans={loaded.plans} yearlyNote={loaded.yearlyNote} />
+          <Enterprise {...loaded.enterprise} />
+        </>
+      ) : (
+        <section className="flex flex-col items-center gap-4 text-center">
+          <a href={SIGN_UP} className={buttonVariants({ size: "lg", className: "h-11 px-6 text-base" })}>
+            Start free
+          </a>
+          <p className="text-muted-foreground">Questions about plans? {contact}</p>
+        </section>
+      )}
     </div>
+  );
+}
+
+function Enterprise({ features, cta }: Plans["enterprise"]) {
+  return (
+    <section className="flex flex-col gap-5 rounded-2xl border bg-muted/40 p-7 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3">
+        <h2 className="font-heading text-xl font-bold">Enterprise</h2>
+        <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <li className="font-semibold">Everything in Business, plus:</li>
+          {features.map((feature) => (
+            <li key={feature} className="flex items-center gap-2">
+              <CheckIcon aria-hidden className="size-4 text-primary" strokeWidth={2.5} /> {feature}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <a href={cta.href} className={cn(buttonVariants({ size: "lg", variant: "outline" }), "h-11 shrink-0 border-primary/60 text-base text-primary hover:text-primary")}>
+        {cta.label}
+      </a>
+    </section>
   );
 }

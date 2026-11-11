@@ -18,11 +18,12 @@ export type Plans = {
 
 /**
  * The plans the app sells (its /api/plans): their prices and limits are the app's settings, so this site asks it on
- * each page view rather than keeping a copy. APP_URL is the app's address (development: its dev server).
+ * each page view rather than keeping a copy. APP_URL is the app's public address (development: its dev server): the app
+ * answers only on its own host. Given up on after 3 seconds, so a slow app can't hold a page up.
  */
 export async function appPlans(): Promise<Plans> {
   const url = new URL("/api/plans", process.env.APP_URL || "http://localhost:3100");
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(3000) });
   if (!response.ok) {
     throw new Error(`${url}: ${response.status}`);
   }

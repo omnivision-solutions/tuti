@@ -88,7 +88,7 @@ tuti.so is two apps on one domain. The domain's proxy (Cloudflare) sends `/app`,
 `/help` (Tuti's own help center, `APP_PORTAL_PROJECT`) to the app (`apps/web`), and everything else to the
 marketing site (`apps/marketing`). The site's links into the app are plain paths on the same domain; its
 pricing comes from the app's `/api/plans`, so plans and limits stay the app's settings. It needs one
-variable, `APP_URL` (the app's address). Its image:
+variable, `APP_URL`: the app's public address (`https://tuti.so`; the app answers only on its own host). Its image:
 `docker build -f apps/marketing/Dockerfile -t tuti-marketing .` (port 3000). In development each runs on
 its own port, and the site's links go to the app's dev server.
 
