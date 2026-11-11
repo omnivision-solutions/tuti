@@ -35,7 +35,7 @@ export const normalizeSentence = (value: string) => sentenceTokens(value).map(({
 const spacelessScript = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
 
 /** Exact quote offsets, with substring matching for scripts whose clauses need no spaces. */
-export function sentenceQuoteRange(value: string, quote: string) {
+export function sentenceQuoteRange(value: string, quote: string, allowInsideClause = true) {
   const tokens = sentenceTokens(value);
   const text = tokens.map(({ word }) => word).join(" ");
   const wanted = normalizeSentence(quote);
@@ -54,11 +54,22 @@ export function sentenceQuoteRange(value: string, quote: string) {
   const needle = wanted.replaceAll(" ", "");
   const boundary = (index: number) => {
     const left = letters[index - 1], right = letters[index];
-    return !left || !right || left.spaceless || right.spaceless || value.slice(left.to, right.from).replace(/\p{Cf}/gu, "").length > 0;
+    return !left || !right || (allowInsideClause && (left.spaceless || right.spaceless)) || value.slice(left.to, right.from).replace(/\p{Cf}/gu, "").length > 0;
   };
   for (let at = compact.indexOf(needle); at >= 0; at = compact.indexOf(needle, at + 1)) {
     // A mixed-script quote must still respect Latin words and numeric boundaries.
     if (boundary(at) && boundary(at + needle.length)) return { from: letters[at]!.from, to: letters[at + needle.length - 1]!.to };
+  }
+  return null;
+}
+
+/** Prefer quote boundaries anywhere in the article before trying inside a spaceless clause. */
+export function findSentenceQuote(quote: string, candidates: string[]) {
+  for (const allowInsideClause of [false, true]) {
+    for (const [index, candidate] of candidates.entries()) {
+      const range = sentenceQuoteRange(candidate, quote, allowInsideClause);
+      if (range) return { ...range, index };
+    }
   }
   return null;
 }

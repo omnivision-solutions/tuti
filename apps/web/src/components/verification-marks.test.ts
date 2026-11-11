@@ -105,4 +105,32 @@ describe("verification annotations", () => {
     expect(ranges).toEqual([{ from, to: from + quote.length, number: 1, verdict: "outdated" }]);
     expect(content.textBetween(ranges[0]!.from, ranges[0]!.to)).toBe(quote);
   });
+  it.each([
+    ["公開の記事は", "非公開の記事は。", "", ""],
+    ["公開の記事は", "非公開の記事は。", "詳しくは「", "」をご覧ください。"],
+    ["发布的文章", "未发布的文章。", "参照 ", " 一覧"],
+  ])("underlines the bounded quote instead of an earlier prefixed clause: %s", (quote, other, prefix, suffix) => {
+    const content = schema.nodeFromJSON({ type: "doc", content: [
+      { type: "paragraph", content: [{ type: "text", text: other }] },
+      { type: "paragraph", content: [
+        { type: "text", text: `🗓 ${prefix}${quote.slice(0, 1)}` },
+        { type: "text", text: quote.slice(1), marks: [{ type: "bold" }] },
+        ...(suffix ? [{ type: "text", text: suffix }] : []),
+      ] },
+    ] });
+    const from = other.length + 3 + `🗓 ${prefix}`.length;
+    expect(verificationRanges(content, [{ statement: quote, verdict: "outdated" }])).toEqual([
+      { from, to: from + quote.length, number: 1, verdict: "outdated" },
+    ]);
+  });
+  it("prefers bounded spaceless text even when a quote adds whitespace", () => {
+    const content = schema.nodeFromJSON({ type: "doc", content: [
+      { type: "paragraph", content: [{ type: "text", text: "非公開の記事は。" }] },
+      { type: "paragraph", content: [{ type: "text", text: "公開の記事は" }] },
+    ] });
+    const from = "非公開の記事は。".length + 3;
+    expect(verificationRanges(content, [{ statement: "公開 の記事は", verdict: "outdated" }])).toEqual([
+      { from, to: from + "公開の記事は".length, number: 1, verdict: "outdated" },
+    ]);
+  });
 });

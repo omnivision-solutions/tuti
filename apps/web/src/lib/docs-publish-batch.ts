@@ -1,10 +1,12 @@
 type PublishResult = { error?: string; code?: string };
+type PublishFailure<T> = { article: T; error: string; code?: string };
 const stopsBatch = new Set(["article_limit", "forbidden", "unauthorized", "unreachable"]);
 
 /** Keep individual refusals out of retries; a project-wide refusal stops further requests. */
 export async function publishBatch<T>(articles: T[], publish: (article: T) => Promise<PublishResult>) {
   const published: T[] = [];
-  const failed: { article: T; error: string; code?: string }[] = [];
+  const failed: PublishFailure<T>[] = [];
+  const unattempted: PublishFailure<T>[] = [];
   for (const [index, article] of articles.entries()) {
     let result: PublishResult;
     try {
@@ -18,9 +20,9 @@ export async function publishBatch<T>(articles: T[], publish: (article: T) => Pr
     }
     failed.push({ article, error: result.error, code: result.code });
     if (stopsBatch.has(result.code ?? "")) {
-      failed.push(...articles.slice(index + 1).map((remaining) => ({ article: remaining, error: `Not attempted: ${result.error}`, code: result.code })));
+      unattempted.push(...articles.slice(index + 1).map((remaining) => ({ article: remaining, error: `Not attempted: ${result.error}`, code: result.code })));
       break;
     }
   }
-  return { published, failed };
+  return { published, failed, unattempted };
 }

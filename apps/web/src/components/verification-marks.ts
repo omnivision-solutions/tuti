@@ -1,4 +1,4 @@
-import { matchingSentence, normalizeSentence as normalize, sentenceQuoteRange } from "@/lib/docs-review";
+import { findSentenceQuote, matchingSentence, normalizeSentence as normalize, sentenceQuoteRange } from "@/lib/docs-review";
 import type { Node } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -25,10 +25,11 @@ export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
       if (!wanted) return;
       const blocks: { node: Node; pos: number }[] = [];
       doc.descendants((node, pos) => { if (node.isTextblock) blocks.push({ node, pos }); });
-      const paraphrase = matchingSentence(finding.source ?? finding.statement, blocks.map(({ node }) => node.textContent));
-      let found = false;
+      const texts = blocks.map(({ node }) => node.textContent);
+      const exact = findSentenceQuote(finding.source ?? finding.statement, texts);
+      const chosen = exact?.index ?? matchingSentence(finding.source ?? finding.statement, texts);
       doc.descendants((node, pos) => {
-        if (!node.isTextblock || found) return;
+        if (!node.isTextblock || blocks[chosen]?.pos !== pos) return;
         let source = "";
         const positions: number[] = [];
         node.descendants((child, offset) => {
@@ -39,8 +40,7 @@ export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
             positions.push(pos + 1 + offset + characterIndex);
           }
         });
-        const match = sentenceQuoteRange(source, finding.source ?? finding.statement)
-          ?? (blocks[paraphrase]?.pos === pos ? sentenceQuoteRange(source, source) : null);
+        const match = exact ?? sentenceQuoteRange(source, source);
         if (!match) return;
         const from = positions[match.from]!;
         const to = positions[match.to - 1]! + 1;
@@ -50,7 +50,6 @@ export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
           number: index + 1,
           verdict: finding.verdict as "outdated" | "unclear",
         });
-        found = true;
       });
     });
   return ranges;

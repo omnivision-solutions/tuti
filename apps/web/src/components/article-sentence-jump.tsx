@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpIcon } from "lucide-react";
-import { matchingSentence, sentenceQuoteRange } from "@/lib/docs-review";
+import { findSentenceQuote, matchingSentence } from "@/lib/docs-review";
 import { toast } from "sonner";
 
 export const ARTICLE_SENTENCE_JUMP = "docs:jump-to-sentence";
@@ -15,8 +15,8 @@ export function focusArticleSentence(sentence: string) {
     text.querySelectorAll("[data-finding]").forEach((marker) => marker.remove());
     return text.textContent ?? "";
   });
-  const exact = texts.findIndex((text) => sentenceQuoteRange(text, sentence));
-  const target = blocks[exact >= 0 ? exact : matchingSentence(sentence, texts)];
+  const exact = findSentenceQuote(sentence, texts);
+  const target = blocks[exact?.index ?? matchingSentence(sentence, texts)];
   if (!target || !editor) {
     toast.info("Couldn't find this sentence in the text");
     return;

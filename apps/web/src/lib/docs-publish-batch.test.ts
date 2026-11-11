@@ -7,6 +7,8 @@ it("keeps earlier successes and stops further requests when publishing throws", 
     published: ["first"],
     failed: [
       { article: "unreachable", error: "Couldn't reach the server", code: "unreachable" },
+    ],
+    unattempted: [
       { article: "unattempted", error: "Not attempted: Couldn't reach the server", code: "unreachable" },
     ],
   });
@@ -25,6 +27,7 @@ it("continues after a deleted article or review hold and records what went live"
       { article: "deleted", error: "Article was deleted", code: "not_found" },
       { article: "held", error: "Review the edit", code: "edits_required" },
     ],
+    unattempted: [],
   });
   expect(publish.mock.calls).toEqual([["first"], ["deleted"], ["held"], ["last"]]);
 });
@@ -35,6 +38,8 @@ it.each(["article_limit", "forbidden", "unauthorized"])("stops on %s and account
     published: ["first"],
     failed: [
       { article: "refused", error: "Publishing is unavailable", code },
+    ],
+    unattempted: [
       { article: "unattempted", error: "Not attempted: Publishing is unavailable", code },
     ],
   });

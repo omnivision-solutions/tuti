@@ -61,3 +61,18 @@ it.each([
   focusArticleSentence(source);
   expect(notice).toHaveBeenCalledWith("Couldn't find this sentence in the text");
 });
+
+it.each([
+  ["公開の記事は", "非公開の記事は。", "公開の記事は"],
+  ["公開 の記事は", "非公開の記事は。", "公開の記事は"],
+  ["公開の記事は", "非公開の記事は。", "詳しくは「公開の記事は」をご覧ください。"],
+  ["发布的文章", "未发布的文章。", "参照 发布的文章 一覧"],
+])("prefers a quote with clear boundaries over an earlier prefixed clause: %s", (source, other, text) => {
+  const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+  editor.innerHTML = `<p>${other}</p><p>${text}</p>`;
+  const target = editor.querySelectorAll("p")[1]!;
+  const scroll = vi.spyOn(target, "scrollIntoView");
+  focusArticleSentence(source);
+  expect(scroll).toHaveBeenCalled();
+  expect(window.getSelection()?.anchorNode).toBe(target);
+});

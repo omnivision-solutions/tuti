@@ -68,7 +68,7 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
   const publish = () => {
     if (!selection) return;
     start(async () => {
-      const { published, failed } = await publishBatch(selection.articles, (article) => article.published
+      const { published, failed, unattempted } = await publishBatch(selection.articles, (article) => article.published
         ? publishArticleChanges(projectSlug, article.slug, article.savedAt, article.revision)
         : publishArticle(projectSlug, article.slug, undefined, article.revision));
       setNeedsReview((previous) => {
@@ -87,7 +87,7 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
       setOpen(false);
       const notify = failed.length ? toast.warning : toast.success;
       notify(`Published ${plural(published.length, "article")}`, {
-        description: failed.length ? <ul className="space-y-1">{failed.map(({ article, error, code }) => <li key={article.slug}>
+        description: failed.length ? <ul className="space-y-1">{[...failed, ...unattempted].map(({ article, error, code }) => <li key={article.slug}>
           {article.title}: {code === "edits_required" ? "An Autopilot edit needs review first." : code === "changed" ? "Changed since you opened this page. Review before publishing." : error}
           {(code === "edits_required" || code === "changed") && <> <Link className="underline underline-offset-4" href={`/app/${projectSlug}/docs/${article.slug}`}>Review article</Link></>}
         </li>)}</ul> : undefined,
