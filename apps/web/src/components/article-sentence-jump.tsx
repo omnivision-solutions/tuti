@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowUpIcon } from "lucide-react";
 import { matchingSentence } from "@/lib/docs-review";
 import { toast } from "sonner";
 
@@ -16,7 +16,7 @@ export function focusArticleSentence(sentence: string) {
     return text.textContent ?? "";
   }))];
   if (!target || !editor) {
-    toast.info("This sentence has changed in the editor.");
+    toast.info("Couldn't find this sentence in the text");
     return;
   }
   target.scrollIntoView({ block: "center", behavior: "instant" });
@@ -37,7 +37,7 @@ export function ArticleSentenceJump({ sentence }: { sentence: string }) {
         if (window.dispatchEvent(new CustomEvent(ARTICLE_SENTENCE_JUMP, { detail: sentence, cancelable: true }))) focusArticleSentence(sentence);
       }}
     >
-      Jump to sentence <ArrowLeftIcon className="size-3" />
+      Jump to sentence <ArrowUpIcon className="size-3" />
     </button>
   );
 }

@@ -2481,7 +2481,7 @@ model ArticleVerification {
   current       Int                      @default(0)
   outdated      Int                      @default(0)
   unclear       Int                      @default(0)
-  /// What it found per statement: [{ statement, verdict ("current", "outdated", "unclear"), evidence (file paths), note }].
+  /// What it found per statement: [{ statement, source? (exact article quote), verdict ("current", "outdated", "unclear"), evidence (file paths), note }].
   statements    Json                     @default("[]")
   createdAt     DateTime                 @default(now())
   /// When its job started work (null while it waits in the queue): a run still running long after it is settled as failed.

@@ -41,6 +41,9 @@ describe("verification annotations", () => {
   it("annotates a paraphrased finding without changing its number or verdict", () => {
     expect(verificationRanges(doc("Every plan includes 5 seats for your team."), [{ statement: "Your team gets 5 seats with every plan", verdict: "outdated" }])).toMatchObject([{ from: 1, number: 1, verdict: "outdated" }]);
   });
+  it("uses a quoted source when the finding paraphrases it beyond word matching", () => {
+    expect(verificationRanges(doc("Team admins can invite five people."), [{ statement: "Invitations are restricted", source: "Team admins can invite five people.", verdict: "outdated" }])).toMatchObject([{ from: 1, number: 1 }]);
+  });
   it("does not underline the fix in place of the checked sentence", () => {
     expect(
       verificationRanges(doc("Each plan has 10 seats. You pay monthly."), [

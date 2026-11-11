@@ -343,7 +343,7 @@ export default async function ArticlePage(
                     href={url}
                     target="_blank"
                     rel="noreferrer"
-                    aria-label="View on help center"
+                    aria-label="Open on help center"
                     className="docs-live-link inline-flex gap-1.5 items-center text-muted-foreground text-[13px] whitespace-nowrap [&:hover]:text-primary"
                   >
                     <ExternalLinkIcon className="size-3.5" />

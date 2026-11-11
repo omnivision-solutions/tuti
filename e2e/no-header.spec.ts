@@ -209,22 +209,28 @@ test("a long docs collection and its settings scroll inside their page surface",
   await owner.setViewportSize({ width: 1440, height: 900 });
   for (const suffix of ["", "/settings"]) {
     await owner.goto(`/app/${slug}/docs/collections/getting-started${suffix}`);
-    if (suffix) {
-      await owner.evaluate(() => {
+    const pane = owner.locator(".docs-page-content");
+    await expect(owner.getByRole("heading", { name: "Getting started", level: 1, exact: true })).toBeVisible();
+    // Hydration or a server refresh can replace a spacer. Add it inside the poll, then let layout settle.
+    await expect.poll(() => pane.evaluate(async (element, addRoom) => {
+      if (addRoom && !element.querySelector("[data-scroll-room]")) {
         const room = document.createElement("div");
+        room.dataset.scrollRoom = "";
         room.style.minHeight = "100vh";
         room.style.flexShrink = "0";
-        document.querySelector(".docs-page-content")!.append(room);
-      });
-    }
-    // Scrolled again on each try, in case the page is still growing.
-    const pane = owner.locator(".docs-page-content");
-    await expect.poll(() => pane.evaluate((element) => {
-      element.scrollTo(0, 600);
-      return element.scrollTop;
-    })).toBeGreaterThan(300);
+        element.append(room);
+      }
+      const scroller = [element, ...element.querySelectorAll<HTMLElement>("*")].find((candidate) =>
+        /auto|scroll/.test(getComputedStyle(candidate).overflowY) && candidate.scrollHeight > candidate.clientHeight,
+      );
+      if (!scroller) return 0;
+      scroller.setAttribute("data-docs-test-scroller", "");
+      scroller.scrollTo(0, 600);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      return scroller.isConnected ? scroller.scrollTop : 0;
+    }, Boolean(suffix))).toBeGreaterThan(300);
     expect(await owner.evaluate(() => window.scrollY)).toBe(0);
-    await pane.evaluate((element) => element.scrollTo(0, 0));
+    await owner.locator("[data-docs-test-scroller]").evaluate((element) => element.scrollTo(0, 0));
     await expect(owner.getByRole("heading", { name: "Getting started", level: 1, exact: true })).toBeInViewport();
     if (!suffix) await expect(owner.locator('[data-slot="docs-page-header"]').getByRole("button", { name: "More actions", exact: true })).toBeInViewport();
     await checkpoint(owner, suffix ? "collection-settings-sticky-toolbar" : "collection-sticky-toolbar", { fullPage: false });

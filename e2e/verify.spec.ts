@@ -32,7 +32,7 @@ test("Verify checks an article against the repository: its history, and its fix 
     JSON.stringify({
       statements: [
         { statement: "Every plan has 5 seats for the team", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." },
-        { statement: "People are either members or admins", verdict: "current", evidence: ["docs/roles.md"], note: "Roles are admin and member." },
+        { statement: "Membership has two permission tiers", source: "People are admins or members.", verdict: "current", evidence: ["docs/roles.md"], note: "Roles are admin and member." },
       ],
       reason: "Plans have 10 seats now, not 5.",
       sections: { "1": "Each plan has 10 seats.\n\nPeople are admins or members." },
@@ -73,7 +73,7 @@ test("Verify checks an article against the repository: its history, and its fix 
   await expect(run.getByText("Every plan has 5 seats for the team", { exact: true })).toBeVisible();
   await expect(run.getByText("src/seats.ts")).toBeVisible();
   await run.getByRole("button", { name: "Jump to sentence" }).click();
-  await expect(owner.getByText("This sentence has changed in the editor.")).toBeVisible();
+  await expect(owner.getByText("Couldn't find this sentence in the text")).toBeVisible();
   await run.getByText("Still true (1)", { exact: true }).click();
   await run.locator(".docs-current-findings").getByRole("button", { name: "Jump to sentence" }).click();
   await expect(owner.getByRole("textbox", { name: "Article", exact: true })).toBeFocused();

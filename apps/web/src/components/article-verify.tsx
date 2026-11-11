@@ -19,7 +19,7 @@ const VERDICTS = {
   outdated: {
     label: "Out of date",
     dot: "bg-highlight-foreground",
-    pill: "bg-highlight",
+    pill: "bg-highlight text-highlight-foreground",
   },
   unclear: {
     label: "Can't tell",
@@ -124,7 +124,7 @@ export async function ArticleVerify({
             <CardContent className="flex flex-col gap-4">
               {(run.state === "done" || run.state === "changed") && run.statements.length > 0 && (
                 // The counts, each in its verdict's colour; said as one sentence to the ear.
-                <p className="docs-verify-counts flex flex-wrap gap-2 justify-between [&_>_span:not(.sr-only)]:bg-transparent [&_>_span:not(.sr-only)]:border-0 [&_>_span:not(.sr-only)]:rounded-none [&_>_span:not(.sr-only)]:p-0 [&_>_span:not(.sr-only)]:shadow-none [&_>_span:not(.sr-only)]:ring-0 [&_>_span:not(.sr-only)]:text-xs [&_>_span:not(.sr-only)_>_span]:hidden [&_>_span:nth-child(2)]:text-muted-foreground">
+                <p className="docs-verify-counts flex flex-wrap gap-2 justify-between [&_>_span:not(.sr-only)]:bg-transparent [&_>_span:not(.sr-only)]:border-0 [&_>_span:not(.sr-only)]:rounded-none [&_>_span:not(.sr-only)]:p-0 [&_>_span:not(.sr-only)]:shadow-none [&_>_span:not(.sr-only)]:ring-0 [&_>_span:not(.sr-only)]:text-xs [&_>_span:not(.sr-only)_>_span]:hidden">
                   <span className="sr-only">
                     {plural(run.counts.current, "statement")} still true · {run.counts.outdated} out of date · {run.counts.unclear} it can&apos;t tell
                   </span>
@@ -167,7 +167,7 @@ export async function ArticleVerify({
                           {statement.evidence.length > 0 && (
                             <span className="font-mono text-xs break-all text-muted-foreground">{statement.evidence.join(", ")}</span>
                           )}
-                          {statement.verdict !== "current" && <ArticleSentenceJump sentence={statement.statement} />}
+                          {statement.verdict !== "current" && <ArticleSentenceJump sentence={statement.source ?? statement.statement} />}
                           {run.fix && statement === run.statements.find((item) => item.verdict === "outdated") && <VerificationFix summary={summaries.get(run.fix.id)} fix={run.fix} projectSlug={projectSlug} articleId={article.id} />}
                         </li>
                       ))}
@@ -182,7 +182,7 @@ export async function ArticleVerify({
                               <strong>{statement.statement}</strong>
                               {statement.note && <p>{statement.note}</p>}
                               <code>{statement.evidence.join(", ")}</code>
-                              <ArticleSentenceJump sentence={statement.statement} />
+                              <ArticleSentenceJump sentence={statement.source ?? statement.statement} />
                             </li>
                           ))}
                       </ul>

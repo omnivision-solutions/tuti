@@ -216,10 +216,17 @@ export async function saveArticleSettings(projectSlug: string, slug: string, _st
 }
 
 /** Publish a draft; `edits`: the ids of Autopilot's edits waiting in it that the page showed, which go live with it. */
-export async function publishArticle(projectSlug: string, slug: string, edits?: string[]): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) =>
-    call(publishOperation, context, { slug: String(slug), ...(Array.isArray(edits) && { edits: edits.map(String) }) }),
-  );
+export async function publishArticle(projectSlug: string, slug: string, edits?: string[]): Promise<FormState & { code?: string }> {
+  let code: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    try {
+      await call(publishOperation, context, { slug: String(slug), ...(Array.isArray(edits) && { edits: edits.map(String) }) });
+    } catch (error) {
+      if (error instanceof OperationError) code = error.code;
+      throw error;
+    }
+  });
+  return code ? { ...result, code } : result;
 }
 
 /** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */

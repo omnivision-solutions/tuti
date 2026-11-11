@@ -222,7 +222,7 @@ test("Docs surfaces in laptop light, laptop dark and phone layouts", async ({ br
         await expect(team.getByRole("button", { name: "Developers", exact: true })).toBeVisible();
         await expect(team.getByRole("button", { name: "Add to your docs" })).toBeVisible();
         await expect(team.locator(".docs-tree-footer").getByText("New article", { exact: true })).toHaveCount(0);
-        await expect(team.getByRole("link", { name: "Open help center", exact: true })).toBeVisible();
+        await expect(team.locator(".docs-tree-heading").getByRole("link", { name: "Open on help center", exact: true })).toBeVisible();
       }
       await expect(team.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 10_000 });
       await team.locator(".docs-page-content").evaluate((element) => { element.scrollTop = 0; });

@@ -167,7 +167,7 @@ test("collection totals exclude sample readership, Updated uses the save time, a
   const { default: CollectionPage } = await import("@/app/app/[project]/docs/collections/[collection]/page");
   const params = Promise.resolve({ project: project.slug, collection: collection.slug });
   const html = await render(await TeamDocsLayout({ params, children: await CollectionPage({ params } as never) } as never));
-  const text = html.replace(/<[^>]+>/g, "");
+  const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   expect(text).toContain("7 views");
   expect(text).not.toContain("107 views");
   expect(text).toContain("Last edited 2 hours ago by Autopilot");

@@ -5,6 +5,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 export type VerificationFinding = {
   statement: string;
+  source?: string;
   verdict: "current" | "outdated" | "unclear";
 };
 const key = new PluginKey("verificationHighlights");
@@ -22,11 +23,11 @@ export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
   findings
     .filter((finding) => finding.verdict !== "current")
     .forEach((finding, index) => {
-      const wanted = normalize(finding.statement);
+      const wanted = normalize(finding.source ?? finding.statement);
       if (!wanted) return;
       const blocks: { node: Node; pos: number }[] = [];
       doc.descendants((node, pos) => { if (node.isTextblock) blocks.push({ node, pos }); });
-      const paraphrase = matchingSentence(finding.statement, blocks.map(({ node }) => node.textContent));
+      const paraphrase = matchingSentence(finding.source ?? finding.statement, blocks.map(({ node }) => node.textContent));
       let found = false;
       doc.descendants((node, pos) => {
         if (!node.isTextblock || found) return;

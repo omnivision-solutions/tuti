@@ -449,3 +449,67 @@ test("the publish queue leaves unseen Autopilot edits for review and singularise
   await expect(team.locator(".docs-live-footer")).toContainText("1 article live");
   await checkpoints(testInfo)(team, "docs-unseen-edits-need-review", { fullPage: false });
 });
+
+async function pendingQueueEdit(project: string, article: string) {
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`WITH action AS (
+      INSERT INTO code_change_action (id, "articleId", kind, probability, status, payload)
+      SELECT gen_random_uuid()::text, a.id, 'ARTICLE_EDIT', 1, 'PENDING', '{}'::jsonb FROM article a JOIN project p ON p.id = a."projectId" WHERE p.slug = $1 AND a.slug = $2 RETURNING id, "articleId"
+    ) INSERT INTO article_revision (id, "articleId", title, body, "codeChangeActionId") SELECT gen_random_uuid()::text, "articleId", 'Suggested edit', 'Unseen suggested words.', id FROM action`, [project, article]);
+  } finally { await db.end(); }
+}
+
+test("published articles with waiting Autopilot changes stay out of queue publishing", async ({ browser }) => {
+  const { team, slug, api } = await editor(browser);
+  await api("/articles/invite-your-team/publish", {});
+  await api("/articles/invite-your-team", { body: "Unseen suggested words." }, "PATCH");
+  await pendingQueueEdit(slug, "invite-your-team");
+  await api("/articles", { title: "First steps", body: "Open Settings." });
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: "Waiting to publish" });
+  const blocked = queue.getByRole("listitem").filter({ hasText: "Invite your team" });
+  await expect(blocked.getByRole("button", { name: "Publish", exact: true })).toHaveCount(0);
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  const confirm = team.getByRole("alertdialog", { name: "Publish 1 article?", exact: true });
+  await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+  await expect(team.getByText("Articles published", { exact: true })).toBeVisible();
+  await expect(blocked).toBeVisible();
+  await expect(queue.getByRole("button", { name: "Publish all", exact: true })).toHaveCount(0);
+  await expect(team.locator(".docs-live-footer")).toContainText("2 articles live");
+});
+
+test("a late Autopilot edit gets a review link and Publish all continues with the remaining articles", async ({ browser }) => {
+  const { team, slug, api } = await editor(browser);
+  await api("/articles", { title: "First steps", body: "Open Settings." });
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: "Waiting to publish" });
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  const confirm = team.getByRole("alertdialog", { name: "Publish 2 articles?", exact: true });
+  await pendingQueueEdit(slug, "first-steps");
+  await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+  const notice = team.locator("[data-sonner-toast]").filter({ hasText: "First steps has an Autopilot edit to review first" });
+  await expect(notice).toBeVisible();
+  await expect(notice.getByRole("link", { name: "Review article" })).toHaveAttribute("href", `/app/${slug}/docs/first-steps`);
+  await expect(confirm).toBeHidden();
+  await expect(queue.getByRole("listitem")).toHaveCount(1);
+  await expect(queue.getByRole("listitem")).toContainText("First steps");
+  await expect(team.locator(".docs-live-footer")).toContainText("1 article live");
+});
+
+test("the portaled article title belongs to its form and blocks an empty title", async ({ browser }) => {
+  const { team, slug } = await editor(browser);
+  await team.goto(`/app/${slug}/docs/new`);
+  const title = team.getByRole("textbox", { name: "Title", exact: true });
+  await team.getByRole("textbox", { name: "Article", exact: true }).fill("A useful guide.");
+  await title.fill("");
+  await expect(title).toHaveAttribute("form", "article-form");
+  await team.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(title).toBeFocused();
+  expect(await title.evaluate((node: HTMLTextAreaElement) => node.validity.valueMissing)).toBe(true);
+  await expect(team).toHaveURL(new RegExp(`/app/${slug}/docs/new$`));
+  await title.fill("A useful guide");
+  await team.getByRole("button", { name: "Save draft", exact: true }).click();
+  await team.waitForURL(`**/app/${slug}/docs/a-useful-guide`);
+});

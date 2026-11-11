@@ -70,7 +70,7 @@ export const ARTICLE_STATES: Record<ArticleState, { label: string; dot: string; 
 /** An article's state as a tinted pill with its dot (the editor's header). */
 export function ArticleStateBadge({ state }: { state: ArticleState }) {
   return (
-    <Badge variant="outline" className={cn("border-transparent text-foreground", ARTICLE_STATES[state ?? "published"].tint)}>
+    <Badge variant="outline" className={cn("border-transparent", state === "changes" ? "text-highlight-foreground" : "text-foreground", ARTICLE_STATES[state ?? "published"].tint)}>
       <span aria-hidden className={cn("size-2 shrink-0 rounded-full", ARTICLE_STATES[state ?? "published"].dot)} />
       {ARTICLE_STATES[state ?? "published"].label}
     </Badge>
@@ -216,7 +216,7 @@ export function DocsArticleRows({
         </div>
         <span className={STATUS}>
           {(state || article?.publishedAt) && (
-            <span className={cn("inline-flex items-center gap-1.5 text-[13px]", "text-muted-foreground")}>
+            <span className={cn("inline-flex items-center gap-1.5 text-[13px]", state === "changes" ? "text-highlight-foreground" : "text-muted-foreground")}>
               <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", ARTICLE_STATES[state ?? "published"].dot)} />
               {ARTICLE_STATES[state ?? "published"].label}
             </span>

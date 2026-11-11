@@ -1426,7 +1426,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await team.waitForURL(`**/app/${slug}/docs/invites`);
   // (Under "More actions" in an editor.)
-  await expect(team.getByRole("link", { name: "View on help center", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
+  await expect(team.locator(".docs-editor-state").getByRole("link", { name: "Open on help center", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);
 
   await bar("More actions").click();
   await expect(team.locator(".docs-more-menu").getByRole("link", { name: "View on help center", exact: true })).toHaveAttribute("href", `${portalUrl(slug)}/docs/invites`);

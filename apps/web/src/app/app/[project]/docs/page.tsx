@@ -83,9 +83,9 @@ export default async function TeamDocsPage(
   // At a glance: how many are out, read and found helpful (Reporting's window), and how many wait to be published.
   const articles = [...rowDetails.detailsOf.values()];
   const published = articles.filter((a) => a.publishedAt).length;
-  // One query for the whole queue. Waiting edits must be reviewed before a draft can go live.
+  // One query for the whole queue. Waiting edits must be reviewed before their saved text can go live.
   const edits = await prisma.articleRevision.findMany({
-    where: { articleId: { in: articles.filter((a) => !a.publishedAt).map((a) => a.id) }, codeChangeAction: { status: { in: ["PENDING", "STALE", "SCHEDULED"] } } },
+    where: { articleId: { in: articles.filter((a) => !a.publishedAt || a.changes).map((a) => a.id) }, codeChangeAction: { status: { in: ["PENDING", "STALE", "SCHEDULED"] } } },
     select: { articleId: true }, distinct: ["articleId"],
   });
   const needsReview = new Set(edits.map((edit) => edit.articleId));
@@ -107,7 +107,7 @@ export default async function TeamDocsPage(
           )?.name ?? "Not in a collection",
         saved: timeAgo(rowDetails.savedAt.get(a.id) ?? a.updatedAt),
         savedAt: (a.changes?.updatedAt ?? a.updatedAt).toISOString(),
-        reviewRequired: !a.publishedAt && needsReview.has(a.id),
+        reviewRequired: needsReview.has(a.id),
       }))
   );
   const mostRead = articles

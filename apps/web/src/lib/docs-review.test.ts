@@ -14,6 +14,8 @@ describe("Docs review summaries", () => {
   });
   it("finds a paraphrased claim but refuses a changed quantity or an ambiguous match", () => {
     expect(matchingSentence("Each plan has 5 seats", ["Each plan has 5 seats. You can add 10 more."])).toBe(0);
+    expect(matchingSentence("Each plan has 5 seats", ["Each plan has 5 seats.", "Each plan has 5 seats."])).toBe(0);
+    expect(matchingSentence("Exporting calendars includes five seats", ["Export calendars with 5 seats, or add 10 more."])).toBe(0);
     const blocks = ["Every plan includes 5 seats for your team.", "Billing is monthly."];
     expect(matchingSentence("Your team gets 5 seats with every plan.", blocks)).toBe(0);
     expect(matchingSentence("Your team gets 10 seats with every plan.", blocks)).toBe(-1);

@@ -501,7 +501,7 @@ export function DocsWorkspace({
                 {article.title}
               </span>
               {article.sample && <SampleBadge />}
-              {article.changes && <span className="size-1.5 shrink-0 rounded-full bg-status-under-review"><span className="sr-only">Unpublished changes</span></span>}
+              {article.changes && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-status-under-review"><span className="sr-only">Unpublished changes</span></span>}
               {!article.published && <span className="shrink-0 rounded-full bg-muted px-1.5 text-xs leading-5 text-muted-foreground">Draft</span>}
             </Link>
           </Row>
@@ -664,7 +664,7 @@ export function DocsWorkspace({
 
   const footerLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
   const navigation = <>
-    <div className="docs-tree-heading flex items-center justify-between p-[22px_16px_0_20px] [&_h2]:font-heading [&_h2]:text-[30px] [&_h2]:font-[650] [&_h2]:tracking-[-0.03em]"><h2>Docs</h2><div className="flex items-center"><Button variant="ghost" size="icon-sm" aria-label="Search docs" onClick={() => { if (browsing) { openingSearch.current = true; setBrowsing(false); } else window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); }}><SearchIcon className="size-4" /></Button><a href={`${portal}/docs`} target="_blank" rel="noreferrer" aria-label="Open help center" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary"><ExternalLinkIcon className="size-4" /></a><DocsTreeFold open={false} className="max-lg:hidden" /></div></div>
+    <div className="docs-tree-heading flex items-center justify-between p-[22px_16px_0_20px] [&_h2]:font-heading [&_h2]:text-[30px] [&_h2]:font-[650] [&_h2]:tracking-[-0.03em]"><h2>Docs</h2><div className="flex items-center"><Button variant="ghost" size="icon-sm" aria-label="Search docs" onClick={() => { if (browsing) { openingSearch.current = true; setBrowsing(false); } else window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); }}><SearchIcon className="size-4" /></Button><a href={`${portal}/docs`} target="_blank" rel="noreferrer" aria-label="Open on help center" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary"><ExternalLinkIcon className="size-4" /></a><DocsTreeFold open={false} className="max-lg:hidden" /></div></div>
     <p className="docs-tree-caption m-[2px_20px_20px] text-[13px] text-muted-foreground">{projectName} help center</p>
     <div className={cn(
       "docs-tree-content flex min-h-0 flex-1 flex-col gap-3.5 p-[0_10px_14px] overflow-y-auto [scrollbar-width:thin] [&_nav]:flex-1",
