@@ -116,6 +116,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.list": () => ({ status: "open" }),
   "companies.list": () => ({}),
   "conversations.get": () => ({ number: 1 }),
+  "conversations.markRead": () => ({ number: 1, seen: new Date().toISOString() }),
   "conversations.create": () => ({ email: "e2e-matrix-asker@example.com", body: "From the matrix" }),
   "conversations.reply": () => ({ number: 1, body: "From the matrix" }),
   "conversations.update": () => ({ number: 1, status: "closed" }),
@@ -411,7 +412,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
 }
 
 /** Operations only a person can run, in the app: API keys (and MCP, with the same keys) get 403. */
-const PEOPLE_ONLY = new Set<string>(["articles.verifyAll", "imports.start"]);
+const PEOPLE_ONLY = new Set<string>(["articles.verifyAll", "imports.start", "conversations.markRead"]);
 
 /** Calls an operation over REST like a client would. */
 async function call(operation: Operation, input: Record<string, unknown>, key: string) {
@@ -440,6 +441,7 @@ async function call(operation: Operation, input: Record<string, unknown>, key: s
 /** This project's data, to show refused calls change nothing. */
 const snapshot = () =>
   Promise.all([
+    prisma.conversationRead.findMany({ where: { conversation: { projectId: project.id } } }),
     prisma.post.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" } }),
     prisma.comment.findMany({ where: { projectId: project.id } }),
     prisma.postLink.findMany({ where: { projectId: project.id } }),

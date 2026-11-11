@@ -8,6 +8,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ConversationPane, inboxPages, InboxPanes, inboxHref, inboxView } from "@/components/inbox/inbox-panes";
+import { MarkRead } from "@/components/inbox/mark-read";
 import { EarlierMessages } from "@/components/inbox/load-more";
 import { DetailsToggle, DetailsPanel } from "@/components/inbox/conversation-details";
 import { ViewerDate } from "@/components/inbox/viewer-date";
@@ -41,6 +42,7 @@ import { CONVERSATION_STATUS_LABELS, CONVERSATION_STATUS_STYLES, type Conversati
 import { initial, timeAgo } from "@/lib/format";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 import { isAdminRole } from "@/lib/roles";
+import { conversationReads } from "@/server/conversation-reads";
 import { attachmentLinks } from "@/server/attachments";
 import { anyArticleToSend, readerToSend } from "@/server/docs-search";
 import { supportDomain } from "@/server/inbound";
@@ -166,6 +168,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     }
     notFound();
   }
+  const read = (await conversationReads([conversation.id], membership.userId)).get(conversation.id);
   conversation.messages.reverse();
   // Signed as the page renders: an image is shown, any other file is saved under its name.
   // Out of AI credits: the AI's buttons show, disabled (the layout says why).
@@ -205,6 +208,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
   return (
     <InboxPanes slug={slug} view={view} open={conversation.number} pages={pages} messages={messagePages}>
+      <MarkRead slug={slug} number={number} seen={conversation.messages.at(-1)?.createdAt.toISOString() ?? null} unread={read?.unread ?? false} />
       <ConversationPane open detailsHidden={detailsHidden}>
         <header data-slot="page-header" data-inbox-header className="@container/conversation-head inbox-conversation-head inbox-surface col-start-1 row-start-1 rounded-b-none px-6 py-3 shadow-none max-lg:px-3.5 max-lg:pt-3.5 min-[75rem]:group-data-[details=hidden]/thread:px-8 [&>a]:mb-2.25 [&>a]:text-xs [&>a]:leading-5 max-md:[&>a]:mb-3 min-w-0 min-h-0 bg-card rounded-t-2xl max-md:rounded-t-xl">
           <BackLink href={inboxHref(slug, view, null, pages)}>Inbox</BackLink>
@@ -327,8 +331,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             <div className="inbox-composer-wrap sticky bottom-0 mt-auto -mx-1.5 bg-card pt-1.25 pb-2.5 max-lg:-mx-0.5 min-[75rem]:group-data-[details=hidden]/thread:-mx-2">
               <ReplyForm
                 recipient={personName}
-                inWidget={!!(conversation.userId || conversation.visitorHash)}
-                emailed={!waitsForPause && "to" in (await replyRecipient(conversation.id))}
+                // Not for widget conversations: they're emailed only if unseen there for a minute, too fiddly to say here.
+                emailed={!conversation.userId && !conversation.visitorHash && !waitsForPause && "to" in (await replyRecipient(conversation.id))}
                 projectSlug={slug}
                 number={conversation.number}
                 userId={membership.userId}

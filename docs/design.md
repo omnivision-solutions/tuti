@@ -183,14 +183,17 @@ the list picks none to approve at once.
   the row of tabs above the list, in the same place whether or not a conversation is open
   (they never move as one opens or closes): Needs reply, Mine and Unassigned as tabs, the
   rest (Waiting on user, Snoozed, Closed, Spam) under More, which reads as the one of them
-  open, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide, the conversation the rest; on phones and
+  open, with its short title and visible count, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide, the conversation the rest; on phones and
   tablets the list or the conversation, its Back to the list. A row reads in three
   lines: who and their company on one (cut short, in full on hover) with,
   at the right, the assignee's face (their name on hover, and in the row's name to the ear) and its age, short ("4m": how long they've waited, or since
   the latest message); the subject and the latest message's first line on separate lines, cut
   short, after a small "Needs reply" (the highlight colour) when it needs one (not in the Needs
   reply view, where every row would say it; in Snoozed, when it's back first). Its number is in the conversation, and read out
-  with the row.
+  with the row. Unread customer messages make the name and subject bold for each teammate; opening the
+  conversation makes them normal-weight in a softer foreground, with a muted preview. Team replies and notes
+  never make it unread. Only customer messages after deployment or the teammate joining start unread;
+  opening acknowledges the latest customer message shown, using its timestamp, only while the page is visible and focused. Needs reply is independent of whether it has been read.
   Every view lists the latest message first, Needs reply too. A conversation keeps
   its own address (`/inbox/<number>`), the list beside it where it was, its row
   marked; J and K open the next and the previous one. Until one opens, the pane
@@ -678,6 +681,9 @@ Use these instead of hand-rolling layout:
 
 ## Copy
 
+- **Marketing copy** (the home page): short and confident. Headlines and lines sell outcomes with no plan
+  names, limits, thresholds or "with your approval"-style qualifiers; which plan has what lives on /pricing, and
+  the details in the help center. Sell only what's shipped, never hedge it.
 - Plain, short, friendly. Sentence case everywhere ("Possible duplicates",
   not "Possible Duplicates").
 - Say "project", "board", "post", "team" (the customer's staff) and "users"

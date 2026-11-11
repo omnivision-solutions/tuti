@@ -235,7 +235,7 @@ test("the docs tree remembers its fold across reloads and app pages and unfolds 
   await expect(tree).toBeHidden();
   // A fresh marketing document must restore the saved fold when its app link navigates on the client.
   await team.goto("/");
-  await team.locator("header").getByRole("link", { name: "Open app", exact: true }).click();
+  await team.getByRole("banner").getByRole("link", { name: "Open app", exact: true }).click();
   await team.waitForURL(`**/app/${slug}`);
   // The app entry restores the preference before a Docs page can render, rather than folding after its first paint.
   await expect(team.locator("html")).toHaveAttribute("data-docs-tree-folded", "");

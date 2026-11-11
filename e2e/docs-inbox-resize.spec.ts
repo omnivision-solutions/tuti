@@ -85,7 +85,11 @@ for (const pane of [
     const initialHandle = (await handle.boundingBox())!;
     const initialPane = (await column.boundingBox())!;
     expect(initialHandle.width).toBe(10);
-    if (pane.name === "conversation list") expect(await readsAfterUnrelatedChange()).toBe(0);
+    if (pane.name === "conversation list") {
+      // Opening the thread marks it read and refreshes its row; finish that render before measuring observers.
+      await expect(team.locator(".inbox-row.inbox-read")).toBeVisible();
+      expect(await readsAfterUnrelatedChange()).toBe(0);
+    }
     if (pane.name === "conversation list") {
       await team.getByRole("region", { name: "Conversations", exact: true }).getByRole("listitem").last().getByRole("link").first().focus();
       await team.keyboard.press("Tab");

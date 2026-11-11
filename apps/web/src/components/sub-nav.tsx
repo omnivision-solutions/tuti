@@ -175,12 +175,12 @@ export function SubNav({
             {picked ? (picked.short?.title ?? picked.title) : more.label}
             <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="w-max min-w-40">
             {more.items.map((item) => (
               <DropdownMenuItem
                 key={item.href}
                 render={<Link href={item.href} scroll={scroll} aria-current={item.href === current ? currentIs : undefined} />}
-                className="justify-between gap-4"
+                className="justify-between gap-4 whitespace-nowrap"
               >
                 {item.title}
               </DropdownMenuItem>

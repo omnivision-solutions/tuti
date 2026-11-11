@@ -39,12 +39,6 @@ export function conversationDayKey(date: Date, timeZone: string): number {
   return Date.UTC(value("year"), value("month") - 1, value("day"));
 }
 
-/** Under the composer: where replies go. In the widget they're emailed only if unseen there for a minute (the reply job's EMAIL_UNSEEN_AFTER_MS). */
-export function emailHint(recipient: string | undefined, inWidget: boolean): string {
-  const name = recipient?.split(" ")[0] ?? "them";
-  return inWidget ? `Emailed to ${name} if they haven't seen it in the widget within a minute.` : `Replies are emailed to ${name}.`;
-}
-
 /** Inbox day divider, relative to the viewer's calendar day. */
 export function conversationDay(date: Date, timeZone: string, now = new Date()): string {
   const days = (conversationDayKey(now, timeZone) - conversationDayKey(date, timeZone)) / 86_400_000;
