@@ -84,9 +84,11 @@ See [docs/secrets.md](docs/secrets.md) (maintainers use Infisical via `pnpm env:
 
 ### Production routing (Tuti's cloud)
 
-tuti.so is two apps on one domain. The domain's proxy (Cloudflare) sends `/app`, `/api`, `/_tuti` and
-`/help` (Tuti's own help center, `APP_PORTAL_PROJECT`) to the app (`apps/web`), and everything else to the
-marketing site (`apps/marketing`). The site's links into the app are plain paths on the same domain; its
+tuti.so is two apps on one domain, split by path on the server's proxy (Traefik): `/app`, `/api`, `/_tuti`
+and `/help` (Tuti's own help center, `APP_PORTAL_PROJECT`) go to the app (`apps/web`), whose domains are
+those paths with the prefix kept (not stripped), and everything else to the marketing site
+(`apps/marketing`), whose domain is all of `tuti.so` (the longer rule wins). Portals (`*.tuti.so`) and
+customers' domains go to the app. The site's links into the app are plain paths on the same domain; its
 pricing comes from the app's `/api/plans`, so plans and limits stay the app's settings. It needs one
 variable, `APP_URL`: the app's public address (`https://tuti.so`; the app answers only on its own host). Its image:
 `docker build -f apps/marketing/Dockerfile -t tuti-marketing .` (port 3000). In development each runs on
