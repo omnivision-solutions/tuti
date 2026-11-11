@@ -397,7 +397,8 @@ function NavUser({ user }: { user: { name: string; email: string; image: string 
             <DropdownMenuItem
               onClick={async () => {
                 await authClient.signOut();
-                router.push("/");
+                // To signing in again, not "/": that's the marketing site on Tuti's cloud (apps/marketing), another app.
+                router.push("/app/auth/sign-in");
                 router.refresh();
               }}
             >

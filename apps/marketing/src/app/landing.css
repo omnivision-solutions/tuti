@@ -1,5 +1,5 @@
 /*
- * The home page (app/(marketing)/page.tsx, landing.tsx). Everything is scoped to `.lp`. The page's main colours map onto
+ * The home page (page.tsx, landing.tsx). Everything is scoped to `.lp`. The page's main colours map onto
  * the app's tokens; the marketing-only ones (the forest band, the mock UIs' tints) are defined here (docs/design.md,
  * Layout: the marketing site is light, with dark brand bands allowed).
  */

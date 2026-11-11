@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createContext, useContext } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
-import { TutiMark } from "@/components/tuti-logo";
+import { TutiMark } from "@tuti/ui/tuti-logo";
 import { DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 

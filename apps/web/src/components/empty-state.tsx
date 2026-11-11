@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import type { ReactNode } from "react";
 
-import { TutiMark } from "@/components/tuti-logo";
+import { TutiMark } from "@tuti/ui/tuti-logo";
 
 /** What a list shows when it has nothing in it: what's missing, and what to do next. */
 export function EmptyState({

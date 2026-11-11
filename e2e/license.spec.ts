@@ -15,9 +15,9 @@ test("someone buying a licence sees which installation and project it's for, and
   await expect(page.getByRole("definition").filter({ hasText: installation })).toBeVisible();
   await expect(page.getByRole("definition").filter({ hasText: project })).toBeVisible();
   await expect(page.getByRole("button", { name: "Buy for $588 a year" })).toBeVisible();
-  // Buying is under tuti.so's terms, which the licence server (Tuti's own) serves.
+  // Buying is under tuti.so's terms (the marketing site's pages, on the same domain).
   await expect(page.getByText("By buying, you agree to the Terms of Service and Privacy Policy.")).toBeVisible();
-  expect((await page.request.get(`${APP_URL}/terms`)).status()).toBe(200);
+  await expect(page.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms");
   await checkpoint(page, "license-page");
 
   // Stripe's page (the fake), then back, licensed: the installation's next check gets its key.

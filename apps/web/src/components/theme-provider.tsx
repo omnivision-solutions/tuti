@@ -1,16 +1,9 @@
 "use client";
 
 import { ThemeProvider as NextThemesProvider } from "next-themes";
-import { useSelectedLayoutSegments } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
 import { widgetFrame } from "@/lib/widget-messages";
-
-/**
- * The marketing site (landing, pricing, legal) is designed for light mode only, whatever the visitor's own pick. Told
- * apart by its route, not its path: a portal's home page is `/` on its own host too.
- */
-export const forcedThemeFor = (segments: string[]) => (segments[0] === "(marketing)" ? "light" : undefined);
 
 /**
  * In a widget's panel, its theme: the site's pick (`data-theme`, from its frame's name) from the start, then what
@@ -32,5 +25,5 @@ const getWidgetTheme = () => widgetTheme;
 
 export function ThemeProvider(props: React.ComponentProps<typeof NextThemesProvider>) {
   const widget = useSyncExternalStore(subscribe, getWidgetTheme, getWidgetTheme);
-  return <NextThemesProvider forcedTheme={forcedThemeFor(useSelectedLayoutSegments()) ?? widget ?? undefined} {...props} />;
+  return <NextThemesProvider forcedTheme={widget ?? undefined} {...props} />;
 }

@@ -1,21 +1,19 @@
 "use client";
 
-import Link from "next/link";
+import { buttonVariants } from "@tuti/ui/button";
+import { BilledToggle, PlanLineItem, type PricingPlan } from "@tuti/ui/plan-line";
+import { cn } from "cn";
 import { useState } from "react";
 
-import { BilledToggle, PlanLineItem } from "@/components/plan-line";
-import { buttonVariants } from "@/components/ui/button";
-import { YEARLY_NOTE } from "@/lib/plans";
-import type { PricingPlan } from "@/lib/pricing-plans";
-import { cn } from "@/lib/utils";
+import { inApp } from "../links";
 
 /** The plans side by side, priced monthly or yearly as picked. */
-export function PricingTable({ plans }: { plans: PricingPlan[] }) {
+export function PricingTable({ plans, yearlyNote }: { plans: PricingPlan[]; yearlyNote: string }) {
   const [interval, setBilled] = useState<"month" | "year">("month");
 
   return (
     <div className="flex flex-col items-center gap-8">
-      <BilledToggle value={interval} onChange={setBilled} yearlyNote={YEARLY_NOTE} />
+      <BilledToggle value={interval} onChange={setBilled} yearlyNote={yearlyNote} />
       <ul className="grid w-full gap-5 lg:grid-cols-3">
         {plans.map((plan) => (
           <li
@@ -32,16 +30,16 @@ export function PricingTable({ plans }: { plans: PricingPlan[] }) {
                 {plan.price && interval === "year" ? `$${(plan.price.year * 12).toLocaleString("en")} billed yearly` : plan.price ? "Billed monthly" : "No card needed"}
               </p>
             </div>
-            {/* Outline in the brand's colour: a plain outline on a card reads as disabled. */}
-            <Link
-              href={plan.cta.href}
+            {/* Outline in the brand's colour: a plain outline on a card reads as disabled. Into the app (sign-up). */}
+            <a
+              href={inApp(plan.cta.href)}
               className={cn(
                 buttonVariants({ size: "lg", variant: plan.featured ? "default" : "outline", className: "h-11 text-base" }),
                 !plan.featured && "border-primary/60 text-primary hover:text-primary",
               )}
             >
               {plan.cta.label}
-            </Link>
+            </a>
             <ul className="flex flex-col gap-3 border-t pt-6 text-sm">
               {plan.highlights.map((line) => (
                 <PlanLineItem key={line.text} line={line} />

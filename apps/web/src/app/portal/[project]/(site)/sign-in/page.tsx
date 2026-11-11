@@ -5,7 +5,7 @@ import { CircleAlertIcon, LockIcon } from "lucide-react";
 
 import { AuthForm } from "@/components/auth-form";
 import { PortalMark } from "@/components/portal-look";
-import { TutiMark } from "@/components/tuti-logo";
+import { TutiMark } from "@tuti/ui/tuti-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { safeRedirectPath } from "@/lib/redirects";

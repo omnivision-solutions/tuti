@@ -7,7 +7,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
-import { GithubMark } from "@/components/github-mark";
+import { GithubMark } from "@tuti/ui/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";

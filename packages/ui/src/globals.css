@@ -1,0 +1,795 @@
+/* Tuti's styles (docs/design.md), for the app and the marketing site: each app's own globals.css imports Tailwind,
+   then this. The components here use Tailwind classes too, so it's scanned for them. */
+@source "./";
+
+@custom-variant dark (&:is(.dark *));
+/* In the app from tablet width up, where a page's title and actions sit in the top bar (PageHeader). */
+@custom-variant topbar {
+  @media (width >= 48rem) {
+    [data-slot="sidebar-inset"] & {
+      @slot;
+    }
+  }
+}
+/* Where Tuti's own chat launcher is over the window's bottom right (AppWidget, by data-app-widget): what's held at the
+   bottom of the screen leaves its corner (56px, 20px in) clear. The right-hand corner, where Tuti's help project keeps
+   it: moved to the left (Customize → Widget), this would need its side too (docs/design.md, PageActions). */
+@custom-variant launcher (:root:has([data-app-widget]) &);
+/* In the app on phones, where a page's actions are a menu from the top bar (PageActions). */
+@custom-variant phonebar {
+  @media (width < 48rem) {
+    [data-slot="sidebar-inset"] & {
+      @slot;
+    }
+  }
+}
+
+/* The small sizes, a step up from Tailwind's (Figtree reads small): body in dense UI at 15px, meta lines, captions and
+   badges at 13px, never smaller (docs/design.md). */
+@theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.25rem;
+}
+
+@theme inline {
+  --color-docs-surface: var(--docs-surface);
+  --color-docs-canvas: var(--docs-canvas);
+  --color-docs-edge: var(--docs-edge);
+  --color-docs-selection: var(--docs-selection);
+  --color-inbox-canvas: var(--inbox-canvas);
+  --color-inbox-customer: var(--inbox-customer);
+  --color-inbox-team: var(--inbox-team);
+  --color-inbox-note: var(--inbox-note);
+  --shadow-inbox: var(--inbox-shadow);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* After each font, the symbols none of them has (--font-symbols, app/layout.tsx), so they never show as an empty box. */
+  --font-sans: var(--font-sans), var(--font-symbols);
+  --font-mono: var(--font-geist-mono), var(--font-symbols);
+  --font-heading: var(--font-heading), var(--font-symbols);
+  --color-soft: var(--soft);
+  --color-soft-foreground: var(--soft-foreground);
+  --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
+  /* A primary button's hover (components/ui/button.tsx), mixed where it's used so a portal's own brand colour gets it
+     too: toward the button's text colour, which always contrasts with the fill, so a near-black brand colour lightens
+     visibly too. */
+  --color-primary-hover: color-mix(in oklch, var(--primary) 88%, var(--primary-foreground));
+  --color-unread: var(--unread);
+  --color-status-open: var(--status-open);
+  --color-status-under-review: var(--status-under-review);
+  --color-status-planned: var(--status-planned);
+  --color-status-in-progress: var(--status-in-progress);
+  --color-status-completed: var(--status-completed);
+  --color-status-closed: var(--status-closed);
+  --color-kind-closes: var(--kind-closes);
+  --color-kind-progress: var(--kind-progress);
+  --color-kind-edit: var(--kind-edit);
+  --color-kind-new: var(--kind-new);
+  --color-avatar-1: var(--avatar-1);
+  --color-avatar-2: var(--avatar-2);
+  --color-avatar-3: var(--avatar-3);
+  --color-avatar-4: var(--avatar-4);
+  --color-avatar-5: var(--avatar-5);
+  --color-avatar-6: var(--avatar-6);
+  --color-avatar-foreground: var(--avatar-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * Tuti "Parrot" brand (docs/design.md): leafy green primary, beak-orange
+ * highlight, warm paper neutrals. `soft` is a tinted primary for quiet
+ * emphasis; `highlight` flags things that need a look (e.g. duplicates).
+ * `.light` lets a subtree (the /design gallery) force light mode.
+ */
+:root,
+.light {
+  --docs-surface: var(--card);
+  --docs-canvas: color-mix(in srgb, var(--secondary) 68%, var(--background));
+  --docs-edge: color-mix(in oklch, var(--border) 35%, transparent);
+  --docs-selection: color-mix(in srgb, var(--primary) 9%, var(--card));
+  --docs-overlay: color-mix(in srgb, var(--foreground) 42%, transparent);
+  /* Inbox cards keep the approved warm canvas and chat fills. */
+  --inbox-canvas: #f7f4ee;
+  --inbox-customer: #f8f4f1;
+  --inbox-team: color-mix(in srgb, var(--soft) 70%, var(--card));
+  --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--inbox-surface));
+  --inbox-surface: var(--card);
+  --inbox-muted: var(--muted-foreground);
+  --inbox-secondary: var(--secondary);
+  --inbox-shadow: 0 1px 3px oklch(0 0 0 / 0.035), 0 0 0 1px color-mix(in oklch, var(--border) 35%, transparent);
+  --inbox-overlay: oklch(0.08 0.01 160 / 0.44);
+  --background: oklch(0.982 0.008 88.6);
+  --foreground: oklch(0.216 0.006 56);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.216 0.006 56);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.216 0.006 56);
+  --primary: oklch(0.529 0.125 155);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.956 0.009 84.6);
+  --secondary-foreground: oklch(0.216 0.006 56);
+  --muted: oklch(0.956 0.009 84.6);
+  --muted-foreground: oklch(0.45 0.014 58.1);
+  --accent: oklch(0.941 0.012 84.6);
+  --accent-foreground: oklch(0.216 0.006 56);
+  --destructive: oklch(0.577 0.245 27.325);
+  /* Text on the destructive tint (a destructive badge, the picked Breaking tag): darker, to read at small sizes. */
+  --destructive-foreground: oklch(0.51 0.2 27.3);
+  --border: oklch(0.885 0.015 84.6);
+  --input: oklch(0.845 0.018 86.2);
+  --ring: oklch(0.529 0.125 155);
+  --soft: oklch(0.958 0.018 155.8);
+  --soft-foreground: oklch(0.426 0.097 155.7);
+  --highlight: oklch(0.945 0.035 60.4);
+  --highlight-foreground: oklch(0.479 0.139 42.7);
+  /* Something new to the reader (the widget's unread dots, like its launcher's); the same in dark mode. */
+  --unread: oklch(0.705 0.187 47.6);
+  /* A post status's dot (PostStatusBadge), so a list of mixed statuses can be scanned. */
+  --status-open: oklch(0.66 0.012 58);
+  --status-under-review: oklch(0.77 0.16 76);
+  --status-planned: oklch(0.55 0.17 300);
+  --status-in-progress: oklch(0.6 0.16 250);
+  --status-completed: oklch(0.64 0.17 150);
+  --status-closed: oklch(0.85 0.01 70);
+  /* An Autopilot update's kind (a post's or article's badge, and a chip's text and faint fill), so a list can be skimmed: Completing and New green, In progress blue (the statuses' colours), Updated amber. */
+  --kind-closes: oklch(0.47 0.12 150);
+  --kind-progress: oklch(0.47 0.14 255);
+  --kind-edit: oklch(0.47 0.1 72);
+  --kind-new: oklch(0.47 0.12 150);
+  /* Initials for someone without a photo (AvatarFallback picks one by their name), white text at 4.5:1 or more; the same in dark mode.
+     Muted (low chroma): a person keeps their colour everywhere without a rainbow beside the brand's green. */
+  --avatar-1: oklch(0.52 0.08 25);
+  --avatar-2: oklch(0.52 0.07 70);
+  --avatar-3: oklch(0.5 0.07 150);
+  --avatar-4: oklch(0.5 0.06 205);
+  --avatar-5: oklch(0.5 0.08 260);
+  --avatar-6: oklch(0.5 0.08 320);
+  --avatar-foreground: oklch(1 0 0);
+  --chart-1: oklch(0.529 0.125 155);
+  --chart-2: oklch(0.759 0.168 154.6);
+  --chart-3: oklch(0.684 0.185 44.9);
+  --chart-4: oklch(0.426 0.097 155.7);
+  --chart-5: oklch(0.807 0.166 81.8);
+  /* Reporting's two series (what went well, then what needs the team): the brand's green and orange, a lightness step apart
+     (dark green, light orange; in dark mode the other way round) so colour-blind readers tell them apart too. */
+  --series-1: oklch(0.529 0.125 155);
+  --series-2: oklch(0.684 0.185 44.9);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.945 0.014 84.6);
+  --sidebar-foreground: oklch(0.216 0.006 56);
+  --sidebar-primary: oklch(0.529 0.125 155);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.915 0.016 84.6);
+  --sidebar-accent-foreground: oklch(0.216 0.006 56);
+  --sidebar-border: oklch(0.885 0.015 84.6);
+  /* The page open in a page's own menu (Settings', Reporting's): a pale green pill, its label and icon green. The sidebar's
+     open page is a raised neutral pill (the card's colour), so a page with both shows one green. */
+  --sidebar-active: oklch(0.915 0.045 155);
+  --sidebar-active-foreground: oklch(0.4 0.1 155);
+  --sidebar-ring: oklch(0.529 0.125 155);
+}
+
+.dark {
+  --docs-surface: color-mix(in srgb, var(--card) 50%, var(--background));
+  --docs-canvas: var(--background);
+  --docs-edge: color-mix(in oklch, var(--border) 32%, transparent);
+  --docs-selection: color-mix(in srgb, var(--primary) 12%, var(--card));
+  --docs-overlay: color-mix(in srgb, var(--background) 65%, transparent);
+  --inbox-canvas: var(--background);
+  --inbox-customer: oklch(0.292 0.016 160);
+  --inbox-team: oklch(0.325 0.052 157);
+  --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--inbox-surface));
+  --inbox-surface: oklch(0.218 0.013 160.1);
+  --inbox-muted: oklch(0.76 0.016 160);
+  --inbox-secondary: oklch(0.257 0.017 163.3);
+  --inbox-shadow: 0 0 0 1px color-mix(in oklch, var(--border) 32%, transparent);
+  --inbox-overlay: oklch(0.08 0.01 160 / 0.44);
+  --background: oklch(0.185 0.01 158.9);
+  --foreground: oklch(0.966 0.006 153.8);
+  --card: oklch(0.248 0.014 160.1);
+  --card-foreground: oklch(0.966 0.006 153.8);
+  --popover: oklch(0.248 0.014 160.1);
+  --popover-foreground: oklch(0.966 0.006 153.8);
+  --primary: oklch(0.759 0.168 154.6);
+  --primary-foreground: oklch(0.221 0.048 151.7);
+  --secondary: oklch(0.285 0.017 163.3);
+  --secondary-foreground: oklch(0.966 0.006 153.8);
+  --muted: oklch(0.285 0.017 163.3);
+  --muted-foreground: oklch(0.82 0.015 160.9);
+  --accent: oklch(0.305 0.019 161);
+  --accent-foreground: oklch(0.966 0.006 153.8);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.78 0.15 22.2);
+  --border: oklch(0.375 0.02 163.3);
+  --input: oklch(0.43 0.022 163.3);
+  --ring: oklch(0.759 0.168 154.6);
+  --soft: oklch(0.294 0.045 157);
+  --soft-foreground: oklch(0.856 0.111 157.3);
+  --highlight: oklch(0.283 0.051 52.9);
+  --highlight-foreground: oklch(0.825 0.115 56.4);
+  --status-open: oklch(0.66 0.015 160);
+  --status-under-review: oklch(0.8 0.15 80);
+  --status-planned: oklch(0.72 0.13 300);
+  --status-in-progress: oklch(0.72 0.13 250);
+  --status-completed: oklch(0.79 0.17 152);
+  --status-closed: oklch(0.44 0.015 160);
+  --kind-closes: oklch(0.8 0.14 152);
+  --kind-progress: oklch(0.78 0.11 255);
+  --kind-edit: oklch(0.82 0.13 80);
+  --kind-new: oklch(0.8 0.14 152);
+  --chart-1: oklch(0.759 0.168 154.6);
+  --chart-2: oklch(0.529 0.125 155);
+  --chart-3: oklch(0.751 0.164 48.6);
+  --chart-4: oklch(0.856 0.111 157.3);
+  --chart-5: oklch(0.807 0.166 81.8);
+  --series-1: oklch(0.62 0.15 155);
+  --series-2: oklch(0.8 0.14 60);
+  --sidebar: oklch(0.205 0.013 159.9);
+  --sidebar-foreground: oklch(0.966 0.006 153.8);
+  --sidebar-primary: oklch(0.759 0.168 154.6);
+  --sidebar-primary-foreground: oklch(0.221 0.048 151.7);
+  --sidebar-accent: oklch(0.265 0.017 163.3);
+  --sidebar-accent-foreground: oklch(0.966 0.006 153.8);
+  --sidebar-border: oklch(0.375 0.02 163.3);
+  --sidebar-active: oklch(0.31 0.055 157);
+  --sidebar-active-foreground: oklch(0.86 0.11 157);
+  --sidebar-ring: oklch(0.759 0.168 154.6);
+}
+
+/*
+ * The public portal's own look (docs/design.md, Portal): on every portal page (the header's PortalTop marks them), stronger
+ * lines on the paper, a neutral dark mode (no green tint; green stays the accent), one hue per post status (Under review
+ * violet, Planned blue, In progress orange), neutral initials, an info blue for callouts, and 14px cards. The app keeps
+ * its own (the same selectors' light block is less specific than the dark one, so dark mode still wins).
+ */
+:root:has([data-portal-top]) {
+  --radius: 0.625rem;
+  --border: oklch(0.87 0.016 84.6);
+  --input: oklch(0.81 0.02 84.6);
+  --muted-foreground: oklch(0.48 0.01 60);
+  --status-open: oklch(0.5 0.012 60);
+  --status-under-review: oklch(0.53 0.17 300);
+  --status-planned: oklch(0.52 0.16 255);
+  --status-in-progress: oklch(0.53 0.155 45);
+  --status-completed: oklch(0.5 0.13 150);
+  --avatar-1: var(--secondary);
+  --avatar-2: var(--secondary);
+  --avatar-3: var(--secondary);
+  --avatar-4: var(--secondary);
+  --avatar-5: var(--secondary);
+  --avatar-6: var(--secondary);
+  --avatar-foreground: oklch(0.42 0.01 60);
+  --info: oklch(0.55 0.13 240);
+  --tag-improved: oklch(0.47 0.14 255);
+  --tag-improved-bg: oklch(0.95 0.03 250);
+  --sunken: oklch(0.972 0.01 84.6);
+  --portal-shadow: 0 1px 2px oklch(0.3 0.02 60 / 6%), 0 4px 16px -6px oklch(0.3 0.02 60 / 10%);
+}
+:root.dark:has([data-portal-top]) {
+  --background: oklch(0.165 0.004 160);
+  --foreground: oklch(0.965 0.003 160);
+  --card: oklch(0.205 0.005 160);
+  --card-foreground: oklch(0.965 0.003 160);
+  --popover: oklch(0.215 0.005 160);
+  --popover-foreground: oklch(0.965 0.003 160);
+  --secondary: oklch(0.26 0.005 160);
+  --muted: oklch(0.24 0.005 160);
+  --accent: oklch(0.27 0.006 160);
+  --border: oklch(0.32 0.006 160);
+  --input: oklch(0.4 0.008 160);
+  --muted-foreground: oklch(0.76 0.006 160);
+  --status-open: oklch(0.72 0.012 160);
+  --status-under-review: oklch(0.76 0.13 300);
+  --status-planned: oklch(0.74 0.12 255);
+  --status-in-progress: oklch(0.77 0.15 50);
+  --status-completed: oklch(0.78 0.15 152);
+  --avatar-foreground: oklch(0.88 0.004 160);
+  --info: oklch(0.78 0.1 240);
+  --tag-improved: oklch(0.82 0.1 255);
+  --tag-improved-bg: oklch(0.3 0.06 255);
+  --sunken: oklch(0.185 0.004 160);
+  --portal-shadow: 0 1px 2px oklch(0 0 0 / 30%), 0 6px 18px -8px oklch(0 0 0 / 50%);
+}
+@theme inline {
+  --color-info: var(--info);
+  --color-tag-improved: var(--tag-improved);
+  --color-tag-improved-bg: var(--tag-improved-bg);
+  --color-sunken: var(--sunken);
+  --shadow-card: var(--portal-shadow);
+}
+
+/* A group's label: the heading of a group inside a list, card or menu (docs/design.md, Group label). */
+@utility group-label {
+  @apply text-[0.75rem] leading-4 font-semibold tracking-[0.06em] text-muted-foreground uppercase;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+    /* A link to a heading scrolls it into view below the portal's header (PortalTop). */
+    scroll-padding-top: var(--portal-header-height, 0px);
+  }
+  /* On the portal, until PortalTop measures itself (never, without JavaScript): about its tallest, on a phone with every row. */
+  html:has([data-portal-top]) {
+    scroll-padding-top: var(--portal-header-height, 12rem);
+  }
+  /* The marketing site's sticky 64px header: focus and anchor targets clear it. */
+  html:has([data-marketing-header]) {
+    scroll-padding-top: 4rem;
+  }
+  /* The app's own toolbar can wrap. Focus and anchor targets clear its measured height. */
+  html:has([data-slot="sidebar-inset"]) {
+    scroll-padding-top: var(--app-toolbar-height, 0px);
+  }
+  /* Customize below laptop width scrolls under its own title row (and the menu row on phones). */
+  @media (width < 64rem) {
+    html:has([data-slot="customize-settings"]) {
+      scroll-padding-top: 3rem;
+    }
+  }
+  /* A page's actions pinned to the bottom on phones (PageActions): a field focused near the bottom scrolls above them. */
+  @media (width < 48rem) {
+    html:has([data-slot="customize-settings"]) {
+      scroll-padding-top: 6rem;
+    }
+    html:has([data-pinned-actions]) {
+      scroll-padding-bottom: 6rem;
+    }
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-heading;
+  }
+}
+/* Rich content (@tuti/content): rendered posts, comments and changelog entries, and the editor. */
+@layer components {
+  .rich-text {
+    @apply flex flex-col gap-3;
+  }
+  .rich-text :where(ul) {
+    @apply list-disc pl-6;
+  }
+  .rich-text :where(ol) {
+    @apply list-decimal pl-6;
+  }
+  .rich-text :where(li > p) {
+    @apply my-0.5;
+  }
+  .rich-text :where(a) {
+    @apply text-primary underline underline-offset-4;
+  }
+  .rich-text :where(h2) {
+    @apply mt-2 font-heading text-lg font-bold tracking-tight;
+  }
+  .rich-text :where(h3) {
+    @apply mt-1 font-heading text-base font-bold;
+  }
+  .rich-text :where(blockquote) {
+    @apply border-l-2 pl-4 text-muted-foreground;
+  }
+  .rich-text :where(hr) {
+    @apply my-2 border-border;
+  }
+  .rich-text :where(code) {
+    @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.9em];
+  }
+  .rich-text :where(pre) {
+    @apply overflow-x-auto rounded-lg bg-muted p-3 text-sm;
+  }
+  .rich-text :where(pre code) {
+    @apply bg-transparent p-0;
+  }
+  /* A code block with a file name: the name in a bar above the code. */
+  .rich-text :where(.rich-code) {
+    @apply overflow-hidden rounded-lg bg-muted;
+  }
+  .rich-text :where(.rich-code figcaption) {
+    @apply border-b px-3 py-1.5 font-mono text-xs text-muted-foreground;
+  }
+  .rich-text :where(.rich-code pre, .rich-code-tabs pre) {
+    @apply rounded-none;
+  }
+  /* Code tabs: a row of labels (radio buttons, so it works without scripts) that scrolls sideways, then the
+     picked tab's code (RichText's CodeTabs; up to MAX_CODE_TABS). */
+  .rich-text :where(.rich-code-tabs) {
+    @apply overflow-hidden rounded-lg bg-muted;
+  }
+  .rich-text :where(.rich-code-tab-row) {
+    @apply flex overflow-x-auto border-b px-1;
+  }
+  /* Too narrow for its tabs, the row scrolls, faded at the end that has more (scroll-driven, so no script). */
+  @supports (animation-timeline: scroll()) {
+    .rich-text :where(.rich-code-tab-row) {
+      mask-image: linear-gradient(to right, transparent, #000 var(--tab-fade-start), #000 calc(100% - var(--tab-fade-end)), transparent);
+      animation: rich-tab-row-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+  /* Relative: its radio sits in the scrolling row, so picking a tab by keyboard scrolls it into view. */
+  .rich-text :where(.rich-code-tab-row label) {
+    @apply relative shrink-0 cursor-pointer border-b-2 border-transparent px-2 py-1.5 font-mono text-xs whitespace-nowrap text-muted-foreground hover:text-foreground;
+  }
+  .rich-text :where(.rich-code-tab-row label:has(:checked)) {
+    @apply border-primary text-foreground;
+  }
+  .rich-text :where(.rich-code-tab-row label:has(:focus-visible)) {
+    @apply rounded-sm ring-2 ring-ring;
+  }
+  /* The radio covers its label (invisible): focusing it scrolls the whole label into view in every browser. */
+  .rich-text :where(.rich-code-tab-row input) {
+    @apply absolute inset-0 m-0 size-full cursor-pointer appearance-none opacity-0;
+  }
+  .rich-text :where(.rich-code-tabs > pre) {
+    @apply hidden;
+  }
+  .rich-text
+    :where(
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(1) :checked) > pre:nth-of-type(1),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(2) :checked) > pre:nth-of-type(2),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(3) :checked) > pre:nth-of-type(3),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(4) :checked) > pre:nth-of-type(4),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(5) :checked) > pre:nth-of-type(5),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(6) :checked) > pre:nth-of-type(6),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(7) :checked) > pre:nth-of-type(7),
+      .rich-code-tabs:has(> .rich-code-tab-row > :nth-child(8) :checked) > pre:nth-of-type(8)
+    ) {
+    @apply block;
+  }
+  /* In the editor: a code block's file name above its code, and code tabs one under the other in a box. */
+  .rich-text :where(pre[data-filename], [data-code-tabs] pre)::before {
+    @apply mb-2 block font-mono text-xs text-muted-foreground content-[attr(data-filename)];
+  }
+  .rich-text :where([data-code-tabs] pre:not([data-filename]))::before {
+    @apply text-destructive content-['No_label'];
+  }
+  .rich-text :where([data-code-tabs]) {
+    @apply flex flex-col gap-2 rounded-lg border p-2;
+  }
+  .rich-text :where(.rich-table, .tableWrapper) {
+    @apply overflow-x-auto;
+  }
+  .rich-text :where(table) {
+    @apply w-full border-collapse text-sm;
+  }
+  .rich-text :where(th, td) {
+    @apply border px-3 py-2 text-left align-top;
+  }
+  .rich-text :where(th) {
+    @apply bg-muted font-semibold;
+  }
+  .rich-text :where(.selectedCell) {
+    @apply bg-accent;
+  }
+  .rich-text :where(.rich-video) {
+    @apply aspect-video w-full overflow-hidden rounded-lg bg-muted;
+  }
+  .rich-text :where(.rich-video iframe, .rich-video video) {
+    @apply size-full border-0;
+  }
+  .rich-text :where(.rich-image) {
+    @apply w-full;
+  }
+  .rich-text :where(.rich-image img) {
+    @apply h-auto w-full rounded-lg border;
+  }
+  /* Small images stay readable on phones: at least half the width there. */
+  .rich-text :where(.rich-image[data-width="25"]) {
+    @apply w-1/2 sm:w-1/4;
+  }
+  .rich-text :where(.rich-image[data-width="50"]) {
+    @apply w-1/2;
+  }
+  .rich-text :where(.rich-image[data-width="75"]) {
+    @apply w-3/4;
+  }
+  .rich-text :where(.rich-image[data-align="left"]) {
+    @apply mr-auto;
+  }
+  .rich-text :where(.rich-image[data-align="center"]) {
+    @apply mx-auto;
+  }
+  .rich-text :where(.rich-image[data-align="right"]) {
+    @apply ml-auto;
+  }
+  /* A file attachment (articles): a card with its type, name and size that downloads it. */
+  .rich-text :where(.rich-file) {
+    @apply flex w-fit max-w-full items-center gap-3 rounded-lg border bg-card px-3 py-2 text-foreground no-underline transition-colors;
+  }
+  .rich-text :where(a.rich-file:hover) {
+    @apply bg-accent;
+  }
+  .rich-text :where(.rich-file-type) {
+    @apply shrink-0 rounded-md bg-soft px-1.5 py-1 font-mono text-xs font-semibold text-soft-foreground;
+  }
+  .rich-text :where(.rich-file-name) {
+    @apply min-w-0 font-medium [overflow-wrap:anywhere];
+  }
+  .rich-text :where(.rich-file-size) {
+    @apply shrink-0 text-sm text-muted-foreground;
+  }
+  /* Collapsible details (articles): a bordered block whose summary opens it; the editor shows it open, as a div. */
+  .rich-text :where(.rich-details) {
+    @apply rounded-lg border;
+  }
+  .rich-text :where(.rich-details > summary, .rich-details-summary) {
+    @apply cursor-pointer px-4 py-3 font-medium text-foreground marker:text-muted-foreground;
+  }
+  .rich-text :where(.rich-details-summary) {
+    @apply list-item cursor-text list-inside [list-style-type:disclosure-open];
+  }
+  .rich-text :where(.rich-details-summary:has(> .ProseMirror-trailingBreak:only-child))::before {
+    @apply pointer-events-none absolute font-normal text-muted-foreground content-[attr(data-placeholder)];
+  }
+  .rich-text :where(.rich-details-body) {
+    @apply flex flex-col gap-3 px-4 pb-4;
+  }
+  /* A table of contents block (articles): a quiet box of links, h3s indented under their h2. */
+  .rich-text .rich-toc {
+    @apply rounded-xl border px-4 py-3 text-sm leading-6;
+  }
+  .rich-text .rich-toc > p {
+    @apply font-heading font-semibold text-foreground;
+  }
+  .rich-text .rich-toc ul {
+    @apply mt-1 flex list-none flex-col gap-1 pl-0;
+  }
+  .rich-text .rich-toc ul ul {
+    @apply pl-4;
+  }
+  .rich-text .rich-toc li {
+    @apply mt-0 pl-0;
+  }
+  .rich-text .rich-toc a {
+    @apply no-underline hover:underline;
+  }
+  .rich-text :where(.ProseMirror-selectednode) {
+    @apply ring-2 ring-ring;
+  }
+  /* An empty editor's placeholder, and (bare editors) the hint on the empty line being written. */
+  .rich-text :where(p.is-editor-empty:first-child, .is-empty)::before {
+    @apply pointer-events-none float-left h-0 text-muted-foreground content-[attr(data-placeholder)];
+  }
+  /* A docs article, set for reading and skimming: softer text, so headings and bold terms stand
+     out, and room between sections and steps. */
+  .article-text {
+    @apply gap-5 text-lg leading-8 text-foreground/80;
+  }
+  .article-text :where(h2) {
+    @apply mt-6 text-2xl text-foreground;
+  }
+  .article-text :where(h3) {
+    @apply mt-3 text-xl text-foreground;
+  }
+  .article-text :where(strong) {
+    @apply font-semibold text-foreground;
+  }
+  .article-text :where(li) {
+    @apply pl-1 marker:text-muted-foreground;
+  }
+  .article-text :where(li + li) {
+    @apply mt-2;
+  }
+  /* Numbered steps (articles): each step's number in a circle, a line down to the next one, the step's
+     title and body beside it. After `.article-text`, whose list items' spacing they replace. */
+  .rich-text :where(.rich-steps) {
+    @apply list-none pl-0;
+    counter-reset: step;
+  }
+  .rich-text :where(.rich-steps > li) {
+    @apply relative mt-0 flex flex-col gap-2 pb-6 pl-11 last:pb-0;
+    counter-increment: step;
+  }
+  .rich-text :where(.rich-steps > li)::before {
+    @apply absolute top-0 left-0 flex size-7 items-center justify-center rounded-full bg-muted text-sm leading-none font-semibold text-foreground;
+    content: counter(step);
+  }
+  .rich-text :where(.rich-steps > li:not(:last-child))::after {
+    @apply absolute top-9 bottom-1 left-3.5 w-px bg-border;
+    content: "";
+  }
+  .rich-text :where(.rich-step-title) {
+    @apply my-0 min-h-7 font-semibold text-foreground;
+  }
+}
+/* The app uses the page's own heading and actions as its toolbar. Portals keep their own header. The padding
+   covers text passing underneath without changing the header's initial spacing. Short or zoomed windows let ordinary
+   toolbars scroll away to preserve reading room; editors keep their pinned actions. Phones keep the compact menu row. */
+@media (width >= 48rem) {
+  main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-inbox-header]) {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--background);
+    padding-block: 0.75rem;
+    margin-block: -0.75rem;
+  }
+  main[data-slot="sidebar-inset"] [data-slot="post-header"] [data-slot="page-header"] {
+    position: static;
+  }
+  @media (width < 64rem) {
+    /* Above the stacked Autopilot list, the title's column is only as tall as the title itself. */
+    main[data-slot="sidebar-inset"] [data-autopilot-listed] > [data-slot="page-header"] {
+      position: static;
+    }
+  }
+  @media (height < 40rem) {
+    main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-pins-actions]) {
+      position: static;
+    }
+  }
+}
+
+/*
+ * Pinned actions on phones (PageActions) hide while text is being typed: the keyboard is up, and the caret could sit
+ * under the bar. Back once focus leaves. Outside the layers, so it wins over the bar's own display utility.
+ */
+@media (width < 48rem) {
+  /* Text entry only: a checkbox, select, date or range input brings up no keyboard. */
+  html:has(
+      :is(
+          input:not([type]),
+          input:is([type="text"], [type="search"], [type="url"], [type="email"], [type="number"], [type="tel"], [type="password"]),
+          textarea,
+          [contenteditable="true"]
+        ):focus
+    )
+    [data-pinned-actions] {
+    display: none;
+  }
+}
+
+/* The code tab row's fades (see .rich-code-tab-row): none until the row scrolls. */
+@property --tab-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --tab-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes rich-tab-row-fade {
+  0% {
+    --tab-fade-start: 0px;
+    --tab-fade-end: 1.5rem;
+  }
+  10% {
+    --tab-fade-start: 1.5rem;
+  }
+  90% {
+    --tab-fade-end: 1.5rem;
+  }
+  100% {
+    --tab-fade-start: 1.5rem;
+    --tab-fade-end: 0px;
+  }
+}
+
+/*
+ * The portal's articles (docs/design.md, Portal): 17px text, inline code on a sunken chip, code blocks as cards (a labelled
+ * one has its label in a strip over the code, with Copy: CodeCopyButtons), quotes as callouts (an info blue rule and icon on
+ * the card's surface), and steps numbered in soft green. Unlayered, after `.article-text`, so it wins over it.
+ */
+:root:has([data-portal-top]) .article-text {
+  font-size: 1.0625rem;
+  line-height: 1.75;
+}
+:root:has([data-portal-top]) .article-text :where(h2) {
+  margin-top: 2rem;
+  font-size: 1.625rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+:root:has([data-portal-top]) .article-text :where(:not(pre) > code) {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-sunken);
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.86em;
+}
+:root:has([data-portal-top]) .article-text :where(pre, .rich-code) {
+  position: relative;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-card);
+  box-shadow: var(--portal-shadow);
+}
+:root:has([data-portal-top]) .article-text :where(pre) {
+  padding: 1.25rem 1.5rem;
+  font-size: 0.875rem;
+  line-height: 1.75rem;
+}
+:root:has([data-portal-top]) .article-text :where(.rich-code pre) {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+:root:has([data-portal-top]) .article-text :where(.rich-code figcaption) {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.375rem 0.5rem 0.375rem 1.25rem;
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+:root:has([data-portal-top]) .article-text :where(blockquote) {
+  position: relative;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-info);
+  border-radius: var(--radius-xl);
+  background: var(--color-card);
+  padding: 1rem 1.25rem 1rem 3.25rem;
+  color: var(--color-foreground);
+}
+:root:has([data-portal-top]) .article-text :where(blockquote)::before {
+  content: "";
+  position: absolute;
+  top: 1.4rem;
+  left: 1.25rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  background: var(--color-info);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4M12 8h.01'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+:root:has([data-portal-top]) .article-text :where(.rich-steps > li) {
+  gap: 0.125rem;
+}
+:root:has([data-portal-top]) .article-text :where(.rich-steps > li)::before {
+  background: var(--color-soft);
+  color: var(--color-soft-foreground);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-primary) 35%, transparent);
+}

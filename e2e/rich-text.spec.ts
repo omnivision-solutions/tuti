@@ -105,7 +105,7 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  // A real picture to upload: a screenshot of the landing page.
+  // A real picture to upload: a screenshot of the app.
   await owner.goto("/");
   const screenshot = await owner.screenshot();
 

@@ -3,11 +3,11 @@ import { plansEnabled } from "@tuti/shared";
 import { redirect } from "next/navigation";
 
 import { AuthForm } from "@/components/auth-form";
+import { TermsAgreement } from "@/components/terms-agreement";
 import { safeRedirectPath } from "@/lib/redirects";
 import { socialProviders, socialSignInError } from "@/lib/social-sign-in";
 import { getSession } from "@/server/session";
 
-import { TermsAgreement } from "@/app/(marketing)/legal";
 import { continuingTo, WithPitch } from "../../with-pitch";
 
 export default async function SignUpPage(props: PageProps<"/app/auth/sign-up">) {

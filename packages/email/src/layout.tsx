@@ -1,7 +1,7 @@
 import { Body, Column, Container, Head, Html, Img, Preview, Row, Section, Text } from "@react-email/components";
 import type { ReactNode } from "react";
 
-// Brand colours: the light theme tokens in apps/web/src/app/globals.css, as hex.
+// Brand colours: the light theme tokens in packages/ui/src/globals.css, as hex.
 export const colors = {
   green: "#12804a",
   onGreen: "#ffffff",
@@ -21,7 +21,7 @@ export const colors = {
 };
 
 /** The parrot mark, from the app's public files (an email can't show the SVG): none without APP_URL. */
-const logoUrl = () => (process.env.APP_URL ? new URL("/email-logo.png", process.env.APP_URL).href : null);
+const logoUrl = () => (process.env.APP_URL ? new URL("/api/email-logo.png", process.env.APP_URL).href : null);
 
 /**
  * The frame every Tuti email shares. Those to a team about Tuti itself name the part of Tuti they're from
