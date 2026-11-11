@@ -1,7 +1,7 @@
 import pg from "pg";
 import { randomUUID } from "node:crypto";
 
-import { expect, test, type Browser } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
@@ -15,6 +15,23 @@ async function editor(browser: Browser) {
   await api("/articles", { title: "Invite your team", body: "Owners send invites from Settings." });
   await team.setViewportSize({ width: 1440, height: 900 });
   return { team, slug, api };
+}
+
+/** Exercise queue refresh and dialog teardown on slower clients as well. */
+async function throttleQueue(page: Page) {
+  const client = await page.context().newCDPSession(page);
+  await client.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+}
+
+/** Let the real live stream open at a chosen point, refreshing the confirmed queue. */
+async function holdQueueRefresh(page: Page) {
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  await page.route("**/api/live?*", async (route) => {
+    await held;
+    await route.fallback();
+  });
+  return release;
 }
 
 test("the app sidebar folds for saved and new article editors and opens elsewhere", async ({ browser }) => {
@@ -309,6 +326,28 @@ test("the overview expands its publish queue and confirms publishing the saved a
   await checkpoints(testInfo)(team, "docs-published-queue", { fullPage: false });
 });
 
+test("publishing a queue row focuses the next article, then the heading when none remain", async ({ browser }) => {
+  const { team, slug, api } = await editor(browser);
+  await throttleQueue(team);
+  await api("/articles", { title: "First steps", body: "Open Settings." });
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: "Waiting to publish" });
+  await expect(queue.getByRole("listitem")).toHaveCount(2);
+  const firstTitle = await queue.locator("[data-queue-article]").first().innerText();
+  const nextTitle = await queue.locator("[data-queue-article]").nth(1).innerText();
+  await queue.getByRole("listitem").first().getByRole("button", { name: "Publish", exact: true }).click();
+  const confirm = team.getByRole("alertdialog");
+  await confirm.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(confirm).toBeHidden();
+  await expect(queue.getByRole("link", { name: firstTitle, exact: true })).toHaveCount(0);
+  await expect(queue.getByRole("link", { name: nextTitle, exact: true })).toBeFocused();
+  await queue.getByRole("button", { name: "Publish", exact: true }).click();
+  await confirm.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(confirm).toBeHidden();
+  await expect(queue).toContainText("Everything is published.");
+  await expect(queue.getByRole("heading", { name: "Waiting to publish" })).toBeFocused();
+});
+
 
 test("the phone Docs sheet keeps app navigation reachable without a breadcrumb bar", async ({ browser }) => {
   const { team, slug } = await editor(browser);
@@ -487,6 +526,7 @@ test("published articles with waiting Autopilot changes stay out of queue publis
 
 test("a late Autopilot edit gets a review link and Publish all continues with the remaining articles", async ({ browser }) => {
   const { team, slug, api } = await editor(browser);
+  await throttleQueue(team);
   await api("/articles", { title: "First steps", body: "Open Settings." });
   await team.goto(`/app/${slug}/docs`);
   const queue = team.getByRole("region", { name: "Waiting to publish" });
@@ -524,6 +564,7 @@ test("the portaled article title belongs to its form and blocks an empty title",
 for (const all of [false, true]) {
   test(`a late Autopilot edit restores focus after ${all ? "Publish all" : "Publish"} loses its control`, async ({ browser }) => {
     const { team, slug } = await editor(browser);
+    await throttleQueue(team);
     await team.goto(`/app/${slug}/docs`);
     const queue = team.getByRole("region", { name: "Waiting to publish" });
     const action = all ? "Publish all" : "Publish";
@@ -540,6 +581,8 @@ for (const all of [false, true]) {
 
 test("Publish all skips a published article changed by a late Autopilot edit and publishes the next draft", async ({ browser }) => {
   const { team, slug, api } = await editor(browser);
+  await throttleQueue(team);
+  const refresh = await holdQueueRefresh(team);
   await api("/articles", { title: "First steps", body: "Open Settings." });
   await api("/articles/invite-your-team/publish", {});
   await api("/articles/invite-your-team", { body: "Saved changes for the team." }, "PATCH");
@@ -550,6 +593,10 @@ test("Publish all skips a published article changed by a late Autopilot edit and
   const confirm = team.getByRole("alertdialog");
   await api("/articles/invite-your-team", { body: "Late suggested words." }, "PATCH");
   await pendingQueueEdit(slug, "invite-your-team");
+  refresh();
+  // The live render now knows about the edit, but the open dialog still confirms the earlier versions.
+  await expect(team.locator(".docs-publish-queue li").filter({ hasText: "Invite your team" }).locator(".docs-review-link")).toHaveText("Review Autopilot edit");
+  await expect(confirm).toHaveAccessibleName("Publish 2 articles?");
   await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
   await expect(confirm).toBeHidden();
   await expect(queue.getByRole("listitem")).toHaveCount(1);
@@ -630,6 +677,8 @@ test("the collection drag hint requires two articles and a mouse-sized layout", 
 for (const published of [true, false]) {
   test(`Publish all holds a ${published ? "published article" : "draft"} after a teammate's plain save and continues`, async ({ browser }) => {
     const { team, slug, api } = await editor(browser);
+    await throttleQueue(team);
+    const refresh = await holdQueueRefresh(team);
     const teammate = await signUp(browser, APP_URL, "Eddie Editor");
     const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
     await db.connect();
@@ -648,9 +697,14 @@ for (const published of [true, false]) {
     await teammate.getByRole("textbox", { name: "Article", exact: true }).fill("A half-finished save.");
     await teammate.getByRole("button", { name: "Save", exact: true }).click();
     await expect(teammate.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+    await api("/articles", { title: "Later article", body: "Not in the confirmed batch." });
+    refresh();
+    await expect(team.locator('.docs-publish-queue [data-queue-article="later-article"]')).toBeVisible();
+    await expect(confirm).toHaveAccessibleName("Publish 2 articles?");
     await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
     await expect(confirm).toBeHidden();
-    await expect(queue.getByRole("listitem")).toHaveCount(1);
+    await expect(queue.getByRole("listitem")).toHaveCount(2);
+    await expect(queue.getByRole("link", { name: "Later article", exact: true })).toBeVisible();
     await expect(queue.getByRole("link", { name: "Invite your team", exact: true })).toBeFocused();
     await expect(team.locator(".docs-live-footer")).toContainText(`${published ? 2 : 1} article${published ? "s" : ""} live`);
     await team.setViewportSize({ width: 390, height: 844 });

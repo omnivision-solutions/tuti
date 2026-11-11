@@ -2,7 +2,7 @@
 
 import { ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -33,115 +33,119 @@ type WaitingArticle = {
   revision?: string;
 };
 
-/** Publishes the saved versions shown here, stopping on a stale version rather than taking unseen changes live. */
-function Publish({ projectSlug, articles, all = false, hidden = false, onReviewRequired, returnFocus }: {
-  projectSlug: string;
-  articles: WaitingArticle[];
-  all?: boolean;
-  hidden?: boolean;
-  onReviewRequired: (slug: string, reason: ReviewReason) => void;
-  returnFocus: (slug?: string) => HTMLElement | null;
-}) {
+/** Keep the confirmed versions and review decisions while live updates refresh the rows. */
+export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: string; articles: WaitingArticle[] }) {
+  const [expanded, setExpanded] = useState(false);
   const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const reviewTarget = useRef<string | undefined>(undefined);
+  const [dialogClosed, setDialogClosed] = useState(true);
   const [pending, start] = useTransition();
+  const queue = useRef<HTMLElement>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const [selection, setSelection] = useState<{ articles: WaitingArticle[]; all: boolean; index: number } | null>(null);
+  const [needsReview, setNeedsReview] = useState<Map<string, ReviewReason>>(new Map());
+  const [completion, setCompletion] = useState<{ reviewSlug?: string; published: WaitingArticle[]; index: number } | null>(null);
+  const focusedCompletion = useRef<typeof completion>(null);
+  const select = (selected: WaitingArticle[], all: boolean, button: HTMLButtonElement) => {
+    // A refresh may arrive while confirmation is open. Publish only the versions that opened it.
+    setSelection({ articles: selected, all, index: all ? 0 : articles.findIndex((article) => article.slug === selected[0]?.slug) });
+    setCompletion(null);
+    setDialogClosed(false);
+    trigger.current = button;
+  };
+  useEffect(() => {
+    if (!completion || focusedCompletion.current === completion || open || pending || !dialogClosed) return;
+    // Successful actions refresh the server list. Wait for that commit and for dialog teardown.
+    if (completion.published.some((sent) => articles.some((article) => article.slug === sent.slug && article.revision === sent.revision))) return;
+    const links = Array.from(queue.current?.querySelectorAll<HTMLAnchorElement>("[data-queue-article]") ?? []);
+    const target = completion.reviewSlug
+      ? links.find((link) => link.dataset.queueArticle === completion.reviewSlug)
+      : links[completion.index] ?? links[0];
+    (target ?? queue.current?.querySelector<HTMLElement>("#waiting-title"))?.focus();
+    focusedCompletion.current = completion;
+  }, [articles, completion, dialogClosed, open, pending]);
+  const publish = () => {
+    if (!selection) return;
+    start(async () => {
+      const published: WaitingArticle[] = [];
+      let reviewSlug: string | undefined;
+      for (const article of selection.articles) {
+        const result = article.published
+          ? await publishArticleChanges(projectSlug, article.slug, article.savedAt)
+          : await publishArticle(projectSlug, article.slug, undefined, article.revision);
+        if (result.error && "code" in result && (result.code === "edits_required" || result.code === "changed")) {
+          const reason = result.code;
+          setNeedsReview((previous) => new Map(previous).set(article.slug, reason));
+          reviewSlug ??= article.slug;
+          toast.error(reason === "changed" ? `${article.title} has changed since you opened this page. Review it before publishing.` : `${article.title} has an Autopilot edit to review first`, {
+            description: <Link className="underline underline-offset-4" href={`/app/${projectSlug}/docs/${article.slug}`}>Review article</Link>,
+          });
+          continue;
+        }
+        if (result.error) {
+          toast.error(result.error);
+          return;
+        }
+        published.push(article);
+      }
+      if (reviewSlug) setExpanded(true);
+      setCompletion({ reviewSlug, published, index: selection.index });
+      setOpen(false);
+      if (published.length > 0) toast.success(selection.all ? "Articles published" : "Published");
+    });
+  };
+  const publishable = articles.filter((article) => !article.reviewRequired && !needsReview.has(article.slug));
   return (
-    <AlertDialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
-      {!hidden && <AlertDialogTrigger ref={trigger} onClick={() => { reviewTarget.current = undefined; }} render={<Button size="sm" variant={all ? "default" : "outline"} />}>{all ? "Publish all" : "Publish"}</AlertDialogTrigger>}
-      <AlertDialogContent closeDisabled={pending} finalFocus={() => {
-        if (reviewTarget.current) return returnFocus(reviewTarget.current);
-        return trigger.current?.isConnected ? trigger.current : returnFocus();
-      }}>
+    <AlertDialog open={open} onOpenChange={(next) => !pending && setOpen(next)} onOpenChangeComplete={(next) => { if (!next) setDialogClosed(true); }}>
+      <section ref={queue} aria-labelledby="waiting-title" className="docs-publish-queue [&_li_+_li]:[border-top:1px_solid_color-mix(in_oklch,_var(--border)_70%,_transparent)] [&_li]:min-h-19.5">
+        <div className="docs-section-heading flex items-center justify-between gap-2.5 min-h-8 [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 [&_h2]:[font:600_17px/1.35_var(--font-sans)] [&_h2_small]:text-[13px] [&_h2_small]:text-muted-foreground [&_h2_small]:font-normal max-sm:[&_h2]:text-[16px]">
+          <h2 id="waiting-title" tabIndex={-1}>
+            Waiting to publish <span className="docs-count rounded-[30px] bg-highlight text-highlight-foreground p-[2px_7px] text-xs">{articles.length}</span>
+          </h2>
+          {publishable.length > 0 && <AlertDialogTrigger onClick={(event) => select(publishable, true, event.currentTarget)} render={<Button size="sm" />}>Publish all</AlertDialogTrigger>}
+        </div>
+        <p className="docs-section-description text-[13.5px] text-muted-foreground m-[5px_0_15px] max-sm:max-w-[270px] max-sm:text-[13px]">Readers see the published version until you publish.</p>
+        {articles.length === 0 ? (
+          <p className="py-4 text-sm text-muted-foreground">Everything is published.</p>
+        ) : (
+          <ul>
+            {articles.slice(0, expanded ? undefined : 3).map((article) => {
+              const reason = needsReview.get(article.slug) ?? (article.reviewRequired ? "edits_required" : undefined);
+              return <li key={article.slug}>
+                <div>
+                  <Link data-queue-article={article.slug} href={`/app/${projectSlug}/docs/${article.slug}`}>{article.title}</Link>
+                  <small>
+                    {article.collection} · saved {article.saved}
+                  </small>
+                </div>
+                <Link href={`/app/${projectSlug}/docs/${article.slug}`} className={`docs-review-link text-muted-foreground text-[13px] ${reason ? "" : "max-sm:hidden"}`}>
+                  {reason === "edits_required" ? "Review Autopilot edit" : reason === "changed" ? "Review changes" : "Review"}
+                </Link>
+                {!reason && <AlertDialogTrigger onClick={(event) => select([article], false, event.currentTarget)} render={<Button size="sm" variant="outline" />}>Publish</AlertDialogTrigger>}
+              </li>;
+            })}
+          </ul>
+        )}
+        {articles.length > 3 && (
+          <button type="button" className="docs-show-more text-muted-foreground text-[13px] flex items-center gap-1.25 mt-1.5" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+            <ChevronDownIcon className="size-4" />
+            {expanded ? "Show fewer" : `Show ${articles.length - 3} more`}
+          </button>
+        )}
+      </section>
+      <AlertDialogContent closeDisabled={pending} finalFocus={() => completion ? false : trigger.current?.isConnected ? trigger.current : queue.current?.querySelector<HTMLElement>("#waiting-title")}>
         <AlertDialogHeader>
-          <AlertDialogTitle>{all ? `Publish ${plural(articles.length, "article")}?` : `Publish “${articles[0]?.title}”?`}</AlertDialogTitle>
+          <AlertDialogTitle>{selection?.all ? `Publish ${plural(selection.articles.length, "article")}?` : `Publish “${selection?.articles[0]?.title}”?`}</AlertDialogTitle>
           <AlertDialogDescription>
             The saved versions go live on your help center, with each article&apos;s access settings. Articles with waiting Autopilot edits need a review first.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={pending}
-            onClick={() =>
-              start(async () => {
-                let published = 0;
-                for (const article of articles) {
-                  const result = article.published
-                    ? await publishArticleChanges(projectSlug, article.slug, article.savedAt)
-                    : await publishArticle(projectSlug, article.slug, undefined, article.revision);
-                  if (result.error && "code" in result && (result.code === "edits_required" || result.code === "changed")) {
-                    toast.error(result.code === "changed" ? `${article.title} has changed since you opened this page. Review it before publishing.` : `${article.title} has an Autopilot edit to review first`, {
-                      description: <Link className="underline underline-offset-4" href={`/app/${projectSlug}/docs/${article.slug}`}>Review article</Link>,
-                    });
-                    reviewTarget.current ??= article.slug;
-                    onReviewRequired(article.slug, result.code);
-                    continue;
-                  }
-                  if (result.error) {
-                    toast.error(result.error);
-                    return;
-                  }
-                  published++;
-                }
-                setOpen(false);
-                if (published > 0) toast.success(all ? "Articles published" : "Published");
-              })
-            }
-          >
-            {pending ? "Publishing…" : all ? "Publish all" : "Publish"}
+          <AlertDialogAction disabled={pending} onClick={publish}>
+            {pending ? "Publishing…" : selection?.all ? "Publish all" : "Publish"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  );
-}
-
-export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: string; articles: WaitingArticle[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const queue = useRef<HTMLElement>(null);
-  const returnFocus = (slug?: string) =>
-    (slug ? Array.from(queue.current?.querySelectorAll<HTMLAnchorElement>("[data-queue-article]") ?? []).find((link) => link.dataset.queueArticle === slug) : null)
-    ?? queue.current?.querySelector<HTMLElement>("#waiting-title") ?? null;
-  const [needsReview, setNeedsReview] = useState<Map<string, ReviewReason>>(new Map());
-  const onReviewRequired = (slug: string, reason: ReviewReason) => setNeedsReview((previous) => new Map(previous).set(slug, reason));
-  const publishable = articles.filter((article) => !article.reviewRequired && !needsReview.has(article.slug));
-  return (
-    <section ref={queue} aria-labelledby="waiting-title" className="docs-publish-queue [&_li_+_li]:[border-top:1px_solid_color-mix(in_oklch,_var(--border)_70%,_transparent)] [&_li]:min-h-19.5">
-      <div className="docs-section-heading flex items-center justify-between gap-2.5 min-h-8 [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 [&_h2]:[font:600_17px/1.35_var(--font-sans)] [&_h2_small]:text-[13px] [&_h2_small]:text-muted-foreground [&_h2_small]:font-normal max-sm:[&_h2]:text-[16px]">
-        <h2 id="waiting-title" tabIndex={-1}>
-          Waiting to publish <span className="docs-count rounded-[30px] bg-highlight text-highlight-foreground p-[2px_7px] text-xs">{articles.length}</span>
-        </h2>
-        <Publish projectSlug={projectSlug} articles={publishable} all hidden={publishable.length === 0} onReviewRequired={onReviewRequired} returnFocus={returnFocus} />
-      </div>
-      <p className="docs-section-description text-[13.5px] text-muted-foreground m-[5px_0_15px] max-sm:max-w-[270px] max-sm:text-[13px]">Readers see the published version until you publish.</p>
-      {articles.length === 0 ? (
-        <p className="py-4 text-sm text-muted-foreground">Everything is published.</p>
-      ) : (
-        <ul>
-          {articles.slice(0, expanded ? undefined : 3).map((article) => {
-            const reason = needsReview.get(article.slug) ?? (article.reviewRequired ? "edits_required" : undefined);
-            return <li key={article.slug}>
-              <div>
-                <Link data-queue-article={article.slug} href={`/app/${projectSlug}/docs/${article.slug}`}>{article.title}</Link>
-                <small>
-                  {article.collection} · saved {article.saved}
-                </small>
-              </div>
-              <Link href={`/app/${projectSlug}/docs/${article.slug}`} className={`docs-review-link text-muted-foreground text-[13px] ${reason ? "" : "max-sm:hidden"}`}>
-                {reason === "edits_required" ? "Review Autopilot edit" : reason === "changed" ? "Review changes" : "Review"}
-              </Link>
-              <Publish projectSlug={projectSlug} articles={[article]} hidden={Boolean(reason)} onReviewRequired={onReviewRequired} returnFocus={returnFocus} />
-            </li>;
-          })}
-        </ul>
-      )}
-      {articles.length > 3 && (
-        <button type="button" className="docs-show-more text-muted-foreground text-[13px] flex items-center gap-1.25 mt-1.5" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          <ChevronDownIcon className="size-4" />
-          {expanded ? "Show fewer" : `Show ${articles.length - 3} more`}
-        </button>
-      )}
-    </section>
   );
 }
