@@ -86,7 +86,7 @@ export function VerifyAll({
   const cost = estimate.credits;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" />}>Verify all</DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>Start verifying</DialogTrigger>
       <DialogContent>
         {/* One live region across both views, so screen readers hear it start, each step, then what it found. */}
         <span aria-live="polite" className="sr-only">

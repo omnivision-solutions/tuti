@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -31,8 +31,8 @@ test("Verify checks an article against the repository: its history, and its fix 
   await nextModelReply(
     JSON.stringify({
       statements: [
-        { statement: "Each plan has 5 seats", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." },
-        { statement: "People are admins or members", verdict: "current", evidence: ["docs/roles.md"], note: "Roles are admin and member." },
+        { statement: "Every plan has 5 seats for the team", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." },
+        { statement: "Membership has two permission tiers", source: "People are admins or members.", verdict: "current", evidence: ["docs/roles.md"], note: "Roles are admin and member." },
       ],
       reason: "Plans have 10 seats now, not 5.",
       sections: { "1": "Each plan has 10 seats.\n\nPeople are admins or members." },
@@ -42,15 +42,15 @@ test("Verify checks an article against the repository: its history, and its fix 
 
   // Verify is an icon in the editor's top bar, beside History: a panel saying what it sends where.
   await owner.goto(`/app/${slug}/docs/${articleSlug}`);
-  await owner.getByRole("link", { name: "Verify", exact: true }).click();
+  await owner.getByRole("button", { name: "Verify", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs/${articleSlug}?verify`);
-  const panel = owner.getByRole("dialog", { name: "Verify" });
+  const panel = owner.getByRole("complementary", { name: "Article tools" });
   await expect(panel).toContainText("It sends the files it reads to");
   await checkpoint(owner, "verify-panel", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "verify-panel-dark", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "light" });
-  await panel.getByRole("button", { name: "Verify", exact: true }).click();
+  await panel.locator(".docs-tools-scroll").getByRole("button", { name: "Verify", exact: true }).click();
   const toast = owner.getByText("Verified: 1 out of date, its fix waits for you");
   await expect(toast).toBeVisible();
 
@@ -59,12 +59,33 @@ test("Verify checks an article against the repository: its history, and its fix 
   await expect(run).toContainText(`${repo}@c0ffee1`);
   await expect(run).toContainText("1 statement still true · 1 out of date · 0 it can't tell");
   await expect(run).toContainText("Its fix waits for you");
-  await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeVisible();
+  await expect(run).toContainText("“5 seats” becomes “10 seats”");
+  const current = run.locator(".docs-current-findings");
+  await expect(current).toBeHidden();
+  await expect(run.getByText("Still true (1)", { exact: true }).locator("svg")).toHaveCSS("rotate", "none");
+  const outdated = run.getByRole("listitem").filter({ hasText: "Every plan has 5 seats for the team" });
+  await expect(outdated.getByRole("link", { name: "Review it" })).toBeVisible();
+  await expect(run.locator("details").filter({ has: owner.getByText("Still true (1)", { exact: true }) }).last().getByRole("link", { name: "Review it" })).toHaveCount(0);
+  await expect(run.getByText("Every plan has 5 seats for the team", { exact: true })).toBeVisible();
   await run.getByText("What it found").click();
-  await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeHidden();
+  await expect(run.getByText("Every plan has 5 seats for the team", { exact: true })).toBeHidden();
   await run.getByText("What it found").click();
-  await expect(run.getByText("Each plan has 5 seats", { exact: true })).toBeVisible();
+  await expect(run.getByText("Every plan has 5 seats for the team", { exact: true })).toBeVisible();
   await expect(run.getByText("src/seats.ts")).toBeVisible();
+  await run.getByRole("button", { name: "Jump to sentence" }).click();
+  await expect(owner.getByText("Couldn't find this sentence in the text")).toBeVisible();
+  await run.getByText("Still true (1)", { exact: true }).click();
+  await run.locator(".docs-current-findings").getByRole("button", { name: "Jump to sentence" }).click();
+  await expect(owner.getByRole("textbox", { name: "Article", exact: true })).toBeFocused();
+  await expect.poll(() => owner.evaluate(() => window.getSelection()?.toString())).toBe("People are admins or members.");
+  // A restored, flagged source paragraph still matches its paraphrased finding: marker text isn't article content.
+  const firstParagraph = owner.getByRole("textbox", { name: "Article", exact: true }).locator("p").first();
+  await firstParagraph.fill("Each plan has 5 seats.");
+  await expect(firstParagraph.locator("[data-finding='1']")).toBeVisible();
+  await outdated.getByRole("button", { name: "Jump to sentence" }).click();
+  await expect(owner.getByRole("textbox", { name: "Article", exact: true })).toBeFocused();
+  await expect.poll(() => owner.evaluate(() => window.getSelection()?.toString())).toContain("Each plan has 5 seats.");
+  await firstParagraph.fill("Each plan has 10 seats.");
   // (Once the toast has gone, so the panel's title shows.)
   await expect(toast).toBeHidden({ timeout: 10_000 });
   await checkpoint(owner, "verify-history", { fullPage: false });
@@ -75,7 +96,13 @@ test("Verify checks an article against the repository: its history, and its fix 
   await checkpoint(owner, "verify-history-phone-dark", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "light" });
   await checkpoint(owner, "verify-history-phone", { fullPage: false });
+  await owner.getByRole("dialog", { name: "Verify", exact: true }).getByText("Still true (1)", { exact: true }).click();
+  await owner.getByRole("dialog", { name: "Verify", exact: true }).locator(".docs-current-findings").getByRole("button", { name: "Jump to sentence" }).click();
+  await expect(owner.getByRole("dialog", { name: "Verify", exact: true })).toBeHidden();
+  await expect(owner.getByRole("textbox", { name: "Article", exact: true })).toBeFocused();
+  await expect.poll(() => owner.evaluate(() => window.getSelection()?.toString())).toBe("People are admins or members.");
   await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.getByRole("button", { name: "Verify", exact: true }).click();
 
   // Its fix on the article's review: a Verify chip, its part in its popover, approved like a pull request's edit.
   await run.getByRole("link", { name: "Review it" }).click();
@@ -137,8 +164,7 @@ test("Verify all says what it will cost first, then shows its progress, opened a
 
   // Docs' "More actions": Verify all, saying what it will cost before anything runs.
   await owner.goto(`/app/${slug}/docs`);
-  await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("button", { name: "Verify all" }).click();
+  await owner.getByRole("button", { name: "Start verifying" }).click();
   const confirm = owner.getByRole("dialog", { name: "Verify all 2 published articles?" });
   await expect(confirm).toContainText("Articles verified at that commit and unchanged since are skipped.");
   // Credits are on (like Tuti's cloud): about 5 an article before the project has run any, of its 1,000 free.
@@ -170,8 +196,7 @@ test("Verify all says what it will cost first, then shows its progress, opened a
   // Opened again elsewhere while it runs: the one running, not a new start.
   const other = await owner.context().newPage();
   await other.goto(`/app/${slug}/docs`);
-  await other.getByRole("button", { name: "More actions" }).click();
-  await other.getByRole("button", { name: "Verify all" }).click();
+  await other.getByRole("button", { name: "Start verifying" }).click();
   await expect(other.getByRole("dialog", { name: "Verifying all articles" })).toContainText("Checked 1 of 2 articles.");
   await releaseModelReply(`verify-all-${id}`);
 

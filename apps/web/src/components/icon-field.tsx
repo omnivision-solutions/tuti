@@ -1,5 +1,6 @@
 "use client";
 
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { cn } from "cn";
 import { SmilePlusIcon } from "lucide-react";
 import type { IconName } from "lucide-react/dynamic";
@@ -32,12 +33,15 @@ export function IconField({
   known = true,
   onChange,
   compact = false,
+  named = false,
 }: {
   defaultValue: string | null;
   known?: boolean;
   onChange?: () => void;
   /** A 36px square beside a name field (the icon, or a placeholder); Remove icon is in its picker. */
   compact?: boolean;
+  /** Show the current icon name and a Change label in a separate settings row. */
+  named?: boolean;
 }) {
   const [value, setValue] = useState(defaultValue);
   // `onChange`: picked or removed (its hidden field changes without an event of its own).
@@ -51,20 +55,25 @@ export function IconField({
     return (
       <div className="relative shrink-0">
         <input type="hidden" name="icon" value={value ?? ""} />
-        <Popover open={open} onOpenChange={setOpen}>
+        <Tooltip><Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
             render={
-              <Button
+              <TooltipTrigger render={<Button
                 type="button"
-                variant="outline"
-                size="icon"
-                title={icon ? "Change icon" : "Add icon"}
-                aria-label={icon ? `Change icon (${icon.replaceAll("-", " ")})` : "Add icon"}
+                variant={named ? "ghost" : "outline"}
+                size={named ? "sm" : "icon"}
+                aria-label={icon ? named ? `${icon.replaceAll("-", " ")} Change icon` : `Change icon (${icon.replaceAll("-", " ")})` : "Add icon"}
                 className={cn(!icon && "border-dashed text-muted-foreground")}
-              />
+              />} />
             }
           >
-            {icon ? <LucideIcon name={icon} /> : <SmilePlusIcon aria-hidden />}
+            {icon ? <LucideIcon name={icon} className={named ? "text-primary" : undefined} /> : <SmilePlusIcon aria-hidden />}
+            {named && (
+              <>
+                <span className="capitalize">{icon?.replaceAll("-", " ") ?? "No icon"}</span>
+                <span className="ml-3 text-muted-foreground">Change</span>
+              </>
+            )}
           </PopoverTrigger>
           <PopoverContent aria-label="Pick an icon" initialFocus={false}>
             <IconPicker
@@ -90,7 +99,7 @@ export function IconField({
               </Button>
             )}
           </PopoverContent>
-        </Popover>
+        </Popover><TooltipContent>{icon ? "Change icon" : "Add icon"}</TooltipContent></Tooltip>
       </div>
     );
   }
@@ -100,7 +109,7 @@ export function IconField({
       <div className="flex flex-wrap gap-2">
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
-            render={<Button type="button" variant="outline" size="sm" aria-label={icon ? `Change icon (${icon.replaceAll("-", " ")})` : undefined} />}
+            render={<Button type="button" variant="outline" size="sm" aria-label={icon ? named ? `${icon.replaceAll("-", " ")} Change icon` : `Change icon (${icon.replaceAll("-", " ")})` : undefined} />}
           >
             {icon ? (
               <>

@@ -27,7 +27,7 @@ cute at the expense of clarity.
   ~11px (`rounded-xl`), pills fully round. On the public portal `--radius` is 0.625rem: controls 10px,
   cards 14px, through the same `rounded-lg` and `rounded-xl`. The portal board search variant below uses the larger corners.
   A workspace's panes, the large surfaces that sit on the page's canvas side by side (the Inbox's list, conversation
-  and details; the composer card), are a step larger, `rounded-2xl` (~14px), so they read as panes, not as cards inside one.
+  and details; the composer card; Docs' tree, page and article tools), are a step larger, `rounded-2xl` (~14px), so they read as panes, not as cards inside one.
 - **Controls:** 36px tall (`h-9`: `Button`, `Input`, `SelectTrigger`), 32px in dense rows (`size="sm"`).
   Fields (`Input`, `Textarea`, `SelectTrigger`) sit on the card's colour in light (white) and on the
   page's in dark (a step below the card), with the `input` border, their placeholder lighter than a value; a textarea grows with its text and has no resize grip. A card's footer (`CardFooter`) is a
@@ -172,8 +172,8 @@ the list picks none to approve at once.
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
   width, the labelled sidebar open beside its own column from 1280px up; under 1280px it
   folds to its rail, its column taking the room. The Inbox (its panes fill the window),
-  Customize (its rail and the portal's preview) and an article's editor (the text is the page; the docs' tree stays
-  beside it) always fold it. The docs' tree folds too, from laptop width up, on its own button at its top ("Hide the docs
+  Customize (its rail and the portal's preview) and every Docs page (its own tree and page panes need
+  the room) always fold it. The docs' tree folds too, from laptop width up, on its own button at its top ("Hide the docs
   tree"; a rail with "Show the docs tree" in its place), remembered per browser on every Docs page (`DocsTreeFold`:
   `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). Every other page has it open. A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
@@ -263,17 +263,19 @@ the list picks none to approve at once.
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
-  An article's editor has Settings, History and Verify in its sticky toolbar (ghost; History and Verify named from 1280px up,
-  icons under it, so the actions fit beside the page context), then Save (filled once there's something to save, else an outline) and a
-  draft's Publish; View on portal (in words), Unpublish and Delete are under "More actions". Its header is the way back (its collection), the
-  state as a pill (`ArticleStateBadge`: Draft neutral, Unpublished changes in the highlight, as it needs the team, Published soft green; never a post status's colour) and the date; a new
-  article's collection is picked beside its Draft pill. Its text is as wide as the portal will show it (46rem with sections, as it opened, 43rem without;
-  other Docs pages max-w-3xl), so it wraps as it will publish, at the reading size
-  in the full text colour; the title field wraps. Verify is a panel from the
-  right (`?verify`, as History is `?history`) with Verify and, folded, how it works and what it sends where, then
-  each run, newest first (its commit, what's still true, out of date and can't tell as tinted chips, its
-  fix and what became of it with Review it, what it found per statement open). Docs' home has Verify all
-  in its "More actions": a dialog saying what it will cost first (credits, or how many AI
+  The team Docs workspace uses rounded tree, page and tools surfaces on the canvas, separated by 12px gaps,
+  with no breadcrumb bar or embedded preview. Its tree is 274px and owns the Docs title, search and navigation;
+  on phones the Docs button opens it as a sheet, including App navigation. Subpages have a small parent link.
+  An article's editable title sits beside Saved (Save while there are edits) and Publish; its publishing state
+  and live Open link sit below. The formatting row stays pinned while the article body scrolls. Settings,
+  History and Verify share one collapsible card (330px, 300px on smaller laptops), opening from icons at the
+  end of the formatting row. Collapsing it returns that space to the document; phones use a bottom sheet.
+  History keeps a timeline and an inline comparison under the selected version, with the full comparison available.
+  Verify keeps its runs, source evidence, sentence jumps and fixes to review. Unpublish and Delete stay under
+  More actions; the Unpublished changes pill opens Review and Discard. The text remains capped at the portal's
+  reading width (46rem with sections, 43rem without), and the title wraps. A new article includes an optional
+  description and its collection beside Draft. Collection settings keep one Save with the title.
+  Docs' home has Verify all beside its explanation: a dialog saying what it will cost first (credits, or how many AI
   runs), then, started or opened again while it runs, how far it's got ("Checked 3 of 12
   articles", a bar) and at the end what it found, with Review in Autopilot. Its fix is a part of
   the article's review like a pull request's, named Verify. A pull request's
@@ -315,17 +317,14 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   quarter, else a month; a bar's numbers on hover) and the lists behind them. Its
   heading (`ReportHeading`), as Ferndesk's: the part as a Group label, the title as a Page title,
   and the date range picker on the right (`?range=`, kept by the menu's links); never a sentence under it. The Docs home starts
-  with one strip of numbers (published, views and helpful votes in Reporting's 30 days, waiting to publish), then
-  Waiting to publish (each draft and article with unpublished changes, newest first), then each tab as one card of
-  columns (`TabContents`: Article, Status, Views, Helpful headed once; each collection a band that folds, the first
-  open, with its count and how many are unpublished; its articles under it in reading order, the tree's; a state only
-  where work waits, as a pill in the Status column). Every Docs page (the home too) has the docs as a tree
-  in a column of its own beside it (`DocsWorkspace`: Overview, then the tabs under a "Tabs" label, each a row, its
-  collections with their counts, articles in no collection under their own label, New article under it; a "Browse
-  docs" menu above it on phones), and the page in one centred column (max-w-3xl); ⌘K finds articles and collections
-  by name; a tab's page has Content, Access and Settings tabs; a collection's page (`CollectionHeader`) has Content
-  and Settings tabs, its settings one form with its details (its icon a square beside its name) and who can read it,
-  saved by one Save in a bar at the bottom of the window.
+  with live articles, views and helpful votes for the last 30 days, followed by Waiting to publish and Most read
+  side by side (stacked on phones). The queue shows three saved versions, expands to the rest, and confirms
+  Publish or Publish all before taking them live. Verify all and the live help center link sit below. Collections
+  and tabs remain reachable in the tree. A collection's page is a flat ordered table with article state, views,
+  helpful votes and updated date; Content and Settings sit under its header. Collection settings use flat Details
+  and Access sections with labelled fields, a single Save beside the title and deletion at the end. Tab pages
+  keep Content, Access and Settings. Recently deleted articles can still be restored from the overview.
+
 - **Sidebar** (`AppSidebar`): its groups one under the other with a line between them (no gap
   pushing the last to the bottom); the page open is a raised neutral pill (the card's colour with a ring, semibold; green is for a page's own menu); a count
   is a small round pill, in the highlight colour where people wait on the team (the Inbox's open
@@ -495,7 +494,7 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
 
 Use these instead of hand-rolling layout:
 
-- **`PageHeader`** (`title`, `back`, `description`, `meta`, `actions`, `more`): the top of every page,
+- **`PageHeader`** (Docs uses `DocsPageHeader` and its pinned editor layout above; elsewhere `title`, `back`, `description`, `meta`, `actions`, `more`): the top of every page,
   its title the page's heading at every width (the Page title style), `back` above it, then
   `description`: one short muted line saying what the page is for ("Ideas and problems your
   users posted, by status."; on portals the team's own words), on a section's main page
@@ -606,11 +605,12 @@ Use these instead of hand-rolling layout:
 - **`Card`** with `CardHeader`/`CardTitle`/`CardDescription`: a settings section
   or form. One topic per card.
 - **`RichEditor bare`**: long writing (docs articles, changelog entries, new
-  posts) is written as it's published: no box and no toolbar; the title above
-  it is a borderless `BARE_TITLE` input set like the published heading. Blocks
-  come from a menu that typing / at the start of a line opens (the empty line
-  being written says so), formatting from a bar over selected text (and
-  Ctrl/⌘+K for a link). Comments keep the boxed editor with its toolbar.
+  posts) is written as it's published, without a box; the title above it is a
+  borderless `BARE_TITLE` input set like the published heading. Docs articles
+  keep a pinned formatting row; changelog entries and posts have no toolbar.
+  All keep the selection bar, Ctrl/⌘+K for a link, and the block menu that typing
+  / at the start of a line opens (the empty line being written says so).
+  Comments keep the boxed editor with its toolbar.
 - **`CopyField`**: a value the team pastes elsewhere (a script tag, a rule)
   in a muted box with "Copy", never bare code.
 - **Setup steps** (`SetupSteps`, `SetupStep` in `components/dns-setup.tsx`): a

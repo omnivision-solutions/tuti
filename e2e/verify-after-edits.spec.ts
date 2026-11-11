@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
@@ -47,7 +47,7 @@ test("two pull requests' edits piling up on an article: Autopilot starts Verify,
   }
 
   await owner.goto(`/app/${slug}/docs/${articleSlug}?verify`);
-  const run = owner.getByRole("dialog", { name: "Verify" }).getByRole("region", { name: /^Checked / });
+  const run = owner.getByRole("complementary", { name: "Article tools" }).getByRole("region", { name: /^Checked / });
   await expect(run).toContainText(`Started by Autopilot: 2 pull requests' edits wait on it, PR #${numbers[1]} rewriting a section an earlier one changed.`);
   await expect(run).toContainText("1 statement still true · 0 out of date · 0 it can't tell");
   await checkpoint(owner, "verify-started-by-autopilot", { fullPage: false });

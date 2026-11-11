@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
@@ -693,9 +693,14 @@ for (const via of ["sort", "status"] as const) {
       await api("/posts/2", { status: "completed" }, "PATCH");
     }
     const visitor = await newPerson(browser, portalUrl(slug));
-    await visitor.clock.install();
+    const clockStart = Date.now();
+    await visitor.clock.install({ time: clockStart });
     await visitor.goto("/feedback/feature-requests?q=dark");
     const box = visitor.getByRole("searchbox", { name: "Search ideas" });
+    await expect(box).toHaveValue("dark");
+    // install() still advances with real time. Only explicit ticks should expire typing here,
+    // regardless of how long menu positioning or Playwright's actionability checks take.
+    await visitor.clock.pauseAt(clockStart + 60_000);
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
     await visitor.route((url) => url.searchParams.get("q") === "dark mode", async (route) => {
@@ -712,6 +717,8 @@ for (const via of ["sort", "status"] as const) {
         await visitor.waitForURL(/\?sort=top&q=dark$/);
       } else {
         await visitor.getByRole("button", { name: /^Status: / }).click();
+        // Position the menu without letting the 350ms typing pause expire.
+        await visitor.clock.runFor(100);
         await visitor.getByRole("menuitem", { name: "Completed", exact: true }).click();
         await visitor.waitForURL(/\?q=dark&status=completed$/);
       }
@@ -728,6 +735,8 @@ for (const via of ["sort", "status"] as const) {
         await visitor.waitForURL(/\?sort=new&q=dark$/);
       } else {
         await visitor.getByRole("button", { name: /^Status: / }).click();
+        // Position the menu without letting the 350ms typing pause expire.
+        await visitor.clock.runFor(100);
         await visitor.getByRole("menuitem", { name: "Every idea", exact: true }).click();
         await visitor.waitForURL(/\?q=dark$/);
       }

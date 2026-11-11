@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@tuti/db";
 import { analysisOn, articlesViews, continueVerifyAll, creditBalance, enqueue, lockProject, newestRevision, noAi, NO_REPOSITORY, settleStale, type Statement, VERIFY_OFF, verifyAllRunSelect, verifyAllStuck, WAITING_FIX } from "@tuti/jobs";
 import { codeChangesEnabled, creditsEnabled, creditsPerUsageDollar, log } from "@tuti/shared";
+import { cache } from "react";
 import { z } from "zod";
 
 import { aiOrRefuse } from "./credits";
@@ -72,11 +73,11 @@ export function verificationView(run: Prisma.ArticleVerificationGetPayload<{ sel
 export type VerificationView = ReturnType<typeof verificationView>;
 
 /** An article's verification history, newest first. ponytail: the latest 20; page when teams need older ones. */
-export async function articleVerifications(articleId: string) {
+export const articleVerifications = cache(async (articleId: string) => {
   await settleStale(articleId);
   const runs = await prisma.articleVerification.findMany({ where: { articleId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20, select: verificationSelect });
   return runs.map(verificationView);
-}
+});
 
 const teamArticle = async (projectId: string, articleSlug: string) => {
   const article = await prisma.article.findFirst({ where: { projectId, slug: articleSlug, deletedAt: null }, select: { id: true, publishedAt: true } });

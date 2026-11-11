@@ -147,6 +147,18 @@ describe("description, keywords and noindex", () => {
   });
 });
 
+test("a new article keeps the description written with its title and body", async () => {
+  actAs(owner);
+  const data = new FormData();
+  data.set("title", "Inviting your team");
+  data.set("content", JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Open Settings." }] }] }));
+  data.set("description", "Add teammates and pick their roles.");
+  await saveArticle(project.slug, null, {}, data).catch((error: { digest?: string }) => {
+    expect(error.digest).toContain("NEXT_REDIRECT");
+  });
+  expect(await call(getArticle, as(), { slug: "inviting-your-team" })).toMatchObject({ description: "Add teammates and pick their roles.", body: "Open Settings." });
+});
+
 describe("the editor's Settings dialog", () => {
   const form = (fields: Record<string, string>) => {
     const data = new FormData();

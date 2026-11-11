@@ -34,6 +34,10 @@
 }
 
 @theme inline {
+  --color-docs-surface: var(--docs-surface);
+  --color-docs-canvas: var(--docs-canvas);
+  --color-docs-edge: var(--docs-edge);
+  --color-docs-selection: var(--docs-selection);
   --color-inbox-canvas: var(--inbox-canvas);
   --color-inbox-customer: var(--inbox-customer);
   --color-inbox-team: var(--inbox-team);
@@ -122,6 +126,11 @@
  */
 :root,
 .light {
+  --docs-surface: var(--card);
+  --docs-canvas: color-mix(in srgb, var(--secondary) 68%, var(--background));
+  --docs-edge: color-mix(in oklch, var(--border) 35%, transparent);
+  --docs-selection: color-mix(in srgb, var(--primary) 9%, var(--card));
+  --docs-overlay: color-mix(in srgb, var(--foreground) 42%, transparent);
   /* Inbox cards keep the approved warm canvas and chat fills. */
   --inbox-canvas: #f7f4ee;
   --inbox-customer: #f8f4f1;
@@ -204,6 +213,11 @@
 }
 
 .dark {
+  --docs-surface: color-mix(in srgb, var(--card) 50%, var(--background));
+  --docs-canvas: var(--background);
+  --docs-edge: color-mix(in oklch, var(--border) 32%, transparent);
+  --docs-selection: color-mix(in srgb, var(--primary) 12%, var(--card));
+  --docs-overlay: color-mix(in srgb, var(--background) 65%, transparent);
   --inbox-canvas: var(--background);
   --inbox-customer: oklch(0.292 0.016 160);
   --inbox-team: oklch(0.325 0.052 157);

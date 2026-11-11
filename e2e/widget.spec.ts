@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Route, test } from "./fixtures";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";

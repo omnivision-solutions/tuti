@@ -9,12 +9,23 @@ import { Button } from "@/components/ui/button";
 import { verifyArticle } from "@/server/code-changes";
 
 /** Verify on an article (articles.verify): says what it found, then the panel shows it in the history. */
-export function VerifyButton({ projectSlug, slug }: { projectSlug: string; slug: string }) {
+export function VerifyButton({
+  projectSlug,
+  slug,
+  again = false,
+}: {
+  projectSlug: string;
+  slug: string;
+  again?: boolean;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const verify = () =>
     startTransition(async () => {
-      const { error, verification: run } = await verifyArticle(projectSlug, slug);
+      const { error, verification: run } = await verifyArticle(
+        projectSlug,
+        slug,
+      );
       if (error || !run) {
         toast.error(error ?? "Couldn't verify it");
       } else if (run.state === "failed") {
@@ -39,9 +50,15 @@ export function VerifyButton({ projectSlug, slug }: { projectSlug: string; slug:
     });
   return (
     // The panel's one call to act: large, its shield as in the editor's bar.
-    <Button size="lg" disabled={pending} focusableWhenDisabled onClick={verify}>
+    <Button
+      size={again ? "sm" : "lg"}
+      variant={again ? "outline" : "default"}
+      disabled={pending}
+      focusableWhenDisabled
+      onClick={verify}
+    >
       <ShieldCheckIcon aria-hidden />
-      {pending ? "Verifying…" : "Verify"}
+      {pending ? "Verifying…" : again ? "Verify again" : "Verify"}
     </Button>
   );
 }

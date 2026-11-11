@@ -85,8 +85,8 @@ const PICK = JSON.stringify({ files: ["src/seats.ts", "docs/roles.md", ".env", "
 /** The model's check: seats out of date (fixed in section 2), roles still true, Settings can't be told. */
 const CHECK = JSON.stringify({
   statements: [
-    { statement: "Each plan has 5 seats", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." },
-    { statement: "People are admins or members", verdict: "current", evidence: ["docs/roles.md"], note: "Roles are admin and member." },
+    { statement: "Each plan has 5 seats", source: "Each plan has 5 seats.", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." },
+    { statement: "People are admins or members", source: "Invented words not in the article.", verdict: "current", evidence: ["docs/roles.md"], note: "Roles are admin and member." },
     { statement: "Invite from Settings", verdict: "unclear", evidence: [], note: "" },
     // Out of date with nothing to show it: counted as can't tell.
     { statement: "Invites expire", verdict: "outdated", evidence: ["nowhere.ts"], note: "" },
@@ -105,7 +105,9 @@ test("Verify reads the default branch's latest commit, finds what's true, out of
   model.reply(CHECK);
   const run = await call(verifyArticle, team(), { slug: article.slug });
   expect(run).toMatchObject({ state: "done", repo, commit: "c0ffee1234567", counts: { current: 1, outdated: 1, unclear: 2 }, startedBy: "Olive Owner" });
-  expect(run.statements[0]).toEqual({ statement: "Each plan has 5 seats", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." });
+  expect(run.statements[0]).toEqual({ statement: "Each plan has 5 seats", source: "Each plan has 5 seats.", verdict: "outdated", evidence: ["src/seats.ts"], note: "SEATS_PER_PLAN is 10." });
+
+  expect(run.statements[1]).not.toHaveProperty("source");
 
   // What went to the model: the article and the files, never what holds secrets, and secret-looking text masked.
   const [pick, check] = model.requests;

@@ -1,13 +1,14 @@
 "use client";
 
 import { SettingsIcon } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useContext, useState } from "react";
 import { toast } from "sonner";
 
+import { ToolsContext } from "@/components/article-tools";
 import { CollectionSelect } from "@/components/collection-select";
 import { type ArticlePlace, PlaceFields, useArticleEditor } from "@/components/docs";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSeparator, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -77,7 +78,9 @@ function Place({
           labelledBy="article-collection-label"
           describedBy={published ? "article-collection-description" : undefined}
         />
-        {published && <FieldDescription id="article-collection-description">A new collection goes live when you publish the changes.</FieldDescription>}
+        {published && (
+          <FieldDescription id="article-collection-description">A new collection goes live when you publish the changes.</FieldDescription>
+        )}
       </Field>
       <Toggle
         checked={place.showUpdatedDate}
@@ -102,15 +105,17 @@ function NewPlace() {
  * its title and text: on a published one a new collection waits for "Publish changes" (as the
  * article's Save would keep it), the rest changes at once. A new article's go with its first save.
  */
-export function ArticleSettings({ saved }: { saved?: Saved }) {
+export function ArticleSettings({ saved, inline = false }: { saved?: Saved; inline?: boolean }) {
   const [open, setOpen] = useState(false);
+  const tools = useContext(ToolsContext);
+  const close = () => tools?.select(null);
+  if (inline && saved) return <SavedSettings {...saved} inline onSaved={close} />;
   return (
     // A panel from the right, beside the article (which stays as it was underneath).
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger render={<Button variant="ghost" />}>
         <SettingsIcon aria-hidden />
-        {/* On a phone's bottom bar, the gear alone (named to the ear), so Save has room. */}
-        <span className="phonebar:sr-only">Settings</span>
+        <span>Settings</span>
       </SheetTrigger>
       <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md">
         {saved ? (
@@ -159,7 +164,15 @@ type Saved = {
 };
 
 /** A saved article's panel (opened again: as saved, not as left). */
-function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved }: Saved & { onSaved: () => void }) {
+function SavedSettings({
+  projectSlug,
+  article,
+  groups,
+  inherit,
+  preview,
+  onSaved,
+  inline = false,
+}: Saved & { onSaved: () => void; inline?: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveArticleSettings(projectSlug, article.slug, prev, formData);
     if (!result.error) {
@@ -176,10 +189,12 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
 
   return (
     <form {...keepingFields(action)} className="flex min-h-0 flex-1 flex-col">
-      <SheetHeader className="border-b">
-        <SheetTitle>Article settings</SheetTitle>
-      </SheetHeader>
-      <FieldGroup className="min-h-0 flex-1 overflow-y-auto p-4">
+      {!inline && (
+        <SheetHeader className="border-b">
+          <SheetTitle>Article settings</SheetTitle>
+        </SheetHeader>
+      )}
+      <FieldGroup className={inline ? "gap-5" : "min-h-0 flex-1 overflow-y-auto p-4"}>
         <Place place={place} loaded={loaded} onChange={setPlace} published={article.published} />
         <FieldSeparator />
         <WhoCanRead
@@ -236,7 +251,7 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
               )}
             </Field>
             <Field>
-              <FieldLabel htmlFor="article-description">Meta description</FieldLabel>
+              <FieldLabel htmlFor="article-description">Search description</FieldLabel>
               <Textarea
                 id="article-description"
                 name="description"
@@ -246,7 +261,7 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
                 placeholder="From the text when left empty"
                 aria-describedby="article-description-hint"
               />
-              <FieldDescription id="article-description-hint">Shown under the title in search results.</FieldDescription>
+              <FieldDescription id="article-description-hint">Shows in search results and link previews.</FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="article-keywords">Keywords</FieldLabel>
@@ -260,17 +275,22 @@ function SavedSettings({ projectSlug, article, groups, inherit, preview, onSaved
               />
               <FieldDescription id="article-keywords-hint">Terms a customer might search for when they need this article.</FieldDescription>
             </Field>
-            <Toggle name="noindex" checked={article.noindex} label="Block search indexing" description="Asks search engines not to list this article." />
+            <Toggle
+              name="noindex"
+              checked={article.noindex}
+              label="Block search indexing"
+              description="Asks search engines not to list this article."
+            />
           </FieldGroup>
         </FieldSet>
         {state.error && <FieldError id="article-settings-error">{state.error}</FieldError>}
       </FieldGroup>
-      <SheetFooter className="flex-row items-center justify-between border-t">
+      <div className="mt-5 flex items-center justify-between gap-2 border-t pt-4">
         <p className="text-sm text-muted-foreground">Applies to this article.</p>
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save changes"}
         </Button>
-      </SheetFooter>
+      </div>
     </form>
   );
 }

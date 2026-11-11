@@ -1,7 +1,9 @@
 import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
+import { CollectionIcon } from "@/components/collection-icon";
 import { DocsWorkspace } from "@/components/docs-tree";
+import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
@@ -22,6 +24,8 @@ export default async function TeamDocsLayout({ children, params }: LayoutProps<"
   ]);
   return (
     <DocsWorkspace
+      projectName={membership.project.name}
+      portal={await portalAddress(slug)}
       projectSlug={slug}
       tabs={docs.tabs.map((tab) => ({ slug: tab.slug, name: tab.name }))}
       collections={docs.collections.map((c) => ({
@@ -29,7 +33,7 @@ export default async function TeamDocsLayout({ children, params }: LayoutProps<"
         name: c.name,
         parent: c.parent,
         tab: c.tab,
-        icon: c.knownIcon ? c.icon : null,
+        icon: c.knownIcon ? <CollectionIcon name={c.icon} /> : null,
         articles: c.articles.map(treeArticle),
       }))}
       uncollected={docs.uncollected.map(treeArticle)}

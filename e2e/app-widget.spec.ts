@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_WIDGET_SLUG, CLOUD_URL, cloudPortalUrl } from "./env";

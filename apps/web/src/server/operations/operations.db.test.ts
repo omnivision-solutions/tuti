@@ -71,7 +71,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "assistant.update": () => ({ tone: "Plain", length: "short", instructions: "Say hi", offLimits: ["refund"] }),
   "articles.create": () => ({ title: "From the matrix", body: "Read me", collection: "basics" }),
   "articles.update": () => ({ slug: "matrix-draft", title: "Renamed by the matrix", collection: null }),
-  "articles.publish": () => ({ slug: "matrix-draft" }),
+  "articles.publish": (f) => ({ slug: "matrix-draft", revision: f.revisionId }),
   "articles.publishChanges": () => ({ slug: "matrix-article" }),
   "articles.discardChanges": () => ({ slug: "matrix-article" }),
   "articles.unpublish": () => ({ slug: "matrix-article" }),

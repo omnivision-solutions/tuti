@@ -1,16 +1,20 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronRightIcon, FileTextIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { BookOpenIcon, ChevronRightIcon, ChevronDownIcon, ChevronsUpDownIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
+import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
+import { useSidebar } from "@/components/ui/sidebar";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { CollectionDialog, TabDialog } from "@/components/docs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DocsTreeFold } from "@/components/docs-tree-fold";
-import { LucideIcon } from "@/components/icon-field";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { SampleBadge } from "@/components/sample-badge";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +28,7 @@ import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import type { AccessChoices } from "@/server/docs-queries";
 import { moveArticle, moveCollection, moveTab } from "@/server/docs";
 
-export type TreeArticle = { slug: string; title: string; published: boolean };
+export type TreeArticle = { slug: string; title: string; published: boolean; changes?: boolean; sample?: boolean };
 export type TreeCollection = {
   slug: string;
   name: string;
@@ -33,10 +37,16 @@ export type TreeCollection = {
   /** At the top level, the tab it's in (null without tabs). */
   tab: string | null;
   /** Its Lucide icon's name, if the installed Lucide has it. */
-  icon: string | null;
+  icon: ReactNode;
   articles: TreeArticle[];
 };
 export type TreeTab = { slug: string; name: string };
+
+const subscribeDesktop = (changed: () => void) => {
+  const query = matchMedia("(min-width: 1024px)");
+  query.addEventListener("change", changed);
+  return () => query.removeEventListener("change", changed);
+};
 
 type Kind = "tab" | "collection" | "article";
 /** A row things can be dropped on: a tab, a collection, an article (in `collection`), or the articles in no collection. */
@@ -91,9 +101,10 @@ export function AddContentMenu({
           <PlusIcon aria-hidden />
         </DropdownMenuTrigger>
       ) : (
-        <DropdownMenuTrigger render={<Button className={className} />}>
+        <DropdownMenuTrigger render={<Button className={cn("h-[34px] gap-2 px-3 text-[13.5px]", className)} />}>
           <PlusIcon aria-hidden />
           Add content
+          <ChevronDownIcon aria-hidden className="size-3.5" />
         </DropdownMenuTrigger>
       )}
       <DropdownMenuContent align="end" className="w-auto min-w-40">
@@ -102,6 +113,11 @@ export function AddContentMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+export function NewCollectionButton({ parent }: { parent: string }) {
+  const workspace = useContext(DocsWorkspaceContext)!;
+  return <Button variant="ghost" size="sm" disabled={workspace.depthOf(parent) >= MAX_COLLECTION_DEPTH} className="h-8 gap-1.5 px-0 text-xs text-muted-foreground [&_svg]:size-3.5" onClick={() => workspace.newCollection({ parent })}><FolderIcon />New collection</Button>;
 }
 
 /** A row's handle: dragging its row moves it, and its menu moves it up, down, or to another place (from the keyboard too). */
@@ -186,8 +202,8 @@ function Row({
       draggable={draggable}
       data-drop={drop}
       className={cn(
-        // The page open: the menus' pale green pill (sidebar-active), its label and icons green.
-        "group/row relative flex min-h-8 items-center gap-0.5 rounded-lg pr-1 text-sm hover:bg-accent/60 has-[a[aria-current=page]]:bg-sidebar-active has-[a[aria-current=page]]:text-sidebar-active-foreground has-[a[aria-current=page]]:[&_svg]:text-sidebar-active-foreground",
+        // A quiet Docs selection across the full row, including its controls.
+        "group/row relative flex min-h-8 items-center gap-0.5 rounded-lg pr-1 text-sm hover:bg-accent/60 has-[a[aria-current=page]]:bg-docs-selection has-[a[aria-current=page]]:text-foreground has-[a[aria-current=page]]:[&_svg]:text-primary",
         "data-[drop=after]:shadow-[inset_0_-2px_0_0_var(--color-primary)] data-[drop=before]:shadow-[inset_0_2px_0_0_var(--color-primary)]",
         "data-[drop=into]:bg-accent data-[drop=into]:ring-2 data-[drop=into]:ring-primary",
         className,
@@ -213,7 +229,7 @@ const rowLink =
 /**
  * The team's docs beside a tab's, a collection's and an article's page in the app: each tab with its collections
  * (5 levels deep at most, each with its articles, then the collections in it) and the articles in none
- * (on the first tab), in the order readers see them, then "New tab" and "Recently deleted". A tab or a
+ * (on the first tab), in the order readers see them, then "Recently deleted". Tabs are managed in the switcher. A tab or a
  * collection opens its page, an article its editor; the page's own row is marked and its branch open.
  *
  * It's a nested list of links (`nav` › `ul` › `li`), each collection with a button that opens or
@@ -231,6 +247,8 @@ export function DocsWorkspace({
   access,
   parents,
   deleted,
+  projectName,
+  portal,
   children,
 }: {
   projectSlug: string;
@@ -243,14 +261,23 @@ export function DocsWorkspace({
   parents: { slug: string; name: string }[];
   /** How many articles were deleted lately (they can be restored from the Docs home). */
   deleted: number;
+  projectName: string;
+  portal: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const query = useSearchParams();
   const base = `/app/${projectSlug}/docs`;
   const [pending, startTransition] = useTransition();
   const [dragging, setDragging] = useState<{ kind: Kind; slug: string } | null>(null);
   const [target, setTarget] = useState<{ key: string; where: Where } | null>(null);
   const [browsing, setBrowsing] = useState(false);
+  const [tabsOpen, setTabsOpen] = useState(false);
+  const [newTab, setNewTab] = useState(false);
+  const { setOpenMobile, setOpen: setAppOpen, isMobile } = useSidebar();
+  const desktop = useSyncExternalStore(subscribeDesktop, () => matchMedia("(min-width: 1024px)").matches, () => true);
+  const openingApp = useRef(false);
+  const openingSearch = useRef(false);
   // Where "New collection" adds one, while its dialog is open.
   const [adding, setAdding] = useState<NewCollection | null>(null);
   // The handle to focus again once the move is done, moved or refused: it's disabled while the move runs
@@ -263,7 +290,10 @@ export function DocsWorkspace({
       return;
     }
     refocus.current = null;
-    document.getElementById(id)?.focus();
+    // A phone sheet can still be mounted while its exit transition finishes.
+    document.querySelectorAll<HTMLElement>(`[id="${CSS.escape(id)}"]`).forEach((handle) => {
+      if (handle.getClientRects().length) handle.focus();
+    });
   }, [pending, tabs, collections, uncollected]);
 
   // The tree by slug, for the checks the server makes too.
@@ -286,10 +316,10 @@ export function DocsWorkspace({
   // An article's editor, a new one's too.
   const editing = current?.kind === "article" || at === "new";
   const currentCollection =
-    current?.kind === "collection" ? current.slug : current?.kind === "article" ? (collections.find((c) => c.articles.some((a) => a.slug === current.slug))?.slug ?? null) : null;
+    current?.kind === "collection" ? current.slug : current?.kind === "article" ? (collections.find((c) => c.articles.some((a) => a.slug === current.slug))?.slug ?? null) : at === "new" ? query.get("collection") : null;
   const branch = (chains.get(currentCollection ?? "") ?? []).map((c) => c.id);
   // Open: the current page's branch, and the ones opened since; a new page opens its branch too.
-  const [open, setOpen] = useState(() => new Set(branch));
+  const [open, setOpen] = useState(() => new Set(branch.length ? branch : collections[0] ? [collections[0].slug] : []));
   const [shown, setShown] = useState(pathname);
   if (shown !== pathname) {
     setShown(pathname);
@@ -466,10 +496,12 @@ export function DocsWorkspace({
               aria-current={current?.kind === "article" && current.slug === article.slug ? "page" : undefined}
               className={rowLink}
             >
-              <FileTextIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              {collection === null && <FileTextIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
               <span title={article.title} className={cn("min-w-0 truncate", !article.published && "text-muted-foreground")}>
                 {article.title}
               </span>
+              {article.sample && <SampleBadge />}
+              {article.changes && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-status-under-review"><span className="sr-only">Unpublished changes</span></span>}
               {!article.published && <span className="shrink-0 rounded-full bg-muted px-1.5 text-xs leading-5 text-muted-foreground">Draft</span>}
             </Link>
           </Row>
@@ -539,14 +571,14 @@ export function DocsWorkspace({
                     aria-current={current?.kind === "collection" && current.slug === collection.slug ? "page" : undefined}
                     className={rowLink}
                   >
-                    {collection.icon && <LucideIcon name={collection.icon} className="text-muted-foreground" />}
+                    {collection.icon ? collection.icon : <FolderIcon className="size-4 shrink-0 text-muted-foreground" />}
                     <span title={collection.name} className="min-w-0 truncate">
                       {collection.name}
                     </span>
                   </Link>
                 </Row>
                 {expanded && !empty && (
-                  <div className="ml-3 border-l pl-1">
+                  <div className="ml-3 pl-1">
                     {collection.articles.length > 0 && <ul aria-label={`Articles in ${collection.name}`}>{articleRows(collection.articles, collection.slug)}</ul>}
                     {collectionRows(inside, `Collections in ${collection.name}`)}
                   </div>
@@ -579,6 +611,7 @@ export function DocsWorkspace({
     );
   };
 
+  const activeTab = tabs.find((tab) => current?.kind === "tab" ? tab.slug === current.slug : collections.find((c) => c.slug === branch.at(-1))?.tab === tab.slug) ?? tabs[0];
   const sectionHeader = "flex min-w-0 flex-1 items-center py-1.5 pl-2 group-label";
   const tabSections = tabs
     .map((tab, index) => {
@@ -596,7 +629,7 @@ export function DocsWorkspace({
               <>
                 <AddContentMenu
                   label={`Add to ${tab.name}`}
-                 
+
                   parent={null}
                   tab={tab.slug}
                   // An article in no collection is on the first tab; on another, a new one starts in its first collection.
@@ -623,36 +656,33 @@ export function DocsWorkspace({
               <span className="min-w-0 truncate">{tab.name}</span>
             </Link>
           </Row>
-          {collectionRows(top, `Collections in ${tab.name}`)}
-          {index === 0 && uncollectedRows()}
+
         </li>
       );
     })
     .filter(Boolean);
 
   const footerLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
-  return (
-    <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
-      <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t lg:flex-row">
-        {/* Beside every Docs page, to go between them. */}
-        <aside className="border-b lg:w-64 lg:shrink-0 lg:border-r lg:border-b-0 lg:[:root[data-docs-tree-folded]_&]:w-12">
-          {/* Folded (from laptop width up, `data-docs-tree-folded` on <html>: DocsTreeFold): a rail with the button that
-              opens the tree again, where the tree's own was. */}
-          <div className="hidden justify-center p-2 lg:sticky lg:top-0 lg:[:root[data-docs-tree-folded]_&]:flex">
-            <DocsTreeFold open />
-          </div>
-          <button
-            type="button"
-            aria-expanded={browsing}
-            aria-controls="docs-tree"
-            onClick={() => setBrowsing(!browsing)}
-            className="flex w-full items-center gap-2 px-6 py-3 text-sm font-medium lg:hidden"
-          >
-            <ChevronRightIcon aria-hidden className={cn("size-4 transition-transform", browsing && "rotate-90")} />
-            Browse docs
-          </button>
-          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-0 lg:flex lg:max-h-dvh lg:overflow-y-auto", "lg:[:root[data-docs-tree-folded]_&]:hidden", browsing ? "flex" : "hidden")}>
-            {/* Back to the docs' home, which shows them all at a glance; beside it, from laptop width up, the tree's fold. */}
+  const navigation = <>
+    <div className="docs-tree-heading flex items-center justify-between p-[22px_16px_0_20px] [&_h2]:font-heading [&_h2]:text-[30px] [&_h2]:font-[650] [&_h2]:tracking-[-0.03em]"><h2>Docs</h2><div className="flex items-center"><Button variant="ghost" size="icon-sm" aria-label="Search docs" onClick={() => { if (browsing) { openingSearch.current = true; setBrowsing(false); } else window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); }}><SearchIcon className="size-4" /></Button><a href={`${portal}/docs`} target="_blank" rel="noreferrer" aria-label="Open on help center" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary"><ExternalLinkIcon className="size-4" /></a><DocsTreeFold open={false} className="max-lg:hidden" /></div></div>
+    <p className="docs-tree-caption m-[2px_20px_20px] text-[13px] text-muted-foreground">{projectName} help center</p>
+    <div className={cn(
+      "docs-tree-content flex min-h-0 flex-1 flex-col gap-3.5 p-[0_10px_14px] overflow-y-auto [scrollbar-width:thin] [&_nav]:flex-1",
+      "[&_nav_[data-tab-label]]:text-[14px] [&_a]:text-[13.5px] [&_[aria-current='page']]:bg-docs-selection",
+      "[&_[aria-current='page']]:text-foreground [&_.group-label]:text-xs [&_.group-label]:font-medium [&_.group-label]:normal-case",
+      "[&_.group-label]:tracking-[0] [&_li_li_a]:text-[13px]",
+      "[&_a[aria-current='page']]:bg-transparent",
+    )} onClick={(event) => { if ((event.target as Element).closest("a")) setBrowsing(false); }}>
+
+            <Popover open={tabsOpen} onOpenChange={setTabsOpen}>
+              <PopoverTrigger render={<Button variant="ghost" className="docs-tab-switcher w-full justify-between px-3 text-[14px] font-semibold shadow-none" />}>
+                <span className="flex items-center gap-2"><PanelsTopLeftIcon className="size-4 text-muted-foreground" />{activeTab?.name ?? "Help center"}</span><ChevronsUpDownIcon className="size-3.5 text-muted-foreground" />
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-60" onClick={(event) => { if ((event.target as Element).closest("a")) { setTabsOpen(false); setBrowsing(false); } }}>
+                <ul aria-label="Tabs" className="flex flex-col gap-1">{tabSections}</ul>
+                <Button variant="ghost" size="sm" className="w-full justify-start font-normal" onClick={() => { setTabsOpen(false); setNewTab(true); }}><PlusIcon />New tab</Button>
+              </PopoverContent>
+            </Popover>
             <div className="flex items-center gap-1">
               <Row draggable={false} drop={undefined} handlers={{}} className="min-w-0 flex-1 pl-2">
                 <Link href={base} aria-current={pathname === base ? "page" : undefined} className={rowLink}>
@@ -660,49 +690,69 @@ export function DocsWorkspace({
                   Overview
                 </Link>
               </Row>
-              <DocsTreeFold open={false} className="max-lg:hidden" />
+
             </div>
             <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
-              {tabs.length > 0 ? (
-                <>
-                  {/* Named, so a first-time reader knows these are the help center's tabs (and that there can be more). */}
-                  <p aria-hidden className="px-2 pb-1 group-label">
-                    Tabs
-                  </p>
-                  <ul aria-label="Tabs" className="flex flex-col gap-3">
-                    {tabSections}
-                  </ul>
-                </>
-              ) : (
-                <div className="flex flex-col gap-0.5">
-                  <Row draggable={false} drop={undefined} handlers={{}} actions={<AddContentMenu label="Add to your docs" parent={null} article={null} />}>
-                    <span className={sectionHeader}>Collections</span>
-                  </Row>
-                  {collectionRows(childrenOf(null), "Collections")}
-                  {uncollectedRows()}
-                </div>
-              )}
+              <div className="flex flex-col gap-0.5">
+                <Row draggable={false} drop={undefined} handlers={{}} className="[&>div]:opacity-100" actions={<AddContentMenu label="Add to your docs" parent={null} tab={activeTab?.slug} article={false} />}>
+                  <span className={sectionHeader}>Collections</span>
+                </Row>
+                {collectionRows(childrenOf(null).filter((c) => !activeTab || c.tab === activeTab.slug), activeTab ? `Collections in ${activeTab.name}` : "Collections")}
+                {(!activeTab || activeTab === tabs[0]) && uncollectedRows()}
+              </div>
             </nav>
-            <div className="flex flex-col gap-0.5 border-t pt-3">
-              {/* The tree's main action, always in reach under it. */}
-              <Link href={`${base}/new`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mb-1.5 w-full")}>
-                <PlusIcon aria-hidden />
-                New article
-              </Link>
-              <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} />
+            <div className="docs-tree-footer flex flex-col gap-0.5 pt-3 mt-[auto]">
+              <Button variant="ghost" className="justify-start lg:hidden" onClick={() => { openingApp.current = true; setBrowsing(false); }}><PanelLeftIcon />App navigation</Button>
               {deleted > 0 && (
-                <Link href={`${base}#recently-deleted`} className={footerLink}>
+                <a href={`${base}#recently-deleted`} className={footerLink}>
                   <Trash2Icon aria-hidden className="size-4 text-muted-foreground" />
-                  Recently deleted
-                </Link>
+                  Recently deleted <span className="ml-auto text-xs">{deleted}</span>
+                </a>
               )}
             </div>
-          </div>
+
+    </div>
+  </>;
+  return (
+    <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
+      <div data-slot="pane-layout" className={cn(
+        "docs-workspace relative flex gap-3 min-w-0 flex-1 m-[-24px_-24px_-24px_-24px] p-[16px_16px_16px_24px] bg-docs-canvas h-dvh",
+        "[&[data-editing='true']_>_.docs-page-content]:p-0 [&[data-editing='true']_>_.docs-page-content]:bg-transparent",
+        "[&[data-editing='true']_>_.docs-page-content]:shadow-none [&[data-editing='true']_>_.docs-page-content]:ring-0 [&[data-editing='true']_>_.docs-page-content]:overflow-visible md:ml-[-32px]",
+        "md:mr-[-32px] max-lg:p-3 max-lg:h-dvh max-sm:p-2 max-sm:m-[-24px] max-sm:h-dvh",
+        "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:left-6.5",
+        "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:right-[auto]",
+        "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:top-6 [&_nav[aria-label='Collection']]:border-b-0",
+        "[&_nav[aria-label='Collection']]:shadow-none [&_nav[aria-label='Collection']]:ring-0 [&_nav[aria-label='Collection']_[aria-current='page']]:text-primary",
+        "[&_nav[aria-label=Collection]]:border-b-0 [&_nav[aria-label=Collection]]:shadow-none [&_nav[aria-label=Collection]]:ring-0",
+      )} data-editing={editing}>
+        <aside className="docs-tree-pane docs-surface w-68.5 shrink-0 flex flex-col lg:[:root[data-docs-tree-folded]_&]:w-12 max-lg:hidden min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+          <div className="docs-tree-folded hidden p-[10px_6px] lg:[:root[data-docs-tree-folded]_&]:flex lg:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
+          <div className="docs-tree-expanded flex flex-col min-h-0 h-full lg:[:root[data-docs-tree-folded]_&]:hidden">{desktop && navigation}</div>
         </aside>
-        {/* Lists stay at a reading width. An editor's toolbar and text share one column; its text matches the portal
-            (46rem with sections, 43rem without). */}
-        <div className={cn("mx-auto flex w-full min-w-0 flex-1 flex-col gap-6 p-6 md:px-8", editing ? "max-w-[50rem] topbar:gap-8" : "max-w-3xl")}>{children}</div>
+        <button type="button" aria-label="Browse docs" aria-expanded={browsing} onClick={() => setBrowsing(true)} className="docs-phone-trigger hidden bg-secondary text-foreground max-lg:flex max-lg:absolute max-lg:top-5.75 max-lg:right-7 max-lg:z-20 max-lg:items-center max-lg:gap-1.25 max-lg:h-7 max-lg:p-[0_7px] max-lg:text-[13px] max-lg:text-muted-foreground max-lg:rounded-[6px] max-sm:top-3 max-sm:right-4"><BookOpenIcon className="size-3.5" />Docs</button>
+        {pathname === base && activeTab && <span className="hidden max-sm:block absolute right-8 top-7 text-xs text-muted-foreground">{activeTab.name}</span>}
+        <Sheet open={browsing && !desktop} onOpenChange={setBrowsing} onOpenChangeComplete={(open) => { if (!open && openingApp.current) { openingApp.current = false; if (isMobile) setOpenMobile(true); else setAppOpen(true); } if (!open && openingSearch.current) { openingSearch.current = false; window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); } }}>
+          <SheetContent overlayClassName="bg-(--docs-overlay) supports-backdrop-filter:backdrop-blur-none" side="bottom" className={cn(
+            "docs-tree-sheet [&::before]:[content:''] [&::before]:shrink-0 [&::before]:w-8 [&::before]:h-1 [&::before]:rounded-[4px]",
+            "[&::before]:bg-input [&::before]:m-[8px_auto_0] max-lg:[inset:64px_8px_8px]! max-lg:h-auto! max-lg:max-h-[calc(100dvh_-_72px)]",
+            "max-lg:gap-0 max-lg:rounded-[16px] max-lg:border max-lg:border-border max-lg:bg-docs-surface max-lg:[&_.docs-tree-heading]:pt-3",
+            "max-lg:[&_.docs-tree-content]:min-h-0 max-lg:[&_.docs-tree-caption]:mb-4.5 max-sm:top-20! [&_.docs-tree-heading]:pr-14.5",
+            "[&_>_[data-slot='sheet-close']]:top-5.5 [&_>_[data-slot='sheet-close']]:right-3.5",
+          )}>
+            <SheetTitle className="sr-only">Docs navigation</SheetTitle>
+            {!desktop && navigation}
+          </SheetContent>
+        </Sheet>
+        <div className={cn(
+          "docs-page-content min-w-0 min-h-0 rounded-2xl bg-docs-surface",
+          "shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)] flex flex-1 flex-col gap-6",
+          "overflow-y-auto p-[28px_32px] [scrollbar-width:thin] max-lg:p-6 max-lg:[&_>_.docs-page-header:first-child:not(:has(>_a))]:pt-6",
+          "max-sm:rounded-2xl max-sm:p-[20px_16px] max-sm:gap-5.5 [&_>_*]:shrink-0",
+          "max-sm:[&:has(.docs-overview-stats)_>_.docs-page-header:first-child:not(:has(>_a))]:pt-10",
+        )}>{children}</div>
       </div>
+      <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} open={newTab} onOpenChange={setNewTab} renderTrigger={false} />
       {adding && (
         <CollectionDialog
           projectSlug={projectSlug}

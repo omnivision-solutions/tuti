@@ -1,5 +1,7 @@
 "use client";
 
+import { IconTooltip } from "@/components/icon-tooltip";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Extension } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -56,8 +58,11 @@ import {
   TextIcon,
   VideoIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { verificationPlugin, type VerificationFinding } from "@/components/verification-marks";
+import { useEditorSlot } from "@/components/use-editor-slot";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
@@ -106,6 +111,9 @@ export function RichEditor({
   onCreate,
   onReadable,
   bare = false,
+  toolbarId,
+  toolbarEnd,
+  findings,
 }: {
   profile: Profile;
   name: string;
@@ -132,7 +140,12 @@ export function RichEditor({
    */
   onReadable?: (readable: boolean) => void;
   bare?: boolean;
+  /** A pinned formatting row owned by an article editor, outside its scrolling text. */
+  toolbarId?: string;
+  toolbarEnd?: ReactNode;
+  findings?: VerificationFinding[];
 }) {
+  const toolbarHost = useEditorSlot(toolbarId);
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [uploading, setUploading] = useState(0);
@@ -367,6 +380,14 @@ export function RichEditor({
     },
   });
 
+  // Checked sentences are decorations, independent of the document being saved.
+  useEffect(() => {
+    if (!editor || !findings?.length) return;
+    const plugin = verificationPlugin(findings);
+    editor.registerPlugin(plugin);
+    return () => { editor.unregisterPlugin("verificationHighlights"); };
+  }, [editor, findings]);
+
   // A new placeholder in an open editor: drawn again.
   useEffect(() => {
     if (editor && !editor.isDestroyed && hint.text !== (placeholder ?? "")) {
@@ -433,11 +454,15 @@ export function RichEditor({
       >
         {/* Not over text it can't read: its commands would change what's shown (none of it is sent). */}
         {editor && !bare && !unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} className="border-b px-1 py-1" />}
+        {editor && toolbarHost && createPortal(<>
+          {!unreadable && <Toolbar editor={editor} onPrompt={setPrompt} onImage={canUpload ? () => fileInput.current?.click() : undefined} expanded />}
+          {toolbarEnd}
+        </>, toolbarHost)}
         <EditorContent editor={editor} />
-        {editor && bare && (
+        {editor && bare && !unreadable && (
           <>
             <div ref={menus} />
-            <SelectionBar editor={editor} onPrompt={setPrompt} host={menusHost} />
+            <SelectionBar editor={editor} onPrompt={setPrompt} host={menusHost} label={toolbarId ? "Text selection" : "Formatting"} />
             <SlashMenu
               editor={editor}
               host={menusHost}
@@ -753,7 +778,7 @@ function SlashMenu({
 }
 
 /** Formatting over selected text, and an image's, a table's or a code block's controls while one is picked. */
-function SelectionBar({ editor, onPrompt, host }: { editor: Editor; onPrompt: (kind: Prompt) => void; host: () => HTMLElement }) {
+function SelectionBar({ editor, onPrompt, host, label }: { label: string; editor: Editor; onPrompt: (kind: Prompt) => void; host: () => HTMLElement }) {
   // In a table or code with nothing selected, the bar sits above it rather than over the line being written.
   const table = useCallback(() => {
     const { selection } = editor.state;
@@ -785,16 +810,20 @@ function SelectionBar({ editor, onPrompt, host }: { editor: Editor; onPrompt: (k
       className="z-50"
       ref={bar}
     >
-      <Toolbar editor={editor} onPrompt={onPrompt} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
+      <Toolbar label={label} editor={editor} onPrompt={onPrompt} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
     </BubbleMenu>
   );
 }
 
 /** `onImage`: picks images to upload (with uploads set up). */
-function Toolbar({ editor, onPrompt, onImage, className }: { editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; className?: string }) {
+function Toolbar({ editor, onPrompt, onImage, className, expanded = false, label = "Formatting" }: { label?: string; editor: Editor; onPrompt: (kind: Prompt) => void; onImage?: () => void; className?: string; expanded?: boolean }) {
   const active = useEditorState({
     editor,
     selector: ({ editor }) => ({
+      heading: editor.isActive("heading", { level: 2 }) ? "h2" : editor.isActive("heading", { level: 3 }) ? "h3" : "text",
+      bulletList: editor.isActive("bulletList"),
+      orderedList: editor.isActive("orderedList"),
+      blockquote: editor.isActive("blockquote"),
       bold: editor.isActive("bold"),
       italic: editor.isActive("italic"),
       code: editor.isActive("code"),
@@ -807,9 +836,20 @@ function Toolbar({ editor, onPrompt, onImage, className }: { editor: Editor; onP
   const chain = () => editor.chain().focus();
 
   return (
-    <div role="toolbar" aria-label="Formatting" className={cn("flex flex-wrap items-center gap-0.5", className)}>
+    <div role="toolbar" aria-label={label} className={cn("flex flex-wrap items-center gap-0.5", className)}>
       {!active.image && !active.codeBlock && (
         <>
+          {expanded && <>
+            <Select items={[{ value: "text", label: "Text" }, { value: "h2", label: "Heading" }, { value: "h3", label: "Subheading" }]} value={active.heading} onValueChange={(value) => {
+              if (value === "h2") chain().setHeading({ level: 2 }).run();
+              else if (value === "h3") chain().setHeading({ level: 3 }).run();
+              else chain().setParagraph().run();
+            }}>
+              <SelectTrigger size="sm" aria-label="Text style" className="h-7.5 w-auto gap-1 border-0 bg-transparent px-1 text-xs shadow-none dark:bg-transparent [&>svg]:size-3"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="text">Text</SelectItem><SelectItem value="h2">Heading</SelectItem><SelectItem value="h3">Subheading</SelectItem></SelectContent>
+            </Select>
+            <span className="docs-toolbar-separator w-0.25 h-4 bg-border m-[0_3px] shrink-0" />
+          </>}
           <Tool icon={BoldIcon} label="Bold" active={active.bold} onClick={() => chain().toggleBold().run()} />
           <Tool icon={ItalicIcon} label="Italic" active={active.italic} onClick={() => chain().toggleItalic().run()} />
           <Tool icon={CodeIcon} label="Code" active={active.code} onClick={() => chain().toggleCode().run()} />
@@ -819,7 +859,29 @@ function Toolbar({ editor, onPrompt, onImage, className }: { editor: Editor; onP
             active={active.link}
             onClick={() => (active.link ? chain().extendMarkRange("link").unsetLink().run() : onPrompt("link"))}
           />
+          {expanded && <>
+            <span className="docs-toolbar-separator w-0.25 h-4 bg-border m-[0_3px] shrink-0" />
+            <Tool icon={ListIcon} label="Bulleted list" active={active.bulletList} onClick={() => chain().toggleBulletList().run()} />
+            <Tool icon={ListOrderedIcon} label="Numbered list" active={active.orderedList} onClick={() => chain().toggleOrderedList().run()} />
+            <Tool icon={QuoteIcon} label="Quote" active={active.blockquote} onClick={() => chain().toggleBlockquote().run()} />
+            <span className="docs-toolbar-separator w-0.25 h-4 bg-border m-[0_3px] shrink-0" />
+          </>}
           {onImage && <Tool icon={ImageIcon} label="Image" active={false} onClick={onImage} />}
+          {expanded && <>
+            <Tool icon={TableIcon} label="Table" active={active.table} onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} />
+            <details className={cn(
+              "docs-insert-menu [&_>_summary::-webkit-details-marker]:hidden relative text-[13px] [&_>_summary]:p-1.25 [&_>_summary]:whitespace-nowrap",
+              "[&_>_summary]:cursor-pointer [&_>_summary]:list-none [&_>_div]:absolute [&_>_div]:top-[100%] [&_>_div]:left-[0] [&_>_div]:w-37.5",
+              "[&_>_div]:p-1.25 [&_>_div]:border [&_>_div]:border-border [&_>_div]:rounded-[8px] [&_>_div]:bg-popover",
+              "[&_>_div]:shadow-[0_2px_8px_var(--docs-edge)] [&_button]:block [&_button]:p-1.5 [&_button]:w-full [&_button]:text-left",
+
+            )} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }} onClick={(event) => { if ((event.target as Element).closest("button")) event.currentTarget.open = false; }}><summary>+ <span className="max-sm:sr-only">Insert</span></summary><div>
+              <button type="button" onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>Table</button>
+              <button type="button" onClick={() => chain().setCodeBlock().run()}>Code block</button>
+              <button type="button" onClick={() => chain().setHorizontalRule().run()}>Divider</button>
+              <button type="button" onClick={() => onPrompt("video")}>Video</button>
+            </div></details>
+          </>}
         </>
       )}
       {active.image && (
@@ -898,19 +960,18 @@ function Tool({
   onClick: () => void;
 }) {
   return (
-    <Button
+    <IconTooltip label={label}><Button
       type="button"
       variant={active ? "secondary" : "ghost"}
       size="icon-sm"
       aria-label={label}
       aria-pressed={active}
-      title={label}
       // Keep focus (and the selection) in the text while clicking; keyboard users still reach it with Tab.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
     >
       <Icon />
-    </Button>
+    </Button></IconTooltip>
   );
 }
 

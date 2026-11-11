@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_PORTAL_OWNER, APP_PORTAL_SLUG, APP_URL, portalUrl } from "./env";

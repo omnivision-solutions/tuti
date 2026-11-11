@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, type Locator, type Page, type Request, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Request, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -294,13 +294,13 @@ test("a merged pull request becomes a code change; the team completes the post i
   await editor.click();
   await owner.keyboard.press("ControlOrMeta+End");
   await owner.keyboard.type(" On every device.");
-  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
-  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).filter({ visible: true }).click();
+  await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
   // (Through its History panel and back, the way back stays.)
-  await owner.getByRole("link", { name: "History" }).click();
-  await expect(owner.getByRole("dialog", { name: "History" })).toBeVisible();
+  await owner.getByRole("button", { name: "History", exact: true }).click();
+  await expect(owner.getByRole("complementary", { name: "Article tools" })).toBeVisible();
   await owner.keyboard.press("Escape");
-  await expect(owner.getByRole("dialog", { name: "History" })).toBeHidden();
+  await expect(owner.getByRole("complementary", { name: "Article tools" })).toBeHidden();
   await owner.getByRole("link", { name: "Review", exact: true }).click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   await expect(view.getByRole("insertion").filter({ hasText: "On every device." })).toBeVisible();
@@ -1032,16 +1032,16 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(owner.locator("[data-sonner-toast]").getByText("Save your changes first", { exact: true })).toBeVisible();
   await expect(confirm).toHaveCount(0);
-  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
-  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).filter({ visible: true }).click();
+  await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
   await owner.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(confirm).toContainText("It includes 2 edits Autopilot suggested; they go live too.");
   await confirm.getByRole("button", { name: "Cancel" }).click();
   await expect(confirm).toBeHidden();
   // Then an earlier version restored, on the same page: the one the second edit left, before the save. It keeps the
   // second edit and takes out the first (the second rewrote its part), said first.
-  await owner.getByRole("link", { name: "History" }).click();
-  const history = owner.getByRole("dialog", { name: "History" });
+  await owner.getByRole("button", { name: "History", exact: true }).click();
+  const history = owner.getByRole("complementary", { name: "Article tools" });
   await history.getByRole("link", { name: /^Saved / }).nth(1).click();
   await owner.getByRole("button", { name: "Restore this version" }).click();
   const restoring = owner.getByRole("alertdialog", { name: "Restore this version?" });
@@ -1051,7 +1051,7 @@ test("a draft holding a pull request's edit, published from Docs: the dialog say
   await expect(owner.getByText("Version restored")).toBeVisible();
   // And moved into another collection, in its Settings (a new version too).
   await owner.getByRole("button", { name: "Settings" }).click();
-  const settings = owner.getByRole("dialog", { name: "Article settings" });
+  const settings = owner.getByRole("region", { name: "Article settings" });
   await settings.getByRole("combobox", { name: "Collection" }).click();
   await owner.getByRole("option", { name: "Appearance" }).click();
   await settings.getByRole("button", { name: "Save changes" }).click();
@@ -1101,14 +1101,14 @@ test("an editor open as Autopilot's edit lands: saving the same paragraph is ref
 
   // The page shows the article as now saved (opening its History re-renders it): their unsaved text stays, and the
   // editor says it was saved since.
-  await owner.getByRole("link", { name: "History" }).click();
-  await expect(owner.getByRole("dialog", { name: "History" })).toBeVisible();
+  await owner.getByRole("button", { name: "History", exact: true }).click();
+  await expect(owner.getByRole("complementary", { name: "Article tools" })).toBeVisible();
   await owner.keyboard.press("Escape");
-  await expect(owner.getByRole("dialog", { name: "History" })).toBeHidden();
+  await expect(owner.getByRole("complementary", { name: "Article tools" })).toBeHidden();
   await expect(editor).toContainText("Pick a theme from the menu in the corner.");
   await expect(owner.getByText("It was saved since you opened it. Your text is kept")).toBeVisible();
   // …then saves: refused, their text still there, the newest shown beside it.
-  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).filter({ visible: true }).click();
   await expect(owner.getByText("Autopilot changed the same part of the article since you opened it. Your text is kept")).toBeVisible();
   await expect(editor).toContainText("Pick a theme from the menu in the corner.");
   const newest = owner.getByRole("region", { name: "The newest version, with Autopilot's edit" });
@@ -1123,8 +1123,8 @@ test("an editor open as Autopilot's edit lands: saving the same paragraph is ref
   await editor.click();
   await owner.keyboard.press("ControlOrMeta+End");
   await owner.keyboard.type(" Dark is there too.");
-  await owner.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
-  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).filter({ visible: true }).click();
+  await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
   await expect(editor).toContainText("Pick a theme from the menu in the corner. Dark is there too.");
   await expect(newest).toHaveCount(0);
 });
@@ -1151,7 +1151,7 @@ test("restoring an earlier version while a pull request's edit waits: it says fi
 
   // The version before the edit, from the article's history.
   await owner.goto(`/app/${slug}/docs/${articleSlug}?history`);
-  const history = owner.getByRole("dialog", { name: "History" });
+  const history = owner.getByRole("complementary", { name: "Article tools" });
   const versions = history.getByRole("link", { name: /^Saved / });
   await expect(versions).toHaveCount(2);
   await versions.nth(1).click();
@@ -1181,16 +1181,16 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   const asTheyHappen = owner.getByRole("radio", { name: /^As they happen/ });
   await expect(asTheyHappen).toBeChecked();
   await off.check();
-  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
   await checkpoint(owner, "account-autopilot-email");
   // Changed back in another tab: this one shows it once the page refreshes (saving the name, here).
   const other = await owner.context().newPage();
   await other.goto("/app/account");
   await other.getByRole("radio", { name: /^As they happen/ }).check();
-  await expect(other.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(other.getByText("Saved", { exact: true }).first()).toBeVisible();
   await other.close();
   await owner.getByLabel("Name").fill("Olive O. Owner");
-  await owner.getByRole("button", { name: "Save", exact: true }).first().click();
+  await owner.getByRole("button", { name: /^(Save|Saved|Saving…)$/ }).first().click();
   await expect(asTheyHappen).toBeChecked();
   await off.check();
   await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();

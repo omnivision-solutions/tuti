@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -78,10 +78,10 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await owner.keyboard.press("Escape");
   await expect(owner.getByRole("dialog")).toHaveCount(0);
   await owner.goto(`/app/${slug}/docs`);
-  const collection = owner.getByRole("region", { name: "Getting started" });
-  await expect(collection.getByText("Sample", { exact: true })).toHaveCount(3);
-  await expect(collection.getByRole("link", { name: "Create your account" })).toBeVisible();
-  await expect(collection.getByRole("link", { name: "Invite your team" })).toBeVisible();
+  const collection = owner.getByRole("list", { name: "Articles in Getting started" });
+  await expect(collection.getByText("Sample", { exact: true })).toHaveCount(2);
+  await expect(collection.getByRole("link", { name: /Create your account/ })).toBeVisible();
+  await expect(collection.getByRole("link", { name: /Invite your team/ })).toBeVisible();
   await checkpoint(owner, "docs-sample");
   await owner.goto(`/app/${slug}/changelog`);
   await expect(row("Welcome to our changelog").getByText("Sample", { exact: true })).toBeVisible();
@@ -157,7 +157,7 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   await expect(owner.getByRole("link", { name: "Single sign-on" })).toBeVisible();
   await expect(owner.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
   await owner.goto(`/app/${slug}/docs`);
-  await expect(owner.getByRole("region", { name: "Getting started" })).toHaveCount(0);
+  await expect(owner.getByRole("list", { name: "Articles in Getting started" })).toHaveCount(0);
   await owner.goto(`/app/${slug}/changelog`);
   await expect(owner.getByText("Welcome to our changelog")).toHaveCount(0);
   await owner.goto(`/app/${slug}/inbox`);

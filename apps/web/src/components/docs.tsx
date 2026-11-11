@@ -4,8 +4,12 @@ import type { Doc, MediaUrls } from "@tuti/content";
 import { editedSections } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { cn } from "cn";
-import { PlusIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
+import { useEditorSlot } from "@/components/use-editor-slot";
+import { useDocsMoreFocus } from "@/components/docs-page-header";
+import { ArticleToolButtons } from "@/components/article-tools";
 import { useRouter } from "next/navigation";
 import { createContext, type ReactNode, useActionState, useContext, useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -24,7 +28,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -153,8 +157,23 @@ export function ArticleSaveButton({ label = "Save", outline = false, filled = fa
   const { pending, unsaved } = useArticleEditor();
   return (
     // Quiet (an outline) while there's nothing to save; still a button (on an article it can't edit it points to why).
-    <Button type="submit" form={ARTICLE_FORM} disabled={pending} variant={outline || (!filled && !unsaved) ? "outline" : "default"}>
-      {pending ? "Saving…" : label}
+    <Button
+      type="submit"
+      form={ARTICLE_FORM}
+      className="docs-article-save"
+      disabled={pending}
+      variant={outline || (!filled && !unsaved) ? "outline" : "default"}
+    >
+      {pending ? (
+        "Saving…"
+      ) : label === "Save" && !unsaved ? (
+        <>
+          <CheckIcon className="size-3.5" />
+          Saved
+        </>
+      ) : (
+        label
+      )}
     </Button>
   );
 }
@@ -166,7 +185,9 @@ export function ArticleForm({
   mediaUrls,
   defaultTitle,
   sections = false,
+  findings,
 }: {
+  findings?: import("@/components/verification-marks").VerificationFinding[];
   projectSlug: string;
   article: Article | null;
   mediaUrls: MediaUrls | null;
@@ -179,6 +200,7 @@ export function ArticleForm({
   defaultTitle?: string;
 }) {
   const [wide] = useState(sections);
+  const titleHost = useEditorSlot(article ? "article-title" : undefined);
   // The text shown (`opened`) and the version its saves are made on (`base`), kept while it has edits not saved,
   // whatever is saved meanwhile (Autopilot's edit landing, a teammate's save): what was typed is never replaced, and its
   // save says the version it was made on. With nothing unsaved, a newer saved version starts the form afresh (`shown`).
@@ -278,8 +300,43 @@ export function ArticleForm({
   // Publish (ArticleActions) waits for a save while there's typing not saved.
   useEffect(() => setUnsaved(dirty), [setUnsaved, dirty]);
 
+  const titleInput = (
+    <textarea
+      ref={titleField}
+      form={ARTICLE_FORM}
+      aria-label="Title"
+      rows={1}
+      value={title}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+        }
+      }}
+      onChange={(event) => {
+        // One line, pasted too (Enter adds none above).
+        setTitle(event.currentTarget.value.replace(/[\r\n]+/g, " "));
+        setTitleChanged(true);
+        titleChanges.current++;
+      }}
+      placeholder="Article title"
+      required
+      autoComplete="off"
+      aria-invalid={state.error ? true : undefined}
+      aria-describedby={state.error ? "article-error" : undefined}
+      className={cn(
+        BARE_TITLE,
+        "resize-none text-3xl leading-tight font-semibold [field-sizing:content] placeholder:text-muted-foreground/70 sm:text-[2.25rem]",
+      )}
+    />
+  );
+
   return (
-    <form id={ARTICLE_FORM} {...keepingFields(action)} onInput={changed} className={wide ? undefined : "max-w-[43rem]"}>
+    <form
+      id={ARTICLE_FORM}
+      {...keepingFields(action)}
+      onInput={changed}
+      className={cn("docs-article-form w-full m-[0_auto] p-[32px_36px_56px] box-content max-w-[min(43rem,_calc(100%_-_72px))] pt-7 [&_>_[data-slot='field-group']]:gap-4", wide ? "max-w-[min(46rem,calc(100%_-_72px))]" : "max-w-[min(43rem,calc(100%_-_72px))]")}
+    >
       {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
       {!article && <PlaceFields place={place} />}
       {/* The version this text was made on, and after a refusal the newest one shown beside it: the next save (merged
@@ -289,46 +346,50 @@ export function ArticleForm({
       {own && <input type="hidden" name="own" value={own} />}
       <FieldGroup key={shown}>
         {/* Written as it's published: the title, then the text, no boxes. */}
-        <div className="flex flex-col gap-1">
+        <div className="docs-title-field flex flex-col gap-1 [&:has(textarea:only-child)]:flex [&:not(:has(textarea,_[role='alert'],_p,_#article-error))]:hidden">
           {/* A saved article's title is sent only once changed here (since it opened or last saved): one left alone keeps
               whatever it's renamed to meanwhile, and a change back to how it opened still counts. */}
           {(!opened || titleChanged) && <input type="hidden" name="title" value={title} />}
           {/* A line that wraps (a long title stays in sight on a phone), Enter doesn't add a line. */}
-          <textarea
-            ref={titleField}
-            aria-label="Title"
-            rows={1}
-            value={title}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-              }
-            }}
-            onChange={(event) => {
-              // One line, pasted too (Enter adds none above).
-              setTitle(event.currentTarget.value.replace(/[\r\n]+/g, " "));
-              setTitleChanged(true);
-              titleChanges.current++;
-            }}
-            placeholder="Article title"
-            required
-            autoComplete="off"
-            aria-invalid={state.error ? true : undefined}
-            aria-describedby={state.error ? "article-error" : undefined}
-            className={cn(BARE_TITLE, "resize-none text-3xl leading-tight font-semibold [field-sizing:content] placeholder:text-muted-foreground/70 sm:text-[2.25rem]")}
-          />
+          {titleHost ? createPortal(titleInput, titleHost) : !article ? titleInput : null}
           {state.error && <FieldError id="article-error">{state.error}</FieldError>}
           {newer && dirty && !state.newest && !seenSaved && (
-            <p className="text-sm text-muted-foreground">It was saved since you opened it. Your text is kept: save it to see whether anything needs merging.</p>
+            <p className="text-sm text-muted-foreground">
+              It was saved since you opened it. Your text is kept: save it to see whether anything needs merging.
+            </p>
           )}
         </div>
         {state.newest ? <NewestVersion newest={state.newest} /> : seenSaved && <NewestVersion newest={seenSaved} merged />}
+        {!article && (
+          <Field>
+          <FieldLabel htmlFor="new-article-description">Search description</FieldLabel>
+          <Textarea
+            id="new-article-description"
+            name="description"
+            aria-describedby="new-article-description-hint"
+            maxLength={300}
+            placeholder="A short summary for search results"
+            className="docs-new-description text-sm"
+            rows={1}
+          />
+          <FieldDescription id="new-article-description-hint">Shows in search results and link previews.</FieldDescription>
+          </Field>
+        )}
+        {!article && (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span>Draft</span>
+            <ArticlePlaceLine />
+          </div>
+        )}
         <RichEditor
+          toolbarId="article-toolbar"
+          toolbarEnd={<ArticleToolButtons />}
+          findings={findings}
           bare
           profile="article"
           name="content"
           label="Article"
-          placeholder="Write it here. Type / for headings, lists and more"
+          placeholder="Explain it step by step. Type / for headings, lists and more."
           initial={opened?.content}
           // Every change counts, pasted or formatted too (they fire no input event).
           onChange={changed}
@@ -398,6 +459,7 @@ export function ArticleActions({
   autopilotEdits?: string[];
 }) {
   const router = useRouter();
+  const moreFocus = useDocsMoreFocus();
   const [pending, startTransition] = useTransition();
   // Every save refreshes the page (the action's refresh), so these are the edits waiting now, as shown.
   const shown = autopilotEdits;
@@ -412,7 +474,7 @@ export function ArticleActions({
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
       // Set before it runs: the page it refreshes to may render the bar's Publish before this goes on.
-      focusPublishNext = action === unpublishArticle;
+      focusPublishNext = action === unpublishArticle && !moreFocus;
       // The edits shown: one landing since refuses it.
       const result = await action(projectSlug, slug, shown);
       if (result.error) {
@@ -441,7 +503,7 @@ export function ArticleActions({
     return (
       <AlertDialog>
         <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Delete</AlertDialogTrigger>
-        <AlertDialogContent closeDisabled={pending}>
+        <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{title}”?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -481,7 +543,7 @@ export function ArticleActions({
       >
         {published ? "Unpublish" : "Publish"}
       </AlertDialogTrigger>
-      <AlertDialogContent closeDisabled={pending}>
+      <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>
             {unpublishing ? "Unpublish" : "Publish"} “{title}”?
@@ -525,7 +587,9 @@ export function ArticleChanges({
   savedAt,
   saved,
   diff,
+  compact = false,
 }: {
+  compact?: boolean;
   projectSlug: string;
   slug: string;
   /** When the changes were saved (ISO): they're published or discarded only if nobody saved more since. */
@@ -536,6 +600,7 @@ export function ArticleChanges({
 }) {
   const [pending, startTransition] = useTransition();
   const [reviewing, setReviewing] = useState(false);
+  const stateHost = useEditorSlot(compact ? "article-state-tools" : undefined);
   const run = (action: typeof publishArticleChanges, done: string) =>
     startTransition(async () => {
       const result = await action(projectSlug, slug, savedAt);
@@ -547,9 +612,52 @@ export function ArticleChanges({
       }
     });
   const publish = (
-    <Button disabled={pending} onClick={() => run(publishArticleChanges, "Changes published")}>
-      Publish changes
+    <Button aria-label="Publish changes" disabled={pending} onClick={() => run(publishArticleChanges, "Changes published")}>
+      {compact ? "Publish" : "Publish changes"}
     </Button>
+  );
+
+  const controls = (
+    <details open={compact ? undefined : true} className={compact ? "docs-change-menu relative right-[auto] top-[auto] z-20 [&:not([open])]:relative [&:not([open])]:top-[auto] [&:not([open])]:right-[auto] [&[open]]:w-auto [&[open]]:p-0 [&[open]]:bg-transparent [&[open]]:border-0 [&[open]]:rounded-[8px] [&[open]]:relative [&_>_button]:mt-2 [&[open]_>_button]:flex [&[open]_>_button]:w-47.5 [&[open]_>_button]:justify-start [&[open]_>_button]:m-0 [&[open]_>_button]:bg-popover [&[open]_>_button]:border [&[open]_>_button]:border-border [&[open]_>_button]:absolute [&[open]_>_button]:left-[0] [&[open]_>_button]:top-8 [&[open]_>_button]:z-30 [&[open]_>_button:last-child]:top-16.5" : "contents"}>
+      <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle text-xs text-highlight-foreground list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-highlight rounded-full max-sm:text-xs max-sm:gap-1 max-sm:px-2" : "hidden"}>
+        <span aria-hidden className="size-1.5 rounded-full bg-status-under-review" />
+        Unpublished changes
+        <ChevronDownIcon aria-hidden className="size-3" />
+      </summary>
+      <AlertDialog>
+        <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>
+        <AlertDialogContent closeDisabled={pending}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The article goes back to the published version. The changes stay in its history, so you can restore them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(discardArticleChanges, "Changes discarded")}>
+              Discard changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <Dialog open={reviewing} onOpenChange={setReviewing}>
+        <DialogTrigger render={<Button variant="outline" disabled={pending} />}>Review changes</DialogTrigger>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Review changes</DialogTitle>
+            <DialogDescription>Against the published version: paragraphs taken out are struck through, new ones are highlighted.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto">{diff}</div>
+          <DialogFooter>
+            <Button variant="outline" disabled={pending} onClick={() => setReviewing(false)}>
+              Close
+            </Button>
+            {publish}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </details>
   );
 
   return (
@@ -557,52 +665,23 @@ export function ArticleChanges({
     <section
       role="region"
       aria-labelledby="article-changes-title"
-      className="flex flex-col gap-3 rounded-xl bg-highlight px-4 py-3 ring-1 ring-highlight-foreground/25 sm:flex-row sm:items-center"
+      className={
+        compact
+          ? "docs-changes-actions relative"
+          : "flex flex-col gap-3 rounded-xl bg-highlight px-4 py-3 ring-1 ring-highlight-foreground/25 sm:flex-row sm:items-center"
+      }
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <div className={compact ? "sr-only" : "flex min-w-0 flex-1 flex-col gap-0.5"}>
         <h2 id="article-changes-title" className="flex items-center gap-2 text-sm font-semibold">
-          <span aria-hidden className="size-2 shrink-0 rounded-full bg-highlight-foreground" />
+          <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-under-review" />
           Unpublished changes
         </h2>
         <p className="text-sm text-muted-foreground">Saved {saved}. Readers see the published version until you publish them.</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <AlertDialog>
-          <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>
-          <AlertDialogContent closeDisabled={pending}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Discard changes?</AlertDialogTitle>
-              <AlertDialogDescription>
-                The article goes back to the published version. The changes stay in its history, so you can restore them.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(discardArticleChanges, "Changes discarded")}>
-                Discard changes
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        <Dialog open={reviewing} onOpenChange={setReviewing}>
-          <DialogTrigger render={<Button variant="outline" disabled={pending} />}>Review changes</DialogTrigger>
-          <DialogContent className="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Review changes</DialogTitle>
-              <DialogDescription>
-                Against the published version: paragraphs taken out are struck through, new ones are highlighted.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="max-h-[60vh] overflow-y-auto">{diff}</div>
-            <DialogFooter>
-              <Button variant="outline" disabled={pending} onClick={() => setReviewing(false)}>
-                Close
-              </Button>
-              {publish}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        {publish}
+        {compact && publish}
+        {stateHost ? createPortal(controls, stateHost) : !compact ? controls : null}
+        {!compact && publish}
       </div>
     </section>
   );
@@ -635,7 +714,7 @@ export function RestoreVersionButton({
         }
       }}
     >
-      <AlertDialogTrigger render={<Button disabled={pending} />}>Restore this version</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button variant="outline" size="sm" className="h-[27px] px-2 text-xs" disabled={pending} />}>Restore this version</AlertDialogTrigger>
       <AlertDialogContent closeDisabled={pending}>
         <AlertDialogHeader>
           <AlertDialogTitle>Restore this version?</AlertDialogTitle>
@@ -719,14 +798,29 @@ type CollectionSettings = {
 };
 
 /** A collection's name (with `error`, a refused save's), icon and description, as form fields; `collection` gives their values. */
-function CollectionFields({ id, collection, error, onIconChange }: { id: string; collection?: CollectionSettings; error?: string; onIconChange?: () => void }) {
+function CollectionFields({
+  id,
+  collection,
+  error,
+  onIconChange,
+  separateIcon = false,
+}: {
+  id: string;
+  collection?: CollectionSettings;
+  error?: string;
+  onIconChange?: () => void;
+  separateIcon?: boolean;
+}) {
+  const [descriptionLength, setDescriptionLength] = useState(collection?.description.length ?? 0);
   return (
     <>
       {/* Its icon beside its name, as the tree shows them. */}
       <Field data-invalid={error ? true : undefined}>
-        <FieldLabel htmlFor={`collection-name-${id}`}>Name and icon</FieldLabel>
+        <FieldLabel htmlFor={`collection-name-${id}`}>{separateIcon ? "Name" : "Name and icon"}</FieldLabel>
         <div className="flex items-center gap-2">
-          <IconField compact defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
+          {!separateIcon && (
+            <IconField compact named={separateIcon} defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
+          )}
           <Input
             id={`collection-name-${id}`}
             name="name"
@@ -738,16 +832,28 @@ function CollectionFields({ id, collection, error, onIconChange }: { id: string;
         </div>
         {error && <FieldError>{error}</FieldError>}
       </Field>
-      <Field>
+      {separateIcon && (
+        <Field>
+          <FieldLabel>Icon</FieldLabel>
+          <div>
+            <IconField compact named={separateIcon} defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} onChange={onIconChange} />
+          </div>
+        </Field>
+      )}
+      <Field className={separateIcon ? "docs-description-field [&_textarea]:min-h-19.5 [&_textarea]:pb-5.5 max-sm:[&_textarea]:min-h-22.5" : undefined}>
         <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
-        <Textarea
-          id={`collection-description-${id}`}
-          name="description"
-          rows={2}
-          maxLength={300}
-          defaultValue={collection?.description}
-          placeholder="Optional, shown in your docs"
-        />
+        <div className="relative">
+          <Textarea
+            id={`collection-description-${id}`}
+            name="description"
+            rows={2}
+            maxLength={300}
+            onChange={(event) => setDescriptionLength(event.target.value.length)}
+            defaultValue={collection?.description}
+            placeholder="Optional, shown in your docs"
+          />
+          {separateIcon && <small className="docs-description-count absolute bottom-1.5 right-2.25 text-muted-foreground text-xs">{descriptionLength} / 300</small>}
+        </div>
       </Field>
     </>
   );
@@ -823,6 +929,7 @@ export function CollectionSettingsForm({
   backHref: string;
   level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
+  const actionsHost = useEditorSlot("collection-actions");
   const [parent, setParent] = useState(collection.parent);
   // "Inherit" says from where: the parent picked, else its tab, else the docs.
   const inheritsFrom = (parent ? parents.find((c) => c.slug === parent)?.name : null) ?? tabName ?? "your docs";
@@ -830,6 +937,11 @@ export function CollectionSettingsForm({
   // The fields the person changed here since the form opened or last saved: a save sends only those (one set back
   // as it was too), never one left alone, so it doesn't undo a change made elsewhere; a refresh keeps what's typed.
   const touched = useRef(new Set<string>());
+  const [unsaved, setUnsaved] = useState(0);
+  const mark = (name: string) => {
+    touched.current.add(name);
+    setUnsaved(touched.current.size);
+  };
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const sent = new Set(touched.current);
     // Groups go with "Specific groups": both, or neither.
@@ -849,19 +961,41 @@ export function CollectionSettingsForm({
     } else {
       toast.success("Collection saved");
     }
+    setUnsaved(touched.current.size);
     return result;
   }, {});
   return (
     <form
+      id="collection-settings"
       {...keepingFields(action)}
       onChange={(event) => {
         // A field the person typed in or picked (by its name; the icon and the parent say so themselves).
         const name = (event.target as Element).getAttribute("name");
         if (name) {
-          touched.current.add(name);
+          mark(name);
         }
       }}
-      className="flex flex-col gap-6"
+      className={cn(
+        "docs-collection-settings [&_fieldset_label]:bg-transparent! [&_fieldset_label]:border-0 [&_fieldset_label]:ring-0 max-w-[840px] flex flex-col gap-0 [&_>_[data-slot='card']]:grid",
+        "[&_>_[data-slot='card']]:[grid-template-columns:130px_minmax(0,_1fr)] [&_>_[data-slot='card']]:gap-5",
+        "[&_>_[data-slot='card']:first-child]:pt-0 [&_>_[data-slot='card']]:p-[26px_0_22px] [&_>_[data-slot='card']]:bg-transparent [&_>_[data-slot='card']]:border-0",
+        "[&_>_[data-slot='card']]:rounded-none [&_>_[data-slot='card']]:shadow-none [&_>_[data-slot='card']]:ring-0 [&_>_[data-slot='card']]:border-b",
+        "[&_>_[data-slot='card']]:border-border [&_>_[data-slot='card']]:overflow-visible [&_[data-slot='card-header']]:p-0",
+        "[&_[data-slot='card-content']]:p-0 [&_[data-slot='card-title']]:[font:600_15px_var(--font-sans)] [&_[data-slot='card-title']]:pt-1.75",
+        "[&_[data-slot='field-group']]:gap-4 [&_[data-slot='field']]:grid [&_[data-slot='field']]:[grid-template-columns:145px_minmax(0,_1fr)]",
+        "[&_[data-slot='field']]:[align-items:start] [&_[data-slot='field']]:gap-4 [&_[data-slot='field']_>_label]:pt-1.75",
+        "[&_[data-slot='field']_>_label]:text-[14px] [&_fieldset_>_label]:border-0 [&_fieldset_>_label]:p-[4px_0] [&_fieldset_>_label]:rounded-none",
+        "[&_fieldset_>_label]:bg-transparent [&_input]:text-[14px] [&_textarea]:text-[14px] [&_fieldset]:gap-3",
+        "[&_>_.docs-collection-form-actions]:hidden max-sm:[&_>_[data-slot='card']]:grid-cols-1 max-sm:[&_>_[data-slot='card']]:gap-5",
+        "max-sm:[&_>_[data-slot='card']]:pt-2 max-sm:[&_>_[data-slot='card']]:mt-0 max-sm:[&_[data-slot='field']]:grid-cols-1",
+        "max-sm:[&_[data-slot='field']]:gap-2 [&_[data-slot='field-description']]:[grid-column:2]",
+        "max-sm:[&_[data-slot='field-description']]:[grid-column:1] sm:[&_[data-slot='card-content']_fieldset]:relative",
+        "sm:[&_[data-slot='card-content']_fieldset]:pl-40.25 sm:[&_[data-slot='card-content']_fieldset_>_legend]:absolute",
+        "sm:[&_[data-slot='card-content']_fieldset_>_legend]:left-[0] sm:[&_[data-slot='card-content']_fieldset_>_legend]:top-1",
+        "sm:[&_[data-slot='card-content']_fieldset_>_legend]:w-36.25 sm:[&_[data-slot='card-content']_fieldset_fieldset]:pl-0",
+
+        "[&_[data-slot='field']:has(.docs-description-count)_>_div]:min-w-0",
+      )}
     >
       <Card role="region" aria-labelledby="collection-details-title">
         <CardHeader>
@@ -869,13 +1003,19 @@ export function CollectionSettingsForm({
         </CardHeader>
         <CardContent>
           <FieldGroup>
-            <CollectionFields id={collection.slug} collection={collection} error={state.error} onIconChange={() => touched.current.add("icon")} />
+            <CollectionFields
+              separateIcon
+              id={collection.slug}
+              collection={collection}
+              error={state.error}
+              onIconChange={() => mark("icon")}
+            />
             <ParentField
               id={`collection-${collection.slug}`}
               parents={parents}
               value={parent}
               onValueChange={(next) => {
-                touched.current.add("parent");
+                mark("parent");
                 setParent(next);
               }}
             />
@@ -888,10 +1028,15 @@ export function CollectionSettingsForm({
         </CardHeader>
         <CardContent>
           <WhoCanRead
+            compact
             id={`collection-access-${collection.slug}`}
             projectSlug={projectSlug}
             groups={access.groups}
-            inherit={{ label: `Inherit from ${inheritsFrom}`, description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}
+            inherit={{
+              label: `Inherit from ${inheritsFrom}`,
+              description: access.inherits[above] ?? access.inherits[""]!,
+              shows: access.shows[above] ?? "hide",
+            }}
             defaultAccess={level.access}
             defaultGroups={level.groups}
             defaultNoAccess={level.noAccess}
@@ -899,16 +1044,19 @@ export function CollectionSettingsForm({
           />
         </CardContent>
       </Card>
-      {/* In reach as the form scrolls: a bar at the bottom of the window. */}
-      {/* Clear of Tuti's chat launcher's corner where it shows (launcher:), as the app's other bottom bars. */}
-      <div className="sticky bottom-0 z-10 -mx-4 flex justify-end gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur-sm launcher:pr-24">
-        <Link href={backHref} className={buttonVariants({ variant: "ghost" })}>
-          Cancel
-        </Link>
-        <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Save"}
-        </Button>
-      </div>
+      {actionsHost &&
+        createPortal(
+          <>
+            {unsaved > 0 && <span className="mr-auto inline-flex items-center gap-1.5 text-xs text-highlight-foreground"><span aria-hidden className="size-1 rounded-full bg-status-under-review" />{unsaved} unsaved {unsaved === 1 ? "change" : "changes"}</span>}
+            <Link href={backHref} className="docs-cancel p-[6px_8px] text-[13px] text-muted-foreground">
+              Cancel
+            </Link>
+            <Button type="submit" form="collection-settings" disabled={pending}>
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </>,
+          actionsHost,
+        )}
     </form>
   );
 }
@@ -958,7 +1106,6 @@ export function AccessForm({
     </form>
   );
 }
-
 
 /**
  * Adds a collection, at the top level (of a tab, with tabs) or in one of `parents`: the dialog a
@@ -1032,7 +1179,11 @@ export function CollectionDialog({
               id="collection-access-new"
               projectSlug={projectSlug}
               groups={access.groups}
-              inherit={{ label: "Inherit", description: access.inherits[parent ?? tab ?? ""] ?? access.inherits[""]!, shows: access.shows[parent ?? tab ?? ""] ?? "hide" }}
+              inherit={{
+                label: "Inherit",
+                description: access.inherits[parent ?? tab ?? ""] ?? access.inherits[""]!,
+                shows: access.shows[parent ?? tab ?? ""] ?? "hide",
+              }}
             />
           </FieldGroup>
           <DialogFooter>
@@ -1051,18 +1202,21 @@ export function DeleteCollectionButton({
   slug,
   name,
   hasChildren = false,
+  standalone = false,
 }: {
   projectSlug: string;
   slug: string;
   name: string;
   /** It has collections in it, which move up a level. */
   hasChildren?: boolean;
+  standalone?: boolean;
 }) {
+  const moreFocus = useDocsMoreFocus();
   const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>Delete</AlertDialogTrigger>
-      <AlertDialogContent closeDisabled={pending}>
+      <AlertDialogTrigger render={<Button variant={standalone ? "outline" : "ghost"} size="sm" disabled={pending} className={standalone ? "h-[30px] border-destructive/45 text-[13px] text-destructive-foreground" : undefined} />}>{standalone ? <><Trash2Icon className="size-3.5" />Delete collection</> : "Delete"}</AlertDialogTrigger>
+      <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
           <AlertDialogDescription>
@@ -1268,8 +1422,10 @@ export function TabSettingsForm({ projectSlug, tab, home }: { projectSlug: strin
 }
 
 /** "New tab": adds one, after the others (`first`: the first one, which takes the collections there are, as the dialog says). */
-export function TabDialog({ projectSlug, first = false }: { projectSlug: string; first?: boolean }) {
-  const [open, setOpen] = useState(false);
+export function TabDialog({ projectSlug, first = false, open: controlledOpen, onOpenChange, renderTrigger = true }: { projectSlug: string; first?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void; renderTrigger?: boolean }) {
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const setOpen = onOpenChange ?? setOwnOpen;
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveTab(projectSlug, null, prev, formData);
     if (!result.error) {
@@ -1280,11 +1436,11 @@ export function TabDialog({ projectSlug, first = false }: { projectSlug: string;
   }, {});
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="sm" className="justify-start text-sm font-normal" />}>
+      {renderTrigger && <DialogTrigger render={<Button variant="ghost" size="sm" className="justify-start text-sm font-normal" />}>
         <PlusIcon aria-hidden className="text-muted-foreground" />
         New tab
-      </DialogTrigger>
-      <DialogContent>
+      </DialogTrigger>}
+      <DialogContent finalFocus={renderTrigger ? undefined : () => Array.from(document.querySelectorAll<HTMLElement>(".docs-tab-switcher")).find((element) => element.getClientRects().length > 0)}>
         <form {...keepingFields(action)}>
           <DialogHeader>
             <DialogTitle>New tab</DialogTitle>
@@ -1321,13 +1477,14 @@ export function DeleteTabButton({
   /** The tab its collections go to (null: it's the last one). */
   movesTo: string | null;
 }) {
+  const moreFocus = useDocsMoreFocus();
   const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete ${tab.name}`} />}>
         Delete
       </AlertDialogTrigger>
-      <AlertDialogContent closeDisabled={pending}>
+      <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {tab.name}?</AlertDialogTitle>
           <AlertDialogDescription>

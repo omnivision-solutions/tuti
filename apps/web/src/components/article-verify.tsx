@@ -1,8 +1,11 @@
+import { prisma } from "@tuti/db";
+import { fixSummary } from "@/lib/docs-review";
 import { cn } from "cn";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { ArticleSentenceJump } from "@/components/article-sentence-jump";
 import { VerifyButton } from "@/components/verify-button";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +16,16 @@ import { articleVerifications, type VerificationView } from "@/server/operations
 /** Each verdict's words and colours: still true green (soft), out of date in the highlight (it needs the team), can't tell neutral. */
 const VERDICTS = {
   current: { label: "Still true", dot: "bg-primary", pill: "bg-soft" },
-  outdated: { label: "Out of date", dot: "bg-highlight-foreground", pill: "bg-highlight" },
-  unclear: { label: "Can't tell", dot: "bg-muted-foreground", pill: "bg-muted" },
+  outdated: {
+    label: "Out of date",
+    dot: "bg-highlight-foreground",
+    pill: "bg-highlight text-highlight-foreground",
+  },
+  unclear: {
+    label: "Can't tell",
+    dot: "bg-muted-foreground",
+    pill: "bg-muted",
+  },
 } as const;
 
 const STATES: Record<VerificationView["state"], string> = {
@@ -54,41 +65,51 @@ export async function ArticleVerify({
   provider,
 }: {
   projectSlug: string;
-  article: { id: string; slug: string };
+  article: { id: string; slug: string; title: string };
   /** Why Verify can't run now (null: it can). */
   unavailable: string | null;
   provider: string;
 }) {
   const runs = await articleVerifications(article.id);
+  const fixes = await prisma.codeChangeAction.findMany({ where: { articleId: article.id, id: { in: runs.flatMap((run) => run.fix ? [run.fix.id] : []) } }, select: { id: true, payload: true } });
+  const summaries = new Map(fixes.map((fix) => {
+    const payload = fix.payload as { before?: string; body?: string };
+    return [fix.id, typeof payload.before === "string" && typeof payload.body === "string" ? fixSummary(payload.before, payload.body) : null];
+  }));
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Check against your code</CardTitle>
-          <CardDescription>{unavailable ?? "Verify reads your repository and flags what's out of date, with a fix for you to review."}</CardDescription>
-        </CardHeader>
-        {!unavailable && (
-          <CardContent className="flex flex-col items-start gap-4">
-            <VerifyButton projectSlug={projectSlug} slug={article.slug} />
-            <Folded summary="How it works">
-              <p className="text-sm text-muted-foreground">
-                It reads your repository&apos;s default branch at its latest commit and finds what&apos;s still true, what&apos;s out of date and what it
-                can&apos;t tell. It sends the files it reads to {provider}, with files that hold secrets left out and secret-looking strings masked. What&apos;s
-                out of date is fixed as an edit for you to review.
-              </p>
-            </Folded>
-          </CardContent>
-        )}
-      </Card>
+      {runs.length === 0 || unavailable ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Check against your code</CardTitle>
+            <CardDescription>
+              {unavailable ?? "Verify reads your repository and flags what's out of date, with a fix for you to review."}
+            </CardDescription>
+          </CardHeader>
+          {!unavailable && (
+            <CardContent>
+              <VerifyButton projectSlug={projectSlug} slug={article.slug} />
+            </CardContent>
+          )}
+        </Card>
+      ) : (
+        <div className="docs-verify-again flex justify-end mb-3.5 absolute top-4.5 right-13.25 m-0 z-[1] [&_button]:h-6.75 [&_button]:text-xs [&_button]:px-2">
+          <VerifyButton projectSlug={projectSlug} slug={article.slug} again />
+        </div>
+      )}
       {runs.map((run) => (
         <Card key={run.id} role="region" aria-label={`${stateLabel(run)} ${timeAgo(new Date(run.createdAt))}`}>
           <CardHeader>
-            <CardTitle className="text-base">
-              {stateLabel(run)}{" "}
+            <CardTitle className={cn("flex items-start gap-2 text-[15px]", run.counts.outdated > 0 && "text-destructive")}>
+              {run.counts.outdated > 0 && <CircleAlertIcon className="mt-0.5 size-4 shrink-0" />}
+              {run.state === "done" && run.counts.outdated > 0 ? `${plural(run.counts.outdated, "statement")} ${run.counts.outdated === 1 ? "is" : "are"} out of date` : stateLabel(run)}
+            </CardTitle>
+            <CardDescription>
+              {stateLabel(run)} “{article.title}”{" "}
               <time dateTime={run.createdAt} title={run.createdAt} className="font-normal text-muted-foreground" suppressHydrationWarning>
                 {timeAgo(new Date(run.createdAt))}
               </time>
-            </CardTitle>
+            </CardDescription>
             <CardDescription className="flex flex-col gap-1">
               <span className="break-words">
                 {run.startedBy}
@@ -103,65 +124,103 @@ export async function ArticleVerify({
             <CardContent className="flex flex-col gap-4">
               {(run.state === "done" || run.state === "changed") && run.statements.length > 0 && (
                 // The counts, each in its verdict's colour; said as one sentence to the ear.
-                <p className="flex flex-wrap gap-2">
+                <p className="docs-verify-counts flex flex-wrap gap-2 justify-between [&_>_span:not(.sr-only)]:bg-transparent [&_>_span:not(.sr-only)]:border-0 [&_>_span:not(.sr-only)]:rounded-none [&_>_span:not(.sr-only)]:p-0 [&_>_span:not(.sr-only)]:shadow-none [&_>_span:not(.sr-only)]:ring-0 [&_>_span:not(.sr-only)]:text-xs [&_>_span:not(.sr-only)_>_span]:hidden">
                   <span className="sr-only">
                     {plural(run.counts.current, "statement")} still true · {run.counts.outdated} out of date · {run.counts.unclear} it can&apos;t tell
                   </span>
-                  {(["current", "outdated", "unclear"] as const).map((verdict) => (
-                    <span key={verdict} aria-hidden className={cn(
+                  {(["outdated", "unclear", "current"] as const).map((verdict) => (
+                    <span
+                      key={verdict}
+                      aria-hidden
+                      className={cn(
                         "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium",
                         VERDICTS[verdict].pill,
                         // What needs the team reads first.
                         verdict === "outdated" && run.counts.outdated > 0 && "font-semibold ring-1 ring-highlight-foreground/40",
-                      )}>
+                      )}
+                    >
                       <span className={cn("size-1.5 rounded-full", VERDICTS[verdict].dot)} />
                       {run.counts[verdict]} {VERDICTS[verdict].label.toLowerCase()}
                     </span>
                   ))}
                 </p>
               )}
-              {run.fix && (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2.5">
-                  <span className="text-sm">{fixStatus(run.fix)}</span>
-                  {run.fix.status === "waiting" && (
-                    <Link href={`/app/${projectSlug}/autopilot/articles/${article.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                      Review it
-                    </Link>
-                  )}
-                </div>
-              )}
               {run.statements.length > 0 && (
                 <Folded summary="What it found" open>
                   <ul className="flex flex-col divide-y text-sm">
-                    {run.statements.map((statement, i) => (
-                      <li key={i} className="flex flex-col items-start gap-1.5 py-4 first:pt-1">
-                        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium", VERDICTS[statement.verdict].pill)}>
-                          <span aria-hidden className={cn("size-1.5 rounded-full", VERDICTS[statement.verdict].dot)} />
-                          {VERDICTS[statement.verdict].label}
-                        </span>
-                        {/* Each claim as a sentence, whatever case it was written down in. */}
-                        <span className="font-medium break-words first-letter:uppercase">{statement.statement}</span>
-                        {statement.note && <span className="break-words text-muted-foreground">{statement.note}</span>}
-                        {statement.evidence.length > 0 && <span className="font-mono text-xs break-all text-muted-foreground">{statement.evidence.join(", ")}</span>}
-                      </li>
-                    ))}
+                    {run.statements
+                      .filter((statement) => statement.verdict !== "current")
+                      .map((statement, i) => (
+                        <li key={i} className="flex flex-col items-start gap-1.5 py-4 text-[13px] leading-[1.5] first:pt-1">
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
+                              VERDICTS[statement.verdict].pill,
+                            )}
+                          >
+                            <span aria-hidden className="grid size-4 place-items-center rounded-sm">{i + 1}</span>
+                            <span className="sr-only">Finding {i + 1}: </span>{VERDICTS[statement.verdict].label}
+                          </span>
+                          {/* Each claim as a sentence, whatever case it was written down in. */}
+                          <span className="font-medium break-words first-letter:uppercase">{statement.statement}</span>
+                          {statement.note && <span className="break-words text-muted-foreground">{statement.note}</span>}
+                          {statement.evidence.length > 0 && (
+                            <span className="font-mono text-xs break-all text-muted-foreground">{statement.evidence.join(", ")}</span>
+                          )}
+                          {statement.verdict !== "current" && <ArticleSentenceJump sentence={statement.source ?? statement.statement} />}
+                          {run.fix && statement === run.statements.find((item) => item.verdict === "outdated") && <VerificationFix summary={summaries.get(run.fix.id)} fix={run.fix} projectSlug={projectSlug} articleId={article.id} />}
+                        </li>
+                      ))}
                   </ul>
+                  {run.counts.current > 0 && (
+                    <Folded summary={`Still true (${run.counts.current})`}>
+                      <ul className="docs-current-findings flex flex-col gap-4 [padding-block:12px] text-[13px] [&_p]:text-muted-foreground [&_p]:[font-weight:normal] [&_code]:text-muted-foreground [&_code]:[font-weight:normal] [&_code]:text-xs">
+                        {run.statements
+                          .filter((statement) => statement.verdict === "current")
+                          .map((statement, i) => (
+                            <li key={i}>
+                              <strong>{statement.statement}</strong>
+                              {statement.note && <p>{statement.note}</p>}
+                              <code>{statement.evidence.join(", ")}</code>
+                              <ArticleSentenceJump sentence={statement.source ?? statement.statement} />
+                            </li>
+                          ))}
+                      </ul>
+                    </Folded>
+                  )}
                 </Folded>
               )}
+              {run.fix && !run.statements.some((statement) => statement.verdict === "outdated") && <VerificationFix summary={summaries.get(run.fix.id)} fix={run.fix} projectSlug={projectSlug} articleId={article.id} />}
             </CardContent>
           ) : null}
         </Card>
       ))}
+      {!unavailable && (
+        <Folded summary="How it works">
+          <p className="text-[13px] text-muted-foreground">
+            It reads your repository&apos;s default branch at its latest commit and finds what&apos;s still true, what&apos;s out of date and what it
+            can&apos;t tell. It sends the files it reads to {provider}, with files that hold secrets left out and secret-looking strings masked.
+            What&apos;s out of date is fixed as an edit for you to review.
+          </p>
+        </Folded>
+      )}
     </>
   );
+}
+
+function VerificationFix({ fix, projectSlug, articleId, summary }: { summary?: string | null; fix: NonNullable<VerificationView["fix"]>; projectSlug: string; articleId: string }) {
+  return <div className="mt-2 flex w-full items-center justify-between gap-2 text-xs">
+    <span className="flex min-w-0 flex-col gap-1"><span>{fixStatus(fix)}</span>{summary && <span className="text-muted-foreground">{summary}</span>}</span>
+    {fix.status === "waiting" && <Link href={`/app/${projectSlug}/autopilot/articles/${articleId}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-7 px-2 text-xs")}>Review it</Link>}
+  </div>;
 }
 
 /** Folded away until asked for: a chevron (as the docs' tree has) that turns as it opens. */
 function Folded({ summary, open = false, children }: { summary: string; open?: boolean; children: ReactNode }) {
   return (
-    <details open={open} className="group w-full">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRightIcon aria-hidden className="size-4 transition-transform group-open:rotate-90" />
+    <details open={open} className="w-full text-[13px] leading-[1.5] [&[open]>summary>svg]:rotate-90">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <ChevronRightIcon aria-hidden className="size-4 transition-transform" />
         {summary}
       </summary>
       <div className="mt-2">{children}</div>
