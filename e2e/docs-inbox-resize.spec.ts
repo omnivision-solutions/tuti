@@ -277,26 +277,47 @@ for (const pane of [
       }
     }
     if (pane.name === "conversation list") {
-      // CSS also clamps an old pixel preference before hydration at an enlarged root text size.
-      await team.evaluate(() => localStorage.setItem("tuti:inbox-list-width", "352"));
-      const styles = /\/_next\/static\/.*\.css(?:\?.*)?$/;
-      await team.route(styles, async (route) => {
-        const response = await route.fetch();
-        await route.fulfill({ response, headers: { ...response.headers(), "cache-control": "no-store" }, body: `${await response.text()}\n:root{font-size:20px}` });
-      });
-      await team.route(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/, (route) => route.abort());
-      await team.reload({ waitUntil: "load" });
-      await expect(team.locator("html")).toHaveCSS("font-size", "20px");
-      expect(await width()).toBe(440);
-      expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe("352");
-      expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
-      await team.unroute(styles);
-      await team.unroute(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/);
-      await team.reload();
-      await expect(team.locator("html")).toHaveCSS("font-size", "16px");
-      await expect(handle).toHaveAttribute("aria-valuenow", String(pane.default));
-      expect(await width()).toBe(pane.default);
-      await handle.dblclick();
+      // Restore pixel preferences unchanged; CSS applies the current rem minimum before hydration.
+      for (const [fontSize, savedWidth, renderedWidth] of [[20, 352, 440], [12, 300, 300]] as const) {
+        await team.evaluate((value) => localStorage.setItem("tuti:inbox-list-width", String(value)), savedWidth);
+        const styles = /\/_next\/static\/.*\.css(?:\?.*)?$/;
+        await team.route(styles, async (route) => {
+          const response = await route.fetch();
+          await route.fulfill({ response, headers: { ...response.headers(), "cache-control": "no-store" }, body: `${await response.text()}\n:root{font-size:${fontSize}px}` });
+        });
+        await team.route(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/, (route) => route.abort());
+        await team.reload({ waitUntil: "load" });
+        await expect(team.locator("html")).toHaveCSS("font-size", `${fontSize}px`);
+        expect(await width()).toBe(renderedWidth);
+        expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe(String(savedWidth));
+        expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        // Let hydration resume at the same text size: the reported width must match the first render.
+        await team.unroute(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/);
+        await team.reload();
+        await expect(handle).toHaveAttribute("aria-valuenow", String(renderedWidth));
+        expect(await width()).toBe(renderedWidth);
+        expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe(String(savedWidth));
+        if (fontSize === 12) {
+          await expect(handle).toHaveAttribute("aria-valuemin", "264");
+          await handle.focus();
+          await team.keyboard.press("ArrowRight");
+          await expect(handle).toHaveAttribute("aria-valuenow", "310");
+          expect(await width()).toBe(310);
+          expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe("310");
+          await team.keyboard.press("ArrowLeft");
+          await expect(handle).toHaveAttribute("aria-valuenow", "300");
+          expect(await width()).toBe(300);
+          expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe("300");
+          await checkpoint(team, "inbox-small-text-saved-width", { fullPage: false });
+        }
+        await team.unroute(styles);
+        await team.reload();
+        await expect(team.locator("html")).toHaveCSS("font-size", "16px");
+        await expect(handle).toHaveAttribute("aria-valuenow", String(pane.default));
+        expect(await width()).toBe(pane.default);
+        expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe(String(savedWidth));
+        await handle.dblclick();
+      }
     }
     await team.locator("html").evaluate((element) => { element.style.removeProperty("font-size"); });
     for (const viewport of [{ width: 820, height: 1000 }, { width: 390, height: 844 }]) {
