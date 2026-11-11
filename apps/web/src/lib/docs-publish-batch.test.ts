@@ -1,6 +1,18 @@
 import { expect, it, vi } from "vitest";
 import { publishBatch } from "./docs-publish-batch";
 
+it("keeps earlier successes and stops further requests when publishing throws", async () => {
+  const publish = vi.fn().mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("Connection dropped"));
+  expect(await publishBatch(["first", "unreachable", "unattempted"], publish)).toEqual({
+    published: ["first"],
+    failed: [
+      { article: "unreachable", error: "Couldn't reach the server", code: "unreachable" },
+      { article: "unattempted", error: "Not attempted: Couldn't reach the server", code: "unreachable" },
+    ],
+  });
+  expect(publish.mock.calls).toEqual([["first"], ["unreachable"]]);
+});
+
 it("continues after a deleted article or review hold and records what went live", async () => {
   const publish = vi.fn()
     .mockResolvedValueOnce({})

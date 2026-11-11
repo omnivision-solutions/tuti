@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Response, test } from "@playwright/test";
 
 import { seedAiConversations, seedViewsLastMonth } from "./articles";
 import { checkpoints } from "./checkpoint";
@@ -187,17 +187,19 @@ test("the team writes a docs article in a collection, publishes it, and a visito
 
   // The visitor finds its collection's card on the Docs tab, and reads it there.
   const scripts: Promise<string>[] = [];
-  visitor.on("response", (response) => {
+  const recordScript = (response: Response) => {
     if (response.request().resourceType() === "script") {
       scripts.push(response.text());
     }
-  });
+  };
+  visitor.on("response", recordScript);
   await visitor.goto("/");
   await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" }).click();
   const card = visitor.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Getting started/ });
   await expect(card).toContainText("The basics, in five minutes.");
   // With its icon, drawn on the server: no script the portal sends has Lucide's names (the app's picker loads them).
   await expect(card.locator("svg.lucide-rocket")).toBeVisible();
+  visitor.off("response", recordScript);
   expect(scripts.length).toBeGreaterThan(0);
   for (const script of await Promise.all(scripts)) {
     expect(script).not.toContain("a-arrow-down");
@@ -487,6 +489,31 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await checkpoint(team, "team-reporting-searches-phone-dark");
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.emulateMedia({ colorScheme: "light" });
+});
+
+test("the team reviews article history, changes visibility and restores a deleted article", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  // Start with an independently published article: writing and reader reporting have their own journey.
+  const api = await apiFor(team, slug);
+  await api("/collections", { name: "Getting started", description: "The basics, in five minutes." });
+  await api("/articles", {
+    title: "Inviting your team", collection: "getting-started",
+    content: { type: "doc", content: [
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Who can invite" }] },
+      { type: "paragraph", content: [{ type: "text", text: "Owners and admins send invites from the Team page." }] },
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Roles" }] },
+      { type: "paragraph", content: [{ type: "text", text: "Admins can invite teammates." }] },
+    ] },
+  });
+  await api("/articles/inviting-your-team/publish", {});
+  const teamTree = team.getByRole("navigation", { name: "Docs", exact: true });
+  const editor = team.getByRole("textbox", { name: "Article" });
+  const visitor = await newPerson(browser, portalUrl(slug));
+  const article = visitor.getByRole("article", { name: "Inviting your team" });
 
   // Deleting the collection, from its page, keeps its article. While it runs (slowed down here), Delete can't be clicked again.
   await team.goto(`/app/${slug}/docs`);
@@ -520,13 +547,11 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await visitor.goto("/docs/inviting-your-team");
   await expect(article.getByRole("link", { name: "All collections" })).toHaveAttribute("href", "/docs");
   // So is it for an article whose collection has no page for readers: an unlisted article is all that's in it.
-  const api = await apiFor(team, slug);
   await api("/collections", { name: "Hidden away" });
   const unlisted = await api("/articles", { title: "Only by link", body: "Here.", collection: "hidden-away", listing: "unlisted" });
   await api(`/articles/${unlisted.slug}/publish`, {});
   await visitor.goto(`/docs/${unlisted.slug}`);
   await expect(visitor.getByRole("article", { name: "Only by link" }).getByRole("link", { name: "All collections" })).toHaveAttribute("href", "/docs");
-  // (Making its API key took the team to Settings: back to the docs' home.)
   await team.goto(`/app/${slug}/docs`);
 
   // The team edits it twice. It's published, so the edits wait as unpublished changes until the team publishes them.

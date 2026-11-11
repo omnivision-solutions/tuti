@@ -1,12 +1,17 @@
 type PublishResult = { error?: string; code?: string };
-const stopsBatch = new Set(["article_limit", "forbidden", "unauthorized"]);
+const stopsBatch = new Set(["article_limit", "forbidden", "unauthorized", "unreachable"]);
 
 /** Keep individual refusals out of retries; a project-wide refusal stops further requests. */
 export async function publishBatch<T>(articles: T[], publish: (article: T) => Promise<PublishResult>) {
   const published: T[] = [];
   const failed: { article: T; error: string; code?: string }[] = [];
   for (const [index, article] of articles.entries()) {
-    const result = await publish(article);
+    let result: PublishResult;
+    try {
+      result = await publish(article);
+    } catch {
+      result = { error: "Couldn't reach the server", code: "unreachable" };
+    }
     if (!result.error) {
       published.push(article);
       continue;

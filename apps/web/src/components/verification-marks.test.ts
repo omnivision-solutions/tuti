@@ -54,6 +54,8 @@ describe("verification annotations", () => {
   it.each([
     ["Published articles are visible.", "Unpublished articles are visible."],
     ["Seat limit: 5", "Seat limit: 50"],
+    ["Published記事", "Unpublished記事"],
+    ["席数5", "席数50"],
   ])("requires whole words and quantities when underlining %s", (source, other) => {
     const content = schema.nodeFromJSON({
       type: "doc",
@@ -84,5 +86,23 @@ describe("verification annotations", () => {
     const ranges = verificationRanges(content, [{ statement: "Pick one role", verdict: "unclear" }]);
     expect(ranges).toEqual([{ from: 4, to: 4 + quoted.length, number: 1, verdict: "unclear" }]);
     expect(content.textBetween(ranges[0]!.from, ranges[0]!.to)).toBe(quoted);
+  });
+  it.each([
+    ["設定から", "記事を公開", "できます。"],
+    ["𠮷", "𠮷野", "家。"],
+    ["您可以在设置中", "发布文章", "并查看。"],
+    ["คุณสามารถ", "เผยแพร่บทความ", "จากการตั้งค่า"],
+  ])("underlines a partial quote in spaceless text after %s", (prefix, quote, suffix) => {
+    const content = schema.nodeFromJSON({
+      type: "doc", content: [{ type: "paragraph", content: [
+        { type: "text", text: `🗓 ${prefix}` },
+        { type: "text", text: quote, marks: [{ type: "bold" }] },
+        { type: "text", text: suffix },
+      ] }],
+    });
+    const from = 1 + `🗓 ${prefix}`.length;
+    const ranges = verificationRanges(content, [{ statement: quote, verdict: "outdated" }]);
+    expect(ranges).toEqual([{ from, to: from + quote.length, number: 1, verdict: "outdated" }]);
+    expect(content.textBetween(ranges[0]!.from, ranges[0]!.to)).toBe(quote);
   });
 });

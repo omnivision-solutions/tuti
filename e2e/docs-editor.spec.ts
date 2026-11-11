@@ -372,6 +372,34 @@ test("Publish all reports a deleted draft and publishes the other confirmed arti
   await expect(team.locator(".docs-live-footer")).toContainText("2 articles live");
 });
 
+test("Publish all closes with partial success after a server action loses its connection", async ({ browser }, testInfo) => {
+  const { team, slug, api } = await editor(browser);
+  await throttleQueue(team);
+  for (const title of ["Unreachable draft", "First draft"]) await api("/articles", { title, body: "Open Settings." });
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: "Waiting to publish" });
+  await expect(queue.getByRole("listitem").first()).toContainText("First draft");
+  let requests = 0;
+  await team.route(`**/app/${slug}/docs`, async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"] && ++requests === 2) await route.abort("connectionfailed");
+    else await route.fallback();
+  });
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  const confirm = team.getByRole("alertdialog", { name: "Publish 3 articles?", exact: true });
+  await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+  const summary = team.locator("[data-sonner-toast]").filter({ hasText: "Published 1 article" });
+  await expect(summary).toContainText("Unreachable draft: Couldn't reach the server");
+  await expect(summary).toContainText("Invite your team: Not attempted: Couldn't reach the server");
+  await expect(confirm).toBeHidden();
+  await expect(queue.getByRole("listitem")).toHaveCount(2);
+  await expect(queue.getByRole("button", { name: /Publish/ })).toHaveCount(0);
+  await expect(queue.getByRole("link", { name: "Review article", exact: true })).toHaveCount(2);
+  await expect(queue.getByRole("link", { name: "Unreachable draft", exact: true })).toBeFocused();
+  await expect(team.locator(".docs-live-footer")).toContainText("1 article live");
+  expect(requests).toBe(2);
+  await checkpoints(testInfo)(team, "docs-publish-connection-failure", { fullPage: false });
+});
+
 test("Publish all stops at the article limit, reports partial success and excludes failed rows from retries", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, CLOUD_URL, "Tess Team");

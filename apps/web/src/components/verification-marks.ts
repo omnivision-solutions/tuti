@@ -1,4 +1,4 @@
-import { matchingSentence, normalizeSentence as normalize, sentenceTokens } from "@/lib/docs-review";
+import { matchingSentence, normalizeSentence as normalize, sentenceQuoteRange } from "@/lib/docs-review";
 import type { Node } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -39,15 +39,11 @@ export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
             positions.push(pos + 1 + offset + characterIndex);
           }
         });
-        const tokens = sentenceTokens(source);
-        const text = tokens.map(({ word }) => word).join(" ");
-        const start = (` ${text} `).indexOf(` ${wanted} `);
-        if (start < 0 && blocks[paraphrase]?.pos !== pos) return;
-        const first = start < 0 ? 0 : text.slice(0, start).split(" ").filter(Boolean).length;
-        const last = start < 0 ? tokens.length - 1 : first + wanted.split(" ").length - 1;
-        if (!tokens[first] || !tokens[last]) return;
-        const from = positions[tokens[first].from]!;
-        const to = positions[tokens[last].to - 1]! + 1;
+        const match = sentenceQuoteRange(source, finding.source ?? finding.statement)
+          ?? (blocks[paraphrase]?.pos === pos ? sentenceQuoteRange(source, source) : null);
+        if (!match) return;
+        const from = positions[match.from]!;
+        const to = positions[match.to - 1]! + 1;
         ranges.push({
           from,
           to,

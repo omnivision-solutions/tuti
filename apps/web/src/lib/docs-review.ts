@@ -32,6 +32,37 @@ export function sentenceTokens(value: string) {
 /** Preserve word boundaries while ignoring punctuation, whitespace differences and invisible format characters. */
 export const normalizeSentence = (value: string) => sentenceTokens(value).map(({ word }) => word).join(" ");
 
+const spacelessScript = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
+
+/** Exact quote offsets, with substring matching for scripts whose clauses need no spaces. */
+export function sentenceQuoteRange(value: string, quote: string) {
+  const tokens = sentenceTokens(value);
+  const text = tokens.map(({ word }) => word).join(" ");
+  const wanted = normalizeSentence(quote);
+  if (!wanted) return null;
+  const start = (` ${text} `).indexOf(` ${wanted} `);
+  if (start >= 0) {
+    const first = text.slice(0, start).split(" ").filter(Boolean).length;
+    return { from: tokens[first]!.from, to: tokens[first + wanted.split(" ").length - 1]!.to };
+  }
+  if (!spacelessScript.test(quote)) return null;
+  // Keep an offset per normalized UTF-16 unit, including lowercase expansions.
+  const letters = [...value.matchAll(/[\p{L}\p{N}\p{M}]/gu)].flatMap((match) =>
+    match[0].toLowerCase().split("").map((word) => ({ word, from: match.index, to: match.index + match[0].length, spaceless: spacelessScript.test(match[0]) })),
+  );
+  const compact = letters.map(({ word }) => word).join("");
+  const needle = wanted.replaceAll(" ", "");
+  const boundary = (index: number) => {
+    const left = letters[index - 1], right = letters[index];
+    return !left || !right || left.spaceless || right.spaceless || value.slice(left.to, right.from).replace(/\p{Cf}/gu, "").length > 0;
+  };
+  for (let at = compact.indexOf(needle); at >= 0; at = compact.indexOf(needle, at + 1)) {
+    // A mixed-script quote must still respect Latin words and numeric boundaries.
+    if (boundary(at) && boundary(at + needle.length)) return { from: letters[at]!.from, to: letters[at + needle.length - 1]!.to };
+  }
+  return null;
+}
+
 const numberWords: Record<string, string> = { zero: "0", one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10", eleven: "11", twelve: "12" };
 const words = (text: string) => (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).map((word) => numberWords[word] ?? word);
 const ignored = new Set(["a", "an", "the", "is", "are", "it", "has", "have", "to", "for", "of", "in", "with", "your", "you", "and", "can", "gets", "get", "includes", "include", "each", "every", "either", "or"]);
