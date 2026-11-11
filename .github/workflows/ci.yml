@@ -130,7 +130,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      # Without --with-deps: the runner already has Chromium's libraries (apt would only add fonts),
+      # and apt's mirrors going down then can't fail every shard.
+      - run: pnpm exec playwright install chromium
       # Placeholders only: the tests start the app with their own settings and database.
       - run: pnpm test:e2e --shard=${{ matrix.shard }}/4
         env:
