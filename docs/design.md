@@ -330,7 +330,7 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   is a small round pill, in the highlight colour where people wait on the team (the Inbox's open
   conversations), quiet otherwise (Feedback's to triage, Autopilot's to review).
 - **Sign-in pages** (sign-in, sign-up, forgot and reset password, invitations): in the visitor's own
-  light or dark, as the app is; the card's title in the heading font at 20px; the rest of the marketing site is light only (`forcedThemeFor`).
+  light or dark, as the app is; the card's title in the heading font at 20px; the rest of the marketing site is light only (`forcedThemeFor`), though a page may set dark brand bands inside it (the home page's forest-green sections and final band, `landing.css`).
   Continue with Google and Continue with GitHub are both outline buttons with their marks, under
   nothing louder than the form's own primary. The header there has no Sign in or Start free
   (`SignedOutLinks`): the form is the way in. On phones no keyboard hints (`Ctrl K`).

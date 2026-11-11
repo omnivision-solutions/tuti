@@ -362,6 +362,10 @@
   html:has([data-portal-top]) {
     scroll-padding-top: var(--portal-header-height, 12rem);
   }
+  /* The marketing site's sticky 64px header: focus and anchor targets clear it. */
+  html:has([data-marketing-header]) {
+    scroll-padding-top: 4rem;
+  }
   /* The app's own toolbar can wrap. Focus and anchor targets clear its measured height. */
   html:has([data-slot="sidebar-inset"]) {
     scroll-padding-top: var(--app-toolbar-height, 0px);
