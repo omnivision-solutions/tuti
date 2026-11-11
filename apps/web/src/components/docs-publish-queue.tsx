@@ -99,7 +99,7 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
       <section ref={queue} aria-labelledby="waiting-title" className="docs-publish-queue [&_li_+_li]:[border-top:1px_solid_color-mix(in_oklch,_var(--border)_70%,_transparent)] [&_li]:min-h-19.5">
         <div className="docs-section-heading flex items-center justify-between gap-2.5 min-h-8 [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 [&_h2]:[font:600_17px/1.35_var(--font-sans)] [&_h2_small]:text-[13px] [&_h2_small]:text-muted-foreground [&_h2_small]:font-normal max-sm:[&_h2]:text-[16px]">
           <h2 id="waiting-title" tabIndex={-1}>
-            Waiting to publish <span className="docs-count rounded-[30px] bg-highlight text-highlight-foreground p-[2px_7px] text-xs">{articles.length}</span>
+            Waiting to publish <span className="docs-count rounded-full bg-highlight text-highlight-foreground px-1.75 py-0.5 text-xs">{articles.length}</span>
           </h2>
           {publishable.length > 0 && <AlertDialogTrigger onClick={(event) => select(publishable, true, event.currentTarget)} render={<Button size="sm" />}>Publish all</AlertDialogTrigger>}
         </div>
@@ -141,7 +141,7 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction disabled={pending} onClick={publish}>
+          <AlertDialogAction disabled={pending} focusableWhenDisabled onClick={publish}>
             {pending ? "Publishing…" : selection?.all ? "Publish all" : "Publish"}
           </AlertDialogAction>
         </AlertDialogFooter>
