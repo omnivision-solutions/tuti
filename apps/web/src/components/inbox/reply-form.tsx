@@ -14,7 +14,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { insertAt, linkToInsert, type Opened } from "@/lib/insert-link";
-import { emailHint } from "@/lib/format";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
@@ -39,7 +38,6 @@ export function ReplyForm({
   projectSlug,
   recipient,
   emailed = false,
-  inWidget = false,
   number,
   userId,
   filesLastFor,
@@ -51,8 +49,6 @@ export function ReplyForm({
   projectSlug: string;
   recipient?: string;
   emailed?: boolean;
-  /** Readable in the widget: the reply job emails only what they haven't seen there within a minute. */
-  inWidget?: boolean;
   /** Who's signed in: their drafts are theirs. */
   userId: string;
   /** How long a file attached can still be sent (ms): unsent, the server deletes it after a while. */
@@ -330,8 +326,8 @@ export function ReplyForm({
           {/* Send, the one button in words, and in its menu Send and close: answered, and done with, closed with the reply (not
             left waiting on them). Both keep the keyboard's focus while it sends: a plain Send leaves the conversation open, with
             nothing else to take it. */}
-          <div className="ml-auto flex items-center">
-            <Button type="submit" className={note ? undefined : "rounded-r-none"} disabled={pending || drafting || files.uploading} focusableWhenDisabled>
+          <div className={note ? "ml-auto flex items-center" : "ml-auto inline-flex items-center gap-0 rounded-lg shadow-xs"}>
+            <Button type="submit" className={note ? undefined : "rounded-r-none border-r-0 bg-clip-border shadow-none"} disabled={pending || drafting || files.uploading} focusableWhenDisabled>
               {pending ? (
                 "Sending…"
               ) : note ? (
@@ -352,7 +348,7 @@ export function ReplyForm({
                           <Button
                             type="button"
                             size="icon"
-                            className="rounded-l-none border-l border-l-primary-foreground/25"
+                            className="rounded-l-none border-l border-l-primary-foreground/25 bg-clip-border shadow-none"
                             aria-label="More ways to send"
                             disabled={pending || drafting || files.uploading}
                             focusableWhenDisabled
@@ -376,7 +372,7 @@ export function ReplyForm({
       {emailed && !note && (
         <p className="inbox-composer-hint leading-normal mt-1.5 flex items-center justify-center gap-1.25 text-center text-xs text-muted-foreground [&>svg]:size-3.25">
           <MailIcon aria-hidden />
-          {emailHint(recipient, inWidget)}
+          Replies are emailed to {recipient?.split(" ")[0] ?? "them"}.
         </p>
       )}
     </>

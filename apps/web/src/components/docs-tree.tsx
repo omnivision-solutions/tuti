@@ -644,7 +644,7 @@ export function DocsWorkspace({
             <Link
               href={`${base}/tabs/${tab.slug}`}
               aria-current={current?.kind === "tab" && current.slug === tab.slug ? "page" : undefined}
-              className={cn(rowLink, "pl-2 font-semibold")}
+              className={cn(rowLink, "pl-2 text-[13.5px] font-normal aria-[current=page]:font-medium!")}
               data-tab-label
             >
               <PanelsTopLeftIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
@@ -675,7 +675,7 @@ export function DocsWorkspace({
               </PopoverTrigger>
               <PopoverContent align="start" className="w-60" onClick={(event) => { if ((event.target as Element).closest("a")) { setTabsOpen(false); setBrowsing(false); } }}>
                 <ul aria-label="Tabs" className="flex flex-col gap-1">{tabSections}</ul>
-                <Button variant="ghost" size="sm" className="w-full justify-start font-normal" onClick={() => { setTabsOpen(false); setNewTab(true); }}><PlusIcon />New tab</Button>
+                <Button variant="ghost" size="sm" className="w-full justify-start px-2 text-[13.5px] font-normal" onClick={() => { setTabsOpen(false); setNewTab(true); }}><PlusIcon />New tab</Button>
               </PopoverContent>
             </Popover>
             <div className="flex items-center gap-1">

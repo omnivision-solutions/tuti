@@ -912,7 +912,8 @@ test("the team member's own action taking the open conversation out of its view 
   await search.press("Enter");
   release();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/reporting$`));
-  await owner.unroute("**/*");
+  // Read acknowledgements may also be in flight: let their released handlers finish before removing the route.
+  await owner.unrouteAll({ behavior: "wait" });
   await expect(owner.getByRole("heading", { name: "Reporting", level: 1 })).toBeVisible();
   await owner.goBack();
   await expect(meta(owner)).toContainText("#3");
@@ -952,7 +953,8 @@ test("the team member's own action taking the open conversation out of its view 
   await row(5).click();
   answer();
   await expect(row(4)).toHaveCount(0);
-  await owner.unroute("**/*");
+  // Read acknowledgements may also be in flight: let their released handlers finish before removing the route.
+  await owner.unrouteAll({ behavior: "wait" });
   await api("/conversations", { email: "e2e-seventh@example.com", body: "A seventh question" });
   await expect(row(7)).toBeVisible();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/5$`));
@@ -1105,10 +1107,20 @@ test("with two-digit counts the views still fit, at every laptop width and on a 
       // showMore allows).
       await expect.poll(() => views.evaluate((row) => row.scrollWidth - row.clientWidth)).toBeLessThanOrEqual(1);
     }
-    // Open under More: its name alone, short, on the tab ("Waiting"), and in full with its count to the ear.
+    // Open under More: its short name and visible count, with the full name to the ear.
     const open = views.getByRole("button", { name: "Waiting on user 12" });
     await expect(open).toHaveAttribute("aria-current", "page");
-    await expect(open).toHaveText("Waiting");
+    await expect(open).toHaveText(/^Waiting\s*12$/);
+    await expect(open.getByText("12", { exact: true })).toBeVisible();
+    if (width === 390) {
+      for (const [view, title] of [["snoozed", "Snoozed"], ["closed", "Closed"], ["spam", "Spam"]]) {
+        await owner.goto(`/app/${slug}/inbox?view=${view}`);
+        const selected = views.getByRole("button", { name: `${title} 0` });
+        await expect(selected).toHaveAttribute("aria-current", "page");
+        await expect(selected).toHaveText(new RegExp(`^${title}\\s*0$`));
+        await expect(selected.getByText("0", { exact: true })).toBeVisible();
+      }
+    }
   }
 });
 
@@ -2348,4 +2360,105 @@ test("Tuti's chat launcher isn't in the Inbox, so the reply box's buttons are al
   await expect(launcher).toBeVisible();
   await checkpoint(owner, "changelog-phone-launcher", { fullPage: false });
   await expectClear(owner.locator("[data-pinned-actions]").getByRole("button"));
+});
+
+test("customer messages are bold until this teammate opens the conversation, then become unread again on another customer message", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "sam", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Exporting reports", body: "Can I export a spreadsheet?" });
+  await owner.goto(`/app/${slug}/inbox?view=unassigned`);
+  const row = owner.getByRole("region", { name: "Conversations", exact: true }).getByRole("listitem");
+  const link = row.locator("[data-row-link]");
+  const subject = row.locator(".inbox-row-subject");
+  await expect(link).toHaveAccessibleName(/unread/i);
+  await expect(link).toHaveCSS("font-weight", "650");
+  await expect(subject).toHaveCSS("font-weight", "650");
+  // Prefetching (including a hover) cannot mark a conversation as read.
+  await link.hover();
+  await expect(link).toHaveAccessibleName(/unread/i);
+  await checkpoint(owner, "inbox-unread-customer-message");
+  await link.click();
+  await expect(owner.getByRole("textbox", { name: "Reply", exact: true })).toBeVisible();
+  await expect(link).not.toHaveAccessibleName(/unread/i);
+  await expect(link).toHaveCSS("font-weight", "400");
+  await expect(subject).toHaveCSS("font-weight", "400");
+  await expect(row.getByText("Needs reply", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Needs reply 1" })).toBeVisible();
+  await checkpoint(owner, "inbox-read-still-needs-reply");
+  await owner.goto(`/app/${slug}/inbox?view=unassigned`);
+  await api("/conversations/1/messages", { body: "Any update?", author: { id: "sam" } });
+  await expect(link).toHaveAccessibleName(/unread/i, { timeout: 15_000 });
+  await expect(link).toHaveCSS("font-weight", "650");
+  await expect(subject).toHaveCSS("font-weight", "650");
+  await expect(row.locator(".inbox-row-preview")).toContainText("Any update?");
+  await checkpoint(owner, "inbox-unread-again");
+});
+
+test("customer messages stay unread in a hidden or unfocused conversation until it is visible and focused", async ({ browser }, testInfo) => {
+  test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { user: { id: "sam", name: "Sam Smith", email: "e2e-sam@example.com" }, subject: "Exporting reports", body: "Can I export a spreadsheet?" });
+  const list = await owner.context().newPage();
+  await list.goto(`/app/${slug}/inbox`);
+  const listed = list.locator('[data-row-link="1"]');
+  await owner.bringToFront();
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const opened = owner.locator('[data-row-link="1"]');
+  await expect(owner.getByRole("textbox", { name: "Reply", exact: true })).toBeVisible();
+  await expect(opened).not.toHaveAccessibleName(/unread/i);
+
+  // Control visibility and focus independently, without relying on the headless browser's tab focus behavior.
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    Object.defineProperty(document, "hasFocus", { configurable: true, value: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await api("/conversations/1/messages", { body: "A question while the tab is hidden", author: { id: "sam" } });
+  // LiveRefresh must actually render the new message while hidden before checking the durable state elsewhere.
+  await expect(owner.getByRole("list", { name: "Messages", exact: true })).toContainText("A question while the tab is hidden", { timeout: 15_000 });
+  await checkpoint(owner, "inbox-hidden-live-message");
+  await list.reload();
+  await expect(listed).toHaveAccessibleName(/unread/i);
+  await expect(listed).toHaveCSS("font-weight", "650");
+
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(document, "hasFocus", { configurable: true, value: () => false });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await list.reload();
+  await expect(listed).toHaveAccessibleName(/unread/i);
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "hasFocus", { configurable: true, value: () => true });
+    window.dispatchEvent(new Event("focus"));
+  });
+  await expect(opened).not.toHaveAccessibleName(/unread/i);
+  await list.reload();
+  await expect(listed).not.toHaveAccessibleName(/unread/i);
+
+  // Returning via visibilitychange alone also acknowledges the current seen timestamp.
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await api("/conversations/1/messages", { body: "Another question while hidden", author: { id: "sam" } });
+  await expect(owner.getByRole("list", { name: "Messages", exact: true })).toContainText("Another question while hidden", { timeout: 15_000 });
+  await list.reload();
+  await expect(listed).toHaveAccessibleName(/unread/i);
+  await owner.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(opened).not.toHaveAccessibleName(/unread/i);
+  await list.reload();
+  await expect(listed).not.toHaveAccessibleName(/unread/i);
+  await expect(listed).toHaveCSS("font-weight", "400");
+  await checkpoint(list, "inbox-visible-and-focused-read");
 });

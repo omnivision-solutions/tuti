@@ -262,6 +262,35 @@ export const getConversation = defineOperation({
   },
 });
 
+/** Acknowledges only the customer message shown on the open page, never a newer one that arrived meanwhile. */
+export const markConversationRead = defineOperation({
+  name: "conversations.markRead",
+  summary: "Mark a conversation read for the signed-in teammate (API keys cannot mark someone else's inbox read)",
+  method: "POST",
+  path: "/conversations/{number}/read",
+  scope: "write",
+  access: "team",
+  input: z.object({ number: conversationNumber, seen: z.iso.datetime().nullable() }),
+  run: async ({ actor, projectId }, { number, seen }) => {
+    if (actor.kind !== "user") {
+      throw new OperationError(403, "people_only", "Only signed-in teammates can mark conversations read");
+    }
+    const conversation = await findConversation(projectId, number);
+    // Store message time, not this server's clock. Old tabs and repeated acknowledgements cannot move it back.
+    // One atomic statement acknowledges only committed customer messages at or before what the page showed.
+    await prisma.$executeRaw`
+      INSERT INTO conversation_read ("conversationId", "userId", "readAt")
+      SELECT ${conversation.id}, ${actor.userId}, "createdAt"
+      FROM conversation_message
+      WHERE "conversationId" = ${conversation.id} AND author = 'USER' AND NOT note
+        AND "createdAt" <= ${seen}::timestamp
+      ORDER BY "createdAt" DESC LIMIT 1
+      ON CONFLICT ("conversationId", "userId") DO UPDATE SET "readAt" = EXCLUDED."readAt"
+      WHERE conversation_read."readAt" < EXCLUDED."readAt"`;
+    return {};
+  },
+});
+
 export const createConversation = defineOperation({
   name: "conversations.create",
   summary: "Start a conversation from someone in your app (`user`, by their id there) or an email address, with their first message",

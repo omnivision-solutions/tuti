@@ -9,7 +9,8 @@ test("Tuti's own widget in the team app signs people in with their account once 
   const checkpoint = checkpoints(testInfo);
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Tuti", APP_WIDGET_SLUG, cloudPortalUrl);
-  const launcher = owner.getByRole("button", { name: "Feedback" });
+  // The launcher, not the home page's Feedback tab.
+  const launcher = owner.locator('body > button[aria-controls="tuti-widget"]');
   const panel = owner.frameLocator('iframe[title="Feedback"]');
 
   // SSO off: the panel asks to sign in on the portal.
