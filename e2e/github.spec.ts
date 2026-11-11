@@ -111,8 +111,12 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   expect(demoted).toHaveLength(1);
   const setRole = (role: string) => db.query(`UPDATE team_member SET role = $2 WHERE id = $1`, [demoted[0]!.id, role]);
   const complete = owner.getByRole("switch", { name: "Complete posts" });
+  const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   await complete.click();
   await expect(owner.getByText("Only project owners can change Autopilot's settings")).toBeVisible();
+  await expect(owner.getByText("Only project owners can change Autopilot's settings")).toBeInViewport();
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   await expect(complete).toBeChecked();
   // The page they're on still lets them flip (it was loaded while they owned the project).
   await setRole("OWNER");

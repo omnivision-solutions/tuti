@@ -271,6 +271,8 @@ export function DocsWorkspace({
   const [newTab, setNewTab] = useState(false);
   const { setOpenMobile, setOpen: setAppOpen, isMobile } = useSidebar();
   const desktop = useInsetBreakpoint(61);
+  // An inset change can close the sheet through its prop without onOpenChange firing.
+  if (desktop && browsing) setBrowsing(false);
   const openingApp = useRef(false);
   const openingSearch = useRef(false);
   // Where "New collection" adds one, while its dialog is open.

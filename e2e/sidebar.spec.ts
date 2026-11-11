@@ -157,11 +157,19 @@ test("bolding an article leaves the collapsed sidebar and its cookie alone", asy
   await team.getByRole("textbox", { name: "Title", exact: true }).press("ControlOrMeta+b");
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   expect(await cookie()).toEqual(before);
-  await article.click();
-  await article.press("ControlOrMeta+Home");
-  for (let i = 0; i < "Owners".length; i++) await article.press("Shift+ArrowRight");
+  await article.focus();
+  await expect(article).toBeFocused();
+  await team.keyboard.press("ControlOrMeta+Home");
+  // Each key uses the selection the editor committed, after the browser's selectionchange and rendering.
+  const selectionSettled = () => article.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await selectionSettled();
+  for (let i = 0; i < "Owners".length; i++) {
+    await team.keyboard.press("Shift+ArrowRight");
+    await selectionSettled();
+    await expect.poll(() => team.evaluate(() => window.getSelection()?.toString())).toBe("Owners".slice(0, i + 1));
+  }
   await expect.poll(() => team.evaluate(() => window.getSelection()?.toString().trim())).toBe("Owners");
-  await article.press("ControlOrMeta+b");
+  await team.keyboard.press("ControlOrMeta+b");
   await expect(article.locator("strong")).toHaveText("Owners");
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   expect(await cookie()).toEqual(before);

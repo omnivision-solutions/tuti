@@ -276,9 +276,11 @@ the list picks none to approve at once.
   newest version beside it, to merge by hand; the next Save goes on top of it.
   The team Docs workspace uses rounded tree, page and tools surfaces on the canvas, separated by 12px gaps,
   with no breadcrumb bar or embedded preview. Its tree is 274px and owns the Docs title, search and navigation;
-  below 61rem of sidebar inset width the Docs button opens it as a sheet, including App navigation. Subpages have a small parent link.
+  below 61rem of sidebar inset width the Docs button opens it as a sheet, including App navigation. Moving back to an inline tree
+  closes and resets the sheet; Search docs opens the command menu in either layout. Subpages have a small parent link.
   An article's editable title sits beside Saved (Save while there are edits) and Publish; its publishing state
-  and live Open link sit below. The formatting row stays pinned while the article body scrolls. Settings,
+  and live Open link sit below. New and saved articles use the same inset thresholds for editor padding and formatting controls.
+  The formatting row stays pinned while the article body scrolls. Settings,
   History and Verify share one collapsible card (20.625rem, 18.75rem below 77rem of sidebar inset width), opening from icons at the
   end of the formatting row. Below 76rem of inset width the tools use a bottom sheet so the editor keeps its room,
   even with the app sidebar open. Collapsing the card returns its space to the document. These layout thresholds
