@@ -378,6 +378,10 @@ test("table and code context controls remain reachable on small laptops and phon
     const article = team.getByRole("textbox", { name: "Article", exact: true });
     const formatting = team.getByRole("toolbar", { name: "Formatting", exact: true });
     await article.click();
+    await team.keyboard.press("ControlOrMeta+Home");
+    await team.keyboard.press("ControlOrMeta+Shift+ArrowRight");
+    await expect(team.getByRole("toolbar", { name: "Text selection", exact: true })).toBeVisible();
+    await team.keyboard.press("ArrowRight");
     await formatting.locator("summary").filter({ hasText: "Insert" }).click();
     await formatting.locator(".docs-insert-menu").getByRole("button", { name: "Table", exact: true }).click();
     await expect(formatting.getByRole("group", { name: "Table", exact: true })).toBeVisible();

@@ -173,7 +173,7 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
 
-  // The sidebar is folded on Customize (its rail and the portal's preview need the room), again each time it opens; from
+  // The sidebar folds on Customize (its rail and the portal's preview need the room), again each time it opens.
   // Docs always folds it; Settings keeps it open from 1280px and folds it below that.
   await owner.goto(`/app/${slug}/customize/branding`);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
@@ -191,10 +191,12 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await owner.waitForURL(`**/app/${slug}/settings/general`);
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   // Its panes run edge to edge beside the sidebar: the menu's column from the sidebar's edge, the page to the window's.
-  const inset = (await owner.locator('[data-slot="sidebar-inset"]').boundingBox())!;
-  const panes = (await owner.locator('[data-slot="pane-layout"]').boundingBox())!;
-  expect(panes.x).toBe(inset.x);
-  expect(panes.x + panes.width).toBe(inset.x + inset.width);
+  await expect.poll(() => owner.evaluate(() => {
+    // Measure in one frame while the sidebar finishes opening.
+    const inset = document.querySelector('[data-slot="sidebar-inset"]')!.getBoundingClientRect();
+    const panes = document.querySelector('[data-slot="pane-layout"]')!.getBoundingClientRect();
+    return [Math.round(panes.x - inset.x), Math.round(panes.right - inset.right)];
+  })).toEqual([0, 0]);
   // Settings' menu is a column of its own beside the page, the page's height; the users' settings in a group of their own.
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await expect(menu).toBeVisible();
