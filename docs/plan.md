@@ -57,7 +57,7 @@ Components live in `apps/web/src/components/ui`, on **Base UI**
 - [x] Move admin pages to `/app` (project list, create, settings); apex `/` is marketing
 - [x] `/app` shell: shadcn sidebar with project switcher (switch / create) at the top, nav, account menu at the bottom
 - [x] From tablet width up, use the page’s own sticky title and actions instead of a separate app header; keep the sidebar rail keyboard reachable and preserve the compact phone menu and actions (2026-11-10).
-- [x] Docs pages fold the sidebar away, as Customize does, for the tree and the page; it opens again on its trigger (asked 2026-10-25)
+- [x] Every app page starts with the same collapsed sidebar rail; its toggle or Ctrl/⌘+B opens it, and the user's choice stays across pages and reloads. Phones keep their off-canvas sheet
 - [x] The docs tree is only the docs: Open portal, Customize and Groups left it (the sidebar has the last two); the portal's docs are an icon beside the Docs title (asked 2026-10-25)
 - [x] The Docs home shows all the docs the whole width, without the tree: each tab with its collections as cards (their articles, with who can read them and when they were published, then the collections in them) and the articles in no collection, with Add content and New tab. The tree is beside a tab's, a collection's and an article's page, to go between them; its Docs heading leads home (asked 2026-10-25)
 - [x] "Filter by title" is in the top bar on Docs pages (the home, a tab's, a collection's and an article's page): it filters the tree and the home's cards and rows alike, keeping what matches with the tab and collection it's in, and stays as you go between them (asked 2026-10-25)

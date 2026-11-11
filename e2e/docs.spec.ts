@@ -420,7 +420,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.setViewportSize({ width: 768, height: 1024 });
   await team.goto(`/app/${slug}/reporting/ai-conversations?range=year`);
   // The title's text ends before the picker starts: the dates beside the button wait for a laptop's width.
-  // The sidebar animates to its rail at this width; measure once that layout has settled.
+  // Measure once the responsive layout has settled.
   await expect.poll(async () => {
     const titleRight = await team.getByRole("heading", { name: "AI conversations", level: 2 }).evaluate((heading) => {
       const text = document.createRange();

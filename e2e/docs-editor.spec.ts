@@ -34,7 +34,7 @@ async function holdQueueRefresh(page: Page) {
   return release;
 }
 
-test("the app sidebar folds for saved and new article editors and opens elsewhere", async ({ browser }) => {
+test("the app sidebar keeps the user's choice in saved and new article editors and settings", async ({ browser }) => {
   const { team, slug } = await editor(browser);
   const sidebar = team.locator('[data-slot="sidebar"][data-state]');
   const tree = team.getByRole("navigation", { name: "Docs", exact: true });

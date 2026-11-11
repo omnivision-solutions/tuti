@@ -1,14 +1,14 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { type CSSProperties, type ReactNode, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useLayoutEffect, useState } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { DOCS_TREE_FOLDED_ATTRIBUTE, DOCS_TREE_FOLDED_KEY } from "@/lib/docs-tree-fold";
 
 /**
  * Customize (/app/<project>/customize/<section>): the settings beside a preview of the portal. /customize itself too: the
- * sidebar's link goes there on its way to the first section, and the sidebar mustn't open for that moment.
+ * sidebar's link goes there on its way to the first section. Both use Customize's layout.
  */
 const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
 /**
@@ -16,28 +16,12 @@ const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
  * itself, `data-narrow`: New project, Setup, Account, max-w-2xl), centred in the room beside the sidebar. Customize's sections and pages of panes (their own column, data-slot="pane-layout") take the
  * whole width instead (Feedback caps its own at 72rem until a post opens beside the list), as do pages that need the
  * room (`data-wide`: Users' tables, the team's Roadmap columns).
- * The labelled sidebar is open on every page but Customize (its own rail of sections and the portal's preview), the
- * Inbox (its panes fill the window), the Docs workspace (DOCS) and, under 1280px, the pages of panes (PANES), whose own column takes its room: there
- * it's folded to its rail (it opens again on its own trigger, and is as it was on the way back).
+ * The sidebar starts collapsed and keeps the user's choice on every page, restored from its cookie on full loads.
  */
-/** The pages of panes: Settings (its menu), Reporting, every Docs page (the docs' tree), Autopilot (its list). */
-const PANES = /^\/app\/[^/]+\/(settings|reporting|autopilot|docs)(\/|$)/;
-/**
- * Docs owns its navigation and page surfaces, so the app sidebar folds to its rail at every width.
- * Its tree folds separately, and its phone sheet keeps app navigation reachable.
- */
+/** Docs supplies its own phone navigation instead of the shared header. */
 const DOCS = /^\/app\/[^/]+\/docs(\/|$)/;
-/** The Inbox: its views and list, the conversation and the person beside it fill the window. */
-const INBOX = /^\/app\/[^/]+\/inbox(\/|$)/;
-/** Under 1280px, where a pane page's own column and the labelled sidebar leave the page too little room. */
-const NARROW = "(width < 80rem)";
-const subscribeNarrow = (listener: () => void) => {
-  const query = window.matchMedia(NARROW);
-  query.addEventListener("change", listener);
-  return () => query.removeEventListener("change", listener);
-};
 
-export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
+export function AppShell({ sidebar, header, banners, children, defaultSidebarOpen = false }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode; defaultSidebarOpen?: boolean }) {
   // The inline script covers full loads; client entry from marketing or sign-in restores the fold before paint too.
   useLayoutEffect(() => {
     try {
@@ -48,33 +32,10 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
   }, []);
   const pathname = usePathname();
   const customizing = CUSTOMIZE.test(pathname);
-  // The Inbox too: its three panes (views and list, the conversation, the person beside it) fill the window.
-  const narrow = useSyncExternalStore(subscribeNarrow, () => window.matchMedia(NARROW).matches, () => false);
-  const folds = customizing
-    ? "customize"
-    : INBOX.test(pathname)
-      ? "inbox"
-      : DOCS.test(pathname)
-        ? "docs"
-        : narrow
-          ? (PANES.exec(pathname)?.[1] ?? null)
-          : null;
-  const folded = folds !== null;
-  const [open, setOpen] = useState(true);
-  // While folded: the sidebar's own state, folded again each time one of those opens.
-  const [peek, setPeek] = useState(false);
-  const [wasFolds, setWasFolds] = useState(folds);
-  if (wasFolds !== folds) {
-    setWasFolds(folds);
-    setPeek(false);
-  }
+  const [open, setOpen] = useState(defaultSidebarOpen);
 
   return (
-    <SidebarProvider
-      style={DOCS.test(pathname) ? { "--sidebar-width-icon": "4rem" } as CSSProperties : undefined}
-      open={folded ? peek : open}
-      onOpenChange={folded ? setPeek : setOpen}
-    >
+    <SidebarProvider open={open} onOpenChange={setOpen}>
       {sidebar}
       <SidebarInset className="has-[.inbox-workspace]:bg-inbox-canvas max-md:has-[.inbox-workspace]:[&>header]:hidden">
         {!DOCS.test(pathname) && header}

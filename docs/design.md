@@ -170,12 +170,12 @@ the list picks none to approve at once.
   wider screens and below the menu row on phones. Pane heights and sticky menus use the full window on wider screens.
   A page of three panes (the sidebar, a column of its own, the page: Settings,
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
-  width, the labelled sidebar open beside its own column from 1280px up; under 1280px it
-  folds to its rail, its column taking the room. The Inbox (its panes fill the window),
-  Customize (its rail and the portal's preview) and every Docs page (its own tree and page panes need
-  the room) always fold it. The docs' tree folds too, from laptop width up, on its own button at its top ("Hide the docs
+  width. The app sidebar starts collapsed to the same icon rail on every page. Only its toggle or Ctrl/⌘+B opens
+  or collapses it; that choice stays across navigation, screen widths and reloads (the existing `sidebar_state`
+  cookie, kept for seven days). Phones keep their off-canvas sheet, which closes on navigation.
+  The docs' tree folds independently, from laptop width up, on its own button at its top ("Hide the docs
   tree"; a rail with "Show the docs tree" in its place), remembered per browser on every Docs page (`DocsTreeFold`:
-  `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). Every other page has it open. A pane's column is
+  `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox: its views (with their counts), the list
   and the open conversation side by side from laptop width up, each scrolling on
@@ -283,7 +283,7 @@ the list picks none to approve at once.
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones
   and tablets it's the list right under the page's title, then the page picked.
-  Users' tables take the whole width, the sidebar open (`data-wide` on the table's
+  Users' tables take the whole width (`data-wide` on the table's
   card): who (name, email, and their id from tablet width up), the properties the team
   picks, headed by the team's name for each or the key in words ("plan_name": "Plan
   name"), their groups in a column, then what they did. A person's page is the whole
@@ -334,8 +334,8 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   Continue with Google and Continue with GitHub are both outline buttons with their marks, under
   nothing louder than the form's own primary. The header there has no Sign in or Start free
   (`SignedOutLinks`): the form is the way in. On phones no keyboard hints (`Ctrl K`).
-- **Customize** (`/app/<project>/customize/<section>`): the whole width, the
-  sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
+- **Customize** (`/app/<project>/customize/<section>`): the whole width.
+  `CustomizeShell`: Customize's sections in a rail on
   the far left (a menu above the panel on smaller screens; no index page, no
   Back), the section's settings in a panel beside it (title; cards inside),
   the portal it changes on the right in a browser frame, at desktop or phone
