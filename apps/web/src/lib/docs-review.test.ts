@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changedParagraphs, fixSummary, matchingSentence } from "./docs-review";
+import { changedParagraphs, fixSummary, markedRun, matchingSentence } from "./docs-review";
 
 describe("Docs review summaries", () => {
   it("counts a replacement as one paragraph, includes insertions and removals, and ignores unchanged content", () => {
@@ -27,5 +27,11 @@ describe("Docs review summaries", () => {
     expect(matchingSentence("Your team gets 10 seats with every plan.", blocks)).toBe(-1);
     expect(matchingSentence("Your team gets 5 seats with every plan.", [blocks[0]!, blocks[0]!])).toBe(-1);
     expect(matchingSentence("You can export a calendar.", blocks)).toBe(-1);
+  });
+  it("marks the newest run that checked statements, not a newer skipped, running or failed one", () => {
+    const done = { id: "1", state: "done", statements: [{}] };
+    expect(markedRun([{ id: "3", state: "running", statements: [] }, { id: "2", state: "skipped", statements: [] }, done])?.id).toBe("1");
+    expect(markedRun([{ id: "2", state: "changed", statements: [] }, done])?.id).toBe("1");
+    expect(markedRun([{ id: "2", state: "failed", statements: [] }])).toBeUndefined();
   });
 });

@@ -98,3 +98,11 @@ export function matchingSentence(statement: string, candidates: string[]) {
   }).sort((a, b) => b.score - a.score);
   return scores[0] && scores[0].score >= 0.65 && scores[0].score > (scores[1]?.score ?? 0) + 0.1 ? scores[0].index : -1;
 }
+
+/**
+ * The Verify run whose findings the editor marks: the newest one that checked statements. A newer run that's
+ * running, failed or skipped (nothing changed since) has none, and the card still shows the earlier findings.
+ */
+export function markedRun<T extends { state: string; statements: unknown[] }>(runs: T[]): T | undefined {
+  return runs.find((run) => (run.state === "done" || run.state === "changed") && run.statements.length > 0);
+}

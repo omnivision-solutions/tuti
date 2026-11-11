@@ -42,6 +42,7 @@ import {
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 import { articleVerifications, verifyUnavailable } from "@/server/operations/verify";
+import { markedRun } from "@/lib/docs-review";
 
 export default async function ArticlePage(
   props: PageProps<"/app/[project]/docs/[slug]">,
@@ -378,7 +379,7 @@ export default async function ArticlePage(
               }}
               mediaUrls={await mediaUrls(displayDoc(edited))}
               // As the portal measures it (portal-docs' `outlined`).
-              findings={showsVerify ? (await articleVerifications(article.id))[0]?.statements : undefined}
+              findings={showsVerify ? markedRun(await articleVerifications(article.id))?.statements : undefined}
               sections={docHeadings(displayDoc(edited)).length >= 2}
             />
           </div>
