@@ -15,43 +15,10 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
   const config = PANE_WIDTHS[pane];
   const drag = useRef<{ x: number; width: number; pointer: number } | null>(null);
   const handle = useRef<HTMLDivElement>(null);
-  const subscribe = useCallback((changed: () => void) => {
-    const desktop = window.matchMedia("(min-width: 1024px)");
-    const mutations = new MutationObserver(changed);
-    const sizes = new ResizeObserver(changed);
-    const folds = new MutationObserver(() => connect());
-    const connect = () => {
-      mutations.disconnect();
-      sizes.disconnect();
-      folds.disconnect();
-      if (desktop.matches && pane === "docs") folds.observe(document.documentElement, { attributes: true, attributeFilter: [DOCS_TREE_FOLDED_ATTRIBUTE] });
-      if (paneShown(pane)) {
-        mutations.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
-        const column = document.querySelector(config.selector);
-        if (column) sizes.observe(column);
-        const workspace = handle.current?.closest(".inbox-workspace");
-        if (workspace) {
-          sizes.observe(workspace);
-          const thread = workspace.querySelector(".inbox-thread");
-          if (thread) mutations.observe(thread, { attributes: true, attributeFilter: ["data-details"] });
-          const details = workspace.querySelector(".inbox-details");
-          if (details) sizes.observe(details);
-        }
-      }
-      changed();
-    };
-    connect();
-    desktop.addEventListener("change", connect);
-    return () => {
-      mutations.disconnect();
-      sizes.disconnect();
-      folds.disconnect();
-      desktop.removeEventListener("change", connect);
-    };
-  }, [config, pane]);
-  const snapshot = useCallback(() => {
+  const measure = useCallback(() => {
     // Hidden handles need no measurements or preference updates; reconnect when shown again.
-    if (!paneShown(pane)) return `${config.default},${config.max}`;
+    if (!paneShown(pane)) return `${config.default},${config.min},${config.max}`;
+    const min = pane === "inbox" ? 22 * Number.parseFloat(getComputedStyle(document.documentElement).fontSize) : config.min;
     let max: number = config.max;
     const workspace = handle.current?.closest(".inbox-workspace");
     if (workspace) {
@@ -62,12 +29,63 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
       const detailsWidth = details?.getBoundingClientRect().width ?? 0;
       const detailsSpace = detailsWidth && thread ? detailsWidth + Number.parseFloat(getComputedStyle(thread).columnGap) : 0;
       const gap = Number.parseFloat(getComputedStyle(workspace).columnGap);
-      max = Math.max(config.min, Math.min(max, Math.floor(workspace.getBoundingClientRect().width - gap - detailsSpace - 480)));
+      max = Math.max(min, Math.min(max, Math.floor(workspace.getBoundingClientRect().width - gap - detailsSpace - 480)));
     }
     const preferred = Number.parseFloat(document.documentElement.style.getPropertyValue(config.variable)) || config.default;
-    return `${Math.min(max, preferred)},${max}`;
+    return `${Math.min(max, preferred)},${min},${max}`;
   }, [config, pane]);
-  const [width, max] = useSyncExternalStore(subscribe, snapshot, () => `${config.default},${config.max}`).split(",").map(Number);
+  const value = useRef(`${config.default},${config.min},${config.max}`);
+  const subscribe = useCallback((changed: () => void) => {
+    // React also asks for snapshots during unrelated server refreshes. Only observer notifications
+    // measure layout; reads during render return the last measured value.
+    const update = () => {
+      const next = measure();
+      if (next !== value.current) {
+        value.current = next;
+        changed();
+      }
+    };
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const mutations = new MutationObserver(update);
+    const sizes = new ResizeObserver(update);
+    const folds = new MutationObserver(() => connect());
+    const children = new MutationObserver(() => connect());
+    const connect = () => {
+      mutations.disconnect();
+      sizes.disconnect();
+      folds.disconnect();
+      children.disconnect();
+      if (desktop.matches && pane === "docs") folds.observe(document.documentElement, { attributes: true, attributeFilter: [DOCS_TREE_FOLDED_ATTRIBUTE] });
+      if (paneShown(pane)) {
+        mutations.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+        const column = document.querySelector(config.selector);
+        if (column) sizes.observe(column);
+        const workspace = handle.current?.closest(".inbox-workspace");
+        if (workspace) {
+          sizes.observe(workspace);
+          // Navigation replaces the thread. Observe only its parent's direct children, never messages.
+          const conversation = workspace.querySelector(".inbox-conversation-pane");
+          if (conversation) children.observe(conversation, { childList: true });
+          const thread = workspace.querySelector(".inbox-thread");
+          if (thread) mutations.observe(thread, { attributes: true, attributeFilter: ["data-details"] });
+          const details = workspace.querySelector(".inbox-details");
+          if (details) sizes.observe(details);
+        }
+      }
+      update();
+    };
+    connect();
+    desktop.addEventListener("change", connect);
+    return () => {
+      mutations.disconnect();
+      sizes.disconnect();
+      folds.disconnect();
+      children.disconnect();
+      desktop.removeEventListener("change", connect);
+    };
+  }, [config, pane, measure]);
+  const snapshot = useCallback(() => value.current, []);
+  const [width, min, max] = useSyncExternalStore(subscribe, snapshot, () => `${config.default},${config.min},${config.max}`).split(",").map(Number);
 
   const stop = useCallback(() => {
     const pointer = drag.current?.pointer;
@@ -87,7 +105,7 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
   }, [stop]);
   const setWidth = (value: number | null) => {
     const root = document.documentElement;
-    const next = value === null ? null : Math.round(Math.min(max, Math.max(config.min, value)));
+    const next = value === null ? null : Math.round(Math.min(max, Math.max(min, value)));
     if (next === null) root.style.removeProperty(config.variable);
     else root.style.setProperty(config.variable, `${next}px`);
     try {
@@ -105,7 +123,7 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
       aria-label={config.label}
       aria-orientation="vertical"
       aria-valuenow={width}
-      aria-valuemin={config.min}
+      aria-valuemin={min}
       aria-valuemax={max}
       className={cn("pane-resize group/resize z-20 hidden w-2.5 touch-none cursor-col-resize items-center justify-center outline-none lg:flex", className)}
       onPointerDown={(event) => {
@@ -125,7 +143,7 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
       onLostPointerCapture={stop}
       onDoubleClick={() => setWidth(null)}
       onKeyDown={(event) => {
-        const next = { ArrowLeft: width - 10, ArrowRight: width + 10, Home: config.min, End: max }[event.key];
+        const next = { ArrowLeft: width - 10, ArrowRight: width + 10, Home: min, End: max }[event.key];
         if (next === undefined) return;
         event.preventDefault();
         setWidth(next);

@@ -8,7 +8,7 @@ import { verifyEmail } from "./mail";
 
 for (const pane of [
   { name: "docs tree", label: "Resize docs tree", selector: ".docs-tree-pane", path: "docs/collections/getting-started", min: 240, max: 440, default: 274 },
-  { name: "conversation list", label: "Resize conversation list", selector: ".inbox-list-body", path: "inbox/1", min: 300, max: 520, default: 350 },
+  { name: "conversation list", label: "Resize conversation list", selector: ".inbox-list-body", path: "inbox/1", min: 352, max: 520, default: 350 },
 ]) {
   test(`${pane.name} resizes with the mouse and keyboard and restores before hydration`, async ({ browser }, testInfo) => {
     test.setTimeout(120_000);
@@ -18,21 +18,26 @@ for (const pane of [
     await createProject(team, "Acme Calendar", slug);
     await verifyEmail(team);
     const api = await apiFor(team, slug);
-    await api("/collections", { name: "Getting started", icon: "rocket" });
+    await api("/collections", { name: "Getting started", icon: "rocket", description: `https://example.com/${"calendar-guide-".repeat(12)}` });
     await api("/articles", { title: "Set up calendars and invite everyone on your team", collection: "getting-started" });
     await api("/conversations", { user: { id: "calendar-user", name: "Sam Example", email: "e2e-calendar@example.com" }, subject: "How can I share a calendar with everyone on my team?", body: "I would like to share our project calendar and keep everyone up to date." });
+    if (pane.name === "conversation list") await api("/conversations", { user: { id: "calendar-user", name: "Sam Example", email: "e2e-calendar@example.com" }, subject: "Can I change a calendar's sharing settings?", body: "I need to change who can see our shared calendar." });
     await team.setViewportSize({ width: 1280, height: 900 });
     await team.goto(`/app/${slug}/${pane.path}`);
     const handle = team.getByRole("separator", { name: pane.label });
     const column = team.locator(pane.selector);
     const width = () => column.evaluate((element) => element.getBoundingClientRect().width);
     // The list reserves 480px for the conversation and the details card's preferred 300px plus its gap.
-    const maximum = async (viewport = 1280) => pane.name === "docs tree" ? pane.max : Math.max(pane.min, Math.min(pane.max,
-      (await team.locator(".inbox-workspace").boundingBox())!.width - 480 - 12 - (viewport >= 1200 ? 312 : 0)));
+    const maximum = async () => {
+      if (pane.name === "docs tree") return pane.max;
+      const available = (await team.locator(".inbox-workspace").boundingBox())!.width;
+      return Math.max(pane.min, Math.min(pane.max, available - 480 - 12 - (available >= 1096 ? 312 : 0)));
+    };
     const initialMax = await maximum();
     const readsAfterUnrelatedChange = () => team.evaluate(async () => {
-      // Wait out the initial ResizeObserver delivery before measuring an unrelated message update.
+      // Finish font layout and the initial ResizeObserver delivery before measuring a message update.
       const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await document.fonts.ready;
       await frame();
       await frame();
       const workspace = document.querySelector<HTMLElement>(".inbox-workspace")!;
@@ -65,9 +70,11 @@ for (const pane of [
         const title = (await team.getByRole("heading", { name: "Getting started", exact: true }).boundingBox())!;
         const actions = (await team.locator(".docs-heading-actions").boundingBox())!;
         expect(title.y + title.height <= actions.y || title.x + title.width <= actions.x).toBe(true);
+        expect(await team.locator(".docs-heading-copy p").evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
       }
       if (pane.name === "conversation list") {
-        if (viewport >= 1200) await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeVisible();
+        expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        if ((await team.locator(".inbox-workspace").boundingBox())!.width >= 1096) await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeVisible();
         else await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeHidden();
         expect((await team.locator("#conversation").boundingBox())!.width).toBeGreaterThanOrEqual(480);
         const title = (await team.getByRole("heading", { name: "How can I share a calendar with everyone on my team?" }).boundingBox())!;
@@ -87,7 +94,7 @@ for (const pane of [
     expect(initialHandle.width).toBe(10);
     if (pane.name === "conversation list") {
       // Opening the thread marks it read and refreshes its row; finish that render before measuring observers.
-      await expect(team.locator(".inbox-row.inbox-read")).toBeVisible();
+      await expect(team.locator(".inbox-row.inbox-read")).toHaveCount(1);
       expect(await readsAfterUnrelatedChange()).toBe(0);
     }
     if (pane.name === "conversation list") {
@@ -96,6 +103,29 @@ for (const pane of [
       await expect(handle).toBeFocused();
     }
     expect(initialHandle.x + initialHandle.width / 2 - initialPane.x - initialPane.width).toBe(6);
+    if (pane.name === "conversation list") {
+      const list = team.getByRole("region", { name: "Conversations", exact: true });
+      await list.getByRole("link", { name: /Can I change a calendar's sharing settings/ }).click();
+      await expect(team).toHaveURL(new RegExp(`/app/${slug}/inbox/2$`));
+      await expect(team.getByRole("heading", { name: "Can I change a calendar's sharing settings?", exact: true })).toBeVisible();
+      await expect(list.locator(".inbox-read")).toHaveCount(2);
+      await team.getByRole("button", { name: "Hide details", exact: true }).click();
+      await expect(handle).toHaveAttribute("aria-valuemax", String(pane.max));
+      await handle.focus();
+      await team.keyboard.press("End");
+      expect(await width()).toBe(pane.max);
+      await team.keyboard.press("Home");
+      expect(await width()).toBe(pane.min);
+      await team.getByRole("button", { name: "Show details", exact: true }).click();
+      await expect(handle).toHaveAttribute("aria-valuemax", String(initialMax));
+      await handle.focus();
+      await team.keyboard.press("End");
+      expect(await width()).toBe(initialMax);
+      await handle.dblclick();
+      await list.getByRole("link", { name: /How can I share a calendar with everyone/ }).click();
+      await expect(team).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
+      await expect(team.getByRole("heading", { name: "How can I share a calendar with everyone on my team?", exact: true })).toBeVisible();
+    }
     for (const theme of ["light", "dark"]) {
       await team.evaluate((theme) => { localStorage.setItem("theme", theme); document.documentElement.classList.remove("light", "dark"); document.documentElement.classList.add(theme); }, theme);
       await handle.evaluate((element) => element.blur());
@@ -143,7 +173,7 @@ for (const pane of [
     await team.keyboard.press("End");
     for (const viewport of [1024, 1200, 1280]) {
       await team.setViewportSize({ width: viewport, height: 900 });
-      const expectedMax = await maximum(viewport);
+      const expectedMax = await maximum();
       await expect(handle).toHaveAttribute("aria-valuemax", String(expectedMax));
       await team.keyboard.press("End");
       expect(await width()).toBe(expectedMax);
@@ -211,12 +241,13 @@ for (const pane of [
     await team.goto(`/app/${slug}/${pane.path}`);
     // CSS defaults and the separator's px values agree even when the text is enlarged.
     await team.locator("html").evaluate((element) => { element.style.fontSize = "20px"; });
-    const enlargedDefault = pane.name === "docs tree" ? pane.default : pane.min;
+    const enlargedDefault = pane.default;
     await expect(handle).toHaveAttribute("aria-valuenow", String(enlargedDefault));
     expect(await width()).toBe(enlargedDefault);
     await handle.focus();
     await team.keyboard.press("ArrowRight");
-    expect(await width()).toBe(pane.name === "docs tree" ? pane.default + 10 : pane.min);
+    expect(await width()).toBe(pane.name === "docs tree" ? pane.default + 10 : 440);
+    if (pane.name === "conversation list") await expect(handle).toHaveAttribute("aria-valuemin", "440");
     await handle.dblclick();
     await team.locator("html").evaluate((element) => { element.style.removeProperty("font-size"); });
     for (const viewport of [{ width: 820, height: 1000 }, { width: 390, height: 844 }]) {
@@ -258,6 +289,10 @@ for (const pane of [
       await handle.focus();
       await team.keyboard.press("End");
       expect(await width()).toBe(availableMax);
+      expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+      await team.keyboard.press("Home");
+      expect(await width()).toBe(pane.min);
+      expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
       expect((await team.locator("#conversation").boundingBox())!.width).toBeGreaterThanOrEqual(480);
       expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBe(1200);
       await checkpoint(team, "inbox-sidebar-open-1200", { fullPage: false });

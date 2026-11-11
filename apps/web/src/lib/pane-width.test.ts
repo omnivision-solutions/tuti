@@ -26,6 +26,7 @@ describe.each(["inline script", "client entry"])("pane widths before paint: %s",
   const run = (saved: Record<string, string>, blocked = false) => restore(saved, blocked, source === "client entry");
   it("restores each pane independently, clamping old or out-of-range preferences", () => {
     expect(run({ [PANE_WIDTHS.docs.key]: "200", [PANE_WIDTHS.inbox.key]: "900" })).toEqual({ "--docs-tree-width": "240px", "--inbox-list-width": "520px" });
+    expect(run({ [PANE_WIDTHS.inbox.key]: "300" })).toEqual({ "--inbox-list-width": "352px" });
     expect(run({ [PANE_WIDTHS.docs.key]: "400", [PANE_WIDTHS.inbox.key]: "480" })).toEqual({ "--docs-tree-width": "400px", "--inbox-list-width": "480px" });
   });
 

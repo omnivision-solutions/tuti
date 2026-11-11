@@ -43,7 +43,7 @@ const subscribeWidth = (listener: () => void) => {
 
 export function ConversationDetails({ hidden, children }: { hidden: boolean; children: ReactNode }) {
   return (
-    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @min-[calc(780px_+_16.5rem)]/inbox:grid-cols-[minmax(480px,1fr)_minmax(15rem,18.75rem)] grid-rows-[auto_minmax(0,1fr)] gap-x-3 data-[details=hidden]:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
+    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @min-[calc(480px_+_38.5rem)]/inbox:grid-cols-[minmax(480px,1fr)_minmax(15rem,18.75rem)] grid-rows-[auto_minmax(0,1fr)] gap-x-3 data-[details=hidden]:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
       {children}
     </div>
   );
@@ -62,7 +62,7 @@ export function DetailsPanel({ children }: { children: ReactNode }) {
   }, []);
   return (
     <>
-      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details inbox-surface col-start-2 row-span-2 row-start-1 hidden @min-[calc(780px_+_16.5rem)]/inbox:flex flex-col overflow-hidden group-data-[details=hidden]/thread:hidden min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
+      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details inbox-surface col-start-2 row-span-2 row-start-1 hidden @min-[calc(480px_+_38.5rem)]/inbox:flex flex-col overflow-hidden group-data-[details=hidden]/thread:hidden min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
         <h2 className="px-4.5 pt-5 pb-3 font-sans text-sm leading-[normal] font-semibold">Conversation details</h2>
         <div className="inbox-details-scroll min-h-0 overflow-y-auto px-4.5 pb-4.5 [scrollbar-width:thin] group-[.inbox-details-sheet]/details:px-5">{children}</div>
       </aside>

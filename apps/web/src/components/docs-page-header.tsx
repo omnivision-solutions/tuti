@@ -81,7 +81,7 @@ export function DocsPageHeader({
           {icon && <span className="docs-heading-icon grid place-items-center w-11 h-11 shrink-0 rounded-[12px] bg-soft text-soft-foreground [&_svg]:w-5.5 [&_svg]:h-5.5 max-sm:w-9 max-sm:h-9 max-sm:rounded-[10px]">{icon}</span>}
           <div className="min-w-0 [&_h1]:wrap-anywhere">
             <h1>{title}</h1>
-            {description && <p>{description}</p>}
+            {description && <p className="wrap-anywhere">{description}</p>}
           </div>
         </div>
         <div className={cn(
