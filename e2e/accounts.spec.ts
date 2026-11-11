@@ -99,18 +99,10 @@ test("a team member switches projects, edits their account, signs out and back i
   await olive.getByRole("menuitem", { name: "Sign out" }).press("Enter");
   await olive.waitForURL(`${APP_URL}/`);
   await olive.goto("/app/auth/sign-in");
-  // The form is the way in here: the header has no Sign in or Start free of its own.
+  // The form is the way in here: the header is Tuti's logo, back to the site, with no Sign in or Start free of its own.
+  await expect(olive.getByRole("banner").getByRole("link", { name: "Tuti home" })).toHaveAttribute("href", "/");
   await expect(olive.getByRole("banner").getByRole("link", { name: "Start free" })).toHaveCount(0);
   await expect(olive.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveCount(0);
-  // Nor its menu on a phone.
-  await olive.setViewportSize({ width: 390, height: 844 });
-  await olive.getByRole("banner").getByRole("button", { name: "Menu" }).click();
-  const menu = olive.locator("#mobile-nav");
-  await expect(menu.getByRole("link", { name: "Docs" })).toBeVisible();
-  await expect(menu.getByRole("link", { name: "Start free" })).toHaveCount(0);
-  await expect(menu.getByRole("link", { name: "Sign in" })).toHaveCount(0);
-  await olive.getByRole("banner").getByRole("button", { name: "Close menu" }).click();
-  await olive.setViewportSize({ width: 1280, height: 720 });
   await olive.getByLabel("Email").fill(olive.email);
   await olive.getByLabel("Password").fill(PASSWORD);
   await olive.getByRole("button", { name: "Sign in" }).click();

@@ -33,6 +33,11 @@ test("other paths on unknown hosts are still 404", async () => {
   expect((await proxy(request("localhost:3000", "/api/auth/get-session"))).status).toBe(404);
 });
 
+test("the API reference is the app's own page: a portal's /api/docs is the portal's (its not-found page), not Tuti's", async () => {
+  expect((await proxy(request("acme.tuti.example", "/api/docs"))).headers.get("x-middleware-rewrite")).toBe("http://acme.tuti.example/portal/acme/api/docs");
+  expect((await proxy(request("acme.tuti.example", "/api/v1/posts"))).headers.get("x-middleware-rewrite")).toBeNull();
+});
+
 test("other sites may frame a portal's /widget, the app its other pages (Customize's preview), and nobody the app", async () => {
   const framing = async (host: string, path: string) => (await proxy(request(host, path))).headers.get("content-security-policy");
   expect(await framing("acme.tuti.example", "/widget")).toBeNull();
