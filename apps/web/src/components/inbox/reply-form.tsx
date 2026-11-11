@@ -326,7 +326,7 @@ export function ReplyForm({
           {/* Send, the one button in words, and in its menu Send and close: answered, and done with, closed with the reply (not
             left waiting on them). Both keep the keyboard's focus while it sends: a plain Send leaves the conversation open, with
             nothing else to take it. */}
-          <div className={note ? "ml-auto flex items-center" : "ml-auto inline-flex items-center gap-0 rounded-lg bg-primary shadow-xs"}>
+          <div className={note ? "ml-auto flex items-center" : "ml-auto inline-flex items-center gap-0 rounded-lg shadow-xs"}>
             <Button type="submit" className={note ? undefined : "rounded-r-none border-r-0 bg-clip-border shadow-none"} disabled={pending || drafting || files.uploading} focusableWhenDisabled>
               {pending ? (
                 "Sending…"

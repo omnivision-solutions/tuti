@@ -279,23 +279,16 @@ export const markConversationRead = defineOperation({
     await prisma.$transaction(async (tx) => {
       // The same lock as addMessage: wait for a message already being saved before checking what the page showed.
       await tx.$executeRaw`SELECT 1 FROM "conversation" WHERE "id" = ${conversation.id} FOR NO KEY UPDATE`;
-      const readAt = new Date();
-      // Conditional upsert: refreshes, repeated acknowledgements and old tabs don't rewrite the row or move it back.
-      // If the displayed page is stale, leave the new customer message unread until a page actually shows it.
+      // Store message time, not this server's clock. Old tabs and repeated acknowledgements cannot move it back.
       await tx.$executeRaw`
         INSERT INTO conversation_read ("conversationId", "userId", "readAt")
-        SELECT ${conversation.id}, ${actor.userId}, ${readAt}
-        WHERE NOT EXISTS (
-          SELECT 1 FROM conversation_message
-          WHERE "conversationId" = ${conversation.id} AND author = 'USER' AND NOT note
-            AND (${seen}::timestamp IS NULL OR "createdAt" > ${seen}::timestamp)
-        )
+        SELECT ${conversation.id}, ${actor.userId}, "createdAt"
+        FROM conversation_message
+        WHERE "conversationId" = ${conversation.id} AND author = 'USER' AND NOT note
+          AND "createdAt" <= ${seen}::timestamp
+        ORDER BY "createdAt" DESC LIMIT 1
         ON CONFLICT ("conversationId", "userId") DO UPDATE SET "readAt" = EXCLUDED."readAt"
-        WHERE conversation_read."readAt" < EXCLUDED."readAt" AND EXISTS (
-          SELECT 1 FROM conversation_message
-          WHERE "conversationId" = ${conversation.id} AND author = 'USER' AND NOT note
-            AND "createdAt" > conversation_read."readAt"
-        )`;
+        WHERE conversation_read."readAt" < EXCLUDED."readAt"`;
     });
     return {};
   },

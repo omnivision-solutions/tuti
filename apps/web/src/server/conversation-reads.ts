@@ -5,8 +5,10 @@ export async function conversationReads(ids: string[], userId: string) {
   const rows = ids.length
     ? await prisma.$queryRaw<{ conversationId: string; latestCustomerAt: Date | null; unread: boolean }[]>`
         SELECT c.id AS "conversationId", m."createdAt" AS "latestCustomerAt",
-          (r."readAt" IS NULL OR COALESCE(r."readAt" < m."createdAt", false)) AS unread
-        FROM unnest(${ids}::text[]) AS c(id)
+          COALESCE(m."createdAt" > GREATEST(r."readAt", t."readsSince"), false) AS unread
+        FROM unnest(${ids}::text[]) AS requested(id)
+        JOIN conversation c ON c.id = requested.id
+        JOIN team_member t ON t."projectId" = c."projectId" AND t."userId" = ${userId}
         LEFT JOIN LATERAL (
           SELECT "createdAt" FROM conversation_message
           WHERE "conversationId" = c.id AND author = 'USER' AND NOT note

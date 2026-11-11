@@ -17,7 +17,7 @@ async function expectViewsMenu(page: Page) {
     const label = (await item.locator("span").first().boundingBox())!;
     const count = (await item.locator("span").last().boundingBox())!;
     expect.soft(label.height).toBeLessThanOrEqual(22);
-    expect.soft(Math.abs(label.y - count.y)).toBeLessThanOrEqual(1);
+    expect.soft(Math.abs(label.y + label.height / 2 - count.y - count.height / 2)).toBeLessThanOrEqual(1);
     rightEdges.push(count.x + count.width);
   }
   expect.soft(Math.max(...rightEdges) - Math.min(...rightEdges)).toBeLessThanOrEqual(1);
@@ -71,6 +71,28 @@ test("Inbox list, composer and views at laptop and phone widths in light and dar
     await expect.soft(dropdown).toHaveCSS("border-left-width", "1px");
     expect.soft(await send.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThan(0);
     expect.soft(await dropdown.evaluate((el) => parseFloat(getComputedStyle(el).borderTopRightRadius))).toBeGreaterThan(0);
+    const uploaded = Promise.withResolvers<void>();
+    await team.route("**/*", async (route) => {
+      if (route.request().method() === "PUT") await uploaded.promise;
+      await route.fallback();
+    });
+    try {
+      await team.getByLabel("Files to attach").setInputFiles({ name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 fixture") });
+      await expect(team.getByRole("list", { name: "Files to send" })).toContainText("Uploading…");
+      await expect(send).toHaveAttribute("aria-disabled", "true");
+      await expect(dropdown).toHaveAttribute("aria-disabled", "true");
+      await expect(send).toHaveCSS("opacity", "0.5");
+      await expect(dropdown).toHaveCSS("opacity", "0.5");
+      // The fill fades with the buttons: an opaque wrapper would keep the green fully painted underneath.
+      await expect.soft(send.locator("..")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await checkpoint(team, `composer-disabled-laptop-${theme}`, { fullPage: false });
+    } finally {
+      uploaded.resolve();
+      await team.unrouteAll({ behavior: "wait" });
+    }
+    await expect(team.getByRole("list", { name: "Files to send" })).not.toContainText("Uploading…");
+    await team.getByRole("button", { name: "Remove invoice.pdf", exact: true }).click();
+    await expect(send).toHaveAttribute("aria-disabled", "false");
     await team.goto(`/app/${slug}/inbox`);
     await checkpoint(team, `list-laptop-${theme}`, { fullPage: false });
     const views = team.getByRole("navigation", { name: "Views", exact: true });
