@@ -12,8 +12,8 @@ test("read state belongs to each teammate, ignores team replies and notes, and o
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   const teammate = await addMember(project.id, "MEMBER");
-  // Joined well before what follows, so its messages are after the cutoff whatever the clock does.
-  await prisma.teamMember.update({ where: { id: teammate.memberId }, data: { readsSince: new Date("2001-01-01T00:00:00Z") } });
+  // Everyone joined well before what follows, so its messages are after the cutoff whatever the clocks do.
+  await prisma.teamMember.updateMany({ where: { projectId: project.id }, data: { readsSince: new Date("2001-01-01T00:00:00Z") } });
   const actor = { kind: "apiKey", keyId: "fixture", projectId: project.id, scope: "write", createdById: owner.id } as const;
   const context = { actor, projectId: project.id };
   await call(createConversation, context, { user: { id: "sam", name: "Sam", email: "e2e-sam@example.com" }, body: "Exporting reports" });
