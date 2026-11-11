@@ -4,7 +4,7 @@ import { cn } from "cn";
 
 import { HistoryIcon, PanelRightCloseIcon, SettingsIcon, ShieldCheckIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { ARTICLE_SENTENCE_JUMP, focusArticleSentence } from "@/components/article-sentence-jump";
 import type { ArticleSettingsDraft } from "@/components/article-settings";
@@ -54,17 +54,29 @@ export function ArticleTools({
   const [previousDesktop, setPreviousDesktop] = useState(desktop);
   const [closedByInset, setClosedByInset] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<ArticleSettingsDraft | null>(null);
+  const card = useRef<HTMLElement>(null);
+  const restoreFocus = useRef<Tool | null>(null);
+  const attachCard = useCallback((element: HTMLElement | null) => {
+    card.current = element;
+    if (!element) return;
+    restoreFocus.current = null;
+    return () => {
+      // Capture focus before the closing card's DOM is removed, including on an inset change.
+      if (element.contains(document.activeElement)) restoreFocus.current = requested;
+      card.current = null;
+    };
+  }, [requested]);
   // Close before a sheet can mount. The first measurement still honors explicit query links.
   if (previousDesktop !== desktop) {
     setPreviousDesktop(desktop);
-    if (previousDesktop === true && desktop === false && requested) setClosedByInset(true);
+    if (previousDesktop === true && desktop === false && requested) {
+      setClosedByInset(true);
+    }
   }
   if (closedByInset && !requested) setClosedByInset(false);
   const active = closedByInset || desktop === null ? null : requested;
-  const card = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const focusOnOpen = useRef(false);
-  const restoreFocus = useRef<Tool | null>(null);
   const jumpAfterClose = useRef<string | null>(null);
   const select = (tool: Tool | null) => {
     setClosedByInset(false);
@@ -172,7 +184,7 @@ export function ArticleTools({
         {children}
         {desktop ? (
           active && (
-            <aside ref={card} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden @max-[76rem]/app:hidden @max-[77rem]/app:w-75 min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+            <aside ref={attachCard} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden @max-[76rem]/app:hidden @max-[77rem]/app:w-75 min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
               {content}
             </aside>
           )

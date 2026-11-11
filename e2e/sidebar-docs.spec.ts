@@ -34,11 +34,16 @@ test("narrowing the article inset closes its tools without losing the Settings d
   await card.getByRole("textbox", { name: "Search description", exact: true }).fill("A draft summary.");
   await card.getByRole("textbox", { name: "Keywords", exact: true }).fill("teams, invitations");
   await card.getByRole("checkbox", { name: /^Block search indexing/ }).check();
-  await sidebar.locator('[data-slot="sidebar-trigger"]').click();
+  // Toggle from a non-editable control inside the card so its closing layout must restore focus.
+  await card.getByRole("heading", { name: "Settings", exact: true }).focus();
+  await team.keyboard.press("Tab");
+  await expect(card.getByRole("button", { name: "Collapse article tools", exact: true })).toBeFocused();
+  await team.keyboard.press("ControlOrMeta+b");
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await expect(card).toBeHidden();
   await expect(team.getByRole("dialog")).toBeHidden();
   await expect(buttons.getByRole("button", { name: "Settings", exact: true })).toHaveAttribute("aria-expanded", "false");
+  await expect(buttons.getByRole("button", { name: "Settings", exact: true })).toBeFocused();
   await buttons.getByRole("button", { name: "Settings", exact: true }).click();
   const sheet = team.getByRole("dialog", { name: "Article settings", exact: true });
   await expect(sheet).toBeVisible();
@@ -64,6 +69,45 @@ test("narrowing the article inset closes its tools without losing the Settings d
   await team.goto(`/app/${slug}/docs/invite-your-team?settings`);
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole("checkbox", { name: /^Custom slug/ })).not.toBeChecked();
+});
+
+test("saved Settings stay current while the tools' closing navigation is pending", async ({ browser }, testInfo) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Example Team");
+  await createProject(team, "Example", slug);
+  const api = await apiFor(team, slug);
+  await api("/articles", { title: "Invite your team", body: "Owners send invites from Settings." });
+  await team.setViewportSize({ width: 1366, height: 900 });
+  const articlePath = `/app/${slug}/docs/invite-your-team`;
+  const routePattern = `**${articlePath}*`;
+  let releaseClose = () => {};
+  const closing = new Promise<void>((resolve) => { releaseClose = resolve; });
+  // Keep the successful save's panel on screen until its navigation can finish.
+  await team.route(routePattern, async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === "GET" && !url.searchParams.has("settings")) await closing;
+    await route.continue();
+  });
+  try {
+    await team.goto(`${articlePath}?settings`);
+    const card = team.getByRole("complementary", { name: "Article tools", exact: true });
+    await expect(card).toBeVisible();
+    await card.getByRole("checkbox", { name: /^Custom slug/ }).check();
+    const savedSlug = "invite-your-team";
+    await card.getByRole("textbox", { name: "Slug", exact: true }).fill(savedSlug);
+    await card.getByRole("textbox", { name: "Search description", exact: true }).fill("The saved summary.");
+    await card.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(team.getByText("Settings saved", { exact: true })).toBeVisible();
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("textbox", { name: "Slug", exact: true })).toHaveValue(savedSlug);
+    await expect(card.getByRole("textbox", { name: "Search description", exact: true })).toHaveValue("The saved summary.");
+    await checkpoints(testInfo)(team, "settings-saved-before-panel-closes", { fullPage: false });
+    releaseClose();
+    await expect(card).toBeHidden();
+  } finally {
+    releaseClose();
+    await team.unrouteAll({ behavior: "wait" });
+  }
 });
 
 test("App navigation in the Docs sheet persists the sidebar choice at non-phone widths", async ({ browser }, testInfo) => {

@@ -288,6 +288,7 @@ the list picks none to approve at once.
   end of the formatting row. Below 76rem of inset width the tools use a bottom sheet so the editor keeps its room,
   even with the app sidebar open. Narrowing the inset closes an open card without opening a sheet; its Settings draft
   stays until the user explicitly closes or saves it, and clicking Settings again opens that draft in the sheet.
+  Focus inside a closing card returns to that tool's toolbar button. Saving keeps the visible fields current while the panel closes.
   Collapsing the card returns its space to the document. These layout thresholds
   follow the inset and the current root font size in both CSS and JavaScript.
   History keeps a timeline and an inline comparison under the selected version, with the full comparison available.

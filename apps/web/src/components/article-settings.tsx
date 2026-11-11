@@ -196,6 +196,7 @@ function SavedSettings({
   }, {});
   const tools = useContext(ToolsContext);
   const [ownDraft, setOwnDraft] = useState<ArticleSettingsDraft>(() => {
+    if (inline && tools?.settingsDraft) return tools.settingsDraft;
     // As the panel opened: send only place changes, so someone else's newer move stays.
     const loaded = { collection: article.collection, showUpdatedDate: article.showUpdatedDate };
     return {
@@ -206,7 +207,10 @@ function SavedSettings({
     };
   });
   const draft = inline && tools ? tools.settingsDraft ?? ownDraft : ownDraft;
-  const setDraft = (next: ArticleSettingsDraft) => inline && tools ? tools.setSettingsDraft(next) : setOwnDraft(next);
+  const setDraft = (next: ArticleSettingsDraft) => {
+    setOwnDraft(next);
+    if (inline && tools) tools.setSettingsDraft(next);
+  };
 
   return (
     <form {...keepingFields(action)} className="flex min-h-0 flex-1 flex-col">
