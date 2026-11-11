@@ -33,5 +33,7 @@ describe("Docs review summaries", () => {
     expect(markedRun([{ id: "3", state: "running", statements: [] }, { id: "2", state: "skipped", statements: [] }, done])?.id).toBe("1");
     expect(markedRun([{ id: "2", state: "changed", statements: [] }, done])?.id).toBe("1");
     expect(markedRun([{ id: "2", state: "failed", statements: [] }])).toBeUndefined();
+    // A newer finished check that found nothing replaces the older findings: nothing is marked.
+    expect(markedRun([{ id: "2", state: "done", statements: [] }, done])?.id).toBe("2");
   });
 });

@@ -100,9 +100,10 @@ export function matchingSentence(statement: string, candidates: string[]) {
 }
 
 /**
- * The Verify run whose findings the editor marks: the newest one that checked statements. A newer run that's
+ * The Verify run whose findings the editor marks: the newest one that checked the article. A newer run that's
  * running, failed or skipped (nothing changed since) has none, and the card still shows the earlier findings.
  */
 export function markedRun<T extends { state: string; statements: unknown[] }>(runs: T[]): T | undefined {
-  return runs.find((run) => (run.state === "done" || run.state === "changed") && run.statements.length > 0);
+  // "done" with no statements found nothing to flag; "changed" with none didn't check (the card says so).
+  return runs.find((run) => run.state === "done" || (run.state === "changed" && run.statements.length > 0));
 }
