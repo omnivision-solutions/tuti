@@ -164,7 +164,8 @@ the list picks none to approve at once.
   away to leave room for the content. An article's back link and draft state share one compact block beside its actions,
   with a lower divider; the toolbar and text share a reading column, at the portal's width. The sidebar's visible "Toggle Sidebar"
   button sits beside the project switcher when expanded and at the top of the icon rail when collapsed. The edge rail
-  and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. On phones a compact sticky row keeps the menu and project/section path, the page's title
+  and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. The shortcut leaves typing
+  and shortcuts already handled by an editor alone. On phones a compact sticky row keeps the menu and project/section path, the page's title
   once its heading scrolls away, and `PageActions` at its right end. An editor's primary actions (`pinActions`) stay
   at the bottom on phones. Customize has its own section heading and Save changes row; it sticks at the top on
   wider screens and below the menu row on phones. Pane heights and sticky menus use the full window on wider screens.
@@ -178,13 +179,14 @@ the list picks none to approve at once.
   `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox: its views (with their counts), the list
-  and the open conversation side by side from laptop width up, each scrolling on
+  and the open conversation side by side when the sidebar inset has at least 57rem, each scrolling on
   its own from the top of the shell (the page itself doesn't; `InboxPanes`); the views always
   the row of tabs above the list, in the same place whether or not a conversation is open
   (they never move as one opens or closes): Needs reply, Mine and Unassigned as tabs, the
   rest (Waiting on user, Snoozed, Closed, Spam) under More, which reads as the one of them
-  open, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide, the conversation the rest; on phones and
-  tablets the list or the conversation, its Back to the list. A row reads in three
+  open, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide, the conversation the rest; with less room beside the sidebar,
+  the list or the conversation, its Back to the list. Opening the app sidebar can switch
+  to this single-pane layout without changing the sidebar preference. A row reads in three
   lines: who and their company on one (cut short, in full on hover) with,
   at the right, the assignee's face (their name on hover, and in the row's name to the ear) and its age, short ("4m": how long they've waited, or since
   the latest message); the subject and the latest message's first line on separate lines, cut
@@ -207,7 +209,8 @@ the list picks none to approve at once.
   in chat bubbles with the author's avatar and time; internal notes have the highlight tint. The composer is one card.
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
-  kept for the browser; on phones and smaller tablets its toggle opens the same controls and context in a sheet.
+  kept for the browser; below 77rem of sidebar inset width its toggle opens the same controls and context in a sheet,
+  leaving room for the conversation even with the app sidebar open.
   Linked posts and Looks related start open. Customer details, Company, Other conversations from this person,
   Recent page visits, Events and Conversation attributes start folded, each with an icon, count and chevron.
   Other conversations expand to a title, a muted status · number · date line and one line of the latest message.
@@ -336,10 +339,11 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   (`SignedOutLinks`): the form is the way in. On phones no keyboard hints (`Ctrl K`).
 - **Customize** (`/app/<project>/customize/<section>`): the whole width.
   `CustomizeShell`: Customize's sections in a rail on
-  the far left (a menu above the panel on smaller screens; no index page, no
+  the far left when the sidebar inset has at least 64rem (a menu above the panel with less room; no index page, no
   Back), the section's settings in a panel beside it (title; cards inside),
   the portal it changes on the right in a browser frame, at desktop or phone
-  width, light or dark. Settings that
+  width, light or dark. Below that inset width the settings and preview stack and the page scrolls;
+  with room for all three columns, each pane scrolls inside the window. The app sidebar keeps the user’s choice. Settings that
   change how the portal looks go here, not in Settings. A section's forms use
   `useCustomizeForm`: "Save changes" in the panel's header saves every one with
   a change (enabled once something changed), and `toDraft` shows a change in the frame as it's made

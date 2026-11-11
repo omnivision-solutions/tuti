@@ -37,20 +37,20 @@ export function AppShell({ sidebar, header, banners, children, defaultSidebarOpe
   return (
     <SidebarProvider open={open} onOpenChange={setOpen}>
       {sidebar}
-      <SidebarInset className="has-[.inbox-workspace]:bg-inbox-canvas max-md:has-[.inbox-workspace]:[&>header]:hidden">
+      <SidebarInset className="@container/app has-[.inbox-workspace]:bg-inbox-canvas max-md:has-[.inbox-workspace]:[&>header]:hidden">
         {!DOCS.test(pathname) && header}
         {customizing ? (
-          // From laptop width up, the window's height: the page doesn't scroll, each of its panes does
+          // With enough room beside the sidebar, the window's height: the page doesn't scroll, each of its panes does
           // (the banners too, past a third of it, so the panes keep their room).
-          <div className="flex flex-1 flex-col lg:h-svh lg:flex-none">
-            <div className="flex flex-col gap-4 p-4 empty:hidden lg:max-h-1/3 lg:overflow-y-auto">{banners}</div>
+          <div className="flex flex-1 flex-col @min-[64rem]/app:h-svh @min-[64rem]/app:flex-none">
+            <div className="flex flex-col gap-4 p-4 empty:hidden @min-[64rem]/app:max-h-1/3 @min-[64rem]/app:overflow-y-auto">{banners}</div>
             {children}
           </div>
         ) : (
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
-          // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up. On
+          // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height when its columns fit. On
           // phones, room at the bottom for actions pinned there (PageActions), and for Tuti's own chat launcher (AppWidget; not in the Inbox or on Customize).
-          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 lg:has-data-fills-window:h-dvh lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24 has-[>.inbox-workspace]:py-4 has-[>.inbox-workspace]:pr-4 has-[>.inbox-workspace]:pl-12 max-lg:has-[>.inbox-workspace]:h-dvh max-lg:has-[>.inbox-workspace]:min-h-0 max-lg:has-[>.inbox-workspace]:flex-none max-lg:has-[>.inbox-workspace]:gap-4 max-lg:has-[>.inbox-workspace]:p-2">
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 @min-[57rem]/app:has-data-fills-window:h-dvh @min-[57rem]/app:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24 has-[>.inbox-workspace]:py-4 has-[>.inbox-workspace]:pr-4 has-[>.inbox-workspace]:pl-12 @max-[57rem]/app:has-[>.inbox-workspace]:h-dvh @max-[57rem]/app:has-[>.inbox-workspace]:min-h-0 @max-[57rem]/app:has-[>.inbox-workspace]:flex-none @max-[57rem]/app:has-[>.inbox-workspace]:gap-4 @max-[57rem]/app:has-[>.inbox-workspace]:p-2">
             {banners}
             {children}
           </div>
