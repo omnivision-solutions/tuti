@@ -7,7 +7,7 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { saveAutopilotRecipients, setAutopilotEmails } from "@/server/github";
-import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
+import { GET as act } from "@/app/app/(workspace)/[project]/autopilot/[id]/act/route";
 import { dismissCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, createCollection, discardChanges, publishArticle, updateArticle } from "@/server/operations/docs";

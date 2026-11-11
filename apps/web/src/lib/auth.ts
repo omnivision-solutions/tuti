@@ -41,7 +41,7 @@ async function sendSignInLink({ email, token, metadata }: { email: string; token
 
 /**
  * Remembers a password reset link's token on the sign_in_link row of where it was asked and emails a link to the
- * app's /reset-password, wherever that was: a portal's address can be its team's own domain or site, and the
+ * app's /app/auth/reset-password, wherever that was: a portal's address can be its team's own domain or site, and the
  * password is the account's everywhere. Better Auth's request endpoint isn't served: only emailPasswordReset
  * (server/password-reset.ts) asks, passing its row's id as `redirectTo`, which comes back here as the URL's callbackURL.
  */
@@ -52,7 +52,7 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
     data: { tokenHash: hashSecret(token) },
     select: { project: { select: { id: true, name: true } } },
   });
-  const link = new URL("/reset-password", appUrl());
+  const link = new URL("/app/auth/reset-password", appUrl());
   link.searchParams.set("token", token);
   await sendEmail({
     to: user.email,
@@ -99,7 +99,7 @@ export async function isOwnWayBack(
  */
 export async function signedWayBack(portal: string, redirect: string, userId: string): Promise<string> {
   const issued = String(Math.floor(Date.now() / 1000));
-  return `/continue?${new URLSearchParams({ portal, redirect, issued, mac: await wayBackMac(portal, redirect, userId, issued) })}`;
+  return `/app/auth/continue?${new URLSearchParams({ portal, redirect, issued, mac: await wayBackMac(portal, redirect, userId, issued) })}`;
 }
 
 /**
@@ -112,9 +112,9 @@ export async function signedWayBack(portal: string, redirect: string, userId: st
 async function withoutHandoffState(link: string, userId: string, signingUp: boolean): Promise<string> {
   const url = new URL(link);
   const back = url.searchParams.get("callbackURL");
-  if (back?.startsWith("/continue?") && !signingUp) {
+  if (back?.startsWith("/app/auth/continue?") && !signingUp) {
     url.searchParams.set("callbackURL", "/");
-  } else if (back?.startsWith("/continue?")) {
+  } else if (back?.startsWith("/app/auth/continue?")) {
     const callback = new URL(back, url);
     const portal = callback.searchParams.get("portal");
     url.searchParams.set("callbackURL", portal ? await signedWayBack(portal, callback.searchParams.get("redirect") ?? "", userId) : "/");

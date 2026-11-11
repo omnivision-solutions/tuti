@@ -1,7 +1,7 @@
 # Design system
 
 Tuti's look ("Parrot") and the rules for building screens. See every pattern
-live, in light and dark, at **`/design`** (dev only, e.g. https://dev.tuti.so/design).
+live, in light and dark, at **`/app/design`** (dev only, e.g. https://dev.tuti.so/app/design).
 Check new UI there and at phone width (390px) before shipping it.
 
 ## Brand

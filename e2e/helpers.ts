@@ -3,7 +3,7 @@ import { deflateSync } from "node:zlib";
 
 import { type Browser, expect, type Locator, type Page } from "@playwright/test";
 
-import { APP_URL, portalUrl } from "./env";
+import { APP_URL, CLOUD_URL, portalUrl } from "./env";
 
 export type TestPage = Page & { email: string; ip: string };
 
@@ -32,10 +32,11 @@ export async function signUp(
   email = `e2e-${randomUUID()}@example.com`,
 ): Promise<TestPage> {
   const page = await newPerson(browser, baseUrl);
-  await page.goto("/sign-up");
+  // The app's sign-up, or the portal's, which sends on to the app's.
+  await page.goto(baseUrl === APP_URL || baseUrl === CLOUD_URL ? "/app/auth/sign-up" : "/sign-up");
   await fillSignUp(page, name, email);
-  await page.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
-  if (new URL(page.url()).pathname === "/continue") {
+  await page.waitForURL((url) => url.pathname !== "/app/auth/sign-up");
+  if (new URL(page.url()).pathname === "/app/auth/continue") {
     await backToPortal(page);
   }
   return Object.assign(page, { email });
@@ -58,7 +59,7 @@ export async function signInWithPassword(page: Page, email: string, password = "
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.waitForURL((url) => url.pathname === "/continue");
+  await page.waitForURL((url) => url.pathname === "/app/auth/continue");
   await backToPortal(page);
 }
 

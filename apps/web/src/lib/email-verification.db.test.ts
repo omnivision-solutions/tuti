@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@tuti/db";
 import { expect, test, vi } from "vitest";
 
-import ContinuePage from "@/app/(marketing)/continue/page";
+import ContinuePage from "@/app/app/(account-pages)/auth/continue/page";
 import { actAs, createProject, redirectTarget, signUp as signUpUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
@@ -151,10 +151,10 @@ test("signed up from a portal, the verification link comes back through a new ha
   const project = await createProject(await signUpUser("Owner"));
   // Sent from the portal to the app's sign-up: its way back is this handoff's /continue, with its state.
   const state = randomSecret();
-  const email = await signUp(`/continue?${new URLSearchParams({ portal: project.slug, state, redirect: "/feedback/ideas" })}`);
+  const email = await signUp(`/app/auth/continue?${new URLSearchParams({ portal: project.slug, state, redirect: "/feedback/ideas" })}`);
   const { link } = await verificationLink(email);
   const back = new URL(link.searchParams.get("callbackURL")!, link);
-  expect(back.pathname).toBe("/continue");
+  expect(back.pathname).toBe("/app/auth/continue");
   // In the state's place, when it was made and the app's MAC for this account: only that starts a new handoff.
   expect(Object.fromEntries(back.searchParams)).toEqual({
     portal: project.slug,
@@ -173,7 +173,7 @@ test("signed up from a portal, the verification link comes back through a new ha
   request.host = appHost;
   actAs(ada);
   const page = (query: Record<string, string>) =>
-    ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(query) } as PageProps<"/continue">);
+    ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(query) } as PageProps<"/app/auth/continue">);
   const signed = Object.fromEntries(back.searchParams);
   // Not by itself: the card names the portal and its address, and the person clicks on.
   const rendered = await page(signed);
@@ -216,8 +216,8 @@ test("signed up from a portal, the verification link comes back through a new ha
   expect(again.headers.getSetCookie().some((c) => c.includes("session_token"))).toBe(false);
   actAs(null);
   const signIn = new URL(await redirectTarget(page(signed)), APP_URL);
-  expect(signIn.pathname).toBe("/sign-in");
-  expect(signIn.searchParams.get("next")).toBe(`/continue?${new URLSearchParams({ portal: project.slug, redirect: signed.redirect!, issued: signed.issued!, mac: signed.mac! })}`);
+  expect(signIn.pathname).toBe("/app/auth/sign-in");
+  expect(signIn.searchParams.get("next")).toBe(`/app/auth/continue?${new URLSearchParams({ portal: project.slug, redirect: signed.redirect!, issued: signed.issued!, mac: signed.mac! })}`);
   actAs(ada);
   expect(await continueButton(page(Object.fromEntries(new URL(signIn.searchParams.get("next")!, APP_URL).searchParams)))).toBe(
     `http://${project.slug}.localhost:3100/continue?redirect=%2Ffeedback%2Fideas`,
@@ -227,7 +227,7 @@ test("signed up from a portal, the verification link comes back through a new ha
 test("a way back someone gets signed by signing up with a hand-picked callback works for nobody else", async () => {
   // Their own project (whose address they may run), and a sign-up through the API asking for a way back there.
   const theirs = await createProject(await signUpUser("Owner"));
-  const email = await signUp(`/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}`);
+  const email = await signUp(`/app/auth/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}`);
   const { link } = await verificationLink(email);
   const back = new URL(link.searchParams.get("callbackURL")!, link);
   expect(back.searchParams.get("mac")).toBeTruthy();
@@ -236,20 +236,20 @@ test("a way back someone gets signed by signing up with a hand-picked callback w
   // that account, not valid). Never a redirect to that address.
   request.host = new URL(APP_URL).host;
   const open = () =>
-    ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/continue">).catch(
+    ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/app/auth/continue">).catch(
       (error: { digest?: string }) => error.digest,
     );
   actAs(await signUpUser("Someone else"));
   expect(JSON.stringify(((await open()) as React.ReactElement).props)).toContain("Link not valid");
   actAs(null);
-  expect(await open()).toMatch(/^NEXT_REDIRECT;[^;]+;\/sign-in\?next=%2Fcontinue%3F/);
+  expect(await open()).toMatch(/^NEXT_REDIRECT;[^;]+;\/app\/auth\/sign-in\?next=%2Fapp%2Fauth%2Fcontinue%3F/);
 });
 
 test("asking for a verification email again never signs a way back: anyone can ask, for anyone's address", async () => {
   // Bea signed up on the app and hasn't verified; someone else asks for her email again, with a way back to their portal.
   const email = await signUp("/app");
   const theirs = await createProject(await signUpUser("Owner"));
-  const asked = await postOnApp("send-verification-email", { email, callbackURL: `/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}` });
+  const asked = await postOnApp("send-verification-email", { email, callbackURL: `/app/auth/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}` });
   expect(asked.ok).toBe(true);
   const { link } = await verificationLink(email);
   // No way back to the portal in it: the app's home.
@@ -265,7 +265,7 @@ test("asking for a verification email again never signs a way back: anyone can a
 test("someone else's address signed up with a hand-picked callback: its own verify click shows the card, never a redirect", async () => {
   // Whoever signs up an address chooses the way back, and the inbox's owner's click signs that account in.
   const theirs = await createProject(await signUpUser("Owner"));
-  const email = await signUp(`/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}`);
+  const email = await signUp(`/app/auth/continue?${new URLSearchParams({ portal: theirs.slug, redirect: "/" })}`);
   const { link } = await verificationLink(email);
   const appHost = new URL(APP_URL).host;
   const verified = await auth.handler(new Request(link, { headers: { host: appHost } }));
@@ -275,7 +275,7 @@ test("someone else's address signed up with a hand-picked callback: its own veri
   request.host = appHost;
 
   // As that account: a page saying where it goes, with a button, not a redirect.
-  const rendered = ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/continue">);
+  const rendered = ContinuePage({ params: Promise.resolve({}), searchParams: Promise.resolve(Object.fromEntries(back.searchParams)) } as PageProps<"/app/auth/continue">);
   const outcome = await rendered.then(
     (tree) => ({ tree }),
     (error: { digest?: string }) => ({ redirect: error.digest }),

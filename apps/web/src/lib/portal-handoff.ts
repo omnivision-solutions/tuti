@@ -15,7 +15,7 @@ import { baseFrom, withBase } from "@/lib/portal-base";
  * cookies between hosts.
  *
  * 1. The portal's `/continue` sets a random state in a host-only cookie and sends
- *    the browser to the app host's `/continue` with that state.
+ *    the browser to the app host's `/app/auth/continue` with that state.
  * 2. There, the signed-in account confirms; the app host stores a one-time code
  *    bound to the portal, the account and the state, and sends the browser back.
  * 3. The portal's callback (below) uses the code once, checks it was issued for

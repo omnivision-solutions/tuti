@@ -5,9 +5,9 @@ import { FAILED_SEARCHES_PER_DAY, handlers } from "@tuti/jobs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import DocsInsightsPage from "@/app/app/[project]/docs/insights/page";
-import ReportingSearchesPage from "@/app/app/[project]/reporting/searches/page";
-import ReportingUnansweredPage from "@/app/app/[project]/reporting/unanswered/page";
+import DocsInsightsPage from "@/app/app/(workspace)/[project]/docs/insights/page";
+import ReportingSearchesPage from "@/app/app/(workspace)/[project]/reporting/searches/page";
+import ReportingUnansweredPage from "@/app/app/(workspace)/[project]/reporting/unanswered/page";
 import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";

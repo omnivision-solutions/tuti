@@ -578,7 +578,7 @@ const matrix: Matrix = {
     addSampleContent: { allowed: "ADMIN", call: (slug) => projects.addSampleContent(slug) },
     removeSampleContent: { allowed: "ADMIN", call: (slug) => projects.removeSampleContent(slug) },
   },
-  // Anyone with tuti.so/license's link may pay for the licence it names (see license-checkout.db.test.ts).
+  // Anyone with tuti.so/app/license's link may pay for the licence it names (see license-checkout.db.test.ts).
   "license-checkout": {
     buyLicense: {
       allowed: "public",

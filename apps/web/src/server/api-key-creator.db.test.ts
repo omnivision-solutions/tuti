@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
 import { GET } from "@/app/api/v1/[...path]/route";
-import { POST } from "@/app/mcp/route";
+import { POST } from "@/app/api/mcp/route";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createApiKey } from "./api-keys";
@@ -48,7 +48,7 @@ test("a key whose creator left the team without it being revoked (a key from bef
   expect(await prisma.apiKey.count({ where: { projectId: project.id, revokedAt: null } })).toBe(1);
   expect(await get("/users")).toBe(401);
   const mcp = await POST(
-    new Request("http://tuti.localhost:3100/mcp", {
+    new Request("http://tuti.localhost:3100/api/mcp", {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
@@ -66,7 +66,7 @@ test("an admin's key loses admin operations once they're made a member", async (
 test("MCP follows the same rule: a demoted admin's key loses admin tools, a removed one's key stops working", async () => {
   const listTools = () =>
     POST(
-      new Request("http://tuti.localhost:3100/mcp", {
+      new Request("http://tuti.localhost:3100/api/mcp", {
         method: "POST",
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),

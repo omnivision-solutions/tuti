@@ -3,8 +3,8 @@ import { readAutopilotButton, signAutopilotButton } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
-import OldChangePage from "@/app/app/[project]/autopilot/[id]/page";
+import { GET as act } from "@/app/app/(workspace)/[project]/autopilot/[id]/act/route";
+import OldChangePage from "@/app/app/(workspace)/[project]/autopilot/[id]/page";
 import { publishCodeChangeActionNow, stopCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
@@ -99,7 +99,7 @@ test("signed out (a mail scanner, or the recipient on another device): sign in f
   const token = signAutopilotButton(owner.id, id, `approve:${link.id}`)!;
   actAs(null);
   const landing = await click(id, token);
-  expect(landing).toBe(`/sign-in?next=${encodeURIComponent(`/app/${project.slug}/autopilot/${id}/act?token=${token}`)}`);
+  expect(landing).toBe(`/app/auth/sign-in?next=${encodeURIComponent(`/app/${project.slug}/autopilot/${id}/act?token=${token}`)}`);
   expect(await statusOf(link.id)).toBe("PENDING");
 });
 

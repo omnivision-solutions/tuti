@@ -14,7 +14,7 @@ import { disconnectGithub, refreshGithubRepositories, setGithubRepository } from
 import { accountsFromCookie } from "@/server/github-connect";
 
 import { GithubRepositories } from "@/components/github-connection";
-import GithubIntegrationPage from "@/app/app/[project]/settings/(admin)/integrations/github/page";
+import GithubIntegrationPage from "@/app/app/(workspace)/[project]/settings/(admin)/integrations/github/page";
 
 import { GET as callback } from "./callback/route";
 import { GET as install } from "./install/route";

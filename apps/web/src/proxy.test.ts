@@ -84,7 +84,7 @@ test("Tuti's own portal under its path on the app's domain (tuti.example/help/â€
   expect((await response("/help/roadmap")).headers.get("x-middleware-request-x-tuti-base")).toBe("/help");
   // Its sign-in is the app's own auth API, under the path.
   expect(await rewrite("/help/api/auth/get-session")).toBe("http://tuti.example/api/auth/get-session");
-  for (const path of ["/", "/docs/api", "/sign-in", "/app/acme", "/helpx", "/feedback/ideas", "/widget"]) {
+  for (const path of ["/", "/api/docs", "/app/auth/sign-in", "/app/acme", "/helpx", "/feedback/ideas", "/widget"]) {
     expect(await rewrite(path)).toBeNull();
   }
   // Its slug may be a reserved one: help.tuti.example is its portal.

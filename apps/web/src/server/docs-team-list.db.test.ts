@@ -14,8 +14,8 @@ const render = (node: ReactNode) => new Promise<string>((resolve, reject) => {
 });
 import { expect, test, vi } from "vitest";
 
-import TeamDocsLayout from "@/app/app/[project]/docs/layout";
-import TeamDocsPage from "@/app/app/[project]/docs/page";
+import TeamDocsLayout from "@/app/app/(workspace)/[project]/docs/layout";
+import TeamDocsPage from "@/app/app/(workspace)/[project]/docs/page";
 import { ArticleHistory, authorPhotos } from "@/components/article-history";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
@@ -168,7 +168,7 @@ test("collection totals exclude sample readership, Updated uses the save time, a
   await prisma.articleRevision.create({ data: { articleId: article.id, title: "Plans", body: "Seats.", codeChangeActionId: action.id, createdAt: new Date(Date.now() - 2 * 3_600_000) } });
   await prisma.article.update({ where: { id: article.id }, data: { order: 2 } });
   await prisma.articleViewDay.createMany({ data: [{ articleId: article.id, day: new Date(), views: 7 }, { articleId: sample.id, day: new Date(), views: 100 }] });
-  const { default: CollectionPage } = await import("@/app/app/[project]/docs/collections/[collection]/page");
+  const { default: CollectionPage } = await import("@/app/app/(workspace)/[project]/docs/collections/[collection]/page");
   const params = Promise.resolve({ project: project.slug, collection: collection.slug });
   const html = await render(await TeamDocsLayout({ params, children: await CollectionPage({ params } as never) } as never));
   const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();

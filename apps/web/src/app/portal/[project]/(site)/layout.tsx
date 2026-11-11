@@ -104,7 +104,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   // The project's own widget (Customize → Widget), and for Ask AI even where the team turned it off here: on the portal's
   // own origin, with the reader's sign-in. A copy the team's Custom code adds gives way to it (the loader sees this tag),
   // and brings its launcher back if the setting is off (they added it to have one; not if they hid it, data-hide-launcher).
-  const teamAddsWidget = !!ownOrigin && brand.customHtml.includes(`${appUrl().origin}/widget.js`);
+  const teamAddsWidget = !!ownOrigin && brand.customHtml.includes(`${appUrl().origin}/api/widget.js`);
   const widgetHere = project.widgetOnPortal || assistant || teamAddsWidget;
 
   return (
@@ -163,7 +163,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
             path it's under, Ask AI's question). */}
         {widgetHere && (
           <PortalWidget
-            src={`${appUrl().origin}/widget.js?v=${PORTAL_LOADER}`}
+            src={`${appUrl().origin}/api/widget.js?v=${PORTAL_LOADER}`}
             slug={slug}
             base={base}
             launcher={project.widgetOnPortal || (teamAddsWidget && !hidesLauncher(brand.customHtml))}

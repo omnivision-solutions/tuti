@@ -20,9 +20,9 @@ import {
 } from "./widget-messages";
 
 /**
- * The widget loader served at /widget.js, for customers' own sites:
+ * The widget loader served at /api/widget.js, for customers' own sites:
  *
- *   <script src="https://tuti.so/widget.js" data-project="acme" async></script>
+ *   <script src="https://tuti.so/api/widget.js" data-project="acme" async></script>
  *
  * Adds a launcher, a round button with an icon, that opens the project's portal /widget
  * page in an iframe. Plain ES5 without dependencies, and it never puts data into HTML: the
