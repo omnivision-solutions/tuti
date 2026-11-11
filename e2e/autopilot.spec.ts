@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, type Locator, type Page, type Request, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Request, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";

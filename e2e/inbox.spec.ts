@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { type Browser, expect, type Locator, type Page, test } from "@playwright/test";
+import { type Browser, expect, type Locator, type Page, test } from "./fixtures";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";

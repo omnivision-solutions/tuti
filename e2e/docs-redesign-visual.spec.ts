@@ -1,6 +1,6 @@
 import pg from "pg";
 import { randomInt, randomUUID } from "node:crypto";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { connectGithub } from "./github";
 import { nextModelReply } from "./model";

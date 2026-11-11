@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { type Browser, expect, type Page, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, type Locator, type Page, type Response, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Response, test } from "./fixtures";
 
 import { seedAiConversations, seedViewsLastMonth } from "./articles";
 import { checkpoints } from "./checkpoint";
@@ -1414,7 +1414,6 @@ test("an article's settings: its own address (the old one redirects), keywords r
   const api = await apiFor(team, slug);
   await api("/articles", { title: "Inviting your team", body: "Owners send invites from the Team page." });
   await api("/articles/inviting-your-team/publish", {});
-  await api("/collections", { name: "Team basics" });
 
   await team.goto(`/app/${slug}/docs/inviting-your-team`);
   // Saved state lives in the title row; Settings is an icon on the pinned formatting row.
@@ -1478,7 +1477,21 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await visitor.goto("/docs?q=colleague");
   await expect(visitor.getByRole("main").getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Inviting your team"]);
   await checkpoint(visitor, "portal-docs-search-by-keyword");
+});
 
+test("article settings keep collection changes unpublished, preserve a typed title and retain a concurrent move", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/articles", { title: "Inviting your team", body: "Owners send invites from the Team page.", slug: "invites" });
+  await api("/articles/invites/publish", {});
+  await api("/collections", { name: "Team basics" });
+  await team.goto(`/app/${slug}/docs/invites`);
+  const dialog = team.getByRole("region", { name: "Article settings" });
+  const slugBox = dialog.getByRole("textbox", { name: "Slug" });
+  const visitor = await newPerson(browser, portalUrl(slug));
   // A collection picked in Settings is saved there, as the article's Save would: on a published article it waits, with
   // the other unpublished changes, to be published. The title being written meanwhile stays as it was typed.
   const title = team.getByRole("textbox", { name: "Title" });
@@ -1504,6 +1517,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await team.getByRole("button", { name: "Settings" }).click();
   await dialog.getByRole("combobox", { name: "Collection" }).click();
   await team.getByRole("option", { name: "No collection" }).click();
+  await dialog.getByRole("checkbox", { name: /^Custom slug/ }).check();
   await slugBox.fill("team-invites");
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await team.waitForURL(`**/app/${slug}/docs/team-invites`);
@@ -1523,6 +1537,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await team.getByRole("button", { name: "Settings" }).click();
   await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("Team basics");
   await team.keyboard.press("Escape");
+  await checkpoint(team, "team-docs-settings-preserve-concurrent-move", { fullPage: false });
 });
 
 test("a visitor asks the docs' AI: an answer with its source, or “I don't know” and posting the question as feedback", async ({ browser }, testInfo) => {

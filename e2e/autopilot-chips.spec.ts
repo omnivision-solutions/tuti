@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { type Browser, expect, type Request, test } from "@playwright/test";
+import { type Browser, expect, type Request, test } from "./fixtures";
 
 import { asPreviousRelease, markOutOfDate, setAnalysis, setPullRequestState } from "./autopilot";
 import { checkpoints } from "./checkpoint";

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type Browser, expect, test } from "@playwright/test";
+import { type Browser, expect, test } from "./fixtures";
 import pg from "pg";
 import { APP_URL } from "./env";
 import { checkpoints } from "./checkpoint";

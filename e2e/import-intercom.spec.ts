@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { FAKE_INTERCOM_TOKEN } from "@tuti/testkit";
 
 import { checkpoints } from "./checkpoint";

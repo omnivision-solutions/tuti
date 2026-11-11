@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { verifyEmail } from "./mail";
 import { APP_URL } from "./env";

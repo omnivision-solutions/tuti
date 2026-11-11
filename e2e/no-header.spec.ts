@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";

@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import pg from "pg";
 
 import { checkpoints } from "./checkpoint";

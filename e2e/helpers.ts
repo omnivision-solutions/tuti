@@ -15,7 +15,13 @@ export type TestPage = Page & { email: string; ip: string };
 export async function newPerson(browser: Browser, baseUrl: string): Promise<Page & { ip: string }> {
   const ip = `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
   const context = await browser.newContext({ baseURL: baseUrl, extraHTTPHeaders: { "x-forwarded-for": ip } });
-  return Object.assign(await context.newPage(), { ip });
+  const page = await context.newPage();
+  const slowdown = Number(process.env.E2E_CPU_THROTTLE ?? 1);
+  if (slowdown > 1) {
+    const client = await context.newCDPSession(page);
+    await client.send("Emulation.setCPUThrottlingRate", { rate: slowdown });
+  }
+  return Object.assign(page, { ip });
 }
 
 /** A new browser session that signed up at `baseUrl` (the app, or a portal: on the app, and back to it). */
