@@ -30,6 +30,32 @@ for (const pane of [
     const maximum = async (viewport = 1280) => pane.name === "docs tree" ? pane.max : Math.max(pane.min, Math.min(pane.max,
       (await team.locator(".inbox-workspace").boundingBox())!.width - 480 - 12 - (viewport >= 1200 ? 312 : 0)));
     const initialMax = await maximum();
+    const readsAfterUnrelatedChange = () => team.evaluate(async () => {
+      // Wait out the initial ResizeObserver delivery before measuring an unrelated message update.
+      const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await frame();
+      await frame();
+      const workspace = document.querySelector<HTMLElement>(".inbox-workspace")!;
+      const original = workspace.getBoundingClientRect;
+      let reads = 0;
+      workspace.getBoundingClientRect = function () { reads++; return original.call(this); };
+      const message = document.createElement("span");
+      message.hidden = true;
+      try {
+        workspace.querySelector("#conversation")!.append(message);
+        // Hidden handles must also ignore width preferences and synthetic resize events.
+        if (!matchMedia("(min-width: 1024px)").matches) {
+          document.documentElement.style.setProperty("--inbox-list-width", "350px");
+          window.dispatchEvent(new Event("resize"));
+        }
+        await frame();
+        await frame();
+        return reads;
+      } finally {
+        workspace.getBoundingClientRect = original;
+        message.remove();
+      }
+    });
     const fits = async (viewport = 1280) => {
       expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport);
       for (const selector of [pane.name === "docs tree" ? ".docs-tree-expanded" : pane.selector, pane.name === "docs tree" ? ".docs-page-content" : ".inbox-thread"]) {
@@ -59,6 +85,7 @@ for (const pane of [
     const initialHandle = (await handle.boundingBox())!;
     const initialPane = (await column.boundingBox())!;
     expect(initialHandle.width).toBe(10);
+    if (pane.name === "conversation list") expect(await readsAfterUnrelatedChange()).toBe(0);
     if (pane.name === "conversation list") {
       await team.getByRole("region", { name: "Conversations", exact: true }).getByRole("listitem").last().getByRole("link").first().focus();
       await team.keyboard.press("Tab");
@@ -191,7 +218,45 @@ for (const pane of [
     for (const viewport of [{ width: 820, height: 1000 }, { width: 390, height: 844 }]) {
       await team.setViewportSize(viewport);
       await expect(handle).toBeHidden();
+      if (pane.name === "conversation list") expect(await readsAfterUnrelatedChange()).toBe(0);
     }
     await checkpoint(team, `${pane.name}-phone`, { fullPage: false });
+    // Widening reconnects observation and restores working controls after the hidden/mobile state.
+    await team.setViewportSize({ width: 1280, height: 900 });
+    await expect(handle).toBeVisible();
+    await handle.focus();
+    await team.keyboard.press("End");
+    await expect(handle).toHaveAttribute("aria-valuenow", String(initialMax));
+    expect(await width()).toBe(initialMax);
+    await fits();
+    if (pane.name === "conversation list") {
+      await team.getByRole("button", { name: "Hide details", exact: true }).click();
+      await expect(handle).toHaveAttribute("aria-valuemax", String(pane.max));
+      await team.getByRole("button", { name: "Show details", exact: true }).click();
+      await expect(handle).toHaveAttribute("aria-valuemax", String(initialMax));
+      await team.setViewportSize({ width: 1200, height: 900 });
+      await team.getByRole("button", { name: "Toggle Sidebar", exact: true }).first().click();
+      await expect(team.locator('[data-slot="sidebar"][data-state]')).toHaveAttribute("data-state", "expanded");
+      await expect(team.locator('[data-slot="sidebar-gap"]')).toHaveCSS("width", "240px");
+      const details = team.getByRole("complementary", { name: "Conversation details" });
+      if (await details.isVisible()) {
+        expect((await details.boundingBox())!.width).toBeGreaterThanOrEqual(240);
+      } else {
+        await team.getByRole("button", { name: "Show details", exact: true }).click();
+        const sheet = team.getByRole("dialog", { name: "Conversation details" });
+        await expect(sheet).toBeVisible();
+        await sheet.getByRole("button", { name: "Close", exact: true }).click();
+        await expect(sheet).toBeHidden();
+      }
+      const detailsWidth = await details.isVisible() ? (await details.boundingBox())!.width : 0;
+      const availableMax = Math.min(pane.max, Math.max(pane.min, (await team.locator(".inbox-workspace").boundingBox())!.width - 480 - 12 - (detailsWidth ? detailsWidth + 12 : 0)));
+      await expect(handle).toHaveAttribute("aria-valuemax", String(availableMax));
+      await handle.focus();
+      await team.keyboard.press("End");
+      expect(await width()).toBe(availableMax);
+      expect((await team.locator("#conversation").boundingBox())!.width).toBeGreaterThanOrEqual(480);
+      expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBe(1200);
+      await checkpoint(team, "inbox-sidebar-open-1200", { fullPage: false });
+    }
   });
 }

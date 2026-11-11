@@ -3,7 +3,12 @@
 import { cn } from "cn";
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 
+import { DOCS_TREE_FOLDED_ATTRIBUTE } from "@/lib/docs-tree-fold";
 import { PANE_WIDTHS, type ResizablePane } from "@/lib/pane-width";
+
+function paneShown(pane: ResizablePane) {
+  return window.matchMedia("(min-width: 1024px)").matches && (pane !== "docs" || !document.documentElement.hasAttribute(DOCS_TREE_FOLDED_ATTRIBUTE));
+}
 
 /** An overlay in the existing 12px pane gap: resizing never adds a column or moves the gap. */
 export function PaneResize({ pane, className }: { pane: ResizablePane; className: string }) {
@@ -11,24 +16,42 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
   const drag = useRef<{ x: number; width: number; pointer: number } | null>(null);
   const handle = useRef<HTMLDivElement>(null);
   const subscribe = useCallback((changed: () => void) => {
+    const desktop = window.matchMedia("(min-width: 1024px)");
     const mutations = new MutationObserver(changed);
-    mutations.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
     const sizes = new ResizeObserver(changed);
-    const column = document.querySelector(config.selector);
-    if (column) sizes.observe(column);
-    const workspace = handle.current?.closest(".inbox-workspace");
-    if (workspace) {
-      sizes.observe(workspace);
-      mutations.observe(workspace, { attributes: true, attributeFilter: ["data-details"], childList: true, subtree: true });
-    }
-    window.addEventListener("resize", changed);
+    const folds = new MutationObserver(() => connect());
+    const connect = () => {
+      mutations.disconnect();
+      sizes.disconnect();
+      folds.disconnect();
+      if (desktop.matches && pane === "docs") folds.observe(document.documentElement, { attributes: true, attributeFilter: [DOCS_TREE_FOLDED_ATTRIBUTE] });
+      if (paneShown(pane)) {
+        mutations.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+        const column = document.querySelector(config.selector);
+        if (column) sizes.observe(column);
+        const workspace = handle.current?.closest(".inbox-workspace");
+        if (workspace) {
+          sizes.observe(workspace);
+          const thread = workspace.querySelector(".inbox-thread");
+          if (thread) mutations.observe(thread, { attributes: true, attributeFilter: ["data-details"] });
+          const details = workspace.querySelector(".inbox-details");
+          if (details) sizes.observe(details);
+        }
+      }
+      changed();
+    };
+    connect();
+    desktop.addEventListener("change", connect);
     return () => {
       mutations.disconnect();
       sizes.disconnect();
-      window.removeEventListener("resize", changed);
+      folds.disconnect();
+      desktop.removeEventListener("change", connect);
     };
-  }, [config]);
+  }, [config, pane]);
   const snapshot = useCallback(() => {
+    // Hidden handles need no measurements or preference updates; reconnect when shown again.
+    if (!paneShown(pane)) return `${config.default},${config.max}`;
     let max: number = config.max;
     const workspace = handle.current?.closest(".inbox-workspace");
     if (workspace) {
@@ -43,7 +66,7 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
     }
     const preferred = Number.parseFloat(document.documentElement.style.getPropertyValue(config.variable)) || config.default;
     return `${Math.min(max, preferred)},${max}`;
-  }, [config]);
+  }, [config, pane]);
   const [width, max] = useSyncExternalStore(subscribe, snapshot, () => `${config.default},${config.max}`).split(",").map(Number);
 
   const stop = useCallback(() => {

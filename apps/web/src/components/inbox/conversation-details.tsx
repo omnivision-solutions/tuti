@@ -17,16 +17,33 @@ const subscribe = (listener: () => void) => {
 const hiddenNow = () => document.cookie.split("; ").includes(`${DETAILS_HIDDEN_COOKIE}=1`);
 const useHidden = (server: boolean) => useSyncExternalStore(subscribe, hiddenNow, () => server);
 const OPEN_DETAILS = "tuti:conversation-details";
-const wide = () => window.matchMedia("(min-width: 1200px)").matches;
+// CSS decides from the actual Inbox container; the toggle and sheet use the same decision.
+const wide = () => {
+  const workspace = document.querySelector(".inbox-workspace");
+  return !!workspace && getComputedStyle(workspace).getPropertyValue("--inbox-details-beside").trim() === "1";
+};
 const subscribeWidth = (listener: () => void) => {
-  const query = window.matchMedia("(min-width: 1200px)");
-  query.addEventListener("change", listener);
-  return () => query.removeEventListener("change", listener);
+  const sizes = new ResizeObserver(listener);
+  const workspace = document.querySelector(".inbox-workspace");
+  if (workspace) sizes.observe(workspace);
+  let fontSize = document.documentElement.style.fontSize;
+  const font = new MutationObserver((records) => {
+    const next = document.documentElement.style.fontSize;
+    // Width preference writes do not change whether details fit.
+    if (next === fontSize && records.every((record) => record.attributeName !== "class")) return;
+    fontSize = next;
+    listener();
+  });
+  font.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
+  return () => {
+    sizes.disconnect();
+    font.disconnect();
+  };
 };
 
 export function ConversationDetails({ hidden, children }: { hidden: boolean; children: ReactNode }) {
   return (
-    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(480px,1fr)_minmax(0,18.75rem)] grid-rows-[auto_minmax(0,1fr)] gap-x-3 data-[details=hidden]:grid-cols-[minmax(0,1fr)] max-[75rem]:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
+    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @min-[calc(780px_+_16.5rem)]/inbox:grid-cols-[minmax(480px,1fr)_minmax(15rem,18.75rem)] grid-rows-[auto_minmax(0,1fr)] gap-x-3 data-[details=hidden]:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
       {children}
     </div>
   );
@@ -45,7 +62,7 @@ export function DetailsPanel({ children }: { children: ReactNode }) {
   }, []);
   return (
     <>
-      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details inbox-surface col-start-2 row-span-2 row-start-1 flex flex-col overflow-hidden group-data-[details=hidden]/thread:hidden max-[75rem]:hidden min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
+      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details inbox-surface col-start-2 row-span-2 row-start-1 hidden @min-[calc(780px_+_16.5rem)]/inbox:flex flex-col overflow-hidden group-data-[details=hidden]/thread:hidden min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
         <h2 className="px-4.5 pt-5 pb-3 font-sans text-sm leading-[normal] font-semibold">Conversation details</h2>
         <div className="inbox-details-scroll min-h-0 overflow-y-auto px-4.5 pb-4.5 [scrollbar-width:thin] group-[.inbox-details-sheet]/details:px-5">{children}</div>
       </aside>
