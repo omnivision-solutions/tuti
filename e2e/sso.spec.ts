@@ -272,9 +272,9 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await unpublishing.getByRole("button", { name: "Unpublish" }).click();
   await expect(owner.getByText("Unpublished", { exact: true })).toBeVisible();
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
-  // Focus goes to Publish, in the bar (Unpublish was in the menu).
+  // The closed menu returns focus to More actions; Publish is now in the toolbar.
+  await expect(owner.getByRole("button", { name: "More actions", exact: true })).toBeFocused();
   const publish = owner.getByRole("main").getByRole("button", { name: "Publish", exact: true });
-  await expect(publish).toBeFocused();
   await publish.click();
   const publishing = owner.getByRole("alertdialog", { name: "Publish “Pricing”?" });
   await expect(publishing).toContainText("Signed-in readers can read it in your portal's docs.");

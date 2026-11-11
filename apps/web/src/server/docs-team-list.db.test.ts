@@ -189,4 +189,5 @@ test("History shows ten versions at a time and keeps earlier versions reachable"
   const earlier = await render(await ArticleHistory({ ...props, limit: 20 }));
   expect((earlier.match(/<li>/g) ?? [])).toHaveLength(14);
   expect(earlier).not.toContain("Show earlier versions");
+  expect(earlier).not.toContain("first version");
 });

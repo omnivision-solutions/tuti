@@ -605,11 +605,12 @@ Use these instead of hand-rolling layout:
 - **`Card`** with `CardHeader`/`CardTitle`/`CardDescription`: a settings section
   or form. One topic per card.
 - **`RichEditor bare`**: long writing (docs articles, changelog entries, new
-  posts) is written as it's published: no box and no toolbar; the title above
-  it is a borderless `BARE_TITLE` input set like the published heading. Blocks
-  come from a menu that typing / at the start of a line opens (the empty line
-  being written says so), formatting from a bar over selected text (and
-  Ctrl/⌘+K for a link). Comments keep the boxed editor with its toolbar.
+  posts) is written as it's published, without a box; the title above it is a
+  borderless `BARE_TITLE` input set like the published heading. Docs articles
+  keep a pinned formatting row; changelog entries and posts have no toolbar.
+  All keep the selection bar, Ctrl/⌘+K for a link, and the block menu that typing
+  / at the start of a line opens (the empty line being written says so).
+  Comments keep the boxed editor with its toolbar.
 - **`CopyField`**: a value the team pastes elsewhere (a script tag, a rule)
   in a muted box with "Copy", never bare code.
 - **Setup steps** (`SetupSteps`, `SetupStep` in `components/dns-setup.tsx`): a

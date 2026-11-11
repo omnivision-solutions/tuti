@@ -3,11 +3,14 @@
 import { cn } from "cn";
 
 import { EllipsisIcon } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { createContext, type ReactNode, type RefObject, useContext, useEffect, useRef, useState } from "react";
 import { IconTooltip } from "@/components/icon-tooltip";
 import { Button } from "@/components/ui/button";
 
 import { BackLink } from "@/components/back-link";
+
+const DocsMoreFocus = createContext<RefObject<HTMLButtonElement | null> | undefined>(undefined);
+export const useDocsMoreFocus = () => useContext(DocsMoreFocus);
 
 export function DocsMore({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -48,7 +51,7 @@ export function DocsMore({ children }: { children: ReactNode }) {
           }
         }}
       >
-        {children}
+        <DocsMoreFocus.Provider value={toggle}>{children}</DocsMoreFocus.Provider>
       </div>
     </div>
   );

@@ -91,7 +91,7 @@ export async function ArticleHistory({
                   {index === 0 && <Badge>Current</Badge>}
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {[revision.author?.name ?? "Someone whose account is gone", revisions[index + 1] ? (changed ? plural(changed, "paragraph") + " changed" : null) : "first version", revision.title !== current.title && `Titled “${revision.title}”`]
+                  {[revision.author?.name ?? "Someone whose account is gone", revisions[index + 1] ? (changed ? plural(changed, "paragraph") + " changed" : null) : null, revision.title !== current.title && `Titled “${revision.title}”`]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>

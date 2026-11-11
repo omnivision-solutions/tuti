@@ -226,14 +226,22 @@ export async function publishArticle(projectSlug: string, slug: string, edits?: 
       throw error;
     }
   });
-  return code ? { ...result, code } : result;
+  // Only the queue needs a structured review requirement; preserve other action errors.
+  return code === "edits_required" ? { ...result, code } : result;
 }
 
 /** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */
-export async function publishArticleChanges(projectSlug: string, slug: string, savedAt?: string): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) =>
-    call(publishChangesOperation, context, { slug: String(slug), savedAt: savedAt === undefined ? undefined : String(savedAt) }),
-  );
+export async function publishArticleChanges(projectSlug: string, slug: string, savedAt?: string): Promise<FormState & { code?: "changed" }> {
+  let changed = false;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    try {
+      await call(publishChangesOperation, context, { slug: String(slug), savedAt: savedAt === undefined ? undefined : String(savedAt) });
+    } catch (error) {
+      changed = error instanceof OperationError && error.code === "changed";
+      throw error;
+    }
+  });
+  return changed ? { ...result, code: "changed" } : result;
 }
 
 /** "Discard changes": back to the published version, if the changes are still those saved at `savedAt`. */

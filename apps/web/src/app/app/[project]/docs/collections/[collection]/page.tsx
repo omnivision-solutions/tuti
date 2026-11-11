@@ -72,7 +72,7 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
           </DocsArticleOrder>
         </Card>
       )}
-      <p className="-mt-4 flex items-center gap-1.5 text-xs text-muted-foreground"><GripVerticalIcon aria-hidden className="size-3.5" />Drag rows to reorder them; readers see this order.</p>
+      {collection.articles.length >= 2 && <p className="-mt-4 flex items-center gap-1.5 text-xs text-muted-foreground max-sm:hidden [@media(pointer:coarse)]:hidden"><GripVerticalIcon aria-hidden className="size-3.5" />Drag rows to reorder them; readers see this order.</p>}
     </>
   );
 }

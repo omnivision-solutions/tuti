@@ -8,6 +8,7 @@ import { CheckIcon, ChevronDownIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useEditorSlot } from "@/components/use-editor-slot";
+import { useDocsMoreFocus } from "@/components/docs-page-header";
 import { ArticleToolButtons } from "@/components/article-tools";
 import { useRouter } from "next/navigation";
 import { createContext, type ReactNode, useActionState, useContext, useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
@@ -334,7 +335,7 @@ export function ArticleForm({
       id={ARTICLE_FORM}
       {...keepingFields(action)}
       onInput={changed}
-      className={cn("docs-article-form [&_.tiptap>p:first-child]:text-[17px] [&_.tiptap>p:first-child]:text-muted-foreground [&_.tiptap>p:first-child]:leading-[1.6] w-full m-[0_auto] p-[32px_36px_56px] box-content max-w-[min(43rem,_calc(100%_-_72px))] pt-7 [&_>_[data-slot='field-group']]:gap-4", wide ? "max-w-[min(46rem,calc(100%_-_72px))]" : "max-w-[min(43rem,calc(100%_-_72px))]")}
+      className={cn("docs-article-form w-full m-[0_auto] p-[32px_36px_56px] box-content max-w-[min(43rem,_calc(100%_-_72px))] pt-7 [&_>_[data-slot='field-group']]:gap-4", wide ? "max-w-[min(46rem,calc(100%_-_72px))]" : "max-w-[min(43rem,calc(100%_-_72px))]")}
     >
       {/* A new article's place, from the Settings panel (a saved one's panel saves it). */}
       {!article && <PlaceFields place={place} />}
@@ -458,6 +459,7 @@ export function ArticleActions({
   autopilotEdits?: string[];
 }) {
   const router = useRouter();
+  const moreFocus = useDocsMoreFocus();
   const [pending, startTransition] = useTransition();
   // Every save refreshes the page (the action's refresh), so these are the edits waiting now, as shown.
   const shown = autopilotEdits;
@@ -472,7 +474,7 @@ export function ArticleActions({
   const run = (action: typeof publishArticle, done: string) =>
     startTransition(async () => {
       // Set before it runs: the page it refreshes to may render the bar's Publish before this goes on.
-      focusPublishNext = action === unpublishArticle;
+      focusPublishNext = action === unpublishArticle && !moreFocus;
       // The edits shown: one landing since refuses it.
       const result = await action(projectSlug, slug, shown);
       if (result.error) {
@@ -501,7 +503,7 @@ export function ArticleActions({
     return (
       <AlertDialog>
         <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Delete</AlertDialogTrigger>
-        <AlertDialogContent closeDisabled={pending}>
+        <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{title}”?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -541,7 +543,7 @@ export function ArticleActions({
       >
         {published ? "Unpublish" : "Publish"}
       </AlertDialogTrigger>
-      <AlertDialogContent closeDisabled={pending}>
+      <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>
             {unpublishing ? "Unpublish" : "Publish"} “{title}”?
@@ -617,7 +619,7 @@ export function ArticleChanges({
 
   const controls = (
     <details open={compact ? undefined : true} className={compact ? "docs-change-menu relative right-[auto] top-[auto] z-20 [&:not([open])]:relative [&:not([open])]:top-[auto] [&:not([open])]:right-[auto] [&[open]]:w-auto [&[open]]:p-0 [&[open]]:bg-transparent [&[open]]:border-0 [&[open]]:rounded-[8px] [&[open]]:relative [&_>_button]:mt-2 [&[open]_>_button]:flex [&[open]_>_button]:w-47.5 [&[open]_>_button]:justify-start [&[open]_>_button]:m-0 [&[open]_>_button]:bg-popover [&[open]_>_button]:border [&[open]_>_button]:border-border [&[open]_>_button]:absolute [&[open]_>_button]:left-[0] [&[open]_>_button]:top-8 [&[open]_>_button]:z-30 [&[open]_>_button:last-child]:top-16.5" : "contents"}>
-      <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle text-xs text-highlight-foreground list-none cursor-pointer inline-flex items-center gap-1.5 p-[3px_9px] bg-highlight rounded-[30px] max-sm:text-xs max-sm:gap-1 max-sm:px-2" : "hidden"}>
+      <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle text-xs text-highlight-foreground list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-highlight rounded-full max-sm:text-xs max-sm:gap-1 max-sm:px-2" : "hidden"}>
         <span aria-hidden className="size-1.5 rounded-full bg-status-under-review" />
         Unpublished changes
         <ChevronDownIcon aria-hidden className="size-3" />
@@ -1209,11 +1211,12 @@ export function DeleteCollectionButton({
   hasChildren?: boolean;
   standalone?: boolean;
 }) {
+  const moreFocus = useDocsMoreFocus();
   const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant={standalone ? "outline" : "ghost"} size="sm" disabled={pending} className={standalone ? "h-[30px] border-destructive/45 text-[13px] text-destructive-foreground" : undefined} />}>{standalone ? <><Trash2Icon className="size-3.5" />Delete collection</> : "Delete"}</AlertDialogTrigger>
-      <AlertDialogContent closeDisabled={pending}>
+      <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
           <AlertDialogDescription>
@@ -1474,13 +1477,14 @@ export function DeleteTabButton({
   /** The tab its collections go to (null: it's the last one). */
   movesTo: string | null;
 }) {
+  const moreFocus = useDocsMoreFocus();
   const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
       <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete ${tab.name}`} />}>
         Delete
       </AlertDialogTrigger>
-      <AlertDialogContent closeDisabled={pending}>
+      <AlertDialogContent closeDisabled={pending} finalFocus={moreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {tab.name}?</AlertDialogTitle>
           <AlertDialogDescription>

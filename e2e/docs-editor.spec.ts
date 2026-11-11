@@ -438,7 +438,9 @@ test("the publish queue leaves unseen Autopilot edits for review and singularise
   const queue = team.getByRole("region", { name: "Waiting to publish" });
   const blocked = queue.getByRole("listitem").filter({ hasText: "Invite your team" });
   await expect(blocked.getByRole("button", { name: "Publish", exact: true })).toHaveCount(0);
-  await expect(blocked.getByRole("link", { name: "Review", exact: true })).toBeVisible();
+  await expect(blocked.getByRole("link", { name: "Review Autopilot edit", exact: true })).toBeVisible();
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect(blocked.getByRole("link", { name: "Review Autopilot edit", exact: true })).toBeVisible();
   await queue.getByRole("button", { name: "Publish all", exact: true }).click();
   const confirm = team.getByRole("alertdialog", { name: "Publish 1 article?", exact: true });
   await expect(confirm).toBeVisible();
@@ -471,6 +473,9 @@ test("published articles with waiting Autopilot changes stay out of queue publis
   const queue = team.getByRole("region", { name: "Waiting to publish" });
   const blocked = queue.getByRole("listitem").filter({ hasText: "Invite your team" });
   await expect(blocked.getByRole("button", { name: "Publish", exact: true })).toHaveCount(0);
+  await expect(blocked.getByRole("link", { name: "Review Autopilot edit", exact: true })).toBeVisible();
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect(blocked.getByRole("link", { name: "Review Autopilot edit", exact: true })).toBeVisible();
   await queue.getByRole("button", { name: "Publish all", exact: true }).click();
   const confirm = team.getByRole("alertdialog", { name: "Publish 1 article?", exact: true });
   await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
@@ -495,6 +500,7 @@ test("a late Autopilot edit gets a review link and Publish all continues with th
   await expect(confirm).toBeHidden();
   await expect(queue.getByRole("listitem")).toHaveCount(1);
   await expect(queue.getByRole("listitem")).toContainText("First steps");
+  await expect(queue.getByRole("link", { name: "First steps", exact: true })).toBeFocused();
   await expect(team.locator(".docs-live-footer")).toContainText("1 article live");
 });
 
@@ -512,4 +518,111 @@ test("the portaled article title belongs to its form and blocks an empty title",
   await title.fill("A useful guide");
   await team.getByRole("button", { name: "Save draft", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/a-useful-guide`);
+});
+
+for (const all of [false, true]) {
+  test(`a late Autopilot edit restores focus after ${all ? "Publish all" : "Publish"} loses its control`, async ({ browser }) => {
+    const { team, slug } = await editor(browser);
+    await team.goto(`/app/${slug}/docs`);
+    const queue = team.getByRole("region", { name: "Waiting to publish" });
+    const action = all ? "Publish all" : "Publish";
+    await queue.getByRole("button", { name: action, exact: true }).click();
+    const confirm = team.getByRole("alertdialog");
+    await pendingQueueEdit(slug, "invite-your-team");
+    await confirm.getByRole("button", { name: action, exact: true }).click();
+    await expect(team.getByText("Invite your team has an Autopilot edit to review first", { exact: true })).toBeVisible();
+    await expect(confirm).toBeHidden();
+    await expect(queue.getByRole("button", { name: /Publish/ })).toHaveCount(0);
+    await expect(queue.getByRole("link", { name: "Invite your team", exact: true })).toBeFocused();
+  });
+}
+
+test("Publish all skips a published article changed by a late Autopilot edit and publishes the next draft", async ({ browser }) => {
+  const { team, slug, api } = await editor(browser);
+  await api("/articles", { title: "First steps", body: "Open Settings." });
+  await api("/articles/invite-your-team/publish", {});
+  await api("/articles/invite-your-team", { body: "Saved changes for the team." }, "PATCH");
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: "Waiting to publish" });
+  await expect(queue.getByRole("listitem").first()).toContainText("Invite your team");
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  const confirm = team.getByRole("alertdialog");
+  await api("/articles/invite-your-team", { body: "Late suggested words." }, "PATCH");
+  await pendingQueueEdit(slug, "invite-your-team");
+  await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+  await expect(team.getByText("Invite your team has changed since you opened this page. Review it before publishing.", { exact: true })).toBeVisible();
+  await expect(confirm).toBeHidden();
+  await expect(queue.getByRole("listitem")).toHaveCount(1);
+  await expect(queue.getByRole("link", { name: "Review Autopilot edit", exact: true })).toBeVisible();
+  await expect(queue.getByRole("link", { name: "Invite your team", exact: true })).toBeFocused();
+  await expect(team.locator(".docs-live-footer")).toContainText("2 articles live");
+});
+
+test("More actions restores focus after cancelling article dialogs", async ({ browser }) => {
+  const { team, slug, api } = await editor(browser);
+  await api("/articles/invite-your-team/publish", {});
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  const more = team.getByRole("button", { name: "More actions", exact: true });
+  for (const action of ["Unpublish", "Delete"]) {
+    for (const close of ["cancel", "escape"]) {
+      await more.click();
+      await team.getByRole("button", { name: action, exact: true }).click();
+      const confirm = team.getByRole("alertdialog");
+      await expect(confirm).toBeVisible();
+      if (close === "cancel") await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
+      else await team.keyboard.press("Escape");
+      await expect(confirm).toBeHidden();
+      await expect(more).toBeFocused();
+    }
+  }
+  await more.click();
+  await team.getByRole("button", { name: "Unpublish", exact: true }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Unpublish", exact: true }).click();
+  await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
+  await expect(more).toBeFocused();
+});
+
+test("the first paragraph uses the same body style as later paragraphs", async ({ browser }) => {
+  const { team, slug, api } = await editor(browser);
+  await api("/articles/invite-your-team", { body: "Owners send invites.\n\nTeammates accept them." }, "PATCH");
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  const paragraphs = team.getByRole("textbox", { name: "Article", exact: true }).locator("p");
+  await expect(paragraphs).toHaveCount(2);
+  const styles = await paragraphs.evaluateAll((nodes) => nodes.map((node) => {
+    const style = getComputedStyle(node);
+    return [style.fontSize, style.color, style.lineHeight];
+  }));
+  expect(styles[0]).toEqual(styles[1]);
+});
+
+test("the collection drag hint requires two articles and a mouse-sized layout", async ({ browser }) => {
+  const { team, slug, api } = await editor(browser);
+  await api("/collections", { name: "Guides" });
+  const hint = team.getByText("Drag rows to reorder them; readers see this order.", { exact: true });
+  await team.goto(`/app/${slug}/docs/collections/guides`);
+  const more = team.getByRole("button", { name: "More actions", exact: true });
+  await more.click();
+  await team.getByRole("button", { name: "Delete", exact: true }).click();
+  const confirm = team.getByRole("alertdialog");
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(confirm).toBeHidden();
+  await expect(more).toBeFocused();
+  await expect(hint).toBeHidden();
+  await api("/collections", { name: "Subguides", parent: "guides" });
+  await team.reload();
+  await expect(hint).toBeHidden();
+  await api("/articles", { title: "One guide", body: "Words.", collection: "guides" });
+  await team.reload();
+  await expect(hint).toBeHidden();
+  await api("/articles", { title: "Another guide", body: "Words.", collection: "guides" });
+  await team.reload();
+  await expect(hint).toBeVisible();
+  await team.setViewportSize({ width: 390, height: 844 });
+  await expect(hint).toBeHidden();
+  const touch = await browser.newContext({ hasTouch: true, viewport: { width: 1440, height: 900 }, storageState: await team.context().storageState() });
+  try {
+    const page = await touch.newPage();
+    await page.goto(`${APP_URL}/app/${slug}/docs/collections/guides`);
+    await expect(page.getByText("Drag rows to reorder them; readers see this order.", { exact: true })).toBeHidden();
+  } finally { await touch.close(); }
 });

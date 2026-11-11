@@ -477,6 +477,8 @@ describe("edits to drafts", () => {
   test("published from Docs, the page having shown no edits: one landed since, so it's refused", async () => {
     editing(90);
     await merge(90);
+    // The queue can distinguish a review requirement without changing ordinary action errors.
+    expect(await publishFromDocs(project.slug, "themes-draft")).toMatchObject({ error: expect.any(String), code: "edits_required" });
     expect(await publishFromDocs(project.slug, "themes-draft", [])).toEqual({ error: "The article changed since. Reload the page to review it." });
     expect(await draftOf()).toMatchObject({ publishedAt: null });
     expect(await editOf(90)).toMatchObject({ status: "PENDING" });
