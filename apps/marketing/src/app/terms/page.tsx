@@ -5,9 +5,6 @@ import { contact, LegalPage } from "../legal";
 
 export const metadata: Metadata = { title: "Terms of Service · Tuti", description: "The terms for using Tuti's hosted service at tuti.so." };
 
-// Only on Tuti's cloud, a server setting, read when the page is asked for.
-export const dynamic = "force-dynamic";
-
 export default function TermsPage() {
   return (
     <LegalPage title="Terms of Service" updated="6 November 2026">

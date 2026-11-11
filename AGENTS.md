@@ -28,7 +28,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 - Test data uses `e2e-…@example.com` emails.
 - Journeys import `test` from `e2e/fixtures.ts`: it closes manually created browser contexts after each test, so sessions, live streams and pages do not accumulate on a worker. Set `E2E_CPU_THROTTLE=4` to exercise helper-created sessions with 4× CPU throttling.
 - A change to a user-facing flow updates its journey in `e2e/` (or adds one). Journeys run side by side, even those in one file, so each makes its own project and data; a file whose journeys act on every project (`runAutopilot`) runs them one at a time (`test.describe.configure({ mode: "default" })`). While a dialog is open the page behind it is hidden from role queries, so after a dialog action wait for its result (a toast, the URL) before asserting that something is gone. Journeys save numbered screenshots with `checkpoints()`; CI uploads them in the `playwright-report-*` artifacts, one per shard.
-- Marketing pages get no tests; check them with a build and a screenshot.
+- Marketing pages (`apps/marketing`, tuti.so's site) get no tests; check them with a build and a screenshot. Journeys run the app alone, where `/` is the app.
 
 ## Database migrations
 

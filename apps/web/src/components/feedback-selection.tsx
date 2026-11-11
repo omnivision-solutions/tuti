@@ -17,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { FADE_AT_MORE, focusClearOfFade, showMore, wheelSideways } from "@/components/sub-nav";
+import { FADE_AT_MORE, focusClearOfFade, showMore, wheelSideways } from "@tuti/ui/scrolling-row";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";

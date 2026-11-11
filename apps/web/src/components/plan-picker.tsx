@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { BilledToggle, PlanLineItem } from "@/components/plan-line";
+import { BilledToggle, PlanLineItem } from "@tuti/ui/plan-line";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { BADGE_PRICE, PLAN_PRICES, planPriceText, YEARLY_NOTE } from "@/lib/plans";

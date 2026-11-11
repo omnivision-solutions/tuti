@@ -14,14 +14,15 @@ cute at the expense of clarity.
   Portals).
 - **Type:** Figtree for text, Bricolage Grotesque for headings (`h1`–`h3` and
   `font-heading` pick it up automatically) in the app; Inter for both on the public portal, unless the project picks
-  its own (Customize → Branding; see Layout → Portals). Every font, these and the portals'
-  16, is a file in `apps/web/src/fonts` (`node scripts/fetch-fonts.mjs` fetches
+  its own (Customize → Branding; see Layout → Portals). Every font is a file: these and the symbols font in
+  `packages/ui/src/fonts` (`brand-fonts.ts`, the app's and the marketing site's), the portals' 16 in `apps/web/src/fonts`
+  (`node scripts/fetch-fonts.mjs` fetches
   them, with their licences), loaded with `next/font/local`: builds never
   download fonts. A symbol none of them has, nor their fallback (the device's Arial, which
   has the common arrows and math signs), comes from a cut-down Noto Sans Math after them
   ("⋯", ✓; `--font-symbols`, also `next/font/local`), never an empty box.
-- **Mark:** the parrot (`TutiMark`, `TutiLogo` in `components/tuti-logo.tsx`;
-  favicon `app/icon.svg`). The current drawing is a placeholder until we have
+- **Mark:** the parrot (`TutiMark`, `TutiLogo` in `packages/ui/src/tuti-logo.tsx`;
+  favicon `app/icon.svg`, in each app). The current drawing is a placeholder until we have
   a proper illustration.
 - **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
   ~11px (`rounded-xl`), pills fully round. On the public portal `--radius` is 0.625rem: controls 10px,
@@ -44,7 +45,7 @@ cute at the expense of clarity.
 
 ## Tokens
 
-All colours are CSS variables in `apps/web/src/app/globals.css` (`:root`/`.light`
+All colours are CSS variables in `packages/ui/src/globals.css` (`:root`/`.light`
 and `.dark`), used through Tailwind (`bg-primary`, `text-muted-foreground`, …).
 Never hard-code a colour in a component; add a token if one is missing.
 
@@ -360,7 +361,7 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   is a small round pill, in the highlight colour where people wait on the team (the Inbox's open
   conversations), quiet otherwise (Feedback's to triage, Autopilot's to review).
 - **Sign-in pages** (sign-in, sign-up, forgot and reset password, invitations): in the visitor's own
-  light or dark, as the app is; the card's title in the heading font at 20px; the rest of the marketing site is light only (`forcedThemeFor`), though a page may set dark brand bands inside it (the home page's forest-green sections and final band, `landing.css`).
+  light or dark, as the app is; the card's title in the heading font at 20px; the rest of the marketing site (`apps/marketing`) is light only (it never sets the dark theme), though a page may set dark brand bands inside it (the home page's forest-green sections and final band, `landing.css`).
   Continue with Google and Continue with GitHub are both outline buttons with their marks, under
   nothing louder than the form's own primary. Their header (the account pages' layout, under `/app/auth`)
   is Tuti's logo alone, no Sign in or Start free: the form is the way in. On phones no keyboard hints (`Ctrl K`).

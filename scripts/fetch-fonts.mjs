@@ -1,4 +1,5 @@
-// Downloads the app's and the portals' fonts into apps/web/src/fonts (committed), so builds don't
+// Downloads the brand's fonts into packages/ui/src/fonts (the app's and the marketing site's) and the portals' into
+// apps/web/src/fonts (committed), so builds don't
 // fetch them from Google Fonts: one failed request there failed the whole build. The same files
 // next/font/google asked for: the latin subset, variable where it was variable. Each family's
 // licence (all are SIL Open Font License) goes with it, from the google/fonts repository.
@@ -6,7 +7,7 @@
 //
 // Then the symbols fallback: Noto Sans Math, cut down with fontTools' pyftsubset (`pip install fonttools brotli`) to the
 // symbols none of the fonts above has (arrows, math operators like "⋯", shapes, ✓), so a page that uses one downloads
-// about 32 kB. app/layout.tsx loads it for those ranges (SYMBOLS here; fonts.test.ts checks they match).
+// about 32 kB. packages/ui/src/brand-fonts.ts loads it for those ranges (SYMBOLS here; fonts.test.ts checks they match).
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,14 +18,15 @@ import { fileURLToPath } from "node:url";
 execFileSync("pyftsubset", ["--help"], { stdio: "ignore" });
 
 const OUT = new URL("../apps/web/src/fonts/", import.meta.url);
+const BRAND = new URL("../packages/ui/src/fonts/", import.meta.url);
 // A browser's user agent, so the CSS lists woff2 files.
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 
-// [family, Google Fonts axes (css2 syntax), google/fonts directory]
+// [family, Google Fonts axes (css2 syntax), google/fonts directory, where it goes (the portals' by default)]
 const FONTS = [
-  ["Figtree", "wght@300..900", "figtree"],
-  ["Bricolage Grotesque", "opsz,wght@12..96,200..800", "bricolagegrotesque"],
-  ["Geist Mono", "wght@100..900", "geistmono"],
+  ["Figtree", "wght@300..900", "figtree", BRAND],
+  ["Bricolage Grotesque", "opsz,wght@12..96,200..800", "bricolagegrotesque", BRAND],
+  ["Geist Mono", "wght@100..900", "geistmono", BRAND],
   ["Inter", "wght@100..900", "inter"],
   ["Roboto", "wght@100..900", "roboto"],
   ["Open Sans", "wght@300..800", "opensans"],
@@ -52,7 +54,8 @@ async function get(url, as = "text") {
 }
 
 mkdirSync(OUT, { recursive: true });
-for (const [family, axes, dir] of FONTS) {
+mkdirSync(BRAND, { recursive: true });
+for (const [family, axes, dir, out = OUT] of FONTS) {
   const name = family.toLowerCase().replaceAll(" ", "-");
   const css = await get(`https://fonts.googleapis.com/css2?family=${family.replaceAll(" ", "+")}:${axes}&display=swap`);
   // One @font-face per weight (or one for the whole range), each subset after its comment.
@@ -65,10 +68,10 @@ for (const [family, axes, dir] of FONTS) {
   }
   for (const { weight, url } of faces) {
     const file = faces.length === 1 ? `${name}.woff2` : `${name}-${weight}.woff2`;
-    writeFileSync(new URL(file, OUT), await get(url, "buffer"));
+    writeFileSync(new URL(file, out), await get(url, "buffer"));
     console.log(file, weight);
   }
-  writeFileSync(new URL(`${name}.OFL.txt`, OUT), await get(`https://raw.githubusercontent.com/google/fonts/main/ofl/${dir}/OFL.txt`));
+  writeFileSync(new URL(`${name}.OFL.txt`, out), await get(`https://raw.githubusercontent.com/google/fonts/main/ofl/${dir}/OFL.txt`));
 }
 
 // The symbols fallback (one subset, so no "latin" comment in its CSS). Arrows, math operators, shapes and ✓; not the
@@ -86,10 +89,10 @@ const work = mkdtempSync(join(tmpdir(), "noto-sans-math-"));
 try {
   const full = join(work, "noto-sans-math.woff2");
   writeFileSync(full, await get(math, "buffer"));
-  const symbols = fileURLToPath(new URL("noto-sans-math.woff2", OUT));
+  const symbols = fileURLToPath(new URL("noto-sans-math.woff2", BRAND));
   execFileSync("pyftsubset", [full, `--unicodes=${SYMBOLS}`, "--drop-tables+=MATH", "--flavor=woff2", `--output-file=${symbols}`]);
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
-writeFileSync(new URL("noto-sans-math.OFL.txt", OUT), await get("https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/OFL.txt"));
+writeFileSync(new URL("noto-sans-math.OFL.txt", BRAND), await get("https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/OFL.txt"));
 console.log("noto-sans-math.woff2", SYMBOLS);

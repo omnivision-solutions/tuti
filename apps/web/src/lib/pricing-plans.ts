@@ -1,25 +1,12 @@
 import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
+import type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
 import { PLAN_PRICES } from "./plans";
 
 const SALES_EMAIL = "hello@tuti.so";
 
-/** One line of what a plan includes; `more` opens beside it, explaining the line. */
-export type PlanLine = { text: string; more?: { title: string; points: string[] } };
-
-export type PricingPlan = {
-  name: string;
-  /** Dollars a month, billed monthly and billed yearly; null for Free. */
-  price: { month: number; year: number } | null;
-  /** What every plan lists first, its own: Autopilot and its AI credits. */
-  highlights: PlanLine[];
-  /** The line between the highlights and the rest: "Everything in Free, plus:". */
-  intro?: string;
-  features: PlanLine[];
-  cta: { label: string; href: string };
-  featured?: boolean;
-};
+export type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
 // What an AI answer and a shipped change checked by Autopilot cost in model use, roughly, as measured on
 // tuti.so (2026-11). Credits are worth what AI_CREDITS_PER_USAGE_DOLLAR says, so the estimates follow it.

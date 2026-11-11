@@ -222,9 +222,8 @@ for (const pane of [
     await team.reload();
     await expect(handle).toHaveAttribute("aria-valuenow", String(saved));
     expect(await width()).toBe(saved);
-    // A fresh marketing document enters the app on the client; its shell restores the preference too.
+    // A fresh document entering from `/` restores the preference before a pane can render.
     await team.goto("/");
-    await team.getByRole("link", { name: "Open app", exact: true }).first().click();
     await team.waitForURL(/\/app(?:\/|$)/);
     await team.getByRole("link", { name: pane.name === "docs tree" ? "Docs" : "Inbox", exact: true }).first().click();
     await expect(column).toBeVisible();

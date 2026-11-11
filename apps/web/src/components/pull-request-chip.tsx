@@ -6,7 +6,7 @@ import { ExternalLinkIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { Children, isValidElement, type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 
-import { GithubMark } from "@/components/github-mark";
+import { GithubMark } from "@tuti/ui/github-mark";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatDate, timeAgo } from "@/lib/format";

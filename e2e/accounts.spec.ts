@@ -21,13 +21,9 @@ test("a team member switches projects, edits their account, signs out and back i
     await olive.goto(`${APP_URL}${page}`);
     await olive.waitForURL(/\/app\/e2e-/);
   }
-  // The site has one way into the app: Open app, in the header and the page, in place of Sign in and Start free.
+  // The server's own home is the app (Tuti's cloud sends `/` to its marketing site instead).
   await olive.goto(APP_URL);
-  await expect(olive.getByRole("banner").getByRole("link", { name: "Open app" })).toHaveAttribute("href", "/app");
-  await expect(olive.getByRole("main").getByRole("link", { name: "Open app" }).first()).toHaveAttribute("href", "/app");
-  await expect(olive.getByRole("link", { name: "Start free" })).toHaveCount(0);
-  await expect(olive.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(0);
-  await checkpoint(olive, "site-header-signed-in", { fullPage: false });
+  await olive.waitForURL(/\/app\/e2e-/);
   // Except after a password reset, which may be someone else's on this browser: its message and the form stay.
   await olive.goto(`${APP_URL}/app/auth/sign-in?reset=done`);
   await expect(olive.getByText("Your password was changed. Sign in with the new one.")).toBeVisible();
@@ -97,8 +93,7 @@ test("a team member switches projects, edits their account, signs out and back i
   await olive.getByRole("button", { name: /Olive Q\. Owner/ }).click();
   // From the keyboard: a click aimed while the menu is still opening can land on Theme, whose submenu then covers Sign out.
   await olive.getByRole("menuitem", { name: "Sign out" }).press("Enter");
-  await olive.waitForURL(`${APP_URL}/`);
-  await olive.goto("/app/auth/sign-in");
+  await olive.waitForURL(`${APP_URL}/app/auth/sign-in`);
   // The form is the way in here: the header is Tuti's logo, back to the site, with no Sign in or Start free of its own.
   await expect(olive.getByRole("banner").getByRole("link", { name: "Tuti home" })).toHaveAttribute("href", "/");
   await expect(olive.getByRole("banner").getByRole("link", { name: "Start free" })).toHaveCount(0);

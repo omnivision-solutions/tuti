@@ -15,7 +15,7 @@ import { PICKED_CHIP, TAG_LABELS, TAG_VARIANTS, TagBadge } from "./changelog-tag
 import { STATUS_STYLES, STATUS_TEXT } from "./post-status-badge";
 import { TargetBadge } from "./target-badge";
 
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../../../../packages/ui/src/globals.css", import.meta.url), "utf8");
 const themes = [":root", ".dark"] as const;
 const statuses = Object.keys(STATUS_STYLES) as PostStatus[];
 
@@ -207,7 +207,7 @@ test.each(themes)("a progress bar's empty track is outlined at 3:1 on a dialog, 
 });
 
 test("in dark mode a popover stands out from the card it opens over by its edge, and the hovers inside it still show", () => {
-  const source = readFileSync(new URL("./ui/popover.tsx", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../../packages/ui/src/popover.tsx", import.meta.url), "utf8");
   const surface = source.match(/dark:bg-([a-z-]+)/)?.[1] ?? "popover";
   const [, edge, percent] = source.match(/dark:ring-([a-z-]+)\/(\d+)/)!;
   const ring = blend(srgb(token(".dark", edge!)), srgb(token(".dark", surface)), Number(percent) / 100);

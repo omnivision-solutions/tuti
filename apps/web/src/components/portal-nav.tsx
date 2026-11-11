@@ -8,7 +8,7 @@ import { useEffect, useRef } from "react";
 import { DocsSearchBox } from "@/components/docs-search-box";
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { usePortalNotFound } from "@/components/portal-menu";
-import { SCROLLING_ROW, useScrollingRow } from "@/components/sub-nav";
+import { SCROLLING_ROW, useScrollingRow } from "@tuti/ui/scrolling-row";
 import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 
