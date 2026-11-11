@@ -16,7 +16,7 @@ export function focusArticleSentence(sentence: string) {
     return text.textContent ?? "";
   });
   const wanted = normalizeSentence(sentence);
-  const exact = wanted ? texts.findIndex((text) => normalizeSentence(text).includes(wanted)) : -1;
+  const exact = wanted ? texts.findIndex((text) => (` ${normalizeSentence(text)} `).includes(` ${wanted} `)) : -1;
   const target = blocks[exact >= 0 ? exact : matchingSentence(sentence, texts)];
   if (!target || !editor) {
     toast.info("Couldn't find this sentence in the text");

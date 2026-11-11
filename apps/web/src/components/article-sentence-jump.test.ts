@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { focusArticleSentence } from "./article-sentence-jump";
+import { toast } from "sonner";
 
 beforeEach(() => {
   document.body.innerHTML = '<form id="article-form"><div contenteditable="true" tabindex="0"></div></form>';
@@ -20,4 +21,29 @@ it.each([
   expect(scroll).toHaveBeenCalled();
   expect(document.activeElement).toBe(editor);
   expect(window.getSelection()?.anchorNode).toBe(target);
+});
+
+it.each([
+  ["Published articles are visible.", "Unpublished articles are visible."],
+  ["Seat limit: 5", "Seat limit: 50"],
+])("jumps to whole words and quantities for %s", (source, other) => {
+  const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+  editor.innerHTML = `<p>${other}</p><p>${source}</p>`;
+  const target = editor.querySelectorAll("p")[1]!;
+  const scroll = vi.spyOn(target, "scrollIntoView");
+  focusArticleSentence(source);
+  expect(scroll).toHaveBeenCalled();
+  expect(window.getSelection()?.anchorNode).toBe(target);
+});
+
+it.each([
+  ["Published articles are visible.", "Unpublished articles are visible."],
+  ["Seat limit: 5", "Seat limit: 50"],
+])("does not jump inside a different word or number for %s", (source, other) => {
+  const editor = document.querySelector<HTMLElement>("[contenteditable]")!;
+  editor.innerHTML = `<p>${other}</p>`;
+  const notice = vi.spyOn(toast, "info");
+  focusArticleSentence(source);
+  expect(notice).toHaveBeenCalledWith("Couldn't find this sentence in the text");
+  expect(document.activeElement).not.toBe(editor);
 });

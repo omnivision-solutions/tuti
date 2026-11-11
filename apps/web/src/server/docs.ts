@@ -226,22 +226,22 @@ export async function publishArticle(projectSlug: string, slug: string, edits?: 
       throw error;
     }
   });
-  // The queue needs structured review reasons; preserve existing errors from callers without a revision.
-  return code === "edits_required" || (revision !== undefined && code === "changed") ? { ...result, code } : result;
+  // Revision-aware queue callers need batch error codes; preserve other callers' existing error shapes.
+  return revision !== undefined && result.error ? { ...result, code: code ?? "forbidden" } : code === "edits_required" ? { ...result, code } : result;
 }
 
 /** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */
-export async function publishArticleChanges(projectSlug: string, slug: string, savedAt?: string): Promise<FormState & { code?: "changed" }> {
-  let changed = false;
+export async function publishArticleChanges(projectSlug: string, slug: string, savedAt?: string, revision?: string): Promise<FormState & { code?: string }> {
+  let code: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     try {
-      await call(publishChangesOperation, context, { slug: String(slug), savedAt: savedAt === undefined ? undefined : String(savedAt) });
+      await call(publishChangesOperation, context, { slug: String(slug), savedAt: savedAt === undefined ? undefined : String(savedAt), ...(revision !== undefined && { revision: String(revision) }) });
     } catch (error) {
-      changed = error instanceof OperationError && error.code === "changed";
+      if (error instanceof OperationError) code = error.code;
       throw error;
     }
   });
-  return changed ? { ...result, code: "changed" } : result;
+  return revision !== undefined && result.error ? { ...result, code: code ?? "forbidden" } : code === "changed" ? { ...result, code } : result;
 }
 
 /** "Discard changes": back to the published version, if the changes are still those saved at `savedAt`. */

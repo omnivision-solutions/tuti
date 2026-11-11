@@ -18,6 +18,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import { plural } from "@/lib/autopilot-words";
+import { publishBatch } from "@/lib/docs-publish-batch";
 import { publishArticle, publishArticleChanges } from "@/server/docs";
 
 type ReviewReason = "edits_required" | "changed";
@@ -43,6 +44,7 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
   const trigger = useRef<HTMLButtonElement | null>(null);
   const [selection, setSelection] = useState<{ articles: WaitingArticle[]; all: boolean; index: number } | null>(null);
   const [needsReview, setNeedsReview] = useState<Map<string, ReviewReason>>(new Map());
+  const [failures, setFailures] = useState<Map<string, string>>(new Map());
   const [completion, setCompletion] = useState<{ reviewSlug?: string; published: WaitingArticle[]; index: number } | null>(null);
   const focusedCompletion = useRef<typeof completion>(null);
   const select = (selected: WaitingArticle[], all: boolean, button: HTMLButtonElement) => {
@@ -66,34 +68,33 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
   const publish = () => {
     if (!selection) return;
     start(async () => {
-      const published: WaitingArticle[] = [];
-      let reviewSlug: string | undefined;
-      for (const article of selection.articles) {
-        const result = article.published
-          ? await publishArticleChanges(projectSlug, article.slug, article.savedAt)
-          : await publishArticle(projectSlug, article.slug, undefined, article.revision);
-        if (result.error && "code" in result && (result.code === "edits_required" || result.code === "changed")) {
-          const reason = result.code;
-          setNeedsReview((previous) => new Map(previous).set(article.slug, reason));
-          reviewSlug ??= article.slug;
-          toast.error(reason === "changed" ? `${article.title} has changed since you opened this page. Review it before publishing.` : `${article.title} has an Autopilot edit to review first`, {
-            description: <Link className="underline underline-offset-4" href={`/app/${projectSlug}/docs/${article.slug}`}>Review article</Link>,
-          });
-          continue;
-        }
-        if (result.error) {
-          toast.error(result.error);
-          return;
-        }
-        published.push(article);
-      }
-      if (reviewSlug) setExpanded(true);
+      const { published, failed } = await publishBatch(selection.articles, (article) => article.published
+        ? publishArticleChanges(projectSlug, article.slug, article.savedAt, article.revision)
+        : publishArticle(projectSlug, article.slug, undefined, article.revision));
+      setNeedsReview((previous) => {
+        const next = new Map(previous);
+        for (const failure of failed) if (failure.code === "edits_required" || failure.code === "changed") next.set(failure.article.slug, failure.code);
+        return next;
+      });
+      setFailures((previous) => {
+        const next = new Map(previous);
+        for (const failure of failed) if (failure.code !== "edits_required" && failure.code !== "changed") next.set(failure.article.slug, failure.error);
+        return next;
+      });
+      const reviewSlug = failed[0]?.article.slug;
+      if (failed.length) setExpanded(true);
       setCompletion({ reviewSlug, published, index: selection.index });
       setOpen(false);
-      if (published.length > 0) toast.success(selection.all ? "Articles published" : "Published");
+      const notify = failed.length ? toast.warning : toast.success;
+      notify(`Published ${plural(published.length, "article")}`, {
+        description: failed.length ? <ul className="space-y-1">{failed.map(({ article, error, code }) => <li key={article.slug}>
+          {article.title}: {code === "edits_required" ? "An Autopilot edit needs review first." : code === "changed" ? "Changed since you opened this page. Review before publishing." : error}
+          {(code === "edits_required" || code === "changed") && <> <Link className="underline underline-offset-4" href={`/app/${projectSlug}/docs/${article.slug}`}>Review article</Link></>}
+        </li>)}</ul> : undefined,
+      });
     });
   };
-  const publishable = articles.filter((article) => !article.reviewRequired && !needsReview.has(article.slug));
+  const publishable = articles.filter((article) => !article.reviewRequired && !needsReview.has(article.slug) && !failures.has(article.slug));
   return (
     <AlertDialog open={open} onOpenChange={(next) => !pending && setOpen(next)} onOpenChangeComplete={(next) => { if (!next) setDialogClosed(true); }}>
       <section ref={queue} aria-labelledby="waiting-title" className="docs-publish-queue [&_li_+_li]:[border-top:1px_solid_color-mix(in_oklch,_var(--border)_70%,_transparent)] [&_li]:min-h-19.5">
@@ -109,18 +110,20 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
         ) : (
           <ul>
             {articles.slice(0, expanded ? undefined : 3).map((article) => {
-              const reason = needsReview.get(article.slug) ?? (article.reviewRequired ? "edits_required" : undefined);
+              const reason = article.reviewRequired ? "edits_required" : needsReview.get(article.slug);
+              const failure = failures.get(article.slug);
               return <li key={article.slug}>
                 <div>
                   <Link data-queue-article={article.slug} href={`/app/${projectSlug}/docs/${article.slug}`}>{article.title}</Link>
                   <small>
                     {article.collection} · saved {article.saved}
                   </small>
+                  {failure && <small>{failure}</small>}
                 </div>
-                <Link href={`/app/${projectSlug}/docs/${article.slug}`} className={`docs-review-link text-muted-foreground text-[13px] ${reason ? "" : "max-sm:hidden"}`}>
-                  {reason === "edits_required" ? "Review Autopilot edit" : reason === "changed" ? "Review changes" : "Review"}
+                <Link href={`/app/${projectSlug}/docs/${article.slug}`} className={`docs-review-link text-muted-foreground text-[13px] ${reason || failure ? "" : "max-sm:hidden"}`}>
+                  {reason === "edits_required" ? "Review Autopilot edit" : reason === "changed" ? "Review changes" : failure ? "Review article" : "Review"}
                 </Link>
-                {!reason && <AlertDialogTrigger onClick={(event) => select([article], false, event.currentTarget)} render={<Button size="sm" variant="outline" />}>Publish</AlertDialogTrigger>}
+                {!reason && !failure && <AlertDialogTrigger onClick={(event) => select([article], false, event.currentTarget)} render={<Button size="sm" variant="outline" />}>Publish</AlertDialogTrigger>}
               </li>;
             })}
           </ul>

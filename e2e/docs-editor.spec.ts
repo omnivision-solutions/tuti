@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL } from "./env";
+import { APP_URL, CLOUD_URL, cloudPortalUrl } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 
 async function editor(browser: Browser) {
@@ -320,7 +320,7 @@ test("the overview expands its publish queue and confirms publishing the saved a
   await expect(queue.getByRole("listitem")).toHaveCount(4);
   await queue.getByRole("button", { name: "Publish all", exact: true }).click();
   await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
-  await expect(team.getByText("Articles published", { exact: true })).toBeVisible();
+  await expect(team.getByText("Published 4 articles", { exact: true })).toBeVisible();
   await expect(queue).toContainText("Everything is published.");
   await expect(team.getByRole("region", { name: "At a glance" })).toContainText("4Live articles");
   await checkpoints(testInfo)(team, "docs-published-queue", { fullPage: false });
@@ -346,6 +346,62 @@ test("publishing a queue row focuses the next article, then the heading when non
   await expect(confirm).toBeHidden();
   await expect(queue).toContainText("Everything is published.");
   await expect(queue.getByRole("heading", { name: "Waiting to publish" })).toBeFocused();
+});
+
+test("Publish all reports a deleted draft and publishes the other confirmed articles", async ({ browser }) => {
+  const { team, slug, api } = await editor(browser);
+  await throttleQueue(team);
+  const refresh = await holdQueueRefresh(team);
+  for (const title of ["Second steps", "First steps"]) await api("/articles", { title, body: "Open Settings." });
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: "Waiting to publish" });
+  await expect(queue.getByRole("listitem").first()).toContainText("First steps");
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  const confirm = team.getByRole("alertdialog", { name: "Publish 3 articles?", exact: true });
+  await api("/articles/first-steps", undefined, "DELETE");
+  refresh();
+  await expect(team.locator('.docs-publish-queue [data-queue-article="first-steps"]')).toHaveCount(0);
+  await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+  const summary = team.locator("[data-sonner-toast]").filter({ hasText: "Published 2 articles" });
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText("First steps: There's no article “first-steps”");
+  await expect(team.locator("[data-sonner-toast]")).toHaveCount(1);
+  await expect(confirm).toBeHidden();
+  await expect(queue).toContainText("Everything is published.");
+  await expect(queue.getByRole("heading", { name: "Waiting to publish" })).toBeFocused();
+  await expect(team.locator(".docs-live-footer")).toContainText("2 articles live");
+});
+
+test("Publish all stops at the article limit, reports partial success and excludes failed rows from retries", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, CLOUD_URL, "Tess Team");
+  await createProject(team, "Acme", slug, cloudPortalUrl);
+  const api = await apiFor(team, slug);
+  await throttleQueue(team);
+  for (const title of ["Last draft", "Limit draft", "First draft"]) await api("/articles", { title, body: "Open Settings." });
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  try {
+    await db.query(`INSERT INTO article (id, "projectId", slug, title, "publishedAt", "updatedAt")
+      SELECT gen_random_uuid()::text, p.id, 'existing-' || n, 'Existing ' || n, now(), now()
+      FROM project p CROSS JOIN generate_series(1, 49) n WHERE p.slug = $1`, [slug]);
+  } finally { await db.end(); }
+  await team.goto(`/app/${slug}/docs`);
+  const queue = team.getByRole("region", { name: "Waiting to publish" });
+  await expect(queue.getByRole("listitem").first()).toContainText("First draft");
+  await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+  const confirm = team.getByRole("alertdialog", { name: "Publish 3 articles?", exact: true });
+  await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+  const summary = team.locator("[data-sonner-toast]").filter({ hasText: "Published 1 article" });
+  await expect(summary).toContainText("Limit draft: Your plan publishes up to 50 articles.");
+  await expect(summary).toContainText("Last draft: Not attempted: Your plan publishes up to 50 articles.");
+  await expect(team.locator("[data-sonner-toast]")).toHaveCount(1);
+  await expect(confirm).toBeHidden();
+  await expect(queue.getByRole("listitem")).toHaveCount(2);
+  await expect(queue.getByRole("button", { name: /Publish/ })).toHaveCount(0);
+  await expect(queue.getByRole("link", { name: "Review article", exact: true })).toHaveCount(2);
+  await expect(queue.getByRole("link", { name: "Limit draft", exact: true })).toBeFocused();
+  await expect(team.locator(".docs-live-footer")).toContainText("50 articles live");
 });
 
 
@@ -484,7 +540,7 @@ test("the publish queue leaves unseen Autopilot edits for review and singularise
   const confirm = team.getByRole("alertdialog", { name: "Publish 1 article?", exact: true });
   await expect(confirm).toBeVisible();
   await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
-  await expect(team.getByText("Articles published", { exact: true })).toBeVisible();
+  await expect(team.getByText("Published 1 article", { exact: true })).toBeVisible();
   await expect(queue.getByRole("listitem")).toHaveCount(1);
   await expect(queue.getByRole("button", { name: "Publish all", exact: true })).toHaveCount(0);
   await expect(team.locator(".docs-live-footer")).toContainText("1 article live");
@@ -518,7 +574,7 @@ test("published articles with waiting Autopilot changes stay out of queue publis
   await queue.getByRole("button", { name: "Publish all", exact: true }).click();
   const confirm = team.getByRole("alertdialog", { name: "Publish 1 article?", exact: true });
   await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
-  await expect(team.getByText("Articles published", { exact: true })).toBeVisible();
+  await expect(team.getByText("Published 1 article", { exact: true })).toBeVisible();
   await expect(blocked).toBeVisible();
   await expect(queue.getByRole("button", { name: "Publish all", exact: true })).toHaveCount(0);
   await expect(team.locator(".docs-live-footer")).toContainText("2 articles live");
@@ -600,7 +656,7 @@ test("Publish all skips a published article changed by a late Autopilot edit and
   await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
   await expect(confirm).toBeHidden();
   await expect(queue.getByRole("listitem")).toHaveCount(1);
-  await expect(queue.getByRole("link", { name: "Review changes", exact: true })).toBeVisible();
+  await expect(queue.getByRole("link", { name: "Review Autopilot edit", exact: true })).toBeVisible();
   await expect(queue.getByRole("link", { name: "Invite your team", exact: true })).toBeFocused();
   await expect(team.locator(".docs-live-footer")).toContainText("2 articles live");
 });

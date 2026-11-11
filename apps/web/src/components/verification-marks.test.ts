@@ -51,4 +51,38 @@ describe("verification annotations", () => {
       ]),
     ).toEqual([{ from: 25, to: 40, number: 2, verdict: "unclear" }]);
   });
+  it.each([
+    ["Published articles are visible.", "Unpublished articles are visible."],
+    ["Seat limit: 5", "Seat limit: 50"],
+  ])("requires whole words and quantities when underlining %s", (source, other) => {
+    const content = schema.nodeFromJSON({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: other }] },
+        { type: "paragraph", content: [
+          { type: "text", text: "🗓 Check: " },
+          { type: "text", text: source, marks: [{ type: "bold" }] },
+          { type: "text", text: " Ask support." },
+        ] },
+      ],
+    });
+    const ranges = verificationRanges(content, [{ statement: source, verdict: "outdated" }]);
+    const from = other.length + 3 + "🗓 Check: ".length;
+    expect(ranges).toEqual([{ from, to: from + source.replace(/\.$/, "").length, number: 1, verdict: "outdated" }]);
+    expect(content.textBetween(ranges[0]!.from, ranges[0]!.to)).toBe(source.replace(/\.$/, ""));
+    expect(verificationRanges(doc(other), [{ statement: source, verdict: "outdated" }])).toEqual([]);
+  });
+  it("keeps underline offsets through invisible characters, whitespace and formatting", () => {
+    const content = schema.nodeFromJSON({
+      type: "doc", content: [{ type: "paragraph", content: [
+        { type: "text", text: "🗓 Pick o" },
+        { type: "text", text: "\u200bne", marks: [{ type: "bold" }] },
+        { type: "text", text: "\trole. Ask support." },
+      ] }],
+    });
+    const quoted = "Pick o\u200bne\trole";
+    const ranges = verificationRanges(content, [{ statement: "Pick one role", verdict: "unclear" }]);
+    expect(ranges).toEqual([{ from: 4, to: 4 + quoted.length, number: 1, verdict: "unclear" }]);
+    expect(content.textBetween(ranges[0]!.from, ranges[0]!.to)).toBe(quoted);
+  });
 });

@@ -1,10 +1,12 @@
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { actAs, createProject, signUp } from "@/test/helpers";
-import { publishArticle as publishFromDocs } from "./docs";
+import { publishArticle as publishFromDocs, publishArticleChanges as publishChangesFromDocs } from "./docs";
 import { createArticle, publishArticle, updateArticle } from "./operations/docs";
 import { inputSchema } from "./operations/openapi";
 import { call } from "./operations/run";
+
+afterEach(() => { vi.unstubAllEnvs(); });
 
 async function draft() {
   const owner = await signUp("Olive Owner");
@@ -34,4 +36,21 @@ test("the publish revision guard is optional and documented in the API schema", 
   expect(schema.properties?.revision).toMatchObject({ type: "string", description: expect.stringContaining("409") });
   expect(schema.required).not.toContain("revision");
   await expect(call(publishArticle, context, { slug: article.slug })).resolves.toMatchObject({ status: "published" });
+});
+
+test("revision-aware queue publishing reports plan limits for drafts and saved changes, preserving legacy errors", async () => {
+  const { owner, project, context, article, newest } = await draft();
+  actAs(owner);
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "0");
+  const reviewed = await newest();
+  expect(await publishFromDocs(project.slug, article.slug, undefined, reviewed.id)).toMatchObject({ code: "article_limit", error: expect.any(String) });
+  expect(await publishFromDocs(project.slug, article.slug)).toEqual({ error: expect.any(String) });
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  expect(await publishFromDocs(project.slug, article.slug, undefined, reviewed.id)).toEqual({});
+  const saved = await call(updateArticle, context, { slug: article.slug, body: "New saved words." });
+  const current = await newest();
+  vi.stubEnv("ARTICLE_LIMIT_FREE", "0");
+  expect(await publishChangesFromDocs(project.slug, article.slug, saved.changes!.savedAt, current.id)).toMatchObject({ code: "article_limit", error: expect.any(String) });
+  expect(await publishChangesFromDocs(project.slug, article.slug, saved.changes!.savedAt)).toEqual({ error: expect.any(String) });
 });

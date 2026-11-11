@@ -20,8 +20,17 @@ export function fixSummary(before: string, after: string) {
   return `${quote(a.slice(start, a.length - Math.max(0, end - 1)))} becomes ${quote(b.slice(start, b.length - Math.max(0, end - 1)))}`;
 }
 
-/** The same quote matching across inline formatting, punctuation and whitespace in Verify and the editor. */
-export const normalizeSentence = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+/** Keep original UTF-16 offsets so matched words can be underlined across inline formatting. */
+export function sentenceTokens(value: string) {
+  return [...value.matchAll(/[\p{L}\p{N}\p{M}][\p{L}\p{N}\p{M}\p{Cf}]*/gu)].map((match) => ({
+    word: match[0].replace(/\p{Cf}/gu, "").toLowerCase(),
+    from: match.index,
+    to: match.index + match[0].length,
+  }));
+}
+
+/** Preserve word boundaries while ignoring punctuation, whitespace differences and invisible format characters. */
+export const normalizeSentence = (value: string) => sentenceTokens(value).map(({ word }) => word).join(" ");
 
 const numberWords: Record<string, string> = { zero: "0", one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10", eleven: "11", twelve: "12" };
 const words = (text: string) => (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).map((word) => numberWords[word] ?? word);
