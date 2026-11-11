@@ -33,16 +33,16 @@ export default async function ReportingLayout({ children, params }: LayoutProps<
   ];
   // As Settings' layout: the menu a column of its own the page's height, the page beside it.
   return (
-    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t md:flex-row">
-      <div className="px-6 pt-6 md:hidden">
+    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t @min-[48rem]/app:flex-row">
+      <div className="px-6 pt-6 @min-[48rem]/app:hidden">
         <PageHeader title="Reporting" />
       </div>
-      <aside className="px-6 pt-6 md:w-60 md:shrink-0 md:border-r md:p-0">
+      <aside className="px-6 pt-6 @min-[48rem]/app:w-60 @min-[48rem]/app:shrink-0 @min-[48rem]/app:border-r @min-[48rem]/app:p-0">
         <SettingsMenu label="Reporting" groups={groups} carry="range" />
       </aside>
-      <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8">
+      <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-1 flex-col gap-6 p-6 @min-[48rem]/app:px-8">
         {/* Beside the menu, the report's own heading (ReportHeading) is the page's title: this one for screen readers. */}
-        <h1 className="max-md:hidden md:sr-only">Reporting</h1>
+        <h1 className="@max-[48rem]/app:hidden @min-[48rem]/app:sr-only">Reporting</h1>
         {children}
       </div>
     </div>

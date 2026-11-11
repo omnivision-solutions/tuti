@@ -36,6 +36,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
 
   return (
     <AppShell
+      defaultSidebarOpen={cookieStore.get("sidebar_state")?.value === "true"}
       sidebar={
         <>
           {/* Before any page shows: the docs tree folded where it was left folded (DocsTreeFold), on whichever app page

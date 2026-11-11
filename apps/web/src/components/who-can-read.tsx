@@ -7,6 +7,7 @@ import { useState } from "react";
 import { type Access, ANYONE, type WithoutAccess } from "@/lib/read-access";
 
 export type GroupOption = { key: string; name: string };
+export type ReadAccessDraft = { access: Access; groups: string[]; noAccess: WithoutAccess };
 
 /**
  * "Who can read" a tab, collection or article, as form fields (`access`, and `groups` for the ticked
@@ -25,6 +26,7 @@ export function WhoCanRead({
   defaultNoAccess = "inherit",
   preview,
   compact = false,
+  control,
 }: {
   /** Unique on the page, for the fields' ids. */
   id: string;
@@ -43,9 +45,15 @@ export function WhoCanRead({
   preview?: string;
   /** Settings pages keep the less common visibility choices behind a disclosure. */
   compact?: boolean;
+  /** A parent that survives a panel moving between layouts can own the unsaved choices. */
+  control?: { value: ReadAccessDraft; onChange: (value: ReadAccessDraft) => void };
 }) {
-  const [access, setAccess] = useState<Access>(defaultAccess);
-  const [noAccess, setNoAccess] = useState<WithoutAccess>(defaultNoAccess);
+  const [ownAccess, setOwnAccess] = useState<Access>(defaultAccess);
+  const [ownNoAccess, setOwnNoAccess] = useState<WithoutAccess>(defaultNoAccess);
+  const access = control?.value.access ?? ownAccess;
+  const noAccess = control?.value.noAccess ?? ownNoAccess;
+  const setAccess = (access: Access) => control ? control.onChange({ ...control.value, access }) : setOwnAccess(access);
+  const setNoAccess = (noAccess: WithoutAccess) => control ? control.onChange({ ...control.value, noAccess }) : setOwnNoAccess(noAccess);
   const choices: [Access, string, string][] = [
     ["inherit", inherit.label, inherit.description],
     ["signed_in", "Signed-in readers", "Readers must sign in to read it"],
@@ -96,7 +104,10 @@ export function WhoCanRead({
                       type="checkbox"
                       name="groups"
                       value={group.key}
-                      defaultChecked={defaultGroups.includes(group.key)}
+                      {...(control ? {
+                        checked: control.value.groups.includes(group.key),
+                        onChange: (event) => control.onChange({ ...control.value, groups: event.target.checked ? [...control.value.groups, group.key] : control.value.groups.filter((key) => key !== group.key) }),
+                      } : { defaultChecked: defaultGroups.includes(group.key) })}
                       className="size-4 accent-primary"
                     />
                     {group.name}

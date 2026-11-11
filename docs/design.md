@@ -166,27 +166,32 @@ the list picks none to approve at once.
   away to leave room for the content. An article's back link and draft state share one compact block beside its actions,
   with a lower divider; the toolbar and text share a reading column, at the portal's width. The sidebar's visible "Toggle Sidebar"
   button sits beside the project switcher when expanded and at the top of the icon rail when collapsed. The edge rail
-  and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. On phones a compact sticky row keeps the menu and project/section path, the page's title
+  and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. The shortcut leaves typing
+  and shortcuts already handled by an editor alone. On phones a compact sticky row keeps the menu and project/section path, the page's title
   once its heading scrolls away, and `PageActions` at its right end. An editor's primary actions (`pinActions`) stay
   at the bottom on phones. Customize has its own section heading and Save changes row; it sticks at the top on
   wider screens and below the menu row on phones. Pane heights and sticky menus use the full window on wider screens.
   A page of three panes (the sidebar, a column of its own, the page: Settings,
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
-  width, the labelled sidebar open beside its own column from 1280px up; under 1280px it
-  folds to its rail, its column taking the room. The Inbox (its panes fill the window),
-  Customize (its rail and the portal's preview) and every Docs page (its own tree and page panes need
-  the room) always fold it. The docs' tree folds too, from laptop width up, on its own button at its top ("Hide the docs
+  width. The app sidebar starts collapsed to the same icon rail on every page. Only its toggle, Ctrl/⌘+B,
+  or App navigation in the Docs sheet can open it. The toggle and shortcut also collapse it; that choice stays
+  across navigation, screen widths and reloads (the existing `sidebar_state`
+  cookie, kept for seven days). Phones keep their off-canvas sheet, which closes on navigation.
+  Inset thresholds translated from viewport breakpoints subtract the 3rem rail: 64rem becomes 61rem,
+  and 80rem becomes 77rem, preserving the layout at the default rail width.
+  The docs' tree folds independently, when the sidebar inset has at least 61rem, on its own button at its top ("Hide the docs
   tree"; a rail with "Show the docs tree" in its place), remembered per browser on every Docs page (`DocsTreeFold`:
-  `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). Every other page has it open. A pane's column is
+  `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
   The Inbox: its views (with their counts), the list
-  and the open conversation side by side from laptop width up, each scrolling on
+  and the open conversation side by side when the sidebar inset has at least 57rem, each scrolling on
   its own from the top of the shell (the page itself doesn't; `InboxPanes`); the views always
   the row of tabs above the list, in the same place whether or not a conversation is open
   (they never move as one opens or closes): Needs reply, Mine and Unassigned as tabs, the
   rest (Waiting on user, Snoozed, Closed, Spam) under More, which reads as the one of them
-  open, with its short title and visible count, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide, the conversation the rest; on phones and
-  tablets the list or the conversation, its Back to the list. A row reads in three
+  open, with its short title and visible count, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide,
+  the conversation the rest; with less room beside the sidebar, the list or the conversation, its Back to the list.
+  Opening the app sidebar can switch to this single-pane layout without changing the sidebar preference. A row reads in three
   lines: who and their company on one (cut short, in full on hover) with,
   at the right, the assignee's face (their name on hover, and in the row's name to the ear) and its age, short ("4m": how long they've waited, or since
   the latest message); the subject and the latest message's first line on separate lines, cut
@@ -212,14 +217,16 @@ the list picks none to approve at once.
   in chat bubbles with the author's avatar and time; internal notes have the highlight tint. The composer is one card.
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
-  kept for the browser; on phones and smaller tablets its toggle opens the same controls and context in a sheet.
+  kept for the browser; below 77rem of sidebar inset width its toggle opens the same controls and context in a sheet,
+  leaving room for the conversation even with the app sidebar open. The toggle uses the same rem threshold
+  and current root font size as the CSS, so the sheet stays reachable with larger text.
   Linked posts and Looks related start open. Customer details, Company, Other conversations from this person,
   Recent page visits, Events and Conversation attributes start folded, each with an icon, count and chevron.
   Other conversations expand to a title, a muted status · number · date line and one line of the latest message.
   Day dividers group each message by its own day in the viewer’s time zone, with "Today · <date>" or "Yesterday · <date>" when applicable. The widget-off notice is
   13px muted text, and More sits at the end of the views row. Inbox layout uses component Tailwind utilities;
   its canvas, surface, bubble fills and shadow use the `inbox-*` tokens in `globals.css`.
-  From laptop width up, the Docs tree (240–440px) and Inbox list (22rem minimum, 352px at default text, up to 520px;
+  When their columns fit the sidebar inset (61rem for Docs, 57rem for Inbox), the Docs tree (240–440px) and Inbox list (22rem minimum, 352px at default text, up to 520px;
   defaulting to the minimum) resize from a 10px handle centred in their gap. Hover, focus and dragging highlight its line in primary; dragging keeps the resize cursor and
   prevents selection across the page. The Inbox maximum also shrinks to keep the conversation at least 480px wide beside visible
   details, recomputing as the window or details change without replacing the saved preference. Details keep a 15rem
@@ -243,7 +250,9 @@ the list picks none to approve at once.
   on every board) then Help center (articles, and new articles' drafts), the ones that
   reach the most people first; and Activity, every merged pull request (those with
   nothing to do folded away at the end, To review pointing to those not read yet).
-  On tablets the list sits below a short title section, which scrolls with it and reserves no sticky toolbar space.
+  With at least 61rem of sidebar inset, its list sits beside the page (20rem wide, 24rem from 77rem of inset).
+  With less room, the list or the picked page fills the width; the list sits below a short title section,
+  which scrolls with it and reserves no sticky toolbar space. Opening the first review follows this same layout.
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
   once nothing of it waits, the next one to review opens by itself. One going out by itself says when in its bar,
@@ -278,11 +287,18 @@ the list picks none to approve at once.
   newest version beside it, to merge by hand; the next Save goes on top of it.
   The team Docs workspace uses rounded tree, page and tools surfaces on the canvas, separated by 12px gaps,
   with no breadcrumb bar or embedded preview. Its tree defaults to 274px and owns the Docs title, search and navigation;
-  on phones the Docs button opens it as a sheet, including App navigation. Subpages have a small parent link.
+  below 61rem of sidebar inset width the Docs button opens it as a sheet, including App navigation. Moving back to an inline tree
+  closes and resets the sheet; Search docs opens the command menu in either layout. Subpages have a small parent link.
   An article's editable title sits beside Saved (Save while there are edits) and Publish; its publishing state
-  and live Open link sit below. The formatting row stays pinned while the article body scrolls. Settings,
-  History and Verify share one collapsible card (330px, 300px on smaller laptops), opening from icons at the
-  end of the formatting row. Collapsing it returns that space to the document; phones use a bottom sheet.
+  and live Open link sit below. New and saved articles use the same inset thresholds for editor padding and formatting controls.
+  The formatting row stays pinned while the article body scrolls. Settings,
+  History and Verify share one collapsible card (20.625rem, 18.75rem below 77rem of sidebar inset width), opening from icons at the
+  end of the formatting row. Below 76rem of inset width the tools use a bottom sheet so the editor keeps its room,
+  even with the app sidebar open. Narrowing the inset closes an open card without opening a sheet; its Settings draft
+  stays until the user explicitly closes or saves it, and clicking Settings again opens that draft in the sheet.
+  Focus inside a closing card returns to that tool's toolbar button. Saving keeps the visible fields current while the panel closes.
+  Collapsing the card returns its space to the document. These layout thresholds
+  follow the inset and the current root font size in both CSS and JavaScript.
   History keeps a timeline and an inline comparison under the selected version, with the full comparison available.
   Verify keeps its runs, source evidence, sentence jumps and fixes to review. Unpublish and Delete stay under
   More actions; the Unpublished changes pill opens Review and Discard. The text remains capped at the portal's
@@ -296,7 +312,7 @@ the list picks none to approve at once.
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones
   and tablets it's the list right under the page's title, then the page picked.
-  Users' tables take the whole width, the sidebar open (`data-wide` on the table's
+  Users' tables take the whole width (`data-wide` on the table's
   card): who (name, email, and their id from tablet width up), the properties the team
   picks, headed by the team's name for each or the key in words ("plan_name": "Plan
   name"), their groups in a column, then what they did. A person's page is the whole
@@ -320,9 +336,10 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   into view, faded at the end that has more (`useScrollingRow`; the portal's
   parts and their rows too). Settings has one menu of its own on the left, in groups
   (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
-  one button above the page on phones); it opens on General. Reporting has one
+  one button above the page below 48rem of sidebar inset); it opens on General. Reporting has one
   too (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
-  small and uppercase, each page with its icon), each page its numbers (`Stat`, a
+  small and uppercase, each page with its icon), using the same 48rem inset threshold to put its menu
+  above the report when the app sidebar leaves less room. Each page has its numbers (`Stat`, a
   labelled group; as Ferndesk's, its change on as many days just before as a badge, `soft` when
   better, `destructive` when worse, `secondary` when neither, with an arrow so it isn't colour
   alone, and a line of the range's days in its chart's colour: `countTrend`, `shareTrend` in
@@ -347,12 +364,13 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   Continue with Google and Continue with GitHub are both outline buttons with their marks, under
   nothing louder than the form's own primary. Their header (the account pages' layout, under `/app/auth`)
   is Tuti's logo alone, no Sign in or Start free: the form is the way in. On phones no keyboard hints (`Ctrl K`).
-- **Customize** (`/app/<project>/customize/<section>`): the whole width, the
-  sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
-  the far left (a menu above the panel on smaller screens; no index page, no
+- **Customize** (`/app/<project>/customize/<section>`): the whole width.
+  `CustomizeShell`: Customize's sections in a rail on
+  the far left when the sidebar inset has at least 61rem (a menu above the panel with less room; no index page, no
   Back), the section's settings in a panel beside it (title; cards inside),
   the portal it changes on the right in a browser frame, at desktop or phone
-  width, light or dark. Settings that
+  width, light or dark. Below that inset width the settings and preview stack and the page scrolls;
+  with room for all three columns, each pane scrolls inside the window. The app sidebar keeps the user’s choice. Settings that
   change how the portal looks go here, not in Settings. A section's forms use
   `useCustomizeForm`: "Save changes" in the panel's header saves every one with
   a change (enabled once something changed), and `toDraft` shows a change in the frame as it's made

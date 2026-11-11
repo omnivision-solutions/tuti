@@ -45,7 +45,7 @@ const VIEWS = {
   spam: { title: "Spam", empty: "No spam." },
 } as const;
 /** The list column's title row (the Inbox's heading, or its copy while a conversation is open). */
-const LIST_TITLE = "inbox-list-title col-start-1 row-start-1 h-18 rounded-t-2xl bg-card px-4.5 pt-5 pb-3.5 max-lg:group-data-[open=true]/inbox:hidden max-md:h-13.5 max-md:rounded-none max-md:px-4 max-md:pt-2 max-md:pb-3";
+const LIST_TITLE = "inbox-list-title col-start-1 row-start-1 h-18 rounded-t-2xl bg-card px-4.5 pt-5 pb-3.5 @max-[57rem]/app:group-data-[open=true]/inbox:hidden max-md:h-13.5 max-md:rounded-none max-md:px-4 max-md:pt-2 max-md:pb-3";
 
 export type View = keyof typeof VIEWS;
 
@@ -131,7 +131,7 @@ async function listed(view: View, projectId: string, userId: string, history: Da
 
 /**
  * The Inbox: its views, the list, and the conversation open beside it (`children`, the `open` one's), each
- * scrolling on its own under the header from laptop width up (the page itself doesn't); narrower, one at a time. The
+ * scrolling on its own when the sidebar inset has 57rem (the page itself doesn't); narrower, one at a time. The
  * views are a row of tabs above the list at every width, in the same place whether a conversation is open or not.
  * With none open, the pane beside the list has the Inbox's numbers (`children` only with one open). The list is `pages`
  * pages long (`?page=`), with "Load more" under it while the view has more; it keeps the open one's `messages` pages.
@@ -200,7 +200,7 @@ export async function InboxPanes({
 
   return (
     // Rounded panes fill the available window under any account banners.
-    <div data-slot="pane-layout" data-fills-window data-open={open !== null} className="inbox-workspace group/inbox grid flex-1 min-h-0 grid-cols-[clamp(22rem,var(--inbox-list-width,22rem),var(--inbox-list-max))_minmax(0,1fr)] [--inbox-details-beside:0] @min-[calc(480px_+_38.5rem)]/inbox:[--inbox-details-beside:1] [--inbox-list-max:clamp(22rem,calc(100%_-_480px_-_0.75rem_-_var(--inbox-details-space,0px)),520px)] @min-[calc(480px_+_38.5rem)]/inbox:has-[.inbox-thread[data-details=shown]>.inbox-details]:[--inbox-details-space:calc(18.75rem_+_0.75rem)] grid-rows-[auto_auto_minmax(0,1fr)] gap-x-3 max-lg:flex max-lg:flex-col [--card:var(--inbox-surface)] dark:[--muted-foreground:var(--inbox-muted)] dark:[--secondary:var(--inbox-secondary)]">
+    <div data-slot="pane-layout" data-fills-window data-open={open !== null} className="inbox-workspace group/inbox grid flex-1 min-h-0 grid-cols-[clamp(22rem,var(--inbox-list-width,22rem),var(--inbox-list-max))_minmax(0,1fr)] [--inbox-details-beside:0] @min-[77rem]/app:@min-[calc(480px_+_38.5rem)]/inbox:[--inbox-details-beside:1] [--inbox-list-max:clamp(22rem,calc(100%_-_480px_-_0.75rem_-_var(--inbox-details-space,0px)),520px)] @min-[77rem]/app:@min-[calc(480px_+_38.5rem)]/inbox:has-[.inbox-thread[data-details=shown]>.inbox-details]:[--inbox-details-space:calc(18.75rem_+_0.75rem)] grid-rows-[auto_auto_minmax(0,1fr)] gap-x-3 @max-[57rem]/app:flex @max-[57rem]/app:flex-col [--card:var(--inbox-surface)] dark:[--muted-foreground:var(--inbox-muted)] dark:[--secondary:var(--inbox-secondary)]">
       <div className="inbox-phone-project hidden max-md:flex items-center gap-1.5 rounded-t-xl bg-card px-4 pt-2 text-xs text-muted-foreground group-data-[open=true]/inbox:hidden">
         <SidebarTrigger />
         <span>{membership.project.name}</span>
@@ -228,7 +228,7 @@ export async function InboxPanes({
         current={inboxHref(slug, view)}
         // The view the list shows: the page itself, or, with a conversation open, the one beside it.
         currentIs={open === null ? "page" : "true"}
-        className={cn("inbox-views col-start-1 row-start-2 border-0 bg-card px-3 pt-0 shadow-none [&>[aria-current]]:text-primary [&>[aria-current]]:font-semibold [&>button]:ml-auto", moreOpen && "[&>button]:gap-0.5", open !== null && "max-lg:hidden")}
+        className={cn("inbox-views col-start-1 row-start-2 border-0 bg-card px-3 pt-0 shadow-none [&>[aria-current]]:text-primary [&>[aria-current]]:font-semibold [&>button]:ml-auto", moreOpen && "[&>button]:gap-0.5", open !== null && "@max-[57rem]/app:hidden")}
         // The three worked through most as tabs; the rest under More, which fits the list's third of the window.
         items={views.slice(0, TABS).map(tab)}
         more={{ label: "More", items: views.slice(TABS).map(tab) }}
@@ -238,7 +238,7 @@ export async function InboxPanes({
       />
 
       {/* The list's pane: a note above the list when there's one, the list scrolling under it. */}
-      <div className={cn("inbox-list-body col-start-1 row-start-3 flex min-h-0 flex-col overflow-hidden rounded-b-2xl bg-card max-lg:flex-1", open !== null && "max-lg:hidden")}>
+      <div className={cn("inbox-list-body col-start-1 row-start-3 flex min-h-0 flex-col overflow-hidden rounded-b-2xl bg-card @max-[57rem]/app:flex-1", open !== null && "@max-[57rem]/app:hidden")}>
         {/* Off, the widget offers no way to write in: said above the list (outside it: the list is only its conversations), whatever is in it. */}
         {!supportInbox && (
           <div className="px-4.5 pt-4 pb-1">
@@ -246,7 +246,7 @@ export async function InboxPanes({
           </div>
         )}
         {hidden > 0 && (
-          <div className="px-6 pt-6 lg:px-3 lg:pt-3">
+          <div className="px-6 pt-6 @min-[57rem]/app:px-3 @min-[57rem]/app:pt-3">
             <PastHistoryNotice
               what={view === "spam" ? "Spam conversations" : "Closed conversations"}
               plan={plan}
@@ -264,11 +264,11 @@ export async function InboxPanes({
           className="inbox-list-scroll relative min-h-0 flex-1 overflow-y-auto px-2 pt-3 pb-4.5"
         >
           {conversations.length === 0 ? (
-            // From laptop width up, an empty Inbox says new conversations show up here, beside the list, with its numbers.
+            // With room for both panes, an empty Inbox says new conversations show up here, beside the list, with its numbers.
             <div className="inbox-list-empty mt-18 mx-5 flex flex-col items-center gap-2 text-center max-md:mt-37.5 [&>svg]:size-6.25 [&>svg]:text-primary [&>p]:text-sm [&>p]:leading-normal [&>p]:font-[550] [&>span]:text-xs [&>span]:leading-normal [&>span]:text-muted-foreground">
               <CheckIcon aria-hidden />
               <p>{VIEWS[view].empty}</p>
-              <span className={cn(none && view !== "open" && "lg:hidden")}>{view === "open" ? "You’re up to date." : whereFrom}</span>
+              <span className={cn(none && view !== "open" && "@min-[57rem]/app:hidden")}>{view === "open" ? "You’re up to date." : whereFrom}</span>
             </div>
           ) : (
             <div className="inbox-rows [&>ul]:m-0">
@@ -380,7 +380,7 @@ export async function InboxPanes({
             more={counts[views.indexOf(view)]! > conversations.length}
           />
         </ListKeys>
-        <div className="inbox-list-footer leading-normal mt-auto flex items-center gap-1.75 px-4.5 py-4 text-xs text-muted-foreground [&>svg]:size-3.5 [&>span]:ml-auto max-lg:[&>span]:hidden [&_kbd]:rounded-sm [&_kbd]:border [&_kbd]:border-border [&_kbd]:px-1 [&_kbd]:text-xs [&_kbd]:leading-4">
+        <div className="inbox-list-footer leading-normal mt-auto flex items-center gap-1.75 px-4.5 py-4 text-xs text-muted-foreground [&>svg]:size-3.5 [&>span]:ml-auto @max-[57rem]/app:[&>span]:hidden [&_kbd]:rounded-sm [&_kbd]:border [&_kbd]:border-border [&_kbd]:px-1 [&_kbd]:text-xs [&_kbd]:leading-4">
           <InboxIcon aria-hidden />
           All conversations stay here.
           <span>
@@ -392,7 +392,7 @@ export async function InboxPanes({
       <PaneResize pane="inbox" className="col-start-1 row-start-1 row-span-3 translate-x-[11px] justify-self-end" />
 
       {stats ? (
-        // Until a conversation opens (from laptop width up: on a phone the list is alone), how the Inbox is doing.
+        // Until a conversation opens (with room for both panes; otherwise the list is alone), how the Inbox is doing.
         <ConversationPane open={false}>
           <div className="inbox-overview inbox-surface flex flex-1 flex-col px-7.5 py-6 min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
             <div className="inbox-overview-title flex items-center justify-between gap-3 [&>h2]:font-sans [&>h2]:text-base [&>h2]:leading-[normal] [&>h2]:font-semibold [&>span]:text-xs [&>span]:leading-normal [&>span]:text-muted-foreground">
@@ -454,7 +454,7 @@ export async function InboxPanes({
  */
 export function ConversationPane({ open, detailsHidden = false, children }: { open: boolean; detailsHidden?: boolean; children: ReactNode }) {
   return (
-    <section aria-label="Conversation" data-inbox-conversation className={cn("inbox-conversation-pane col-start-2 row-span-3 row-start-1 flex min-h-0 min-w-0 max-lg:flex-1", !open && "max-lg:hidden")}>
+    <section aria-label="Conversation" data-inbox-conversation className={cn("inbox-conversation-pane col-start-2 row-span-3 row-start-1 flex min-h-0 min-w-0 @max-[57rem]/app:flex-1", !open && "@max-[57rem]/app:hidden")}>
       <ConversationDetails hidden={detailsHidden}>{children}</ConversationDetails>
     </section>
   );

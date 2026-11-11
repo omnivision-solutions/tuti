@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { type CSSProperties, type ReactNode, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useLayoutEffect, useState } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { restorePaneWidths } from "@/lib/pane-width";
@@ -9,7 +9,7 @@ import { DOCS_TREE_FOLDED_ATTRIBUTE, DOCS_TREE_FOLDED_KEY } from "@/lib/docs-tre
 
 /**
  * Customize (/app/<project>/customize/<section>): the settings beside a preview of the portal. /customize itself too: the
- * sidebar's link goes there on its way to the first section, and the sidebar mustn't open for that moment.
+ * sidebar's link goes there on its way to the first section. Both use Customize's layout.
  */
 const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
 /**
@@ -17,28 +17,12 @@ const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
  * itself, `data-narrow`: New project, Setup, Account, max-w-2xl), centred in the room beside the sidebar. Customize's sections and pages of panes (their own column, data-slot="pane-layout") take the
  * whole width instead (Feedback caps its own at 72rem until a post opens beside the list), as do pages that need the
  * room (`data-wide`: Users' tables, the team's Roadmap columns).
- * The labelled sidebar is open on every page but Customize (its own rail of sections and the portal's preview), the
- * Inbox (its panes fill the window), the Docs workspace (DOCS) and, under 1280px, the pages of panes (PANES), whose own column takes its room: there
- * it's folded to its rail (it opens again on its own trigger, and is as it was on the way back).
+ * The sidebar starts collapsed and keeps the user's choice on every page, restored from its cookie on full loads.
  */
-/** The pages of panes: Settings (its menu), Reporting, every Docs page (the docs' tree), Autopilot (its list). */
-const PANES = /^\/app\/[^/]+\/(settings|reporting|autopilot|docs)(\/|$)/;
-/**
- * Docs owns its navigation and page surfaces, so the app sidebar folds to its rail at every width.
- * Its tree folds separately, and its phone sheet keeps app navigation reachable.
- */
+/** Docs supplies its own phone navigation instead of the shared header. */
 const DOCS = /^\/app\/[^/]+\/docs(\/|$)/;
-/** The Inbox: its views and list, the conversation and the person beside it fill the window. */
-const INBOX = /^\/app\/[^/]+\/inbox(\/|$)/;
-/** Under 1280px, where a pane page's own column and the labelled sidebar leave the page too little room. */
-const NARROW = "(width < 80rem)";
-const subscribeNarrow = (listener: () => void) => {
-  const query = window.matchMedia(NARROW);
-  query.addEventListener("change", listener);
-  return () => query.removeEventListener("change", listener);
-};
 
-export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
+export function AppShell({ sidebar, header, banners, children, defaultSidebarOpen = false }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode; defaultSidebarOpen?: boolean }) {
   // The inline script covers full loads; client entry from marketing or sign-in restores the fold before paint too.
   useLayoutEffect(() => {
     restorePaneWidths();
@@ -50,48 +34,25 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
   }, []);
   const pathname = usePathname();
   const customizing = CUSTOMIZE.test(pathname);
-  // The Inbox too: its three panes (views and list, the conversation, the person beside it) fill the window.
-  const narrow = useSyncExternalStore(subscribeNarrow, () => window.matchMedia(NARROW).matches, () => false);
-  const folds = customizing
-    ? "customize"
-    : INBOX.test(pathname)
-      ? "inbox"
-      : DOCS.test(pathname)
-        ? "docs"
-        : narrow
-          ? (PANES.exec(pathname)?.[1] ?? null)
-          : null;
-  const folded = folds !== null;
-  const [open, setOpen] = useState(true);
-  // While folded: the sidebar's own state, folded again each time one of those opens.
-  const [peek, setPeek] = useState(false);
-  const [wasFolds, setWasFolds] = useState(folds);
-  if (wasFolds !== folds) {
-    setWasFolds(folds);
-    setPeek(false);
-  }
+  const [open, setOpen] = useState(defaultSidebarOpen);
 
   return (
-    <SidebarProvider
-      style={DOCS.test(pathname) ? { "--sidebar-width-icon": "4rem" } as CSSProperties : undefined}
-      open={folded ? peek : open}
-      onOpenChange={folded ? setPeek : setOpen}
-    >
+    <SidebarProvider open={open} onOpenChange={setOpen}>
       {sidebar}
-      <SidebarInset className="has-[.inbox-workspace]:bg-inbox-canvas max-md:has-[.inbox-workspace]:[&>header]:hidden">
+      <SidebarInset className="@container/app has-[.inbox-workspace]:bg-inbox-canvas max-md:has-[.inbox-workspace]:[&>header]:hidden">
         {!DOCS.test(pathname) && header}
         {customizing ? (
-          // From laptop width up, the window's height: the page doesn't scroll, each of its panes does
+          // With enough room beside the sidebar, the window's height: the page doesn't scroll, each of its panes does
           // (the banners too, past a third of it, so the panes keep their room).
-          <div className="flex flex-1 flex-col lg:h-svh lg:flex-none">
-            <div className="flex flex-col gap-4 p-4 empty:hidden lg:max-h-1/3 lg:overflow-y-auto">{banners}</div>
+          <div className="flex flex-1 flex-col @min-[61rem]/app:h-svh @min-[61rem]/app:flex-none">
+            <div className="flex flex-col gap-4 p-4 empty:hidden @min-[61rem]/app:max-h-1/3 @min-[61rem]/app:overflow-y-auto">{banners}</div>
             {children}
           </div>
         ) : (
           // Pages of three panes take the whole width: their column is beside the page (DocsWorkspace, Settings). One
-          // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height from laptop width up. On
+          // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height when its columns fit. On
           // phones, room at the bottom for actions pinned there (PageActions), and for Tuti's own chat launcher (AppWidget; not in the Inbox or on Customize).
-          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 lg:has-data-fills-window:h-dvh lg:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24 has-[>.inbox-workspace]:@container/inbox has-[>.inbox-workspace]:py-4 has-[>.inbox-workspace]:pr-4 has-[>.inbox-workspace]:pl-12 max-lg:has-[>.inbox-workspace]:h-dvh max-lg:has-[>.inbox-workspace]:min-h-0 max-lg:has-[>.inbox-workspace]:flex-none max-lg:has-[>.inbox-workspace]:gap-4 max-lg:has-[>.inbox-workspace]:p-2">
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 @min-[57rem]/app:has-data-fills-window:h-dvh @min-[57rem]/app:has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24 has-[>.inbox-workspace]:@container/inbox has-[>.inbox-workspace]:py-4 has-[>.inbox-workspace]:pr-4 has-[>.inbox-workspace]:pl-12 @max-[57rem]/app:has-[>.inbox-workspace]:h-dvh @max-[57rem]/app:has-[>.inbox-workspace]:min-h-0 @max-[57rem]/app:has-[>.inbox-workspace]:flex-none @max-[57rem]/app:has-[>.inbox-workspace]:gap-4 @max-[57rem]/app:has-[>.inbox-workspace]:p-2">
             {banners}
             {children}
           </div>

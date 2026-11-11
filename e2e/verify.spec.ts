@@ -93,6 +93,12 @@ test("Verify checks an article against the repository: its history, and its fix 
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "verify-history-dark", { fullPage: false });
   await owner.setViewportSize({ width: 390, height: 844 });
+  // Narrowing the inset closes the card; a click explicitly opens its phone sheet.
+  const verifyTool = owner.getByRole("toolbar", { name: "Article tools", exact: true }).getByRole("button", { name: "Verify", exact: true });
+  await expect(verifyTool).toHaveAttribute("aria-expanded", "false");
+  await expect(owner.getByRole("dialog", { name: "Verify", exact: true })).toBeHidden();
+  await verifyTool.click();
+  await expect(owner.getByRole("dialog", { name: "Verify", exact: true })).toBeVisible();
   await checkpoint(owner, "verify-history-phone-dark", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "light" });
   await checkpoint(owner, "verify-history-phone", { fullPage: false });

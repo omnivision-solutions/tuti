@@ -4,10 +4,12 @@ import { cn } from "cn";
 
 import { HistoryIcon, PanelRightCloseIcon, SettingsIcon, ShieldCheckIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useSyncExternalStore } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { ARTICLE_SENTENCE_JUMP, focusArticleSentence } from "@/components/article-sentence-jump";
+import type { ArticleSettingsDraft } from "@/components/article-settings";
 import { IconTooltip } from "@/components/icon-tooltip";
+import { useInsetBreakpoint } from "@/hooks/use-inset-breakpoint";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
@@ -20,14 +22,17 @@ type Tool = keyof typeof TOOLS;
 export const ToolsContext = createContext<{
   active: Tool | null;
   select: (tool: Tool | null) => void;
+  settingsDraft: ArticleSettingsDraft | null;
+  setSettingsDraft: (draft: ArticleSettingsDraft | null) => void;
 } | null>(null);
-const subscribe = (changed: () => void) => {
-  const query = matchMedia("(min-width: 1024px)");
-  query.addEventListener("change", changed);
-  return () => query.removeEventListener("change", changed);
-};
 
-/** One card beside the article; on phones the same tools open in a sheet. Query links remain shareable. */
+function toolsHref(pathname: string, search: string, tool: Tool | null) {
+  const next = new URLSearchParams(search);
+  for (const key of ["settings", "history", "verify", "revision"]) next.delete(key);
+  if (tool) next.set(tool.toLowerCase(), "");
+  return `${pathname}${next.size ? `?${next.toString().replace(/(settings|history|verify)=(?=&|$)/g, "$1")}` : ""}`;
+}
+/** One card beside the article; with less than 76rem beside the app sidebar the same tools open in a sheet. Query links remain shareable. */
 export function ArticleTools({
   children,
   settings,
@@ -44,25 +49,46 @@ export function ArticleTools({
   const pathname = usePathname();
   const search = useSearchParams();
   const router = useRouter();
-  const desktop = useSyncExternalStore(
-    subscribe,
-    () => matchMedia("(min-width: 1024px)").matches,
-    () => true,
-  );
-  const active = search.has("history") ? "History" : search.has("verify") ? "Verify" : search.has("settings") ? "Settings" : null;
+  const desktop = useInsetBreakpoint(76, null);
+  const requested = search.has("history") ? "History" : search.has("verify") ? "Verify" : search.has("settings") ? "Settings" : null;
+  const [previousDesktop, setPreviousDesktop] = useState(desktop);
+  const [closedByInset, setClosedByInset] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState<ArticleSettingsDraft | null>(null);
   const card = useRef<HTMLElement>(null);
+  const restoreFocus = useRef<Tool | null>(null);
+  const attachCard = useCallback((element: HTMLElement | null) => {
+    card.current = element;
+    if (!element) return;
+    restoreFocus.current = null;
+    return () => {
+      // Capture focus before the closing card's DOM is removed, including on an inset change.
+      if (element.contains(document.activeElement)) restoreFocus.current = requested;
+      card.current = null;
+    };
+  }, [requested]);
+  // Close before a sheet can mount. The first measurement still honors explicit query links.
+  if (previousDesktop !== desktop) {
+    setPreviousDesktop(desktop);
+    if (previousDesktop === true && desktop === false && requested) {
+      setClosedByInset(true);
+    }
+  }
+  if (closedByInset && !requested) setClosedByInset(false);
+  const active = closedByInset || desktop === null ? null : requested;
   const heading = useRef<HTMLHeadingElement>(null);
   const focusOnOpen = useRef(false);
-  const restoreFocus = useRef<Tool | null>(null);
   const jumpAfterClose = useRef<string | null>(null);
   const select = (tool: Tool | null) => {
+    setClosedByInset(false);
+    // Explicitly leaving Settings discards its draft; an inset change keeps it for reopening.
+    if (tool !== "Settings") setSettingsDraft(null);
     if (!tool) restoreFocus.current = active;
     else if (!active) focusOnOpen.current = true;
-    const next = new URLSearchParams(search);
-    for (const key of ["settings", "history", "verify", "revision"]) next.delete(key);
-    if (tool) next.set(tool.toLowerCase(), "");
-    router.replace(`${pathname}${next.size ? `?${next.toString().replace(/(settings|history|verify)=(?=&|$)/g, "$1")}` : ""}`, { scroll: false });
+    router.replace(toolsHref(pathname, search.toString(), tool), { scroll: false });
   };
+  useEffect(() => {
+    if (closedByInset && requested) router.replace(toolsHref(pathname, search.toString(), null), { scroll: false });
+  }, [closedByInset, requested, pathname, router, search]);
   useEffect(() => {
     if (active && desktop && focusOnOpen.current) {
       heading.current?.focus();
@@ -153,12 +179,12 @@ export function ArticleTools({
     </>
   );
   return (
-    <ToolsContext value={{ active, select }}>
+    <ToolsContext value={{ active, select, settingsDraft, setSettingsDraft }}>
       <div className="docs-editor-layout flex gap-3 min-w-0 h-full flex-1" data-tools-open={Boolean(active && desktop)}>
         {children}
         {desktop ? (
           active && (
-            <aside ref={card} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden max-xl:w-75 min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+            <aside ref={attachCard} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden @max-[76rem]/app:hidden @max-[77rem]/app:w-75 min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
               {content}
             </aside>
           )
@@ -198,7 +224,7 @@ export function ArticleToolButtons() {
   const tools = useContext(ToolsContext);
   if (!tools) return null;
   return (
-    <div data-article-tools role="toolbar" aria-label="Article tools" className="docs-tool-icons flex gap-0.75 ml-auto [&[data-open='true']]:hidden max-lg:[&[data-open='true']]:flex max-sm:gap-0" data-open={Boolean(tools.active)}>
+    <div data-article-tools role="toolbar" aria-label="Article tools" className="docs-tool-icons flex gap-0.75 ml-auto [&[data-open='true']]:hidden @max-[76rem]/app:[&[data-open='true']]:flex max-sm:gap-0" data-open={Boolean(tools.active)}>
       {Object.entries(TOOLS).map(([name, Icon]) => (
         <IconTooltip key={name} label={name}><Button
           type="button"
