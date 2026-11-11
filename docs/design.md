@@ -174,7 +174,7 @@ the list picks none to approve at once.
   width. The app sidebar starts collapsed to the same icon rail on every page. Only its toggle or Ctrl/⌘+B opens
   or collapses it; that choice stays across navigation, screen widths and reloads (the existing `sidebar_state`
   cookie, kept for seven days). Phones keep their off-canvas sheet, which closes on navigation.
-  The docs' tree folds independently, from laptop width up, on its own button at its top ("Hide the docs
+  The docs' tree folds independently, when the sidebar inset has at least 64rem, on its own button at its top ("Hide the docs
   tree"; a rail with "Show the docs tree" in its place), remembered per browser on every Docs page (`DocsTreeFold`:
   `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
@@ -210,7 +210,8 @@ the list picks none to approve at once.
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
   kept for the browser; below 77rem of sidebar inset width its toggle opens the same controls and context in a sheet,
-  leaving room for the conversation even with the app sidebar open.
+  leaving room for the conversation even with the app sidebar open. The toggle uses the same rem threshold
+  and current root font size as the CSS, so the sheet stays reachable with larger text.
   Linked posts and Looks related start open. Customer details, Company, Other conversations from this person,
   Recent page visits, Events and Conversation attributes start folded, each with an icon, count and chevron.
   Other conversations expand to a title, a muted status · number · date line and one line of the latest message.
@@ -268,11 +269,13 @@ the list picks none to approve at once.
   newest version beside it, to merge by hand; the next Save goes on top of it.
   The team Docs workspace uses rounded tree, page and tools surfaces on the canvas, separated by 12px gaps,
   with no breadcrumb bar or embedded preview. Its tree is 274px and owns the Docs title, search and navigation;
-  on phones the Docs button opens it as a sheet, including App navigation. Subpages have a small parent link.
+  below 64rem of sidebar inset width the Docs button opens it as a sheet, including App navigation. Subpages have a small parent link.
   An article's editable title sits beside Saved (Save while there are edits) and Publish; its publishing state
   and live Open link sit below. The formatting row stays pinned while the article body scrolls. Settings,
-  History and Verify share one collapsible card (330px, 300px on smaller laptops), opening from icons at the
-  end of the formatting row. Collapsing it returns that space to the document; phones use a bottom sheet.
+  History and Verify share one collapsible card (20.625rem, 18.75rem below 80rem of sidebar inset width), opening from icons at the
+  end of the formatting row. Below 76rem of inset width the tools use a bottom sheet so the editor keeps its room,
+  even with the app sidebar open. Collapsing the card returns its space to the document. These layout thresholds
+  follow the inset and the current root font size in both CSS and JavaScript.
   History keeps a timeline and an inline comparison under the selected version, with the full comparison available.
   Verify keeps its runs, source evidence, sentence jumps and fixes to review. Unpublish and Delete stay under
   More actions; the Unpublished changes pill opens Review and Discard. The text remains capped at the portal's

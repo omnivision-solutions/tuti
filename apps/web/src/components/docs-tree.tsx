@@ -4,9 +4,10 @@ import { cn } from "cn";
 import { BookOpenIcon, ChevronRightIcon, ChevronDownIcon, ChevronsUpDownIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { useInsetBreakpoint } from "@/hooks/use-inset-breakpoint";
 import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -41,12 +42,6 @@ export type TreeCollection = {
   articles: TreeArticle[];
 };
 export type TreeTab = { slug: string; name: string };
-
-const subscribeDesktop = (changed: () => void) => {
-  const query = matchMedia("(min-width: 1024px)");
-  query.addEventListener("change", changed);
-  return () => query.removeEventListener("change", changed);
-};
 
 type Kind = "tab" | "collection" | "article";
 /** A row things can be dropped on: a tab, a collection, an article (in `collection`), or the articles in no collection. */
@@ -212,12 +207,12 @@ function Row({
       {children}
       {count !== undefined && (
         // From laptop width up its buttons show on hover or focus, in the room they keep: its count sits there till then.
-        <span className="hidden px-1.5 text-xs text-muted-foreground tabular-nums lg:absolute lg:top-1/2 lg:right-2 lg:block lg:-translate-y-1/2 lg:group-focus-within/row:hidden lg:group-hover/row:hidden lg:group-has-data-popup-open/row:hidden">
+        <span className="hidden px-1.5 text-xs text-muted-foreground tabular-nums @min-[64rem]/app:absolute @min-[64rem]/app:top-1/2 @min-[64rem]/app:right-2 @min-[64rem]/app:block @min-[64rem]/app:-translate-y-1/2 @min-[64rem]/app:group-focus-within/row:hidden @min-[64rem]/app:group-hover/row:hidden @min-[64rem]/app:group-has-data-popup-open/row:hidden">
           {count}
         </span>
       )}
       {actions && (
-        <div className="flex shrink-0 items-center opacity-100 group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 lg:opacity-0">{actions}</div>
+        <div className="flex shrink-0 items-center opacity-100 group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 @min-[64rem]/app:opacity-0">{actions}</div>
       )}
     </div>
   );
@@ -275,7 +270,7 @@ export function DocsWorkspace({
   const [tabsOpen, setTabsOpen] = useState(false);
   const [newTab, setNewTab] = useState(false);
   const { setOpenMobile, setOpen: setAppOpen, isMobile } = useSidebar();
-  const desktop = useSyncExternalStore(subscribeDesktop, () => matchMedia("(min-width: 1024px)").matches, () => true);
+  const desktop = useInsetBreakpoint(64);
   const openingApp = useRef(false);
   const openingSearch = useRef(false);
   // Where "New collection" adds one, while its dialog is open.
@@ -664,7 +659,7 @@ export function DocsWorkspace({
 
   const footerLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
   const navigation = <>
-    <div className="docs-tree-heading flex items-center justify-between p-[22px_16px_0_20px] [&_h2]:font-heading [&_h2]:text-[30px] [&_h2]:font-[650] [&_h2]:tracking-[-0.03em]"><h2>Docs</h2><div className="flex items-center"><Button variant="ghost" size="icon-sm" aria-label="Search docs" onClick={() => { if (browsing) { openingSearch.current = true; setBrowsing(false); } else window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); }}><SearchIcon className="size-4" /></Button><a href={`${portal}/docs`} target="_blank" rel="noreferrer" aria-label="Open on help center" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary"><ExternalLinkIcon className="size-4" /></a><DocsTreeFold open={false} className="max-lg:hidden" /></div></div>
+    <div className="docs-tree-heading flex items-center justify-between p-[22px_16px_0_20px] [&_h2]:font-heading [&_h2]:text-[30px] [&_h2]:font-[650] [&_h2]:tracking-[-0.03em]"><h2>Docs</h2><div className="flex items-center"><Button variant="ghost" size="icon-sm" aria-label="Search docs" onClick={() => { if (browsing) { openingSearch.current = true; setBrowsing(false); } else window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); }}><SearchIcon className="size-4" /></Button><a href={`${portal}/docs`} target="_blank" rel="noreferrer" aria-label="Open on help center" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary"><ExternalLinkIcon className="size-4" /></a>{desktop && <DocsTreeFold open={false} />}</div></div>
     <p className="docs-tree-caption m-[2px_20px_20px] text-[13px] text-muted-foreground">{projectName} help center</p>
     <div className={cn(
       "docs-tree-content flex min-h-0 flex-1 flex-col gap-3.5 p-[0_10px_14px] overflow-y-auto [scrollbar-width:thin] [&_nav]:flex-1",
@@ -702,7 +697,7 @@ export function DocsWorkspace({
               </div>
             </nav>
             <div className="docs-tree-footer flex flex-col gap-0.5 pt-3 mt-[auto]">
-              <Button variant="ghost" className="justify-start lg:hidden" onClick={() => { openingApp.current = true; setBrowsing(false); }}><PanelLeftIcon />App navigation</Button>
+              {!desktop && <Button variant="ghost" className="justify-start" onClick={() => { openingApp.current = true; setBrowsing(false); }}><PanelLeftIcon />App navigation</Button>}
               {deleted > 0 && (
                 <a href={`${base}#recently-deleted`} className={footerLink}>
                   <Trash2Icon aria-hidden className="size-4 text-muted-foreground" />
@@ -719,25 +714,25 @@ export function DocsWorkspace({
         "docs-workspace relative flex gap-3 min-w-0 flex-1 m-[-24px_-24px_-24px_-24px] p-[16px_16px_16px_24px] bg-docs-canvas h-dvh",
         "[&[data-editing='true']_>_.docs-page-content]:p-0 [&[data-editing='true']_>_.docs-page-content]:bg-transparent",
         "[&[data-editing='true']_>_.docs-page-content]:shadow-none [&[data-editing='true']_>_.docs-page-content]:ring-0 [&[data-editing='true']_>_.docs-page-content]:overflow-visible md:ml-[-32px]",
-        "md:mr-[-32px] max-lg:p-3 max-lg:h-dvh max-sm:p-2 max-sm:m-[-24px] max-sm:h-dvh",
+        "md:mr-[-32px] @max-[64rem]/app:p-3 @max-[64rem]/app:h-dvh max-sm:p-2 max-sm:m-[-24px] max-sm:h-dvh",
         "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:left-6.5",
         "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:right-[auto]",
         "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:top-6 [&_nav[aria-label='Collection']]:border-b-0",
         "[&_nav[aria-label='Collection']]:shadow-none [&_nav[aria-label='Collection']]:ring-0 [&_nav[aria-label='Collection']_[aria-current='page']]:text-primary",
         "[&_nav[aria-label=Collection]]:border-b-0 [&_nav[aria-label=Collection]]:shadow-none [&_nav[aria-label=Collection]]:ring-0",
       )} data-editing={editing}>
-        <aside className="docs-tree-pane docs-surface w-68.5 shrink-0 flex flex-col lg:[:root[data-docs-tree-folded]_&]:w-12 max-lg:hidden min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
-          <div className="docs-tree-folded hidden p-[10px_6px] lg:[:root[data-docs-tree-folded]_&]:flex lg:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
-          <div className="docs-tree-expanded flex flex-col min-h-0 h-full lg:[:root[data-docs-tree-folded]_&]:hidden">{desktop && navigation}</div>
+        <aside className="docs-tree-pane docs-surface w-68.5 shrink-0 flex flex-col @min-[64rem]/app:[:root[data-docs-tree-folded]_&]:w-12 @max-[64rem]/app:hidden min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+          <div className="docs-tree-folded hidden p-[10px_6px] @min-[64rem]/app:[:root[data-docs-tree-folded]_&]:flex @min-[64rem]/app:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
+          <div className="docs-tree-expanded flex flex-col min-h-0 h-full @min-[64rem]/app:[:root[data-docs-tree-folded]_&]:hidden">{desktop && navigation}</div>
         </aside>
-        <button type="button" aria-label="Browse docs" aria-expanded={browsing} onClick={() => setBrowsing(true)} className="docs-phone-trigger hidden bg-secondary text-foreground max-lg:flex max-lg:absolute max-lg:top-5.75 max-lg:right-7 max-lg:z-20 max-lg:items-center max-lg:gap-1.25 max-lg:h-7 max-lg:p-[0_7px] max-lg:text-[13px] max-lg:text-muted-foreground max-lg:rounded-[6px] max-sm:top-3 max-sm:right-4"><BookOpenIcon className="size-3.5" />Docs</button>
+        <button type="button" aria-label="Browse docs" aria-expanded={browsing} onClick={() => setBrowsing(true)} className="docs-phone-trigger absolute top-5.75 right-7 z-20 hidden h-7 items-center gap-1.25 rounded-[6px] bg-secondary p-[0_7px] text-[13px] text-muted-foreground @max-[64rem]/app:flex max-sm:top-3 max-sm:right-4"><BookOpenIcon className="size-3.5" />Docs</button>
         {pathname === base && activeTab && <span className="hidden max-sm:block absolute right-8 top-7 text-xs text-muted-foreground">{activeTab.name}</span>}
         <Sheet open={browsing && !desktop} onOpenChange={setBrowsing} onOpenChangeComplete={(open) => { if (!open && openingApp.current) { openingApp.current = false; if (isMobile) setOpenMobile(true); else setAppOpen(true); } if (!open && openingSearch.current) { openingSearch.current = false; window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); } }}>
           <SheetContent overlayClassName="bg-(--docs-overlay) supports-backdrop-filter:backdrop-blur-none" side="bottom" className={cn(
             "docs-tree-sheet [&::before]:[content:''] [&::before]:shrink-0 [&::before]:w-8 [&::before]:h-1 [&::before]:rounded-[4px]",
-            "[&::before]:bg-input [&::before]:m-[8px_auto_0] max-lg:[inset:64px_8px_8px]! max-lg:h-auto! max-lg:max-h-[calc(100dvh_-_72px)]",
-            "max-lg:gap-0 max-lg:rounded-[16px] max-lg:border max-lg:border-border max-lg:bg-docs-surface max-lg:[&_.docs-tree-heading]:pt-3",
-            "max-lg:[&_.docs-tree-content]:min-h-0 max-lg:[&_.docs-tree-caption]:mb-4.5 max-sm:top-20! [&_.docs-tree-heading]:pr-14.5",
+            "[&::before]:bg-input [&::before]:m-[8px_auto_0] [inset:64px_8px_8px]! h-auto! max-h-[calc(100dvh_-_72px)]",
+            "gap-0 rounded-[16px] border border-border bg-docs-surface [&_.docs-tree-heading]:pt-3",
+            "[&_.docs-tree-content]:min-h-0 [&_.docs-tree-caption]:mb-4.5 max-sm:top-20! [&_.docs-tree-heading]:pr-14.5",
             "[&_>_[data-slot='sheet-close']]:top-5.5 [&_>_[data-slot='sheet-close']]:right-3.5",
           )}>
             <SheetTitle className="sr-only">Docs navigation</SheetTitle>
@@ -747,7 +742,7 @@ export function DocsWorkspace({
         <div className={cn(
           "docs-page-content min-w-0 min-h-0 rounded-2xl bg-docs-surface",
           "shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)] flex flex-1 flex-col gap-6",
-          "overflow-y-auto p-[28px_32px] [scrollbar-width:thin] max-lg:p-6 max-lg:[&_>_.docs-page-header:first-child:not(:has(>_a))]:pt-6",
+          "overflow-y-auto p-[28px_32px] [scrollbar-width:thin] @max-[64rem]/app:p-6 @max-[64rem]/app:[&_>_.docs-page-header:first-child:not(:has(>_a))]:pt-6",
           "max-sm:rounded-2xl max-sm:p-[20px_16px] max-sm:gap-5.5 [&_>_*]:shrink-0",
           "max-sm:[&:has(.docs-overview-stats)_>_.docs-page-header:first-child:not(:has(>_a))]:pt-10",
         )}>{children}</div>

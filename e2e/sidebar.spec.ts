@@ -164,3 +164,80 @@ test("Inbox keeps the conversation usable as an opened sidebar reduces its room"
   await team.getByRole("button", { name: "Hide details", exact: true }).click();
   await expect(team.getByRole("complementary", { name: "Conversation details", exact: true })).toBeHidden();
 });
+
+test("Docs keeps a readable editor with the sidebar and an article tool open", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Example Team");
+  await createProject(team, "Example", slug);
+  const api = await apiFor(team, slug);
+  await api("/articles", { title: "Invite your team", body: "Owners send invites from Settings." });
+  await team.setViewportSize({ width: 1024, height: 768 });
+  const sidebar = team.locator('[data-slot="sidebar"][data-state]');
+  await sidebar.locator('[data-slot="sidebar-trigger"]').click();
+  await team.goto(`/app/${slug}/docs/invite-your-team`);
+  await expect(team.locator(".docs-tree-pane")).toBeHidden();
+  await checkpoint(team, "docs-open-sidebar-small-laptop", { fullPage: false });
+  await team.getByRole("toolbar", { name: "Article tools", exact: true }).getByRole("button", { name: "Settings", exact: true }).click();
+  // The editor's text keeps its room even while the tool is open in front of it.
+  const article = team.locator('.docs-editor-page [role="textbox"][aria-label="Article"]');
+  await expect.poll(async () => (await article.boundingBox())!.width).toBeGreaterThanOrEqual(480);
+  const sheet = team.getByRole("dialog", { name: "Article settings", exact: true });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("combobox", { name: "Collection", exact: true })).toBeVisible();
+  await checkpoint(team, "docs-open-tool-small-laptop", { fullPage: false });
+  await sheet.getByRole("button", { name: "Collapse article tools", exact: true }).click();
+  await expect(sheet).toBeHidden();
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await team.getByRole("button", { name: "Browse docs", exact: true }).click();
+  const tree = team.getByRole("dialog", { name: "Docs navigation", exact: true });
+  await expect(tree.getByRole("link", { name: /^Invite your team/ })).toBeVisible();
+  await tree.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(tree).toBeHidden();
+  // At a wider inset both panes fit, and the same open tool moves beside the text on resize.
+  await team.getByRole("toolbar", { name: "Article tools", exact: true }).getByRole("button", { name: "Settings", exact: true }).click();
+  await team.setViewportSize({ width: 1600, height: 900 });
+  const tools = team.getByRole("complementary", { name: "Article tools", exact: true });
+  await expect(tools).toBeVisible();
+  await expect(team.getByRole("navigation", { name: "Docs", exact: true })).toBeVisible();
+  await expect(team.getByRole("dialog")).toBeHidden();
+  await expect.poll(async () => (await article.boundingBox())!.width).toBeGreaterThanOrEqual(480);
+  await tools.getByRole("button", { name: "Collapse article tools", exact: true }).click();
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+});
+
+test("Inbox details remain reachable when a larger root font changes the container breakpoint", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Example Team");
+  await createProject(team, "Example", slug);
+  const api = await apiFor(team, slug);
+  await api("/conversations", { email: "e2e-user@example.com", subject: "Reports", body: "Can I export my reports?" });
+  await team.setViewportSize({ width: 1440, height: 900 });
+  await team.goto(`/app/${slug}/inbox/1`);
+  const details = team.getByRole("complementary", { name: "Conversation details", exact: true });
+  await expect(details).toBeVisible();
+  // Change the font without resizing the window: rem queries change even though its pixel width stays put.
+  await team.evaluate(() => { document.documentElement.style.fontSize = "20px"; });
+  await expect(details).toBeHidden();
+  const show = team.getByRole("button", { name: "Show details", exact: true });
+  await expect(show).toHaveAttribute("aria-haspopup", "dialog");
+  await show.click();
+  const sheet = team.getByRole("dialog", { name: "Conversation details", exact: true });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("button", { name: /Unassigned/ })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Needs reply, change status", exact: true })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Not snoozed", exact: true })).toBeVisible();
+  await sheet.getByRole("button", { name: /Unassigned/ }).click();
+  await expect(team.getByRole("menuitem", { name: "Assign to me", exact: true })).toBeVisible();
+  await team.keyboard.press("Escape");
+  await checkpoint(team, "inbox-large-root-font-details", { fullPage: false });
+  await sheet.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(sheet).toBeHidden();
+  await team.evaluate(() => { document.documentElement.style.fontSize = "16px"; });
+  await expect(details).toBeVisible();
+  await team.getByRole("button", { name: "Hide details", exact: true }).click();
+  await expect(details).toBeHidden();
+  await team.getByRole("button", { name: "Show details", exact: true }).click();
+  await expect(details).toBeVisible();
+});

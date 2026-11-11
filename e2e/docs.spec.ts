@@ -607,11 +607,11 @@ test("the team reviews article history, changes visibility and restores a delete
   await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
   await checkpoint(visitor, "portal-docs-article-updated");
 
-  // Its history (an icon in the top bar), in a panel from the right over the article, shows what changed since the first version.
+  // Its history opens in the shared card beside the article and shows what changed since the first version.
   await team.getByRole("button", { name: "History", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team?history`);
   const historyPanel = team.getByRole("complementary", { name: "Article tools" });
-  await expect(historyPanel).toHaveCSS("width", "330px");
+  await expect(historyPanel).toHaveCSS("width", "300px");
   const versions = historyPanel.getByRole("link", { name: /^Saved / });
   await expect(versions).toHaveCount(3);
   await versions.nth(2).click();
@@ -1429,9 +1429,9 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await expect(dialog.getByRole("combobox", { name: "Collection" })).toContainText("No collection");
   await expect(dialog.getByRole("checkbox", { name: /^Show the updated date/ })).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
-  // The shared card takes 330px here (300px below 1280px), and leaves the text beside it.
+  // The inset is below 80rem: the shared card takes 300px and leaves the text beside it.
   await expect(team.getByRole("complementary", { name: "Article tools" })).toBeVisible();
-  await expect.poll(async () => Math.round((await team.getByRole("complementary", { name: "Article tools" }).boundingBox())!.width)).toBe(330);
+  await expect.poll(async () => Math.round((await team.getByRole("complementary", { name: "Article tools" }).boundingBox())!.width)).toBe(300);
   await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveCount(0);
   // Published, with the box off: its address stays as it is, and the checkbox says so.
   await expect(dialog.getByRole("checkbox", { name: /^Custom slug/ })).toHaveAccessibleName(/Its address stays as it is; links to it keep working\.$/);

@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useInsetBreakpoint } from "@/hooks/use-inset-breakpoint";
 import { DETAILS_HIDDEN_COOKIE } from "@/lib/inbox-details";
 
 const listeners = new Set<() => void>();
@@ -17,16 +18,6 @@ const subscribe = (listener: () => void) => {
 const hiddenNow = () => document.cookie.split("; ").includes(`${DETAILS_HIDDEN_COOKIE}=1`);
 const useHidden = (server: boolean) => useSyncExternalStore(subscribe, hiddenNow, () => server);
 const OPEN_DETAILS = "tuti:conversation-details";
-// Match @min-[77rem]/app: list, conversation and details all need room beside the sidebar.
-const inset = () => document.querySelector<HTMLElement>('[data-slot="sidebar-inset"]');
-const wide = () => (inset()?.getBoundingClientRect().width ?? 0) >= 1232;
-const subscribeWidth = (listener: () => void) => {
-  const element = inset();
-  if (!element) return () => {};
-  const observer = new ResizeObserver(listener);
-  observer.observe(element);
-  return () => observer.disconnect();
-};
 
 export function ConversationDetails({ hidden, children }: { hidden: boolean; children: ReactNode }) {
   return (
@@ -39,7 +30,7 @@ export function ConversationDetails({ hidden, children }: { hidden: boolean; chi
 /** The same details and controls, in a card when the inset has room and a sheet otherwise. */
 export function DetailsPanel({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const beside = useSyncExternalStore(subscribeWidth, wide, () => true);
+  const beside = useInsetBreakpoint(77);
   // Reset during the breakpoint render so narrowing cannot resurrect a sheet from the previous phone view.
   if (beside && open) setOpen(false);
   useEffect(() => {
@@ -68,7 +59,7 @@ export function DetailsPanel({ children }: { children: ReactNode }) {
 
 export function DetailsToggle({ hidden: server }: { hidden: boolean }) {
   const hidden = useHidden(server);
-  const beside = useSyncExternalStore(subscribeWidth, wide, () => true);
+  const beside = useInsetBreakpoint(77);
   const label = !beside || hidden ? "Show details" : "Hide details";
   return (
     <Button

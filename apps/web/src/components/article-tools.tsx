@@ -4,10 +4,11 @@ import { cn } from "cn";
 
 import { HistoryIcon, PanelRightCloseIcon, SettingsIcon, ShieldCheckIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useSyncExternalStore } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useRef } from "react";
 
 import { ARTICLE_SENTENCE_JUMP, focusArticleSentence } from "@/components/article-sentence-jump";
 import { IconTooltip } from "@/components/icon-tooltip";
+import { useInsetBreakpoint } from "@/hooks/use-inset-breakpoint";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
@@ -21,13 +22,7 @@ export const ToolsContext = createContext<{
   active: Tool | null;
   select: (tool: Tool | null) => void;
 } | null>(null);
-const subscribe = (changed: () => void) => {
-  const query = matchMedia("(min-width: 1024px)");
-  query.addEventListener("change", changed);
-  return () => query.removeEventListener("change", changed);
-};
-
-/** One card beside the article; on phones the same tools open in a sheet. Query links remain shareable. */
+/** One card beside the article; with less than 76rem beside the app sidebar the same tools open in a sheet. Query links remain shareable. */
 export function ArticleTools({
   children,
   settings,
@@ -44,11 +39,7 @@ export function ArticleTools({
   const pathname = usePathname();
   const search = useSearchParams();
   const router = useRouter();
-  const desktop = useSyncExternalStore(
-    subscribe,
-    () => matchMedia("(min-width: 1024px)").matches,
-    () => true,
-  );
+  const desktop = useInsetBreakpoint(76);
   const active = search.has("history") ? "History" : search.has("verify") ? "Verify" : search.has("settings") ? "Settings" : null;
   const card = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -158,7 +149,7 @@ export function ArticleTools({
         {children}
         {desktop ? (
           active && (
-            <aside ref={card} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden max-xl:w-75 min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+            <aside ref={card} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden @max-[76rem]/app:hidden @max-[80rem]/app:w-75 min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
               {content}
             </aside>
           )
@@ -198,7 +189,7 @@ export function ArticleToolButtons() {
   const tools = useContext(ToolsContext);
   if (!tools) return null;
   return (
-    <div data-article-tools role="toolbar" aria-label="Article tools" className="docs-tool-icons flex gap-0.75 ml-auto [&[data-open='true']]:hidden max-lg:[&[data-open='true']]:flex max-sm:gap-0" data-open={Boolean(tools.active)}>
+    <div data-article-tools role="toolbar" aria-label="Article tools" className="docs-tool-icons flex gap-0.75 ml-auto [&[data-open='true']]:hidden @max-[76rem]/app:[&[data-open='true']]:flex max-sm:gap-0" data-open={Boolean(tools.active)}>
       {Object.entries(TOOLS).map(([name, Icon]) => (
         <IconTooltip key={name} label={name}><Button
           type="button"
