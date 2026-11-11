@@ -13,11 +13,11 @@ export function appPortalProject(): string | null {
 }
 
 /**
- * The first path segments already taken on the app's domain: Tuti's own portal can't be under one
+ * The first path segments the app already serves: Tuti's own portal can't be under one
  * (APP_PORTAL_PROJECT=api would take /api/docs, the API reference, and the API), so such a slug is
- * ignored. The app's own, and on Tuti's cloud the marketing site's pages (apps/marketing).
+ * ignored. Paths of other sites on the domain (tuti.so's marketing pages) are the proxy's to keep apart.
  */
-const APP_PATHS = new Set(["app", "api", "portal", "_tuti", "_next", "pricing", "terms", "privacy"]);
+const APP_PATHS = new Set(["app", "api", "portal", "_tuti", "_next"]);
 
 /** Where Tuti's own portal is on the app's domain, as a site mount, or null. */
 export function appPortalMount(): { slug: string; origin: string; path: string } | null {
