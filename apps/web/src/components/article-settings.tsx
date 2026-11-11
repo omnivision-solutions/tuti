@@ -13,7 +13,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegen
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
+import { type GroupOption, type ReadAccessDraft, WhoCanRead } from "@/components/who-can-read";
 import { type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
 import { keepingFields } from "@/lib/forms";
 import type { Access, WithoutAccess } from "@/lib/read-access";
@@ -163,7 +163,20 @@ type Saved = {
   preview?: string;
 };
 
-/** A saved article's panel (opened again: as saved, not as left). */
+/** Kept above the tools' card/sheet switch until an explicit close or a successful save. */
+export type ArticleSettingsDraft = {
+  listing: Listing;
+  customSlug: boolean;
+  slug: string;
+  loaded: ArticlePlace;
+  place: ArticlePlace;
+  visibility: ReadAccessDraft;
+  description: string;
+  keywords: string;
+  noindex: boolean;
+};
+
+/** A saved article's panel (explicitly closed and opened again: as saved, not as left). */
 function SavedSettings({
   projectSlug,
   article,
@@ -181,11 +194,19 @@ function SavedSettings({
     }
     return result;
   }, {});
-  const [listing, setListing] = useState<Listing>(article.listing);
-  const [customSlug, setCustomSlug] = useState(article.customSlug);
-  // As the panel opened: it sends only what's changed since, so someone else's newer move stays.
-  const [loaded] = useState<ArticlePlace>({ collection: article.collection, showUpdatedDate: article.showUpdatedDate });
-  const [place, setPlace] = useState(loaded);
+  const tools = useContext(ToolsContext);
+  const [ownDraft, setOwnDraft] = useState<ArticleSettingsDraft>(() => {
+    // As the panel opened: send only place changes, so someone else's newer move stays.
+    const loaded = { collection: article.collection, showUpdatedDate: article.showUpdatedDate };
+    return {
+      listing: article.listing, customSlug: article.customSlug, slug: article.slug,
+      loaded, place: loaded,
+      visibility: { access: article.access, groups: article.groups, noAccess: article.noAccess },
+      description: article.description, keywords: article.keywords.join(", "), noindex: article.noindex,
+    };
+  });
+  const draft = inline && tools ? tools.settingsDraft ?? ownDraft : ownDraft;
+  const setDraft = (next: ArticleSettingsDraft) => inline && tools ? tools.setSettingsDraft(next) : setOwnDraft(next);
 
   return (
     <form {...keepingFields(action)} className="flex min-h-0 flex-1 flex-col">
@@ -195,7 +216,7 @@ function SavedSettings({
         </SheetHeader>
       )}
       <FieldGroup className={inline ? "gap-5" : "min-h-0 flex-1 overflow-y-auto p-4"}>
-        <Place place={place} loaded={loaded} onChange={setPlace} published={article.published} />
+        <Place place={draft.place} loaded={draft.loaded} onChange={(place) => setDraft({ ...draft, place })} published={article.published} />
         <FieldSeparator />
         <WhoCanRead
           id="article-access"
@@ -205,11 +226,12 @@ function SavedSettings({
           defaultAccess={article.access}
           defaultGroups={article.groups}
           defaultNoAccess={article.noAccess}
+          control={{ value: draft.visibility, onChange: (visibility) => setDraft({ ...draft, visibility }) }}
           preview={preview}
         />
         <Field>
           <FieldLabel id="article-listing-label">Listed in</FieldLabel>
-          <Select name="listing" items={LISTING_LABELS} value={listing} onValueChange={(value) => setListing(value as Listing)}>
+          <Select name="listing" items={LISTING_LABELS} value={draft.listing} onValueChange={(value) => setDraft({ ...draft, listing: value as Listing })}>
             <SelectTrigger className="w-full" aria-labelledby="article-listing-label" aria-describedby="article-listing-description">
               <SelectValue />
             </SelectTrigger>
@@ -221,7 +243,7 @@ function SavedSettings({
               ))}
             </SelectContent>
           </Select>
-          <FieldDescription id="article-listing-description">{LISTING_DESCRIPTIONS[listing]}</FieldDescription>
+          <FieldDescription id="article-listing-description">{LISTING_DESCRIPTIONS[draft.listing]}</FieldDescription>
         </Field>
         <FieldSet>
           <FieldLegend>Search</FieldLegend>
@@ -229,17 +251,18 @@ function SavedSettings({
             <Field>
               <Toggle
                 name="customSlug"
-                checked={customSlug}
-                onChange={setCustomSlug}
+                checked={draft.customSlug}
+                onChange={(customSlug) => setDraft({ ...draft, customSlug })}
                 label="Custom slug"
                 // Published, its address stays when the box is unticked: said in its label, so it's read out too.
-                description={`Set the end of the URL instead of using the title.${article.published && !customSlug ? " Its address stays as it is; links to it keep working." : ""}`}
+                description={`Set the end of the URL instead of using the title.${article.published && !draft.customSlug ? " Its address stays as it is; links to it keep working." : ""}`}
               />
-              {customSlug && (
+              {draft.customSlug && (
                 <Input
                   name="newSlug"
                   aria-label="Slug"
-                  defaultValue={article.slug}
+                  value={draft.slug}
+                  onChange={(event) => setDraft({ ...draft, slug: event.target.value })}
                   placeholder="getting-started"
                   required
                   autoComplete="off"
@@ -257,7 +280,8 @@ function SavedSettings({
                 name="description"
                 rows={2}
                 maxLength={300}
-                defaultValue={article.description}
+                value={draft.description}
+                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
                 placeholder="From the text when left empty"
                 aria-describedby="article-description-hint"
               />
@@ -269,7 +293,8 @@ function SavedSettings({
                 id="article-keywords"
                 name="keywords"
                 rows={2}
-                defaultValue={article.keywords.join(", ")}
+                value={draft.keywords}
+                onChange={(event) => setDraft({ ...draft, keywords: event.target.value })}
                 placeholder="Separate terms with commas"
                 aria-describedby="article-keywords-hint"
               />
@@ -277,7 +302,8 @@ function SavedSettings({
             </Field>
             <Toggle
               name="noindex"
-              checked={article.noindex}
+              checked={draft.noindex}
+              onChange={(noindex) => setDraft({ ...draft, noindex })}
               label="Block search indexing"
               description="Asks search engines not to list this article."
             />

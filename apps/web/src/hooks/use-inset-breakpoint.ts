@@ -20,9 +20,12 @@ function subscribe(changed: () => void) {
 }
 
 /** Match @min-[<rem>]/app using the inset and the root font that CSS's rem queries use. */
-export function useInsetBreakpoint(rem: number) {
+export function useInsetBreakpoint(rem: number): boolean;
+/** A null server snapshot distinguishes the first measurement from a later layout change. */
+export function useInsetBreakpoint(rem: number, serverSnapshot: null): boolean | null;
+export function useInsetBreakpoint(rem: number, serverSnapshot: boolean | null = true) {
   return useSyncExternalStore(subscribe, () => {
     const fontSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
     return (inset()?.getBoundingClientRect().width ?? 0) >= rem * fontSize;
-  }, () => true);
+  }, () => serverSnapshot);
 }

@@ -284,7 +284,9 @@ the list picks none to approve at once.
   The formatting row stays pinned while the article body scrolls. Settings,
   History and Verify share one collapsible card (20.625rem, 18.75rem below 77rem of sidebar inset width), opening from icons at the
   end of the formatting row. Below 76rem of inset width the tools use a bottom sheet so the editor keeps its room,
-  even with the app sidebar open. Collapsing the card returns its space to the document. These layout thresholds
+  even with the app sidebar open. Narrowing the inset closes an open card without opening a sheet; its Settings draft
+  stays until the user explicitly closes or saves it, and clicking Settings again opens that draft in the sheet.
+  Collapsing the card returns its space to the document. These layout thresholds
   follow the inset and the current root font size in both CSS and JavaScript.
   History keeps a timeline and an inline comparison under the selected version, with the full comparison available.
   Verify keeps its runs, source evidence, sentence jumps and fixes to review. Unpublish and Delete stay under
