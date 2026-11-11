@@ -89,6 +89,8 @@ test("Tuti's own portal under its path on the app's domain (tuti.example/help/â€
   expect((await response("/help/roadmap")).headers.get("x-middleware-request-x-tuti-base")).toBe("/help");
   // Its sign-in is the app's own auth API, under the path.
   expect(await rewrite("/help/api/auth/get-session")).toBe("http://tuti.example/api/auth/get-session");
+  // The API reference is the app's alone: under the mount it's the help center's path, not Tuti's reference.
+  expect(await rewrite("/help/api/docs")).toBe("http://tuti.example/portal/help/api/docs");
   for (const path of ["/", "/api/docs", "/app/auth/sign-in", "/app/acme", "/helpx", "/feedback/ideas", "/widget"]) {
     expect(await rewrite(path)).toBeNull();
   }
