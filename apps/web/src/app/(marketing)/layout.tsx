@@ -41,7 +41,7 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
         <div className="mx-auto flex w-full max-w-[1240px] flex-wrap items-start gap-10 px-5 pt-14 pb-16 text-sm text-muted-foreground md:px-8">
           <div>
             <TutiLogo />
-            <p className="mt-3 max-w-72">The help center, feature requests and changelog for your product.</p>
+            <p className="mt-3 max-w-72">The help center that stays in sync with your code.</p>
           </div>
           <nav aria-label="Footer" className="flex flex-wrap gap-16 md:ml-auto max-md:gap-9">
             <div className="flex flex-col gap-2.5">

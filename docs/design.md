@@ -670,6 +670,9 @@ Use these instead of hand-rolling layout:
 
 ## Copy
 
+- **Marketing copy** (the home page): short and confident. Headlines and lines sell outcomes with no plan
+  names, limits, thresholds or "with your approval"-style qualifiers; which plan has what lives on /pricing, and
+  the details in the help center. Sell only what's shipped, never hedge it.
 - Plain, short, friendly. Sentence case everywhere ("Possible duplicates",
   not "Possible Duplicates").
 - Say "project", "board", "post", "team" (the customer's staff) and "users"

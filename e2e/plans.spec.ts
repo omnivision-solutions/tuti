@@ -258,13 +258,12 @@ test("on Tuti's cloud, signing up (or continuing with Google or GitHub from sign
   await expect(selfHosted.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Terms" })).toHaveCount(0);
 });
 
-test("Tuti's cloud's home page says the free plan comes with Autopilot (Free starts with AI credits); a self-hosted server's shows no plan", async ({ browser }) => {
+test("Tuti's cloud's home page has a pricing section; a self-hosted server's has none", async ({ browser }) => {
   const cloud = await browser.newPage({ baseURL: CLOUD_URL });
   await cloud.goto("/");
-  await expect(cloud.getByText("Autopilot included, no credit card")).toBeVisible();
+  await expect(cloud.getByRole("heading", { name: /Free to start/ })).toBeVisible();
   const own = await browser.newPage({ baseURL: APP_URL });
   await own.goto("/");
-  await expect(own.getByRole("heading", { level: 1 })).toContainText("keeps up");
-  await expect(own.getByText("Autopilot included")).toHaveCount(0);
-  await expect(own.getByText("Free plan")).toHaveCount(0);
+  await expect(own.getByRole("heading", { level: 1 })).toContainText("in sync with your code");
+  await expect(own.getByRole("heading", { name: /Free to start/ })).toHaveCount(0);
 });
