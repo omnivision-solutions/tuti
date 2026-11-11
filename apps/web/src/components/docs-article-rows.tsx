@@ -39,6 +39,7 @@ export const articleRowDetails = cache(async (projectId: string) => {
         sample: true,
         ...levelSelect,
         changes: { select: { articleId: true, updatedAt: true } },
+        revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
       },
     }),
     articleStats(projectId),

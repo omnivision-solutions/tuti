@@ -12,8 +12,13 @@ describe("Docs review summaries", () => {
     expect(fixSummary("Same.", "Same.")).toBeNull();
     expect(fixSummary("", "A new paragraph.")).toContain("A new paragraph");
   });
+  it("finds a quoted source inside paragraphs with other quantities or number words", () => {
+    expect(matchingSentence("Each plan has 5 seats.", ["Each plan has 5 seats. You can add up to 10 more from Billing."])).toBe(0);
+    expect(matchingSentence("People are admins or members.", ["People are admins or members. Pick one role."])).toBe(0);
+    expect(matchingSentence("Pick one role.", ["Pick one role. Invite up to 10 people."])).toBe(0);
+  });
   it("finds a paraphrased claim but refuses a changed quantity or an ambiguous match", () => {
-    expect(matchingSentence("Each plan has 5 seats", ["Each plan has 5 seats. You can add 10 more."])).toBe(-1);
+    expect(matchingSentence("Each plan has 5 seats", ["Each plan has 5 seats. You can add 10 more."])).toBe(0);
     expect(matchingSentence("Each plan has 5 seats", ["Each plan has 10 seats. Add 5 more."])).toBe(-1);
     expect(matchingSentence("Each plan has 5 seats", ["Each plan has 5 seats.", "Each plan has 5 seats."])).toBe(0);
     expect(matchingSentence("Exporting calendars includes five seats", ["Export calendars with 5 seats."])).toBe(0);

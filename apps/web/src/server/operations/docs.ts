@@ -1152,12 +1152,16 @@ export const restoreArticle = defineOperation({
 export const publishArticle = defineOperation({
   name: "articles.publish",
   summary:
-    "Publish a docs article on the portal. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. While Autopilot's edits wait in the draft (they go live with it), `edits` is required (409 `edits_required` without it): the ids of those you reviewed (codeChanges.target's `actions`); one waiting that isn't among them is a 409 `changed` (one gone since is fine)",
+    "Publish a docs article on the portal. Optional `revision` (the newest id from articles.revisions) publishes a draft only if it is still that version; a later save is refused with 409 `changed`. Refused (402 `article_limit`) where the project's plan has a limit on published articles and it would go past it. While Autopilot's edits wait in the draft (they go live with it), `edits` is required (409 `edits_required` without it): the ids of those you reviewed (codeChanges.target's `actions`); one waiting that isn't among them is a 409 `changed` (one gone since is fine)",
   method: "POST",
   path: "/articles/{slug}/publish",
   scope: "write",
   access: "team",
-  input: z.object({ slug, edits: z.array(z.string().min(1).max(100)).max(500).optional() }),
+  input: z.object({
+    slug,
+    edits: z.array(z.string().min(1).max(100)).max(500).optional(),
+    revision: z.string().min(1).max(100).optional().describe("The draft’s newest revision id from articles.revisions, as reviewed. A later save is refused with 409 changed. Omit to publish without a revision check."),
+  }),
   run: async ({ actor, projectId }, input) => {
     // Looked up before writing, like articles.create.
     const portal = await portalOf(projectId);
@@ -1182,6 +1186,8 @@ export const publishArticle = defineOperation({
           throw new OperationError(409, "changed", "The article changed since. Reload the page to review it.");
         }
       }
+      // Like publishing saved changes: no save can slip between this revision check and publishing under the lock.
+      if (draft) await checkSavedAt(tx, article.id, undefined, input.revision);
       const { count } = await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
       // Autopilot's edits still waiting from before it was unpublished are in the text going live: approved. Counted
       // with it, the project's published articles must fit its plan (else nothing is written).

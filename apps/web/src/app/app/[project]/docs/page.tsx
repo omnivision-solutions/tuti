@@ -108,6 +108,7 @@ export default async function TeamDocsPage(
         saved: timeAgo(rowDetails.savedAt.get(a.id) ?? a.updatedAt),
         savedAt: (a.changes?.updatedAt ?? a.updatedAt).toISOString(),
         reviewRequired: needsReview.has(a.id),
+        revision: a.revisions[0]?.id,
       }))
   );
   const mostRead = articles

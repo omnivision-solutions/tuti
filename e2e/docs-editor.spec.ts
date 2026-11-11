@@ -494,10 +494,11 @@ test("a late Autopilot edit gets a review link and Publish all continues with th
   const confirm = team.getByRole("alertdialog", { name: "Publish 2 articles?", exact: true });
   await pendingQueueEdit(slug, "first-steps");
   await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
-  const notice = team.locator("[data-sonner-toast]").filter({ hasText: "First steps has an Autopilot edit to review first" });
-  await expect(notice).toBeVisible();
-  await expect(notice.getByRole("link", { name: "Review article" })).toHaveAttribute("href", `/app/${slug}/docs/first-steps`);
   await expect(confirm).toBeHidden();
+  const review = queue.getByRole("link", { name: "Review Autopilot edit", exact: true });
+  await expect(review).toBeVisible();
+  await expect(review).toHaveAccessibleName("Review Autopilot edit");
+  await expect(review).toHaveAttribute("href", `/app/${slug}/docs/first-steps`);
   await expect(queue.getByRole("listitem")).toHaveCount(1);
   await expect(queue.getByRole("listitem")).toContainText("First steps");
   await expect(queue.getByRole("link", { name: "First steps", exact: true })).toBeFocused();
@@ -530,8 +531,8 @@ for (const all of [false, true]) {
     const confirm = team.getByRole("alertdialog");
     await pendingQueueEdit(slug, "invite-your-team");
     await confirm.getByRole("button", { name: action, exact: true }).click();
-    await expect(team.getByText("Invite your team has an Autopilot edit to review first", { exact: true })).toBeVisible();
     await expect(confirm).toBeHidden();
+    await expect(queue.getByRole("link", { name: "Review Autopilot edit", exact: true })).toBeVisible();
     await expect(queue.getByRole("button", { name: /Publish/ })).toHaveCount(0);
     await expect(queue.getByRole("link", { name: "Invite your team", exact: true })).toBeFocused();
   });
@@ -550,10 +551,9 @@ test("Publish all skips a published article changed by a late Autopilot edit and
   await api("/articles/invite-your-team", { body: "Late suggested words." }, "PATCH");
   await pendingQueueEdit(slug, "invite-your-team");
   await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
-  await expect(team.getByText("Invite your team has changed since you opened this page. Review it before publishing.", { exact: true })).toBeVisible();
   await expect(confirm).toBeHidden();
   await expect(queue.getByRole("listitem")).toHaveCount(1);
-  await expect(queue.getByRole("link", { name: "Review Autopilot edit", exact: true })).toBeVisible();
+  await expect(queue.getByRole("link", { name: "Review changes", exact: true })).toBeVisible();
   await expect(queue.getByRole("link", { name: "Invite your team", exact: true })).toBeFocused();
   await expect(team.locator(".docs-live-footer")).toContainText("2 articles live");
 });
@@ -626,3 +626,37 @@ test("the collection drag hint requires two articles and a mouse-sized layout", 
     await expect(page.getByText("Drag rows to reorder them; readers see this order.", { exact: true })).toBeHidden();
   } finally { await touch.close(); }
 });
+
+for (const published of [true, false]) {
+  test(`Publish all holds a ${published ? "published article" : "draft"} after a teammate's plain save and continues`, async ({ browser }) => {
+    const { team, slug, api } = await editor(browser);
+    const teammate = await signUp(browser, APP_URL, "Eddie Editor");
+    const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+    await db.connect();
+    try {
+      await db.query(`INSERT INTO team_member (id, "projectId", "userId") SELECT gen_random_uuid()::text, p.id, u.id FROM project p, "user" u WHERE p.slug = $1 AND u.email = $2`, [slug, teammate.email]);
+    } finally { await db.end(); }
+    if (published) await api("/articles/invite-your-team/publish", {});
+    await api("/articles", { title: "First steps", body: "Open Settings." });
+    await api("/articles/invite-your-team", { body: "The reviewed words." }, "PATCH");
+    await teammate.goto(`/app/${slug}/docs/invite-your-team`);
+    await team.goto(`/app/${slug}/docs`);
+    const queue = team.getByRole("region", { name: "Waiting to publish" });
+    await expect(queue.getByRole("listitem").first()).toContainText("Invite your team");
+    await queue.getByRole("button", { name: "Publish all", exact: true }).click();
+    const confirm = team.getByRole("alertdialog");
+    await teammate.getByRole("textbox", { name: "Article", exact: true }).fill("A half-finished save.");
+    await teammate.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(teammate.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+    await confirm.getByRole("button", { name: "Publish all", exact: true }).click();
+    await expect(confirm).toBeHidden();
+    await expect(queue.getByRole("listitem")).toHaveCount(1);
+    await expect(queue.getByRole("link", { name: "Invite your team", exact: true })).toBeFocused();
+    await expect(team.locator(".docs-live-footer")).toContainText(`${published ? 2 : 1} article${published ? "s" : ""} live`);
+    await team.setViewportSize({ width: 390, height: 844 });
+    const review = queue.getByRole("link", { name: "Review changes", exact: true });
+    await expect(review).toBeVisible();
+    await expect(review).toHaveAccessibleName("Review changes");
+    await expect(queue.getByRole("link", { name: "Review Autopilot edit", exact: true })).toHaveCount(0);
+  });
+}

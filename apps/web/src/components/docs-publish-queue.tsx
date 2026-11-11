@@ -20,6 +20,8 @@ import {
 import { plural } from "@/lib/autopilot-words";
 import { publishArticle, publishArticleChanges } from "@/server/docs";
 
+type ReviewReason = "edits_required" | "changed";
+
 type WaitingArticle = {
   slug: string;
   title: string;
@@ -28,6 +30,7 @@ type WaitingArticle = {
   published: boolean;
   savedAt: string;
   reviewRequired: boolean;
+  revision?: string;
 };
 
 /** Publishes the saved versions shown here, stopping on a stale version rather than taking unseen changes live. */
@@ -36,7 +39,7 @@ function Publish({ projectSlug, articles, all = false, hidden = false, onReviewR
   articles: WaitingArticle[];
   all?: boolean;
   hidden?: boolean;
-  onReviewRequired: (slug: string) => void;
+  onReviewRequired: (slug: string, reason: ReviewReason) => void;
   returnFocus: (slug?: string) => HTMLElement | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -66,13 +69,13 @@ function Publish({ projectSlug, articles, all = false, hidden = false, onReviewR
                 for (const article of articles) {
                   const result = article.published
                     ? await publishArticleChanges(projectSlug, article.slug, article.savedAt)
-                    : await publishArticle(projectSlug, article.slug);
+                    : await publishArticle(projectSlug, article.slug, undefined, article.revision);
                   if (result.error && "code" in result && (result.code === "edits_required" || result.code === "changed")) {
                     toast.error(result.code === "changed" ? `${article.title} has changed since you opened this page. Review it before publishing.` : `${article.title} has an Autopilot edit to review first`, {
                       description: <Link className="underline underline-offset-4" href={`/app/${projectSlug}/docs/${article.slug}`}>Review article</Link>,
                     });
                     reviewTarget.current ??= article.slug;
-                    onReviewRequired(article.slug);
+                    onReviewRequired(article.slug, result.code);
                     continue;
                   }
                   if (result.error) {
@@ -100,8 +103,8 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
   const returnFocus = (slug?: string) =>
     (slug ? Array.from(queue.current?.querySelectorAll<HTMLAnchorElement>("[data-queue-article]") ?? []).find((link) => link.dataset.queueArticle === slug) : null)
     ?? queue.current?.querySelector<HTMLElement>("#waiting-title") ?? null;
-  const [needsReview, setNeedsReview] = useState<Set<string>>(new Set());
-  const onReviewRequired = (slug: string) => setNeedsReview((previous) => new Set(previous).add(slug));
+  const [needsReview, setNeedsReview] = useState<Map<string, ReviewReason>>(new Map());
+  const onReviewRequired = (slug: string, reason: ReviewReason) => setNeedsReview((previous) => new Map(previous).set(slug, reason));
   const publishable = articles.filter((article) => !article.reviewRequired && !needsReview.has(article.slug));
   return (
     <section ref={queue} aria-labelledby="waiting-title" className="docs-publish-queue [&_li_+_li]:[border-top:1px_solid_color-mix(in_oklch,_var(--border)_70%,_transparent)] [&_li]:min-h-19.5">
@@ -116,20 +119,21 @@ export function DocsPublishQueue({ projectSlug, articles }: { projectSlug: strin
         <p className="py-4 text-sm text-muted-foreground">Everything is published.</p>
       ) : (
         <ul>
-          {articles.slice(0, expanded ? undefined : 3).map((article) => (
-            <li key={article.slug}>
+          {articles.slice(0, expanded ? undefined : 3).map((article) => {
+            const reason = needsReview.get(article.slug) ?? (article.reviewRequired ? "edits_required" : undefined);
+            return <li key={article.slug}>
               <div>
                 <Link data-queue-article={article.slug} href={`/app/${projectSlug}/docs/${article.slug}`}>{article.title}</Link>
                 <small>
                   {article.collection} · saved {article.saved}
                 </small>
               </div>
-              <Link href={`/app/${projectSlug}/docs/${article.slug}`} className={`docs-review-link text-muted-foreground text-[13px] ${article.reviewRequired || needsReview.has(article.slug) ? "" : "max-sm:hidden"}`}>
-                {article.reviewRequired || needsReview.has(article.slug) ? "Review Autopilot edit" : "Review"}
+              <Link href={`/app/${projectSlug}/docs/${article.slug}`} className={`docs-review-link text-muted-foreground text-[13px] ${reason ? "" : "max-sm:hidden"}`}>
+                {reason === "edits_required" ? "Review Autopilot edit" : reason === "changed" ? "Review changes" : "Review"}
               </Link>
-              <Publish projectSlug={projectSlug} articles={[article]} hidden={article.reviewRequired || needsReview.has(article.slug)} onReviewRequired={onReviewRequired} returnFocus={returnFocus} />
-            </li>
-          ))}
+              <Publish projectSlug={projectSlug} articles={[article]} hidden={Boolean(reason)} onReviewRequired={onReviewRequired} returnFocus={returnFocus} />
+            </li>;
+          })}
         </ul>
       )}
       {articles.length > 3 && (

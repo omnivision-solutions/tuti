@@ -20,11 +20,14 @@ export function fixSummary(before: string, after: string) {
   return `${quote(a.slice(start, a.length - Math.max(0, end - 1)))} becomes ${quote(b.slice(start, b.length - Math.max(0, end - 1)))}`;
 }
 
+/** The same quote matching across inline formatting, punctuation and whitespace in Verify and the editor. */
+export const normalizeSentence = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+
 const numberWords: Record<string, string> = { zero: "0", one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10", eleven: "11", twelve: "12" };
 const words = (text: string) => (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).map((word) => numberWords[word] ?? word);
 const ignored = new Set(["a", "an", "the", "is", "are", "it", "has", "have", "to", "for", "of", "in", "with", "your", "you", "and", "can", "gets", "get", "includes", "include", "each", "every", "either", "or"]);
 const stem = (word: string) => word.length > 4 ? word.replace(/ies$/, "y").replace(/(ing|ed|s)$/, "").replace(/e$/, "") : word;
-/** Older runs have paraphrases. Match their content words and quantities, allowing inflections only when the block’s quantities agree. */
+/** Prefer exact quotes. Older paraphrases match content words and inflections only when the block’s quantities agree. */
 export function matchingSentence(statement: string, candidates: string[]) {
   const wanted = words(statement), content = new Set(wanted.filter((word) => !ignored.has(word)).map(stem));
   if (!content.size) return -1;
@@ -32,7 +35,7 @@ export function matchingSentence(statement: string, candidates: string[]) {
   const numbers = quantities(wanted);
   const exact = candidates.findIndex((candidate) => {
     const tokens = words(candidate);
-    return quantities(tokens) === numbers && (` ${tokens.join(" ")} `).includes(` ${wanted.join(" ")} `);
+    return (` ${tokens.join(" ")} `).includes(` ${wanted.join(" ")} `);
   });
   if (exact >= 0) return exact;
   const scores = candidates.map((candidate, index) => {

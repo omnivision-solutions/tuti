@@ -215,19 +215,19 @@ export async function saveArticleSettings(projectSlug: string, slug: string, _st
   return result;
 }
 
-/** Publish a draft; `edits`: the ids of Autopilot's edits waiting in it that the page showed, which go live with it. */
-export async function publishArticle(projectSlug: string, slug: string, edits?: string[]): Promise<FormState & { code?: string }> {
+/** Publish a draft; `edits`: the reviewed Autopilot edits going live with it; `revision`: the newest version the queue reviewed. */
+export async function publishArticle(projectSlug: string, slug: string, edits?: string[], revision?: string): Promise<FormState & { code?: string }> {
   let code: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     try {
-      await call(publishOperation, context, { slug: String(slug), ...(Array.isArray(edits) && { edits: edits.map(String) }) });
+      await call(publishOperation, context, { slug: String(slug), ...(Array.isArray(edits) && { edits: edits.map(String) }), ...(revision !== undefined && { revision: String(revision) }) });
     } catch (error) {
       if (error instanceof OperationError) code = error.code;
       throw error;
     }
   });
-  // Only the queue needs a structured review requirement; preserve other action errors.
-  return code === "edits_required" ? { ...result, code } : result;
+  // The queue needs structured review reasons; preserve existing errors from callers without a revision.
+  return code === "edits_required" || (revision !== undefined && code === "changed") ? { ...result, code } : result;
 }
 
 /** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */

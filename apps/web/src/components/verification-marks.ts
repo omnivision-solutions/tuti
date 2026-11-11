@@ -1,4 +1,4 @@
-import { matchingSentence } from "@/lib/docs-review";
+import { matchingSentence, normalizeSentence as normalize } from "@/lib/docs-review";
 import type { Node } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -18,8 +18,6 @@ export function verificationRanges(doc: Node, findings: VerificationFinding[]) {
     number: number;
     verdict: "outdated" | "unclear";
   }[] = [];
-  const normalize = (value: string) =>
-    value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
   findings
     .filter((finding) => finding.verdict !== "current")
     .forEach((finding, index) => {

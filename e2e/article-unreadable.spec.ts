@@ -44,6 +44,9 @@ test("an article with something this editor doesn't know opens read-only, shows 
       const tools = team.getByRole("complementary", { name: "Article tools" });
       await expect(tools.getByRole("heading", { name: "History", exact: true })).toBeVisible();
       await tools.getByRole("button", { name: "Collapse article tools" }).click();
+      // Wait for the navigation and its focus restoration before starting a separate Tab journey.
+      await expect(tools).toBeHidden();
+      await expect(team.getByRole("toolbar", { name: "Article tools" }).getByRole("button", { name: "History", exact: true })).toBeFocused();
       // Still reached with Tab from the title, so it can be read (and its note heard).
       await team.getByLabel("Title").focus();
       // The title now shares its row with Save and Publish; the body remains in the keyboard order.
