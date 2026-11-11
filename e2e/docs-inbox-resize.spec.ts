@@ -239,16 +239,65 @@ for (const pane of [
       expect(await width()).toBe(pane.default);
     }
     await team.goto(`/app/${slug}/${pane.path}`);
-    // CSS defaults and the separator's px values agree even when the text is enlarged.
-    await team.locator("html").evaluate((element) => { element.style.fontSize = "20px"; });
-    const enlargedDefault = pane.default;
-    await expect(handle).toHaveAttribute("aria-valuenow", String(enlargedDefault));
-    expect(await width()).toBe(enlargedDefault);
-    await handle.focus();
-    await team.keyboard.press("ArrowRight");
-    expect(await width()).toBe(pane.name === "docs tree" ? pane.default + 10 : 440);
-    if (pane.name === "conversation list") await expect(handle).toHaveAttribute("aria-valuemin", "440");
-    await handle.dblclick();
+    // Defaults, rendered widths and ARIA agree at both normal and enlarged root text sizes.
+    for (const fontSize of [16, 20]) {
+      await team.locator("html").evaluate((element, size) => { element.style.fontSize = `${size}px`; }, fontSize);
+      const expectedMin = pane.name === "docs tree" ? pane.min : 22 * fontSize;
+      const expectedDefault = pane.name === "docs tree" ? pane.default : expectedMin;
+      await expect(handle).toHaveAttribute("aria-valuemin", String(expectedMin));
+      await expect(handle).toHaveAttribute("aria-valuenow", String(expectedDefault));
+      expect(Number(await handle.getAttribute("aria-valuenow"))).toBeGreaterThanOrEqual(Number(await handle.getAttribute("aria-valuemin")));
+      expect(await width()).toBe(expectedDefault);
+      if (pane.name === "conversation list") {
+        expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+      }
+      await handle.focus();
+      await team.keyboard.press("ArrowLeft");
+      expect(await width()).toBeLessThanOrEqual(expectedDefault);
+      expect(await width()).toBe(Math.max(expectedMin, expectedDefault - 10));
+      await handle.dblclick();
+      await expect(handle).toHaveAttribute("aria-valuenow", String(expectedDefault));
+      await team.keyboard.press("ArrowRight");
+      expect(await width()).toBe(expectedDefault + 10);
+      await handle.dblclick();
+      await expect(handle).toHaveAttribute("aria-valuenow", String(expectedDefault));
+      if (pane.name === "conversation list") {
+        // A pixel preference from normal text must clamp when the minimum grows, without replacing it.
+        await team.evaluate(() => {
+          localStorage.setItem("tuti:inbox-list-width", "352");
+          document.documentElement.style.setProperty("--inbox-list-width", "352px");
+        });
+        await expect(handle).toHaveAttribute("aria-valuenow", String(expectedMin));
+        expect(await width()).toBe(expectedMin);
+        expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe("352");
+        expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        if (fontSize === 20) await checkpoint(team, "inbox-enlarged-text-minimum", { fullPage: false });
+        await handle.dblclick();
+        await expect(handle).toHaveAttribute("aria-valuenow", String(expectedDefault));
+      }
+    }
+    if (pane.name === "conversation list") {
+      // CSS also clamps an old pixel preference before hydration at an enlarged root text size.
+      await team.evaluate(() => localStorage.setItem("tuti:inbox-list-width", "352"));
+      const styles = /\/_next\/static\/.*\.css(?:\?.*)?$/;
+      await team.route(styles, async (route) => {
+        const response = await route.fetch();
+        await route.fulfill({ response, headers: { ...response.headers(), "cache-control": "no-store" }, body: `${await response.text()}\n:root{font-size:20px}` });
+      });
+      await team.route(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/, (route) => route.abort());
+      await team.reload({ waitUntil: "load" });
+      await expect(team.locator("html")).toHaveCSS("font-size", "20px");
+      expect(await width()).toBe(440);
+      expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe("352");
+      expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+      await team.unroute(styles);
+      await team.unroute(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/);
+      await team.reload();
+      await expect(team.locator("html")).toHaveCSS("font-size", "16px");
+      await expect(handle).toHaveAttribute("aria-valuenow", String(pane.default));
+      expect(await width()).toBe(pane.default);
+      await handle.dblclick();
+    }
     await team.locator("html").evaluate((element) => { element.style.removeProperty("font-size"); });
     for (const viewport of [{ width: 820, height: 1000 }, { width: 390, height: 844 }]) {
       await team.setViewportSize(viewport);

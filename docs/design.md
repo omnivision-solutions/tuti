@@ -217,9 +217,9 @@ the list picks none to approve at once.
   Day dividers group each message by its own day in the viewer’s time zone, with "Today · <date>" or "Yesterday · <date>" when applicable. The widget-off notice is
   13px muted text, and More sits at the end of the views row. Inbox layout uses component Tailwind utilities;
   its canvas, surface, bubble fills and shadow use the `inbox-*` tokens in `globals.css`.
-  From laptop width up, the Docs tree (240–440px) and Inbox list (300–520px, 350px by default) resize from a 10px handle
-  centred in their gap. Hover, focus and dragging highlight its line in primary; dragging keeps the resize cursor and
-  prevents selection across the page. The Inbox limit also reserves at least 480px for the conversation beside visible
+  From laptop width up, the Docs tree (240–440px) and Inbox list (22rem minimum, 352px at default text, up to 520px;
+  defaulting to the minimum) resize from a 10px handle centred in their gap. Hover, focus and dragging highlight its line in primary; dragging keeps the resize cursor and
+  prevents selection across the page. The Inbox maximum also shrinks to keep the conversation at least 480px wide beside visible
   details, recomputing as the window or details change without replacing the saved preference. Details keep a 15rem
   minimum; when the Inbox's actual container cannot fit the list, conversation, details and gaps, their toggle opens
   the details sheet instead. Conversation actions stay

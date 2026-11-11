@@ -1,7 +1,7 @@
 /** Width preferences live on <html>, like the docs tree's fold, so every app route shares them. */
 export const PANE_WIDTHS = {
   docs: { key: "tuti:docs-tree-width", variable: "--docs-tree-width", selector: ".docs-tree-pane", min: 240, max: 440, default: 274, label: "Resize docs tree" },
-  inbox: { key: "tuti:inbox-list-width", variable: "--inbox-list-width", selector: ".inbox-list-body", min: 352, max: 520, default: 352, label: "Resize conversation list" },
+  inbox: { key: "tuti:inbox-list-width", variable: "--inbox-list-width", selector: ".inbox-list-body", min: 352, max: 520, default: "22rem", label: "Resize conversation list" },
 } as const;
 
 export type ResizablePane = keyof typeof PANE_WIDTHS;

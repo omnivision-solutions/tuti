@@ -13,11 +13,13 @@ function paneShown(pane: ResizablePane) {
 /** An overlay in the existing 12px pane gap: resizing never adds a column or moves the gap. */
 export function PaneResize({ pane, className }: { pane: ResizablePane; className: string }) {
   const config = PANE_WIDTHS[pane];
+  // Rem defaults equal the minimum; server ARIA starts at its baseline pixel value.
+  const initialWidth = typeof config.default === "number" ? config.default : config.min;
   const drag = useRef<{ x: number; width: number; pointer: number } | null>(null);
   const handle = useRef<HTMLDivElement>(null);
   const measure = useCallback(() => {
     // Hidden handles need no measurements or preference updates; reconnect when shown again.
-    if (!paneShown(pane)) return `${config.default},${config.min},${config.max}`;
+    if (!paneShown(pane)) return `${initialWidth},${config.min},${config.max}`;
     const min = pane === "inbox" ? 22 * Number.parseFloat(getComputedStyle(document.documentElement).fontSize) : config.min;
     let max: number = config.max;
     const workspace = handle.current?.closest(".inbox-workspace");
@@ -31,10 +33,11 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
       const gap = Number.parseFloat(getComputedStyle(workspace).columnGap);
       max = Math.max(min, Math.min(max, Math.floor(workspace.getBoundingClientRect().width - gap - detailsSpace - 480)));
     }
-    const preferred = Number.parseFloat(document.documentElement.style.getPropertyValue(config.variable)) || config.default;
-    return `${Math.min(max, preferred)},${min},${max}`;
-  }, [config, pane]);
-  const value = useRef(`${config.default},${config.min},${config.max}`);
+    const defaultWidth = typeof config.default === "number" ? config.default : min;
+    const preferred = Number.parseFloat(document.documentElement.style.getPropertyValue(config.variable)) || Math.max(defaultWidth, min);
+    return `${Math.min(max, Math.max(min, preferred))},${min},${max}`;
+  }, [config, initialWidth, pane]);
+  const value = useRef(`${initialWidth},${config.min},${config.max}`);
   const subscribe = useCallback((changed: () => void) => {
     // React also asks for snapshots during unrelated server refreshes. Only observer notifications
     // measure layout; reads during render return the last measured value.
@@ -85,7 +88,7 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
     };
   }, [config, pane, measure]);
   const snapshot = useCallback(() => value.current, []);
-  const [width, min, max] = useSyncExternalStore(subscribe, snapshot, () => `${config.default},${config.min},${config.max}`).split(",").map(Number);
+  const [width, min, max] = useSyncExternalStore(subscribe, snapshot, () => `${initialWidth},${config.min},${config.max}`).split(",").map(Number);
 
   const stop = useCallback(() => {
     const pointer = drag.current?.pointer;
