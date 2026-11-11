@@ -8,7 +8,7 @@ import { verifyEmail } from "./mail";
 
 for (const pane of [
   { name: "docs tree", label: "Resize docs tree", selector: ".docs-tree-pane", path: "docs/collections/getting-started", min: 240, max: 440, default: 274 },
-  { name: "conversation list", label: "Resize conversation list", selector: ".inbox-list-body", path: "inbox/1", min: 352, max: 520, default: 350 },
+  { name: "conversation list", label: "Resize conversation list", selector: ".inbox-list-body", path: "inbox/1", min: 352, max: 520, default: 352 },
 ]) {
   test(`${pane.name} resizes with the mouse and keyboard and restores before hydration`, async ({ browser }, testInfo) => {
     test.setTimeout(120_000);
