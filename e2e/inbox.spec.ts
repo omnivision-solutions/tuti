@@ -711,6 +711,9 @@ test("the views, the list and the open conversation side by side, each scrolling
   const list = owner.getByRole("region", { name: "Conversations", exact: true });
   const conversation = owner.getByRole("region", { name: "Conversation", exact: true });
   await expect(conversation).toContainText("Open a conversation to reply here: click it, or press J.");
+  // The open view is filled (marked the page here, the current one beside a conversation below).
+  const fill = (name: RegExp) => views.getByRole("link", { name }).evaluate((link) => getComputedStyle(link).backgroundColor);
+  expect(await fill(/^Needs reply/)).not.toBe(await fill(/^Spam/));
 
   // Opened from the list, it's beside it, the list still there, the views beside the list.
   await list.getByRole("link", { name: /Can't export to CSV/ }).click();
@@ -720,6 +723,7 @@ test("the views, the list and the open conversation side by side, each scrolling
   await expect(list.getByRole("link", { name: /Can't export to CSV/ })).toHaveAttribute("aria-current", "page");
   // The view the list shows is still the current one, for screen readers too.
   await expect(views.getByRole("link", { name: "Needs reply 20" })).toHaveAttribute("aria-current", "true");
+  expect(await fill(/^Needs reply/)).not.toBe(await fill(/^Spam/));
   await expect(owner.getByRole("complementary", { name: "About them" })).toBeVisible();
   const listPane = owner.locator(".inbox-list-body");
   const [v, l, c] = [(await views.boundingBox())!, (await listPane.boundingBox())!, (await conversation.boundingBox())!];

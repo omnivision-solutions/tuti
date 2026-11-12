@@ -214,7 +214,7 @@ export function SectionLink({
     <Link
       href={href}
       aria-current={open ? currentIs : undefined}
-      className="flex h-8.5 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors hover:bg-muted aria-current:bg-accent [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground aria-current:[&>svg]:text-foreground"
+      className="flex h-8.5 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors hover:bg-muted [&[aria-current]]:bg-accent [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground [&[aria-current]>svg]:text-foreground"
     >
       {icon}
       {dot && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: dot }} />}
