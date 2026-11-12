@@ -53,6 +53,9 @@ describe("analytics", () => {
     expect(isCounted("/app/auth/continue", "?portal=acme&state=x", "/app")).toBe(false);
     expect(isCounted("/app/auth/sign-in", `?${new URLSearchParams({ next: back })}`, "/app")).toBe(false);
     expect(isCounted("/app/auth/sign-up", `?${new URLSearchParams({ next: `/app/auth/sign-in?${new URLSearchParams({ next: back })}` })}`, "/app")).toBe(false);
+    const deeper = `?${new URLSearchParams({ next: `/app/auth/sign-up?${new URLSearchParams({ next: `/app/auth/sign-in?${new URLSearchParams({ next: back })}` })}` })}`;
+    expect(isCounted("/app/auth/sign-in", deeper, "/app")).toBe(false);
+    expect(isCounted("/app/auth/sign-in", `?bad=%E0%A4%A&next=${encodeURIComponent(back)}`, "/app")).toBe(false);
     expect(isCounted("/app/auth/sign-in", "?next=%2Fapp%2Facme", "/app")).toBe(true);
     expect(isCounted("/app/auth/sign-up", "", "/app")).toBe(true);
   });

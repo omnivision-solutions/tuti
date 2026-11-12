@@ -200,13 +200,8 @@ export function isCounted(pathname: string, search: string, under: string | unde
   if (!under) {
     return true;
   }
-  let query = search;
-  try {
-    query = decodeURIComponent(decodeURIComponent(search));
-  } catch {
-    // Kept as it came: a malformed query still can't hide the continue address below, only spell it encoded.
-  }
-  const portalSignIn = pathname === "/app/auth/continue" || /\/app\/auth(\/|%2f)continue/i.test(query);
+  // The continue address in the query, at any depth of nesting: each level encodes its slashes once more (%2F, %252F, …).
+  const portalSignIn = pathname === "/app/auth/continue" || /app(\/|%(25)*2f)auth(\/|%(25)*2f)continue/i.test(search);
   return !portalSignIn && (pathname === under || pathname.startsWith(`${under}/`));
 }
 
