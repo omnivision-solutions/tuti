@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Children, createContext, isValidElement, type ReactNode, useContext, useState } from "react";
+import { Children, createContext, isValidElement, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { activeView } from "@/lib/active-link";
@@ -17,10 +17,22 @@ import { activeView } from "@/lib/active-link";
 type SectionMenu = { open: boolean; setOpen: (open: boolean) => void };
 const SectionMenuContext = createContext<SectionMenu | null>(null);
 
+/** The tablet width where the section pane shows beside the page (the shell's 48rem; the window's here, near enough). */
+const BESIDE = "(min-width: 48rem)";
+
 export function PaneLayout({ children, className }: { children: ReactNode; className?: string }) {
-  const [open, setOpen] = useState(false);
+  // The drawer is open on the URL it was opened on: any move (a link, Back, a gesture) closes it.
+  const url = `${usePathname()}?${useSearchParams()}`;
+  const [openOn, setOpenOn] = useState<string | null>(null);
+  // Wide enough for the pane beside the page: not the drawer too.
+  useEffect(() => {
+    const beside = matchMedia(BESIDE);
+    const close = () => beside.matches && setOpenOn(null);
+    beside.addEventListener("change", close);
+    return () => beside.removeEventListener("change", close);
+  }, []);
   return (
-    <SectionMenuContext value={{ open, setOpen }}>
+    <SectionMenuContext value={{ open: openOn === url, setOpen: (open) => setOpenOn(open ? url : null) }}>
       <div data-slot="pane-layout" className={cn("group/panes flex min-h-0 min-w-0 flex-1 gap-2", className)}>
         {children}
       </div>
@@ -101,7 +113,9 @@ export function PaneHeader({
  * An area's own menu (Feedback's views, boards and statuses; Settings' pages): a 248px pane titled by the area, its
  * links in `SectionGroup`s; one of them is open: the one the URL is on (`activeView`, views in the query string too),
  * unless a link's `active` says otherwise. On phones it's hidden; the pane header's menu button opens it as a drawer
- * from the left, with its own Close, which also closes as a link in it is picked.
+ * from the left, with its own Close; it closes as the URL changes, or the window gets wide enough for the pane.
+ * Its links are found in its children (in groups, fragments and arrays, and what server components render): a client
+ * component that renders SectionLinks hides them, so pass them in as elements, or give them `active`.
  */
 export function SectionPane({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
   const menu = useContext(SectionMenuContext);
@@ -125,7 +139,7 @@ export function SectionPane({ title, actions, children }: { title: ReactNode; ac
       </aside>
       {menu && (
         <Sheet open={menu.open} onOpenChange={menu.setOpen}>
-          <SheetContent data-pill-buttons side="left" showCloseButton={false} className="w-[19.5rem] gap-0 border-0 bg-card p-0" onClick={(event) => (event.target as HTMLElement).closest("a") && menu.setOpen(false)}>
+          <SheetContent data-pill-buttons side="left" showCloseButton={false} className="w-[19.5rem] gap-0 border-0 bg-card p-0" onClick={(event) => !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) && (event.target as HTMLElement).closest("a") && menu.setOpen(false)}>
             <SheetTitle className="sr-only">{title}</SheetTitle>
             {content(
               <SheetClose aria-label="Close the menu" className="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground">

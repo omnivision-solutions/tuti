@@ -684,7 +684,10 @@ at desktop and phone widths, in light and dark (in development only).
   statuses; Settings' pages): a 248px pane titled by the area, its actions (search, +) beside the title; groups under
   a quiet sentence-case label (13px, muted; never capitals); each link an icon or a colour dot, its title and a count.
   The open one is a neutral fill (`accent`), so a page shows one green, its primary action. On phones the pane is
-  hidden and the pane header's menu button opens it as a drawer from the left, which closes as a link is picked.
+  hidden and the pane header's menu button opens it as a drawer from the left, with a Close; it closes as the URL
+  changes or the window gets wide enough for the pane. One link is open, the one the URL is on (views in the query
+  string too); the pane finds its links in its children, so a client component that renders SectionLinks hides them
+  (pass them as elements, or give them `active`).
 - **`FilterPills`** (`pillClass` for a pill that isn't a link): a page's views as rounded pills with counts, the open
   one filled; one row that scrolls sideways when it doesn't fit, like `SubNav`'s.
 - **`ItemGroup`**: a list's group (posts by status): a tinted (`muted`) bar with its icon, title and count that folds

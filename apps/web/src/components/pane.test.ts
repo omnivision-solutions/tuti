@@ -18,7 +18,8 @@ function open(pathname: string, search = "") {
         children: [
           link("/app/acme/feedback", "All posts"),
           link("/app/acme/feedback?view=mine", "Mine"),
-          h(SectionGroup, { label: "Boards", children: link("/app/acme/feedback?board=bugs", "Bug reports") }),
+          // Mapped, as an area lists its boards.
+          h(SectionGroup, { label: "Boards", children: ["bugs", "ideas"].map((board) => h(SectionLink, { key: board, href: `/app/acme/feedback?board=${board}`, children: board === "bugs" ? "Bug reports" : "Ideas" })) }),
           link("/app/acme/feedback/roadmap", "Roadmap"),
         ],
       }),
