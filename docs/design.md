@@ -675,13 +675,16 @@ at desktop and phone widths, in light and dark (in development only).
 - **`PaneLayout`**, **`Pane`**, **`PaneBody`** (`components/pane.tsx`): a row of panes (the shell gives it the whole
   width), one white panel (`rounded-2xl`, ~14px corners, a `border` ring, nothing scrolling past its edge), and what scrolls in it.
   No card inside a card: a pane's lists and row cards sit on the pane.
-- **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`): a pane's one-row header, 60px, a line
+- **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line
   under it. The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
   type), and on phones "‹ All posts" alone, the title for screen readers. `description` follows the title from 56rem
   of the shell up ("· Your project's name…"). `filters` are pills after the title, on phones a row of their own under
   it. `actions` at the right end: round icon buttons (`outline`, `icon-sm`, with an `aria-label`) and at most one
   primary button. Its title is the page's `h1`; `level={2}` on a list's pane while the open item beside it has
   the page's heading (Autopilot's list, the Inbox's), so a page has one `h1`.
+  An editor whose title field shows the title (a changelog entry) sets `titleInForm`: the heading is for screen
+  readers at every width, the way back "‹ All entries" alone, and the phone's top bar never names the page (the title
+  shows once, the one to edit).
 - **`SectionPane`**, **`SectionGroup`**, **`SectionLink`**: an area's own menu (Feedback's views, boards and
   statuses; Settings' pages): a 248px pane titled by the area, its actions (search, +) beside the title; groups under
   a quiet sentence-case label (13px, muted; never capitals); each link an icon or a colour dot, its title and a count.

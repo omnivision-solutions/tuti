@@ -109,8 +109,9 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
         },
         { rootMargin: `-${bar}px 0px 0px 0px` },
       );
-      // A pane header's heading is for screen readers alone on phones (PaneHeader): watch its row instead.
-      observer.observe(heading!.closest('[data-slot="pane-header"]') ?? heading!);
+      // A pane header's heading is for screen readers alone on phones (PaneHeader): watch its row instead. Not an
+      // editor's (titleInForm): its title field says it, so the bar doesn't (the sr-only heading is never under it).
+      observer.observe(heading!.closest('[data-slot="pane-header"]:not([data-title-in-form])') ?? heading!);
       renamed.observe(heading!, { childList: true, characterData: true, subtree: true });
     };
     // A width change or a remounted toolbar needs the current heading and all its observers afresh.

@@ -31,7 +31,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // A draft: title, tag, text with a heading, and the post it completes.
   await team.getByRole("link", { name: "Changelog" }).click();
   // Nothing written yet: both tabs, empty.
-  await expect(team.getByRole("navigation", { name: "Entries" })).toContainText("Drafts 0Published 0");
+  // Its views are pills in its pane's header.
+  await expect(team.locator('[data-slot="pane-header"]').getByRole("navigation", { name: "Entries" })).toContainText("Drafts 0Published 0");
   await expect(team.getByText("No entries yet")).toBeVisible();
   await team.getByRole("link", { name: "New entry" }).click();
   await team.getByLabel("Title").fill("Dark mode is here");
@@ -62,7 +63,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(linkPost).toBeHidden();
   // A refused save keeps what was typed and picked. Save draft is in the page's own toolbar.
   const saveDraft = team.getByRole("button", { name: "Save draft" });
-  const draftToolbar = (await team.locator('[data-slot="page-header"]').boundingBox())!;
+  const draftToolbar = (await team.locator('[data-slot="pane-header"]').boundingBox())!;
   expect((await saveDraft.boundingBox())!.y).toBeGreaterThanOrEqual(draftToolbar.y);
   expect((await saveDraft.boundingBox())!.y).toBeLessThan(draftToolbar.y + draftToolbar.height);
   await team.getByLabel("Title").fill("Hi");
@@ -89,6 +90,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(saveDraft).toBeInViewport();
   await expect(saveDraft).toHaveCount(1);
   await expect(team.getByRole("button", { name: "More actions" })).toHaveCount(0);
+  // The way back to the list, at the top.
+  await expect(team.getByRole("link", { name: "All entries" })).toBeInViewport();
   await team.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const bottomBar = (await saveDraft.boundingBox())!;
   expect(bottomBar.y + bottomBar.height).toBeGreaterThan(844 - 32);
@@ -172,11 +175,18 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(sidebar.getByRole("link", { name: "View as reader" })).toHaveAttribute("href", `${portalUrl(slug)}/changelog/1`);
   // Save and Unpublish together in the page's own sticky toolbar.
   for (const name of ["Save", "Unpublish"]) {
-    const toolbar = (await team.locator('[data-slot="page-header"]').boundingBox())!;
+    const toolbar = (await team.locator('[data-slot="pane-header"]').boundingBox())!;
     const button = (await team.getByRole("button", { name, exact: true }).boundingBox())!;
     expect(button.y).toBeGreaterThanOrEqual(toolbar.y);
     expect(button.y + button.height).toBeLessThanOrEqual(toolbar.y + toolbar.height);
   }
+  // The settings beside the text are no taller than the pane under its header (the email banner above it too).
+  const paneBox = (await team.locator('[data-slot="pane"]').boundingBox())!;
+  const asideBox = (await sidebar.boundingBox())!;
+  expect(asideBox.y + asideBox.height).toBeLessThanOrEqual(paneBox.y + paneBox.height);
+  // The title shows once at this width too, the one to edit: the pane's header keeps it for screen readers.
+  await expect(team.getByRole("heading", { level: 1, name: "Dark mode is here", exact: true })).toBeAttached();
+  expect((await team.getByRole("heading", { level: 1 }).boundingBox())!.height).toBeLessThanOrEqual(1);
   await checkpoint(team, "team-changelog-published");
   // On a phone the title shows once, the one to edit (the page's heading kept for screen readers), and Save and
   // Unpublish are in reach at the bottom, Delete in the menu.
@@ -184,12 +194,17 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(sidebar.getByRole("link", { name: "View as reader" })).toBeVisible();
   await expect(team.getByRole("heading", { level: 1, name: "Dark mode is here", exact: true })).toBeAttached();
   expect((await team.getByRole("heading", { level: 1 }).boundingBox())!.height).toBeLessThanOrEqual(1);
-  // Nor in the top bar: scrolled until that heading is under it, the field still in sight below, the bar doesn't repeat
-  // the title above the field.
-  await team.evaluate(() => window.scrollTo(0, 160));
+  // Nor in the top bar: scrolled until the pane's header is under it, the field still in sight below, the bar doesn't
+  // repeat the title above the field.
+  await team.evaluate(() => window.scrollBy(0, document.querySelector('[data-slot="pane-header"]')!.getBoundingClientRect().bottom));
   await afterIntersections(team);
   await expect(team.getByLabel("Title")).toBeInViewport();
   await expect(team.locator('[data-slot="bar-title"]')).toHaveCount(0);
+  // Loaded on a phone, the page keeps what's focused or jumped to clear of the bar (scroll-padding-top).
+  await team.reload();
+  await expect(team.getByLabel("Title")).toBeVisible();
+  const bar = (await team.locator("header").first().boundingBox())!;
+  await expect.poll(() => team.evaluate(() => document.documentElement.style.getPropertyValue("--app-toolbar-height"))).toBe(`${bar.height}px`);
   await team.evaluate(() => window.scrollTo(0, 0));
   for (const name of ["Save", "Unpublish"]) {
     await expect(team.getByRole("button", { name, exact: true })).toBeInViewport();
@@ -218,8 +233,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("button", { name: "More actions" }).click();
   await expect(team.getByRole("button", { name: "Delete" })).toBeVisible();
   await team.keyboard.press("Escape");
-  // The team's list shows it with its tag.
-  await team.getByRole("link", { name: "Changelog" }).click();
+  // The team's list (back from the entry's pane header) shows it with its tag.
+  await team.getByRole("link", { name: "All entries" }).click();
+  await team.waitForURL(`**/app/${slug}/changelog`);
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("New", { exact: true })).toBeVisible();
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("Breaking")).toHaveCSS("color", breaking);
 

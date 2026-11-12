@@ -8,7 +8,8 @@ import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, ChangelogSaving, type TagName } from "@/components/changelog";
-import { PageHeader } from "@/components/page-header";
+import { PageActions } from "@/components/page-actions";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { SampleBadge } from "@/components/sample-badge";
 import { formatDate } from "@/lib/format";
 import { entryPosts, entryTold } from "@/server/changelog-queries";
@@ -80,90 +81,98 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   const wideCoverUrl = cover && lastingMediaUrl(imageKey(cover.id, imageWidths(cover.width).filter((w) => w <= 1600).at(-1)!));
 
   return (
-    // Save in the top bar submits the form below, and says when it's saving. On phones the title shows once, the form's
-    // (the heading stays for screen readers), and Save and Publish stay at the bottom of the screen.
+    // Save in the pane's header submits the form below, and says when it's saving. On phones the title shows once, the
+    // form's (the heading stays for screen readers), and Save and Publish stay at the bottom of the screen.
     <ChangelogSaving>
-      <PageHeader
-        title={entry.title}
-        titleInForm
-        pinActions
-        meta={
-          <>
-            {entry.sample && <SampleBadge />}{" "}
-            {entry.publishedAt
-              ? `Published ${formatDate(entry.publishedAt)}`
-              : entry.collecting
-                ? "Draft · collecting merged pull requests until a release or you publish it"
-                : "Draft"}
-          </>
-        }
-        actions={
-          <ChangelogEntryActions
-            projectSlug={slug}
-            number={entry.number}
+      <PaneLayout>
+        <Pane aria-label="Changelog entry">
+          <PaneHeader
+            back={{ href: `/app/${slug}/changelog`, label: "All entries" }}
+            titleInForm
             title={entry.title}
-            published={entry.publishedAt !== null}
-            postCount={listed.length}
-            subscribers={subscribers ?? 0}
-            emailedSubscribers={entry.subscribersEmailedAt !== null}
-            subscribersLeft={left}
-            emails={emails}
-            sample={entry.sample}
-            importedOn={importedOn}
-            canDraftWithAi={aiEnabled() && entry.publishedAt === null}
-            aiPaused={paused}
-            unwritten={unwritten}
-            part="publish"
+            actions={
+              <PageActions
+                pinned
+                more={
+                  <ChangelogEntryActions
+                    projectSlug={slug}
+                    number={entry.number}
+                    title={entry.title}
+                    published={entry.publishedAt !== null}
+                    postCount={listed.length}
+                    emails={emails}
+                    sample={entry.sample}
+                    canDraftWithAi={aiEnabled() && entry.publishedAt === null}
+                    aiPaused={paused}
+                    part="delete"
+                  />
+                }
+              >
+                <ChangelogEntryActions
+                  projectSlug={slug}
+                  number={entry.number}
+                  title={entry.title}
+                  published={entry.publishedAt !== null}
+                  postCount={listed.length}
+                  subscribers={subscribers ?? 0}
+                  emailedSubscribers={entry.subscribersEmailedAt !== null}
+                  subscribersLeft={left}
+                  emails={emails}
+                  sample={entry.sample}
+                  importedOn={importedOn}
+                  canDraftWithAi={aiEnabled() && entry.publishedAt === null}
+                  aiPaused={paused}
+                  unwritten={unwritten}
+                  part="publish"
+                />
+              </PageActions>
+            }
           />
-        }
-        more={
-          <ChangelogEntryActions
-            projectSlug={slug}
-            number={entry.number}
-            title={entry.title}
-            published={entry.publishedAt !== null}
-            postCount={listed.length}
-            emails={emails}
-            sample={entry.sample}
-            canDraftWithAi={aiEnabled() && entry.publishedAt === null}
-            aiPaused={paused}
-            part="delete"
-          />
-        }
-      />
-      {/*
-        New saved text or cover (an AI draft, a save, a merged pull request added to the running draft)
-        starts the form afresh; publishing or unpublishing keeps unsaved edits.
-      */}
-      <ChangelogForm
-        key={createHash("sha256").update(JSON.stringify([entry.title, entry.content, entry.cover?.id])).digest("base64url")}
-        projectSlug={slug}
-        entry={{
-          number: entry.number,
-          title: entry.title,
-          content: displayDoc(entry) as Doc,
-          tags: entry.tags.map((t) => t.toLowerCase() as TagName),
-          posts: listed,
-          published: entry.publishedAt !== null,
-          cover,
-          wideCoverUrl,
-          told: entry.publishedAt ? await entryTold(entry.id) : null,
-          announced: entry.announced,
-          emailedSubscribers: entry.subscribersEmailedAt !== null,
-          subscribersLeft: left,
-          subscribersSent: sent,
-          emailedFrom: imported ? IMPORT_SOURCES[imported.source.toLowerCase() as ImportSourceKey].name : null,
-          sample: entry.sample,
-          importedOn,
-          emailPaused: await projectEmailWaits(membership.project.id),
-        }}
-        subscribers={subscribers}
-        posts={posts}
-        readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}
-        mediaUrls={await mediaUrls(displayDoc(entry))}
-        canEditWithAi={aiEnabled() && !unwritten}
-        aiPaused={paused}
-      />
+          <PaneBody className="lg:[container-type:size] flex flex-col gap-4 p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
+            <p className="text-sm text-muted-foreground">
+              {entry.sample && <SampleBadge />}{" "}
+              {entry.publishedAt
+                ? `Published ${formatDate(entry.publishedAt)}`
+                : entry.collecting
+                  ? "Draft · collecting merged pull requests until a release or you publish it"
+                  : "Draft"}
+            </p>
+            {/*
+              New saved text or cover (an AI draft, a save, a merged pull request added to the running draft)
+              starts the form afresh; publishing or unpublishing keeps unsaved edits.
+            */}
+            <ChangelogForm
+              key={createHash("sha256").update(JSON.stringify([entry.title, entry.content, entry.cover?.id])).digest("base64url")}
+              projectSlug={slug}
+              entry={{
+                number: entry.number,
+                title: entry.title,
+                content: displayDoc(entry) as Doc,
+                tags: entry.tags.map((t) => t.toLowerCase() as TagName),
+                posts: listed,
+                published: entry.publishedAt !== null,
+                cover,
+                wideCoverUrl,
+                told: entry.publishedAt ? await entryTold(entry.id) : null,
+                announced: entry.announced,
+                emailedSubscribers: entry.subscribersEmailedAt !== null,
+                subscribersLeft: left,
+                subscribersSent: sent,
+                emailedFrom: imported ? IMPORT_SOURCES[imported.source.toLowerCase() as ImportSourceKey].name : null,
+                sample: entry.sample,
+                importedOn,
+                emailPaused: await projectEmailWaits(membership.project.id),
+              }}
+              subscribers={subscribers}
+              posts={posts}
+              readerUrl={entry.publishedAt ? `${await portalAddress(slug)}/changelog/${entry.number}` : null}
+              mediaUrls={await mediaUrls(displayDoc(entry))}
+              canEditWithAi={aiEnabled() && !unwritten}
+              aiPaused={paused}
+            />
+          </PaneBody>
+        </Pane>
+      </PaneLayout>
     </ChangelogSaving>
   );
 }

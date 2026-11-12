@@ -135,7 +135,7 @@ export function ChangelogSaving({ children }: { children: ReactNode }) {
 }
 
 /**
- * The entry's Save in the top bar (at the bottom of the screen on phones, PageHeader's `pinActions`): it submits
+ * The entry's Save in the top bar (at the bottom of the screen on phones, PageActions' `pinned`): it submits
  * the ChangelogForm below. A new entry's "Save draft" is the page's main action; a saved one's Save sits beside Publish.
  */
 export function ChangelogSaveButton({ isNew = false }: { isNew?: boolean }) {
@@ -266,8 +266,8 @@ export function ChangelogForm({
         </div>
       </FieldGroup>
 
-      {/* Beside the text, held in view as the page scrolls (under it on phones). */}
-      <aside aria-label="Entry settings" className="flex flex-col gap-5 rounded-xl border p-4 text-sm lg:sticky lg:top-[calc(var(--app-toolbar-height,0px)+1.5rem)] lg:max-h-[calc(100dvh-var(--app-toolbar-height,0px)-3rem)] lg:overflow-y-auto">
+      {/* Beside the text, held in view as the pane scrolls, no taller than it (its PaneBody, a size container), under it on phones. */}
+      <aside aria-label="Entry settings" className="flex flex-col gap-5 rounded-xl border p-4 text-sm lg:sticky lg:top-0 lg:max-h-[calc(100cqh-3rem)] lg:overflow-y-auto">
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 text-xs font-medium text-muted-foreground">Tags</legend>
           {/* Chips: each its checkbox, unseen, laid over it. */}
@@ -1036,7 +1036,7 @@ export function ChangelogEntryActions({
       </AlertDialogContent>
     </AlertDialog>
   );
-  // Its buttons sit with the page's other actions (PageHeader's), in the top bar or the phone menu. As the main action,
+  // Its buttons sit with the page's other actions (in the pane's header, PageActions), in the top bar or the phone menu. As the main action,
   // Draft with AI comes last, on the right of Save and Publish: keyed, so it's moved rather than made again (its
   // dialog and the keyboard's focus on it stay) when that changes.
   const save = <ChangelogSaveButton key="save" />;
