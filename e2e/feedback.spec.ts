@@ -1962,6 +1962,14 @@ test("on a laptop another view of the list starts at its top; a post opened and 
   await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Needs triage/ }).click();
   await team.waitForURL(`**/app/${slug}/feedback`);
   await expect(rows.first()).toBeInViewport();
+  // Reloaded (no places kept from before), scrolled to its end, then Back: All posts has no saved place to go back
+  // to, so it starts at its top, not at Needs triage's place.
+  await team.reload();
+  await last.scrollIntoViewIfNeeded();
+  await expect(rows.first()).not.toBeInViewport();
+  await team.goBack();
+  await team.waitForURL(`**/app/${slug}/feedback?status=all`);
+  await expect(rows.first()).toBeInViewport();
 });
 
 test("a post's page and the list at tablet and laptop widths: the header stays in view, the properties beside the post", async ({ browser }, testInfo) => {

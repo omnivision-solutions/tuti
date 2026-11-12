@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import { feedbackStep, sameFeedbackList } from "@/lib/feedback-steps";
-import { isTraversal } from "@/components/pane";
+import { restoredPlace } from "@/components/pane";
 import { pageShortcut } from "@/lib/shortcut-keys";
 
 /**
@@ -87,7 +87,7 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
 /**
  * The list's pane back at its top as the list itself changes (a view, a status, a board, a search, the sort), which
  * keeps the page and so the pane's scroll: not as a post opens or closes beside it (`list` leaves out `post`), nor as
- * more of it loads (nor `page`), nor on Back and Forward (PaneBody's own). Put first in the pane's scrolling body.
+ * more of it loads (nor `page`), nor where Back or Forward put it back (`restoredPlace`). Put first in its PaneBody.
  */
 export function ListScrollReset({ list }: { list: string }) {
   const marker = useRef<HTMLSpanElement>(null);
@@ -95,8 +95,10 @@ export function ListScrollReset({ list }: { list: string }) {
   useEffect(() => {
     if (shown.current !== list) {
       shown.current = list;
-      // Not on Back or Forward: PaneBody has put the list back where it was on that address.
-      if (!isTraversal()) marker.current?.parentElement?.scrollTo({ top: 0 });
+      // Not where PaneBody has just put the list back where it was on this address (Back or Forward to a place it
+      // saved); Back with none saved (after a reload) starts at the top too. A passive effect: after PaneBody's.
+      const body = marker.current?.parentElement;
+      if (!restoredPlace(body)) body?.scrollTo({ top: 0 });
     }
   }, [list]);
   return <span ref={marker} hidden />;

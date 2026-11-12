@@ -61,8 +61,13 @@ if (typeof window !== "undefined") {
     document.addEventListener(event, () => (traversal = false), true);
   }
 }
-/** Whether the latest navigation is Back or Forward: a pane body is put back where it was then, not reset. */
-export const isTraversal = () => traversal;
+/** Whether each pane body's latest layout effect (its latest URL) put a saved place back (Back or Forward to it). */
+const restored = new WeakMap<HTMLElement, boolean>();
+/**
+ * Whether `box`, a pane body, was just put back where it was on this URL: read in a passive effect of something in it,
+ * which runs after the body's layout effect for the same navigation (Feedback's list starting a new view at its top).
+ */
+export const restoredPlace = (box: HTMLElement | null | undefined) => (box ? (restored.get(box) ?? false) : false);
 
 /**
  * What scrolls in a pane, under its header, in place of the window: so it returns to where it was on Back and Forward,
@@ -76,8 +81,10 @@ export function PaneBody({ children, className, resetOnNavigate = false }: { chi
     const box = ref.current;
     if (!box) return;
     const place = `${[...document.querySelectorAll("[data-slot=pane-body]")].indexOf(box)} ${url}`;
-    if (traversal) box.scrollTop = places.get(place) ?? box.scrollTop;
+    const saved = traversal ? places.get(place) : undefined;
+    if (traversal) box.scrollTop = saved ?? box.scrollTop;
     else if (resetOnNavigate) box.scrollTop = 0;
+    restored.set(box, saved !== undefined);
     const keep = () => places.set(place, box.scrollTop);
     // Every URL the body shows has a place, scrolled or not: a body kept across a navigation keeps it on Back.
     keep();
