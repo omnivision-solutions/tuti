@@ -216,6 +216,15 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows).toHaveCount(5);
   await expect(pages).toContainText("51–55 of 55");
   await checkpoint(owner, "team-users-second-page", { fullPage: false });
+  // Next from the bottom of a page: the next one starts at its top (the pane scrolls, not the window).
+  await api("/users", { users: Array.from({ length: 50 }, (_, i) => ({ id: `more-${i}`, name: `Zoe ${String(i).padStart(2, "0")}` })) });
+  await owner.goto(`/app/${slug}/users`);
+  await pages.getByRole("link", { name: "Next" }).scrollIntoViewIfNeeded();
+  await expect(table.getByRole("columnheader", { name: "User" })).not.toBeInViewport();
+  await pages.getByRole("link", { name: "Next" }).click();
+  await expect(owner).toHaveURL(/\?page=2$/);
+  await expect(rows).toHaveCount(50);
+  await expect(table.getByRole("columnheader", { name: "User" })).toBeInViewport();
   await owner.getByRole("combobox", { name: "Group" }).click();
   await owner.getByRole("option", { name: "Enterprise" }).click();
   await expect(owner).toHaveURL(/\?group=enterprise$/);

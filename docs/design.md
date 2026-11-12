@@ -155,9 +155,9 @@ the list picks none to approve at once.
   (`app/app/(workspace)/layout.tsx`, `components/app-shell.tsx`); the pages for the signed out and the
   operator's links (`/app/auth/*`, `/app/license`, `/app/admin/*`) sit outside it, under Tuti's logo
   over a centred `<main>` (`app/app/(account-pages)/layout.tsx`). Shell pages sit in one of three
-  columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, Home, a post), max-w-2xl for a form
+  columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, a post), max-w-2xl for a form
   by itself (`data-narrow` on it; New project, Setup and Account are panes now), or the whole width (`data-wide`: the
-  team's Roadmap, Users' tables; and pages of panes). Feedback, a page of panes, caps itself at 72rem while
+  team's Roadmap; and pages of panes: Home, Users). Feedback, a page of panes, caps itself at 72rem while
   no post is open beside its list, so its rows stay scannable on a wide screen. It keeps the shell's left edge
   whether or not a post is open, so the clicked row stays in place.
   From tablet width up there is no separate app header: the page starts at the top of the shell. Its own
@@ -316,15 +316,14 @@ the list picks none to approve at once.
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones
   and tablets it's the list right under the page's title, then the page picked.
-  Users' tables take the whole width (`data-wide` on the table's
-  card): who (name, email, and their id from tablet width up), the properties the team
+  Users is a pane (Panes): People and Companies as pills in its header, Sync from your app at its right end, its
+  tables on the pane at its whole width: who (name, email, and their id from tablet width up), the properties the team
   picks, headed by the team's name for each or the key in words ("plan_name": "Plan
-  name"), their groups in a column, then what they did. A person's page is the whole
-  width too: their profile (avatar, their name as its heading, email, id, groups,
-  properties) beside all their posts, votes and conversations, each status a badge
-  (one column on phones, where the page's title is their name and the profile has no heading of its own).
-  A page with sections of its own lists them under its header with `SubNav`
-  (Users' People and Companies).
+  name"), their groups in a column, then what they did. A person's page is a pane too, "All users ›" before their
+  name in its header (on phones "‹ All users", the name for screen readers): their avatar, name, email and id first,
+  then their profile (groups, properties, on a muted fill) beside all their posts, votes and conversations, each
+  status a badge (one column on phones). A page with sections of its own that isn't a page of panes yet lists them
+  under its header with `SubNav`.
   Tabs come in two styles. Switching a page's views or sections (Feedback's
   statuses, Changelog, Users, Reporting's AI conversations, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is

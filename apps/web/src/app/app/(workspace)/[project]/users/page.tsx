@@ -77,7 +77,10 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
             </a>
           }
         />
-        <PaneBody className="flex flex-col gap-4 p-3 @min-[48rem]/app:p-4">{children}</PaneBody>
+        {/* A fresh one for each view, page, sort, search and group, so a new list starts at its top (the pane scrolls, not the window). */}
+        <PaneBody key={new URLSearchParams(Object.entries(searchParams).flatMap(([name, value]) => (typeof value === "string" ? [[name, value]] : []))).toString()} className="flex flex-col gap-4 p-3 @min-[48rem]/app:p-4">
+          {children}
+        </PaneBody>
       </Pane>
     </PaneLayout>
   );
