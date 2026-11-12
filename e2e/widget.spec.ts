@@ -651,7 +651,7 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await laptop.context().close();
 });
 
-test("the portal shows the project's own widget, until the team turns it off in Customize → Widget", async ({ browser }, testInfo) => {
+test("the portal shows the project's own widget, until the team turns it off in Settings → Widget", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -720,7 +720,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
 
   // Turned off, the portal has no launcher.
-  await owner.goto(`/app/${slug}/customize/widget`);
+  await owner.goto(`/app/${slug}/settings/widget`);
   const onPortal = owner.getByRole("switch", { name: "Show on your portal" });
   await expect(onPortal).toBeChecked();
   await expect(owner.getByText("The launcher on every page of your portal too, opening the same panel as on your site.")).toBeVisible();
@@ -1015,7 +1015,7 @@ test("a new message in the widget's Messages gets the AI's answer first, with As
   await expect(widget.getByRole("dialog", { name: "Assistant" })).toHaveCount(0);
 
   // Turned off in Customize → Widget, a new message goes straight to the team.
-  await owner.goto(`/app/${slug}/customize/widget`);
+  await owner.goto(`/app/${slug}/settings/widget`);
   const aiFirst = owner.getByRole("switch", { name: "Answer with AI first" });
   await expect(aiFirst).toBeChecked();
   await aiFirst.scrollIntoViewIfNeeded();
@@ -1681,7 +1681,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
 
   // Customize → Widget: a name, a colour, the left corner, an icon and a quick link (https only), beside a stand-in for the
   // site with the widget open above its launcher, what the team came to see (focus stays on the page).
-  await owner.goto(`/app/${slug}/customize/widget`);
+  await owner.goto(`/app/${slug}/settings/widget`);
   const previewLauncher = (name: string) => owner.getByRole("figure", { name: "Widget preview" }).getByRole("button", { name: `Launcher: ${name}` });
   await expect(previewLauncher("Feedback")).toHaveAttribute("aria-expanded", "true");
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
@@ -2039,7 +2039,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
 
   // Customize → Widget and the Inbox say so, the Inbox with the way to turn it on.
   const off = owner.getByRole("note").filter({ hasText: "Messages in the widget is off" });
-  await owner.goto(`/app/${slug}/customize/widget`);
+  await owner.goto(`/app/${slug}/settings/widget`);
   await expect(off).toContainText("so the widget has no Messages tab.");
   await checkpoint(owner, "customize-widget-messages-off");
   await owner.goto(`/app/${slug}/inbox`);

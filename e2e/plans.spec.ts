@@ -189,7 +189,7 @@ test("on Tuti's cloud, the widget launcher's icon is locked on the free plan, it
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
 
-  await owner.goto(`/app/${slug}/customize/widget`);
+  await owner.goto(`/app/${slug}/settings/widget`);
   await expect(owner.getByText("Choosing the launcher's icon needs the Pro plan.")).toBeVisible();
   await expect(owner.getByRole("radio", { name: "Megaphone" })).toBeDisabled();
   await expect(owner.getByRole("radio", { name: "Chat" })).toBeChecked();

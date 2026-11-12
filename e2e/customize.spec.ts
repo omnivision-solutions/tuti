@@ -24,18 +24,27 @@ test("the team sets what readers can do with an article and the docs' home, seei
     await api(`/articles/${article.slug}/publish`, {});
   }
 
-  // Customize opens on its first section (Branding); its rail goes between them, the preview staying beside them.
+  // How the portal looks is Settings' Portal group, each page beside a preview; Customize's old address lands on its first.
   await owner.goto(`/app/${slug}/customize`);
-  await owner.waitForURL(`**/app/${slug}/customize/branding`);
-  const rail = owner.getByRole("navigation", { name: "Customize" });
+  await owner.waitForURL(`**/app/${slug}/settings/branding`);
+  const rail = owner.getByRole("navigation", { name: "Settings" }).getByRole("group", { name: "Portal", exact: true });
   await expect(rail.getByRole("link")).toHaveText(["Branding", "Navigation", "Docs home", "Content actions", "Widget", "SEO", "Custom code"]);
-  await expect(owner.getByRole("link", { name: "Back to Customize" })).toHaveCount(0);
-  // The preview as a phone in dark mode stays so in the next section.
+  await expect(rail.getByRole("link", { name: "Branding" })).toHaveAttribute("aria-current", "page");
+  await expect(owner.getByRole("region", { name: "Branding" }).getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
+  // Each of Customize's old addresses lands on its page.
+  for (const [from, to] of [["seo", "seo"], ["home-page", "navigation"], ["widget", "widget"]]) {
+    await owner.goto(`/app/${slug}/customize/${from}`);
+    await owner.waitForURL(`**/app/${slug}/settings/${to}`);
+  }
+  await owner.goto(`/app/${slug}/settings/branding`);
+  // The sidebar has no Customize of its own any more.
+  await expect(owner.locator('[data-slot="sidebar"]').getByRole("link", { name: "Customize" })).toHaveCount(0);
+  // The preview as a phone in dark mode stays so on the next page.
   const size = owner.getByRole("group", { name: "Preview size" });
   const mode = owner.getByRole("group", { name: "Preview mode" });
   await size.getByRole("button", { name: "Phone" }).click();
   await mode.getByRole("button", { name: "Dark mode" }).click();
-  // Customize → Content actions, beside one of the docs' articles.
+  // Settings → Content actions, beside one of the docs' articles.
   await rail.getByRole("link", { name: "Content actions" }).click();
   await expect(owner.getByRole("heading", { name: "Content actions", level: 1 })).toBeVisible();
   await expect(size.getByRole("button", { name: "Phone" })).toHaveAttribute("aria-pressed", "true");
@@ -76,7 +85,7 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(visitor.getByRole("button", { name: "Page actions" })).toHaveCount(0);
 
-  // Customize → Docs home: the heading at its top, and Popular articles (three read, but saved off: shown once switched on, before saving).
+  // Settings → Docs home: the heading at its top, and Popular articles (three read, but saved off: shown once switched on, before saving).
   for (const article of ["inviting-your-team", "billing", "exporting"]) {
     const counted = visitor.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
     await visitor.goto(`/docs/${article}`);
@@ -109,7 +118,7 @@ test("the team sets the portal's search listing, seeing it as a search result an
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  await owner.goto(`/app/${slug}/customize/seo`);
+  await owner.goto(`/app/${slug}/settings/seo`);
   const result = owner.getByRole("figure", { name: "Search result preview" });
   await expect(result).toContainText("Acme");
   await owner.getByLabel("Page title").fill("Acme Help Center");
@@ -173,8 +182,8 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
 
-  // The sidebar starts collapsed and keeps the user's choice through Customize, Docs, Settings and resizing.
-  await owner.goto(`/app/${slug}/customize/branding`);
+  // The sidebar starts collapsed and keeps the user's choice through Branding, Docs, Settings and resizing.
+  await owner.goto(`/app/${slug}/settings/branding`);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   await owner.locator('[data-slot="sidebar-rail"]').click();
@@ -199,17 +208,18 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   // Settings' menu is a section pane beside the page's; the users' settings in a group of their own.
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await expect(menu).toBeVisible();
-  for (const group of ["Project", "Users", "Support"]) {
+  for (const group of ["Project", "Portal", "Users", "Support"]) {
     await expect(menu.getByRole("group", { name: group, exact: true })).toBeVisible();
   }
   await expect(menu.getByRole("group", { name: "Users", exact: true }).getByRole("link")).toHaveText(["Groups", "Who's asking", "User properties"]);
-  await expect(menu.getByRole("link")).toContainText(["General", "Team & roles", "Access", "Single sign-on", "Domain", "Groups", "Who's asking", "User properties"]);
+  await expect(menu.getByRole("link")).toContainText(["General", "Team & roles", "Access", "Single sign-on", "Domain", "Branding", "Navigation", "Groups", "Who's asking", "User properties"]);
   await checkpoint(owner, "settings-panes", { fullPage: false });
-  // Customize keeps the open sidebar through its redirect to the first section too.
-  await sidebar.getByRole("link", { name: "Customize", exact: true }).click();
-  await owner.waitForURL(`**/app/${slug}/customize/branding`);
+  // And through a Portal page.
+  await menu.getByRole("link", { name: "Branding" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/branding`);
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
-  await owner.goto(`/app/${slug}/settings/general`);
+  await menu.getByRole("link", { name: "General" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/general`);
   // User properties is in the menu before any user has one, and says where they come from.
   await menu.getByRole("link", { name: "User properties" }).click();
   await expect(owner.getByRole("region", { name: "User properties" })).toContainText("None yet.");
@@ -234,7 +244,7 @@ test("the team's own CSS shows in the preview as it's typed, and on the portal o
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  await owner.goto(`/app/${slug}/customize/custom-code`);
+  await owner.goto(`/app/${slug}/settings/custom-code`);
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
   await expect(preview.locator(".portal-header")).toBeVisible();
   await owner.getByLabel("Custom CSS").fill(".portal-header { background: rgb(1, 2, 3); }");
@@ -250,7 +260,7 @@ test("the team's own CSS shows in the preview as it's typed, and on the portal o
   await expect(visitor.locator(".portal-header")).toHaveCSS("background-color", "rgb(1, 2, 3)");
 });
 
-test("on a laptop Customize fits the window, and each pane scrolls on its own", async ({ browser }, testInfo) => {
+test("on a laptop a Portal settings page fits the window, and each side scrolls on its own", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -263,7 +273,7 @@ test("on a laptop Customize fits the window, and each pane scrolls on its own", 
   for (const height of [720, 560]) {
     await owner.setViewportSize({ width: 1280, height });
     for (const section of ["branding", "navigation", "docs-home", "content-actions", "widget", "seo", "custom-code"]) {
-      await owner.goto(`/app/${slug}/customize/${section}`);
+      await owner.goto(`/app/${slug}/settings/${section}`);
       await expect(owner.getByRole("heading", { level: 1 })).toBeVisible();
       expect(await documentScroll(), `${section} at ${height}px`).toEqual({ y: 0, overflow: 0 });
     }
@@ -271,10 +281,10 @@ test("on a laptop Customize fits the window, and each pane scrolls on its own", 
   await owner.setViewportSize({ width: 1280, height: 720 });
 
   // Branding's settings are taller than the window: scrolling them moves them alone.
-  await owner.goto(`/app/${slug}/customize/branding`);
+  await owner.goto(`/app/${slug}/settings/branding`);
   const header = owner.locator("main > header");
-  const settings = owner.locator('[data-slot="customize-settings"]');
-  const rail = owner.getByRole("navigation", { name: "Customize" });
+  const settings = owner.locator('[data-slot="portal-settings"]');
+  const rail = owner.getByRole("navigation", { name: "Settings" });
   const preview = owner.locator('iframe[title="Portal preview"]');
   await expect(preview).toBeVisible();
   expect(await settings.evaluate((pane) => pane.scrollHeight > pane.clientHeight)).toBe(true);
@@ -287,13 +297,12 @@ test("on a laptop Customize fits the window, and each pane scrolls on its own", 
   await owner.mouse.wheel(0, 600);
   await expect.poll(() => settings.evaluate((pane) => pane.scrollTop)).toBeGreaterThan(0);
   expect(await owner.evaluate(() => window.scrollY)).toBe(0);
-  // The rail and preview stay put, with the settings' title and "Save changes" at the pane's top.
+  // The menu and preview stay put, with the page's title and "Save changes" in the pane's header above.
   await expect(header).toBeHidden();
   expect(await settings.boundingBox()).toEqual(before.settings);
   expect(await rail.boundingBox()).toEqual(before.rail);
   expect(await preview.boundingBox()).toEqual(before.preview);
-  const save = (await owner.getByRole("button", { name: "Save changes" }).boundingBox())!;
-  expect(save.y).toBeGreaterThanOrEqual(before.settings!.y);
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeInViewport();
   await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeInViewport();
   await checkpoint(owner, "customize-branding-scrolled", { fullPage: false });
   // A field reached from below (Shift+Tab) shows under the title bar, not behind it.
@@ -307,15 +316,14 @@ test("on a laptop Customize fits the window, and each pane scrolls on its own", 
   const bar = (await owner.getByRole("heading", { name: "Branding", level: 1 }).locator("..").boundingBox())!;
   expect((await darkLogo.boundingBox())!.y).toBeGreaterThanOrEqual(bar.y + bar.height);
 
-  // Powered by's old address lands on its card, 1rem under the settings' title bar (the pane's scroll padding is the bar).
+  // Powered by's old address lands on its card.
   await owner.goto(`/app/${slug}/customize/powered-by`);
-  await owner.waitForURL(`**/customize/branding#powered-by`);
-  await expect(settings).toHaveCSS("scroll-padding-top", "48px");
-  await expect(owner.locator("#powered-by")).toHaveCSS("scroll-margin-top", "16px");
+  await owner.waitForURL(`**/settings/branding#powered-by`);
+  await expect(owner.locator("#powered-by")).toBeInViewport();
 
   // Invitations to four other projects (they show once the email is verified): the banners scroll in their own room, leaving the panes theirs.
   await owner.goto(linkIn(await latestEmailTo(owner.email), `${APP_URL}/api/auth/verify-email`));
-  await owner.goto(`/app/${slug}/customize/branding`);
+  await owner.goto(`/app/${slug}/settings/branding`);
   const inviter = await signUp(browser, APP_URL, "Ivan Inviter");
   await verifyEmail(inviter);
   for (const name of ["Globex", "Initech", "Umbrella", "Hooli"]) {
@@ -329,10 +337,11 @@ test("on a laptop Customize fits the window, and each pane scrolls on its own", 
   await owner.reload();
   await expect(owner.getByRole("alert").filter({ hasText: "Join " })).toHaveCount(4);
   expect(await documentScroll()).toEqual({ y: 0, overflow: 0 });
-  expect((await settings.boundingBox())!.height).toBeGreaterThanOrEqual(400);
+  // Half the window: the banners take a third at most.
+  expect((await settings.boundingBox())!.height).toBeGreaterThanOrEqual(360);
   await checkpoint(owner, "customize-branding-many-banners", { fullPage: false });
   // The open widget fits the preview the banners leave.
-  await owner.getByRole("navigation", { name: "Customize" }).getByRole("link", { name: "Widget" }).click();
+  await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Widget" }).click();
   // Open from the start.
   const widgetPanel = owner.locator('iframe[title="Widget panel preview"]');
   await expect(widgetPanel).toBeVisible();
@@ -353,12 +362,12 @@ test("on a laptop Customize fits the window, and each pane scrolls on its own", 
   expect(await documentScroll()).toEqual({ y: 0, overflow: 0 });
   await owner.setViewportSize({ width: 1280, height: 720 });
 
-  // On a tablet and a phone the page scrolls: the section title sticks at the top (under the menu row on phones).
-  await owner.goto(`/app/${slug}/customize/branding`);
-  const titleBar = owner.getByRole("heading", { name: "Branding", level: 1 }).locator("..");
+  // On a tablet and a phone the page scrolls: the pane's header, with "Save changes", sticks at the top (under the menu row on phones).
+  await owner.goto(`/app/${slug}/settings/branding`);
+  const titleBar = owner.getByRole("region", { name: "Branding" }).locator('[data-slot="pane-header"]');
   for (const width of [800, 390]) {
     await owner.setViewportSize({ width, height: 844 });
-    await owner.evaluate(() => window.scrollTo(0, document.querySelector("[data-slot=customize-settings]")!.getBoundingClientRect().bottom + window.scrollY - 600));
+    await owner.evaluate(() => window.scrollTo(0, document.querySelector("[data-slot=portal-settings]")!.getBoundingClientRect().bottom + window.scrollY - 600));
     expect(await owner.evaluate(() => window.scrollY), `${width}px`).toBeGreaterThan(0);
     const bar = (await titleBar.boundingBox())!;
     expect(bar.y, `${width}px`).toBe(width < 768 ? 48 : 0);
@@ -374,15 +383,15 @@ test("on a laptop Customize fits the window, and each pane scrolls on its own", 
       await expect(darkLogo).toBeFocused();
     }
   }
-  // Nothing runs past the phone's edge; Powered by's card lands 1rem under both bars.
+  // Nothing runs past the phone's edge; "Save changes" stays in reach, and what's focused or linked to lands under both bars.
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "96px");
-  await expect(owner.locator("#powered-by")).toHaveCSS("scroll-margin-top", "16px");
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeInViewport();
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "108px");
   await checkpoint(owner, "customize-branding-phone-scrolled", { fullPage: false });
   await owner.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(owner, "customize-branding-phone");
   // Widget on a phone: the script tag, the colour with its hex and the open preview fit too.
-  await owner.goto(`/app/${slug}/customize/widget`);
+  await owner.goto(`/app/${slug}/settings/widget`);
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Home" })).toBeVisible();
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "customize-widget-phone");

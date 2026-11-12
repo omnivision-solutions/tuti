@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { permanentRedirect } from "next/navigation";
 
-/** Customize opens on its first section: the others are in its rail. */
+/** Customize is Settings' Portal pages now: its first. */
 export default async function CustomizePage(props: PageProps<"/app/[project]/customize">) {
-  redirect(`/app/${(await props.params).project}/customize/branding`);
+  permanentRedirect(`/app/${(await props.params).project}/settings/branding`);
 }

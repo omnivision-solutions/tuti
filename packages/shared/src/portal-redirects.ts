@@ -44,7 +44,7 @@ export function redirectFrom(input: string): { from: string } | { error: string 
   }
   const from = redirectKey(path);
   if (from === "/") {
-    return { error: "Pick what your portal's home opens in Customize → Navigation, under Home page, instead" };
+    return { error: "Pick what your portal's home opens in Settings → Navigation, under Home page, instead" };
   }
   if (RESERVED.test(from)) {
     return { error: `${from} is one of the portal's own addresses` };

@@ -18,7 +18,6 @@ import {
   MessagesSquareIcon,
   MonitorIcon,
   MoonIcon,
-  PaintbrushIcon,
   PlusIcon,
   SearchIcon,
   SettingsIcon,
@@ -185,7 +184,7 @@ export function phoneTabs(project: ProjectSummary, pathname: string, params: Rec
     route === "/changelog/new" ||
     // Docs has its own phone navigation, and its workspace is the window's height, scrolling inside (DocsWorkspace).
     /^\/docs(\/|$)/.test(route) ||
-    /^\/(settings|customize)\/./.test(route);
+    /^\/settings\/./.test(route);
   if (onePage) {
     return null;
   }
@@ -327,10 +326,9 @@ const countId = (title: string) => `nav-count-${title.toLowerCase().replace(/\W+
 
 type NavItem = { title: string; href: string; icon: LucideIcon; section?: boolean; also?: string; badge?: { count: number; label: string; urgent?: boolean } | false };
 
-/** The project's pages, in groups by how often each is used: the daily ones, then Users, then Customize and Settings. */
+/** The project's pages, in groups by how often each is used: the daily ones, then Users, then Settings. */
 function projectNav(project: ProjectSummary): NavItem[][] {
   const base = `/app/${project.slug}`;
-  const admin = project.role === "OWNER" || project.role === "ADMIN";
   // Counts where work waits.
   // `urgent`: people are waiting on the team (the Inbox), its count filled in the highlight colour.
   const waits = (count: number, label: string, urgent = false) => count > 0 && { count, label, urgent };
@@ -350,8 +348,7 @@ function projectNav(project: ProjectSummary): NavItem[][] {
       { title: "Reporting", href: `${base}/reporting`, icon: ChartColumnIcon, section: true },
     ],
     [
-      ...(admin ? [{ title: "Customize", href: `${base}/customize`, icon: PaintbrushIcon, section: true }] : []),
-      // Every member's: Team & roles is in it.
+      // Every member's: Team & roles is in it (and how the portal looks, its Portal pages, for owners and admins).
       { title: "Settings", href: `${base}/settings`, icon: SettingsIcon, section: true },
     ],
   ];

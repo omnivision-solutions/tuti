@@ -35,7 +35,7 @@ test("a page of one thing, a new one and a setting have the screen to themselves
   expect(open("/app/acme/docs/getting-started/history", { slug: "getting-started" })).toBeNull();
   expect(open("/app/acme/settings/team")).toBeNull();
   expect(open("/app/acme/docs/collections/guides/settings", { collection: "guides" })).toBeNull();
-  expect(open("/app/acme/customize/branding")).toBeNull();
+  expect(open("/app/acme/settings/branding")).toBeNull();
 });
 
 test("Docs keeps its own phone navigation: no tab bar on any of its pages", () => {
