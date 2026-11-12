@@ -3,10 +3,10 @@
 import { SCROLLING_ROW, useScrollingRow } from "@tuti/ui/scrolling-row";
 import { cn } from "cn";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { activeHref } from "@/lib/active-link";
+import { activeView } from "@/lib/active-link";
 
 /** A pill's classes (a filter, or a button that opens one's menu): rounded, outlined, the picked one a neutral fill. */
 export const pillClass = (picked = false, className?: string) =>
@@ -17,12 +17,14 @@ export const pillClass = (picked = false, className?: string) =>
   );
 
 /**
- * A page's views as pills in its pane header ("All 38", "Mine 4"): links, the open one filled. One row that never
+ * A page's views as pills in its pane header ("All 38", "Mine 4"): links, the open one filled (views in the query string
+ * too: `activeView`). One row that never
  * wraps; with too little room it scrolls sideways, faded at the end that has more (SubNav's row).
  */
 export function FilterPills({ label, items, current: given }: { label: string; items: { title: ReactNode; href: string; count?: ReactNode }[]; current?: string }) {
   const pathname = usePathname();
-  const current = given ?? activeHref(pathname, items.map((item) => item.href));
+  const search = useSearchParams().toString();
+  const current = given ?? activeView(pathname, search, items.map((item) => item.href));
   const nav = useScrollingRow(current, items);
   return (
     <nav ref={nav} aria-label={label} className={cn("flex min-w-0 gap-1.5", SCROLLING_ROW)}>
