@@ -1155,6 +1155,9 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await expect(owner).toHaveURL(/view=closed/);
   await views.getByRole("link", { name: /^Spam/ }).click();
   await expect(owner).toHaveURL(/view=spam/);
+  // Moved on the later view: Back to Closed returns to where Closed was, not to this.
+  await numbers.evaluate((body) => (body.scrollTop = 0));
+  await expect.poll(() => numbers.evaluate((body) => body.scrollTop)).toBe(0);
   await owner.goBack();
   await expect(owner).toHaveURL(/view=closed/);
   await expect.poll(() => numbers.evaluate((body) => body.scrollTop)).toBe(kept);
