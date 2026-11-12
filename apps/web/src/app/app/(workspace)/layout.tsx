@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { AppWidget } from "@/components/app-widget";
 import { AppShell } from "@/components/app-shell";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppSidebar, AppTabBar } from "@/components/app-sidebar";
 import { PendingInvitations } from "@/components/pending-invitations";
 import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { portalAddress } from "@/server/custom-domains";
@@ -47,6 +47,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
             fallbackSlug={fallbackSlug}
             user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
           />
+          <AppTabBar projects={projects} fallbackSlug={fallbackSlug} />
         </>
       }
       header={<AppHeader projects={projects} fallbackSlug={fallbackSlug} />}

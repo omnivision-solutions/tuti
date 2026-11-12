@@ -10,6 +10,7 @@ import {
   GitPullRequestIcon,
   HouseIcon,
   InboxIcon,
+  LayoutGridIcon,
   type LucideIcon,
   LogOutIcon,
   MapIcon,
@@ -98,12 +99,7 @@ export function AppSidebar({
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
   useOpenCountInTitle(current?.openConversations ?? 0);
   const nav = current ? projectNav(current) : [];
-  // The closest match is the current page: Roadmap, not Feedback, on /feedback/roadmap. A page inside a part (a post, an
-  // article, a changelog entry) keeps its part marked.
-  const active = nav
-    .flat()
-    .filter((item) => pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`)) || (!!item.also && pathname.startsWith(`${item.also}/`)))
-    .sort((a, b) => b.href.length - a.href.length)[0];
+  const active = activeItem(nav, pathname);
 
   return (
     <Sidebar collapsible="icon">
@@ -152,6 +148,87 @@ export function AppSidebar({
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+/**
+ * The closest match is the current page: Roadmap, not Feedback, on /feedback/roadmap. A page inside a part (a post, an
+ * article, a changelog entry) keeps its part marked.
+ */
+function activeItem(nav: NavItem[][], pathname: string) {
+  return nav
+    .flat()
+    .filter((item) => pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`)) || (!!item.also && pathname.startsWith(`${item.also}/`)))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+}
+
+/** The phone tab bar's parts, the rest under More (the sidebar's menu). */
+const TABS = ["Home", "Inbox", "Feedback", "Autopilot"];
+
+/**
+ * The phone tab bar on this page, on a part's lists only (Feedback's posts, its boards, the Roadmap): a page of one
+ * thing (a post, a conversation, an article: the route's `params` name it), a new one, its history, and a setting
+ * have the screen to themselves and their way back. `open`: its part's tab (Feedback on the Roadmap); none for More's.
+ */
+export function phoneTabs(project: ProjectSummary, pathname: string, params: Record<string, unknown>) {
+  const nav = projectNav(project);
+  const active = activeItem(nav, pathname);
+  const onePage = ["number", "id", "slug", "user"].some((key) => key in params) || /\/(new|history)$/.test(pathname) || /\/(settings|customize)\/./.test(pathname);
+  if (!active || onePage) {
+    return null;
+  }
+  const tabs = nav.flat().filter((item) => TABS.includes(item.title));
+  return { tabs, open: tabs.find((item) => item === active || (item.section && active.href.startsWith(`${item.href}/`))) };
+}
+
+/**
+ * On phones, the project's main parts at the bottom of the screen (phoneTabs), and More: the sidebar as a menu. Not
+ * where a page pins its actions to the bottom (PageActions).
+ */
+export function AppTabBar({ projects, fallbackSlug }: { projects: ProjectSummary[]; fallbackSlug: string | null }) {
+  const pathname = usePathname();
+  const current = useCurrentProject(projects, fallbackSlug);
+  const params = useParams();
+  const { setOpenMobile } = useSidebar();
+  const bar = params.project && current ? phoneTabs(current, pathname, params) : null;
+  if (!bar) {
+    return null;
+  }
+  const tab = "relative flex max-w-20 flex-1 flex-col items-center gap-0.5 rounded-xl pt-1.5 pb-1 text-xs font-medium text-muted-foreground [&>svg]:size-5";
+  const on = "bg-card text-foreground shadow-xs ring-1 ring-sidebar-border";
+  return (
+    <nav
+      aria-label="Main"
+      data-tab-bar
+      className="fixed inset-x-0 bottom-0 z-20 flex justify-around gap-1 bg-sidebar px-1.5 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden [:root:has([data-pinned-actions])_&]:hidden"
+    >
+      {bar.tabs.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          aria-current={item === bar.open ? "page" : undefined}
+          // Its count is read with it ("Inbox, 4 open").
+          aria-describedby={item.badge ? countId(`tab ${item.title}`) : undefined}
+          className={cn(tab, item === bar.open && on)}
+        >
+          <item.icon aria-hidden />
+          {item.title}
+          {!!item.badge && (
+            <span
+              id={countId(`tab ${item.title}`)}
+              className={cn("absolute top-0 left-[calc(50%+0.25rem)] h-5 min-w-5 rounded-full bg-sidebar-accent px-1.5 text-center text-xs leading-5 font-medium tabular-nums", item.badge.urgent && "bg-highlight text-highlight-foreground")}
+            >
+              {item.badge.count}
+              <span className="sr-only"> {item.badge.label}</span>
+            </span>
+          )}
+        </Link>
+      ))}
+      <button type="button" onClick={() => setOpenMobile(true)} className={cn(tab, !bar.open && on)}>
+        <LayoutGridIcon aria-hidden />
+        More
+      </button>
+    </nav>
   );
 }
 

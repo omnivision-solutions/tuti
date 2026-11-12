@@ -317,3 +317,38 @@ test("Inbox details remain reachable when a larger root font changes the contain
   await team.getByRole("button", { name: "Show details", exact: true }).click();
   await expect(details).toBeVisible();
 });
+
+test("on phones the tab bar goes between the main parts and opens the rest under More; a post has the screen to itself", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  const { number } = (await api("/posts", { board: "feature-requests", title: "Dark mode" })) as unknown as { number: number };
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}`);
+
+  const bar = team.getByRole("navigation", { name: "Main" });
+  await expect(bar.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(team, "home-tab-bar", { fullPage: false });
+  await bar.getByRole("link", { name: "Feedback" }).click();
+  await team.waitForURL(`**/app/${slug}/feedback`);
+  await expect(bar.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(team, "feedback-tab-bar", { fullPage: false });
+
+  // More is the sidebar's menu, for the parts without a tab; open on their pages.
+  await bar.getByRole("button", { name: "More" }).click();
+  await team.getByRole("dialog").getByRole("link", { name: "Changelog", exact: true }).click();
+  await team.waitForURL(`**/app/${slug}/changelog`);
+  await expect(team.getByRole("dialog")).toBeHidden();
+  await expect(bar.getByRole("link", { name: "Feedback" })).not.toHaveAttribute("aria-current", "page");
+
+  // A post's page, and the desktop, have no tab bar.
+  await team.goto(`/app/${slug}/p/${number}`);
+  await expect(team.getByRole("heading", { name: "Dark mode" }).first()).toBeVisible();
+  await expect(bar).toBeHidden();
+  await team.setViewportSize({ width: 1366, height: 768 });
+  await team.goto(`/app/${slug}/feedback`);
+  await expect(bar).toBeHidden();
+  await checkpoint(team, "feedback-desktop", { fullPage: false });
+});

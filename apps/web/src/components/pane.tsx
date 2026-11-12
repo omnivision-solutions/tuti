@@ -12,7 +12,7 @@ import { activeView } from "@/lib/active-link";
 /**
  * The admin's panes (docs/design.md → Panes): white panels on the shell's canvas, 8px apart. A page is a `PaneLayout`
  * of an optional `SectionPane` (the area's menu) and one or more `Pane`s, each starting with a `PaneHeader`.
- * `data-slot="pane-layout"`: the shell gives it the whole width.
+ * `data-slot="pane-layout"`: the shell gives it the whole width; `data-panes`: on its canvas (AppShell).
  */
 type SectionMenu = { open: boolean; setOpen: (open: boolean) => void; close: () => void };
 const SectionMenuContext = createContext<SectionMenu | null>(null);
@@ -25,7 +25,7 @@ export function PaneLayout({ children, className }: { children: ReactNode; class
   const close = useCallback(() => setOpenOn(null), []);
   return (
     <SectionMenuContext value={{ open: openOn === url, setOpen: (open) => setOpenOn(open ? url : null), close }}>
-      <div data-slot="pane-layout" className={cn("group/panes flex min-h-0 min-w-0 flex-1 gap-2", className)}>
+      <div data-slot="pane-layout" data-panes className={cn("group/panes flex min-h-0 min-w-0 flex-1 gap-2", className)}>
         {children}
       </div>
     </SectionMenuContext>
