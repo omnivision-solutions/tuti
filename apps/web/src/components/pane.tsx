@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Children, createContext, isValidElement, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useState } from "react";
 
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { activeView } from "@/lib/active-link";
@@ -14,7 +14,7 @@ import { activeView } from "@/lib/active-link";
  * of an optional `SectionPane` (the area's menu) and one or more `Pane`s, each starting with a `PaneHeader`.
  * `data-slot="pane-layout"`: the shell gives it the whole width.
  */
-type SectionMenu = { open: boolean; setOpen: (open: boolean) => void };
+type SectionMenu = { open: boolean; setOpen: (open: boolean) => void; close: () => void };
 const SectionMenuContext = createContext<SectionMenu | null>(null);
 
 export function PaneLayout({ children, className }: { children: ReactNode; className?: string }) {
@@ -22,18 +22,10 @@ export function PaneLayout({ children, className }: { children: ReactNode; class
   const url = `${usePathname()}?${useSearchParams()}`;
   const [openOn, setOpenOn] = useState<string | null>(null);
   if (openOn !== null && openOn !== url) setOpenOn(null);
-  // Closed as the section pane shows beside the page (the shell's 48rem, a container query: watched as it renders).
-  const layout = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const pane = layout.current?.querySelector("[data-slot=section-pane]");
-    if (!pane) return;
-    const shown = new ResizeObserver(([entry]) => entry.contentRect.width > 0 && setOpenOn(null));
-    shown.observe(pane);
-    return () => shown.disconnect();
-  }, []);
+  const close = useCallback(() => setOpenOn(null), []);
   return (
-    <SectionMenuContext value={{ open: openOn === url, setOpen: (open) => setOpenOn(open ? url : null) }}>
-      <div ref={layout} data-slot="pane-layout" className={cn("group/panes flex min-h-0 min-w-0 flex-1 gap-2", className)}>
+    <SectionMenuContext value={{ open: openOn === url, setOpen: (open) => setOpenOn(open ? url : null), close }}>
+      <div data-slot="pane-layout" className={cn("group/panes flex min-h-0 min-w-0 flex-1 gap-2", className)}>
         {children}
       </div>
     </SectionMenuContext>
@@ -119,6 +111,18 @@ export function PaneHeader({
  */
 export function SectionPane({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
   const menu = useContext(SectionMenuContext);
+  // The drawer closes as this pane shows beside the page (the shell's 48rem, a container query: watched as it renders),
+  // whenever it mounts (a page of its own, streamed in).
+  const close = menu?.close;
+  const watch = useCallback(
+    (aside: HTMLElement | null) => {
+      if (!aside || !close) return;
+      const shown = new ResizeObserver(([entry]) => entry && entry.contentRect.width > 0 && close());
+      shown.observe(aside);
+      return () => shown.disconnect();
+    },
+    [close],
+  );
   const current = activeView(usePathname(), useSearchParams().toString(), linkHrefs(children));
   const content = (close?: ReactNode) => (
     <SectionCurrentContext value={current}>
@@ -134,7 +138,7 @@ export function SectionPane({ title, actions, children }: { title: ReactNode; ac
   );
   return (
     <>
-      <aside data-slot="section-pane" className="hidden w-62 shrink-0 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border @min-[48rem]/app:flex">
+      <aside ref={watch} data-slot="section-pane" className="hidden w-62 shrink-0 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border @min-[48rem]/app:flex">
         {content()}
       </aside>
       {menu && (
