@@ -266,8 +266,8 @@ export function ChangelogForm({
         </div>
       </FieldGroup>
 
-      {/* Beside the text, held in view as the pane scrolls (under it on phones). */}
-      <aside aria-label="Entry settings" className="flex flex-col gap-5 rounded-xl border p-4 text-sm lg:sticky lg:top-0 lg:max-h-[calc(100dvh-8.5rem)] lg:overflow-y-auto">
+      {/* Beside the text, held in view as the pane scrolls, no taller than it (its PaneBody, a size container), under it on phones. */}
+      <aside aria-label="Entry settings" className="flex flex-col gap-5 rounded-xl border p-4 text-sm lg:sticky lg:top-0 lg:max-h-[calc(100cqh-3rem)] lg:overflow-y-auto">
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 text-xs font-medium text-muted-foreground">Tags</legend>
           {/* Chips: each its checkbox, unseen, laid over it. */}

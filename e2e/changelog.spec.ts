@@ -193,6 +193,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await afterIntersections(team);
   await expect(team.getByLabel("Title")).toBeInViewport();
   await expect(team.locator('[data-slot="bar-title"]')).toHaveCount(0);
+  // Loaded on a phone, the page keeps what's focused or jumped to clear of the bar (scroll-padding-top).
+  await team.reload();
+  await expect(team.getByLabel("Title")).toBeVisible();
+  const bar = (await team.locator("header").first().boundingBox())!;
+  await expect.poll(() => team.evaluate(() => document.documentElement.style.getPropertyValue("--app-toolbar-height"))).toBe(`${bar.height}px`);
   await team.evaluate(() => window.scrollTo(0, 0));
   for (const name of ["Save", "Unpublish"]) {
     await expect(team.getByRole("button", { name, exact: true })).toBeInViewport();

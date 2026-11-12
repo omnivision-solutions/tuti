@@ -26,7 +26,7 @@ export default async function NewChangelogEntryPage(props: PageProps<"/app/[proj
               </PageActions>
             }
           />
-          <PaneBody className="p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
+          <PaneBody className="lg:[container-type:size] p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
             <ChangelogForm projectSlug={slug} entry={null} posts={[]} readerUrl={null} mediaUrls={await mediaUrls()} />
           </PaneBody>
         </Pane>

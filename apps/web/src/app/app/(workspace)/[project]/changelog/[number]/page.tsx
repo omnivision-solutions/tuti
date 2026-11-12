@@ -127,7 +127,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
               </PageActions>
             }
           />
-          <PaneBody className="flex flex-col gap-4 p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
+          <PaneBody className="lg:[container-type:size] flex flex-col gap-4 p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-6">
             <p className="text-sm text-muted-foreground">
               {entry.sample && <SampleBadge />}{" "}
               {entry.publishedAt
