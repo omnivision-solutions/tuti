@@ -16,4 +16,8 @@ test("a view in the query string is open on its own URL, the plain one otherwise
   expect(activeView("/app/acme/feedback", "view=mine", hrefs)).toBe("/app/acme/feedback?view=mine");
   expect(activeView("/app/acme/feedback", "page=2", hrefs)).toBe("/app/acme/feedback");
   expect(activeView("/app/acme/feedback/12", "", hrefs)).toBe("/app/acme/feedback");
+  expect(activeView("/app/acme/feedback", "view=mine&page=2", hrefs)).toBe("/app/acme/feedback?view=mine");
+  expect(activeView("/app/acme/feedback", "page=2&view=mine", hrefs)).toBe("/app/acme/feedback?view=mine");
+  const boards = ["/app/acme/feedback", "/app/acme/feedback?view=mine", "/app/acme/feedback?view=mine&board=bugs"];
+  expect(activeView("/app/acme/feedback", "board=bugs&view=mine", boards)).toBe("/app/acme/feedback?view=mine&board=bugs");
 });
