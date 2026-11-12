@@ -60,7 +60,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
     >
       {children}
       {widgetProject && <AppWidget slug={widgetProject} />}
-      <Analytics />
+      <Analytics under="/app" />
     </AppShell>
   );
 }

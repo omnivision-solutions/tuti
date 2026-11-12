@@ -61,12 +61,26 @@ export const ANALYTICS_CONFIG = {
 } satisfies Partial<PostHogConfig>;
 
 /**
+ * Whether a page is one analytics counts: under `under` ("/app": the app's own pages), or anywhere without it. PostHog
+ * keeps listening after its page's layout is gone, so a client navigation from /app to a portal (/help) would count.
+ */
+export function isCounted(pathname: string, under: string | undefined) {
+  return !under || pathname === under || pathname.startsWith(`${under}/`);
+}
+
+/**
  * Tuti's cloud only: page views to PostHog, when the server sets POSTHOG_KEY (a self-hosted server leaves it unset, and
  * sends nothing). PostHog's script is fetched only then. Never on portals: their visitors are customers' visitors.
  */
-export function PostHogAnalytics({ token, host }: { token: string; host: string }) {
+export function PostHogAnalytics({ token, host, under }: { token: string; host: string; under?: string }) {
   useEffect(() => {
-    void import("posthog-js").then(({ default: posthog }) => posthog.init(token, { ...ANALYTICS_CONFIG, api_host: host }));
-  }, [token, host]);
+    void import("posthog-js").then(({ default: posthog }) =>
+      posthog.init(token, {
+        ...ANALYTICS_CONFIG,
+        api_host: host,
+        before_send: (event) => (isCounted(window.location.pathname, under) ? ANALYTICS_CONFIG.before_send(event) : null),
+      }),
+    );
+  }, [token, host, under]);
   return null;
 }

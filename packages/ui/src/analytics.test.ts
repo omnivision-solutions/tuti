@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { analyticsSettings } from "./analytics";
-import { ANALYTICS_CONFIG, safeAddress } from "./analytics-client";
+import { ANALYTICS_CONFIG, isCounted, safeAddress } from "./analytics-client";
 
 describe("analytics", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -27,6 +27,14 @@ describe("analytics", () => {
       disable_session_recording: true,
       disable_external_dependency_loading: true,
     });
+  });
+
+  it("counts the app's pages only, not a portal reached from them in the same app", () => {
+    expect(isCounted("/app", "/app")).toBe(true);
+    expect(isCounted("/app/acme/inbox", "/app")).toBe(true);
+    expect(isCounted("/help/docs", "/app")).toBe(false);
+    expect(isCounted("/application", "/app")).toBe(false);
+    expect(isCounted("/pricing", undefined)).toBe(true);
   });
 
   it("sends addresses without the tokens in reset, resume and invite links", () => {
