@@ -248,7 +248,7 @@ export async function InboxPanes({
                 <div className="inbox-list-empty mt-18 mx-5 flex flex-col items-center gap-2 text-center max-md:mt-37.5 [&>svg]:size-6.25 [&>svg]:text-primary [&>p]:text-sm [&>p]:leading-normal [&>p]:font-[550] [&>span]:text-xs [&>span]:leading-normal [&>span]:text-muted-foreground">
                   <CheckIcon aria-hidden />
                   <p>{VIEWS[view].empty}</p>
-                  <span className={cn(none && view !== "open" && "@min-[57rem]/app:hidden")}>{view === "open" ? "You’re up to date." : whereFrom}</span>
+                  <span className={cn(none && view !== "open" && "@min-[52.5rem]/inbox:hidden")}>{view === "open" ? "You’re up to date." : whereFrom}</span>
                 </div>
               ) : (
                 <div className="inbox-rows [&>ul]:m-0">

@@ -1116,6 +1116,13 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await expect(pane.getByText("Nothing needs a reply. New conversations from your widget, email and API will appear here.")).toBeVisible();
   await expect(list.getByText("New conversations show up here as they come in.")).toBeHidden();
   await shots("inbox-stats-empty");
+  // Another view says it in the list: hidden only while the numbers are beside it, and said where they aren't.
+  await owner.goto(`/app/${slug}/inbox?view=closed`);
+  await expect(pane.getByText("Nothing needs a reply. New conversations from your widget, email and API will appear here.")).toBeVisible();
+  await expect(list.getByText("New conversations show up here as they come in.")).toBeHidden();
+  await owner.setViewportSize({ width: 1024, height: 800 });
+  await expect(list.getByText("New conversations show up here as they come in.")).toBeVisible();
+  await owner.setViewportSize({ width: 1280, height: 800 });
 
   // Three come in: one is closed (still new this week), one is spam (in neither number).
   const api = await apiFor(owner, slug);
