@@ -64,9 +64,11 @@ export function PaneBody({ children, className, resetOnNavigate = false }: { chi
     const box = ref.current;
     if (!box) return;
     const place = `${[...document.querySelectorAll("[data-slot=pane-body]")].indexOf(box)} ${url}`;
-    if (traversal) box.scrollTop = places.get(place) ?? 0;
+    if (traversal) box.scrollTop = places.get(place) ?? box.scrollTop;
     else if (resetOnNavigate) box.scrollTop = 0;
     const keep = () => places.set(place, box.scrollTop);
+    // Every URL the body shows has a place, scrolled or not: a body kept across a navigation keeps it on Back.
+    keep();
     box.addEventListener("scroll", keep, { passive: true });
     return () => box.removeEventListener("scroll", keep);
   }, [url, resetOnNavigate]);

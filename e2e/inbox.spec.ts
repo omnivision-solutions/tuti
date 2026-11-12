@@ -1144,6 +1144,23 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
   await shots("inbox-stats");
 
+  // Kept across a change of view, the numbers' pane keeps its place on Back to a view it was never scrolled in.
+  await owner.setViewportSize({ width: 1280, height: 420 });
+  const numbers = pane.locator('[data-slot="pane-body"]');
+  await numbers.evaluate((body) => (body.scrollTop = 120));
+  const kept = await numbers.evaluate((body) => body.scrollTop);
+  expect(kept).toBeGreaterThan(0);
+  const views = owner.getByRole("navigation", { name: "Inbox", exact: true });
+  await views.getByRole("link", { name: /^Closed/ }).click();
+  await expect(owner).toHaveURL(/view=closed/);
+  await views.getByRole("link", { name: /^Spam/ }).click();
+  await expect(owner).toHaveURL(/view=spam/);
+  await owner.goBack();
+  await expect(owner).toHaveURL(/view=closed/);
+  await expect.poll(() => numbers.evaluate((body) => body.scrollTop)).toBe(kept);
+  await owner.goto(`/app/${slug}/inbox`);
+  await owner.setViewportSize({ width: 1280, height: 800 });
+
   // Opening a conversation puts it in their place.
   await list.getByRole("link", { name: /discount for nonprofits/ }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
