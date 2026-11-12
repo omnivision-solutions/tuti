@@ -320,12 +320,20 @@ export function AutopilotPanes({
           </Tabs>
         </aside>
       </Pane>
-      {/* The open page (its header and body), or with none open its notices beside the list's hint; on phones and
-          tablets above the list (under its header, with nothing in it), only as tall as those notices (none: not there). On phones the window scrolls, not
-          the pane: nothing in it clips, so its actions held at the bottom (sticky) stay at the screen's. */}
+      {/* The open page (its header and body); with none open, its notices and what the tab's rows open (with none, what
+          Autopilot is). On phones and tablets above the list (under its header, with nothing in it), only as tall as
+          those notices (none: not there). On phones the window scrolls, not the pane: nothing in it clips, so its
+          actions held at the bottom (sticky) stay at the screen's. */}
       <Pane className={cn(!empty && "@max-[61rem]/app:order-first", "@max-[48rem]/app:overflow-visible @max-[48rem]/app:[&>*]:overflow-visible!", listed && "@max-[61rem]/app:flex-none @max-[61rem]/app:not-has-data-autopilot-notices:hidden")}>
         {children}
-        {listed && hint && <EmptyState className="flex-1 @max-[61rem]/app:hidden" title={hint} />}
+        {/* With nothing in the tab, what Autopilot is (never an empty panel), unless the page's notices say why. */}
+        {listed && (
+          <EmptyState
+            className={cn("flex-1 @max-[61rem]/app:hidden", !hint && "[[data-autopilot-notices]~&]:hidden")}
+            title={hint || "Autopilot"}
+            description={hint ? undefined : "Updates from merged pull requests. Some wait for you; some go out by themselves."}
+          />
+        )}
       </Pane>
     </PaneLayout>
     </Decided>

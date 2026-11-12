@@ -453,6 +453,11 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
   await expect(owner.getByText("Nothing to do (1)")).toHaveCount(0);
   await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+  // Nothing to review, nothing open: the pane beside the list says what Autopilot is, never an empty panel.
+  await owner.goto(`/app/${slug}/autopilot`);
+  await expect(list.getByText("Nothing to review")).toBeVisible();
+  await expect(owner.getByText("Updates from merged pull requests. Some wait for you; some go out by themselves.")).toBeVisible();
+  await checkpoint(owner, "autopilot-nothing-open");
 
   // The changelog's draft has both lines Autopilot wrote, and not the pull requests' own titles.
   await owner.goto(`/app/${slug}/changelog/1`);
