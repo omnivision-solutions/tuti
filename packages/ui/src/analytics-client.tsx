@@ -4,8 +4,33 @@ import type { PostHogConfig } from "posthog-js";
 import { useEffect } from "react";
 
 /**
+ * The app's page names (apps/web/src/app/app's folders that aren't [params]). Any other part of an /app address is
+ * the customer's or its people's (a project, an end user's SSO id, an article, an invite token), so it's sent as a
+ * placeholder. A page added without its name here only shows as [id]: nothing leaks.
+ */
+const APP_PAGES = new Set([
+  "access", "account", "activity", "address", "admin", "ai-answers", "ai-conversations", "ai-models", "articles",
+  "ask-a-person", "asking", "auth", "autopilot", "billing", "boards", "branding", "changelog", "code-changes",
+  "collections", "content-actions", "continue", "custom-code", "customize", "design", "developers", "docs",
+  "docs-home", "domain", "email", "feedback", "forgot-password", "general", "github", "groups", "history",
+  "home-page", "import", "inbox", "insights", "integrations", "invite", "license", "navigation", "new", "p", "panes",
+  "powered-by", "properties", "redirects", "reporting", "reset-password", "resume", "roadmap", "searches", "seo",
+  "settings", "setup", "sign-in", "sign-up", "sso", "support", "tabs", "team", "tuning", "unanswered", "usage",
+  "users", "widget", "writing-style",
+]);
+
+/** An /app path as its route: /app/acme/users/jane%40acme.com is /app/[project]/users/[id]. Other paths are the site's. */
+function routeOf(path: string) {
+  const parts = path.split("/");
+  if (parts[1] !== "app") {
+    return path;
+  }
+  return parts.map((part, index) => (index < 2 || part === "" || APP_PAGES.has(part) ? part : index === 2 ? "[project]" : "[id]")).join("/");
+}
+
+/**
  * A page address as it's sent: no query (reset, resume and sign-in links carry tokens there, and campaigns' utm_*
- * come through PostHog's own properties) and no invite token in the path. Anything that isn't an address is kept.
+ * come through PostHog's own properties), and an /app path as its route (routeOf). Anything else is kept.
  */
 export function safeAddress(value: string) {
   if (value === "$direct") {
@@ -13,7 +38,7 @@ export function safeAddress(value: string) {
   }
   try {
     const url = new URL(value, "http://relative.invalid");
-    const path = url.pathname.replace(/\/auth\/invite\/[^/]+/, "/auth/invite/[token]");
+    const path = routeOf(url.pathname);
     return url.origin === "http://relative.invalid" ? path : url.origin + path;
   } catch {
     return "";
@@ -60,6 +85,8 @@ export const ANALYTICS_CONFIG = {
   person_profiles: "identified_only",
   before_send: (event) => {
     if (event) {
+      // The page's title can name a customer's end user or article; the route says which page it was.
+      delete event.properties.title;
       withSafeAddresses(event.properties);
       withSafeAddresses(event.$set);
       withSafeAddresses(event.$set_once);

@@ -47,9 +47,17 @@ describe("analytics", () => {
 
   it("sends addresses without the tokens in reset, resume and invite links", () => {
     expect(safeAddress("https://tuti.so/app/auth/reset-password?token=secret")).toBe("https://tuti.so/app/auth/reset-password");
-    expect(safeAddress("https://tuti.so/app/auth/invite/secret")).toBe("https://tuti.so/app/auth/invite/[token]");
-    expect(safeAddress("/app/auth/invite/secret/")).toBe("/app/auth/invite/[token]/");
+    expect(safeAddress("https://tuti.so/app/auth/invite/secret")).toBe("https://tuti.so/app/auth/invite/[id]");
+    expect(safeAddress("/app/auth/invite/secret/")).toBe("/app/auth/invite/[id]/");
     expect(safeAddress("$direct")).toBe("$direct");
+  });
+
+  it("sends the app's addresses as routes, without customers' projects, people or content", () => {
+    expect(safeAddress("https://tuti.so/app/acme/users/jane%40acme.com")).toBe("https://tuti.so/app/[project]/users/[id]");
+    expect(safeAddress("/app/acme/docs/getting-started/history")).toBe("/app/[project]/docs/[id]/history");
+    expect(safeAddress("/app/acme/settings/ai-models/tuning")).toBe("/app/[project]/settings/ai-models/tuning");
+    expect(safeAddress("/app/account")).toBe("/app/account");
+    expect(safeAddress("https://tuti.so/pricing")).toBe("https://tuti.so/pricing");
 
     const event = {
       event: "$pageview",
@@ -57,6 +65,7 @@ describe("analytics", () => {
         $current_url: "https://tuti.so/app/admin/email/resume?token=secret#x",
         $pathname: "/app/auth/invite/secret",
         $browser: "Chrome",
+        title: "secret · Users",
         $set_once: { $initial_current_url: "https://tuti.so/app/auth/invite/secret", $initial_pathname: "/app/auth/invite/secret" },
       },
       $set_once: { $initial_current_url: "https://tuti.so/app/auth/reset-password?token=secret" },
