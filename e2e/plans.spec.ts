@@ -151,6 +151,13 @@ test("on the free plan, a project has up to 3 team members, invites included, 2 
   await expect(owner.getByRole("link", { name: "Connect GitHub" })).toHaveAttribute("href", `/app/${slug}/settings/integrations`);
   await expect(owner.getByText("Autopilot needs the Pro plan.")).toHaveCount(0);
   await checkpoint(owner, "autopilot-free-plan");
+  // On a phone, with nothing in its list: the page's heading first, then why there's nothing (no empty list too).
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const heading = (await owner.getByRole("heading", { name: "Autopilot", level: 1 }).boundingBox())!;
+  expect((await owner.getByText("Nothing from Autopilot yet").boundingBox())!.y).toBeGreaterThan(heading.y);
+  await expect(owner.getByText("Nothing to review")).toBeHidden();
+  await checkpoint(owner, "autopilot-empty-phone", { fullPage: false });
+  await owner.setViewportSize({ width: 1280, height: 720 });
 
   // A domain of its own is on Pro, a path of the team's site on Business.
   await owner.goto(`/app/${slug}/customize/address`);

@@ -67,31 +67,31 @@ test("eight pull requests' edits on an article in a collection: the list's tree;
   // The one out of date isn't in the changes, and the page says so above them, with Write it again.
   await expect(owner.getByText("One of its edits was written on an earlier version of the article, so it isn't in the changes below.", { exact: false })).toBeVisible();
   await expect(owner.getByRole("button", { name: "Write it again" })).toHaveCount(1);
-  // In a window tall enough for the sticky toolbar, a chip scrolled underneath goes behind it, not over it.
+  // Its pane's header stays put while the page scrolls under it: a chip scrolled underneath is out of sight behind it.
   await owner.setViewportSize({ width: 1280, height: 640 });
-  await expect(owner.locator('[data-slot="page-header"]')).toHaveCSS("position", "sticky");
-  // This short article still needs enough document below it to scroll its chips under the toolbar.
-  await owner.evaluate(() => {
-    const room = document.createElement("div");
-    room.dataset.scrollRoom = "";
-    room.style.height = "100vh";
-    document.querySelector("main")!.append(room);
-  });
+  const header = owner.locator('[data-slot="pane"]').filter({ has: chips }).locator('[data-slot="pane-header"]');
+  const headerTop = (await header.boundingBox())!.y;
   const underHeader = await chips
     .getByRole("button", { name: /^PR #/ })
     .first()
     .evaluate((chip) => {
-      const header = document.querySelector('[data-slot="page-header"]')!;
-      window.scrollBy(0, chip.getBoundingClientRect().top - header.getBoundingClientRect().top - 4);
+      const body = chip.closest<HTMLElement>(".overflow-y-auto")!;
+      // This short article still needs enough below it to scroll its chips under the header.
+      const room = document.createElement("div");
+      room.dataset.scrollRoom = "";
+      room.style.height = "100vh";
+      body.append(room);
+      const header = body.parentElement!.querySelector('[data-slot="pane-header"]')!;
+      body.scrollBy(0, chip.getBoundingClientRect().top - header.getBoundingClientRect().top - 4);
       const { left, top, width, height } = chip.getBoundingClientRect();
       // Top to bottom, as painted.
       const stack = document.elementsFromPoint(left + width / 2, top + height / 2);
-      return { under: top + height / 2 < header.getBoundingClientRect().bottom, behind: stack.includes(header) && stack.indexOf(header) < stack.findIndex((element) => chip.contains(element)) };
+      return { under: top + height / 2 < header.getBoundingClientRect().bottom, hidden: !stack.some((element) => chip.contains(element)) };
     });
-  expect(underHeader).toEqual({ under: true, behind: true });
+  expect(underHeader).toEqual({ under: true, hidden: true });
+  expect((await header.boundingBox())!.y).toBe(headerTop);
   await checkpoint(owner, "chips-under-header", { fullPage: false });
   await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
-  await owner.evaluate(() => window.scrollTo(0, 0));
   await owner.setViewportSize({ width: 1280, height: 720 });
   await checkpoint(owner, "chips-collapsed", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });

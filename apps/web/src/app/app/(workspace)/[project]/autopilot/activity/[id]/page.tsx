@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 
 import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { GoesOut } from "@/components/goes-out";
-import { PageHeader } from "@/components/page-header";
+import { PaneBody, PaneHeader } from "@/components/pane";
 import { PlanNotice } from "@/components/plan-notice";
 import { PullRequestChip } from "@/components/pull-request-chip";
 import { TargetBadge } from "@/components/target-badge";
@@ -94,107 +94,115 @@ export default async function CodeChangeActivityPage(props: PageProps<"/app/[pro
 
   return (
     <>
-      <PageHeader back={{ href: `/app/${slug}/autopilot/activity`, label: "Activity" }} title={change.title} />
-      <div className="flex flex-wrap items-center gap-2">
-        <PullRequestChip projectSlug={slug} pr={change} byline />
-        {/* Which values, said in full; owners and admins can open them (Settings → AI models). */}
-        {change.tuned.length > 0 && (
-          <span className="text-xs text-muted-foreground">
-            {membership.role === "MEMBER" ? (
-              "Ran with this project's tuning"
-            ) : (
-              <Link href={`/app/${slug}/settings/ai-models/tuning`} className="hover:underline">
-                Ran with this project&apos;s tuning
-              </Link>
-            )}
-            : {tunedLabels(change.tuned)}
-          </span>
-        )}
-      </div>
-      {done && (
-        <Alert>
-          <AlertDescription>{done}</AlertDescription>
-        </Alert>
-      )}
-      {change.state === "analysing" && (
-        <Alert>
-          <AlertDescription>Autopilot is reading this pull request. What it changes shows here when it&apos;s done.</AlertDescription>
-        </Alert>
-      )}
-      {!included && (
-        <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership!.role !== "MEMBER"}>
-          It&apos;s kept, and can be analysed once the plan is back.
-        </PlanNotice>
-      )}
-      {change.state === "paused" && (
-        <Alert>
-          <AlertDescription className="flex flex-col items-start gap-2">
-            {included ? `Paused: ${change.reason} It's analysed when you resume it.` : `Paused: ${change.reason}`}
-            {included && <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label="Resume" />}
-          </AlertDescription>
-        </Alert>
-      )}
-      {(change.state === "failed" || change.state === "nothing_to_do") && (
-        <Alert variant={change.state === "failed" ? "destructive" : "default"}>
-          <AlertDescription className="flex flex-col items-start gap-2">
-            {change.state === "failed" ? `The analysis stopped. ${change.reason}` : `Nothing to do. ${change.reason}`}
-            {included && (
-              <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "failed" ? "Analyse again" : "Analyse anyway"} />
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-      {change.summary && (
-        <section aria-labelledby="what-changed" className="flex flex-col gap-2">
-          <h2 id="what-changed" className="font-semibold">
-            What changed for users
-          </h2>
-          <p>{change.summary}</p>
-        </section>
-      )}
-      {change.why && (
-        <details className="rounded-xl border bg-card px-4 py-3 text-sm">
-          <summary className="cursor-pointer font-medium">Why Autopilot made this change</summary>
-          <p className="pt-2 text-muted-foreground">{change.why}</p>
-        </details>
-      )}
-      {(targets.length > 0 || change.changelog) && (
-        <section aria-labelledby="review-changes" className="rounded-xl border bg-card text-sm">
-          <h2 id="review-changes" className="border-b px-4 py-3 font-semibold">
-            Review changes
-          </h2>
-          <div className="flex flex-col gap-4 p-4">
-            {articles.length > 0 && (
-              <section aria-label="Help center" className="flex flex-col gap-1">
-                <h3 className="group-label">Help center</h3>
-                <ul className="flex flex-col gap-2 border-l pl-3">
-                  {collections.map((collection) => (
-                    <li key={collection ?? ""} className="flex flex-col">
-                      <span className="text-muted-foreground">{collection ?? "No collection"}</span>
-                      <ul className="flex flex-col border-l pl-3">{articles.filter((target) => target.collection === collection).map(item)}</ul>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            {posts.length > 0 && (
-              <section aria-label="Feedback" className="flex flex-col gap-1">
-                <h3 className="group-label">Feedback</h3>
-                <ul className="flex flex-col border-l pl-3">{posts.map(item)}</ul>
-              </section>
-            )}
-            {change.changelog && (
-              <p className="text-muted-foreground">
-                Its line in the changelog is in{" "}
-                <Link href={`/app/${slug}/changelog/${change.changelog.number}`} className="font-medium text-foreground hover:underline">
-                  {change.changelog.title}
-                </Link>
-                .
-              </p>
+      <PaneHeader back={{ href: `/app/${slug}/autopilot/activity`, label: "Activity" }} title={change.title} />
+      <PaneBody>
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-7">
+          {/* The title large, over the page: the pane header's heading says it to screen readers. */}
+          <p aria-hidden className="-mb-3 font-heading text-2xl font-semibold tracking-[-0.02em] break-words @min-[48rem]/app:text-[1.75rem]">
+            {change.title}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <PullRequestChip projectSlug={slug} pr={change} byline />
+            {/* Which values, said in full; owners and admins can open them (Settings → AI models). */}
+            {change.tuned.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {membership.role === "MEMBER" ? (
+                  "Ran with this project's tuning"
+                ) : (
+                  <Link href={`/app/${slug}/settings/ai-models/tuning`} className="hover:underline">
+                    Ran with this project&apos;s tuning
+                  </Link>
+                )}
+                : {tunedLabels(change.tuned)}
+              </span>
             )}
           </div>
-        </section>
-      )}
+          {done && (
+            <Alert>
+              <AlertDescription>{done}</AlertDescription>
+            </Alert>
+          )}
+          {change.state === "analysing" && (
+            <Alert>
+              <AlertDescription>Autopilot is reading this pull request. What it changes shows here when it&apos;s done.</AlertDescription>
+            </Alert>
+          )}
+          {!included && (
+            <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership!.role !== "MEMBER"}>
+              It&apos;s kept, and can be analysed once the plan is back.
+            </PlanNotice>
+          )}
+          {change.state === "paused" && (
+            <Alert>
+              <AlertDescription className="flex flex-col items-start gap-2">
+                {included ? `Paused: ${change.reason} It's analysed when you resume it.` : `Paused: ${change.reason}`}
+                {included && <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label="Resume" />}
+              </AlertDescription>
+            </Alert>
+          )}
+          {(change.state === "failed" || change.state === "nothing_to_do") && (
+            <Alert variant={change.state === "failed" ? "destructive" : "default"}>
+              <AlertDescription className="flex flex-col items-start gap-2">
+                {change.state === "failed" ? `The analysis stopped. ${change.reason}` : `Nothing to do. ${change.reason}`}
+                {included && (
+                  <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "failed" ? "Analyse again" : "Analyse anyway"} />
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+          {change.summary && (
+            <section aria-labelledby="what-changed" className="flex flex-col gap-2">
+              <h2 id="what-changed" className="font-semibold">
+                What changed for users
+              </h2>
+              <p>{change.summary}</p>
+            </section>
+          )}
+          {change.why && (
+            <details className="rounded-xl border bg-card px-4 py-3 text-sm">
+              <summary className="cursor-pointer font-medium">Why Autopilot made this change</summary>
+              <p className="pt-2 text-muted-foreground">{change.why}</p>
+            </details>
+          )}
+          {(targets.length > 0 || change.changelog) && (
+            <section aria-labelledby="review-changes" className="rounded-xl border bg-card text-sm">
+              <h2 id="review-changes" className="border-b px-4 py-3 font-semibold">
+                Review changes
+              </h2>
+              <div className="flex flex-col gap-4 p-4">
+                {articles.length > 0 && (
+                  <section aria-label="Help center" className="flex flex-col gap-1">
+                    <h3 className="group-label">Help center</h3>
+                    <ul className="flex flex-col gap-2 border-l pl-3">
+                      {collections.map((collection) => (
+                        <li key={collection ?? ""} className="flex flex-col">
+                          <span className="text-muted-foreground">{collection ?? "No collection"}</span>
+                          <ul className="flex flex-col border-l pl-3">{articles.filter((target) => target.collection === collection).map(item)}</ul>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+                {posts.length > 0 && (
+                  <section aria-label="Feedback" className="flex flex-col gap-1">
+                    <h3 className="group-label">Feedback</h3>
+                    <ul className="flex flex-col border-l pl-3">{posts.map(item)}</ul>
+                  </section>
+                )}
+                {change.changelog && (
+                  <p className="text-muted-foreground">
+                    Its line in the changelog is in{" "}
+                    <Link href={`/app/${slug}/changelog/${change.changelog.number}`} className="font-medium text-foreground hover:underline">
+                      {change.changelog.title}
+                    </Link>
+                    .
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
+      </PaneBody>
     </>
   );
 }

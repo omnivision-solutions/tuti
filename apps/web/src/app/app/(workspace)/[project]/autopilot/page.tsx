@@ -5,12 +5,14 @@ import { notFound } from "next/navigation";
 
 import { SentHereNotice } from "@/components/autopilot-list";
 import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { buttonVariants } from "@/components/ui/button";
 import { getMembership } from "@/server/membership";
 
-/** Autopilot's page with nothing open (and Activity's): why there's nothing yet (beside the list, from laptop width up, what its tab's rows open: AutopilotPanes). */
+/**
+ * Autopilot's page with nothing open (and Activity's): its notices and why there's nothing yet, beside the list (whose
+ * header is the page's heading), above it on phones and tablets; with none, the list's hint (AutopilotPanes).
+ */
 export default async function CodeChangesPage(props: PageProps<"/app/[project]/autopilot">) {
   const [{ project: slug }, searchParams] = await Promise.all([props.params, props.searchParams]);
   // Sent here from a post's or article's review with nothing from Autopilot left on it.
@@ -28,12 +30,11 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
   // On a plan without Autopilot, those here are kept but can't be analysed (codeChanges.analyse refuses).
   const included = planIncludes(plan, "codeChanges");
 
+  if (!gone && included && first) {
+    return null;
+  }
   return (
-    <>
-      <PageHeader
-        title="Autopilot"
-        description="Updates from merged pull requests. Some wait for you; some go out by themselves."
-      />
+    <div data-autopilot-notices className="flex flex-col gap-4 overflow-y-auto p-4 @min-[48rem]/app:p-6">
       {gone && <SentHereNotice>Nothing from Autopilot is on that {gone} any more.</SentHereNotice>}
       {!included && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership.role !== "MEMBER"}>
@@ -68,6 +69,6 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
           }
         />
       )}
-    </>
+    </div>
   );
 }

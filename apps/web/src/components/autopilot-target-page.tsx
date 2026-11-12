@@ -10,7 +10,7 @@ import { RichText } from "@tuti/content/react";
 
 import { ArticleChangesView, ArticleReview, PartChip } from "@/components/autopilot-article-review";
 import { Outcome, PostReview } from "@/components/autopilot-review";
-import { PageHeader } from "@/components/page-header";
+import { PaneBody, PaneHeader } from "@/components/pane";
 import { PlanNotice } from "@/components/plan-notice";
 import { VoterFaces } from "@/components/voter-faces";
 import { PullRequestChips } from "@/components/pull-request-chip";
@@ -171,122 +171,129 @@ export async function AutopilotTargetPage({
 
   return (
     <>
-      <PageHeader
-        back={{ href: `/app/${slug}/autopilot`, label: "Autopilot" }}
-        title={review.title}
-        meta={
-          post
-            ? [board, `#${post.number}`, plural(post.votes, "vote")].filter(Boolean).join(" · ")
-            : article
-              ? (article.collection ?? "No collection")
-              : // Where approving saves it, unless the team picks another below.
-                `A new article, ${placed ?? "in no collection"}`
-        }
-      />
-      <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
-        {chips.map(({ key, parts, ...of }) =>
-          "pr" in of ? (
-            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} reach={review.reach} pr={of.pr} also={review.also.filter((other) => other.codeChangeId === of.pr.id)} />
-          ) : (
-            <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} verification={of.verification} articleSlug={article!.slug} />
-          ),
-        )}
-      </PullRequestChips>
-      {done && (
-        <Alert>
-          <AlertDescription>{done}</AlertDescription>
-        </Alert>
-      )}
-      {!included && (
-        <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership!.role !== "MEMBER"}>
-          It&apos;s kept, and can be analysed once the plan is back.
-        </PlanNotice>
-      )}
-      {/* Nothing waits: what became of it. */}
-      {!all.some((update) => WAITS.includes(update.status)) && (
-        <Outcome
-          projectSlug={slug}
-          updates={all}
-          href={post ? `/app/${slug}/p/${post.number}` : article ? `/app/${slug}/docs/${article.slug}` : `/app/${slug}/docs`}
-          label={post ? "Open the post" : article ? "Open the article" : "Open Docs"}
-          status={post?.status}
-        />
-      )}
-      {/* While its update waits: what the post's users asked, who, and where else they said it. */}
-      {review.asked && postUpdate && (
-        <section aria-labelledby="they-asked" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm">
-          <h2 id="they-asked" className="group-label">
-            What they asked
-          </h2>
-          {review.asked.excerpt && <blockquote className="border-l-2 pl-3 break-words whitespace-pre-line">{review.asked.excerpt}</blockquote>}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
-            {review.asked.voteCount > 0 && <VoterFaces voters={review.asked.voters} count={review.asked.voteCount} label={askedBy(review.asked.voters, review.asked.voteCount)} />}
-            {review.asked.conversations.length > 0 && (
-              // A flex item: a subject with no spaces (a ticket number, a URL) wraps within the card on a phone.
-              <span className="min-w-0 wrap-anywhere">
-                {review.asked.voteCount > 0 && "· "}
-                {plural(review.asked.conversationCount, "conversation")} in the Inbox:{" "}
-                {review.asked.conversations.map((conversation, i) => (
-                  <span key={conversation.number}>
-                    {i > 0 && ", "}
-                    <Link href={`/app/${slug}/inbox/${conversation.number}`} className="text-foreground hover:underline">
-                      {conversation.subject || `#${conversation.number}`}
-                    </Link>
-                  </span>
-                ))}
-                {review.asked.conversationCount > review.asked.conversations.length && "…"}
-              </span>
-            )}
+      <PaneHeader back={{ href: `/app/${slug}/autopilot`, label: "Autopilot" }} title={review.title} />
+      <PaneBody>
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-7">
+          <div className="flex flex-col gap-1.5">
+            {/* The title large, over the page: the pane header's heading says it to screen readers. */}
+            <p aria-hidden className="font-heading text-2xl font-semibold tracking-[-0.02em] break-words @min-[48rem]/app:text-[1.75rem]">
+              {review.title}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {post
+                ? [board, `#${post.number}`, plural(post.votes, "vote")].filter(Boolean).join(" · ")
+                : article
+                  ? (article.collection ?? "No collection")
+                  : // Where approving saves it, unless the team picks another below.
+                    `A new article, ${placed ?? "in no collection"}`}
+            </p>
           </div>
-        </section>
-      )}
-      {type === "articles" ? (
-        <ArticleReview
-          projectSlug={slug}
-          title={review.title}
-          isNew={!review.articleId || !article}
-          revision={review.revision ?? null}
-          teammateEdit={review.teammateEdit ?? false}
-          overview={review.overview ?? ""}
-          updates={updates}
-          view={await articleViews(review.articleId ?? null, review)}
-          changesReaders={review.changesReaders ?? true}
-          outOfDate={review.outOfDate ?? []}
-          writing={review.writing ?? []}
-          writeFailed={review.writeFailed ?? []}
-          analysisOff={analysisOff}
-          collections={picker}
-          proposed={placed ? PROPOSED : null}
-        />
-      ) : (
-        <PostReview
-          projectSlug={slug}
-          post={post!}
-          reach={review.reach}
-          update={postUpdate}
-          notice={
-            review.also.length > 0 && (
-              <Alert className="border-highlight bg-highlight text-highlight-foreground">
-                <AlertDescription className="text-highlight-foreground">
-                  <ul className="flex flex-col gap-1">
-                    {review.also.map((other) => (
-                      <li key={`${other.codeChangeId} ${other.path}`}>
-                        Also from PR #{other.number}:{" "}
-                        <Link href={`/app/${slug}/autopilot/${other.path}`} className="font-medium underline underline-offset-4">
-                          {other.title}
-                        </Link>{" "}
-                        ({other.stale ? "out of date" : "waits"}).
-                        {/* Its email sends people to the docs: they should say so first. */}
-                        {publishFirst(postUpdate, other) && " Publish it first, so the email points people to docs that say how."}
-                      </li>
+          <PullRequestChips outOfDate={chips.map(({ parts }) => parts.some((part) => part.status === "stale"))}>
+            {chips.map(({ key, parts, ...of }) =>
+              "pr" in of ? (
+                <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} reach={review.reach} pr={of.pr} also={review.also.filter((other) => other.codeChangeId === of.pr.id)} />
+              ) : (
+                <PartChip key={key} projectSlug={slug} updates={parts} all={all} canAnalyse={!analysisOff} writing={review.writing ?? []} verification={of.verification} articleSlug={article!.slug} />
+              ),
+            )}
+          </PullRequestChips>
+          {done && (
+            <Alert>
+              <AlertDescription>{done}</AlertDescription>
+            </Alert>
+          )}
+          {!included && (
+            <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership!.role !== "MEMBER"}>
+              It&apos;s kept, and can be analysed once the plan is back.
+            </PlanNotice>
+          )}
+          {/* Nothing waits: what became of it. */}
+          {!all.some((update) => WAITS.includes(update.status)) && (
+            <Outcome
+              projectSlug={slug}
+              updates={all}
+              href={post ? `/app/${slug}/p/${post.number}` : article ? `/app/${slug}/docs/${article.slug}` : `/app/${slug}/docs`}
+              label={post ? "Open the post" : article ? "Open the article" : "Open Docs"}
+              status={post?.status}
+            />
+          )}
+          {/* While its update waits: what the post's users asked, who, and where else they said it. */}
+          {review.asked && postUpdate && (
+            <section aria-labelledby="they-asked" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm">
+              <h2 id="they-asked" className="group-label">
+                What they asked
+              </h2>
+              {review.asked.excerpt && <blockquote className="border-l-2 pl-3 break-words whitespace-pre-line">{review.asked.excerpt}</blockquote>}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
+                {review.asked.voteCount > 0 && <VoterFaces voters={review.asked.voters} count={review.asked.voteCount} label={askedBy(review.asked.voters, review.asked.voteCount)} />}
+                {review.asked.conversations.length > 0 && (
+                  // A flex item: a subject with no spaces (a ticket number, a URL) wraps within the card on a phone.
+                  <span className="min-w-0 wrap-anywhere">
+                    {review.asked.voteCount > 0 && "· "}
+                    {plural(review.asked.conversationCount, "conversation")} in the Inbox:{" "}
+                    {review.asked.conversations.map((conversation, i) => (
+                      <span key={conversation.number}>
+                        {i > 0 && ", "}
+                        <Link href={`/app/${slug}/inbox/${conversation.number}`} className="text-foreground hover:underline">
+                          {conversation.subject || `#${conversation.number}`}
+                        </Link>
+                      </span>
                     ))}
-                  </ul>
-                </AlertDescription>
-              </Alert>
-            )
-          }
-        />
-      )}
+                    {review.asked.conversationCount > review.asked.conversations.length && "…"}
+                  </span>
+                )}
+              </div>
+            </section>
+          )}
+          {type === "articles" ? (
+            <ArticleReview
+              projectSlug={slug}
+              title={review.title}
+              isNew={!review.articleId || !article}
+              revision={review.revision ?? null}
+              teammateEdit={review.teammateEdit ?? false}
+              overview={review.overview ?? ""}
+              updates={updates}
+              view={await articleViews(review.articleId ?? null, review)}
+              changesReaders={review.changesReaders ?? true}
+              outOfDate={review.outOfDate ?? []}
+              writing={review.writing ?? []}
+              writeFailed={review.writeFailed ?? []}
+              analysisOff={analysisOff}
+              collections={picker}
+              proposed={placed ? PROPOSED : null}
+            />
+          ) : (
+            <PostReview
+              projectSlug={slug}
+              post={post!}
+              reach={review.reach}
+              update={postUpdate}
+              notice={
+                review.also.length > 0 && (
+                  <Alert className="border-highlight bg-highlight text-highlight-foreground">
+                    <AlertDescription className="text-highlight-foreground">
+                      <ul className="flex flex-col gap-1">
+                        {review.also.map((other) => (
+                          <li key={`${other.codeChangeId} ${other.path}`}>
+                            Also from PR #{other.number}:{" "}
+                            <Link href={`/app/${slug}/autopilot/${other.path}`} className="font-medium underline underline-offset-4">
+                              {other.title}
+                            </Link>{" "}
+                            ({other.stale ? "out of date" : "waits"}).
+                            {/* Its email sends people to the docs: they should say so first. */}
+                            {publishFirst(postUpdate, other) && " Publish it first, so the email points people to docs that say how."}
+                          </li>
+                        ))}
+                      </ul>
+                    </AlertDescription>
+                  </Alert>
+                )
+              }
+            />
+          )}
+        </div>
+      </PaneBody>
     </>
   );
 }

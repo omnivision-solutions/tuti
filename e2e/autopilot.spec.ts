@@ -186,23 +186,26 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("checkbox")).toHaveCount(0);
   await checkpoint(owner, "autopilot");
 
-  // The tablet list follows a short title section: it scrolls normally, with no phantom toolbar clearance.
+  // On a tablet the list is a pane of its own, the window's height: a long list scrolls inside it, under its header
+  // (its title and views stay), never the page.
   await owner.setViewportSize({ width: 1000, height: 800 });
   await owner.goto(`/app/${slug}/autopilot`);
   await expect(list.getByRole("link", { name: title, exact: true })).toBeVisible();
-  await expect.soft(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
   // Give this small fixture the scrolling room a longer list has.
-  await list.evaluate((element) => {
+  const scrolled = await list.getByRole("tabpanel").evaluate((panel) => {
     const room = document.createElement("div");
     room.dataset.scrollRoom = "";
     room.style.height = "200vh";
-    element.append(room);
+    panel.append(room);
+    const body = panel.closest<HTMLElement>(".overflow-y-auto")!;
+    body.scrollTop = 500;
+    return body.scrollTop;
   });
-  await owner.evaluate(() => window.scrollTo(0, 500));
-  expect(await owner.evaluate(() => window.scrollY)).toBe(500);
-  await expect(owner.getByRole("heading", { name: "Autopilot", level: 1, exact: true })).not.toBeInViewport();
-  await expect.soft(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
-  await checkpoint(owner, "autopilot-tablet-list-without-phantom-toolbar", { fullPage: false });
+  expect(scrolled).toBe(500);
+  expect(await owner.evaluate(() => window.scrollY)).toBe(0);
+  await expect(owner.getByRole("heading", { name: "Autopilot", level: 1, exact: true })).toBeInViewport();
+  await expect(list.getByRole("tab", { name: "Reviewed" })).toBeInViewport();
+  await checkpoint(owner, "autopilot-tablet-list", { fullPage: false });
   await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
   await owner.evaluate(() => window.scrollTo(0, 0));
   await owner.setViewportSize({ width: 1280, height: 720 });
@@ -450,6 +453,11 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
   await expect(owner.getByText("Nothing to do (1)")).toHaveCount(0);
   await expect(list.getByRole("tab", { name: "To review 0" })).toBeVisible();
+  // Nothing to review, nothing open: the pane beside the list says what Autopilot is, never an empty panel.
+  await owner.goto(`/app/${slug}/autopilot`);
+  await expect(list.getByText("Nothing to review")).toBeVisible();
+  await expect(owner.getByText("Updates from merged pull requests. Some wait for you; some go out by themselves.")).toBeVisible();
+  await checkpoint(owner, "autopilot-nothing-open");
 
   // The changelog's draft has both lines Autopilot wrote, and not the pull requests' own titles.
   await owner.goto(`/app/${slug}/changelog/1`);
@@ -469,8 +477,27 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(phoneList.getByRole("link", { name: title })).toBeInViewport();
   await checkpoint(owner, "autopilot-list-phone", { fullPage: false });
   await phoneList.getByRole("link", { name: article }).click();
-  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeInViewport();
+  // Its pane header's heading is for screen readers on phones; its way back and its title, large, are on the screen.
+  await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeAttached();
+  await expect(owner.locator('[data-slot="pane-header"]').getByRole("link", { name: "Autopilot", exact: true })).toBeInViewport();
+  await expect(owner.locator("p[aria-hidden]", { hasText: article })).toBeInViewport();
   await expect(phoneList).toBeHidden();
+  // The window scrolls under the app's bar (48px): focus and anchors land below it, and once the review's title has
+  // gone up under it, the bar says it.
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "48px");
+  await owner.locator("main").evaluate((main) => {
+    const room = document.createElement("div");
+    room.dataset.scrollRoom = "";
+    room.style.height = "200vh";
+    main.append(room);
+  });
+  await owner.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(owner.locator("header:has([data-slot=bar-path])")).toContainText(article);
+  const firstChip = owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: /^PR #/ }).first();
+  await firstChip.focus();
+  expect((await firstChip.boundingBox())!.y).toBeGreaterThanOrEqual(48);
+  await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
+  await owner.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(owner, "autopilot-article-phone");
   await owner.goto(activityPage);
   await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
@@ -586,7 +613,10 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(phoneList.getByRole("link", { name: draft })).toBeInViewport();
   await checkpoint(owner, "autopilot-list-phone", { fullPage: false });
   await phoneList.getByRole("link", { name: draft }).click();
-  await expect(owner.getByRole("heading", { name: draft, level: 1 })).toBeInViewport();
+  // Its pane header's heading is for screen readers on phones; its way back and its title, large, are on the screen.
+  await expect(owner.getByRole("heading", { name: draft, level: 1 })).toBeAttached();
+  await expect(owner.locator('[data-slot="pane-header"]').getByRole("link", { name: "Autopilot", exact: true })).toBeInViewport();
+  await expect(owner.locator("p[aria-hidden]", { hasText: draft })).toBeInViewport();
   await expect(phoneList).toBeHidden();
   // Approve stays at the bottom of the screen.
   await expect(owner.getByRole("button", { name: "Approve as a draft" })).toBeInViewport();
@@ -617,7 +647,11 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.getByRole("button", { name: "Dismiss", exact: true }).filter({ hasText: "Dismiss" }).click();
   await owner.getByRole("alertdialog", { name: "Dismiss this draft?" }).getByRole("button", { name: "Dismiss" }).click();
   await expect(owner.locator("[data-sonner-toast]").getByText("Dismissed", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("heading", { name: nextDraft, level: 1 })).toBeFocused();
+  // On a phone its title is for screen readers (its pane header shows the way back): focus is on that way back, right
+  // before it, on the screen.
+  const back = owner.locator('[data-slot="pane-header"]').filter({ has: owner.getByRole("heading", { name: nextDraft, level: 1 }) }).getByRole("link", { name: "Autopilot", exact: true });
+  await expect(back).toBeFocused();
+  await expect(back).toBeInViewport();
   await owner.setViewportSize({ width: 1280, height: 720 });
   // Then undone, from its pull request's chip: the draft is deleted, and its part says who undid it.
   await owner.goto(page);

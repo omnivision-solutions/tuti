@@ -249,9 +249,15 @@ the list picks none to approve at once.
   on every board) then Help center (articles, and new articles' drafts), the ones that
   reach the most people first; and Activity, every merged pull request (those with
   nothing to do folded away at the end, To review pointing to those not read yet).
-  With at least 61rem of sidebar inset, its list sits beside the page (20rem wide, 24rem from 77rem of inset).
-  With less room, the list or the picked page fills the width; the list sits below a short title section,
-  which scrolls with it and reserves no sticky toolbar space. Opening the first review follows this same layout.
+  Its list is a pane titled Autopilot (the page's heading while nothing is open beside it, a level-2 heading once
+  something is), To review, Reviewed and Activity as pills in a row of their own under the title (the pane is too
+  narrow for them beside it); they are tabs, not links (the rows' pages don't say which one they're in).
+  With at least 61rem of sidebar inset, the list pane sits beside the open page's pane (20rem wide, 24rem from 77rem
+  of inset); with nothing open, that pane says what a row of the tab opens, or with nothing in the tab, what
+  Autopilot is, never an empty panel. With less room, the list or the picked page fills the width, each a pane the
+  window's height from the shell's tablet width up, the list scrolling inside it under its header; the page's
+  notices (sent here from a review with nothing left, the plan's) sit above the list, or with nothing to list,
+  under its header. Opening the first review follows this same layout.
   The post or article picked opens beside it (`/autopilot/feedback/<id>`,
   `/autopilot/articles/<id>`): its pull requests' chips, then what happens to it;
   once nothing of it waits, the next one to review opens by itself. One going out by itself says when in its bar,
@@ -325,8 +331,7 @@ the list picks none to approve at once.
   Settings, a collection's Content and Settings) is
   underline tabs, `SubNav` (in a pane's header, pills: `FilterPills`, under Panes); switching a control's mode (the reply
   box's Reply and Note) is a segmented
-  `Tabs` (Autopilot's To review and Reviewed are still segmented till its
-redesign). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
+  `Tabs` (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed) are underline tabs (`SubNav`), as the board's sort tabs, so the
   portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
   count): a second row of chips or tabs would put more between the visitor and the list. The portal roadmap's three columns, one at a time on phones, are a segmented control:
@@ -529,7 +534,7 @@ Use these instead of hand-rolling layout:
   its title the page's heading at every width (the Page title style), `back` above it, then
   `description`: one short muted line saying what the page is for ("Ideas and problems your
   users posted, by status."; on portals the team's own words), on a section's main page
-  (Home, Feedback, Roadmap, Changelog, Docs, Autopilot, Users, Settings), not on a page
+  (Home, Feedback, Roadmap, Changelog, Docs, Users, Settings), not on a page
   about one thing; then `meta`, facts about the thing shown ("#12 · Ada · 3 votes").
   The actions sit beside the title and description, on the right, from tablet width up.
   `more` is the actions used less often, behind "More actions".
@@ -673,12 +678,13 @@ at desktop and phone widths, in light and dark (in development only).
 - **`PaneLayout`**, **`Pane`**, **`PaneBody`** (`components/pane.tsx`): a row of panes (the shell gives it the whole
   width), one white panel (`rounded-2xl`, ~14px corners, a `border` ring, nothing scrolling past its edge), and what scrolls in it.
   No card inside a card: a pane's lists and row cards sit on the pane.
-- **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`): a pane's one-row header, 60px, a line
+- **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`): a pane's one-row header, 60px, a line
   under it. The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
   type), and on phones "‹ All posts" alone, the title for screen readers. `description` follows the title from 56rem
   of the shell up ("· Your project's name…"). `filters` are pills after the title, on phones a row of their own under
   it. `actions` at the right end: round icon buttons (`outline`, `icon-sm`, with an `aria-label`) and at most one
-  primary button.
+  primary button. Its title is the page's `h1`; `level={2}` on a list's pane while the open item beside it has
+  the page's heading (Autopilot's list, the Inbox's), so a page has one `h1`.
 - **`SectionPane`**, **`SectionGroup`**, **`SectionLink`**: an area's own menu (Feedback's views, boards and
   statuses; Settings' pages): a 248px pane titled by the area, its actions (search, +) beside the title; groups under
   a quiet sentence-case label (13px, muted; never capitals); each link an icon or a colour dot, its title and a count.

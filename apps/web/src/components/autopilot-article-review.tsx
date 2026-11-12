@@ -59,8 +59,9 @@ export function ArticleChangesView({ changes, article, count }: { changes: React
   };
   return (
     <section aria-label="The article" className="rounded-xl border bg-card">
-      {/* Stays under the page's toolbar (the menu row on phones) while the article scrolls. */}
-      <div className="sticky top-12 topbar:top-(--app-toolbar-height) z-10 flex flex-wrap items-center gap-2 rounded-t-xl border-b bg-card px-3 py-2">
+      {/* Stays under the menu row on phones while the article scrolls; from tablet width up (no row), at the top of the
+          window or of its pane's body. */}
+      <div className="sticky top-12 topbar:top-0 z-10 flex flex-wrap items-center gap-2 rounded-t-xl border-b bg-card px-3 py-2">
         <Tabs value={view} onValueChange={(value) => setView(value as "changes" | "article")}>
           <TabsList aria-label="Show">
             <TabsTrigger value="changes">Changes</TabsTrigger>
@@ -324,7 +325,7 @@ export function ArticleReview({
       {view}
       {/* One bar: while any edit waits for someone, none goes out by itself (Approve takes them all). */}
       {scheduled.length > 0 && waiting.length === 0 && (
-        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between launcher:pr-24">
+        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-card px-4 py-3 @min-[48rem]/app:-mx-8 @min-[48rem]/app:px-8 sm:flex-row sm:items-center sm:justify-between launcher:pr-24">
           <p className="text-sm font-medium">
             <GoesOut at={scheduled[0]!.dueAt!} />
             {teammateEdit && <span className="block font-normal text-muted-foreground">Includes your team&apos;s unpublished edit: it waits for you</span>}
@@ -347,7 +348,7 @@ export function ArticleReview({
       )}
       {waiting.length > 0 && (
         // Stays at the bottom of the screen while the article scrolls.
-        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end launcher:pr-24">
+        <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-card px-4 py-3 @min-[48rem]/app:-mx-8 @min-[48rem]/app:px-8 sm:flex-row sm:items-center sm:justify-end launcher:pr-24">
           {(stopped || teammateEdit) && (
             <p className="text-sm text-muted-foreground">
               {stopped && <Stopped by={stopped.waitReason!} at={stopped.wouldHaveGoneOutAt ?? null} />}
