@@ -727,7 +727,7 @@ export function DocsWorkspace({
           <SheetContent overlayClassName="bg-(--docs-overlay) supports-backdrop-filter:backdrop-blur-none" side="bottom" className={cn(
             "docs-tree-sheet [&::before]:[content:''] [&::before]:shrink-0 [&::before]:w-8 [&::before]:h-1 [&::before]:rounded-[4px]",
             "[&::before]:bg-input [&::before]:m-[8px_auto_0] [inset:64px_8px_8px]! h-auto! max-h-[calc(100dvh_-_72px)]",
-            "gap-0 rounded-[16px] border border-border bg-card",
+            "gap-0 rounded-2xl border border-border bg-card",
             "[&_.docs-tree-content]:min-h-0 max-sm:top-20! [&_.docs-tree-heading]:pr-14.5",
             "[&_>_[data-slot='sheet-close']]:top-5.5 [&_>_[data-slot='sheet-close']]:right-3.5",
           )}>
