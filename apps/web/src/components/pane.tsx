@@ -188,7 +188,8 @@ export function SectionGroup({ label, action, children }: { label?: ReactNode; a
 
 /**
  * A section pane's link: its icon (or a coloured `dot`), its title and a count. The open one is a neutral fill (green
- * is for the page's one main action). Open as its section pane works out, or as `active` says.
+ * is for the page's one main action). Open as its section pane works out, or as `active` says; `currentIs` "true" where
+ * the page is something open beside it (the Inbox's view, a conversation open in it).
  */
 export function SectionLink({
   href,
@@ -196,6 +197,7 @@ export function SectionLink({
   dot,
   count,
   active,
+  currentIs = "page",
   children,
 }: {
   href: string;
@@ -203,6 +205,7 @@ export function SectionLink({
   dot?: string;
   count?: ReactNode;
   active?: boolean;
+  currentIs?: "page" | "true";
   children: ReactNode;
 }) {
   const current = useContext(SectionCurrentContext);
@@ -210,8 +213,8 @@ export function SectionLink({
   return (
     <Link
       href={href}
-      aria-current={open ? "page" : undefined}
-      className="flex h-8.5 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors hover:bg-muted aria-[current=page]:bg-accent [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground aria-[current=page]:[&>svg]:text-foreground"
+      aria-current={open ? currentIs : undefined}
+      className="flex h-8.5 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors hover:bg-muted aria-current:bg-accent [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground aria-current:[&>svg]:text-foreground"
     >
       {icon}
       {dot && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: dot }} />}

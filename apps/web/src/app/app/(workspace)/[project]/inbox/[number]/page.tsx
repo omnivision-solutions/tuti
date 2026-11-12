@@ -228,7 +228,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             }
           />
           {/* On phones the header has the way back, the subject under it (to the eye: the header's heading is for screen readers). */}
-          <p aria-hidden className="inbox-conversation-subject shrink-0 truncate px-5 pt-2.5 font-semibold @min-[48rem]/app:hidden">
+          <p aria-hidden className="inbox-conversation-subject shrink-0 px-5 wrap-anywhere pt-2.5 font-semibold @min-[48rem]/app:hidden">
             {conversation.subject}
           </p>
           <p className="inbox-conversation-meta flex shrink-0 flex-wrap items-center gap-1.5 border-b px-5 py-2 text-xs leading-5 text-muted-foreground wrap-anywhere">

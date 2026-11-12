@@ -187,7 +187,7 @@ export async function InboxPanes({
       <SectionPane title="Inbox">
         <SectionGroup>
           {views.map((v, i) => (
-            <SectionLink key={v} href={inboxHref(slug, v)} icon={VIEW_ICONS[v]} count={counts[i]} active={v === view}>
+            <SectionLink key={v} href={inboxHref(slug, v)} icon={VIEW_ICONS[v]} count={counts[i]} active={v === view} currentIs={open === null ? "page" : "true"}>
               {VIEWS[v].title}
             </SectionLink>
           ))}
@@ -408,7 +408,12 @@ export async function InboxPanes({
                     items={[
                       {
                         label: "Waiting for a reply",
-                        value: stats.waiting,
+                        // The Needs reply view's count: it opens it.
+                        value: (
+                          <Link href={inboxHref(slug, "open")} className="hover:underline">
+                            {stats.waiting}
+                          </Link>
+                        ),
                         detail: stats.oldest ? `Longest ${longDuration(stats.oldest)}` : "Nobody's waiting",
                       },
                       {
