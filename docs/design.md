@@ -530,8 +530,7 @@ Use these instead of hand-rolling layout:
   its title the page's heading at every width (the Page title style), `back` above it, then
   `description`: one short muted line saying what the page is for ("Ideas and problems your
   users posted, by status."; on portals the team's own words), on a section's main page
-  (Feedback, Roadmap, Changelog, Docs, Settings; a page of panes, Home and Users, has
-  `PaneHeader`'s instead), not on a page
+  (Feedback, Roadmap, Docs; a page of panes has `PaneHeader`'s instead), not on a page
   about one thing; then `meta`, facts about the thing shown ("#12 · Ada · 3 votes").
   The actions sit beside the title and description, on the right, from tablet width up.
   `more` is the actions used less often, behind "More actions".
