@@ -60,9 +60,14 @@ test("Docs pages are panes: the tree as the area's pane, views as pills, the edi
   await checkpoint(team, "docs-overview-phone", { fullPage: false });
   // "View on help center" stays in words: under More actions, the header keeping room for the page's title.
   await expect(header.getByRole("link", { name: "View on help center", exact: true })).toBeHidden();
-  await header.getByRole("button", { name: "More actions", exact: true }).click();
+  // Clicked again until it opens: a click before the page hydrates does nothing.
+  const moreActions = header.getByRole("button", { name: "More actions", exact: true });
+  await expect(async () => {
+    await moreActions.click();
+    await expect(moreActions).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass();
   await expect(header.getByRole("link", { name: "View on help center", exact: true })).toHaveText("View on help center");
-  await header.getByRole("button", { name: "More actions", exact: true }).click();
+  await moreActions.click();
   await header.getByRole("button", { name: "Browse docs", exact: true }).click();
   const tree = team.getByRole("dialog", { name: "Docs navigation", exact: true });
   await expect(tree.getByRole("link", { name: "Getting started", exact: true })).toBeVisible();
