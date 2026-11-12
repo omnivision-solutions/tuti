@@ -93,10 +93,10 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
   for (const { projectId } of projects) {
     // An avatar is kept only while its owner is on the team of the project it was uploaded in, or one of its users
     // (an import copies theirs: @tuti/jobs import-feedback.ts): someone who left gets their initials back (their
-    // `image` too, while it's still that upload's link), and the upload is released below.
+    // `image` too, while it's still that upload, saved as it is now or as a link from before), and the upload is released below.
     await prisma.$executeRaw`
       UPDATE "user" SET
-        image = CASE WHEN image LIKE '%/media/' || "imageId" || '/%' THEN NULL ELSE image END,
+        image = CASE WHEN image LIKE 'm/' || "imageId" || '/%' OR image LIKE '%/media/' || "imageId" || '/%' THEN NULL ELSE image END,
         "imageId" = NULL
       WHERE "imageId" IN (SELECT id FROM media WHERE "projectId" = ${projectId} AND "attachedAt" < ${cutoff})
         AND id NOT IN (SELECT "userId" FROM team_member WHERE "projectId" = ${projectId})

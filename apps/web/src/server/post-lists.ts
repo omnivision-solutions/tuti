@@ -1,6 +1,7 @@
 import { type PostStatus, type PostVisibility, Prisma, prisma } from "@tuti/db";
 import { audienceReach, postAudience, projectEmailWaits } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
+import { pictureUrl } from "@tuti/shared/media-links";
 
 import type { GroupRule } from "@/lib/group-conditions";
 import { ACTIVE_STATUSES, POSTS_PER_PAGE, type PostFilters, type Sort } from "@/lib/post-filters";
@@ -165,8 +166,8 @@ export const VOTERS_SHOWN = 10;
  * in the project's app, as voterTotals finds it; none for the team or someone it doesn't know), the
  * biggest number first, then the latest vote.
  */
-export function postVoters(projectId: string, property: string | null, postId: string) {
-  return prisma.$queryRaw<{ userId: string; name: string; image: string | null; company: string | null; value: number | null }[]>`
+export async function postVoters(projectId: string, property: string | null, postId: string) {
+  const voters = await prisma.$queryRaw<{ userId: string; name: string; image: string | null; company: string | null; value: number | null }[]>`
     SELECT "userId", name, image, company, value::float8 AS value FROM (
       SELECT DISTINCT ON (v."userId") v."userId", u.name, u.image, v."createdAt",
         CASE WHEN jsonb_typeof(s.attributes -> 'company') = 'string' THEN s.attributes ->> 'company' END AS company,
@@ -182,6 +183,8 @@ export function postVoters(projectId: string, property: string | null, postId: s
     ) voter
     ORDER BY value DESC NULLS LAST, "createdAt" DESC, "userId"
     LIMIT ${VOTERS_SHOWN}`;
+  // Read past the client, so the saved picture is made a link here (as @tuti/db does).
+  return voters.map((voter) => ({ ...voter, image: pictureUrl(voter.image) }));
 }
 
 /**
