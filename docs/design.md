@@ -664,6 +664,38 @@ Use these instead of hand-rolling layout:
   as a button use `<Link className={buttonVariants(...)}>`, not
   `<Button render={<Link />}>` (that adds `role="button"`).
 
+### Panes (the admin's new layout)
+
+The admin is moving, area by area, to one layout shared with every page: the sidebar and the page on the shell's canvas
+(the sidebar's colour, no line between them), the page made of white panes 8px apart. Each area moves to these once,
+in its own change; until then its page keeps `PageHeader` and the rest below. `/app/design/panes` shows them together,
+at desktop and phone widths, in light and dark (in development only).
+
+- **`PaneLayout`**, **`Pane`**, **`PaneBody`** (`components/pane.tsx`): a row of panes (the shell gives it the whole
+  width), one white panel (16px corners, a `border` ring, nothing scrolling past its edge), and what scrolls in it.
+  No card inside a card: a pane's lists and row cards sit on the pane.
+- **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`): a pane's one-row header, 60px, a line
+  under it. The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
+  type), and on phones "‹ All posts" alone, the title for screen readers. `description` follows the title from 56rem
+  of the shell up ("· Your project's name…"). `filters` are pills after the title, on phones a row of their own under
+  it. `actions` at the right end: round icon buttons (`outline`, `icon-sm`, with an `aria-label`) and at most one
+  primary button.
+- **`SectionPane`**, **`SectionGroup`**, **`SectionLink`**: an area's own menu (Feedback's views, boards and
+  statuses; Settings' pages): a 248px pane titled by the area, its actions (search, +) beside the title; groups under
+  a quiet sentence-case label (13px, muted; never capitals); each link an icon or a colour dot, its title and a count.
+  The open one is a neutral fill (`accent`), so a page shows one green, its primary action. On phones the pane is
+  hidden and the pane header's menu button opens it as a drawer from the left, which closes as a link is picked.
+- **`FilterPills`** (`pillClass` for a pill that isn't a link): a page's views as rounded pills with counts, the open
+  one filled; one row that scrolls sideways when it doesn't fit, like `SubNav`'s.
+- **`ItemGroup`**: a list's group (posts by status): a tinted (`muted`) bar with its icon, title and count that folds
+  what's under it.
+- **`SettingsCard`** + **`SettingRow`** (`label`, `description`, `htmlFor`, `inline`): settings as one card of rows,
+  the label and a line on what it does on the left, the control on the right. In a card under 34rem wide the control
+  goes under them at the card's width; `inline` keeps a short control (a switch, a button) on the right.
+- **`StatStrip`**: a page's numbers in one card, side by side between lines; under 40rem two tiles to a row.
+- **Pill buttons**: inside `data-pill-buttons` every `Button` is a pill (`--button-radius`); the admin's shell sets it
+  as it moves to panes. Elsewhere (the portal, marketing) buttons keep their corners.
+
 ## Responsive rules
 
 - Design for 390px first; nothing may overflow or squeeze text to nothing.

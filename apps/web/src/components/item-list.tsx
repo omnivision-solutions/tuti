@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { ChevronUpIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 /** A divided list of rows, usually inside a Card. */
@@ -90,5 +90,23 @@ export function VoteCount({ count }: { count: number }) {
       {count}
       <span className="sr-only">{count === 1 ? " vote" : " votes"}</span>
     </span>
+  );
+}
+
+/**
+ * A list's group (Feedback's posts by status): a tinted bar with its icon, title and count that folds what's under it
+ * (a native `<details>`), open unless `defaultOpen` is false.
+ */
+export function ItemGroup({ icon, title, count, defaultOpen = true, children }: { icon?: ReactNode; title: ReactNode; count?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  return (
+    <details open={defaultOpen} className="group/item-group">
+      <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg bg-muted px-3 text-sm font-semibold select-none [&::-webkit-details-marker]:hidden [&>svg]:size-4 [&>svg]:shrink-0">
+        <ChevronDownIcon aria-hidden className="-rotate-90 text-muted-foreground transition-transform group-open/item-group:rotate-0" />
+        {icon}
+        {title}
+        {count != null && <span className="font-medium text-muted-foreground tabular-nums">{count}</span>}
+      </summary>
+      <div className="py-1">{children}</div>
+    </details>
   );
 }
