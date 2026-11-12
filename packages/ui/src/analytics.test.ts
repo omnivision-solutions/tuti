@@ -19,13 +19,21 @@ describe("analytics", () => {
   });
 
   it("stores nothing in the browser and records only page views", () => {
-    expect(ANALYTICS_CONFIG).toMatchObject({
+    const { before_send: _, ...config } = ANALYTICS_CONFIG;
+    expect(config).toEqual({
       persistence: "memory",
+      capture_pageview: "history_change",
+      capture_pageleave: false,
       autocapture: false,
       capture_heatmaps: false,
       capture_dead_clicks: false,
+      capture_exceptions: false,
+      capture_performance: false,
       disable_session_recording: true,
+      disable_surveys: true,
+      advanced_disable_flags: true,
       disable_external_dependency_loading: true,
+      person_profiles: "identified_only",
     });
   });
 
