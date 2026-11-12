@@ -10,6 +10,7 @@ import {
   GitPullRequestIcon,
   HouseIcon,
   InboxIcon,
+  LayoutGridIcon,
   type LucideIcon,
   LogOutIcon,
   MapIcon,
@@ -27,7 +28,7 @@ import {
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { useEffect } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -98,12 +99,7 @@ export function AppSidebar({
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
   useOpenCountInTitle(current?.openConversations ?? 0);
   const nav = current ? projectNav(current) : [];
-  // The closest match is the current page: Roadmap, not Feedback, on /feedback/roadmap. A page inside a part (a post, an
-  // article, a changelog entry) keeps its part marked.
-  const active = nav
-    .flat()
-    .filter((item) => pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`)) || (!!item.also && pathname.startsWith(`${item.also}/`)))
-    .sort((a, b) => b.href.length - a.href.length)[0];
+  const active = activeItem(nav, pathname);
 
   return (
     <Sidebar collapsible="icon">
@@ -152,6 +148,119 @@ export function AppSidebar({
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+/**
+ * The closest match is the current page: Roadmap, not Feedback, on /feedback/roadmap. A page inside a part (a post, an
+ * article, a changelog entry) keeps its part marked.
+ */
+function activeItem(nav: NavItem[][], pathname: string) {
+  return nav
+    .flat()
+    .filter((item) => pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`)) || (!!item.also && pathname.startsWith(`${item.also}/`)))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+}
+
+/** The phone tab bar's parts, the rest under More (the sidebar's menu). */
+const TABS = ["Home", "Inbox", "Feedback", "Autopilot"];
+
+/**
+ * The phone tab bar on this page, on a part's lists only (Feedback's posts, its boards, the Roadmap): a page of one
+ * thing (a post, a conversation, an article, its history: the route's `params` name it; a post open beside Feedback's
+ * list says so itself, HidesTabBar), a new one, and a setting have the screen to themselves and their way back; Docs has none.
+ * `open`: its part's tab (Feedback on the Roadmap); none for More's.
+ */
+export function phoneTabs(project: ProjectSummary, pathname: string, params: Record<string, unknown>) {
+  const nav = projectNav(project);
+  const active = activeItem(nav, pathname);
+  if (!active) {
+    return null;
+  }
+  // The routes past the project's own address (`/app/<project>`), so a slug the team picks ("settings") is never taken
+  // for one. A page of one thing (a post, a conversation, an article, its history) has its id in `params`.
+  const route = pathname.slice(`/app/${project.slug}`.length);
+  const onePage =
+    ["number", "id", "slug", "user"].some((key) => key in params) ||
+    route === "/changelog/new" ||
+    // Docs has its own phone navigation, and its workspace is the window's height, scrolling inside (DocsWorkspace).
+    /^\/docs(\/|$)/.test(route) ||
+    /^\/(settings|customize)\/./.test(route);
+  if (onePage) {
+    return null;
+  }
+  const tabs = nav.flat().filter((item) => TABS.includes(item.title));
+  return { tabs, open: tabs.find((item) => item === active || (item.section && active.href.startsWith(`${item.href}/`))) };
+}
+
+/**
+ * A page of one thing that has no route of its own says so while it's open (a post beside Feedback's list, `?post=`),
+ * rather than the shell reading the query string. TabBarScope holds it for the shell (AppShell).
+ */
+const TabBarHidden = createContext<{ hidden: boolean; hide: (hidden: boolean) => void }>({ hidden: false, hide: () => {} });
+
+export function TabBarScope({ children }: { children: ReactNode }) {
+  const [hidden, hide] = useState(false);
+  return <TabBarHidden value={{ hidden, hide }}>{children}</TabBarHidden>;
+}
+
+export function HidesTabBar() {
+  const { hide } = useContext(TabBarHidden);
+  useEffect(() => {
+    hide(true);
+    return () => hide(false);
+  }, [hide]);
+  // In the server's HTML too: the bar is hidden from the first paint, before this runs (AppTabBar).
+  return <span hidden data-hides-tab-bar />;
+}
+
+/**
+ * On phones, the project's main parts at the bottom of the screen (phoneTabs), and More: the sidebar as a menu. Not
+ * where a page pins its actions to the bottom (PageActions).
+ */
+export function AppTabBar({ projects, fallbackSlug }: { projects: ProjectSummary[]; fallbackSlug: string | null }) {
+  const pathname = usePathname();
+  const current = useCurrentProject(projects, fallbackSlug);
+  const params = useParams();
+  const { setOpenMobile } = useSidebar();
+  const { hidden } = useContext(TabBarHidden);
+  const bar = params.project && current ? phoneTabs(current, pathname, params) : null;
+  if (!bar || hidden) {
+    return null;
+  }
+  const tab = "relative flex max-w-20 flex-1 flex-col items-center gap-0.5 rounded-xl pt-1.5 pb-1 text-xs font-medium text-muted-foreground [&>svg]:size-5";
+  const on = "bg-card text-foreground shadow-xs ring-1 ring-sidebar-border";
+  return (
+    <nav
+      aria-label="Main"
+      data-tab-bar
+      className="fixed inset-x-0 bottom-0 z-20 flex justify-around gap-1 bg-sidebar px-1.5 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden [:root:has([data-pinned-actions],[data-hides-tab-bar])_&]:hidden"
+    >
+      {bar.tabs.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          aria-current={item === bar.open ? "page" : undefined}
+          className={cn(tab, item === bar.open && on)}
+        >
+          <item.icon aria-hidden />
+          {item.title}
+          {!!item.badge && (
+            // Part of the link's name ("Inbox 4 open").
+            <span
+              className={cn("absolute top-0 left-[calc(50%+0.25rem)] h-5 min-w-5 rounded-full bg-sidebar-accent px-1.5 text-center text-xs leading-5 font-medium tabular-nums", item.badge.urgent && "bg-highlight text-highlight-foreground")}
+            >
+              {item.badge.count}
+              <span className="sr-only"> {item.badge.label}</span>
+            </span>
+          )}
+        </Link>
+      ))}
+      <button type="button" onClick={() => setOpenMobile(true)} className={cn(tab, !bar.open && on)}>
+        <LayoutGridIcon aria-hidden />
+        More
+      </button>
+    </nav>
   );
 }
 

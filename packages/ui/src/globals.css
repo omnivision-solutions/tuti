@@ -15,6 +15,8 @@
    bottom of the screen leaves its corner (56px, 20px in) clear. The right-hand corner, where Tuti's help project keeps
    it: moved to the left (Customize → Widget), this would need its side too (docs/design.md, PageActions). */
 @custom-variant launcher (:root:has([data-app-widget]) &);
+/* On phones, where the app's tab bar is at the bottom of the screen (AppTabBar, on a part's own page). */
+@custom-variant tabbar (:root:has([data-tab-bar]) &);
 /* In the app on phones, where a page's actions are a menu from the top bar (PageActions). */
 @custom-variant phonebar {
   @media (width < 48rem) {
@@ -342,8 +344,9 @@
 }
 
 /* A group's label: the heading of a group inside a list, card or menu (docs/design.md, Group label). */
-/* Buttons are pills where `data-pill-buttons` is set (the admin's panes, docs/design.md → Panes); elsewhere a
-   button's corners come from `--radius` where it is (Button). */
+/* Buttons are pills in the admin (its sidebar's page, dialogs and menus too) and where `data-pill-buttons` is set
+   (docs/design.md → Panes); elsewhere, the portals, a button's corners come from `--radius` where it is (Button). */
+:root:has([data-slot="sidebar-wrapper"]),
 [data-pill-buttons] {
   --button-radius: 9999px;
   --button-radius-sm: 9999px;
@@ -383,12 +386,14 @@
       scroll-padding-top: 3rem;
     }
   }
-  /* A page's actions pinned to the bottom on phones (PageActions): a field focused near the bottom scrolls above them. */
+  /* A page's actions pinned to the bottom on phones (PageActions), or the tab bar (AppTabBar): what's focused near the
+     bottom scrolls above them. */
   @media (width < 48rem) {
     html:has([data-slot="customize-settings"]) {
       scroll-padding-top: 6rem;
     }
-    html:has([data-pinned-actions]) {
+    html:has([data-pinned-actions]),
+    html:has([data-tab-bar]) {
       scroll-padding-bottom: 6rem;
     }
   }

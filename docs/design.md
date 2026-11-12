@@ -696,8 +696,18 @@ at desktop and phone widths, in light and dark (in development only).
   the label and a line on what it does on the left, the control on the right. In a card under 34rem wide the control
   goes under them at the card's width; `inline` keeps a short control (a switch, a button) on the right.
 - **`StatStrip`**: a page's numbers in one card, side by side between lines; under 40rem two tiles to a row.
-- **Pill buttons**: inside `data-pill-buttons` every `Button` is a pill (`--button-radius`); the admin's shell sets it
-  as it moves to panes. Elsewhere (the portal, marketing) buttons keep their corners.
+- **Pill buttons**: every `Button` in the admin is a pill (`--button-radius`, set while the sidebar's shell is on
+  the page: its dialogs and menus too), and inside `data-pill-buttons`. Elsewhere (the portal, marketing) buttons
+  keep their corners.
+- **The shell**: the sidebar sits on the canvas with no line beside it. A page of the new panes (`PaneLayout`) sits
+  on that canvas too, 8px in, the window's height from tablet width up; a page not yet moved keeps its own background.
+- **Phone tab bar** (`AppTabBar`): on phones Home, Inbox, Feedback and Autopilot sit at the bottom of the screen, each
+  with the sidebar's count, and More opens the sidebar as a menu for the rest. The open part's tab is a raised white
+  pill (Feedback on the Roadmap; More on a part without a tab). It shows on a part's lists only: a page of one thing
+  (a post, a conversation, an article, a review), a new one, its history and a settings page of its own (Settings',
+  Customize's, a collection's) have the screen to themselves and their way back, as does a page that pins its actions
+  to the bottom. A view inside a list's page (`?view=`) keeps the bar with the page. Docs has none: it has its own
+  phone navigation, and its workspace is the window's height, scrolling inside. Tuti's own chat launcher sits above it.
 
 ## Responsive rules
 

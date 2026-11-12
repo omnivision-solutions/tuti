@@ -4,6 +4,7 @@ import { ExternalLinkIcon, LayoutListIcon, MessageSquareIcon, PlusIcon } from "l
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { HidesTabBar } from "@/components/app-sidebar";
 import { CopyButton } from "@/components/copy-button";
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys } from "@/components/feedback-keys";
@@ -182,6 +183,8 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       />
 
       <FeedbackKeys order={listed.map((post) => post.number)} open={open} base={withPost(null)} />
+      {/* A post open beside the list has the phone's screen to itself: no tab bar. */}
+      {open !== null && <HidesTabBar />}
       {/* The list (its whole column until a post opens) and, beside it, the post a row opened; on a phone, one or the other. */}
       <div data-slot="pane-layout" className={cn("flex flex-col gap-6", open !== null && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start")}>
         {/* Rows picked for Set status, Move to board and Merge, the bar in the filters' place once some are. */}
