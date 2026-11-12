@@ -39,3 +39,13 @@ test("a page of one thing, a new one and a setting have the screen to themselves
   expect(open("/app/acme/docs/collections/guides/settings", { collection: "guides" })).toBeNull();
   expect(open("/app/acme/customize/branding")).toBeNull();
 });
+
+test("a slug the team picks is never taken for a route: a collection or tab called Settings or History keeps the bar", () => {
+  expect(open("/app/acme/docs/collections/settings", { collection: "settings" })).toBe("More");
+  expect(open("/app/acme/docs/collections/history", { collection: "history" })).toBe("More");
+  expect(open("/app/acme/docs/tabs/settings", { tab: "settings" })).toBe("More");
+  const settings = { ...acme, slug: "settings" };
+  expect(phoneTabs(settings, "/app/settings/feedback", { project: "settings" })?.open?.title).toBe("Feedback");
+  expect(phoneTabs(settings, "/app/settings/inbox", { project: "settings" })?.open?.title).toBe("Inbox");
+  expect(phoneTabs(settings, "/app/settings/settings/team", { project: "settings" })).toBeNull();
+});

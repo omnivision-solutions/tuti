@@ -167,9 +167,9 @@ const TABS = ["Home", "Inbox", "Feedback", "Autopilot"];
 
 /**
  * The phone tab bar on this page, on a part's lists only (Feedback's posts, its boards, the Roadmap): a page of one
- * thing (a post, a conversation, an article: the route's `params` name it; a post open from Feedback's list, `?post=`),
- * a new one, its history, and a setting (a collection's too) have the screen to themselves and their way back. `open`: its part's tab (Feedback on the
- * Roadmap); none for More's.
+ * thing (a post, a conversation, an article, its history: the route's `params` name it; a post open from Feedback's
+ * list, `?post=`), a new one, and a setting (a collection's too) have the screen to themselves and their way back.
+ * `open`: its part's tab (Feedback on the Roadmap); none for More's.
  */
 export function phoneTabs(project: ProjectSummary, pathname: string, params: Record<string, unknown>, search = new URLSearchParams()) {
   const nav = projectNav(project);
@@ -177,9 +177,17 @@ export function phoneTabs(project: ProjectSummary, pathname: string, params: Rec
   if (!active) {
     return null;
   }
-  const setting = /\/(settings|customize)\/./.test(pathname) || (pathname !== active.href && pathname.endsWith("/settings"));
-  const onePage = ["number", "id", "slug", "user"].some((key) => key in params) || (pathname.endsWith("/feedback") && search.has("post"));
-  if (onePage || /\/(new|history)$/.test(pathname) || setting) {
+  // The routes past the project's own address (`/app/<project>`), so a slug the team picks ("settings") is never taken
+  // for one. A page of one thing (a post, a conversation, an article, its history) has its id in `params`.
+  const route = pathname.slice(`/app/${project.slug}`.length);
+  const onePage =
+    ["number", "id", "slug", "user"].some((key) => key in params) ||
+    (route === "/feedback" && search.has("post")) ||
+    route === "/changelog/new" ||
+    route === "/docs/new" ||
+    /^\/(settings|customize)\/./.test(route) ||
+    route === `/docs/collections/${params.collection}/settings`;
+  if (onePage) {
     return null;
   }
   const tabs = nav.flat().filter((item) => TABS.includes(item.title));
