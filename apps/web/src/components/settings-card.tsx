@@ -1,6 +1,8 @@
 import { cn } from "cn";
 import type { ReactNode } from "react";
 
+import { Pane, PaneBody, PaneHeader } from "@/components/pane";
+
 /**
  * Settings as row cards (docs/design.md → Panes): a group's title, then one card of `SettingRow`s divided by lines.
  * No cards inside it.
@@ -41,5 +43,40 @@ export function SettingRow({ label, description, htmlFor, inline = false, childr
       </div>
       <div className={cn("flex shrink-0 items-center gap-2", !inline && "@max-[34rem]/settings:*:w-full @max-[34rem]/settings:*:max-w-none")}>{children}</div>
     </div>
+  );
+}
+
+/** What a settings card holds that isn't a row (a form, a list): padded as its rows are. */
+export function SettingBlock({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn("flex flex-col gap-4 px-4 py-4 @min-[34rem]/settings:px-5", className)}>{children}</div>;
+}
+
+/**
+ * A settings page (Settings', beside its section pane): a pane titled by the page, `description` a line under the
+ * header, then its cards in one centred column. `back`: the page it's a part of (Advanced tuning's AI models).
+ */
+export function SettingsPane({
+  title,
+  description,
+  back,
+  actions,
+  children,
+}: {
+  title: string;
+  description?: ReactNode;
+  back?: { href: string; label: ReactNode };
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Pane aria-label={title}>
+      <PaneHeader title={title} back={back} actions={actions} />
+      <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-7">
+        <div className="mx-auto flex max-w-3xl flex-col gap-7">
+          {description && <p className="-mb-3 text-sm text-muted-foreground">{description}</p>}
+          {children}
+        </div>
+      </PaneBody>
+    </Pane>
   );
 }

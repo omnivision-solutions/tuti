@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { OwnAddressSettings } from "@/components/own-address";
 import { PlanNotice } from "@/components/plan-notice";
 import { RedirectsSettings } from "@/components/redirects-settings";
+import { SettingsPane } from "@/components/settings-card";
 import { customDomainTarget } from "@/lib/custom-domains";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { MAX_REDIRECTS } from "@/lib/portal-redirects";
@@ -41,7 +42,7 @@ export default async function DomainSettingsPage(props: PageProps<"/app/[project
       ? oneClickDns(domain.hostname, "custom-domain", { target, token }, new URL(`/app/${slug}/settings/domain`, appUrl()).href)
       : null;
   return (
-    <>
+    <SettingsPane title="Domain">
       {unpaid && (
         <PlanNotice feature={unpaid} projectSlug={slug} admin>
           Until it&apos;s back, that address isn&apos;t served; your portal&apos;s Tuti address,{" "}
@@ -65,6 +66,6 @@ export default async function DomainSettingsPage(props: PageProps<"/app/[project
         oneClick={oneClick}
       />
       <RedirectsSettings projectSlug={slug} redirects={redirects} max={MAX_REDIRECTS} />
-    </>
+    </SettingsPane>
   );
 }

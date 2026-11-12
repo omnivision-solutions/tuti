@@ -3,7 +3,7 @@ import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { ChangelogStyleForm } from "@/components/changelog";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
 
 /** Settings → AI → Writing style: how Draft with AI writes changelog entries (was a dialog on the changelog). Only where the server has AI. */
@@ -25,21 +25,19 @@ export default async function WritingStyleSettingsPage(props: PageProps<"/app/[p
   // The picked examples that are still published.
   const examples = published.filter((entry) => changelogExampleIds.includes(entry.id)).map((entry) => entry.number);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Writing style</CardTitle>
-        <CardDescription>Draft with AI writes changelog entries like this. It takes facts only from the entry it drafts, never from the examples.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ChangelogStyleForm
-          // A fresh form when what's saved changes (an example unpublished, say), so stale picks don't count.
-          key={`${changelogTone}|${examples.join(",")}`}
-          projectSlug={slug}
-          tone={changelogTone}
-          examples={examples}
-          published={published.map(({ number, title }) => ({ number, title }))}
-        />
-      </CardContent>
-    </Card>
+    <SettingsPane title="Writing style" description="Draft with AI writes changelog entries like this. It takes facts only from the entry it drafts, never from the examples.">
+      <SettingsCard>
+        <SettingBlock>
+          <ChangelogStyleForm
+            // A fresh form when what's saved changes (an example unpublished, say), so stale picks don't count.
+            key={`${changelogTone}|${examples.join(",")}`}
+            projectSlug={slug}
+            tone={changelogTone}
+            examples={examples}
+            published={published.map(({ number, title }) => ({ number, title }))}
+          />
+        </SettingBlock>
+      </SettingsCard>
+    </SettingsPane>
   );
 }

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { AskingPropertySelect } from "@/components/asking-property-select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { storedPropertyFormats } from "@/lib/property-formats";
 import { getAdminProject } from "@/server/membership";
 import { numberPropertyNames } from "@/server/operations/groups";
@@ -15,17 +15,12 @@ export default async function AskingSettingsPage(props: PageProps<"/app/[project
   }
   const numbers = await numberPropertyNames(project.id);
   return (
-    <Card role="region" aria-labelledby="asking-title">
-      <CardHeader>
-        <CardTitle id="asking-title">Who&apos;s asking</CardTitle>
-        <CardDescription>
-          A number property of your users (MRR, seats…), totalled over each post&apos;s voters on Feedback and the post, so you can see what a
-          post is worth. Only your team sees it.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} formats={storedPropertyFormats(project.propertyFormats)} />
-      </CardContent>
-    </Card>
+    <SettingsPane title="Who's asking" description="A number property of your users (MRR, seats…), totalled over each post's voters on Feedback and the post, so you can see what a post is worth. Only your team sees it.">
+      <SettingsCard>
+        <SettingBlock>
+          <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} formats={storedPropertyFormats(project.propertyFormats)} />
+        </SettingBlock>
+      </SettingsCard>
+    </SettingsPane>
   );
 }

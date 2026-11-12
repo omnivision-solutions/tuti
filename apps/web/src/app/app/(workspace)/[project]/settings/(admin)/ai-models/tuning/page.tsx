@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { CodeChangesTuningSettings } from "@/components/code-changes-tuning";
 import { PlanNotice } from "@/components/plan-notice";
+import { SettingsPane } from "@/components/settings-card";
 import { timeAgo } from "@/lib/format";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { codeChangesTuning } from "@/server/operations/code-changes-tuning";
@@ -22,7 +23,7 @@ export default async function CodeChangesTuningPage(props: PageProps<"/app/[proj
   const tuning = await codeChangesTuning(membership.project.id);
   const kept = Object.values(tuning.values).some((value) => value.saved !== null);
   return (
-    <div className="flex flex-col gap-6">
+    <SettingsPane title="Advanced tuning" back={{ href: `/app/${slug}/settings/ai-models`, label: "AI models" }}>
       <Link href={`/app/${slug}/settings/ai-models`} className="flex items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground">
         <ChevronLeftIcon className="size-4" />
         Back to AI models
@@ -41,6 +42,6 @@ export default async function CodeChangesTuningPage(props: PageProps<"/app/[proj
           )
         }
       />
-    </div>
+    </SettingsPane>
   );
 }

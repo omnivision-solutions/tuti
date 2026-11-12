@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { PlanNotice } from "@/components/plan-notice";
 import { PortalAccessSelect } from "@/components/portal-access-select";
 import { PortalReaders } from "@/components/portal-readers";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
 
@@ -22,22 +22,18 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
   ]);
 
   return (
-    <>
+    <SettingsPane title="Access" description="Who can see your portal, its docs and changelog, and the widget.">
       {!planIncludes(plan, "privatePortal") && (
         <PlanNotice feature="privatePortal" projectSlug={project.slug} admin>
           Without it, a private portal and content for reader groups are your team&apos;s only. Your settings are kept.
         </PlanNotice>
       )}
-      <Card>
-        <CardHeader>
-          <CardTitle>Portal access</CardTitle>
-          <CardDescription>Who can see your portal, its docs and changelog, and the widget.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <SettingsCard>
+        <SettingBlock>
           <PortalAccessSelect projectSlug={project.slug} access={access} />
           {access === "private" && <PortalReaders projectSlug={project.slug} readers={await portalReaders(project.id)} />}
-        </CardContent>
-      </Card>
-    </>
+        </SettingBlock>
+      </SettingsCard>
+    </SettingsPane>
   );
 }

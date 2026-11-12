@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ProjectNameForm } from "@/components/project-name-form";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingRow, SettingsCard, SettingsPane } from "@/components/settings-card";
+import { buttonVariants } from "@/components/ui/button";
 import { portalAddress } from "@/server/custom-domains";
 import { getAdminProject } from "@/server/membership";
 
@@ -16,26 +17,25 @@ export default async function GeneralSettingsPage(props: PageProps<"/app/[projec
   }
   const { name } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { name: true } });
   const portal = await portalAddress(slug);
+  const address = `${new URL(portal).host}${new URL(portal).pathname.replace(/\/$/, "")}`;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>General</CardTitle>
-        <CardDescription>
-          Your portal is at{" "}
-          <a href={portal} target="_blank" rel="noreferrer" className="break-all text-foreground underline underline-offset-4">
-            {new URL(portal).host}
-            {new URL(portal).pathname.replace(/\/$/, "")}
-          </a>
-          . Change where in{" "}
-          <Link href={`/app/${slug}/settings/domain`} className="text-foreground underline underline-offset-4">
-            Domain
-          </Link>
-          .
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <SettingsPane title="General" description="Your project's name and where its portal is.">
+      <SettingsCard>
         <ProjectNameForm projectSlug={slug} name={name} />
-      </CardContent>
-    </Card>
+        <SettingRow
+          label="Portal address"
+          description={
+            <a href={portal} target="_blank" rel="noreferrer" className="break-all underline underline-offset-4 hover:text-foreground">
+              {address}
+            </a>
+          }
+          inline
+        >
+          <Link href={`/app/${slug}/settings/domain`} aria-label="Change the portal address in Domain" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Change
+          </Link>
+        </SettingRow>
+      </SettingsCard>
+    </SettingsPane>
   );
 }

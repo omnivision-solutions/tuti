@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { codeChangesEnabled } from "@tuti/shared";
 import { listedRepositories } from "@tuti/jobs";
-import { ArrowLeftRightIcon, ChevronLeftIcon } from "lucide-react";
+import { ArrowLeftRightIcon } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -11,7 +11,7 @@ import { GithubMark } from "@tuti/ui/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { formatDate, timeAgo } from "@/lib/format";
 import { githubConfig, installationSettingsUrl } from "@/lib/github";
 import { repositoryRows } from "@/lib/github-repository-rows";
@@ -78,11 +78,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
   });
 
   return (
-    <div className="flex flex-col gap-6">
-      <Link href={integrations} className="flex items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground">
-        <ChevronLeftIcon className="size-4" />
-        Back to integrations
-      </Link>
+    <SettingsPane title="GitHub" back={{ href: integrations, label: "Integrations" }}>
       <div className="flex flex-wrap items-center gap-4">
         <IntegrationLogo>
           <GithubMark className="size-6" />
@@ -121,29 +117,31 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         </Alert>
       )}
       {accounts && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Switch account</CardTitle>
-            <CardDescription>
+        <SettingsCard
+          title="Switch account"
+          description={
+            <>
               This project&apos;s repositories from @{installation.accountLogin} are removed, and you add the new account&apos;s.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm">
+            </>
+          }
+        >
+          <SettingBlock className="text-sm">
             <GithubAccountChoice projectSlug={project.slug} accounts={accounts} />
-          </CardContent>
-        </Card>
+          </SettingBlock>
+        </SettingsCard>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Repositories</CardTitle>
-          <CardDescription>
+      <SettingsCard
+        title="Repositories"
+        description={
+          <>
             Pull requests merged in these repositories gather in the changelog&apos;s Next release draft
             {codeChangesEnabled() && installation.project.analyseCodeChanges && ", and Autopilot reads them for the posts they complete and the docs they change"}. Each repository belongs to
             one project.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </>
+        }
+      >
+        <SettingBlock>
           <GithubRepositories
             // Fresh state after a refresh or another tab's change.
             key={JSON.stringify([repositories, installation.included])}
@@ -166,8 +164,8 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
             }
             reconnectUrl={`/api/github/use?${new URLSearchParams({ project: project.slug, installation: String(installation.installationId) })}`}
           />
-        </CardContent>
-      </Card>
+        </SettingBlock>
+      </SettingsCard>
 
       {codeChangesEnabled() && (
         <p className="text-sm text-muted-foreground">
@@ -178,6 +176,6 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
           .
         </p>
       )}
-    </div>
+    </SettingsPane>
   );
 }

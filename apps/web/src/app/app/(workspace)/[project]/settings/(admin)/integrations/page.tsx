@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 import { GithubAccountChoice } from "@/components/github-connection";
 import { GithubMark } from "@tuti/ui/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
+import { SettingsPane } from "@/components/settings-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -48,7 +49,7 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
   });
 
   return (
-    <div className="flex flex-col gap-8">
+    <SettingsPane title="Integrations">
       {typeof githubResult === "string" && GITHUB_RESULTS[githubResult] && (
         <Alert variant={githubResult === "disconnected" ? "default" : "destructive"}>
           <AlertDescription>{GITHUB_RESULTS[githubResult]}</AlertDescription>
@@ -138,6 +139,6 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
           ))}
         </ul>
       </section>
-    </div>
+    </SettingsPane>
   );
 }

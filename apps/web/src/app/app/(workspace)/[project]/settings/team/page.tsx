@@ -6,10 +6,10 @@ import { notFound } from "next/navigation";
 
 import { InviteForm, RevokeInvitationButton, UnsentInvitations } from "@/components/invitations";
 import { ItemList, ItemRow } from "@/components/item-list";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { LeaveProjectButton, MemberActions } from "@/components/team-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { canAssignRole, canManageTeamMember, isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { inviteNote } from "@/lib/verify-email";
 import { getMembership } from "@/server/membership";
@@ -49,15 +49,9 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
   const limit = teamLimit(plan);
 
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Team & roles</CardTitle>
-          <CardDescription>
-            {members.length} {members.length === 1 ? "person" : "people"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+    <SettingsPane title="Team & roles" description={`${members.length} ${members.length === 1 ? "person" : "people"}`}>
+      <SettingsCard>
+        <SettingBlock>
           <ItemList>
             {members.map((member) => {
               const isMe = member.userId === session.user.id;
@@ -96,8 +90,8 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
               );
             })}
           </ItemList>
-        </CardContent>
-        <CardFooter className="justify-end">
+        </SettingBlock>
+        <SettingBlock className="flex-row justify-end">
           {isOnlyOwner ? (
             <p className="text-sm text-muted-foreground">
               You&apos;re the only owner. To leave, make someone else an owner first.
@@ -105,14 +99,14 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
           ) : (
             <LeaveProjectButton projectSlug={project.slug} projectName={project.name} />
           )}
-        </CardFooter>
-      </Card>
+        </SettingBlock>
+      </SettingsCard>
 
       {isAdmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Invite people</CardTitle>
-            <CardDescription>
+        <SettingsCard
+          title="Invite people"
+          description={
+            <>
               {inviteNote(session.user)}
               {limit !== null && (
                 <>
@@ -124,9 +118,10 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
                   for more.
                 </>
               )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+            </>
+          }
+        >
+          <SettingBlock>
             <InviteForm projectSlug={project.slug} roles={assignable} />
             {sent.length > 0 && (
               // Where focus goes once the last invite from Featurebase is sent (UnsentInvitations).
@@ -147,8 +142,8 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
                 </ItemList>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </SettingBlock>
+        </SettingsCard>
       )}
 
       {isAdmin && (
@@ -164,6 +159,6 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
           }))}
         />
       )}
-    </>
+    </SettingsPane>
   );
 }

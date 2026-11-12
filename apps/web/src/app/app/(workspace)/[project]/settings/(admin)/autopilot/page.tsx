@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { AutopilotRecipientsForm, AutopilotSettingsForm, AutopilotSwitches } from "@/components/autopilot-settings";
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { autopilotRecordText } from "@/lib/autopilot-words";
 import { getMembership, isAdminRole } from "@/server/membership";
 import { autopilotRecord } from "@/server/operations/code-changes";
@@ -49,39 +49,37 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
     autopilotRecord(membership.project.id),
   ]);
   return (
-    <>
+    <SettingsPane
+      title="Autopilot"
+      description={
+        <>
+          When a pull request merges, Autopilot reads it and finds the posts it completes, the docs it changes and its changelog line.{" "}
+          {!github && (
+            <>
+              It reads the repositories you add in{" "}
+              <Link href={`/app/${slug}/settings/integrations`} className="underline">
+                Integrations
+              </Link>
+              .
+            </>
+          )}
+        </>
+      }
+    >
       {!owner && <p className="text-sm text-muted-foreground">Only owners change Autopilot&apos;s settings.</p>}
       {!planIncludes(project.plan, "codeChanges") && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin>
           Merged pull requests still go into the changelog&apos;s running draft.
         </PlanNotice>
       )}
-      <Card>
-        <CardHeader>
-          <CardTitle>Autopilot</CardTitle>
-          <CardDescription>
-            When a pull request merges, Autopilot reads it and finds the posts it completes, the docs it changes and its changelog line.{" "}
-            {!github && (
-              <>
-                It reads the repositories you add in{" "}
-                <Link href={`/app/${slug}/settings/integrations`} className="underline">
-                  Integrations
-                </Link>
-                .
-              </>
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <SettingsCard>
+        <SettingBlock>
           <CodeChangeSwitch projectSlug={slug} setting="analysis" on={project.analyseCodeChanges} provider={aiProvider()} owner={owner} />
-        </CardContent>
-      </Card>
+        </SettingBlock>
+      </SettingsCard>
       {project.analyseCodeChanges && (
-        <Card>
-          <CardHeader>
-            <CardTitle>What it does by itself</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
+        <SettingsCard title="What it does by itself">
+          <SettingBlock className="gap-6">
             <CodeChangeSwitch projectSlug={slug} setting="autoLinks" on={project.autoApplyLinks} provider={aiProvider()} owner={owner} />
             <AutopilotSwitches
               projectSlug={slug}
@@ -103,36 +101,29 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
                 holdHours: project.autopilotHoldHours,
               }}
             />
-          </CardContent>
-        </Card>
+          </SettingBlock>
+        </SettingsCard>
       )}
       {project.analyseCodeChanges && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Who&apos;s told</CardTitle>
-            <CardDescription>
-              Owners and the people below get emails about merged pull requests, as often as each picks in their account settings. Owners always
-              hear when something customers see goes out by itself.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <SettingsCard
+          title="Who's told"
+          description="Owners and the people below get emails about merged pull requests, as often as each picks in their account settings. Owners always hear when something customers see goes out by itself."
+        >
+          <SettingBlock>
             <AutopilotRecipientsForm
               projectSlug={slug}
               owner={owner}
               admins={project.autopilotTellAdmins}
               members={team.map((member) => ({ userId: member.userId, name: member.user.name, role: member.role as "ADMIN" | "MEMBER", told: member.autopilotTold }))}
             />
-          </CardContent>
-        </Card>
+          </SettingBlock>
+        </SettingsCard>
       )}
-      <Card>
-        <CardHeader>
-          <CardTitle>How it&apos;s doing</CardTitle>
-          <CardDescription>
-            {autopilotRecordText(record)}
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    </>
+      <SettingsCard title="How it's doing">
+        <SettingBlock>
+          <p className="text-sm text-muted-foreground">{autopilotRecordText(record)}</p>
+        </SettingBlock>
+      </SettingsCard>
+    </SettingsPane>
   );
 }

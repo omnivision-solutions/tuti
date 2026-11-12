@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { AssistantSettings } from "@/components/assistant-settings";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { getAdminProject } from "@/server/membership";
 import { assistantSettings } from "@/server/operations/assistant";
 
@@ -14,17 +14,13 @@ export default async function AiAnswersSettingsPage(props: PageProps<"/app/[proj
   }
   const assistant = await assistantSettings(project.id);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>AI answers</CardTitle>
-        <CardDescription>
-          How the AI answers questions in your docs. It only ever answers from your published articles; these settings can&apos;t change that.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {/* A new form once saved, showing what was saved (trimmed), not what was typed. */}
-        <AssistantSettings key={JSON.stringify(assistant)} projectSlug={slug} settings={assistant} />
-      </CardContent>
-    </Card>
+    <SettingsPane title="AI answers" description="How the AI answers questions in your docs. It only ever answers from your published articles; these settings can't change that.">
+      <SettingsCard>
+        <SettingBlock>
+          {/* A new form once saved, showing what was saved (trimmed), not what was typed. */}
+          <AssistantSettings key={JSON.stringify(assistant)} projectSlug={slug} settings={assistant} />
+        </SettingBlock>
+      </SettingsCard>
+    </SettingsPane>
   );
 }
