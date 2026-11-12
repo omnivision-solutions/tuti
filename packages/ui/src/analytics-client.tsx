@@ -20,12 +20,20 @@ export function safeAddress(value: string) {
   }
 }
 
-/** Every address PostHog sends (the page's, the referrer, the first ones of the visit), through safeAddress. */
-function withSafeAddresses(properties: Record<string, unknown> | undefined) {
-  for (const key of Object.keys(properties ?? {})) {
-    const value = properties![key];
+/**
+ * Every address PostHog sends (the page's, the referrer, the first ones of the visit), through safeAddress, at any
+ * depth: the first ones come in `$set_once`, on the event or inside its properties.
+ */
+function withSafeAddresses(properties: unknown) {
+  if (!properties || typeof properties !== "object") {
+    return;
+  }
+  const record = properties as Record<string, unknown>;
+  for (const [key, value] of Object.entries(record)) {
     if (typeof value === "string" && /url|referrer|pathname/i.test(key)) {
-      properties![key] = safeAddress(value);
+      record[key] = safeAddress(value);
+    } else {
+      withSafeAddresses(value);
     }
   }
 }

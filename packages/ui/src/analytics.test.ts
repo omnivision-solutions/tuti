@@ -53,7 +53,12 @@ describe("analytics", () => {
 
     const event = {
       event: "$pageview",
-      properties: { $current_url: "https://tuti.so/app/admin/email/resume?token=secret#x", $pathname: "/app/auth/invite/secret", $browser: "Chrome" },
+      properties: {
+        $current_url: "https://tuti.so/app/admin/email/resume?token=secret#x",
+        $pathname: "/app/auth/invite/secret",
+        $browser: "Chrome",
+        $set_once: { $initial_current_url: "https://tuti.so/app/auth/invite/secret", $initial_pathname: "/app/auth/invite/secret" },
+      },
       $set_once: { $initial_current_url: "https://tuti.so/app/auth/reset-password?token=secret" },
     };
     ANALYTICS_CONFIG.before_send(event as never);
