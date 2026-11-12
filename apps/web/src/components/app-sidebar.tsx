@@ -26,7 +26,7 @@ import {
   UserIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect } from "react";
 
@@ -167,18 +167,19 @@ const TABS = ["Home", "Inbox", "Feedback", "Autopilot"];
 
 /**
  * The phone tab bar on this page, on a part's lists only (Feedback's posts, its boards, the Roadmap): a page of one
- * thing (a post, a conversation, an article: the route's `params` name it), a new one, its history, and a setting (a
- * collection's too) have the screen to themselves and their way back. `open`: its part's tab (Feedback on the
+ * thing (a post, a conversation, an article: the route's `params` name it; a post open from Feedback's list, `?post=`),
+ * a new one, its history, and a setting (a collection's too) have the screen to themselves and their way back. `open`: its part's tab (Feedback on the
  * Roadmap); none for More's.
  */
-export function phoneTabs(project: ProjectSummary, pathname: string, params: Record<string, unknown>) {
+export function phoneTabs(project: ProjectSummary, pathname: string, params: Record<string, unknown>, search = new URLSearchParams()) {
   const nav = projectNav(project);
   const active = activeItem(nav, pathname);
   if (!active) {
     return null;
   }
   const setting = /\/(settings|customize)\/./.test(pathname) || (pathname !== active.href && pathname.endsWith("/settings"));
-  if (["number", "id", "slug", "user"].some((key) => key in params) || /\/(new|history)$/.test(pathname) || setting) {
+  const onePage = ["number", "id", "slug", "user"].some((key) => key in params) || (pathname.endsWith("/feedback") && search.has("post"));
+  if (onePage || /\/(new|history)$/.test(pathname) || setting) {
     return null;
   }
   const tabs = nav.flat().filter((item) => TABS.includes(item.title));
@@ -194,7 +195,8 @@ export function AppTabBar({ projects, fallbackSlug }: { projects: ProjectSummary
   const current = useCurrentProject(projects, fallbackSlug);
   const params = useParams();
   const { setOpenMobile } = useSidebar();
-  const bar = params.project && current ? phoneTabs(current, pathname, params) : null;
+  const search = useSearchParams();
+  const bar = params.project && current ? phoneTabs(current, pathname, params, new URLSearchParams(search)) : null;
   if (!bar) {
     return null;
   }

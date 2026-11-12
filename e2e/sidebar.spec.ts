@@ -335,6 +335,12 @@ test("on phones the tab bar goes between the main parts and opens the rest under
   await team.waitForURL(`**/app/${slug}/feedback`);
   await expect(bar.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
   await checkpoint(team, "feedback-tab-bar", { fullPage: false });
+  // A post opened from the list has the screen to itself.
+  await team.getByRole("link", { name: "Dark mode" }).first().click();
+  await team.waitForURL(/[?&]post=/);
+  await expect(bar).toBeHidden();
+  await team.goBack();
+  await expect(bar.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
 
   // More is the sidebar's menu, for the parts without a tab; open on their pages.
   await bar.getByRole("button", { name: "More" }).click();
