@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { emailImageKey, fileKey, imageKey, videoKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
@@ -95,4 +97,24 @@ test("an uploaded video plays as its video type, not a download; a file of the s
   expect(played.headers.get("content-disposition")).toBeNull();
   const file = await fetch((await open(lastingMediaUrl(fileKey(media.id)))).headers.get("location")!);
   expect(file.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''Tour.mp4");
+});
+
+test("profile pictures saved with the old /media links point at /api/media after the migration; pictures from elsewhere stay", async () => {
+  // Uploaded (imageId) or copied from another user (none of its own); and a picture from another site, whatever its path.
+  const media = await image();
+  const link = lastingMediaUrl(emailImageKey(media.id));
+  const old = link.replace("/api/media/", "/media/");
+  const elsewhere = "https://avatars.example.com/media/u1/1.png?s=2";
+  const [moved, copied, kept] = await Promise.all([signUp("Old picture"), signUp("Copied picture"), signUp("Provider picture")]);
+  await prisma.user.update({ where: { id: moved.id }, data: { image: old, imageId: media.id } });
+  await prisma.user.update({ where: { id: copied.id }, data: { image: old } });
+  await prisma.user.update({ where: { id: kept.id }, data: { image: elsewhere } });
+
+  await prisma.$executeRawUnsafe(
+    readFileSync(new URL("../../../../../../../../packages/db/prisma/migrations/20261112100000_media_links_under_api/migration.sql", import.meta.url), "utf8"),
+  );
+
+  const pictures = await prisma.user.findMany({ where: { id: { in: [moved.id, copied.id, kept.id] } }, select: { id: true, image: true } });
+  expect(Object.fromEntries(pictures.map((user) => [user.id, user.image]))).toEqual({ [moved.id]: link, [copied.id]: link, [kept.id]: elsewhere });
+  expect((await open(link)).status).toBe(302);
 });
