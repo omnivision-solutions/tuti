@@ -13,29 +13,54 @@ function createPrismaClient(): PrismaClient {
   // No connection is opened until the first query, so a missing URL only fails
   // at query time. Apps validate DATABASE_URL on startup instead (builds don't
   // need it).
-  return new PrismaClient({
+  const client = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
-  }).$extends({
-    // A profile picture is saved as its stored file's key (or, from elsewhere, its address): read as a link. On the
-    // results as they come, not as a result extension, whose objects carry a symbol React won't pass to the browser.
-    query: { $allModels: { $allOperations: async ({ args, query }) => withPictures(await query(args)) } },
+  });
+  const pictures = withPictures(relationsOf(client));
+  return client.$extends({
+    // A profile picture is saved as its stored file and signature (or, from elsewhere, its address): read as a link.
+    // On the results as they come, not as a result extension, whose objects carry a symbol React won't pass to the browser.
+    query: { $allModels: { $allOperations: async ({ model, args, query }) => pictures(model, await query(args)) } },
     // Typed as the plain client: the extension changes the field's value, not its type (string | null), and code
     // across the apps types transactions as Prisma.TransactionClient, which an extended client's type isn't.
   }) as unknown as PrismaClient;
 }
 
-/** Users in a result (at any depth) with their picture as a link (only users have `image`; pictureUrl leaves any other value). */
-function withPictures<T>(value: T): T {
-  if (Array.isArray(value)) {
-    value.forEach(withPictures);
-  } else if (value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
-    const row = value as Record<string, unknown>;
-    if (typeof row.image === "string") {
-      row.image = pictureUrl(row.image);
+type Relations = Record<string, Record<string, string>>;
+
+/** Each model's relation fields and the model they hold, from the schema the client was generated from. */
+function relationsOf(client: PrismaClient): Relations {
+  const { models } = (client as unknown as { _runtimeDataModel: { models: Record<string, { fields: { name: string; kind: string; type: string }[] }> } })
+    ._runtimeDataModel;
+  return Object.fromEntries(
+    Object.entries(models).map(([model, { fields }]) => [model, Object.fromEntries(fields.filter((field) => field.kind === "object").map((field) => [field.name, field.type]))]),
+  );
+}
+
+/**
+ * A result with each user's picture as a link (pictureUrl): users at any depth, through relations only, so a JSON
+ * value (a document, a user's properties) is never touched, whatever keys it has.
+ */
+function withPictures(relations: Relations) {
+  const visit = (model: string, value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(model, item));
+    } else if (value && typeof value === "object") {
+      const row = value as Record<string, unknown>;
+      if (model === "User" && typeof row.image === "string") {
+        row.image = pictureUrl(row.image);
+      }
+      for (const [field, related] of Object.entries(relations[model] ?? {})) {
+        visit(related, row[field]);
+      }
     }
-    Object.values(row).forEach(withPictures);
-  }
-  return value;
+  };
+  return <T>(model: string | undefined, result: T): T => {
+    if (model) {
+      visit(model, result);
+    }
+    return result;
+  };
 }
 
 // Reuse one client across hot reloads in dev so we don't exhaust connections.
