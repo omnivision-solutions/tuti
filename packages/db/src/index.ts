@@ -30,8 +30,12 @@ type Relations = Record<string, Record<string, string>>;
 
 /** Each model's relation fields and the model they hold, from the schema the client was generated from. */
 function relationsOf(client: PrismaClient): Relations {
-  const { models } = (client as unknown as { _runtimeDataModel: { models: Record<string, { fields: { name: string; kind: string; type: string }[] }> } })
-    ._runtimeDataModel;
+  const models = (client as unknown as { _runtimeDataModel?: { models?: Record<string, { fields: { name: string; kind: string; type: string }[] }> } })
+    ._runtimeDataModel?.models;
+  // Prisma's own, not public: if an upgrade moves it, fail at once rather than show every saved picture broken.
+  if (!models?.User) {
+    throw new Error("Prisma's data model isn't where @tuti/db reads it: pictures can't be read as links");
+  }
   return Object.fromEntries(
     Object.entries(models).map(([model, { fields }]) => [model, Object.fromEntries(fields.filter((field) => field.kind === "object").map((field) => [field.name, field.type]))]),
   );

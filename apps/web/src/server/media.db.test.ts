@@ -330,6 +330,9 @@ describe("avatar", () => {
     const post = await prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: 900, title: "Dark mode", body: "" } });
     await prisma.vote.create({ data: { postId: post.id, userId: owner.id, projectId: project.id } });
     expect((await postVoters(project.id, null, post.id)).map((voter) => voter.image)).toEqual([lastingMediaUrl(key)]);
+    // Through relations and lists too, as most pictures are shown (a post's author, the team's members).
+    expect(await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: { author: { select: { image: true } } } })).toEqual({ author: { image: lastingMediaUrl(key) } });
+    expect(await prisma.teamMember.findMany({ where: { userId: owner.id }, select: { user: { select: { image: true } } } })).toEqual([{ user: { image: lastingMediaUrl(key) } }]);
     // Only users' pictures: a JSON value with an `image` (a user's properties from the team's app) stays as it is.
     await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "owner-1", userId: owner.id, properties: { image: savedPicture(key) } } });
     expect(await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { image: true, ssoIdentity: { select: { properties: true } } } })).toEqual({
