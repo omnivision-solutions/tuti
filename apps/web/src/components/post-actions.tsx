@@ -15,7 +15,8 @@ export function PostActions({ portal, merge }: { portal: string; merge?: Omit<Co
   const [merging, setMerging] = useState(false);
   // Merge closed: focus back to More actions where that's what shows (its own button is hidden there), else its own.
   const more = useRef<HTMLButtonElement>(null);
-  const backToMore = () => (more.current?.checkVisibility() ? more.current : true);
+  // Shown (laid out at all): getClientRects, which Safari before 17.4 has where checkVisibility is missing.
+  const backToMore = () => (more.current && more.current.getClientRects().length > 0 ? more.current : true);
   const wide = "@max-[48rem]/app:hidden";
   return (
     <>
