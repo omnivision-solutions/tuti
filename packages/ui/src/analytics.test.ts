@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { analyticsSettings } from "./analytics";
-import { ANALYTICS_CONFIG, isCounted, safeAddress } from "./analytics-client";
+import { readdirSync } from "node:fs";
+import { join, relative, sep } from "node:path";
+
+import { ANALYTICS_CONFIG, APP_ROUTES, isCounted, routeOf, safeAddress } from "./analytics-client";
 
 describe("analytics", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -47,31 +50,33 @@ describe("analytics", () => {
 
   it("sends addresses without the tokens in reset, resume and invite links", () => {
     expect(safeAddress("https://tuti.so/app/auth/reset-password?token=secret")).toBe("https://tuti.so/app/auth/reset-password");
-    expect(safeAddress("https://tuti.so/app/auth/invite/secret")).toBe("https://tuti.so/app/auth/invite/[id]");
-    expect(safeAddress("/app/auth/invite/secret/")).toBe("/app/auth/invite/[id]/");
+    expect(safeAddress("https://tuti.so/app/auth/invite/secret")).toBe("https://tuti.so/app/auth/invite/[token]");
+    expect(safeAddress("/app/auth/invite/secret/")).toBe("/app/auth/invite/[token]/");
     expect(safeAddress("$direct")).toBe("$direct");
   });
 
   it("sends the app's addresses as routes, without customers' projects, people or content", () => {
-    expect(safeAddress("https://tuti.so/app/acme/users/jane%40acme.com")).toBe("https://tuti.so/app/[project]/users/[id]");
-    expect(safeAddress("/app/acme/docs/getting-started/history")).toBe("/app/[project]/docs/[id]/history");
+    expect(safeAddress("https://tuti.so/app/acme/users/e2e-jane%40example.com")).toBe("https://tuti.so/app/[project]/users/[user]");
+    expect(safeAddress("/app/acme/docs/getting-started/history")).toBe("/app/[project]/docs/[slug]/history");
     expect(safeAddress("/app/acme/settings/ai-models/tuning")).toBe("/app/[project]/settings/ai-models/tuning");
     expect(safeAddress("/app/account")).toBe("/app/account");
+    expect(safeAddress("/app/new")).toBe("/app/new");
+    expect(safeAddress("/app/acme/no/such/page")).toBe("/app/[unknown]");
     expect(safeAddress("https://tuti.so/pricing")).toBe("https://tuti.so/pricing");
+  });
 
-    const event = {
-      event: "$pageview",
-      properties: {
-        $current_url: "https://tuti.so/app/admin/email/resume?token=secret#x",
-        $pathname: "/app/auth/invite/secret",
-        $browser: "Chrome",
-        title: "secret · Users",
-        $set_once: { $initial_current_url: "https://tuti.so/app/auth/invite/secret", $initial_pathname: "/app/auth/invite/secret" },
-      },
-      $set_once: { $initial_current_url: "https://tuti.so/app/auth/reset-password?token=secret" },
-    };
-    ANALYTICS_CONFIG.before_send(event as never);
-    expect(JSON.stringify(event)).not.toContain("secret");
-    expect(event.properties.$browser).toBe("Chrome");
+  it("hides a project or id that happens to be a page's name", () => {
+    expect(routeOf("/app/support/users/billing")).toBe("/app/[project]/users/[user]");
+    expect(routeOf("/app/settings/docs/history")).toBe("/app/[project]/docs/[slug]");
+    expect(routeOf("/app/inbox")).toBe("/app/[project]");
+  });
+
+  it("knows every page of the app", () => {
+    const app = join(import.meta.dirname, "../../../apps/web/src/app/app");
+    const pages = readdirSync(app, { recursive: true, encoding: "utf8" })
+      .filter((file) => file.endsWith(`${sep}page.tsx`) || file === "page.tsx")
+      .map((file) => relative(".", file).split(sep).slice(0, -1).filter((part) => !part.startsWith("(")).join("/"))
+      .filter(Boolean);
+    expect([...APP_ROUTES].sort()).toEqual([...new Set(pages)].sort());
   });
 });

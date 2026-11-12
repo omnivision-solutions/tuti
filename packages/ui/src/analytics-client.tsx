@@ -4,28 +4,122 @@ import type { PostHogConfig } from "posthog-js";
 import { useEffect } from "react";
 
 /**
- * The app's page names (apps/web/src/app/app's folders that aren't [params]). Any other part of an /app address is
- * the customer's or its people's (a project, an end user's SSO id, an article, an invite token), so it's sent as a
- * placeholder. A page added without its name here only shows as [id]: nothing leaks.
+ * The app's routes: apps/web/src/app/app's pages, without route groups (analytics.test.ts checks they match). An /app
+ * address is sent as its route, so a customer's project, its people (an end user's SSO id), its content (an article)
+ * or a token never reaches PostHog.
  */
-const APP_PAGES = new Set([
-  "access", "account", "activity", "address", "admin", "ai-answers", "ai-conversations", "ai-models", "articles",
-  "ask-a-person", "asking", "auth", "autopilot", "billing", "boards", "branding", "changelog", "code-changes",
-  "collections", "content-actions", "continue", "custom-code", "customize", "design", "developers", "docs",
-  "docs-home", "domain", "email", "feedback", "forgot-password", "general", "github", "groups", "history",
-  "home-page", "import", "inbox", "insights", "integrations", "invite", "license", "navigation", "new", "p", "panes",
-  "powered-by", "properties", "redirects", "reporting", "reset-password", "resume", "roadmap", "searches", "seo",
-  "settings", "setup", "sign-in", "sign-up", "sso", "support", "tabs", "team", "tuning", "unanswered", "usage",
-  "users", "widget", "writing-style",
-]);
+export const APP_ROUTES = [
+  "account",
+  "admin/email/resume",
+  "auth/continue",
+  "auth/forgot-password",
+  "auth/invite/[token]",
+  "auth/reset-password",
+  "auth/sign-in",
+  "auth/sign-up",
+  "design",
+  "design/panes",
+  "license",
+  "new",
+  "[project]",
+  "[project]/autopilot",
+  "[project]/autopilot/activity",
+  "[project]/autopilot/activity/[id]",
+  "[project]/autopilot/articles/[id]",
+  "[project]/autopilot/feedback/[id]",
+  "[project]/autopilot/[id]",
+  "[project]/boards",
+  "[project]/changelog",
+  "[project]/changelog/new",
+  "[project]/changelog/[number]",
+  "[project]/code-changes",
+  "[project]/code-changes/[id]",
+  "[project]/customize",
+  "[project]/customize/address",
+  "[project]/customize/ai-answers",
+  "[project]/customize/branding",
+  "[project]/customize/content-actions",
+  "[project]/customize/custom-code",
+  "[project]/customize/docs-home",
+  "[project]/customize/home-page",
+  "[project]/customize/navigation",
+  "[project]/customize/powered-by",
+  "[project]/customize/redirects",
+  "[project]/customize/seo",
+  "[project]/customize/widget",
+  "[project]/docs",
+  "[project]/docs/collections/[collection]",
+  "[project]/docs/collections/[collection]/settings",
+  "[project]/docs/insights",
+  "[project]/docs/new",
+  "[project]/docs/[slug]",
+  "[project]/docs/[slug]/history",
+  "[project]/docs/tabs/[tab]",
+  "[project]/feedback",
+  "[project]/feedback/boards",
+  "[project]/feedback/roadmap",
+  "[project]/inbox",
+  "[project]/inbox/[number]",
+  "[project]/p/[number]",
+  "[project]/reporting",
+  "[project]/reporting/ai-conversations",
+  "[project]/reporting/articles",
+  "[project]/reporting/feedback",
+  "[project]/reporting/inbox",
+  "[project]/reporting/searches",
+  "[project]/reporting/unanswered",
+  "[project]/settings",
+  "[project]/settings/access",
+  "[project]/settings/ai-answers",
+  "[project]/settings/ai-models",
+  "[project]/settings/ai-models/tuning",
+  "[project]/settings/ask-a-person",
+  "[project]/settings/asking",
+  "[project]/settings/autopilot",
+  "[project]/settings/billing",
+  "[project]/settings/developers",
+  "[project]/settings/domain",
+  "[project]/settings/general",
+  "[project]/settings/groups",
+  "[project]/settings/import",
+  "[project]/settings/integrations",
+  "[project]/settings/integrations/github",
+  "[project]/settings/properties",
+  "[project]/settings/sso",
+  "[project]/settings/support",
+  "[project]/settings/team",
+  "[project]/settings/usage",
+  "[project]/settings/writing-style",
+  "[project]/setup",
+  "[project]/team",
+  "[project]/users",
+  "[project]/users/[user]",
+];
 
-/** An /app path as its route: /app/acme/users/jane%40acme.com is /app/[project]/users/[id]. Other paths are the site's. */
-function routeOf(path: string) {
-  const parts = path.split("/");
-  if (parts[1] !== "app") {
+/**
+ * An /app path as its route, /app/acme/users/e2e-jane%40example.com as /app/[project]/users/[user]: of the routes as
+ * long as it, the one whose fixed parts all match, preferring more fixed parts (as Next.js does: /app/new is the new
+ * project page, not a project called "new"). A path no route matches is /app/[unknown]. Other paths are the site's.
+ */
+export function routeOf(path: string) {
+  const parts = path.split("/").slice(1);
+  if (parts[0] !== "app") {
     return path;
   }
-  return parts.map((part, index) => (index < 2 || part === "" || APP_PAGES.has(part) ? part : index === 2 ? "[project]" : "[id]")).join("/");
+  const trailing = parts.length > 1 && parts.at(-1) === "" ? "/" : "";
+  const segments = parts.slice(1, trailing ? -1 : undefined);
+  let best: { route: string; fixed: number } | null = null;
+  for (const route of APP_ROUTES) {
+    const pattern = route.split("/");
+    if (pattern.length !== segments.length || !pattern.every((part, index) => part.startsWith("[") || part === segments[index])) {
+      continue;
+    }
+    const fixed = pattern.filter((part) => !part.startsWith("[")).length;
+    if (!best || fixed > best.fixed) {
+      best = { route, fixed };
+    }
+  }
+  return segments.length === 0 ? path : `/app/${best ? best.route : "[unknown]"}${trailing}`;
 }
 
 /**
@@ -87,6 +181,7 @@ export const ANALYTICS_CONFIG = {
     if (event) {
       // The page's title can name a customer's end user or article; the route says which page it was.
       delete event.properties.title;
+      delete event.properties.$title;
       withSafeAddresses(event.properties);
       withSafeAddresses(event.$set);
       withSafeAddresses(event.$set_once);
