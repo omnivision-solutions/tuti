@@ -35,7 +35,7 @@ export function ProjectNameForm({ projectSlug, name }: { projectSlug: string; na
           aria-describedby={state.error ? "project-name-description project-name-error" : "project-name-description"}
           className="min-w-0 flex-1 @min-[34rem]/settings:w-60 @min-[34rem]/settings:flex-none"
         />
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending} focusableWhenDisabled>
           {pending ? "Saving…" : "Save"}
         </Button>
         {state.error && (
