@@ -63,7 +63,8 @@ test("Docs pages are panes: the tree as the area's pane, views as pills, the edi
   // Clicked again until it opens: a click before the page hydrates does nothing.
   const moreActions = header.getByRole("button", { name: "More actions", exact: true });
   await expect(async () => {
-    await moreActions.click();
+    // A toggle: clicked only while still closed, so a slow retry never shuts what just opened.
+    if ((await moreActions.getAttribute("aria-expanded")) !== "true") await moreActions.click();
     await expect(moreActions).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
   }).toPass();
   await expect(header.getByRole("link", { name: "View on help center", exact: true })).toHaveText("View on help center");
