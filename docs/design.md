@@ -673,7 +673,7 @@ at desktop and phone widths, in light and dark (in development only).
 
 - **`PaneLayout`**, **`Pane`**, **`PaneBody`** (`components/pane.tsx`): a row of panes (the shell gives it the whole
   width), one white panel (`rounded-2xl`, ~14px corners, a `border` ring, nothing scrolling past its edge), and what scrolls in it.
-  No card inside a card: a pane's lists and row cards sit on the pane.
+  No card inside a card: a pane's lists and row cards sit on the pane. Two exceptions, both data to read at a glance: `StatStrip`, and Reporting's charts and tables, each its own bordered section on the report's pane.
   A pane body scrolls in place of the window, so it keeps its place on each URL for Back and Forward; one whose own
   links replace its list (Users' pages, sorts, searches) starts at the top on a new URL (`resetOnNavigate`).
 - **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line
