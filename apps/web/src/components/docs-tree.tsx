@@ -740,8 +740,9 @@ export function DocsWorkspace({
               panes (the editor's, its tools'), so there it's only their row. */}
           <div data-editing={editing} className={cn(
             "docs-page-content @container/docs-page flex min-h-0 min-w-0 flex-1 flex-col gap-6 [--docs-pad:2rem] @max-[61rem]/app:[--docs-pad:1.5rem] @max-[40rem]/app:[--docs-pad:1rem]",
-            // Its header stays at the top: what's focused or scrolled to clears it (DocsPageHeader measures itself, pills and all).
-            "overflow-y-auto scroll-pt-[calc(var(--docs-header-height,3.75rem)+0.5rem)] rounded-2xl bg-card px-(--docs-pad) pb-7 ring-1 ring-border [scrollbar-width:thin] [&_>_*]:shrink-0",
+            // Its header stays at the top: what's focused or scrolled to clears it (DocsPageHeader measures itself, pills and all;
+            // before that, a header's height with its pills' row or without).
+            "overflow-y-auto scroll-pt-[calc(var(--docs-header-height,3.875rem)+0.5rem)] has-[[data-slot=docs-page-header]_nav]:scroll-pt-[calc(var(--docs-header-height,7rem)+0.5rem)] rounded-2xl bg-card px-(--docs-pad) pb-7 ring-1 ring-border [scrollbar-width:thin] [&_>_*]:shrink-0",
             "data-[editing=true]:overflow-visible data-[editing=true]:rounded-none data-[editing=true]:bg-transparent data-[editing=true]:p-0 data-[editing=true]:ring-0",
           )}>{children}</div>
         </DocsBrowse>

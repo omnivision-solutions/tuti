@@ -128,6 +128,15 @@ test("a long Docs page's sticky header, pills and all, never covers what's focus
   const header = team.locator('[data-slot="docs-page-header"]');
   await expect(header.getByRole("navigation", { name: "Collection", exact: true })).toBeVisible();
   await expect.poll(() => pane.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(600);
+  // Before any script runs (an address with an #anchor lands then), the stylesheet's padding already clears the header and its pills.
+  const bare = await browser.newContext({ javaScriptEnabled: false, storageState: await team.context().storageState(), viewport: { width: 1280, height: 900 } });
+  const page = await bare.newPage();
+  await page.goto(`${APP_URL}/app/${slug}/docs/collections/getting-started`);
+  const height = (await page.locator('[data-slot="docs-page-header"]').boundingBox())!.height;
+  expect(await page.locator(".docs-page-content").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThanOrEqual(height);
+  await bare.close();
+  // Once the header has measured itself (its height before then is the stylesheet's).
+  await expect.poll(() => pane.evaluate((element) => element.style.getPropertyValue("--docs-header-height"))).not.toBe("");
   // A row brought into view at the pane's top (as focus or a link to it does) lands below the header, not under it.
   const row = team.getByRole("region", { name: "Getting started" }).getByRole("link", { name: "Guide 5", exact: true });
   await row.evaluate((element) => element.scrollIntoView({ block: "start", container: "nearest" } as ScrollIntoViewOptions));
