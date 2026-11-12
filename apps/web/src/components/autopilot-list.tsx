@@ -9,6 +9,8 @@ import { createContext, type ReactNode, useContext, useEffect, useRef, useState 
 import { EmptyState } from "@/components/empty-state";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ItemList } from "@/components/item-list";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
+import { pillClass } from "@/components/filter-pills";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { countedToReview, treeOrder } from "@/lib/autopilot-words";
 
@@ -50,6 +52,9 @@ function TreeRow({ depth, last, through, icon, children, className }: { depth: n
     </div>
   );
 }
+
+/** A view's tab, as a pane header's pills (FilterPills): the open one filled. */
+const PILL = pillClass(false, "text-foreground data-active:border-input data-active:bg-accent data-active:shadow-none data-active:hover:bg-accent");
 
 const Decided = createContext<() => void>(() => {});
 
@@ -165,7 +170,7 @@ export function AutopilotPanes({
     }
     arrived.current = true;
     // Read the CSS layout once: opening a first item only makes sense while its list fits beside it.
-    const panes = aside.current?.parentElement;
+    const panes = aside.current?.closest<HTMLElement>("[data-slot=pane-layout]");
     const beside = panes && getComputedStyle(panes).flexDirection === "row";
     if (selected === null && tab === "review" && first && !notice && beside) {
       autoOpening.current = first;
@@ -186,15 +191,19 @@ export function AutopilotPanes({
     setTab(value);
   };
   // Once it's open, focus goes to its row in the list, which says which one opened (the page it was on, and
-  // the button that was focused, went away); on phones, where the list is hidden, to the page's title. Not
-  // before: the closing dialog hands focus back to that button.
+  // the button that was focused, went away); where the list is hidden, to the page's title, or on phones (where
+  // its pane header shows the way back and keeps the title for screen readers) to that way back, right before it.
+  // Not before: the closing dialog hands focus back to that button.
   useEffect(() => {
     if (selected && selected === opened.current) {
       opened.current = null;
       const row = aside.current?.querySelector<HTMLElement>(`a[href="/app/${projectSlug}/autopilot/${selected}"]`);
       const title = document.querySelector<HTMLElement>("h1");
+      const back = title && title.offsetWidth <= 1 ? title.closest("[data-slot=pane-header]")?.querySelector<HTMLElement>("a[href]") : null;
       if (row?.checkVisibility()) {
         row.focus();
+      } else if (back) {
+        back.focus();
       } else if (title) {
         title.tabIndex = -1;
         title.focus();
@@ -251,8 +260,10 @@ export function AutopilotPanes({
       );
     });
   };
-  // Phones and tablets show the list (no page open, or Activity's with none picked) right under the page's title.
-  const listed = (selected === null || selected === "activity") && toReview.length + reviewed.length + activity.length + nothingToDo.length > 0;
+  // Phones and tablets show the list with no page open (or Activity's with none picked); a page open, in its place.
+  // With nothing in it, only its header (the page's heading), the page's notices (why there's nothing) under it.
+  const listed = selected === null || selected === "activity";
+  const empty = toReview.length + reviewed.length + activity.length + nothingToDo.length === 0;
   // Beside the list with none open (from laptop width up), what the tab's rows open.
   const hint =
     tab === "reviewed"
@@ -262,60 +273,61 @@ export function AutopilotPanes({
         : toReview.length > 0 && "Pick a post or an article to review";
   return (
     <Decided value={() => setDecided(selected)}>
-    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 md:-mx-8 flex-col first:-mt-6 not-first:border-t @min-[61rem]/app:flex-row">
-      <aside
-        ref={aside}
-        aria-label="Changes"
-        // On phones and tablets: the list, or the page open; none to list, the page says why.
-        className={cn("px-6 pb-6 @min-[61rem]/app:w-80 @min-[61rem]/app:shrink-0 @min-[77rem]/app:w-96 @min-[61rem]/app:border-r @min-[61rem]/app:p-0", !listed && "@max-[61rem]/app:hidden")}
-      >
-        <Tabs
-          value={tab}
-          onValueChange={pick}
-          className="@min-[61rem]/app:sticky @min-[61rem]/app:top-0 @min-[61rem]/app:max-h-dvh @min-[61rem]/app:overflow-y-auto @min-[61rem]/app:p-4">
-          <TabsList className="w-full">
-            <TabsTrigger value="review" className="flex-1">
-              {/* Counted as the sidebar and Home count them: sample content left out (its rows say Sample). */}
-              To review <span className="text-muted-foreground tabular-nums">{countedToReview(toReview)}</span>
-            </TabsTrigger>
-            <TabsTrigger value="reviewed" className="flex-1">
-              Reviewed
-            </TabsTrigger>
-            <TabsTrigger value="activity" className="flex-1">
-              Activity
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="review">
-            {toReview.length > 0 ? list(toReview) : <EmptyState title="Nothing to review" description="Updates Autopilot suggests to your feedback and help center wait here for you." />}
-            {unread > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {unread === 1 ? "1 pull request isn't" : `${unread} pull requests aren't`} read yet (being read, failed or paused):{" "}
-                <button type="button" onClick={() => pick("activity")} className="font-medium text-foreground underline-offset-4 hover:underline">
-                  see Activity
-                </button>
-              </p>
-            )}
-          </TabsContent>
-          <TabsContent value="reviewed">
-            {reviewed.length > 0 ? list(reviewed) : <EmptyState title="Nothing reviewed yet" description="Posts and articles show here once their updates are approved or dismissed." />}
-          </TabsContent>
-          <TabsContent value="activity">
-            {activity.length > 0 && list(activity)}
-            {nothingToDo.length > 0 && (
-              <details>
-                <summary className="cursor-pointer font-heading text-base font-medium">Nothing to do ({nothingToDo.length})</summary>
-                <div className="pt-4">{list(nothingToDo)}</div>
-              </details>
-            )}
-          </TabsContent>
-        </Tabs>
-      </aside>
-      {/* Above the list on phones and tablets, only as tall as the page's title while the list shows. */}
-      <div data-autopilot-listed={listed || undefined} className={cn("mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6 md:px-8 @max-[61rem]/app:order-first", listed && "@max-[61rem]/app:flex-none")}>
+    <PaneLayout className="flex-col @min-[61rem]/app:flex-row">
+      <Pane className={cn("@min-[61rem]/app:w-80 @min-[61rem]/app:flex-none @min-[77rem]/app:w-96", !listed && "@max-[61rem]/app:hidden", empty && "@max-[61rem]/app:flex-none")}>
+        <aside ref={aside} aria-label="Changes" data-empty={empty || undefined} className="group/list flex min-h-0 flex-1 flex-col">
+          <Tabs value={tab} onValueChange={pick} className="min-h-0 flex-1 gap-0">
+            {/* The page's heading while none is open beside it; the open one's title is, then. */}
+            <PaneHeader title="Autopilot" level={listed ? 1 : 2} />
+            {/* Its views as pills, a row of their own: the list is too narrow for them beside its title. */}
+            <TabsList className="w-full shrink-0 group-data-empty/list:@max-[61rem]/app:hidden justify-start gap-1.5 rounded-none border-b bg-transparent px-3 py-2.5 text-foreground @min-[48rem]/app:px-4">
+              <TabsTrigger value="review" className={PILL}>
+                {/* Counted as the sidebar and Home count them: sample content left out (its rows say Sample). */}
+                To review <span className="text-muted-foreground tabular-nums">{countedToReview(toReview)}</span>
+              </TabsTrigger>
+              <TabsTrigger value="reviewed" className={PILL}>
+                Reviewed
+              </TabsTrigger>
+              <TabsTrigger value="activity" className={PILL}>
+                Activity
+              </TabsTrigger>
+            </TabsList>
+            <PaneBody className="p-3 pl-4 group-data-empty/list:@max-[61rem]/app:hidden">
+              <TabsContent value="review">
+                {toReview.length > 0 ? list(toReview) : <EmptyState title="Nothing to review" description="Updates Autopilot suggests to your feedback and help center wait here for you." />}
+                {unread > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    {unread === 1 ? "1 pull request isn't" : `${unread} pull requests aren't`} read yet (being read, failed or paused):{" "}
+                    <button type="button" onClick={() => pick("activity")} className="font-medium text-foreground underline-offset-4 hover:underline">
+                      see Activity
+                    </button>
+                  </p>
+                )}
+              </TabsContent>
+              <TabsContent value="reviewed">
+                {reviewed.length > 0 ? list(reviewed) : <EmptyState title="Nothing reviewed yet" description="Posts and articles show here once their updates are approved or dismissed." />}
+              </TabsContent>
+              <TabsContent value="activity">
+                {activity.length > 0 && list(activity)}
+                {nothingToDo.length > 0 && (
+                  <details>
+                    <summary className="cursor-pointer font-heading text-base font-medium">Nothing to do ({nothingToDo.length})</summary>
+                    <div className="pt-4">{list(nothingToDo)}</div>
+                  </details>
+                )}
+              </TabsContent>
+            </PaneBody>
+          </Tabs>
+        </aside>
+      </Pane>
+      {/* The open page (its header and body), or with none open its notices beside the list's hint; on phones and
+          tablets above the list (under its header, with nothing in it), only as tall as those notices (none: not there). On phones the window scrolls, not
+          the pane: nothing in it clips, so its actions held at the bottom (sticky) stay at the screen's. */}
+      <Pane className={cn(!empty && "@max-[61rem]/app:order-first", "@max-[48rem]/app:overflow-visible @max-[48rem]/app:[&>*]:overflow-visible!", listed && "@max-[61rem]/app:flex-none @max-[61rem]/app:not-has-data-autopilot-notices:hidden")}>
         {children}
-        {listed && hint && <EmptyState className="@max-[61rem]/app:hidden" title={hint} />}
-      </div>
-    </div>
+        {listed && hint && <EmptyState className="flex-1 @max-[61rem]/app:hidden" title={hint} />}
+      </Pane>
+    </PaneLayout>
     </Decided>
   );
 }
