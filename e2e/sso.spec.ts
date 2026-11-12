@@ -299,10 +299,10 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
 
   // The Enterprise tab, for the group: "Who can read" in its page's Access.
   const tree = owner.getByRole("navigation", { name: "Docs", exact: true });
-  const access = owner.getByRole("tabpanel", { name: "Access" });
+  const access = owner.getByRole("region", { name: "Access", exact: true });
   await owner.locator(".docs-tab-switcher").click();
   await owner.getByRole("list", { name: "Tabs", exact: true }).getByRole("link", { name: "Enterprise", exact: true }).click();
-  await owner.getByRole("tab", { name: "Access" }).click();
+  await owner.getByRole("navigation", { name: "Tab", exact: true }).getByRole("link", { name: "Access", exact: true }).click();
   await expect(access.getByRole("radio", { name: "Inherit" })).toBeChecked();
   await access.getByRole("radio", { name: "Specific groups" }).check();
   await access.getByRole("checkbox", { name: "Enterprise customers" }).check();

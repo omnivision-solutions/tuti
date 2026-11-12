@@ -200,7 +200,6 @@ export function ArticleForm({
   defaultTitle?: string;
 }) {
   const [wide] = useState(sections);
-  const titleHost = useEditorSlot(article ? "article-title" : undefined);
   // The text shown (`opened`) and the version its saves are made on (`base`), kept while it has edits not saved,
   // whatever is saved meanwhile (Autopilot's edit landing, a teammate's save): what was typed is never replaced, and its
   // save says the version it was made on. With nothing unsaved, a newer saved version starts the form afresh (`shown`).
@@ -351,7 +350,7 @@ export function ArticleForm({
               whatever it's renamed to meanwhile, and a change back to how it opened still counts. */}
           {(!opened || titleChanged) && <input type="hidden" name="title" value={title} />}
           {/* A line that wraps (a long title stays in sight on a phone), Enter doesn't add a line. */}
-          {titleHost ? createPortal(titleInput, titleHost) : !article ? titleInput : null}
+          {titleInput}
           {state.error && <FieldError id="article-error">{state.error}</FieldError>}
           {newer && dirty && !state.newest && !seenSaved && (
             <p className="text-sm text-muted-foreground">

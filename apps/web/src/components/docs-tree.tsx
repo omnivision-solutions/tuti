@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { BookOpenIcon, ChevronRightIcon, ChevronDownIcon, ChevronsUpDownIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { ChevronRightIcon, ChevronDownIcon, ChevronsUpDownIcon, ExternalLinkIcon, FileTextIcon, FolderIcon, GripVerticalIcon, LayoutGridIcon, PanelsTopLeftIcon, PanelLeftIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
@@ -14,6 +14,8 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { CollectionDialog, TabDialog } from "@/components/docs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PaneResize } from "@/components/pane-resize";
+import { PaneLayout } from "@/components/pane";
+import { DocsBrowse } from "@/components/docs-page-header";
 import { DocsTreeFold } from "@/components/docs-tree-fold";
 import { SampleBadge } from "@/components/sample-badge";
 import { Button } from "@/components/ui/button";
@@ -97,10 +99,10 @@ export function AddContentMenu({
           <PlusIcon aria-hidden />
         </DropdownMenuTrigger>
       ) : (
-        <DropdownMenuTrigger render={<Button className={cn("h-[34px] gap-2 px-3 text-[13.5px]", className)} />}>
+        <DropdownMenuTrigger render={<Button className={cn("@max-[48rem]/app:w-8 @max-[48rem]/app:px-0", className)} />}>
           <PlusIcon aria-hidden />
-          Add content
-          <ChevronDownIcon aria-hidden className="size-3.5" />
+          <span className="@max-[48rem]/app:sr-only">Add content</span>
+          <ChevronDownIcon aria-hidden className="size-3.5 @max-[48rem]/app:hidden" />
         </DropdownMenuTrigger>
       )}
       <DropdownMenuContent align="end" className="w-auto min-w-40">
@@ -199,7 +201,7 @@ function Row({
       data-drop={drop}
       className={cn(
         // A quiet Docs selection across the full row, including its controls.
-        "group/row relative flex min-h-8 items-center gap-0.5 rounded-lg pr-1 text-sm hover:bg-accent/60 has-[a[aria-current=page]]:bg-docs-selection has-[a[aria-current=page]]:text-foreground has-[a[aria-current=page]]:[&_svg]:text-primary",
+        "group/row relative flex min-h-8 items-center gap-0.5 rounded-lg pr-1 text-sm hover:bg-muted has-[a[aria-current=page]]:bg-accent has-[a[aria-current=page]]:text-foreground has-[a[aria-current=page]]:[&_svg]:text-foreground",
         "data-[drop=after]:shadow-[inset_0_-2px_0_0_var(--color-primary)] data-[drop=before]:shadow-[inset_0_2px_0_0_var(--color-primary)]",
         "data-[drop=into]:bg-accent data-[drop=into]:ring-2 data-[drop=into]:ring-primary",
         className,
@@ -243,7 +245,6 @@ export function DocsWorkspace({
   access,
   parents,
   deleted,
-  projectName,
   portal,
   children,
 }: {
@@ -257,7 +258,6 @@ export function DocsWorkspace({
   parents: { slug: string; name: string }[];
   /** How many articles were deleted lately (they can be restored from the Docs home). */
   deleted: number;
-  projectName: string;
   portal: string;
   children: ReactNode;
 }) {
@@ -662,18 +662,22 @@ export function DocsWorkspace({
 
   const footerLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
   const navigation = <>
-    <div className="docs-tree-heading flex items-center justify-between p-[22px_16px_0_20px] [&_h2]:font-heading [&_h2]:text-[30px] [&_h2]:font-[650] [&_h2]:tracking-[-0.03em]"><h2>Docs</h2><div className="flex items-center"><Button variant="ghost" size="icon-sm" aria-label="Search docs" onClick={() => { if (browsing) { openingSearch.current = true; setBrowsing(false); } else window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); }}><SearchIcon className="size-4" /></Button><a href={`${portal}/docs`} target="_blank" rel="noreferrer" aria-label="Open on help center" className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary"><ExternalLinkIcon className="size-4" /></a>{desktop && <DocsTreeFold open={false} />}</div></div>
-    <p className="docs-tree-caption m-[2px_20px_20px] text-[13px] text-muted-foreground">{projectName} help center</p>
+    <div className="docs-tree-heading flex h-15 shrink-0 items-center gap-1 border-b pr-2 pl-4.5">
+      <h2 className="min-w-0 flex-1 truncate text-[1.0625rem] font-semibold tracking-[-0.01em]">Docs</h2>
+      <Button variant="ghost" size="icon-sm" aria-label="Search docs" className="rounded-full text-muted-foreground" onClick={() => { if (browsing) { openingSearch.current = true; setBrowsing(false); } else window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); }}><SearchIcon /></Button>
+      <a href={`${portal}/docs`} target="_blank" rel="noreferrer" aria-label="Open on help center" className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"><ExternalLinkIcon className="size-4" /></a>
+      {desktop && <DocsTreeFold open={false} />}
+    </div>
     <div className={cn(
-      "docs-tree-content flex min-h-0 flex-1 flex-col gap-3.5 p-[0_10px_14px] overflow-y-auto [scrollbar-width:thin] [&_nav]:flex-1",
-      "[&_nav_[data-tab-label]]:text-[14px] [&_a]:text-[13.5px] [&_[aria-current='page']]:bg-docs-selection",
+      "docs-tree-content flex min-h-0 flex-1 flex-col gap-3 p-2.5 overflow-y-auto [scrollbar-width:thin] [&_nav]:flex-1",
+      "[&_nav_[data-tab-label]]:text-[14px] [&_a]:text-[13.5px] [&_[aria-current='page']]:bg-accent",
       "[&_[aria-current='page']]:text-foreground [&_.group-label]:text-xs [&_.group-label]:font-medium [&_.group-label]:normal-case",
       "[&_.group-label]:tracking-[0] [&_li_li_a]:text-[13px]",
       "[&_a[aria-current='page']]:bg-transparent",
     )} onClick={(event) => { if ((event.target as Element).closest("a")) setBrowsing(false); }}>
 
             <Popover open={tabsOpen} onOpenChange={setTabsOpen}>
-              <PopoverTrigger render={<Button variant="ghost" className="docs-tab-switcher w-full justify-between px-3 text-[14px] font-semibold shadow-none" />}>
+              <PopoverTrigger render={<Button variant="outline" className="docs-tab-switcher w-full justify-between rounded-lg px-3 text-[14px] font-medium shadow-none" />}>
                 <span className="flex min-w-0 items-center gap-2"><PanelsTopLeftIcon className="size-4 shrink-0 text-muted-foreground" /><span className="truncate">{activeTab?.name ?? "Help center"}</span></span><ChevronsUpDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
               </PopoverTrigger>
               <PopoverContent align="start" className="w-60" onClick={(event) => { if ((event.target as Element).closest("a")) { setTabsOpen(false); setBrowsing(false); } }}>
@@ -713,44 +717,34 @@ export function DocsWorkspace({
   </>;
   return (
     <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
-      <div data-slot="pane-layout" className={cn(
-        "docs-workspace relative flex gap-3 min-w-0 flex-1 m-[-24px_-24px_-24px_-24px] p-[16px_16px_16px_24px] bg-docs-canvas h-dvh",
-        "[&[data-editing='true']_>_.docs-page-content]:p-0 [&[data-editing='true']_>_.docs-page-content]:bg-transparent",
-        "[&[data-editing='true']_>_.docs-page-content]:shadow-none [&[data-editing='true']_>_.docs-page-content]:ring-0 [&[data-editing='true']_>_.docs-page-content]:overflow-visible md:ml-[-32px]",
-        "md:mr-[-32px] @max-[61rem]/app:p-3 @max-[61rem]/app:h-dvh max-sm:p-2 max-sm:m-[-24px] max-sm:h-dvh",
-        "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:left-6.5",
-        "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:right-[auto]",
-        "max-sm:[&:has(.docs-overview-stats)_>_.docs-phone-trigger]:top-6 [&_nav[aria-label='Collection']]:border-b-0",
-        "[&_nav[aria-label='Collection']]:shadow-none [&_nav[aria-label='Collection']]:ring-0 [&_nav[aria-label='Collection']_[aria-current='page']]:text-primary",
-        "[&_nav[aria-label=Collection]]:border-b-0 [&_nav[aria-label=Collection]]:shadow-none [&_nav[aria-label=Collection]]:ring-0",
-      )} data-editing={editing}>
-        <aside className="docs-tree-pane docs-surface relative w-(--docs-tree-width,274px) shrink-0 flex flex-col @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:w-12 @max-[61rem]/app:hidden min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+      <PaneLayout className="docs-workspace relative">
+        <aside className="docs-tree-pane relative w-(--docs-tree-width,274px) shrink-0 flex flex-col @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:w-12 @max-[61rem]/app:hidden min-w-0 min-h-0 rounded-2xl bg-card ring-1 ring-border">
           <div className="docs-tree-folded hidden p-[10px_6px] @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:flex @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:justify-center"><DocsTreeFold open /></div>
           <div className="docs-tree-expanded flex flex-col min-h-0 h-full @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:hidden">{desktop && navigation}</div>
-          <PaneResize pane="docs" className="absolute inset-y-0 -right-[11px] @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:hidden" />
+          <PaneResize pane="docs" className="absolute inset-y-0 -right-[9px] @min-[61rem]/app:[:root[data-docs-tree-folded]_&]:hidden" />
         </aside>
-        <button type="button" aria-label="Browse docs" aria-expanded={browsing} onClick={() => setBrowsing(true)} className="docs-phone-trigger absolute top-5.75 right-7 z-20 hidden h-7 items-center gap-1.25 rounded-md bg-secondary p-[0_7px] text-[13px] text-muted-foreground @max-[61rem]/app:flex max-sm:top-3 max-sm:right-4"><BookOpenIcon className="size-3.5" />Docs</button>
-        {pathname === base && activeTab && <span className="hidden max-sm:block absolute right-8 top-7 text-xs text-muted-foreground">{activeTab.name}</span>}
         <Sheet open={browsing && !desktop} onOpenChange={setBrowsing} onOpenChangeComplete={(open) => { if (!open && openingApp.current) { openingApp.current = false; if (isMobile) setOpenMobile(true); else setAppOpen(true); } if (!open && openingSearch.current) { openingSearch.current = false; window.dispatchEvent(new Event(OPEN_COMMAND_MENU)); } }}>
           <SheetContent overlayClassName="bg-(--docs-overlay) supports-backdrop-filter:backdrop-blur-none" side="bottom" className={cn(
             "docs-tree-sheet [&::before]:[content:''] [&::before]:shrink-0 [&::before]:w-8 [&::before]:h-1 [&::before]:rounded-[4px]",
             "[&::before]:bg-input [&::before]:m-[8px_auto_0] [inset:64px_8px_8px]! h-auto! max-h-[calc(100dvh_-_72px)]",
-            "gap-0 rounded-[16px] border border-border bg-docs-surface [&_.docs-tree-heading]:pt-3",
-            "[&_.docs-tree-content]:min-h-0 [&_.docs-tree-caption]:mb-4.5 max-sm:top-20! [&_.docs-tree-heading]:pr-14.5",
+            "gap-0 rounded-[16px] border border-border bg-card",
+            "[&_.docs-tree-content]:min-h-0 max-sm:top-20! [&_.docs-tree-heading]:pr-14.5",
             "[&_>_[data-slot='sheet-close']]:top-5.5 [&_>_[data-slot='sheet-close']]:right-3.5",
           )}>
             <SheetTitle className="sr-only">Docs navigation</SheetTitle>
             {!desktop && navigation}
           </SheetContent>
         </Sheet>
-        <div className={cn(
-          "docs-page-content @container/docs-page min-w-0 min-h-0 rounded-2xl bg-docs-surface",
-          "shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)] flex flex-1 flex-col gap-6",
-          "overflow-y-auto p-[28px_32px] [scrollbar-width:thin] @max-[61rem]/app:p-6 @max-[61rem]/app:[&_>_.docs-page-header:first-child:not(:has(>_a))]:pt-6",
-          "max-sm:rounded-2xl max-sm:p-[20px_16px] max-sm:gap-5.5 [&_>_*]:shrink-0",
-          "max-sm:[&:has(.docs-overview-stats)_>_.docs-page-header:first-child:not(:has(>_a))]:pt-10",
-        )}>{children}</div>
-      </div>
+        <DocsBrowse value={{ open: browsing, browse: () => setBrowsing(true) }}>
+          {/* A page's pane, its header held at the top as it scrolls (DocsPageHeader); an article's editor brings its own
+              panes (the editor's, its tools'), so there it's only their row. */}
+          <div data-editing={editing} className={cn(
+            "docs-page-content @container/docs-page flex min-h-0 min-w-0 flex-1 flex-col gap-6 [--docs-pad:2rem] @max-[61rem]/app:[--docs-pad:1.5rem] @max-[40rem]/app:[--docs-pad:1rem]",
+            "overflow-y-auto rounded-2xl bg-card px-(--docs-pad) pb-7 ring-1 ring-border [scrollbar-width:thin] [&_>_*]:shrink-0",
+            "data-[editing=true]:overflow-visible data-[editing=true]:rounded-none data-[editing=true]:bg-transparent data-[editing=true]:p-0 data-[editing=true]:ring-0",
+          )}>{children}</div>
+        </DocsBrowse>
+      </PaneLayout>
       <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} open={newTab} onOpenChange={setNewTab} renderTrigger={false} />
       {adding && (
         <CollectionDialog

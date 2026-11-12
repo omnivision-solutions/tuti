@@ -13,6 +13,7 @@ import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { DocsPageHeader } from "@/components/docs-page-header";
+import { buttonVariants } from "@/components/ui/button";
 import { DocsPublishQueue } from "@/components/docs-publish-queue";
 import {
   Card,
@@ -137,10 +138,10 @@ export default async function TeamDocsPage(
               href={`${portal}/docs`}
               target="_blank"
               rel="noopener noreferrer"
-              className="docs-live-link inline-flex gap-1.5 items-center text-muted-foreground text-[13px] whitespace-nowrap [&:hover]:text-primary"
+              className={buttonVariants({ variant: "outline", className: "docs-live-link" })}
             >
-              <ExternalLinkIcon className="size-3.5" />
-              <span>View on help center</span>
+              <ExternalLinkIcon />
+              <span className="@max-[48rem]/app:sr-only">View on help center</span>
             </a>
             <AddContentMenu
               parent={null}

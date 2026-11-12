@@ -181,11 +181,11 @@ export function ArticleTools({
   );
   return (
     <ToolsContext value={{ active, select, settingsDraft, setSettingsDraft }}>
-      <div className="docs-editor-layout flex gap-3 min-w-0 h-full flex-1" data-tools-open={Boolean(active && desktop)}>
+      <div className="docs-editor-layout flex gap-2 min-w-0 h-full flex-1" data-tools-open={Boolean(active && desktop)}>
         {children}
         {desktop ? (
           active && (
-            <aside ref={attachCard} aria-label="Article tools" className="docs-tools docs-surface relative shrink-0 w-82.5 flex flex-col overflow-hidden @max-[77rem]/app:w-75 min-w-0 min-h-0 rounded-2xl bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]">
+            <aside ref={attachCard} aria-label="Article tools" className="docs-tools relative shrink-0 w-82.5 flex flex-col overflow-hidden @max-[77rem]/app:w-75 min-w-0 min-h-0 rounded-2xl bg-card ring-1 ring-border">
               {content}
             </aside>
           )

@@ -97,7 +97,7 @@ test("typing in a phone article editor keeps its title, parent link and Save in 
   const { team, slug } = await editor(browser);
   await team.setViewportSize({ width: 390, height: 844 });
   await team.goto(`/app/${slug}/docs/invite-your-team`);
-  const back = team.locator('[data-slot="docs-page-header"]').getByRole("link", { name: "Docs", exact: true });
+  const back = team.locator('[data-slot="docs-page-header"]').getByRole("link", { name: "All articles", exact: true });
   const title = team.getByRole("textbox", { name: "Title", exact: true });
   const article = team.getByRole("textbox", { name: "Article", exact: true });
   const save = team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ });
@@ -274,7 +274,8 @@ test("article tools collapse into the pinned toolbar and restore without a previ
   const tools = team.getByRole("complementary", { name: "Article tools" });
   await expect(tools).toBeVisible();
   await expect(tools.getByRole("heading", { name: "History", exact: true })).toBeVisible();
-  expect((await article.boundingBox())!.width).toBeLessThan(width);
+  // At 1440 the text keeps its reading width beside them.
+  expect((await article.boundingBox())!.width).toBeLessThanOrEqual(width);
   await tools.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(tools.getByRole("combobox", { name: "Collection", exact: true })).toBeVisible();
   await tools.getByRole("button", { name: "Collapse article tools" }).click();
@@ -562,6 +563,8 @@ test("phone tabs have one switcher popover, restore visible focus, and tablet na
   await team.keyboard.press("Escape");
   await expect(tree.locator(".docs-tab-switcher")).toBeFocused();
   await tree.getByRole("link", { name: "Overview", exact: true }).click();
+  // The tree closes as the page changes: open it again once there.
+  await team.waitForURL(`**/app/${slug}/docs`);
   await team.setViewportSize({ width: 850, height: 900 });
   await team.getByRole("button", { name: "Browse docs" }).click();
   await tree.getByRole("button", { name: "App navigation", exact: true }).click();
