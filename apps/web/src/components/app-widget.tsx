@@ -48,8 +48,8 @@ export function AppWidget({ slug }: { slug: string }) {
     <>
       {/* The launcher under the app's dialogs, sheets and popovers (z-50), still over the page; on phones the page ends clear
           of it (AppShell, by data-app-widget), as does what's held at the bottom of the screen (the `launcher:` variant).
-          Over the phone tab bar where it's shown (AppTabBar). Its panel, once open, stays over everything. */}
-      <style data-app-widget>{`body > button[aria-controls="tuti-widget"] { z-index: 40 !important; } @media (width < 48rem) { :root:has([data-tab-bar]) body > button[aria-controls="tuti-widget"] { bottom: calc(5rem + env(safe-area-inset-bottom)) !important; } }`}</style>
+          Over the phone tab bar where it's shown (AppTabBar), and its floating panel (wider than 640px) above the launcher. Its panel, once open, stays over everything. */}
+      <style data-app-widget>{`body > button[aria-controls="tuti-widget"] { z-index: 40 !important; } @media (width < 48rem) { :root:has([data-tab-bar]) body > button[aria-controls="tuti-widget"] { bottom: calc(5rem + env(safe-area-inset-bottom)) !important; } } @media (640px < width < 48rem) { :root:has([data-tab-bar]) #tuti-widget { bottom: calc(5rem + 68px + env(safe-area-inset-bottom)) !important; max-height: calc(100dvh - 5rem - 68px - 1.5rem - env(safe-area-inset-bottom)) !important; } }`}</style>
       <Script src="/api/widget.js" data-project={slug} onLoad={() => window.Tuti?.identify(getToken)} />
     </>
   );

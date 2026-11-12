@@ -59,6 +59,20 @@ test("Tuti's own widget in the team app signs people in with their account once 
   });
   expect(pageEnd).toBeLessThanOrEqual((await appLauncher.boundingBox())!.y);
   await checkpoint(owner, "app-widget-phone-page-end", { fullPage: false });
+  // Over the tab bar on a list, its More still in reach; with a little more room, the floating panel opens above it.
+  await owner.goto(`/app/${APP_WIDGET_SLUG}/feedback`);
+  const tabBar = owner.getByRole("navigation", { name: "Main" });
+  const more = tabBar.getByRole("button", { name: "More" });
+  await expect.poll(async () => (await appLauncher.boundingBox())!.y + (await appLauncher.boundingBox())!.height).toBeLessThanOrEqual((await tabBar.boundingBox())!.y);
+  const moreBox = (await more.boundingBox())!;
+  expect(await more.evaluate((button, [x, y]) => button.contains(document.elementFromPoint(x!, y!)), [moreBox.x + moreBox.width / 2, moreBox.y + moreBox.height / 2])).toBe(true);
+  await owner.setViewportSize({ width: 700, height: 900 });
+  await launcher.click();
+  const floating = owner.locator("#tuti-widget");
+  await expect(floating).toBeVisible();
+  await expect.poll(async () => (await floating.boundingBox())!.y + (await floating.boundingBox())!.height).toBeLessThanOrEqual((await appLauncher.boundingBox())!.y);
+  await launcher.click();
+  await expect(floating).toBeHidden();
   await owner.setViewportSize({ width: 1280, height: 720 });
   await launcher.click();
   await expect(panel.getByRole("navigation", { name: "Widget" })).toBeVisible();
