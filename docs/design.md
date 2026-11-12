@@ -57,7 +57,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders: 4.5:1 or more on the page, a card, the sidebar and a muted fill, in light and dark (`colours.test.ts`) |
 | `border`, `input` | A card's or divider's edge (1.25:1 on the page), an input's (1.5:1) |
-| `sidebar-active` / `sidebar-active-foreground` | The page open in a page's own menu (`SettingsMenu`: Settings', Reporting's): a pale green pill, its label and icon green (4.5:1). The sidebar's open page is a raised neutral pill (the card's colour, a `sidebar-border` ring), so a page with both shows one green. A section pane (Panes) marks its open link with the neutral `accent` instead |
+| `sidebar-active` / `sidebar-active-foreground` | The page open in a page's own menu (`SettingsMenu`: Reporting's): a pale green pill, its label and icon green (4.5:1). The sidebar's open page is a raised neutral pill (the card's colour, a `sidebar-border` ring), so a page with both shows one green. A section pane (Panes) marks its open link with the neutral `accent` instead |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
@@ -141,7 +141,7 @@ the list picks none to approve at once.
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground` in rows, parts joined with ` · `; under a page's title (`PageHeader`'s `meta`) `text-sm` |
-| Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback), a menu's group (Settings', Reporting's) and the part above a Reporting page's title. Quieter than the items under it, never in a colour. A section pane's groups (Panes) are sentence case instead |
+| Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback), a menu's group (Reporting's) and the part above a Reporting page's title. Quieter than the items under it, never in a colour. A section pane's groups (Panes) are sentence case instead |
 
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
@@ -172,7 +172,7 @@ the list picks none to approve at once.
   once its heading scrolls away, and `PageActions` at its right end. An editor's primary actions (`pinActions`) stay
   at the bottom on phones. Customize has its own section heading and Save changes row; it sticks at the top on
   wider screens and below the menu row on phones. Pane heights and sticky menus use the full window on wider screens.
-  A page of three panes (the sidebar, a column of its own, the page: Settings,
+  A page of three panes (the sidebar, a column of its own, the page: Settings (Panes),
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
   width. The app sidebar starts collapsed to the same icon rail on every page. Only its toggle, Ctrl/⌘+B,
   or App navigation in the Docs sheet can open it. The toggle and shortcut also collapse it; that choice stays
@@ -333,10 +333,11 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   three fixed parts of one board that always fit, side by side on wider screens. A row of tabs
   never wraps (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
   into view, faded at the end that has more (`useScrollingRow`; the portal's
-  parts and their rows too). Settings has one menu of its own on the left, in groups
-  (`SettingsMenu`: Project, Users, Support, AI, Connections, Billing; folded into
-  one button above the page below 48rem of sidebar inset); it opens on General. Reporting has one
-  too (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
+  parts and their rows too). Settings has a section pane of its own (Panes), in groups (Project,
+  Users, Support, AI, Connections, Billing; a drawer from the page's header below 48rem of sidebar inset); it opens
+  on General. Each of its pages is a `SettingsPane`: a pane titled by the page, a line on what it's for, then its
+  `SettingsCard`s (a form that isn't a row in a `SettingBlock`). Reporting has a menu of its
+  own (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
   small and uppercase, each page with its icon), using the same 48rem inset threshold to put its menu
   above the report when the app sidebar leaves less room. Each page has its numbers (`Stat`, a
   labelled group; as Ferndesk's, its change on as many days just before as a badge, `soft` when

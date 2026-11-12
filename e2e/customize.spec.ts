@@ -189,17 +189,20 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   // Settings opens on General.
   await owner.waitForURL(`**/app/${slug}/settings/general`);
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
-  // Its panes run edge to edge beside the sidebar: the menu's column from the sidebar's edge, the page to the window's.
+  // Its panes sit on the shell's canvas beside the sidebar: the menu's pane from the sidebar's edge, the page's 8px in from the window's.
   await expect.poll(() => owner.evaluate(() => {
     // Measure in one frame while the sidebar finishes opening.
     const inset = document.querySelector('[data-slot="sidebar-inset"]')!.getBoundingClientRect();
     const panes = document.querySelector('[data-slot="pane-layout"]')!.getBoundingClientRect();
     return [Math.round(panes.x - inset.x), Math.round(panes.right - inset.right)];
-  })).toEqual([0, 0]);
-  // Settings' menu is a column of its own beside the page, the page's height; the users' settings in a group of their own.
+  })).toEqual([0, -8]);
+  // Settings' menu is a section pane beside the page's; the users' settings in a group of their own.
   const menu = owner.getByRole("navigation", { name: "Settings" });
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("heading")).toContainText(["Project", "Users", "Support"]);
+  for (const group of ["Project", "Users", "Support"]) {
+    await expect(menu.getByRole("group", { name: group, exact: true })).toBeVisible();
+  }
+  await expect(menu.getByRole("group", { name: "Users", exact: true }).getByRole("link")).toHaveText(["Groups", "Who's asking", "User properties"]);
   await expect(menu.getByRole("link")).toContainText(["General", "Team & roles", "Access", "Single sign-on", "Domain", "Groups", "Who's asking", "User properties"]);
   await checkpoint(owner, "settings-panes", { fullPage: false });
   // Customize keeps the open sidebar through its redirect to the first section too.
@@ -210,20 +213,19 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   // User properties is in the menu before any user has one, and says where they come from.
   await menu.getByRole("link", { name: "User properties" }).click();
   await expect(owner.getByRole("region", { name: "User properties" })).toContainText("None yet.");
-  // Wider screens keep the page's own heading in reach without a separate bar.
+  // The page's own header is its title, without a separate bar.
   await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Team & roles" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/team`);
   await owner.setViewportSize({ width: 1280, height: 500 });
-  await owner.evaluate(() => window.scrollTo(0, 200));
-  await expect(owner.getByRole("heading", { name: "Settings", level: 1 })).toBeInViewport();
+  const heading = owner.getByRole("region", { name: "Team & roles" }).getByRole("heading", { name: "Team & roles", level: 1 });
+  await expect(heading).toBeInViewport();
   await expect(owner.locator("main > header")).toBeHidden();
-  await owner.evaluate(() => window.scrollTo(0, 0));
-  // On a phone the page's heading comes first, above the menu.
+  // On a phone the page's pane alone, its header's button opening the menu.
   await owner.setViewportSize({ width: 390, height: 844 });
-  const heading = owner.getByRole("heading", { name: "Settings", level: 1 });
-  const menuButton = owner.locator("details summary").first();
   await expect(heading).toBeVisible();
-  expect((await heading.boundingBox())!.y).toBeLessThan((await menuButton.boundingBox())!.y);
+  await expect(menu).toBeHidden();
+  await owner.getByRole("button", { name: "Open the menu" }).click();
+  await expect(owner.getByRole("dialog", { name: "Settings" }).getByRole("link", { name: "Team & roles" })).toHaveAttribute("aria-current", "page");
 });
 
 test("the team's own CSS shows in the preview as it's typed, and on the portal once saved", async ({ browser }, testInfo) => {

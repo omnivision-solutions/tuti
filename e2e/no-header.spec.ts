@@ -175,6 +175,23 @@ async function expectAnchorGap(page: Page, selector: string, gap: number, sticky
   }).toBe(gap);
 }
 
+// A page of panes scrolls inside its pane: a section there lands its gap below the pane's header.
+async function expectPaneAnchorGap(page: Page, selector: string, gap: number) {
+  const target = page.locator(selector);
+  await target.evaluate((element) => {
+    let body = element.parentElement!;
+    while (getComputedStyle(body).overflowY !== "auto") body = body.parentElement!;
+    const room = document.createElement("div");
+    room.style.height = "200vh";
+    body.append(room);
+    element.scrollIntoView({ block: "start" });
+  });
+  await expect.soft.poll(async () => {
+    const header = (await page.locator('[data-slot="pane-header"]').boundingBox())!;
+    return Math.round((await target.boundingBox())!.y - (header.y + header.height));
+  }).toBe(gap);
+}
+
 test("app anchors clear each visible toolbar once, and Reporting adds no invisible toolbar", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -188,7 +205,7 @@ test("app anchors clear each visible toolbar once, and Reporting adds no invisib
   await expect(owner.locator("#recently-deleted")).toBeVisible();
   await expect(owner.locator("#recently-deleted")).toBeInViewport();
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expectAnchorGap(owner, "#usage", 32);
+  await expectPaneAnchorGap(owner, "#usage", 32);
   await owner.goto(`/app/${slug}/reporting/ai-conversations`);
   await expect.soft(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
   await expectAnchorGap(owner, "#ai-history", 32, false);
@@ -254,13 +271,19 @@ test("scroll padding clears a sticky toolbar pushed out of view by a short conta
   await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
 });
 
-test("billing's plan and usage anchors keep only their gap below the toolbar", async ({ browser }) => {
+test("billing's plan and usage anchors keep only their gap below the pane's header", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await verifyEmail(owner);
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/settings/billing`);
-  await expectAnchorGap(owner, "#plans", 32);
-  await expectAnchorGap(owner, "#usage", 32);
+  await expectPaneAnchorGap(owner, "#plans", 32);
+  await expectPaneAnchorGap(owner, "#usage", 32);
+  // On a phone the window scrolls, under the top bar: the plans land clear of it.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "48px");
+  await owner.getByRole("link", { name: "Choose a plan" }).click();
+  await expect.poll(async () => (await owner.locator("#plans").boundingBox())!.y).toBeGreaterThanOrEqual(48);
 });

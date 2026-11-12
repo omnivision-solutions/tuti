@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { ApiKeys } from "@/components/api-keys";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { Webhooks } from "@/components/webhooks";
 import { appUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
@@ -37,34 +37,32 @@ export default async function DevelopersSettingsPage(props: PageProps<"/app/[pro
   ]);
 
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle>API keys</CardTitle>
-          <CardDescription>
+    <SettingsPane title="Developers">
+      <SettingsCard
+        title="API keys"
+        description={
+          <>
             Use this project&apos;s feedback, docs, changelog and inbox from your own code (REST API) or an AI assistant (MCP). Keys are shown once; revoke any you no longer
             use. <a href="/api/docs" className="text-primary underline underline-offset-4">API docs</a>
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </>
+        }
+      >
+        <SettingBlock>
           <ApiKeys projectSlug={project.slug} keys={keys} apiUrl={`${appUrl().origin}/api/v1`} />
-        </CardContent>
-      </Card>
+        </SettingBlock>
+      </SettingsCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Webhooks</CardTitle>
-          <CardDescription>
-            Tuti sends a signed POST to your endpoint when something happens, and retries for about a day until it answers with a 2xx.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <SettingsCard
+        title="Webhooks"
+        description="Tuti sends a signed POST to your endpoint when something happens, and retries for about a day until it answers with a 2xx."
+      >
+        <SettingBlock>
           <Webhooks
             projectSlug={project.slug}
             webhooks={webhooks.map(({ deliveries, ...webhook }) => ({ ...webhook, lastDelivery: deliveries[0] ?? null }))}
           />
-        </CardContent>
-      </Card>
-    </>
+        </SettingBlock>
+      </SettingsCard>
+    </SettingsPane>
   );
 }

@@ -214,7 +214,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.keyboard.press("Escape");
 
   // Integrations lists it as connected, with Manage.
-  await owner.getByRole("link", { name: "Back to integrations" }).click();
+  await owner.getByRole("region", { name: "GitHub" }).getByRole("link", { name: "Integrations" }).click();
   await expect(owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ })).toBeVisible();
   await checkpoint(owner, "settings-integrations-connected");
   await owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ }).click();

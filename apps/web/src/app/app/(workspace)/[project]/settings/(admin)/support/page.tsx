@@ -5,7 +5,7 @@ import { CopyField } from "@/components/copy-button";
 import { EmailDomainSettings } from "@/components/inbox/email-domain";
 import { GetSupportAddressButton, SupportInboxSwitch } from "@/components/inbox/support-settings";
 import { PlanNotice } from "@/components/plan-notice";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingBlock, SettingsCard, SettingsPane } from "@/components/settings-card";
 import { timeAgo } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
 import { mailProvider } from "@/lib/mail-providers";
@@ -35,26 +35,18 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
   const receiver =
     own?.address && !own.receivedAt ? mxHosts(own.address.slice(own.address.lastIndexOf("@") + 1)).then(mailProvider, () => "other" as const) : null;
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Support inbox</CardTitle>
-          <CardDescription>Your users write to your team from the widget, and you answer them from the Inbox.</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <SettingsPane title="Inbox and email">
+      <SettingsCard title="Support inbox" description="Your users write to your team from the widget, and you answer them from the Inbox.">
+        <SettingBlock>
           <SupportInboxSwitch projectSlug={project.slug} on={settings.inbox} />
-        </CardContent>
-      </Card>
+        </SettingBlock>
+      </SettingsCard>
       {settings.email && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Email</CardTitle>
-            <CardDescription>
-              Emails to your support address land in the Inbox. In your email provider, forward your own support address (like
-              support@yourcompany.com) to this one; your provider may ask you to confirm it, and that email lands in the Inbox too.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+        <SettingsCard
+          title="Email"
+          description="Emails to your support address land in the Inbox. In your email provider, forward your own support address (like support@yourcompany.com) to this one; your provider may ask you to confirm it, and that email lands in the Inbox too."
+        >
+          <SettingBlock className="gap-3">
             {settings.email.address ? (
               <>
                 <CopyField label="Your support address" value={settings.email.address} name="support address" />
@@ -77,27 +69,23 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
                 <GetSupportAddressButton projectSlug={project.slug} />
               </div>
             )}
-          </CardContent>
-        </Card>
+          </SettingBlock>
+        </SettingsCard>
       )}
       {settings.email?.address && settings.email.ownDomain && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Your own address</CardTitle>
-            <CardDescription>
-              Use your company&apos;s address, like support@yourcompany.com, instead of your support address above: replies come from it, and emails to it
-              land in the Inbox.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <SettingsCard
+          title="Your own address"
+          description="Use your company's address, like support@yourcompany.com, instead of your support address above: replies come from it, and emails to it land in the Inbox."
+        >
+          <SettingBlock>
             {settings.email.ownDomain.included || settings.email.ownDomain.address ? (
               <EmailDomainSettings projectSlug={project.slug} own={settings.email.ownDomain} supportAddress={settings.email.address} oneClick={oneClick} receiver={receiver} />
             ) : (
               <PlanNotice feature="emailDomain" projectSlug={project.slug} admin />
             )}
-          </CardContent>
-        </Card>
+          </SettingBlock>
+        </SettingsCard>
       )}
-    </>
+    </SettingsPane>
   );
 }

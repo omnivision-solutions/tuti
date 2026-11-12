@@ -73,7 +73,40 @@ test("the sidebar starts collapsed and remembers the user's choice across pages 
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
 });
 
-for (const section of ["Settings", "Reporting", "Autopilot"]) {
+test("Settings keeps room for its page with the sidebar open at tablet width, its menu in a drawer", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Example Team");
+  await createProject(team, "Example", slug);
+  await team.setViewportSize({ width: 768, height: 900 });
+  const sidebar = team.locator('[data-slot="sidebar"][data-state]');
+  await sidebar.locator('[data-slot="sidebar-trigger"]').click();
+  await team.goto(`/app/${slug}/settings/general`);
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  // With less than 48rem beside the sidebar, the page's pane alone, its menu behind the header's button.
+  const page = team.getByRole("region", { name: "General" });
+  await expect(page.getByRole("heading", { name: "General", level: 1 })).toBeVisible();
+  await expect(team.getByRole("navigation", { name: "Settings", exact: true })).toBeHidden();
+  await expect.poll(async () => (await page.boundingBox())!.width).toBeGreaterThanOrEqual(480);
+  await expect.poll(async () => (await team.getByRole("textbox", { name: "Project name", exact: true }).boundingBox())!.width).toBeGreaterThanOrEqual(360);
+  expect(await team.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+  await checkpoint(team, "settings-opened-sidebar-tablet", { fullPage: false });
+  await page.getByRole("button", { name: "Open the menu" }).click();
+  const drawer = team.getByRole("dialog", { name: "Settings" });
+  await expect(drawer.getByRole("link", { name: "General" })).toHaveAttribute("aria-current", "page");
+  await drawer.getByRole("link", { name: "Team & roles", exact: true }).click();
+  await team.waitForURL("**/settings/team");
+  await expect(drawer).toBeHidden();
+  await expect(team.getByRole("region", { name: "Team & roles" }).getByRole("heading", { name: "Team & roles", level: 1 })).toBeVisible();
+  // Wider insets show the menu beside the page, preserving the open sidebar.
+  await team.setViewportSize({ width: 1440, height: 900 });
+  const menu = team.getByRole("navigation", { name: "Settings", exact: true });
+  await expect(menu.getByRole("link", { name: "Team & roles" })).toHaveAttribute("aria-current", "page");
+  await expect(team.getByRole("button", { name: "Open the menu" })).toBeHidden();
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+});
+
+for (const section of ["Reporting", "Autopilot"]) {
   test(`${section} keeps room for its content with the sidebar open at tablet width`, async ({ browser }, testInfo) => {
     const checkpoint = checkpoints(testInfo);
     const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -82,23 +115,20 @@ for (const section of ["Settings", "Reporting", "Autopilot"]) {
     await team.setViewportSize({ width: 768, height: 900 });
     const sidebar = team.locator('[data-slot="sidebar"][data-state]');
     await sidebar.locator('[data-slot="sidebar-trigger"]').click();
-    await team.goto(`/app/${slug}/${section === "Settings" ? "settings/general" : section.toLowerCase()}`);
+    await team.goto(`/app/${slug}/${section.toLowerCase()}`);
     const panes = team.locator('[data-slot="pane-layout"]');
     const content = panes.locator(":scope > div:last-child");
     await expect(sidebar).toHaveAttribute("data-state", "expanded");
     await expect(panes).toHaveCSS("flex-direction", "column");
     await expect.poll(async () => (await content.boundingBox())!.width).toBeGreaterThanOrEqual(480);
-    if (section === "Settings") {
-      await expect.poll(async () => (await team.getByRole("textbox", { name: "Project name", exact: true }).boundingBox())!.width).toBeGreaterThanOrEqual(400);
-    }
     expect(await team.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
     await checkpoint(team, `${section.toLowerCase()}-opened-sidebar-tablet`, { fullPage: false });
     if (section !== "Autopilot") {
       await panes.locator("aside summary").click();
       const menu = panes.getByRole("navigation", { name: section, exact: true });
       await expect(menu).toBeVisible();
-      await menu.getByRole("link", { name: section === "Settings" ? "Team & roles" : "Articles", exact: true }).click();
-      await team.waitForURL(`**/${section === "Settings" ? "settings/team" : "reporting/articles"}`);
+      await menu.getByRole("link", { name: "Articles", exact: true }).click();
+      await team.waitForURL("**/reporting/articles");
       await expect(panes.locator("aside details")).not.toHaveAttribute("open");
     }
     if (section === "Autopilot") {

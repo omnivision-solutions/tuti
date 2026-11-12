@@ -1,8 +1,9 @@
 import { mediaStorage } from "@tuti/shared/storage";
 import { notFound } from "next/navigation";
 
+import { SettingsPane } from "@/components/settings-card";
 import { SetupImport } from "@/components/setup-import";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { getAdminProject } from "@/server/membership";
 import { boardsNotes, latestImport } from "@/server/operations/imports";
 
@@ -14,12 +15,10 @@ export default async function ImportSettingsPage(props: PageProps<"/app/[project
     notFound();
   }
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Import from another tool</CardTitle>
-        <CardDescription>Bring what you have in another tool across. Import again whenever you like: only what&apos;s new comes, nothing twice.</CardDescription>
-      </CardHeader>
-      <SetupImport projectSlug={slug} latest={await latestImport(project.id)} mediaStorage={mediaStorage() !== null} boardsNotes={boardsNotes(project.plan)} />
-    </Card>
+    <SettingsPane title="Import" description="Bring what you have in another tool across. Import again whenever you like: only what's new comes, nothing twice.">
+      <Card>
+        <SetupImport projectSlug={slug} latest={await latestImport(project.id)} mediaStorage={mediaStorage() !== null} boardsNotes={boardsNotes(project.plan)} />
+      </Card>
+    </SettingsPane>
   );
 }
