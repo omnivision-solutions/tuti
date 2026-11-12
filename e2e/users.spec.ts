@@ -230,6 +230,16 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner).toHaveURL(/\?page=2$/);
   await expect(rows).toHaveCount(50);
   await expect(table.getByRole("columnheader", { name: "User" })).toBeInViewport();
+  // Someone from far down the list, then Back: the list is where it was, their row in view.
+  const far = rows.nth(45).getByRole("link").first();
+  await far.scrollIntoViewIfNeeded();
+  const name = (await far.textContent())!;
+  await far.click();
+  await expect(owner.getByRole("heading", { name, level: 1 })).toBeAttached();
+  await owner.goBack();
+  await expect(owner).toHaveURL(/\?page=2$/);
+  await expect(rows.getByRole("link", { name, exact: true })).toBeInViewport();
+  await expect(table.getByRole("columnheader", { name: "User" })).not.toBeInViewport();
   await owner.getByRole("combobox", { name: "Group" }).click();
   await owner.getByRole("option", { name: "Enterprise" }).click();
   await expect(owner).toHaveURL(/\?group=enterprise$/);

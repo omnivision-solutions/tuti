@@ -79,7 +79,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
           }
         />
         <PaneBody className="flex flex-col gap-4 p-3 @min-[48rem]/app:p-4">
-          {/* Each view, page, sort, search and group opens at the list's top (the pane scrolls, not the window). */}
+          {/* Each view, page, sort, search and group opens at the list's top, and Back returns to where it was (the pane scrolls, not the window). */}
           <ScrollTopOnChange />
           {children}
         </PaneBody>
