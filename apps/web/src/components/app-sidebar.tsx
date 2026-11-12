@@ -167,14 +167,18 @@ const TABS = ["Home", "Inbox", "Feedback", "Autopilot"];
 
 /**
  * The phone tab bar on this page, on a part's lists only (Feedback's posts, its boards, the Roadmap): a page of one
- * thing (a post, a conversation, an article: the route's `params` name it), a new one, its history, and a setting
- * have the screen to themselves and their way back. `open`: its part's tab (Feedback on the Roadmap); none for More's.
+ * thing (a post, a conversation, an article: the route's `params` name it), a new one, its history, and a setting (a
+ * collection's too) have the screen to themselves and their way back. `open`: its part's tab (Feedback on the
+ * Roadmap); none for More's.
  */
 export function phoneTabs(project: ProjectSummary, pathname: string, params: Record<string, unknown>) {
   const nav = projectNav(project);
   const active = activeItem(nav, pathname);
-  const onePage = ["number", "id", "slug", "user"].some((key) => key in params) || /\/(new|history)$/.test(pathname) || /\/(settings|customize)\/./.test(pathname);
-  if (!active || onePage) {
+  if (!active) {
+    return null;
+  }
+  const setting = /\/(settings|customize)\/./.test(pathname) || (pathname !== active.href && pathname.endsWith("/settings"));
+  if (["number", "id", "slug", "user"].some((key) => key in params) || /\/(new|history)$/.test(pathname) || setting) {
     return null;
   }
   const tabs = nav.flat().filter((item) => TABS.includes(item.title));
@@ -207,15 +211,13 @@ export function AppTabBar({ projects, fallbackSlug }: { projects: ProjectSummary
           key={item.href}
           href={item.href}
           aria-current={item === bar.open ? "page" : undefined}
-          // Its count is read with it ("Inbox, 4 open").
-          aria-describedby={item.badge ? countId(`tab ${item.title}`) : undefined}
           className={cn(tab, item === bar.open && on)}
         >
           <item.icon aria-hidden />
           {item.title}
           {!!item.badge && (
+            // Part of the link's name ("Inbox 4 open").
             <span
-              id={countId(`tab ${item.title}`)}
               className={cn("absolute top-0 left-[calc(50%+0.25rem)] h-5 min-w-5 rounded-full bg-sidebar-accent px-1.5 text-center text-xs leading-5 font-medium tabular-nums", item.badge.urgent && "bg-highlight text-highlight-foreground")}
             >
               {item.badge.count}

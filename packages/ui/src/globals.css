@@ -386,12 +386,14 @@
       scroll-padding-top: 3rem;
     }
   }
-  /* A page's actions pinned to the bottom on phones (PageActions): a field focused near the bottom scrolls above them. */
+  /* A page's actions pinned to the bottom on phones (PageActions), or the tab bar (AppTabBar): what's focused near the
+     bottom scrolls above them. */
   @media (width < 48rem) {
     html:has([data-slot="customize-settings"]) {
       scroll-padding-top: 6rem;
     }
-    html:has([data-pinned-actions]) {
+    html:has([data-pinned-actions]),
+    html:has([data-tab-bar]) {
       scroll-padding-bottom: 6rem;
     }
   }
