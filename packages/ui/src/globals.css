@@ -198,10 +198,6 @@
   --series-1: oklch(0.529 0.125 155);
   --series-2: oklch(0.684 0.185 44.9);
   --radius: 0.5rem;
-  /* A button's corners (Button), the small sizes' a step rounder-cornered. Pills where `data-pill-buttons` is set: the
-     admin's panes (docs/design.md → Panes). */
-  --button-radius: var(--radius);
-  --button-radius-sm: calc(var(--radius) * 0.8);
   --sidebar: oklch(0.945 0.014 84.6);
   --sidebar-foreground: oklch(0.216 0.006 56);
   --sidebar-primary: oklch(0.529 0.125 155);
@@ -346,6 +342,8 @@
 }
 
 /* A group's label: the heading of a group inside a list, card or menu (docs/design.md, Group label). */
+/* Buttons are pills where `data-pill-buttons` is set (the admin's panes, docs/design.md → Panes); elsewhere a
+   button's corners come from `--radius` where it is (Button). */
 [data-pill-buttons] {
   --button-radius: 9999px;
   --button-radius-sm: 9999px;

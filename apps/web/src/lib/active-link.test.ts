@@ -20,4 +20,6 @@ test("a view in the query string is open on its own URL, the plain one otherwise
   expect(activeView("/app/acme/feedback", "page=2&view=mine", hrefs)).toBe("/app/acme/feedback?view=mine");
   const boards = ["/app/acme/feedback", "/app/acme/feedback?view=mine", "/app/acme/feedback?view=mine&board=bugs"];
   expect(activeView("/app/acme/feedback", "board=bugs&view=mine", boards)).toBe("/app/acme/feedback?view=mine&board=bugs");
+  const overlapping = ["/app/acme/feedback?category=feature-requests", "/app/acme/feedback?view=mine&board=bugs"];
+  expect(activeView("/app/acme/feedback", "category=feature-requests&view=mine&board=bugs", overlapping)).toBe("/app/acme/feedback?view=mine&board=bugs");
 });
