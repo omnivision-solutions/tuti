@@ -98,7 +98,7 @@ function ReportBody({ upgrade, children }: { upgrade: { slug: string; admin: boo
           <CardHeader>
             <LockIcon aria-hidden className="mx-auto size-5 text-muted-foreground" />
             <CardTitle>
-              <h3>See how your help center, AI and inbox are doing</h3>
+              <h2>See how your help center, AI and inbox are doing</h2>
             </CardTitle>
             <CardDescription>{planNeeded("reporting")}</CardDescription>
           </CardHeader>
@@ -256,7 +256,7 @@ export function Stat({ label, value, hint, href, trend }: { label: string; value
       className="min-w-0 rounded-xl bg-card shadow-xs ring-1 ring-border @min-[40rem]/stats:flex-1 @min-[40rem]/stats:rounded-none @min-[40rem]/stats:shadow-none @min-[40rem]/stats:ring-0 @min-[40rem]/stats:not-first:border-l"
     >
       {href ? (
-        <Link href={href} className="flex h-full flex-col gap-1 rounded-[inherit] p-4 transition-colors hover:bg-muted/50 @min-[40rem]/stats:px-5">
+        <Link href={href} className="flex h-full flex-col gap-1 rounded-[inherit] p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset @min-[40rem]/stats:px-5">
           {body}
         </Link>
       ) : (

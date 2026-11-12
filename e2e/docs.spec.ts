@@ -437,6 +437,16 @@ test("the team writes a docs article in a collection, publishes it, and a visito
     await expect(team.getByText(/\d{4}\s–\s/).filter({ visible: true })).toHaveCount(0);
     expect(await team.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
   }
+  // On a laptop with the sidebar open, beside Reporting's menu: the title whole, the range's dates waiting for more room.
+  await team.setViewportSize({ width: 1024, height: 900 });
+  await team.goto(`/app/${slug}/reporting/unanswered?range=year`);
+  const sidebarTrigger = team.locator('[data-slot="sidebar"][data-state] [data-slot="sidebar-trigger"]');
+  await sidebarTrigger.click();
+  await expect(team.locator('[data-slot="sidebar"][data-state]')).toHaveAttribute("data-state", "expanded");
+  const unanswered = team.getByRole("heading", { name: "Unanswered questions", level: 1 });
+  await expect.poll(() => unanswered.evaluate((heading) => heading.scrollWidth - heading.clientWidth)).toBe(0);
+  await expect(team.getByText(/\d{4}\s–\s/).filter({ visible: true })).toHaveCount(0);
+  await sidebarTrigger.click();
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.goto(`/app/${slug}/reporting?range=7d`);
   await stat("Found it helpful").getByRole("link").focus();

@@ -15,8 +15,8 @@ export function HashHeading({ id, className, children }: { id: string; className
     }
   }, [id]);
   return (
-    <h3 ref={ref} id={id} tabIndex={-1} className={className}>
+    <h2 ref={ref} id={id} tabIndex={-1} className={className}>
       {children}
-    </h3>
+    </h2>
   );
 }
