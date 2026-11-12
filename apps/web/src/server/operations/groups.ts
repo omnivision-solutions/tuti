@@ -1,5 +1,6 @@
 import { Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
+import { pictureUrl } from "@tuti/shared/media-links";
 import { z } from "zod";
 
 import { type GroupCondition, groupConditions, groupMatch, type GroupRule, type Match, storedRule } from "@/lib/group-conditions";
@@ -44,7 +45,7 @@ export async function matchingUsers(projectId: string, rule: GroupRule, limit: n
     SELECT s."externalId" AS id, u.name, s.email, u.image AS avatar, count(*) OVER () AS count
     FROM sso_identity s JOIN "user" u ON u.id = s."userId"
     WHERE ${where} ORDER BY u.name, s.id LIMIT ${limit}`;
-  return { readers: Number(rows[0]?.count ?? 0), users: rows.map((row) => ({ id: row.id, name: row.name, email: row.email, avatar: row.avatar })) };
+  return { readers: Number(rows[0]?.count ?? 0), users: rows.map((row) => ({ id: row.id, name: row.name, email: row.email, avatar: pictureUrl(row.avatar) })) };
 }
 
 /** How many of the project's users a group with this rule has now, and the first 3's names. */

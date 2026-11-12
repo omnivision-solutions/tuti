@@ -4,6 +4,7 @@ import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 import type { z } from "zod";
 
+import { lastingMediaUrl, savedPicture } from "@tuti/shared/media-links";
 import type { Properties } from "@tuti/shared/user-properties";
 import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
@@ -235,6 +236,10 @@ test("the dialog's preview: who a group with these conditions would have now, th
   expect("users" in bulk && [bulk.readers, bulk.users.length]).toEqual([51, 50]);
   // Each with their id in the app, email and avatar.
   expect((await previewGroup(project.slug, plan("free"))) as unknown).toEqual({ readers: 1, users: [{ id: expect.any(String), name: "Cy", email: null, avatar: null }] });
+  // An uploaded avatar, saved without host or path, as a link (read past the client).
+  const cy = await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, user: { name: "Cy" } }, select: { userId: true } });
+  await prisma.user.update({ where: { id: cy.userId }, data: { image: savedPicture("m/cyface/96.webp") } });
+  expect(await previewGroup(project.slug, plan("free"))).toMatchObject({ users: [{ avatar: lastingMediaUrl("m/cyface/96.webp") }] });
   expect(await previewGroup(project.slug, [{ property: "plan", op: "is", value: "" }])).toEqual({ error: "A condition needs a value" });
 });
 

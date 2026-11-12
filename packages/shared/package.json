@@ -13,6 +13,7 @@
     "./inbound-signature": "./src/inbound-signature.ts",
     "./email-quotes": "./src/email-quotes.ts",
     "./signed": "./src/signed.ts",
+    "./media-links": "./src/media-links.ts",
     "./user-properties": "./src/user-properties.ts",
     "./portal-redirects": "./src/portal-redirects.ts",
     "./log": "./src/log.ts"

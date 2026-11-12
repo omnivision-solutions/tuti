@@ -1,6 +1,7 @@
 import { emailImageKey, imageKey, mediaKeys, originalKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { handlers } from "@tuti/jobs";
+import { handlers, lastingMediaUrl } from "@tuti/jobs";
+import { savedPicture } from "@tuti/shared/media-links";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -9,6 +10,7 @@ import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/h
 import { request } from "@/test/next-headers";
 
 import { createUpload, finishUpload, setAvatar, uploadStatus } from "./media";
+import { postVoters } from "./post-lists";
 import { createPost } from "./posts";
 
 let s3: S3Fake;
@@ -319,6 +321,17 @@ describe("avatar", () => {
     expect((await prisma.media.findUniqueOrThrow({ where: { id: media.id } })).attachedAt).toBeNull();
   });
 
+  test("an upload saved without host or path (savedPicture) is read as a lasting link: by the client, and in a post's voters", async () => {
+    const media = await ready(owner.id);
+    const key = imageKey(media.id, 96);
+    await prisma.user.update({ where: { id: owner.id }, data: { image: savedPicture(key), imageId: media.id } });
+    expect(await user()).toEqual({ image: lastingMediaUrl(key), imageId: media.id });
+    const board = await prisma.board.findFirstOrThrow({ where: { projectId: project.id } });
+    const post = await prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: 900, title: "Dark mode", body: "" } });
+    await prisma.vote.create({ data: { postId: post.id, userId: owner.id, projectId: project.id } });
+    expect((await postVoters(project.id, null, post.id)).map((voter) => voter.image)).toEqual([lastingMediaUrl(key)]);
+  });
+
   test("someone who leaves the team gets their initials back, and the upload is released; a photo set elsewhere since stays", async () => {
     const member = await addMember(project.id, "MEMBER");
     const other = await addMember(project.id, "MEMBER");
@@ -327,6 +340,8 @@ describe("avatar", () => {
       actAs(person);
       expect(await setAvatar(uploads[i]!.id)).toEqual({});
     }
+    // One saved as it is from now on (without host or path), not as a link: initials back all the same.
+    await prisma.user.update({ where: { id: member.id }, data: { image: savedPicture(imageKey(uploads[0]!.id, 96)) } });
     // Their photo since comes from elsewhere (sign-in), the upload still recorded.
     await prisma.user.update({ where: { id: other.id }, data: { image: "https://example.com/face.png" } });
     await prisma.teamMember.deleteMany({ where: { projectId: project.id, userId: { in: [member.id, other.id] } } });
