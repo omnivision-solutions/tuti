@@ -1,3 +1,4 @@
+import { Analytics } from "@tuti/ui/analytics";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -59,6 +60,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
     >
       {children}
       {widgetProject && <AppWidget slug={widgetProject} />}
+      <Analytics />
     </AppShell>
   );
 }

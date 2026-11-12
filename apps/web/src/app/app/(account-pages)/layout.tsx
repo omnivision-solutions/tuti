@@ -1,3 +1,4 @@
+import { Analytics } from "@tuti/ui/analytics";
 import { TutiLogo } from "@tuti/ui/tuti-logo";
 
 // Rendered for each request, never at build time: their pages read the server's settings (email, licences), which a build doesn't have.
@@ -16,6 +17,7 @@ export default function AccountPagesLayout({ children }: LayoutProps<"/app">) {
       </header>
       {/* Centred down the window: a short page (sign-in, forgot password) sits in the middle, not under the header. */}
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-10 has-data-wide:max-w-5xl has-data-full:max-w-none has-data-full:p-0">{children}</main>
+      <Analytics />
     </>
   );
 }

@@ -92,7 +92,9 @@ customers' domains go to the app. The site's links into the app are plain paths 
 pricing comes from the app's `/api/plans`, so plans and limits stay the app's settings. It needs one
 variable, `APP_URL`: the app's public address (`https://tuti.so`; the app answers only on its own host). Its image:
 `docker build -f apps/marketing/Dockerfile -t tuti-marketing .` (port 3000). In development each runs on
-its own port, and the site's links go to the app's dev server.
+its own port, and the site's links go to the app's dev server. Both send page views to PostHog, cookieless,
+when `POSTHOG_KEY` is set (and `POSTHOG_HOST`, PostHog's EU cloud by default); a self-hosted server leaves it
+unset and sends nothing.
 
 ## Self-hosting
 
