@@ -45,7 +45,7 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
     <PaneLayout>
       <Pane aria-label="Setup">
         <PaneHeader
-          title={`Set up ${membership.project.name}`}
+          title="Set up"
           actions={
             <Link href={home} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Skip setup
@@ -54,8 +54,9 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
         />
         <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-7">
           <div className="mx-auto flex max-w-2xl flex-col gap-3">
-            <p className="text-sm text-muted-foreground">
-              Step {STEPS.indexOf(step) + 1} of {STEPS.length}
+            {/* The project's name on a line of its own, wrapping: the header's title is one line, beside Skip setup. */}
+            <p className="text-sm break-words text-muted-foreground">
+              <span className="font-medium text-foreground">{membership.project.name}</span> · Step {STEPS.indexOf(step) + 1} of {STEPS.length}
             </p>
             <Card>
                 {step === "from" && (
