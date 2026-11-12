@@ -21,6 +21,7 @@ import {
 import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
+import { savedPicture } from "@tuti/shared/media-links";
 import { mediaLimit, mediaStorage, VIDEO_URL_SECONDS } from "@tuti/shared/storage";
 import { z } from "zod";
 
@@ -314,7 +315,8 @@ export async function setAvatar(mediaId: string | null): Promise<{ error?: strin
   }
   await prisma.$transaction([
     prisma.media.update({ where: { id: image.id }, data: { attachedAt: new Date() } }),
-    prisma.user.update({ where: { id: session.user.id }, data: { image: image.url, imageId: image.id } }),
+    // Its stored file, not a link: the link is made when it's read (@tuti/db), so it follows APP_URL and the route.
+    prisma.user.update({ where: { id: session.user.id }, data: { image: savedPicture(imageKey(image.id, imageWidths(image.width)[0]!)), imageId: image.id } }),
   ]);
   return {};
 }

@@ -1,4 +1,4 @@
-import { emailImageKey, imageKey, mediaKeys, originalKey } from "@tuti/content";
+import { emailImageKey, imageKey, imageWidths, mediaKeys, originalKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { handlers, lastingMediaUrl } from "@tuti/jobs";
 import { savedPicture } from "@tuti/shared/media-links";
@@ -310,7 +310,10 @@ describe("avatar", () => {
     actAs(owner);
     const media = await ready(owner.id);
     expect(await setAvatar(media.id)).toEqual({});
-    expect(await user()).toEqual({ image: expect.stringContaining(`/media/${media.id}/`), imageId: media.id });
+    // Saved without host or path (its file and signature); read as a lasting link made then.
+    const key = imageKey(media.id, imageWidths(480)[0]!);
+    expect(await prisma.$queryRaw`SELECT image FROM "user" WHERE id = ${owner.id}`).toEqual([{ image: savedPicture(key) }]);
+    expect(await user()).toEqual({ image: lastingMediaUrl(key), imageId: media.id });
 
     await release();
     expect((await prisma.media.findUniqueOrThrow({ where: { id: media.id } })).attachedAt).not.toBeNull();

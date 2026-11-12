@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
+import { savedPicture } from "@tuti/shared/media-links";
 import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled, upsertProjectUser } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
 import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
@@ -179,7 +180,9 @@ test("Feedback comes across quietly: boards, posts with their content, images, d
   // Mira's avatar is a copy too, as Account's photo is; Tobias's placeholder never came.
   const mira = await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "app-user-1" }, select: { user: { select: { image: true, imageId: true } } } });
   expect(mira.user.imageId).toEqual(expect.any(String));
-  expect(mira.user.image).toContain(`/media/${mira.user.imageId}/96.webp?s=`);
+  expect(mira.user.image).toContain(`/api/media/${mira.user.imageId}/96.webp?s=`);
+  // Saved without host or path, read as a link (@tuti/db).
+  expect(await prisma.$queryRaw`SELECT image FROM "user" WHERE "imageId" = ${mira.user.imageId}`).toEqual([{ image: savedPicture(`m/${mira.user.imageId}/96.webp`) }]);
   expect(await prisma.media.findUniqueOrThrow({ where: { id: mira.user.imageId! } })).toMatchObject({ status: "READY", width: 96 });
   // Kept by the daily release while they're one of the project's users (not only a team member's).
   await prisma.media.updateMany({ where: { projectId: project.id }, data: { attachedAt: new Date(Date.now() - 3 * 24 * 60 * 60_000) } });
