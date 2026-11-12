@@ -117,7 +117,8 @@ for (const section of ["Reporting", "Autopilot"]) {
     await sidebar.locator('[data-slot="sidebar-trigger"]').click();
     await team.goto(`/app/${slug}/${section.toLowerCase()}`);
     const panes = team.locator('[data-slot="pane-layout"]');
-    const content = panes.locator(":scope > div:last-child");
+    // The page's column (Autopilot's: the pane beside its list).
+    const content = panes.locator(":scope > :last-child");
     await expect(sidebar).toHaveAttribute("data-state", "expanded");
     await expect(panes).toHaveCSS("flex-direction", "column");
     await expect.poll(async () => (await content.boundingBox())!.width).toBeGreaterThanOrEqual(480);

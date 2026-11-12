@@ -482,6 +482,22 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.locator('[data-slot="pane-header"]').getByRole("link", { name: "Autopilot", exact: true })).toBeInViewport();
   await expect(owner.locator("p[aria-hidden]", { hasText: article })).toBeInViewport();
   await expect(phoneList).toBeHidden();
+  // The window scrolls under the app's bar (48px): focus and anchors land below it, and once the review's title has
+  // gone up under it, the bar says it.
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "48px");
+  await owner.locator("main").evaluate((main) => {
+    const room = document.createElement("div");
+    room.dataset.scrollRoom = "";
+    room.style.height = "200vh";
+    main.append(room);
+  });
+  await owner.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(owner.locator("header:has([data-slot=bar-path])")).toContainText(article);
+  const firstChip = owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: /^PR #/ }).first();
+  await firstChip.focus();
+  expect((await firstChip.boundingBox())!.y).toBeGreaterThanOrEqual(48);
+  await owner.locator("[data-scroll-room]").evaluate((element) => element.remove());
+  await owner.evaluate(() => window.scrollTo(0, 0));
   await checkpoint(owner, "autopilot-article-phone");
   await owner.goto(activityPage);
   await expect(owner.getByRole("heading", { name: pr, level: 1 })).toBeVisible();
