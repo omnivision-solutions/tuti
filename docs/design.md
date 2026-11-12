@@ -706,7 +706,8 @@ at desktop and phone widths, in light and dark (in development only).
   pill (Feedback on the Roadmap; More on a part without a tab). It shows on a part's lists only: a page of one thing
   (a post, a conversation, an article, a review), a new one, its history and a settings page of its own (Settings',
   Customize's, a collection's) have the screen to themselves and their way back, as does a page that pins its actions
-  to the bottom. A view inside a list's page (a docs tab's Settings, `?view=`) keeps the bar with the page. Tuti's own chat launcher sits above it.
+  to the bottom. A view inside a list's page (`?view=`) keeps the bar with the page. Docs has none: it has its own
+  phone navigation, and its workspace is the window's height, scrolling inside. Tuti's own chat launcher sits above it.
 
 ## Responsive rules
 

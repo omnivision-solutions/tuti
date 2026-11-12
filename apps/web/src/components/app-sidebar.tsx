@@ -168,7 +168,7 @@ const TABS = ["Home", "Inbox", "Feedback", "Autopilot"];
 /**
  * The phone tab bar on this page, on a part's lists only (Feedback's posts, its boards, the Roadmap): a page of one
  * thing (a post, a conversation, an article, its history: the route's `params` name it; a post open from Feedback's
- * list, `?post=`), a new one, and a setting (a collection's too) have the screen to themselves and their way back.
+ * list, `?post=`), a new one, and a setting have the screen to themselves and their way back; Docs has none.
  * `open`: its part's tab (Feedback on the Roadmap); none for More's.
  */
 export function phoneTabs(project: ProjectSummary, pathname: string, params: Record<string, unknown>, search = new URLSearchParams()) {
@@ -184,9 +184,9 @@ export function phoneTabs(project: ProjectSummary, pathname: string, params: Rec
     ["number", "id", "slug", "user"].some((key) => key in params) ||
     (route === "/feedback" && search.has("post")) ||
     route === "/changelog/new" ||
-    route === "/docs/new" ||
-    /^\/(settings|customize)\/./.test(route) ||
-    route === `/docs/collections/${params.collection}/settings`;
+    // Docs has its own phone navigation, and its workspace is the window's height, scrolling inside (DocsWorkspace).
+    /^\/docs(\/|$)/.test(route) ||
+    /^\/(settings|customize)\/./.test(route);
   if (onePage) {
     return null;
   }

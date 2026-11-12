@@ -20,7 +20,6 @@ test("the phone tab bar is on a part's own page, its tab open; More's parts open
   expect(open("/app/acme/feedback/roadmap")).toBe("Feedback");
   expect(open("/app/acme/feedback/boards")).toBe("Feedback");
   expect(open("/app/acme/autopilot/activity")).toBe("Autopilot");
-  expect(open("/app/acme/docs/collections/guides", { collection: "guides" })).toBe("More");
   expect(open("/app/acme/autopilot")).toBe("Autopilot");
   expect(open("/app/acme/changelog")).toBe("More");
   expect(open("/app/acme/settings")).toBe("More");
@@ -41,10 +40,14 @@ test("a page of one thing, a new one and a setting have the screen to themselves
   expect(open("/app/acme/customize/branding")).toBeNull();
 });
 
-test("a slug the team picks is never taken for a route: a collection or tab called Settings or History keeps the bar", () => {
-  expect(open("/app/acme/docs/collections/settings", { collection: "settings" })).toBe("More");
-  expect(open("/app/acme/docs/collections/history", { collection: "history" })).toBe("More");
-  expect(open("/app/acme/docs/tabs/settings", { tab: "settings" })).toBe("More");
+test("Docs keeps its own phone navigation: no tab bar on any of its pages", () => {
+  expect(open("/app/acme/docs")).toBeNull();
+  expect(open("/app/acme/docs/collections/guides", { collection: "guides" })).toBeNull();
+  expect(open("/app/acme/docs/tabs/settings", { tab: "settings" })).toBeNull();
+  expect(open("/app/acme/docs/insights")).toBeNull();
+});
+
+test("a slug the team picks is never taken for a route", () => {
   const settings = { ...acme, slug: "settings" };
   expect(phoneTabs(settings, "/app/settings/feedback", { project: "settings" })?.open?.title).toBe("Feedback");
   expect(phoneTabs(settings, "/app/settings/inbox", { project: "settings" })?.open?.title).toBe("Inbox");
