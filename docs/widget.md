@@ -12,7 +12,7 @@ they posted or voted on ("Dark mode is now Planned": moves to Planned, In progre
 in the last 30 days, three at most); then a way into feedback, What's new (its card opens it),
 and your quick links. The tabs, Home,
 Feedback, Help center (your docs) and Messages, are at the bottom of the panel, with
-"Powered by tuti" under them unless your project hides it (Customize → Branding). Add one
+"Powered by tuti" under them unless your project hides it (Settings → Branding). Add one
 script tag anywhere in your pages:
 
 ```html
@@ -25,7 +25,7 @@ an iframe, so your site's styles can't reach it and it needs no API key.
 ## Launcher
 
 The launcher is a round button with an icon. In the Tuti app, your project's
-**Customize → Widget** (owners and admins) sets:
+**Settings → Widget** (owners and admins) sets:
 
 - **Button name** (default "Feedback", up to 30 characters): what screen readers say, and
   the button's tooltip; the panel it opens has the same name. It isn't shown on the button.
@@ -125,12 +125,12 @@ Elements added to the page later (single-page apps) get their panel when they ap
 
 ## Light or dark
 
-The widget takes your portal's colour scheme (Customize → Branding): light, dark, or, by default,
+The widget takes your portal's colour scheme (Settings → Branding): light, dark, or, by default,
 each visitor's own setting. The panel's accent colour is the portal's too; the button has its own
-(Customize → Widget). If your site has one look, pick the widget's with `data-theme` on the script tag
+(Settings → Widget). If your site has one look, pick the widget's with `data-theme` on the script tag
 (or `theme` in `TutiSettings`): `light`, `dark`, or `auto` (the default, the portal's colour scheme).
 The panel and inline panels take it, on every page the panel opens, and so does the button unless
-you gave it a colour in Customize → Widget (it's the same in both).
+you gave it a colour in Settings → Widget (it's the same in both).
 
 ```html
 <script src="https://tuti.so/api/widget.js" data-project="acme" data-theme="dark" async></script>
@@ -181,7 +181,7 @@ panel instead of leaving the page.
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.setTheme(theme)` | `"light"`, `"dark"` or `"auto"` (your portal's colour scheme): every panel changes now, and the button unless it has its own colour (see [Light or dark](#light-or-dark)). |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |
-| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new, or, with the support inbox on, a reply from your team they haven't seen in Messages. Parts you turned off on Home (Customize → Widget) count too. |
+| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new, or, with the support inbox on, a reply from your team they haven't seen in Messages. Parts you turned off on Home (Settings → Widget) count too. |
 | `Tuti.on("unseen", callback)` | Calls `callback(unseen)` once the status is known and whenever it changes, e.g. to put a dot on your own button. |
 
 ```js

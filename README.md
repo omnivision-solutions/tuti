@@ -234,7 +234,7 @@ tuti.so (a flat monthly fee per project, on tuti.so and self-hosted alike). Your
 fetches the licence key from tuti.so and renews it there, at most daily, after a portal page is
 served.
 
-Only projects an admin asked a licence for (Check now in Customize → Branding, or `POST /license/check` in the API) contact tuti.so, and
+Only projects an admin asked a licence for (Check now in Settings → Branding, or `POST /license/check` in the API) contact tuti.so, and
 all they send is your installation's random id, the project's id, a one-time refresh token (from
 the second request on; until then a random secret of your installation's, whose hash the "Get a licence" link carries, so only
 your installation can claim the licence it bought), a random request id and the app version. If tuti.so can't be reached, the current key keeps working until it expires (35 days);
