@@ -68,4 +68,14 @@ test("Docs pages are panes: the tree as the area's pane, views as pills, the edi
   await expect(editorHeader.getByRole("link", { name: "Getting started", exact: true })).toBeVisible();
   expect((await editorHeader.getByRole("heading", { name: "Create your first calendar", level: 1 }).boundingBox())!.width).toBeLessThanOrEqual(1);
   await checkpoint(team, "docs-editor-phone", { fullPage: false });
+
+  // With unpublished changes the header's row still fits a phone: More actions inside the pane.
+  await api("/articles/create-your-first-calendar/publish", {});
+  await api("/articles/create-your-first-calendar", { body: "Open Calendars, then New calendar." }, "PATCH");
+  await team.reload();
+  await expect(editorHeader.getByRole("button", { name: "Manage unpublished changes", exact: true })).toBeVisible();
+  const pane = (await editorHeader.boundingBox())!;
+  const more = (await editorHeader.getByRole("button", { name: "More actions", exact: true }).boundingBox())!;
+  expect(more.x + more.width).toBeLessThanOrEqual(pane.x + pane.width);
+  await checkpoint(team, "docs-editor-changes-phone", { fullPage: false });
 });

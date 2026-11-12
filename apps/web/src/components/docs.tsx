@@ -620,7 +620,8 @@ export function ArticleChanges({
     <details open={compact ? undefined : true} className={compact ? "docs-change-menu relative right-[auto] top-[auto] z-20 [&:not([open])]:relative [&:not([open])]:top-[auto] [&:not([open])]:right-[auto] [&[open]]:w-auto [&[open]]:p-0 [&[open]]:bg-transparent [&[open]]:border-0 [&[open]]:rounded-[8px] [&[open]]:relative [&_>_button]:mt-2 [&[open]_>_button]:flex [&[open]_>_button]:w-47.5 [&[open]_>_button]:justify-start [&[open]_>_button]:m-0 [&[open]_>_button]:bg-popover [&[open]_>_button]:border [&[open]_>_button]:border-border [&[open]_>_button]:absolute [&[open]_>_button]:left-[0] [&[open]_>_button]:top-8 [&[open]_>_button]:z-30 [&[open]_>_button:last-child]:top-16.5" : "contents"}>
       <summary role="button" aria-label="Manage unpublished changes" className={compact ? "docs-change-toggle text-xs text-highlight-foreground list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-highlight rounded-full max-sm:text-xs max-sm:gap-1 max-sm:px-2" : "hidden"}>
         <span aria-hidden className="size-1.5 rounded-full bg-status-under-review" />
-        Unpublished changes
+        {/* On phones its dot: the header's row keeps room for Publish and More actions. */}
+        <span className="@max-[40rem]/app:sr-only">Unpublished changes</span>
         <ChevronDownIcon aria-hidden className="size-3" />
       </summary>
       <AlertDialog>

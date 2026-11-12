@@ -740,7 +740,8 @@ export function DocsWorkspace({
               panes (the editor's, its tools'), so there it's only their row. */}
           <div data-editing={editing} className={cn(
             "docs-page-content @container/docs-page flex min-h-0 min-w-0 flex-1 flex-col gap-6 [--docs-pad:2rem] @max-[61rem]/app:[--docs-pad:1.5rem] @max-[40rem]/app:[--docs-pad:1rem]",
-            "overflow-y-auto rounded-2xl bg-card px-(--docs-pad) pb-7 ring-1 ring-border [scrollbar-width:thin] [&_>_*]:shrink-0",
+            // Its header stays at the top: what's focused or scrolled to clears it (with its pills' own row on phones).
+            "overflow-y-auto scroll-pt-20 rounded-2xl bg-card px-(--docs-pad) pb-7 ring-1 ring-border [scrollbar-width:thin] [&_>_*]:shrink-0 @max-[48rem]/app:scroll-pt-32",
             "data-[editing=true]:overflow-visible data-[editing=true]:rounded-none data-[editing=true]:bg-transparent data-[editing=true]:p-0 data-[editing=true]:ring-0",
           )}>{children}</div>
         </DocsBrowse>

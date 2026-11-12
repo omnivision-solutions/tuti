@@ -629,8 +629,9 @@ test("the team reviews article history, changes visibility and restores a delete
   await restoring.getByRole("button", { name: "Restore" }).click();
   await expect(team.getByText("Version restored")).toBeVisible();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
-  await team.getByRole("button", { name: "Manage unpublished changes" }).click();
-  await team.getByRole("button", { name: "Discard changes", exact: true }).click();
+  // From the keyboard: the menu opens in the header's row, where the toasts can cover it (they wait while the pointer is over them).
+  await team.getByRole("button", { name: "Manage unpublished changes" }).press("Enter");
+  await team.getByRole("button", { name: "Discard changes", exact: true }).press("Enter");
   const discarding = team.getByRole("alertdialog");
   await expect(discarding).toContainText("The changes stay in its history");
   await discarding.getByRole("button", { name: "Discard changes" }).click();
