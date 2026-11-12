@@ -24,7 +24,6 @@ export default async function TeamDocsLayout({ children, params }: LayoutProps<"
   ]);
   return (
     <DocsWorkspace
-      projectName={membership.project.name}
       portal={await portalAddress(slug)}
       projectSlug={slug}
       tabs={docs.tabs.map((tab) => ({ slug: tab.slug, name: tab.name }))}

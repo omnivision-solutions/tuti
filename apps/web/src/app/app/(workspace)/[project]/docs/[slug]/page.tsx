@@ -21,9 +21,8 @@ import { ArticleStateBadge } from "@/components/docs-article-rows";
 import { ArticleHistory } from "@/components/article-history";
 import { ArticleVerify } from "@/components/article-verify";
 import { ArticleTools } from "@/components/article-tools";
-import { DocsMore } from "@/components/docs-page-header";
+import { DocsMore, DocsPageHeader } from "@/components/docs-page-header";
 import { buttonVariants } from "@/components/ui/button";
-import { BackLink } from "@/components/back-link";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDay, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
@@ -229,36 +228,70 @@ export default async function ArticlePage(
           "[&_.article-text_blockquote]:pr-4 [&_.article-text_blockquote]:pl-10 [&_.article-text_blockquote]:text-soft-foreground",
           "[&_.article-text_blockquote]:text-[14px] [&_.article-text_blockquote]:before:absolute [&_.article-text_blockquote]:before:left-3",
           "[&_.article-text_blockquote]:before:top-3.5 [&_.article-text_blockquote]:before:text-primary",
-          "[&_.article-text_blockquote]:before:content-['i'] [&_.article-text_blockquote]:before:flex [&_.article-text_blockquote]:before:size-3.5 [&_.article-text_blockquote]:before:items-center [&_.article-text_blockquote]:before:justify-center [&_.article-text_blockquote]:before:rounded-full [&_.article-text_blockquote]:before:border [&_.article-text_blockquote]:before:border-current [&_.article-text_blockquote]:before:font-mono [&_.article-text_blockquote]:before:text-xs [&_.article-text_blockquote]:before:leading-none docs-surface flex flex-col flex-1 min-w-0 overflow-hidden",
+          "[&_.article-text_blockquote]:before:content-['i'] [&_.article-text_blockquote]:before:flex [&_.article-text_blockquote]:before:size-3.5 [&_.article-text_blockquote]:before:items-center [&_.article-text_blockquote]:before:justify-center [&_.article-text_blockquote]:before:rounded-full [&_.article-text_blockquote]:before:border [&_.article-text_blockquote]:before:border-current [&_.article-text_blockquote]:before:font-mono [&_.article-text_blockquote]:before:text-xs [&_.article-text_blockquote]:before:leading-none @container/editor flex flex-col flex-1 min-w-0 overflow-hidden [--docs-pad:0px]",
           "@max-[61rem]/app:[&_.docs-article-form]:px-7 @max-[61rem]/app:[&_.docs-article-form]:max-w-[min(43rem,_calc(100%_-_56px))]",
-          "max-sm:rounded-[14px]",
           "max-sm:[&_.docs-article-form]:p-[20px_23px_48px] max-sm:[&_.docs-article-form]:max-w-[calc(100%_-_46px)]",
           "[&_.article-text]:text-[15.5px] [&_.article-text]:leading-[1.7]",
           "[&_.article-text]:gap-3.5 [&_.article-text_h2]:text-[21px] [&_.article-text_h2]:mt-3 [&_.article-text_h2]:leading-[1.3]",
           "[&_.article-text_h3]:text-[19px] [&_.article-text_h3]:mt-3 [&_.article-text_li_+_li]:mt-1 max-sm:[&_.article-text]:text-[15px]",
           "max-sm:[&_.article-text]:leading-[1.7] max-sm:[&_.article-text_h2]:text-[21px] max-sm:[&_.article-text_h2]:mt-3 min-w-0 min-h-0",
-          "rounded-[14px] bg-docs-surface shadow-[0_1px_3px_color-mix(in_oklch,_var(--foreground)_3.5%,_transparent),_0_0_0_1px_var(--docs-edge)]",
+          "rounded-2xl bg-card ring-1 ring-border",
         )}>
-          <header className="docs-editor-heading [&_>_a]:text-muted-foreground [&_>_a]:text-[13px] [&_>_a]:mb-4 p-[23px_28px_18px] shrink-0 @max-[61rem]/app:px-5 max-sm:p-[16px_16px_14px] max-sm:[&_>_a]:mb-6" data-slot="docs-page-header">
-            <BackLink
-              href={
-                fromReview
-                  ? `/app/${slug}/autopilot/articles/${article.id}`
-                  : edited.collection
-                    ? `/app/${slug}/docs/collections/${edited.collection.slug}`
-                    : `/app/${slug}/docs`
-              }
-            >
-              {fromReview ? "Review" : (edited.collection?.name ?? "Docs")}
-            </BackLink>
-            <div className="docs-editor-title-row flex justify-between gap-4 items-start max-sm:flex-wrap max-sm:gap-3.5">
-              <h1 className="sr-only">{edited.title}</h1>
-              <div id="article-title" className="flex-1 min-w-[0] [&_textarea]:text-[29px] [&_textarea]:leading-[1.16] [&_textarea]:font-[650] [&_textarea]:tracking-[-0.03em] max-sm:basis-[100%] max-sm:[&_textarea]:text-[27px] max-sm:[&_textarea]:max-w-[300px] max-sm:[&_textarea]:leading-[1.14]" />
+          <DocsPageHeader
+            back={{
+              href: fromReview
+                ? `/app/${slug}/autopilot/articles/${article.id}`
+                : edited.collection
+                  ? `/app/${slug}/docs/collections/${edited.collection.slug}`
+                  : `/app/${slug}/docs`,
+              label: fromReview ? "Review" : (edited.collection?.name ?? "Docs"),
+            }}
+            title={edited.title}
+            titleInForm
+            actions={
+              <>
               <div className={cn(
-                "docs-editor-actions [&_[data-slot='button']]:h-8.5 [&_[data-slot='button']]:text-[13.5px] flex items-center gap-1.5 shrink-0 pt-0.25",
+                "docs-editor-state mr-2 flex min-w-0 items-center gap-3 text-xs whitespace-nowrap text-muted-foreground [&_[data-slot='badge']]:text-xs",
+                // The row never wraps: as the editor's pane narrows (the window, the tree's width, the tools beside it), the date
+                // and Open go (Open is in More actions), then the badge (Publish says it's a draft); changes keep their
+                // controls, so Save, Publish and More actions stay in the pane.
+                "@max-[52rem]/editor:[&>:not([data-slot=badge],#article-state-tools)]:hidden @max-[30rem]/editor:[&>:not(#article-state-tools)]:hidden",
+              )}>
+                {article.changes ? (
+                  <span id="article-state-tools" className="relative" />
+                ) : (
+                  <ArticleStateBadge
+                    state={!article.publishedAt ? "draft" : "published"}
+                  />
+                )}
+                <span>
+                  {article.publishedAt
+                    ? `Published ${formatDay(article.publishedAt)} ${article.publishedAt.getUTCFullYear()}`
+                    : `Edited ${timeAgo(newest?.createdAt ?? article.updatedAt)}`}
+                  {article.publishedAt &&
+                    listing !== "everywhere" &&
+                    ` · ${LISTING_LABELS[listing]}`}
+                </span>
+                {article.publishedAt &&
+                  listing !== "hidden" &&
+                  listing !== "ai_only" && (
+                    <Link
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open on help center"
+                      className="docs-live-link inline-flex gap-1.5 items-center text-muted-foreground text-[13px] whitespace-nowrap [&:hover]:text-primary"
+                    >
+                      <ExternalLinkIcon className="size-3.5" />
+                      Open
+                    </Link>
+                  )}
+              </div>
+              <div className={cn(
+                "docs-editor-actions flex items-center gap-1.5 shrink-0",
                 "[&_.docs-article-save]:text-muted-foreground [&_.docs-article-save]:bg-transparent",
                 "[&_.docs-article-save]:shadow-none [&_.docs-article-save]:ring-0 [&_.docs-article-save]:border-[transparent] [&_.docs-article-save]:p-[0_3px]",
-                "[&_.docs-article-save]:text-[13px] max-sm:w-full max-sm:justify-end max-sm:[&_.docs-article-save]:mr-auto",
+                "[&_.docs-article-save]:text-[13px]",
               )}>
                 <ArticleSaveButton outline={article.publishedAt === null} />
                 {article.publishedAt === null && (
@@ -315,46 +348,11 @@ export default async function ArticlePage(
                   />
                 </DocsMore>
               </div>
-            </div>
-            <div className={cn(
-              "docs-editor-state flex items-center gap-3 flex-wrap mt-3.5 text-xs text-muted-foreground [&_.docs-live-link]:ml-auto",
-              "[&_[data-slot='badge']]:text-xs max-sm:gap-1.75 max-sm:text-xs max-sm:gap-x-1.75 max-sm:[&_.docs-live-link]:ml-0",
-              "max-sm:[&_.docs-live-link]:text-xs max-sm:[&_>_span:not(#article-state-tools)]:[order:3]",
-              "max-sm:[&_>_span:not(#article-state-tools)]:ml-auto",
-            )}>
-              {article.changes ? (
-                <span id="article-state-tools" className="relative" />
-              ) : (
-                <ArticleStateBadge
-                  state={!article.publishedAt ? "draft" : "published"}
-                />
-              )}
-              <span>
-                {article.publishedAt
-                  ? `Published ${formatDay(article.publishedAt)} ${article.publishedAt.getUTCFullYear()}`
-                  : `Edited ${timeAgo(newest?.createdAt ?? article.updatedAt)}`}
-                {article.publishedAt &&
-                  listing !== "everywhere" &&
-                  ` · ${LISTING_LABELS[listing]}`}
-              </span>
-              {article.publishedAt &&
-                listing !== "hidden" &&
-                listing !== "ai_only" && (
-                  <Link
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Open on help center"
-                    className="docs-live-link inline-flex gap-1.5 items-center text-muted-foreground text-[13px] whitespace-nowrap [&:hover]:text-primary"
-                  >
-                    <ExternalLinkIcon className="size-3.5" />
-                    Open
-                  </Link>
-                )}
-            </div>
-          </header>
+              </>
+            }
+          />
           <div id="article-toolbar" className={cn(
-            "docs-format-row flex items-center gap-2.5 shrink-0 min-h-12 p-[5px_18px] border-b border-border bg-docs-surface z-15",
+            "docs-format-row flex items-center gap-2.5 shrink-0 min-h-12 p-[5px_18px] border-b border-border bg-card z-15",
             "[&_>_[aria-label='Formatting']]:flex-nowrap [&_>_[aria-label='Formatting']]:min-w-0 [&_>_[aria-label='Formatting']]:overflow-x-auto",
             "[&_>_[aria-label='Formatting']]:[scrollbar-width:none] [&_[data-slot='button']]:min-w-7.25 [&_[data-slot='button']]:h-7.5",
             "[&_[data-slot='button']]:text-muted-foreground [&_svg]:w-4 [&_svg]:h-4 @max-[77rem]/app:px-3 @max-[77rem]/app:gap-1 @max-[77rem]/app:[&_[aria-label='Quote']]:hidden",

@@ -195,7 +195,7 @@ test("Docs surfaces in laptop light, laptop dark and phone layouts", async ({ br
       await team.goto(`/app/${slug}/docs${path}`);
       await expect(team.locator(".docs-workspace")).toBeVisible();
       if (path.includes("google") || path.includes("plans")) {
-        await expect(team.locator("#article-title textarea")).toBeVisible();
+        await expect(team.locator(".docs-title-field textarea")).toBeVisible();
         await expect(team.locator('.docs-editor-actions .docs-article-save')).toHaveText("Saved");
       }
       if (path.endsWith("/settings")) {

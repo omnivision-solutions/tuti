@@ -651,8 +651,9 @@ test("the team reviews article history, changes visibility and restores a delete
   await restoring.getByRole("button", { name: "Restore" }).click();
   await expect(team.getByText("Version restored")).toBeVisible();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
-  await team.getByRole("button", { name: "Manage unpublished changes" }).click();
-  await team.getByRole("button", { name: "Discard changes", exact: true }).click();
+  // From the keyboard: the menu opens in the header's row, where the toasts can cover it (they wait while the pointer is over them).
+  await team.getByRole("button", { name: "Manage unpublished changes" }).press("Enter");
+  await team.getByRole("button", { name: "Discard changes", exact: true }).press("Enter");
   const discarding = team.getByRole("alertdialog");
   await expect(discarding).toContainText("The changes stay in its history");
   await discarding.getByRole("button", { name: "Discard changes" }).click();
@@ -1012,11 +1013,11 @@ test("the team builds its docs in the tree: a tab, a collection and an article f
   await team.waitForURL(`**/app/${slug}/docs/tabs/guides`);
   await expect(team.getByRole("heading", { level: 1 })).toHaveText("Guides");
   // Its collections, each a band with what's in it (the first open).
-  await expect(team.getByRole("tabpanel", { name: "Content" }).getByRole("heading", { level: 3 })).toHaveText(["Billing", "Getting started"]);
-  await expect(team.getByRole("tabpanel", { name: "Content" }).getByRole("region", { name: "Getting started" })).toContainText("1 article");
+  await expect(team.getByRole("region", { name: "Content", exact: true }).getByRole("heading", { level: 3 })).toHaveText(["Billing", "Getting started"]);
+  await expect(team.getByRole("region", { name: "Content", exact: true }).getByRole("region", { name: "Getting started" })).toContainText("1 article");
   await checkpoint(team, "team-docs-tab-page");
-  await team.getByRole("tab", { name: "Settings" }).click();
-  const settings = team.getByRole("tabpanel", { name: "Settings" });
+  await team.getByRole("navigation", { name: "Tab", exact: true }).getByRole("link", { name: "Settings", exact: true }).click();
+  const settings = team.getByRole("region", { name: "Settings", exact: true });
   await expect(settings.getByLabel("Address")).toHaveValue("/docs");
   await settings.getByText("A page you choose").click();
   await settings.getByRole("combobox", { name: "Page" }).click();
@@ -1052,7 +1053,7 @@ test("the team builds its docs in the tree: a tab, a collection and an article f
   await expect(team.getByText("Collection saved")).toBeVisible();
   await team.locator(".docs-tab-switcher").click();
   await team.getByRole("link", { name: "Handbook", exact: true }).click();
-  await expect(team.getByRole("tabpanel", { name: "Content" }).getByRole("region").first().getByText("Signed-in", { exact: true })).toBeVisible();
+  await expect(team.getByRole("region", { name: "Content", exact: true }).getByRole("region").first().getByText("Signed-in", { exact: true })).toBeVisible();
   await api("/articles/downloading-invoices/publish", {});
   await visitor.goto("/docs/downloading-invoices");
   await expect(visitor.getByText("Sign in to read this.")).toBeVisible();
@@ -1152,8 +1153,8 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await team.getByRole("link", { name: "API", exact: true }).click();
   // Its page first: the collection's page it comes from has a Settings tab too.
   await team.waitForURL(`**/app/${slug}/docs/tabs/api`);
-  await team.getByRole("tab", { name: "Settings" }).click();
-  const settings = team.getByRole("tabpanel", { name: "Settings" });
+  await team.getByRole("navigation", { name: "Tab", exact: true }).getByRole("link", { name: "Settings", exact: true }).click();
+  const settings = team.getByRole("region", { name: "Settings", exact: true });
   await settings.getByLabel("Name").fill("API reference");
   await settings.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("Tab saved")).toBeVisible();
@@ -1166,8 +1167,8 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(rows("Tabs")).toHaveText([/^API reference/, /^Guides/]);
   await checkpoint(team, "team-docs-home");
   await team.getByRole("link", { name: "API reference", exact: true }).click();
-  await team.getByRole("tab", { name: "Settings" }).click();
-  await expect(team.getByRole("tabpanel", { name: "Settings" }).getByLabel("Name")).toHaveValue("API reference");
+  await team.getByRole("navigation", { name: "Tab", exact: true }).getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(team.getByRole("region", { name: "Settings", exact: true }).getByLabel("Name")).toHaveValue("API reference");
   await team.setViewportSize({ width: 390, height: 844 });
   await expect(team.getByRole("button", { name: "Browse docs" })).toBeVisible();
   await checkpoint(team, "team-docs-home-phone", { fullPage: false });
@@ -1254,7 +1255,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await team.waitForURL(`**/app/${slug}/docs`);
   await team.locator(".docs-tab-switcher").click();
   await team.getByRole("link", { name: "API reference", exact: true }).click();
-  await expect(team.getByRole("tabpanel", { name: "Content" }).getByRole("region")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/, /^Getting started/, /^Billing/]);
+  await expect(team.getByRole("region", { name: "Content", exact: true }).getByRole("region")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/, /^Getting started/, /^Billing/]);
 });
 
 test("a tab's landing page: the overview's cards, or a page the team picks in the tab's settings", async ({ browser }, testInfo) => {
@@ -1371,16 +1372,16 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   // The team makes API's path show an article: the tab's page has its address and what it shows in Settings.
   // From the docs' home, by its heading.
   await team.goto(`/app/${slug}/docs`);
-  const settings = team.getByRole("tabpanel", { name: "Settings" });
+  const settings = team.getByRole("region", { name: "Settings", exact: true });
   await team.locator(".docs-tab-switcher").click();
   await team.getByRole("link", { name: "Guides", exact: true }).click();
-  await team.getByRole("tab", { name: "Settings" }).click();
+  await team.getByRole("navigation", { name: "Tab", exact: true }).getByRole("link", { name: "Settings", exact: true }).click();
   await expect(settings.getByLabel("Address")).toHaveValue("/docs");
   await expect(settings).toContainText("Your docs' home");
   await team.locator(".docs-tab-switcher").click();
   await team.getByRole("link", { name: "API", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/docs/tabs/api`);
-  await team.getByRole("tab", { name: "Settings" }).click();
+  await team.getByRole("navigation", { name: "Tab", exact: true }).getByRole("link", { name: "Settings", exact: true }).click();
   await expect(settings.getByLabel("Address")).toHaveValue("/docs/api");
   await expect(settings.getByRole("radio", { name: /^Overview/ })).toBeChecked();
   await settings.getByText("A page you choose").click();
@@ -1403,7 +1404,7 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
 
   // Back to the overview: the tab's cards.
   await team.reload();
-  await team.getByRole("tab", { name: "Settings" }).click();
+  await team.getByRole("navigation", { name: "Tab", exact: true }).getByRole("link", { name: "Settings", exact: true }).click();
   await expect(settings.getByRole("radio", { name: /^A page you choose/ })).toBeChecked();
   await settings.getByText("Overview", { exact: true }).click();
   await expect(settings.getByRole("combobox", { name: "Page" })).toHaveCount(0);

@@ -131,24 +131,8 @@ export default async function TeamDocsPage(
       <DocsPageHeader
         title="Overview"
         description={`${plural(articles.length, "article")} in ${plural(docs.collections.length, "collection")}`}
-        actions={
-          <>
-            <a
-              href={`${portal}/docs`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="docs-live-link inline-flex gap-1.5 items-center text-muted-foreground text-[13px] whitespace-nowrap [&:hover]:text-primary"
-            >
-              <ExternalLinkIcon className="size-3.5" />
-              <span>View on help center</span>
-            </a>
-            <AddContentMenu
-              parent={null}
-              tab={docs.tabs[0]?.slug}
-              article={null}
-            />
-          </>
-        }
+        helpCenter={`${portal}/docs`}
+        actions={<AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} />}
       />
       <section aria-label="At a glance" className={cn(
         "docs-overview-stats flex gap-16.5 p-[4px_0_28px] border-b border-border [&_>_div]:flex [&_>_div]:flex-col [&_>_div]:gap-0.5",

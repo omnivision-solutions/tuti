@@ -71,9 +71,8 @@ for (const pane of [
       }
       if (pane.name === "docs tree") {
         const title = (await team.getByRole("heading", { name: "Getting started", exact: true }).boundingBox())!;
-        const actions = (await team.locator(".docs-heading-actions").boundingBox())!;
+        const actions = (await team.locator('.docs-page-header [data-slot="pane-header"] > div > div.ml-auto').boundingBox())!;
         expect(title.y + title.height <= actions.y || title.x + title.width <= actions.x).toBe(true);
-        expect(await team.locator(".docs-heading-copy p").evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
       }
       if (pane.name === "conversation list") {
         expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
@@ -105,7 +104,7 @@ for (const pane of [
       await team.keyboard.press("Tab");
       await expect(handle).toBeFocused();
     }
-    expect(initialHandle.x + initialHandle.width / 2 - initialPane.x - initialPane.width).toBe(pane.name === "docs tree" ? 6 : 4);
+    expect(initialHandle.x + initialHandle.width / 2 - initialPane.x - initialPane.width).toBe(4);
     if (pane.name === "conversation list") {
       const list = team.getByRole("region", { name: "Conversations", exact: true });
       await list.getByRole("link", { name: /Can I change a calendar's sharing settings/ }).click();

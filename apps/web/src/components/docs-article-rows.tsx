@@ -10,7 +10,7 @@ import { LucideIcon } from "@/components/icon-field";
 import { CollectionIcon } from "@/components/collection-icon";
 import { DocsPageHeader } from "@/components/docs-page-header";
 import { portalAddress } from "@/server/custom-domains";
-import { SubNav } from "@/components/sub-nav";
+import { FilterPills } from "@/components/filter-pills";
 import { Badge } from "@/components/ui/badge";
 import { SampleBadge } from "@/components/sample-badge";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
@@ -347,23 +347,23 @@ export async function CollectionHeader({
   const base = `/app/${projectSlug}/docs/collections/${collection.slug}`;
   const portal = await portalAddress(projectSlug);
   return (
-    <>
-      <DocsPageHeader
+    <DocsPageHeader
         back={{ href: `/app/${projectSlug}/docs`, label: "Docs" }}
         title={collection.name}
         icon={collection.knownIcon && collection.icon ? <CollectionIcon name={collection.icon} /> : <FolderIcon />}
         description={collection.description || undefined}
-        actions={settings ? <div id="collection-actions" className="flex items-center gap-[8px]" /> : <><a href={`${portal}/docs/${collection.slug}`} target="_blank" rel="noreferrer" className="docs-live-link inline-flex gap-1.5 items-center text-muted-foreground text-[13px] whitespace-nowrap [&:hover]:text-primary"><ExternalLinkIcon className="size-3.5" /><span>View on help center</span></a><AddContentMenu parent={collection.slug} article={collection.slug} /></>}
+        helpCenter={settings ? undefined : `${portal}/docs/${collection.slug}`}
+        actions={settings ? <div id="collection-actions" className="flex items-center gap-[8px]" /> : <AddContentMenu parent={collection.slug} article={collection.slug} />}
         more={settings ? undefined : <DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={hasChildren} />}
+        filters={
+          <FilterPills
+            label="Collection"
+            items={[
+              { title: "Content", href: base },
+              { title: "Settings", href: `${base}/settings` },
+            ]}
+          />
+        }
       />
-      <SubNav
-        label="Collection"
-        items={[
-          { title: "Content", href: base },
-          { title: "Settings", href: `${base}/settings` },
-        ]}
-        itemClassName="first:pl-0"
-      />
-    </>
   );
 }

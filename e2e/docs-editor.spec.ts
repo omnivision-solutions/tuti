@@ -274,7 +274,8 @@ test("article tools collapse into the pinned toolbar and restore without a previ
   const tools = team.getByRole("complementary", { name: "Article tools" });
   await expect(tools).toBeVisible();
   await expect(tools.getByRole("heading", { name: "History", exact: true })).toBeVisible();
-  expect((await article.boundingBox())!.width).toBeLessThan(width);
+  // At 1440 the text keeps its reading width beside them.
+  expect((await article.boundingBox())!.width).toBeLessThanOrEqual(width);
   await tools.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(tools.getByRole("combobox", { name: "Collection", exact: true })).toBeVisible();
   await tools.getByRole("button", { name: "Collapse article tools" }).click();
@@ -562,6 +563,8 @@ test("phone tabs have one switcher popover, restore visible focus, and tablet na
   await team.keyboard.press("Escape");
   await expect(tree.locator(".docs-tab-switcher")).toBeFocused();
   await tree.getByRole("link", { name: "Overview", exact: true }).click();
+  // The tree closes as the page changes: open it again once there.
+  await team.waitForURL(`**/app/${slug}/docs`);
   await team.setViewportSize({ width: 850, height: 900 });
   await team.getByRole("button", { name: "Browse docs" }).click();
   await tree.getByRole("button", { name: "App navigation", exact: true }).click();
