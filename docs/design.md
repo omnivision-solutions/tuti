@@ -27,7 +27,8 @@ cute at the expense of clarity.
   favicon `app/icon.svg`, in each app). The current drawing is a placeholder until we have
   a proper illustration.
 - **Corners:** `--radius` 0.5rem → controls (buttons, inputs, selects) 8px (`rounded-lg`), cards and tiles
-  ~11px (`rounded-xl`), pills fully round. On the public portal `--radius` is 0.625rem: controls 10px,
+  ~11px (`rounded-xl`), pills fully round. A search field in a pane's header (`PaneHeader`'s actions, Feedback's)
+  is a pill like the filter pills and round icon buttons beside it (32px tall, `rounded-full`). On the public portal `--radius` is 0.625rem: controls 10px,
   cards 14px, through the same `rounded-lg` and `rounded-xl`. The portal board search variant below uses the larger corners.
   A workspace's panes, the large surfaces that sit on the page's canvas side by side (the Inbox's list, conversation
   and details; the composer card; Docs' tree, page and article tools), are a step larger, `rounded-2xl` (~14px), so they read as panes, not as cards inside one.
@@ -571,8 +572,8 @@ Use these instead of hand-rolling layout:
   It assumes the launcher at the bottom right, where Tuti's help project keeps it:
   moved to the left (Settings → Widget), `launcher:` would need its side too.
 - **`BackLink`**: "← Feedback" above a detail page's header; in the app it's
-  `PageHeader`'s `back` (a post's page draws its own row: the back link, and the newer/older post as ‹ › at its
-  other end, away from the title).
+  `PageHeader`'s `back`, or on a page of panes `PaneHeader`'s (a post's: "All posts", its newer and older post as ‹ ›
+  among the header's actions, away from the title).
 - **A post's page** (the team's): its header and text in one column (up to 48rem, the page the whole width), its
   sidebar beside it from the top with a line on its left: "Properties" as icon + label rows whose values are quiet
   selects (`QUIET_TRIGGER`: no border until hover, the chevron on hover), then Voters (their faces, three by name,
@@ -582,7 +583,8 @@ Use these instead of hand-rolling layout:
   the highlight colour for a note), Email voters at its left, the button at its right. Team replies and notes: a 3px
   line down the left and a light tint (green, the highlight's); every comment inset by that line, so the avatars
   keep one column. On phones the properties are a card folded to one line (status, owner, ETA) over the post, the
-  rest of the sidebar after the comments.
+  rest of the sidebar after the comments (in a post's pane under 48rem wide: a tablet). Feedback's menu shows beside
+  it only from 76rem of the shell, so on a laptop the pane has room for both columns.
 - **The team's roadmap**: no column fill (the cards make the lanes), each column's header an icon in its status's
   colour, its name, count and a one-line note; cards: board, the vote pill and "⋯" (status menu) on top, a 16px
   title, two lines of the post, then the owner and ETA when there are. On phones one column at a time, picked from a
@@ -695,7 +697,8 @@ at desktop and phone widths, in light and dark (in development only).
   A pane body scrolls in place of the window, so it keeps its place on each URL for Back and Forward; one whose own
   links replace its list (Users' pages, sorts, searches) starts at the top on a new URL (`resetOnNavigate`).
 - **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line
-  under it. The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
+  under it. Where the window scrolls the page rather than the pane (under 48rem of the shell, from a 48rem
+  window, at least 40rem tall) it sticks to the top (`STICKY_PANE_HEADER`), as `PageHeader` does. The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
   type), and on phones "‹ All posts" alone, the title for screen readers. `description` follows the title from 56rem
   of the shell up ("· Your project's name…"). `filters` are pills after the title, on phones a row of their own under
   it. `actions` at the right end: round icon buttons (`outline`, `icon-sm`, with an `aria-label`) and at most one

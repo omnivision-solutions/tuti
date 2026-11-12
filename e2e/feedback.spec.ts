@@ -1926,6 +1926,65 @@ test("Feedback's list keeps its place as a post opens and closes beside it, in a
   await expect(row).toBeInViewport();
 });
 
+test("a post's page and the list at tablet and laptop widths: the header stays in view, the properties beside the post", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Export reports to CSV", body: "Our team needs the full report.\n\n".repeat(40) });
+  await Promise.all(Array.from({ length: 20 }, (_, i) => api("/posts", { board: "feature-requests", title: `Idea ${i + 1}` })));
+  const sidebar = team.locator('[data-slot="sidebar-container"]');
+  const onRail = async () => {
+    if ((await sidebar.boundingBox())!.width > 100) {
+      await team.locator('[data-slot="sidebar-trigger"]:visible').click();
+    }
+    await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(100);
+  };
+  const header = team.locator('[data-slot="pane-header"]').first();
+  // A tablet (768px, the sidebar on its rail): the window scrolls the page; the pane's header stays at its top.
+  await team.setViewportSize({ width: 768, height: 1024 });
+  await team.goto(`/app/${slug}/p/1`);
+  await onRail();
+  const reply = team.getByRole("textbox", { name: "Comment", exact: true });
+  await reply.scrollIntoViewIfNeeded();
+  expect(await team.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect(header.getByRole("link", { name: "All posts" })).toBeInViewport();
+  await expect(header.getByRole("link", { name: "View on portal" })).toBeInViewport();
+  expect(Math.round((await header.boundingBox())!.y)).toBe(0);
+  // The focused reply clears it.
+  await reply.focus();
+  await expect.poll(async () => (await reply.boundingBox())!.y).toBeGreaterThanOrEqual((await header.boundingBox())!.height);
+  await checkpoint(team, "post-tablet-scrolled", { fullPage: false });
+  // The list's header too: its pills, search and Filters.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  expect(await team.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect(team.getByRole("button", { name: /^Filters/ })).toBeInViewport();
+  await expect(team.getByRole("navigation", { name: "Statuses" })).toBeInViewport();
+  // A laptop (1024px on the rail, and 1366px with the sidebar open): the post's properties beside it, open, not
+  // folded to a line.
+  for (const [width, open] of [
+    [1024, false],
+    [1366, true],
+  ] as const) {
+    await team.setViewportSize({ width, height: 800 });
+    await team.goto(`/app/${slug}/p/1`);
+    if (open) {
+      if ((await sidebar.boundingBox())!.width < 100) await team.locator('[data-slot="sidebar-trigger"]:visible').click();
+      await expect.poll(async () => (await sidebar.boundingBox())!.width).toBe(240);
+    } else {
+      await onRail();
+    }
+    const properties = team.getByRole("complementary", { name: "Properties" });
+    await expect(properties.getByRole("combobox", { name: "Owner" })).toBeVisible();
+    await expect(team.getByRole("button", { name: "Show properties" })).toBeHidden();
+    const post = (await team.getByRole("region", { name: "Comments", exact: true }).boundingBox())!;
+    expect((await properties.boundingBox())!.x).toBeGreaterThanOrEqual(post.x + post.width);
+    await checkpoint(team, `post-laptop-${width}`, { fullPage: false });
+  }
+});
+
 test("Feedback's rows picked for Set status, Move to board and Merge; Completed asks first", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -1951,6 +2010,8 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const bar = team.getByRole("toolbar", { name: "Selected posts" });
   const row = (title: string) => team.getByRole("main").getByRole("listitem").filter({ hasText: title });
   await expect(bar).toHaveCount(0);
+  // All, mixing statuses, groups them: each group's fold names it and its count.
+  await expect(team.getByRole("region", { name: "Planned" }).locator("summary")).toHaveAccessibleName("Planned 1");
   // The team writes a post on their portal, from the header.
   const newPost = team.getByRole("link", { name: "New post (on your portal)" });
   await expect(newPost).toHaveAttribute("href", `${portalUrl(slug)}/feedback`);

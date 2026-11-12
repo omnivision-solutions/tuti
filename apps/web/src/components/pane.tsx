@@ -14,6 +14,15 @@ import { activeView } from "@/lib/active-link";
  * of an optional `SectionPane` (the area's menu) and one or more `Pane`s, each starting with a `PaneHeader`.
  * `data-slot="pane-layout"`: the shell gives it the whole width; `data-panes`: on its canvas (AppShell).
  */
+/**
+ * A pane's header where the window scrolls the page, not the pane: under 48rem of the shell from a 48rem window
+ * (the sidebar open on a tablet), where there's no phone bar to say what the page is, it stays at the top (in a
+ * window at least 40rem tall, as `PageHeader`). For what holds a pane's header (Feedback's bar for picked rows).
+ */
+// Its z-index only there too: a grid item with one paints over what follows it in its cell (Feedback's bar).
+export const STICKY_PANE_HEADER =
+  "bg-card rounded-t-2xl topbar:[@media(height>=40rem)]:@max-[48rem]/app:sticky topbar:[@media(height>=40rem)]:@max-[48rem]/app:top-0 topbar:[@media(height>=40rem)]:@max-[48rem]/app:z-10";
+
 type SectionMenu = { open: boolean; setOpen: (open: boolean) => void; close: () => void };
 const SectionMenuContext = createContext<SectionMenu | null>(null);
 
@@ -35,7 +44,8 @@ export function PaneLayout({ children, className }: { children: ReactNode; class
 /** One white panel. Its parts scroll inside it (`PaneBody`), never the panel's rounded edge. */
 export function Pane({ children, className, "aria-label": label }: { children: ReactNode; className?: string; "aria-label"?: string }) {
   return (
-    <section aria-label={label} data-slot="pane" className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-card text-card-foreground ring-1 ring-border", className)}>
+    // Clipped where it's the window's height; under that the window scrolls, and its header sticks (STICKY_PANE_HEADER).
+    <section aria-label={label} data-slot="pane" className={cn("flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl bg-card text-card-foreground ring-1 ring-border @min-[48rem]/app:overflow-hidden", className)}>
       {children}
     </section>
   );
@@ -109,7 +119,7 @@ export function PaneHeader({
   const menu = useContext(SectionMenuContext);
   const Heading = level === 1 ? "h1" : "h2";
   return (
-    <header data-slot="pane-header" data-title-in-form={titleInForm || undefined} className="shrink-0 border-b">
+    <header data-slot="pane-header" data-title-in-form={titleInForm || undefined} className={cn("shrink-0 border-b", STICKY_PANE_HEADER)}>
       <div className={cn("flex min-h-15 min-w-0 items-center gap-2 px-3 py-2 @min-[48rem]/app:px-4 @min-[48rem]/app:pl-5", className)}>
         {menu && (
           // Shown with a section pane on the page (hidden from tablet width up, where the pane is beside it).

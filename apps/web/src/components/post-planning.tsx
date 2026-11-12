@@ -167,7 +167,7 @@ export function PostVisibilitySelect({
 
 /**
  * In a narrow post pane (`@container/post`), a post's properties folded to one line (`summary`: its status, owner and
- * ETA) that opens them; at 56rem and up, beside the post, they're always open and the line isn't there.
+ * ETA) that opens them; at 48rem and up, beside the post, they're always open and the line isn't there.
  */
 export function PhoneFold({ summary, children }: { summary: ReactNode; children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -178,12 +178,12 @@ export function PhoneFold({ summary, children }: { summary: ReactNode; children:
         aria-expanded={open}
         aria-label={open ? "Hide properties" : "Show properties"}
         onClick={() => setOpen(!open)}
-        className="-mx-1 flex min-h-9 items-center gap-2 rounded-lg px-1 text-left text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 @min-[56rem]/post:hidden"
+        className="-mx-1 flex min-h-9 items-center gap-2 rounded-lg px-1 text-left text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 @min-[48rem]/post:hidden"
       >
         {summary}
         <ChevronDownIcon aria-hidden className={cn("ml-auto size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
-      <div className={cn("flex flex-col gap-1", open ? "@max-[56rem]/post:mt-2 @max-[56rem]/post:border-t @max-[56rem]/post:pt-2" : "@max-[56rem]/post:hidden")}>{children}</div>
+      <div className={cn("flex flex-col gap-1", open ? "@max-[48rem]/post:mt-2 @max-[48rem]/post:border-t @max-[48rem]/post:pt-2" : "@max-[48rem]/post:hidden")}>{children}</div>
     </>
   );
 }

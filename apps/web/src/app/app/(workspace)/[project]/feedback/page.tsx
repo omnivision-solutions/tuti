@@ -140,14 +140,24 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   ];
 
   // A post open beside the list: the menu only where there's room for three panes.
-  const menu = feedbackMenu({ project: membership.project, role: membership.role, view: tab, board, className: cn(open !== null && "@max-[80rem]/app:hidden!") });
-  const portal = await portalAddress(slug);
+  // Its counts the list's own when they're across every board.
+  const [menu, portal] = await Promise.all([
+    feedbackMenu({
+      project: membership.project,
+      role: membership.role,
+      view: tab,
+      board,
+      counts: !board && !q && !group ? counts : undefined,
+      className: cn(open !== null && "@max-[80rem]/app:hidden!"),
+    }),
+    portalAddress(slug),
+  ]);
   // The view's name: the board's, filtered to one, else the tab's.
   const title = (board && project.boards.find((b) => b.slug === board)?.name) ?? (tab === "all" ? "All posts" : tabs.find((t) => t.key === tab)!.title);
 
   return (
     <PaneLayout>
-      {await menu}
+      {menu}
       <FeedbackKeys order={listed.map((post) => post.number)} open={open} base={withPost(null)} />
       {/* A post open beside the list has the phone's screen to itself: no tab bar. */}
       {open !== null && <HidesTabBar />}

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createContext, type ReactNode, use, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { STICKY_PANE_HEADER } from "@/components/pane";
 import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import {
   AlertDialog,
@@ -243,7 +244,8 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
   // The bar over the header's first row (its title, views and actions hidden, out of reach), so the list doesn't move;
   // on phones the views' own row under it stays usable.
   const toolbar = (bar?: ReactNode) => (
-    <div ref={filtersRef} className={cn("grid min-w-0 grid-cols-1", bar && "[&>div>header>div:first-child]:invisible")}>
+    // Its header stays at the top where the window scrolls: this, which holds it, does (STICKY_PANE_HEADER).
+    <div ref={filtersRef} className={cn("grid min-w-0 grid-cols-1", STICKY_PANE_HEADER, bar && "[&>div>header>div:first-child]:invisible")}>
       <div className="contents [&>*]:min-w-0 [&>*]:[grid-area:1/1]">{children}</div>
       {bar}
     </div>
@@ -286,7 +288,7 @@ export function FeedbackBulk({ projectSlug, boards, children }: { projectSlug: s
       }}
       // Narrower still (a post open beside the list on a small laptop): the count stays whole, the actions scroll
       // sideways, faded at the end that has more (as the tabs do; room kept for their focus rings, the bar no taller).
-      className="@container flex h-15 min-w-0 items-center gap-2 self-start px-3 text-sm [grid-area:1/1] @min-[48rem]/app:px-5">
+      className="@container relative z-20 flex h-15 min-w-0 items-center gap-2 self-start rounded-t-2xl bg-card px-3 text-sm [grid-area:1/1] @min-[48rem]/app:px-5">
       <span className="shrink-0 font-medium">{picked.length} selected</span>
       <div ref={actionsRef} className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2 @max-md:-m-1 @max-md:flex-nowrap @max-md:gap-1.5 @max-md:overflow-x-auto @max-md:p-1 [scrollbar-width:none] *:scroll-mx-12", FADE_AT_MORE)}>
         <DropdownMenu>

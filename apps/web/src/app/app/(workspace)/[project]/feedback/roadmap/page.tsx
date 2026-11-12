@@ -26,23 +26,23 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
     notFound();
   }
   const { project } = membership;
-  // Feedback's menu, its queries alongside the roadmap's.
-  const menu = feedbackMenu({ project, role: membership.role });
   const boards = await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } });
   const board = boards.find((b) => b.slug === searchParams.board)?.slug;
   const columns = await roadmapColumns(project.id, TEAM_VIEWER, { board, completedDays: COMPLETED_DAYS });
   const ids = columns.flat().map((post) => post.id);
   // Who's asking, how many completing each one emails (asked before a card goes to Completed), and the team's plan for it.
-  const [totals, emails, plans] = await Promise.all([
+  const [totals, emails, plans, menu] = await Promise.all([
     voterTotals(project.id, project.askingProperty, ids),
     emailedOnCompletion(project.id, ids),
     prisma.post.findMany({ where: { id: { in: ids } }, select: { id: true, eta: true, body: true, owner: { select: { name: true, image: true } } } }),
+    // Feedback's menu, its queries alongside the roadmap's.
+    feedbackMenu({ project, role: membership.role }),
   ]);
   const plan = new Map(plans.map(({ id, ...rest }) => [id, rest]));
 
   return (
     <PaneLayout>
-      {await menu}
+      {menu}
       <Pane aria-label="Roadmap">
       <PaneHeader
         title="Roadmap"

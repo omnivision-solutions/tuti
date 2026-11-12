@@ -21,20 +21,23 @@ const STATUSES = [
  * a + for a new one, owners and admins with room on their plan), its statuses and Possible duplicates, with counts
  * across every board. On the list, `view` (its tab: "all", "open", a status's, "duplicates") and `board` say which
  * link is open, as the list reads its address; elsewhere the address does.
- * Not a component: a page starts it beside its own queries and puts `{await menu}` in what it returns, so the page
- * renders whole, with nothing left to suspend (and renders the same way where tests render it).
+ * Not a component: a page awaits it in a `Promise.all` with its own queries (one failing, the rest handled) and puts
+ * what it gives in what it returns, so the page renders whole, with nothing left to suspend (as tests render it).
  */
 export async function feedbackMenu({
   project,
   role,
   view,
   board,
+  counts: given,
   className,
 }: {
   project: { id: string; slug: string; plan: Parameters<typeof boardLimit>[0] };
   role: Parameters<typeof isAdminRole>[0];
   view?: string;
   board?: string;
+  /** The list's own counts, when they're across every board (none filtered): not asked for again. */
+  counts?: Awaited<ReturnType<typeof teamPostCounts>>;
   className?: string;
 }) {
   // On the list: a board's own link for its All, else the tab's link (a board's other tabs mark the status).
@@ -44,7 +47,7 @@ export async function feedbackMenu({
     prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, slug: true, name: true } }),
     // As Feedback lists them: merged duplicates aside.
     prisma.post.groupBy({ by: ["boardId"], where: { projectId: project.id, duplicateOfId: null }, _count: true }),
-    teamPostCounts(project.id, {}),
+    given ?? teamPostCounts(project.id, {}),
   ]);
   const limit = boardLimit(project.plan);
   const canAdd = isAdminRole(role) && (limit === null || boards.length < limit);

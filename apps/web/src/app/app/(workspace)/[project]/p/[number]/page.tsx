@@ -112,9 +112,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
-  // Feedback's menu, its queries alongside the post's.
-  const menu = feedbackMenu({ project, role: membership.role });
-  const [totals, voters, shipped, like, neighbours, emails, toEmail] = await Promise.all([
+  const [totals, voters, shipped, like, neighbours, emails, toEmail, menu] = await Promise.all([
     voterTotals(project.id, project.askingProperty, [post.id]),
     postVoters(project.id, project.askingProperty, post.id),
     howShipped(post.id),
@@ -123,6 +121,9 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     emailedOnCompletion(project.id, [post.id]),
     // Only for the reply form, which a merged post doesn't have.
     post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
+    // Feedback's menu, its queries alongside the post's.
+    // Only where it leaves the post's pane room for its two columns (48rem of it, with its padding).
+    feedbackMenu({ project, role: membership.role, className: "@max-[76rem]/app:hidden!" }),
   ]);
   const total = totals.get(post.id);
   const sort = commentSort((await props.searchParams).sort);
@@ -158,7 +159,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
 
   return (
     <PaneLayout>
-      {await menu}
+      {menu}
       <Pane aria-label="Post">
         <PaneHeader
           back={{ href: `/app/${slug}/feedback?status=all`, label: "All posts" }}
@@ -184,8 +185,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         <PaneBody className="@container/post p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-7">
       {/* The post (its title, then it) beside its properties, both from the top. In a narrow pane one column: the
           title, the properties, the post, the rest of the sidebar (each placed by its order, the columns' boxes dropped). */}
-      <div className="grid gap-6 @min-[56rem]/post:grid-cols-[minmax(0,48rem)_18rem] @min-[56rem]/post:grid-rows-[auto_1fr] @min-[56rem]/post:items-start @min-[56rem]/post:justify-center @min-[56rem]/post:gap-10">
-        <div data-slot="post-header" className="flex min-w-0 flex-col gap-4 @min-[56rem]/post:col-start-1 @min-[56rem]/post:row-start-1">
+      <div className="grid gap-6 @min-[48rem]/post:grid-cols-[minmax(0,48rem)_18rem] @min-[48rem]/post:grid-rows-[auto_1fr] @min-[48rem]/post:items-start @min-[48rem]/post:justify-center @min-[48rem]/post:gap-10">
+        <div data-slot="post-header" className="flex min-w-0 flex-col gap-4 @min-[48rem]/post:col-start-1 @min-[48rem]/post:row-start-1">
           <div className="flex min-w-0 flex-col gap-1.5">
             {/* The title large, over the post: the pane header's heading says it to screen readers. */}
             <p aria-hidden className="font-heading text-2xl font-semibold tracking-[-0.02em] text-balance break-words @min-[48rem]/app:text-[1.75rem]">
@@ -226,11 +227,11 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           // (what triage changes, in reach), the rest (voters, what shipped it, …) after its comments.
           <aside
             aria-label="Properties"
-            className="text-sm @min-[56rem]/post:sticky @min-[56rem]/post:top-0 @min-[56rem]/post:col-start-2 @min-[56rem]/post:row-span-2 @min-[56rem]/post:row-start-1 @min-[56rem]/post:flex @min-[56rem]/post:flex-col @min-[56rem]/post:gap-6 @min-[56rem]/post:max-h-[calc(100dvh-9rem)] @min-[56rem]/post:overflow-y-auto @min-[56rem]/post:border-l @min-[56rem]/post:pl-6"
+            className="text-sm @min-[48rem]/post:sticky @min-[48rem]/post:top-0 @min-[48rem]/post:col-start-2 @min-[48rem]/post:row-span-2 @min-[48rem]/post:row-start-1 @min-[48rem]/post:flex @min-[48rem]/post:flex-col @min-[48rem]/post:gap-6 @min-[48rem]/post:max-h-[calc(100dvh-9rem)] @min-[48rem]/post:overflow-y-auto @min-[48rem]/post:border-l @min-[48rem]/post:pl-6"
           >
             {/* A card on phones, folded to a line (status, owner, ETA); beside the post, open rows under a heading. */}
-            <div className="flex flex-col rounded-xl bg-card px-4 py-3 shadow-xs ring-1 ring-border @min-[56rem]/post:rounded-none @min-[56rem]/post:bg-transparent @min-[56rem]/post:p-0 @min-[56rem]/post:shadow-none @min-[56rem]/post:ring-0">
-              <h2 className="group-label mb-1 @min-[56rem]/post:mb-2">Properties</h2>
+            <div className="flex flex-col rounded-xl bg-card px-4 py-3 shadow-xs ring-1 ring-border @min-[48rem]/post:rounded-none @min-[48rem]/post:bg-transparent @min-[48rem]/post:p-0 @min-[48rem]/post:shadow-none @min-[48rem]/post:ring-0">
+              <h2 className="group-label mb-1 @min-[48rem]/post:mb-2">Properties</h2>
               <PhoneFold
                 summary={
                   <>
@@ -272,7 +273,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               )}
               </PhoneFold>
             </div>
-            <div className="flex flex-col gap-6 empty:hidden @max-[56rem]/post:hidden @min-[56rem]/post:border-t @min-[56rem]/post:pt-5">
+            <div className="flex flex-col gap-6 empty:hidden @max-[48rem]/post:hidden @min-[48rem]/post:border-t @min-[48rem]/post:pt-5">
             <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} formats={formats} total={total} />
             <PostConversations
               projectSlug={slug}
@@ -301,7 +302,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </div>
           </aside>
         )}
-          <div className="flex min-w-0 flex-col gap-6 @min-[56rem]/post:col-start-1 @min-[56rem]/post:row-start-2">
+          <div className="flex min-w-0 flex-col gap-6 @min-[48rem]/post:col-start-1 @min-[48rem]/post:row-start-2">
           {isEmptyDoc(displayDoc(post)) ? (
             <p className="text-sm text-muted-foreground italic">No description.</p>
           ) : (
@@ -360,7 +361,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           {/* On phones the rest of the sidebar (voters, what shipped it, …) after the post, here in the page's order
               too (beside it, from laptop width up, it's the aside's). */}
           {!post.duplicateOf && (
-            <div className="flex flex-col gap-6 text-sm empty:hidden @min-[56rem]/post:hidden">
+            <div className="flex flex-col gap-6 text-sm empty:hidden @min-[48rem]/post:hidden">
               <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} formats={formats} total={total} />
               <PostConversations
                 projectSlug={slug}
