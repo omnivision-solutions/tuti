@@ -98,8 +98,9 @@ export const APP_ROUTES = [
 
 /**
  * An /app path as its route, /app/acme/users/e2e-jane%40example.com as /app/[project]/users/[user]: of the routes as
- * long as it, the one whose fixed parts all match, preferring more fixed parts (as Next.js does: /app/new is the new
- * project page, not a project called "new"). A path no route matches is /app/[unknown]. Other paths are the site's.
+ * long as it, the one whose fixed parts all match; of several, the one fixed where they first differ, as Next.js picks
+ * (/app/new is the new project page, not a project called "new"). A path no route matches is /app/[unknown]. Other
+ * paths are the site's.
  */
 export function routeOf(path: string) {
   const parts = path.split("/").slice(1);
@@ -108,15 +109,16 @@ export function routeOf(path: string) {
   }
   const trailing = parts.length > 1 && parts.at(-1) === "" ? "/" : "";
   const segments = parts.slice(1, trailing ? -1 : undefined);
-  let best: { route: string; fixed: number } | null = null;
+  // Fixed parts as 1s and params as 0s: the greater string is the route Next.js picks (fixed wins where they first differ).
+  const rank = (pattern: string[]) => pattern.map((part) => (part.startsWith("[") ? "0" : "1")).join("");
+  let best: { route: string; rank: string } | null = null;
   for (const route of APP_ROUTES) {
     const pattern = route.split("/");
     if (pattern.length !== segments.length || !pattern.every((part, index) => part.startsWith("[") || part === segments[index])) {
       continue;
     }
-    const fixed = pattern.filter((part) => !part.startsWith("[")).length;
-    if (!best || fixed > best.fixed) {
-      best = { route, fixed };
+    if (!best || rank(pattern) > best.rank) {
+      best = { route, rank: rank(pattern) };
     }
   }
   return segments.length === 0 ? path : `/app/${best ? best.route : "[unknown]"}${trailing}`;
