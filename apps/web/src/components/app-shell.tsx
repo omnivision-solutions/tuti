@@ -15,7 +15,7 @@ import { DOCS_TREE_FOLDED_ATTRIBUTE, DOCS_TREE_FOLDED_KEY } from "@/lib/docs-tre
 const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-5xl (one form by
- * itself, `data-narrow`: New project, Setup, Account, max-w-2xl), centred in the room beside the sidebar. Customize's sections and pages of panes (their own column, data-slot="pane-layout") take the
+ * itself, `data-narrow`, max-w-2xl), centred in the room beside the sidebar. Customize's sections and pages of panes (their own column, data-slot="pane-layout") take the
  * whole width instead (Feedback caps its own at 72rem until a post opens beside the list), as do pages that need the
  * room (`data-wide`: Users' tables, the team's Roadmap columns).
  * The sidebar starts collapsed and keeps the user's choice on every page, restored from its cookie on full loads.
