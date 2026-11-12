@@ -2281,7 +2281,10 @@ test("on a server selling plans, a conversation closed before the plan's history
     const header = (await owner.locator('[data-inbox-conversation] [data-slot="pane-header"]').boundingBox())!;
     const empty = (await owner.getByText("Past your plan's history", { exact: true }).locator("..").boundingBox())!;
     expect.soft(empty.y, `empty state starts below the header at ${width}px`).toBeGreaterThanOrEqual(header.y + header.height);
-    expect.soft(empty.width, `empty state uses the conversation width at ${width}px`).toBeGreaterThan(400);
+    // The whole conversation's width: no empty column where the details would be.
+    const region = (await owner.locator("[data-inbox-conversation]").boundingBox())!;
+    const pane = (await owner.locator('[data-inbox-conversation] [data-slot="pane"]').boundingBox())!;
+    expect.soft(pane.width, `empty state uses the conversation width at ${width}px`).toBeGreaterThanOrEqual(region.width - 1);
   }
   await checkpoint(owner, "conversation-past-plan-history");
 });

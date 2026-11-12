@@ -431,7 +431,8 @@ function PastHistory({
 }) {
   return (
     <ConversationPane open>
-      <Pane>
+      {/* The whole thread's grid: there are no details beside it. */}
+      <Pane className="col-span-full">
         <PaneHeader back={{ href: inboxHref(slug, view, null, pages), label: "Inbox" }} title={`Conversation #${number}`} />
         <PaneBody className="p-6">
           <EmptyState
