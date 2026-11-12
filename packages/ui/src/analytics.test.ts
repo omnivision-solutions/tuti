@@ -60,6 +60,7 @@ describe("analytics", () => {
     expect(isCounted("/app/auth/sign-up", "", "/app")).toBe(true);
     // A reset link's page can't tell a portal's visitor from a team member: never counted.
     expect(isCounted("/app/auth/reset-password", "?token=x", "/app")).toBe(false);
+    expect(isCounted("/app/auth/forgot-password", "?link=failed", "/app")).toBe(false);
   });
 
   it("puts the checks together on every event", () => {

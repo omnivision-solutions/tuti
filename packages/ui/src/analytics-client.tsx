@@ -195,7 +195,7 @@ export const ANALYTICS_CONFIG = {
  * keeps listening after its page's layout is gone, so a client navigation from /app to a portal (/help) would count.
  * Not the way a portal's visitor signs in either (/app/auth/continue, and the sign-in pages on their way back there):
  * they're a customer's visitors. Nor a password reset, whose emailed link may be a portal visitor's, with nothing in it
- * to tell.
+ * to tell: neither its page nor forgot-password, where a failed link lands.
  */
 export function isCounted(pathname: string, search: string, under: string | undefined) {
   if (!under) {
@@ -203,7 +203,7 @@ export function isCounted(pathname: string, search: string, under: string | unde
   }
   // The continue address in the query, at any depth of nesting: each level encodes its slashes once more (%2F, %252F, …).
   const portalSignIn =
-    pathname === "/app/auth/continue" || pathname === "/app/auth/reset-password" || /app(\/|%(25)*2f)auth(\/|%(25)*2f)continue/i.test(search);
+    pathname === "/app/auth/continue" || pathname === "/app/auth/reset-password" || pathname === "/app/auth/forgot-password" || /app(\/|%(25)*2f)auth(\/|%(25)*2f)continue/i.test(search);
   return !portalSignIn && (pathname === under || pathname.startsWith(`${under}/`));
 }
 
