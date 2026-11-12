@@ -100,6 +100,8 @@ test("a long post keeps its title and actions in view, and phones keep the menu 
   await expect(owner.getByRole("dialog", { name: "Merge #1 into…" })).toBeVisible();
   await owner.keyboard.press("Escape");
   await expect(owner.getByRole("dialog")).toHaveCount(0);
+  // Closed, the keyboard's focus is back on More actions (Merge's own button is hidden here), not lost to the page.
+  await expect(owner.locator('[data-slot="pane-header"]').getByRole("button", { name: "More actions" })).toBeFocused();
   await bar.getByRole("button", { name: "Toggle Sidebar" }).click();
   const phoneSidebar = owner.getByRole("dialog", { name: "Sidebar" });
   await expect(phoneSidebar).toBeVisible();

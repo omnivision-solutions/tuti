@@ -3,7 +3,7 @@
 import type { PostVisibility } from "@tuti/db";
 import { MergeIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { type ComponentProps, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ export function MergePostDialog({
   open: given,
   onOpenChange,
   triggerClassName,
+  finalFocus,
 }: {
   projectSlug: string;
   post: { id: string; number: number; title: string; visibility?: PostVisibility; authorId?: string };
@@ -36,6 +37,8 @@ export function MergePostDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   triggerClassName?: string;
+  /** Where focus goes as it closes, when that's not its own button (hidden where a menu opened it). */
+  finalFocus?: ComponentProps<typeof DialogContent>["finalFocus"];
 }) {
   const router = useRouter();
   const [own, setOwn] = useState(false);
@@ -59,7 +62,7 @@ export function MergePostDialog({
         <MergeIcon />
         Merge into…
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent finalFocus={finalFocus}>
         {!target ? (
           <>
             <DialogHeader>

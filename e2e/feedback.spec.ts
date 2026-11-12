@@ -1986,6 +1986,8 @@ test("a post's page and the list at tablet and laptop widths: the header stays i
 });
 
 test("Feedback's rows picked for Set status, Move to board and Merge; Completed asks first", async ({ browser }, testInfo) => {
+  // A long journey: every action on picked rows, at four widths.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Olive Owner");

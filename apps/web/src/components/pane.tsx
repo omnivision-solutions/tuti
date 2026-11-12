@@ -10,11 +10,6 @@ import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/she
 import { activeView } from "@/lib/active-link";
 
 /**
- * The admin's panes (docs/design.md → Panes): white panels on the shell's canvas, 8px apart. A page is a `PaneLayout`
- * of an optional `SectionPane` (the area's menu) and one or more `Pane`s, each starting with a `PaneHeader`.
- * `data-slot="pane-layout"`: the shell gives it the whole width; `data-panes`: on its canvas (AppShell).
- */
-/**
  * A pane's header where the window scrolls the page, not the pane: under 48rem of the shell from a 48rem window
  * (the sidebar open on a tablet), where there's no phone bar to say what the page is, it stays at the top (in a
  * window at least 40rem tall, as `PageHeader`). For what holds a pane's header (Feedback's bar for picked rows).
@@ -23,6 +18,11 @@ import { activeView } from "@/lib/active-link";
 export const STICKY_PANE_HEADER =
   "bg-card rounded-t-2xl topbar:[@media(height>=40rem)]:@max-[48rem]/app:sticky topbar:[@media(height>=40rem)]:@max-[48rem]/app:top-0 topbar:[@media(height>=40rem)]:@max-[48rem]/app:z-10";
 
+/**
+ * The admin's panes (docs/design.md → Panes): white panels on the shell's canvas, 8px apart. A page is a `PaneLayout`
+ * of an optional `SectionPane` (the area's menu) and one or more `Pane`s, each starting with a `PaneHeader`.
+ * `data-slot="pane-layout"`: the shell gives it the whole width; `data-panes`: on its canvas (AppShell).
+ */
 type SectionMenu = { open: boolean; setOpen: (open: boolean) => void; close: () => void };
 const SectionMenuContext = createContext<SectionMenu | null>(null);
 
