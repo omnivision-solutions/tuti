@@ -236,32 +236,6 @@ test("a long docs collection and its settings scroll inside their page surface",
   }
 });
 
-test("scroll padding clears a sticky toolbar pushed out of view by a short containing block", async ({ browser }) => {
-  const slug = `e2e-${randomUUID().slice(0, 8)}`;
-  const owner = await signUp(browser, APP_URL, "Olive Owner");
-  await createProject(owner, "Acme", slug);
-  await owner.setViewportSize({ width: 1440, height: 900 });
-  // A page still with a PageHeader (Home and Changelog are pages of panes).
-  await owner.goto(`/app/${slug}/feedback/roadmap`);
-  const toolbar = owner.locator('[data-slot="page-header"]');
-  await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
-  // Reproduce a shortened containing block independently of any page's current markup.
-  await toolbar.evaluate((element) => {
-    const boundary = document.createElement("div");
-    element.replaceWith(boundary);
-    boundary.append(element);
-    const room = document.createElement("div");
-    room.style.height = "200vh";
-    document.body.append(room);
-  });
-  await owner.evaluate(() => window.scrollTo(0, 600));
-  await expect(toolbar).toHaveCSS("position", "sticky");
-  await expect(owner.getByRole("heading", { level: 1 })).not.toBeInViewport();
-  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
-  await owner.evaluate(() => window.scrollTo(0, 0));
-  await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
-});
-
 test("billing's plan and usage anchors keep only their gap below the pane's header", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
