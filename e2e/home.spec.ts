@@ -62,6 +62,10 @@ test("Home: what needs the team by kind, customers waiting first, three of each;
   await expect(numbers).toHaveCount(4);
   const tops = await numbers.evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().top)));
   expect(new Set(tops).size).toBe(1);
+  // People wait on the team: Need a reply's number in the highlight colour with its dot; the others plain.
+  const colour = (name: RegExp) => home.getByRole("link", { name }).evaluate((link) => getComputedStyle(link.closest("dd")!).color);
+  expect(await colour(/^Need a reply: [1-9]/)).not.toBe(await colour(/^New posts this week:/));
+  await expect(home.getByRole("link", { name: /^Need a reply: [1-9]/ }).locator("xpath=ancestor::dd").locator("span[aria-hidden]")).toHaveCount(1);
   // Conversations, then Autopilot, then posts to triage.
   expect(await groups(owner)).toEqual(["Need a reply", "To review in Autopilot", "New posts to triage"]);
   // Three of the seven posts, oldest first, each with its action; See all opens Feedback's Needs triage.
