@@ -11,7 +11,6 @@ import { WaitingNotice } from "@/components/dns-setup";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
-import { ScrollTopOnChange } from "@/components/scroll-top-on-change";
 import { ImportDetails, InvitationsToSend, RefreshWhile } from "@/components/setup-import";
 import { AddSampleContent, RemoveSampleContent } from "@/components/sample-content";
 import { StatStrip } from "@/components/stat-tile";
@@ -71,8 +70,6 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
       <Pane aria-label="Home">
         <PaneHeader title="Home" description="What needs the team, and what's left to set up." />
         <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-7">
-          {/* Back to Home returns to where it was in the pane. */}
-          <ScrollTopOnChange />
           <div className="mx-auto flex max-w-4xl flex-col gap-8">
       {/* Four numbers, each opening its list; not while the project has nothing of its own and all four are 0. */}
       {(overview.started || Object.values(overview.numbers).some((n) => n > 0)) && (

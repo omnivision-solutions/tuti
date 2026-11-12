@@ -10,7 +10,6 @@ import { ListFilters } from "@/components/list-filters";
 import { FilterPills } from "@/components/filter-pills";
 import { PageNav } from "@/components/page-nav";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
-import { ScrollTopOnChange } from "@/components/scroll-top-on-change";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -78,9 +77,8 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
             </a>
           }
         />
-        <PaneBody className="flex flex-col gap-4 p-3 @min-[48rem]/app:p-4">
-          {/* Each view, page, sort, search and group opens at the list's top, and Back returns to where it was (the pane scrolls, not the window). */}
-          <ScrollTopOnChange />
+        {/* Each view, page, sort, search and group opens at the list's top (Back returns to where it was). */}
+        <PaneBody resetOnNavigate className="flex flex-col gap-4 p-3 @min-[48rem]/app:p-4">
           {children}
         </PaneBody>
       </Pane>

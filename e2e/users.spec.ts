@@ -121,6 +121,18 @@ test("the team syncs its users over the API and finds them on the Users page, by
   const [profile, activity] = [(await owner.getByRole("region", { name: "Properties" }).boundingBox())!, (await votes.boundingBox())!];
   expect(profile.x + profile.width).toBeLessThan(activity.x);
   await checkpoint(owner, "team-user");
+  // In a short window her page scrolls in its pane: a vote far down, opened, then Back is where it was, that vote in view.
+  await owner.setViewportSize({ width: 1280, height: 420 });
+  const last = votes.getByRole("link", { name: "Dark mode" });
+  await last.scrollIntoViewIfNeeded();
+  await expect(owner.locator("[data-slot=person-header]")).not.toBeInViewport();
+  await last.click();
+  await expect(owner.getByRole("heading", { name: "Dark mode", level: 1 })).toBeVisible();
+  await owner.goBack();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users/user-2$`));
+  await expect(last).toBeInViewport();
+  await expect(owner.locator("[data-slot=person-header]")).not.toBeInViewport();
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // On a phone, "‹ All users" in the header (her name there for screen readers) and her name once, above the profile.
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(back).toBeVisible();
