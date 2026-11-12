@@ -180,6 +180,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     expect(button.y).toBeGreaterThanOrEqual(toolbar.y);
     expect(button.y + button.height).toBeLessThanOrEqual(toolbar.y + toolbar.height);
   }
+  // The settings beside the text are no taller than the pane under its header (the email banner above it too).
+  const paneBox = (await team.locator('[data-slot="pane"]').boundingBox())!;
+  const asideBox = (await sidebar.boundingBox())!;
+  expect(asideBox.y + asideBox.height).toBeLessThanOrEqual(paneBox.y + paneBox.height);
   await checkpoint(team, "team-changelog-published");
   // On a phone the title shows once, the one to edit (the page's heading kept for screen readers), and Save and
   // Unpublish are in reach at the bottom, Delete in the menu.
@@ -187,12 +191,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(sidebar.getByRole("link", { name: "View as reader" })).toBeVisible();
   await expect(team.getByRole("heading", { level: 1, name: "Dark mode is here", exact: true })).toBeAttached();
   expect((await team.getByRole("heading", { level: 1 }).boundingBox())!.height).toBeLessThanOrEqual(1);
-  // Nor in the top bar: scrolled until that heading is under it, the field still in sight below, the bar doesn't repeat
-  // the title above the field.
-  await team.evaluate(() => window.scrollTo(0, 160));
+  // Scrolled until the pane's header is under the top bar, the bar names the entry, as on any page of panes.
+  await team.evaluate(() => window.scrollBy(0, document.querySelector('[data-slot="pane-header"]')!.getBoundingClientRect().bottom));
   await afterIntersections(team);
-  await expect(team.getByLabel("Title")).toBeInViewport();
-  await expect(team.locator('[data-slot="bar-title"]')).toHaveCount(0);
+  await expect(team.locator('[data-slot="bar-title"]')).toHaveText("Dark mode is here");
   // Loaded on a phone, the page keeps what's focused or jumped to clear of the bar (scroll-padding-top).
   await team.reload();
   await expect(team.getByLabel("Title")).toBeVisible();
