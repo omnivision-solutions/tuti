@@ -64,10 +64,11 @@ export function ReportPane({
   return (
     <Pane aria-label={title}>
       {/* At the header's right; on phones in a row of its own under the title, which keeps its room. */}
+      {/* None on a plan without Reporting: its ranges would only redraw the made-up numbers behind the card. */}
       <PaneHeader
         title={title}
-        filters={<div className="@min-[48rem]/app:hidden">{picker}</div>}
-        actions={<div className="hidden @min-[48rem]/app:contents">{picker}</div>}
+        filters={!upgrade && <div className="@min-[48rem]/app:hidden">{picker}</div>}
+        actions={!upgrade && <div className="hidden @min-[48rem]/app:contents">{picker}</div>}
       />
       <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-6">
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
