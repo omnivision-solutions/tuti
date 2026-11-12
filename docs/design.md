@@ -703,7 +703,8 @@ at desktop and phone widths, in light and dark (in development only).
 - **A pane of one form or settings** (New project, Setup, Account, the first Welcome): one `Pane` with its
   `PaneHeader`, the body centred in it, max-w-2xl for a form's card (a wizard's step above it), max-w-3xl for
   settings cards, as Settings' pages.
-- **`StatStrip`**: a page's numbers in one card, side by side between lines; under 40rem two tiles to a row.
+- **`StatStrip`**: a page's numbers in one card, side by side between lines; under 40rem two tiles to a row. A number
+  with `href` opens its list (Home's), read number first; `attention` (people waiting) in the highlight colour with its dot.
 - **Pill buttons**: every `Button` in the admin is a pill (`--button-radius`, set while the sidebar's shell is on
   the page: its dialogs and menus too), and inside `data-pill-buttons`. Elsewhere (the portal, marketing) buttons
   keep their corners.

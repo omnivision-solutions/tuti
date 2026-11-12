@@ -34,6 +34,12 @@ test("the team syncs its users over the API and finds them on the Users page, by
   // A table the whole width: each with their email and id, company and plan to start with (headed in words), their
   // groups, and what they did here.
   await owner.goto(`/app/${slug}/users`);
+  // One pane: Users in its header, its views as pills (People with how many), Sync from your app at its right end.
+  const header = owner.getByRole("region", { name: "Users" }).locator('[data-slot="pane-header"]');
+  await expect(header.getByRole("heading", { name: "Users", level: 1 })).toBeVisible();
+  await expect(header.getByRole("navigation", { name: "Users views" }).getByRole("link")).toHaveText(["People3", "Companies"]);
+  await expect(header.getByRole("link", { name: /^People\s*3$/ })).toHaveAttribute("aria-current", "page");
+  await expect(header.getByRole("link", { name: "Sync from your app" })).toHaveAttribute("href", "/api/docs#users.sync");
   const table = owner.getByRole("main").getByRole("table");
   const rows = table.locator("tbody").getByRole("row");
   await expect(rows).toHaveCount(3);
@@ -81,6 +87,12 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows.first()).toContainText("Bea Byte");
   await expect(rows.first().getByRole("cell").last()).not.toHaveText("Never");
   await checkpoint(owner, "team-users");
+  // On a phone: the views a row of pills under the title, each row who they are and when they were last seen.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(owner.getByRole("navigation", { name: "Users views" })).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "team-users-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // A search keeps the sort.
   await owner.getByRole("searchbox", { name: "Search users" }).fill("example.com");
   await owner.getByRole("searchbox", { name: "Search users" }).press("Enter");
@@ -93,8 +105,11 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users/user-2$`));
   const who = owner.getByRole("region", { name: "Who" });
   await expect(owner.getByRole("heading", { name: "Bea Byte", level: 1 })).toBeVisible();
-  await expect(owner.locator("[data-slot=page-header] [data-slot=avatar]")).toHaveText("B");
-  await expect(owner.locator("[data-slot=page-header]")).toContainText("e2e-bea@example.com");
+  await expect(owner.locator("[data-slot=person-header] [data-slot=avatar]")).toHaveText("B");
+  await expect(owner.locator("[data-slot=person-header]")).toContainText("e2e-bea@example.com");
+  // The way back in the pane's header: "All users ›" before her name.
+  const back = owner.locator('[data-slot="pane-header"]').getByRole("link", { name: "All users" });
+  await expect(back).toHaveAttribute("href", `/app/${slug}/users`);
   const votes = owner.getByRole("region", { name: "Votes" });
   await expect(votes.getByRole("link")).toHaveCount(6);
   await expect(votes.getByRole("listitem").filter({ hasText: "Dark mode" }).locator("[data-slot=badge]")).toHaveText("Planned");
@@ -104,10 +119,12 @@ test("the team syncs its users over the API and finds them on the Users page, by
   const [profile, activity] = [(await owner.getByRole("region", { name: "Properties" }).boundingBox())!, (await votes.boundingBox())!];
   expect(profile.x + profile.width).toBeLessThan(activity.x);
   await checkpoint(owner, "team-user");
-  // On a phone, her name once: the page's title, above the profile.
+  // On a phone, "‹ All users" in the header (her name there for screen readers) and her name once, above the profile.
   await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(back).toBeVisible();
   await expect(who.getByRole("heading", { name: "Bea Byte" })).toBeHidden();
-  await expect(owner.getByRole("heading", { name: "Bea Byte", level: 1 })).toBeVisible();
+  await expect(owner.locator("[data-slot=person-header]")).toContainText("Bea Byte");
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "team-user-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
   // She marks one of the project's emails as spam: her page says replies aren't emailed to her any more.

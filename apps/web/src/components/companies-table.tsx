@@ -4,7 +4,6 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { PageNav } from "@/components/page-nav";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { askingTotal } from "@/lib/format";
 import { propertyHeadings, type PropertyFormats } from "@/lib/property-formats";
 import { call } from "@/server/operations/run";
@@ -60,8 +59,8 @@ export async function CompaniesTable({
 
   return (
     <>
-      <Card size="sm" data-wide>
-        <CardContent className="overflow-x-auto">
+      {/* On the Users pane, the whole of its width. */}
+      <div className="-mx-3 shrink-0 overflow-x-auto px-1 @min-[48rem]/app:-mx-4 @min-[48rem]/app:px-2">
           <table className="w-full text-sm">
             <thead className="text-left text-xs font-medium text-muted-foreground">
               <tr className="[&>th]:px-2 [&>th]:pb-2 [&>th]:font-medium">
@@ -86,8 +85,7 @@ export async function CompaniesTable({
               ))}
             </tbody>
           </table>
-        </CardContent>
-      </Card>
+      </div>
       {(page > 1 || nextCursor) && (
         <PageNav back={page > 1 ? { href: href({ to: page - 1 }), label: "Previous" } : null} on={nextCursor ? { href: href({ to: page + 1 }), label: "Next" } : null} />
       )}

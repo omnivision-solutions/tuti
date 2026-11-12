@@ -8,7 +8,6 @@ import type { ReactNode } from "react";
 import { inboxHref, inInboxView, type View } from "@/components/inbox/inbox-panes";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { ConversationStatusText } from "./conversation-status";
 import { cn } from "@/lib/utils";
 import { formatProperty, propertyHeadings, storedPropertyFormats } from "@/lib/property-formats";
@@ -23,17 +22,17 @@ const SHOWN = 5;
 /** The business properties grouped under Company in the Inbox. */
 const KEY_PROPERTIES = ["company", "plan", "seats"];
 
-/** A part of what they did. `card`: on their own page, a card of its own with a heading. */
+/** A part of what they did. `card`: on their own page (a pane), a part of its own with a heading. */
 function Section({ title, count, card = false, big = false, children }: { title: string; count?: number; card?: boolean; big?: boolean; children: ReactNode }) {
   if (card) {
     return (
-      <Card size="sm" className="gap-3" aria-label={title} role="region">
-        <h2 className="flex items-center gap-2 px-(--card-spacing) text-[1rem] font-semibold">
+      <section aria-label={title} className="flex flex-col gap-3">
+        <h2 className="flex items-center gap-2 text-[1rem] font-semibold">
           {title}
           {count !== undefined && <span className="rounded-full bg-muted px-2 text-xs font-medium text-muted-foreground tabular-nums">{count}</span>}
         </h2>
-        <CardContent>{children}</CardContent>
-      </Card>
+        {children}
+      </section>
     );
   }
   return (
@@ -319,11 +318,10 @@ export async function PersonPanel({
     <div className="flex flex-col gap-6">
       <div className={cn("grid gap-6 lg:items-start", hasProfile && "lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]")}>
         {hasProfile && (
-          <Card size="sm">
-            <CardContent className="flex flex-col gap-5">{profile}</CardContent>
-          </Card>
+          // On a muted fill, not a card: their page is a pane (no card in a card).
+          <div className="flex flex-col gap-5 rounded-xl bg-muted/60 p-4">{profile}</div>
         )}
-        <div className="flex flex-col gap-4">{activity}</div>
+        <div className="flex flex-col gap-8">{activity}</div>
       </div>
     </div>
   ) : (

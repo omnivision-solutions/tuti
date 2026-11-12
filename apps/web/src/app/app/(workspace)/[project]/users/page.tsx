@@ -1,18 +1,18 @@
 import { prisma } from "@tuti/db";
 import { ArrowDownIcon, ArrowUpIcon, ArrowUpRightIcon, SearchIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CompaniesTable } from "@/components/companies-table";
 import { EmptyState } from "@/components/empty-state";
 import { ListFilters } from "@/components/list-filters";
-import { PageHeader } from "@/components/page-header";
+import { FilterPills } from "@/components/filter-pills";
 import { PageNav } from "@/components/page-nav";
-import { SubNav } from "@/components/sub-nav";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { UserColumnsMenu } from "@/components/user-columns-menu";
 import { initial, timeAgo } from "@/lib/format";
@@ -50,35 +50,42 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   const context = { actor: { kind: "user" as const, userId: session.user.id }, projectId: project.id };
   const formats = storedPropertyFormats(project.propertyFormats);
   const page = Math.max(1, Number.parseInt(String(searchParams.page ?? "1"), 10) || 1);
-  /** People and Companies; People with how many there are once it's known (the list unfiltered). */
-  const tabs = (people?: number) => (
-    <SubNav
-      label="Users views"
-      items={[
-        {
-          title:
-            people === undefined ? (
-              "People"
-            ) : (
-              <>
-                People <span className="text-muted-foreground tabular-nums">{people.toLocaleString("en-GB")}</span>
-              </>
-            ),
-          href: `/app/${slug}/users`,
-        },
-        { title: "Companies", href: `/app/${slug}/users?view=companies` },
-      ]}
-      current={searchParams.view === "companies" ? `/app/${slug}/users?view=companies` : `/app/${slug}/users`}
-    />
+  /**
+   * The page's pane: Users, its views (People, with how many there are once it's known, and Companies) as pills, and
+   * how users get here (single sign-on, or users.sync: in the docs).
+   */
+  const pane = ({ people, description, children }: { people?: number; description: string; children: ReactNode }) => (
+    <PaneLayout>
+      <Pane aria-label="Users">
+        <PaneHeader
+          title="Users"
+          description={description}
+          filters={
+            <FilterPills
+              label="Users views"
+              items={[
+                { title: "People", href: `/app/${slug}/users`, count: people?.toLocaleString("en-GB") },
+                { title: "Companies", href: `/app/${slug}/users?view=companies` },
+              ]}
+              current={searchParams.view === "companies" ? `/app/${slug}/users?view=companies` : `/app/${slug}/users`}
+            />
+          }
+          actions={
+            <a href="/api/docs#users.sync" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Sync from your app
+              <ArrowUpRightIcon />
+            </a>
+          }
+        />
+        <PaneBody className="flex flex-col gap-4 p-3 @min-[48rem]/app:p-4">{children}</PaneBody>
+      </Pane>
+    </PaneLayout>
   );
   if (searchParams.view === "companies") {
-    return (
-      <>
-        <PageHeader title="Users" description="The people who use your app, and what they asked for." />
-        {tabs()}
-        <CompaniesTable context={context} page={page} sort={searchParams.sort} formats={formats} />
-      </>
-    );
+    return pane({
+      description: "The people who use your app, and what they asked for.",
+      children: <CompaniesTable context={context} page={page} sort={searchParams.sort} formats={formats} />,
+    });
   }
   const q = typeof searchParams.q === "string" ? searchParams.q.trim().slice(0, 255) : "";
   // A company's people, from Companies (its name as it is).
@@ -121,29 +128,13 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
     </th>
   );
 
-  return (
+  return pane({
+    people: q || group || company ? undefined : total,
+    description: q || group || company ? "The people who use your app, and what they asked for." : `${count(total)} ${total === 1 ? "person uses" : "people use"} your app.`,
+    children: (
     <>
-      <PageHeader
-        title="Users"
-        description={
-          q || group || company
-            ? "The people who use your app, and what they asked for."
-            : `${count(total)} ${total === 1 ? "person uses" : "people use"} your app.`
-        }
-        // Users come from the app (single sign-on, or users.sync): how, in the docs.
-        actions={
-          <a href="/api/docs#users.sync" className={buttonVariants({ variant: "outline" })}>
-            Sync from your app
-            <ArrowUpRightIcon />
-          </a>
-        }
-      />
-
-      {/* The views, then (on the same line from laptop width up) finding someone, the columns and a group; above the
-          table at every width, on phones too. */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-6 lg:shadow-[inset_0_-1px_0_var(--color-border)]">
-      <div className="min-w-0 lg:flex-1">{tabs()}</div>
-      <div className="flex items-center gap-2 lg:pb-1.5">
+      {/* Finding someone, the columns and a group, above the table at every width. */}
+      <div className="flex items-center gap-2">
             <form role="search" className="relative flex min-w-0 flex-1 sm:w-64 sm:flex-none">
               {group && <input type="hidden" name="group" value={group} />}
               {company && <input type="hidden" name="company" value={company} />}
@@ -165,7 +156,6 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                 ]}
               />
             )}
-      </div>
       </div>
       {company && (
         <p className="text-sm break-words text-muted-foreground">
@@ -191,9 +181,8 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
         )
       ) : (
         <>
-          {/* The whole width (data-wide), for the team's columns. */}
-          <Card size="sm" data-wide>
-            <CardContent className="overflow-x-auto">
+          {/* On the pane, the whole of its width for the team's columns. */}
+          <div className="-mx-3 shrink-0 overflow-x-auto px-1 @min-[48rem]/app:-mx-4 @min-[48rem]/app:px-2">
               {/* On phones, who they are (no id) and when they were last seen; the rest from tablet width up. */}
               <table className="w-full text-sm">
                 {/* Phones: no header row (a row is who they are, their company and when they were seen), so no sort links in
@@ -287,12 +276,12 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                   ))}
                 </tbody>
               </table>
-            </CardContent>
-          </Card>
+          </div>
         </>
       )}
 
       {pages}
     </>
-  );
+    ),
+  });
 }
