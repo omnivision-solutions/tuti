@@ -10,6 +10,7 @@ import { ListFilters } from "@/components/list-filters";
 import { FilterPills } from "@/components/filter-pills";
 import { PageNav } from "@/components/page-nav";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
+import { ScrollTopOnChange } from "@/components/scroll-top-on-change";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -77,8 +78,9 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
             </a>
           }
         />
-        {/* A fresh one for each view, page, sort, search and group, so a new list starts at its top (the pane scrolls, not the window). */}
-        <PaneBody key={new URLSearchParams(Object.entries(searchParams).flatMap(([name, value]) => (typeof value === "string" ? [[name, value]] : []))).toString()} className="flex flex-col gap-4 p-3 @min-[48rem]/app:p-4">
+        <PaneBody className="flex flex-col gap-4 p-3 @min-[48rem]/app:p-4">
+          {/* Each view, page, sort, search and group opens at the list's top (the pane scrolls, not the window). */}
+          <ScrollTopOnChange />
           {children}
         </PaneBody>
       </Pane>

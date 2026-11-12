@@ -180,12 +180,17 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.getByRole("searchbox", { name: "Search users" }).press("Enter");
   await expect(owner.getByText("No users match")).toBeVisible();
 
-  // By group.
+  // By group, picked with the keyboard: the list follows and focus stays on Group (nothing remounted under it).
   await owner.goto(`/app/${slug}/users`);
-  await owner.getByRole("combobox", { name: "Group" }).click();
-  await owner.getByRole("option", { name: "Enterprise" }).click();
+  const groupPicker = owner.getByRole("combobox", { name: "Group" });
+  await groupPicker.focus();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("option", { name: "Enterprise" })).toBeVisible();
+  await owner.keyboard.press("ArrowDown");
+  await owner.keyboard.press("Enter");
   await expect(owner).toHaveURL(/\?group=enterprise$/);
   await expect(rows).toHaveCount(2);
+  await expect(groupPicker).toBeFocused();
   await expect(rows.filter({ hasText: "Bea Byte" })).toHaveCount(0);
 
   // A group named "All" is a group like any other, not every user.

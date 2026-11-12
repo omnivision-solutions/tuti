@@ -530,7 +530,8 @@ Use these instead of hand-rolling layout:
   its title the page's heading at every width (the Page title style), `back` above it, then
   `description`: one short muted line saying what the page is for ("Ideas and problems your
   users posted, by status."; on portals the team's own words), on a section's main page
-  (Home, Feedback, Roadmap, Changelog, Docs, Users, Settings), not on a page
+  (Feedback, Roadmap, Changelog, Docs, Settings; a page of panes, Home and Users, has
+  `PaneHeader`'s instead), not on a page
   about one thing; then `meta`, facts about the thing shown ("#12 · Ada · 3 votes").
   The actions sit beside the title and description, on the right, from tablet width up.
   `more` is the actions used less often, behind "More actions".
@@ -622,10 +623,11 @@ Use these instead of hand-rolling layout:
   - Compact actions (a badge, one or two small buttons) stay on the right.
   - Pickers or several buttons → `wideActions`: on phones they move under the
     title and share the row width. Give select triggers `w-full sm:w-…`.
-  - A card listing several kinds of thing (Home's "Needs your attention")
+  - A card or a pane's section listing several kinds of thing (Home's "Needs your attention", a section on its pane)
     groups them by kind, the most urgent first: each a heading with how many,
     its first few rows, the longest waiting first (or, where its list shows only the top few, as that list ranks them; Autopilot's, To review's first rows in its order, so the two read the same), and a link to that list ("See all" when it holds them all, else named for where it goes); no kind badge per row.
-- A list compared across columns (Users) is a table in a `Card`: its headings
+- A list compared across columns is a table, in a `Card` on a page or straight on its pane (Users' People and
+  Companies, the pane's whole width): its headings
   sort it (a link each, `aria-sort` on the one in use, the most first; a rate whose low end is what needs the team,
   Reporting's Articles' Found it helpful, the least first and marked ascending), and on
   phones it keeps who and the column that matters most (Last seen), the rest
