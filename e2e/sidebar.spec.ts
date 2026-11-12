@@ -363,6 +363,15 @@ test("on phones the tab bar goes between the main parts and opens the rest under
   await expect(team.getByRole("dialog")).toBeHidden();
   await expect(bar.getByRole("link", { name: "Feedback" })).not.toHaveAttribute("aria-current", "page");
 
+  // Loaded with a post open beside the list, the bar isn't there from the first paint (before any script runs).
+  const firstPaint = await browser.newContext({ storageState: await team.context().storageState(), javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+  const unscripted = await firstPaint.newPage();
+  await unscripted.goto(`${APP_URL}/app/${slug}/feedback?post=${number}`);
+  await expect(unscripted.getByRole("heading", { name: "Dark mode" }).first()).toBeVisible();
+  await expect(unscripted.getByRole("navigation", { name: "Main" })).toBeHidden();
+  await unscripted.goto(`${APP_URL}/app/${slug}/feedback`);
+  await expect(unscripted.getByRole("navigation", { name: "Main" })).toBeVisible();
+  await firstPaint.close();
   // A post's page, and the desktop, have no tab bar.
   await team.goto(`/app/${slug}/p/${number}`);
   await expect(team.getByRole("heading", { name: "Dark mode" }).first()).toBeVisible();

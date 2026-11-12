@@ -210,7 +210,8 @@ export function HidesTabBar() {
     hide(true);
     return () => hide(false);
   }, [hide]);
-  return null;
+  // In the server's HTML too: the bar is hidden from the first paint, before this runs (AppTabBar).
+  return <span hidden data-hides-tab-bar />;
 }
 
 /**
@@ -233,7 +234,7 @@ export function AppTabBar({ projects, fallbackSlug }: { projects: ProjectSummary
     <nav
       aria-label="Main"
       data-tab-bar
-      className="fixed inset-x-0 bottom-0 z-20 flex justify-around gap-1 bg-sidebar px-1.5 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden [:root:has([data-pinned-actions])_&]:hidden"
+      className="fixed inset-x-0 bottom-0 z-20 flex justify-around gap-1 bg-sidebar px-1.5 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden [:root:has([data-pinned-actions],[data-hides-tab-bar])_&]:hidden"
     >
       {bar.tabs.map((item) => (
         <Link
