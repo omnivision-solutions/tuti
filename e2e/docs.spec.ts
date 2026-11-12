@@ -449,7 +449,15 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await sidebarTrigger.click();
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.goto(`/app/${slug}/reporting?range=7d`);
-  await stat("Found it helpful").getByRole("link").focus();
+  // The report's title is the page's heading, the menu's a level under it.
+  await expect(team.getByRole("heading", { level: 1 })).toHaveText("Help center");
+  await expect(team.getByRole("heading", { name: "Reporting", level: 2 })).toBeVisible();
+  // A linked number reached by Tab shows its focus ring inside the strip, which clips anything drawn outside it.
+  await stat("Searches that found nothing").getByRole("link").focus();
+  await team.keyboard.press("Tab");
+  const helpfulLink = stat("Found it helpful").getByRole("link");
+  await expect(helpfulLink).toBeFocused();
+  await expect(helpfulLink).toHaveCSS("box-shadow", /inset/);
   await team.keyboard.press("Tab");
   await expect(bars.last()).toBeFocused();
   await team.keyboard.press("Tab");
@@ -1841,7 +1849,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await pages.getByRole("link", { name: "Older" }).click();
   await team.waitForURL(`**/app/${slug}/reporting/ai-conversations?page=2#ai-history`);
   await expect(pages).toContainText(/21–\d+ of \d+/);
-  await expect(team.getByRole("heading", { name: "Latest conversations" })).toBeFocused();
+  await expect(team.getByRole("heading", { name: "Latest conversations", level: 2 })).toBeFocused();
   await checkpoint(team, "team-reporting-ai-conversations-page-2");
   // Another range starts at its first page.
   await team.getByRole("button", { name: /^Date range: / }).click();

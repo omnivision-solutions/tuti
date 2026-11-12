@@ -206,7 +206,7 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   await createProject(owner, "Acme", slug, cloudPortalUrl);
 
   await owner.goto(`/app/${slug}/reporting`);
-  await expect(owner.getByRole("heading", { name: "See how your help center, AI and inbox are doing" })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "See how your help center, AI and inbox are doing", level: 2 })).toBeVisible();
   await expect(owner.getByText("Reporting needs the Pro plan.")).toBeVisible();
   // The page behind it (made-up numbers) is out of reach.
   await expect(owner.getByRole("group", { name: "Article views" })).toHaveCount(0);
