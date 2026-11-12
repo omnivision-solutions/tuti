@@ -67,6 +67,8 @@ test("an owner sees Autopilot's three steps, finds Advanced tuning locked until 
   await tuningLink.click();
   await owner.waitForURL(`**/app/${slug}/settings/ai-models/tuning`);
   await expect(owner.getByRole("heading", { name: "Advanced tuning", level: 2 })).toBeVisible();
+  // One way back, in the pane's header.
+  await expect(owner.getByRole("region", { name: "Advanced tuning" }).getByRole("link", { name: /AI models/ })).toHaveAttribute("href", `/app/${slug}/settings/ai-models`);
   await expect(owner.getByText("Advanced tuning needs the Business plan.")).toBeVisible();
   await expect(owner.getByRole("link", { name: "See Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   await expect(owner.getByRole("spinbutton", { name: "Fix an article from" })).toBeDisabled();
