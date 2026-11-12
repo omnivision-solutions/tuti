@@ -342,6 +342,13 @@
 }
 
 /* A group's label: the heading of a group inside a list, card or menu (docs/design.md, Group label). */
+/* Buttons are pills where `data-pill-buttons` is set (the admin's panes, docs/design.md → Panes); elsewhere a
+   button's corners come from `--radius` where it is (Button). */
+[data-pill-buttons] {
+  --button-radius: 9999px;
+  --button-radius-sm: 9999px;
+}
+
 @utility group-label {
   @apply text-[0.75rem] leading-4 font-semibold tracking-[0.06em] text-muted-foreground uppercase;
 }
