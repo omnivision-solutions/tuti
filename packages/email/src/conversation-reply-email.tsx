@@ -6,12 +6,14 @@ type ReplyProps = {
   projectName: string;
   /** The team's messages they haven't seen, oldest first. */
   messages: { name: string; body: string }[];
+  /** The project's accent (Project.brandColor; null for Tuti's green): see accentColors. */
+  accent?: string | null;
 };
 
 /** To a user: the team's replies in the support inbox that they haven't seen (docs/plan.md, Support inbox, "Reaching the user"). */
-export function ConversationReplyEmail({ projectName, messages }: ReplyProps) {
+export function ConversationReplyEmail({ projectName, messages, accent }: ReplyProps) {
   return (
-    <Layout preview={messages[0]?.body.slice(0, 120) ?? ""}>
+    <Layout preview={messages[0]?.body.slice(0, 120) ?? ""} accent={accent}>
       {messages.map((message, i) => (
         <div key={i}>
           <Text style={{ fontSize: 13, color: colors.muted, margin: "16px 0 4px" }}>{message.name}</Text>
@@ -27,5 +29,5 @@ export function ConversationReplyEmail({ projectName, messages }: ReplyProps) {
 
 export const conversationReplyEmail = (props: ReplyProps & { subject: string }) => ({
   subject: /^re:/i.test(props.subject) ? props.subject : `Re: ${props.subject}`,
-  body: <ConversationReplyEmail projectName={props.projectName} messages={props.messages} />,
+  body: <ConversationReplyEmail projectName={props.projectName} messages={props.messages} accent={props.accent} />,
 });

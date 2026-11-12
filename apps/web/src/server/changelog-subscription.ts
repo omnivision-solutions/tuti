@@ -70,6 +70,7 @@ export async function emailConfirmation(
   });
   const url = new URL(`${await portalAddress(project.slug)}/changelog/subscription`);
   url.searchParams.set("confirm", confirm);
+  const { brandColor } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { brandColor: true } });
   try {
     await sendEmail({
       to: subscriber.email,
@@ -77,6 +78,7 @@ export async function emailConfirmation(
         projectName: project.name,
         url: url.toString(),
         optedOut: (await changelogReach(project.id, { email: subscriber.email, confirmed: true })) === "opted-out",
+        accent: brandColor,
       }),
       ...(await projectSender(project.id)),
     });

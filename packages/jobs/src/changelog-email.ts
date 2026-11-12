@@ -229,7 +229,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
       subscribersEmailDueAt: true,
       sample: true,
       projectId: true,
-      project: { select: { name: true, slug: true, portalAccess: true } },
+      project: { select: { name: true, slug: true, portalAccess: true, brandColor: true } },
     },
   });
   // Not due (sent, never asked for), or sample content (Home's, for the team to try things with: never emailed).
@@ -301,6 +301,7 @@ export async function changelogEmailed({ entryId }: JobInput<"changelogEmailed">
           doc,
           ...images,
           unsubscribeUrl: `${origin}/changelog/subscription?${query}`,
+          accent: project.brandColor,
         }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.

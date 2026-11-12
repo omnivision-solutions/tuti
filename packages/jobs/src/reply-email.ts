@@ -111,7 +111,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
           projectId: true,
           authorId: true,
           visibility: true,
-          project: { select: { name: true, slug: true, portalAccess: true, plan: true } },
+          project: { select: { name: true, slug: true, portalAccess: true, plan: true, brandColor: true } },
           votes: { select: { userId: true } },
         },
       },
@@ -173,6 +173,7 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
           mediaUrls,
           postUrl,
           unsubscribeUrl: `${origin}/unsubscribe?token=${token}`,
+          accent: project.brandColor,
         }),
         ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.

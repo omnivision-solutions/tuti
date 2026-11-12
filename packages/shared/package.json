@@ -16,7 +16,8 @@
     "./media-links": "./src/media-links.ts",
     "./user-properties": "./src/user-properties.ts",
     "./portal-redirects": "./src/portal-redirects.ts",
-    "./log": "./src/log.ts"
+    "./log": "./src/log.ts",
+    "./colors": "./src/colors.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

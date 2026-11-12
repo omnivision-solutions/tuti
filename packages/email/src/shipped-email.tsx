@@ -1,13 +1,13 @@
 import { Button, Link, Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { buttonStyle, colors, Layout } from "./layout";
 
 /** `note`: the team's comment posted with the completion, quoted under the news. */
-type ShippedProps = { projectName: string; postTitle: string; postUrl: string; unsubscribeUrl: string; note?: { from: string; text: string } };
+type ShippedProps = { projectName: string; postTitle: string; postUrl: string; unsubscribeUrl: string; note?: { from: string; text: string }; accent?: string | null };
 
-export function ShippedEmail({ projectName, postTitle, postUrl, unsubscribeUrl, note }: ShippedProps) {
+export function ShippedEmail({ projectName, postTitle, postUrl, unsubscribeUrl, note, accent }: ShippedProps) {
   return (
-    <Layout preview={`${postTitle} is done.`}>
+    <Layout preview={`${postTitle} is done.`} accent={accent}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         Good news from {projectName}: <strong>{postTitle}</strong> is done. Thanks for asking for it.
       </Text>
@@ -20,7 +20,7 @@ export function ShippedEmail({ projectName, postTitle, postUrl, unsubscribeUrl, 
       )}
       <Button
         href={postUrl}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
+        style={buttonStyle(accent)}
       >
         See the post
       </Button>

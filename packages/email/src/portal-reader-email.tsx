@@ -1,19 +1,19 @@
 import { Button, Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { buttonStyle, colors, Layout } from "./layout";
 
-type PortalReaderProps = { inviterName: string; projectName: string; email: string; url: string };
+type PortalReaderProps = { inviterName: string; projectName: string; email: string; url: string; accent?: string | null };
 
 /** To someone the team added as a reader of its private portal: where to sign in, and with which address. */
-export function PortalReaderEmail({ inviterName, projectName, email, url }: PortalReaderProps) {
+export function PortalReaderEmail({ inviterName, projectName, email, url, accent }: PortalReaderProps) {
   return (
-    <Layout preview={`You can now read ${projectName}'s portal.`}>
+    <Layout preview={`You can now read ${projectName}'s portal.`} accent={accent}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         {inviterName} gave you access to <strong>{projectName}</strong>&apos;s portal: its docs, changelog and feedback.
       </Text>
       <Button
         href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
+        style={buttonStyle(accent)}
       >
         Open the portal
       </Button>

@@ -12,6 +12,8 @@ cute at the expense of clarity.
 - **Colour:** leafy green primary, a beak-orange highlight, warm paper
   neutrals. Dark mode uses a brighter green with dark text on it (the public portal's dark is neutral, see Layout →
   Portals).
+  Emails sent on a project's behalf (to its customers and readers) take its accent for the card's top edge, buttons
+  and links, as its portal does (too faint on white: the text colour); the small "tuti" wordmark above stays green.
 - **Type:** Figtree for text, Bricolage Grotesque for headings (`h1`–`h3` and
   `font-heading` pick it up automatically) in the app; Inter for both on the public portal, unless the project picks
   its own (Settings → Branding; see Layout → Portals). Every font is a file: these and the symbols font in
