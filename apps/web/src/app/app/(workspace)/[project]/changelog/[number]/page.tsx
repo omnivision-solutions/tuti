@@ -88,6 +88,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         <Pane aria-label="Changelog entry">
           <PaneHeader
             back={{ href: `/app/${slug}/changelog`, label: "All entries" }}
+            titleInForm
             title={entry.title}
             actions={
               <PageActions

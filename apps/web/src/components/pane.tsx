@@ -51,6 +51,8 @@ export function PaneBody({ children, className }: { children: ReactNode; classNa
  * page), then the way back (`back`: "‹ All posts" on phones, "All posts ›" before the title from tablet width up), the
  * title (20px heading font; `level` 2 where the page's own heading is in another pane), a short description from tablet width up, `filters` (pills; on phones a row of their
  * own under the title), and `actions` at the right end: round icon buttons and at most one primary button.
+ * `titleInForm`: an editor whose title field shows the title: the heading is for screen readers at every width (and the
+ * way back reads "‹ All entries" at every width), and the top bar doesn't name the page (AppHeader).
  */
 export function PaneHeader({
   title,
@@ -59,10 +61,12 @@ export function PaneHeader({
   filters,
   actions,
   level = 1,
+  titleInForm = false,
   className,
 }: {
   title?: ReactNode;
   level?: 1 | 2;
+  titleInForm?: boolean;
   back?: { href: string; label: ReactNode };
   description?: ReactNode;
   filters?: ReactNode;
@@ -72,7 +76,7 @@ export function PaneHeader({
   const menu = useContext(SectionMenuContext);
   const Heading = level === 1 ? "h1" : "h2";
   return (
-    <header data-slot="pane-header" className="shrink-0 border-b">
+    <header data-slot="pane-header" data-title-in-form={titleInForm || undefined} className="shrink-0 border-b">
       <div className={cn("flex min-h-15 min-w-0 items-center gap-2 px-3 py-2 @min-[48rem]/app:px-4 @min-[48rem]/app:pl-5", className)}>
         {menu && (
           // Shown with a section pane on the page (hidden from tablet width up, where the pane is beside it).
@@ -87,13 +91,13 @@ export function PaneHeader({
         )}
         {back && (
           <Link href={back.href} className="flex min-w-0 shrink items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground [&>svg]:size-4 [&>svg]:shrink-0">
-            <ChevronLeftIcon aria-hidden className="@min-[48rem]/app:hidden" />
+            <ChevronLeftIcon aria-hidden className={cn(!titleInForm && "@min-[48rem]/app:hidden")} />
             <span className="truncate">{back.label}</span>
-            <ChevronRightIcon aria-hidden className="hidden @min-[48rem]/app:block" />
+            {!titleInForm && <ChevronRightIcon aria-hidden className="hidden @min-[48rem]/app:block" />}
           </Link>
         )}
         {title && (
-          <Heading className={cn("min-w-0 truncate font-heading text-xl font-semibold tracking-[-0.015em]", back && "@max-[48rem]/app:sr-only @min-[48rem]/app:text-base @min-[48rem]/app:font-sans @min-[48rem]/app:tracking-normal")}>{title}</Heading>
+          <Heading className={cn("min-w-0 truncate font-heading text-xl font-semibold tracking-[-0.015em]", titleInForm ? "sr-only" : back && "@max-[48rem]/app:sr-only @min-[48rem]/app:text-base @min-[48rem]/app:font-sans @min-[48rem]/app:tracking-normal")}>{title}</Heading>
         )}
         {description && <p className="hidden min-w-0 truncate text-sm text-muted-foreground @min-[56rem]/app:block">· {description}</p>}
         {filters && <div className="hidden min-w-0 @min-[48rem]/app:flex">{filters}</div>}
