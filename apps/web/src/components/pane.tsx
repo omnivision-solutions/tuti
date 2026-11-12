@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Children, createContext, isValidElement, type ReactNode, useContext, useEffect, useState } from "react";
+import { Children, createContext, isValidElement, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { activeView } from "@/lib/active-link";
@@ -17,23 +17,23 @@ import { activeView } from "@/lib/active-link";
 type SectionMenu = { open: boolean; setOpen: (open: boolean) => void };
 const SectionMenuContext = createContext<SectionMenu | null>(null);
 
-/** The tablet width where the section pane shows beside the page (the shell's 48rem; the window's here, near enough). */
-const BESIDE = "(min-width: 48rem)";
-
 export function PaneLayout({ children, className }: { children: ReactNode; className?: string }) {
-  // The drawer is open on the URL it was opened on: any move (a link, Back, a gesture) closes it.
+  // The drawer is open on the URL it was opened on, and closed for good as the URL moves (a link, Back, a gesture).
   const url = `${usePathname()}?${useSearchParams()}`;
   const [openOn, setOpenOn] = useState<string | null>(null);
-  // Wide enough for the pane beside the page: not the drawer too.
+  if (openOn !== null && openOn !== url) setOpenOn(null);
+  // Closed as the section pane shows beside the page (the shell's 48rem, a container query: watched as it renders).
+  const layout = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const beside = matchMedia(BESIDE);
-    const close = () => beside.matches && setOpenOn(null);
-    beside.addEventListener("change", close);
-    return () => beside.removeEventListener("change", close);
+    const pane = layout.current?.querySelector("[data-slot=section-pane]");
+    if (!pane) return;
+    const shown = new ResizeObserver(([entry]) => entry.contentRect.width > 0 && setOpenOn(null));
+    shown.observe(pane);
+    return () => shown.disconnect();
   }, []);
   return (
     <SectionMenuContext value={{ open: openOn === url, setOpen: (open) => setOpenOn(open ? url : null) }}>
-      <div data-slot="pane-layout" className={cn("group/panes flex min-h-0 min-w-0 flex-1 gap-2", className)}>
+      <div ref={layout} data-slot="pane-layout" className={cn("group/panes flex min-h-0 min-w-0 flex-1 gap-2", className)}>
         {children}
       </div>
     </SectionMenuContext>
@@ -113,7 +113,7 @@ export function PaneHeader({
  * An area's own menu (Feedback's views, boards and statuses; Settings' pages): a 248px pane titled by the area, its
  * links in `SectionGroup`s; one of them is open: the one the URL is on (`activeView`, views in the query string too),
  * unless a link's `active` says otherwise. On phones it's hidden; the pane header's menu button opens it as a drawer
- * from the left, with its own Close; it closes as the URL changes, or the window gets wide enough for the pane.
+ * from the left, with its own Close; it closes as the URL changes, or the shell gets wide enough for the pane.
  * Its links are found in its children (in groups, fragments and arrays, and what server components render): a client
  * component that renders SectionLinks hides them, so pass them in as elements, or give them `active`.
  */
