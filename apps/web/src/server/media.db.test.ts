@@ -340,24 +340,27 @@ describe("avatar", () => {
 
   test("someone who leaves the team gets their initials back, and the upload is released; a photo set elsewhere since stays", async () => {
     const member = await addMember(project.id, "MEMBER");
+    const saved = await addMember(project.id, "MEMBER");
     const other = await addMember(project.id, "MEMBER");
-    const uploads = [await ready(member.id), await ready(other.id)];
-    for (const [i, person] of [member, other].entries()) {
+    const people = [member, saved, other];
+    const uploads = await Promise.all(people.map((person) => ready(person.id)));
+    for (const [i, person] of people.entries()) {
       actAs(person);
       expect(await setAvatar(uploads[i]!.id)).toEqual({});
     }
-    // One saved as it is from now on (without host or path), not as a link: initials back all the same.
-    await prisma.user.update({ where: { id: member.id }, data: { image: savedPicture(imageKey(uploads[0]!.id, 96)) } });
+    // `member`'s stays the link setAvatar saves; `saved`'s is as it will be saved (without host or path).
+    await prisma.user.update({ where: { id: saved.id }, data: { image: savedPicture(imageKey(uploads[1]!.id, 96)) } });
     // Their photo since comes from elsewhere (sign-in), the upload still recorded.
     await prisma.user.update({ where: { id: other.id }, data: { image: "https://example.com/face.png" } });
-    await prisma.teamMember.deleteMany({ where: { projectId: project.id, userId: { in: [member.id, other.id] } } });
+    await prisma.teamMember.deleteMany({ where: { projectId: project.id, userId: { in: people.map((person) => person.id) } } });
 
     await release();
-    const people = await prisma.user.findMany({ where: { id: { in: [member.id, other.id] } }, select: { id: true, image: true, imageId: true } });
-    expect(people.find((p) => p.id === member.id)).toMatchObject({ image: null, imageId: null });
-    expect(people.find((p) => p.id === other.id)).toMatchObject({ image: "https://example.com/face.png", imageId: null });
+    const after = await prisma.user.findMany({ where: { id: { in: people.map((person) => person.id) } }, select: { id: true, image: true, imageId: true } });
+    expect(after.find((p) => p.id === member.id)).toMatchObject({ image: null, imageId: null });
+    expect(after.find((p) => p.id === saved.id)).toMatchObject({ image: null, imageId: null });
+    expect(after.find((p) => p.id === other.id)).toMatchObject({ image: "https://example.com/face.png", imageId: null });
     const media = await prisma.media.findMany({ where: { id: { in: uploads.map((u) => u.id) } }, select: { attachedAt: true } });
-    expect(media.map((m) => m.attachedAt)).toEqual([null, null]);
+    expect(media.map((m) => m.attachedAt)).toEqual([null, null, null]);
   });
 
   test("someone else's upload, one not processed yet, or a reader's own (not on the team) isn't", async () => {
