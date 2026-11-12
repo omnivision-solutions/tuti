@@ -146,7 +146,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   return (
     <PaneLayout>
       {/* A post open beside the list: the menu only where there's room for three panes. */}
-      <FeedbackMenu project={membership.project} role={membership.role} className={cn(open !== null && "@max-[80rem]/app:hidden!")} />
+      <FeedbackMenu project={membership.project} role={membership.role} view={tab} board={board} className={cn(open !== null && "@max-[80rem]/app:hidden!")} />
       <FeedbackKeys order={listed.map((post) => post.number)} open={open} base={withPost(null)} />
       {/* A post open beside the list has the phone's screen to itself: no tab bar. */}
       {open !== null && <HidesTabBar />}

@@ -138,7 +138,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Tess Team moved it to Planned");
   // Its title is in the pane header, after the way back to the list, and large over the post; the post merged into
   // it is listed.
-  await expect(team.locator('[data-slot="pane-header"]').getByRole("link", { name: "All posts" })).toHaveAttribute("href", `/app/${slug}/feedback`);
+  await expect(team.locator('[data-slot="pane-header"]').getByRole("link", { name: "All posts" })).toHaveAttribute("href", `/app/${slug}/feedback?status=all`);
   const heading = team.getByRole("heading", { name: "Dark mode", level: 1 });
   await expect(heading).toBeVisible();
   await expect(team.getByRole("main").locator("p", { hasText: /^Dark mode$/ })).toHaveCSS("font-size", "28px");
@@ -266,6 +266,9 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // A status without a tab (an old link to Closed, say) lists All.
   await team.goto(`/app/${slug}/feedback?status=closed`);
   await expect(tabs.getByRole("link", { name: "All 1" })).toHaveAttribute("aria-current", "page");
+  // The menu marks All posts too, not Needs triage (the address has no status of its own there).
+  await expect(menu.getByRole("link", { name: "All posts 1" })).toHaveAttribute("aria-current", "page");
+  await expect(menu.getByRole("link", { name: /^Needs triage/ })).not.toHaveAttribute("aria-current");
   await expect(team.getByRole("link", { name: /Dark mode/ })).toBeVisible();
   // A row shows values, no form controls: its board as a label, who posted it, its status's menu.
   const row = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });

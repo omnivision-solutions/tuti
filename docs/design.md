@@ -159,12 +159,12 @@ the list picks none to approve at once.
   over a centred `<main>` (`app/app/(account-pages)/layout.tsx`). Shell pages sit in one of three
   columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, a post), max-w-2xl for a form
   by itself (`data-narrow` on it; New project, Setup and Account are panes now), or the whole width (`data-wide`: the
-  team's Roadmap; and pages of panes: Home, Users). Feedback, a page of panes, caps itself at 72rem while
-  no post is open beside its list, so its rows stay scannable on a wide screen. It keeps the shell's left edge
-  whether or not a post is open, so the clicked row stays in place.
+  team's Roadmap; and pages of panes: Home, Users). Feedback is a page of panes: its menu, its list and, beside
+  them, a post the list opened; the list keeps its place whether or not a post is open, so the clicked row stays put.
   From tablet width up there is no separate app header: the page starts at the top of the shell. Its own
   `PageHeader` keeps the title, description, metadata and actions together and, in windows at least 40rem tall, sticks
-  to the top as the page scrolls; a post's back/previous/next row sticks with it. Editors keep Save and Publish beside
+  to the top as the page scrolls; a page of panes keeps its `PaneHeader` (a post's way back, its newer and older post
+  and its actions) at the top of its pane, the pane scrolling under it. Editors keep Save and Publish beside
   their page context, in the same sticky header at any window height. Shorter or zoomed windows let other headers scroll
   away to leave room for the content. An article's back link and draft state share one compact block beside its actions,
   with a lower divider; the toolbar and text share a reading column, at the portal's width. The sidebar's visible "Toggle Sidebar"
@@ -595,7 +595,7 @@ Use these instead of hand-rolling layout:
     form controls (selects, checkboxes for settings) in rows, on phones too.
   - A list that's triaged (Feedback) opens a row in a pane beside it, the whole
     width: `?post=<number>` in the address (shareable, Back works), the list
-    left as it was, the open row highlighted out to its card's edges
+    left as it was, the open row highlighted out to its list's edges
     (`ItemRow selected`). The pane holds what triage needs (description, properties,
     voters, a reply) and "Open full page" for the rest; J and K step through
     the list in it, Esc closes it (`pageShortcut`: not while typing, nor with a
@@ -607,9 +607,8 @@ Use these instead of hand-rolling layout:
     strongly when it's also the open one; on any highlighted row the meta line
     is `text-foreground/70`, as the grey falls under 4.5:1 there); a
     bar in the filters' place says how many and offers it (Feedback: Set
-    status, Move to board, Merge…, Clear). Bar and filters share one grid cell,
-    the filters `invisible` and `inert` while the bar shows, so the cell keeps
-    the taller one's height and the list doesn't move. In a
+    status, Move to board, Merge…, Clear). On Feedback it covers the pane header's row (its title, pills, search
+    and Filters `invisible` under it; on phones the pills' own row under it stays), so the list doesn't move. In a
     narrow list column (a phone, or a post open beside it; a container query on
     the column, not the window) it stays one row with shorter words (Status,
     Board, an × for Clear; the full names for screen readers); narrower still,
@@ -627,16 +626,14 @@ Use these instead of hand-rolling layout:
     at the right the owner's face (tablet width up) and the status menu, a quiet "⋯" (`PostStatusMenu
     badge={false}`): the tab says the status, and All, when it mixes them, is grouped under each status (its dot,
     name and count) in the tabs' order. Where no tab or group heading names the status (Possible duplicates, a tab
-    only while there are some; All while it isn't grouped: one status, or more to load) the pill opens the menu. By itself the page (header, toolbar, list)
-    is a column of at most 72rem at the shell's left edge, so a row's title and its "⋯" stay close on a wide screen; a post open
-    beside it, the whole width, with the same left edge. Above the list, on a page 64rem wide or more (the page's width, not the list's: the same
-    with a post open or not), one toolbar row (the job is triage: nothing else between the tabs and the rows): the status tabs on the left (scrolling sideways when short of room), the search and one "Filters"
-    button on the right (a popover with Board, Voters and the sort; how many are set on it). The row is the same height
-    whether or not a post is open (the list never moves as one opens): beside a post the statuses are the first
-    three tabs and More (reading as the one of the rest that's open, as the Inbox's), so Needs triage stays in sight,
-    the search is narrower ("Search") and Filters its icon. Picked rows' bar takes the whole row. Boards, used less, is in the header's "…"
-    menu, New post the one button beside it. On a narrower page the tabs are above the search and Filters (and, on phones,
-    "+ New"); while rows are picked, their bar replaces only that search line, keeping the status tabs visible and usable.
+    only while there are some; All while it isn't grouped: one status, or more to load) the pill opens the menu, each
+    status's group an `ItemGroup`. The list's pane header is its one toolbar (the job is triage: nothing else between
+    the statuses and the rows): the status pills (`FilterPills`, scrolling sideways when short of room), a round search
+    field, one round "Filters" button (a popover with Board, Voters and the sort; how many are set on it) and New post;
+    on phones the view's name as its title and the pills a row under it. The same with a post open or not, so the list
+    never moves as one opens. Feedback's menu (`FeedbackMenu`, a `SectionPane`) beside it has the views (All posts,
+    Needs triage, Roadmap), the boards (a + to add one, Manage boards), the statuses and Possible duplicates, with
+    counts; with a post open it shows only where there's room for three panes (80rem of the shell).
   - A post's vote count, first in its row, has the vote arrow over it (and
     "votes" for screen readers), so it doesn't read as a bare number (`VoteCount`, `VoteBox`).
   - Compact actions (a badge, one or two small buttons) stay on the right.

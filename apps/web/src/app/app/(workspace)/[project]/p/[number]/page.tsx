@@ -159,7 +159,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       <FeedbackMenu project={project} role={membership.role} />
       <Pane aria-label="Post">
         <PaneHeader
-          back={{ href: `/app/${slug}/feedback`, label: "All posts" }}
+          back={{ href: `/app/${slug}/feedback?status=all`, label: "All posts" }}
           title={post.title}
           // The newer and older post, the portal and Merge; round icons on phones but Merge.
           actions={

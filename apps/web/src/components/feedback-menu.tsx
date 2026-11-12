@@ -19,17 +19,24 @@ const STATUSES = [
 /**
  * Feedback's section pane, beside its list, the Roadmap, Boards and a post: its views, its boards (each one's posts;
  * a + for a new one, owners and admins with room on their plan), its statuses and Possible duplicates, with counts
- * across every board.
+ * across every board. On the list, `view` (its tab: "all", "open", a status's, "duplicates") and `board` say which
+ * link is open, as the list reads its address; elsewhere the address does.
  */
 export async function FeedbackMenu({
   project,
   role,
+  view,
+  board,
   className,
 }: {
   project: { id: string; slug: string; plan: Parameters<typeof boardLimit>[0] };
   role: Parameters<typeof isAdminRole>[0];
+  view?: string;
+  board?: string;
   className?: string;
 }) {
+  // On the list: a board's own link for its All, else the tab's link (a board's other tabs mark the status).
+  const open = (link: string) => (view === undefined ? undefined : board && view === "all" ? link === `board:${board}` : link === view);
   const base = `/app/${project.slug}/feedback`;
   const [boards, perBoard, counts] = await Promise.all([
     prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, slug: true, name: true } }),
@@ -42,36 +49,37 @@ export async function FeedbackMenu({
   return (
     <SectionPane title="Feedback" className={className}>
       <SectionGroup>
-        <SectionLink href={`${base}?status=all`} icon={<InboxIcon />} count={counts.all}>
+        <SectionLink href={`${base}?status=all`} icon={<InboxIcon />} count={counts.all} active={open("all")}>
           All posts
         </SectionLink>
-        <SectionLink href={base} icon={<SparklesIcon />} count={counts.of("OPEN")}>
+        <SectionLink href={base} icon={<SparklesIcon />} count={counts.of("OPEN")} active={open("open")}>
           Needs triage
         </SectionLink>
-        <SectionLink href={`${base}/roadmap`} icon={<MapIcon />}>
+        <SectionLink href={`${base}/roadmap`} icon={<MapIcon />} active={view === undefined ? undefined : false}>
           Roadmap
         </SectionLink>
       </SectionGroup>
       <SectionGroup label="Boards" action={canAdd && <NewBoardDialog projectSlug={project.slug} icon />}>
         {boards.map((board) => (
-          <SectionLink key={board.id} href={`${base}?board=${board.slug}&status=all`} icon={<LayoutListIcon />} count={perBoard.find((row) => row.boardId === board.id)?._count ?? 0}>
+          <SectionLink key={board.id} href={`${base}?board=${board.slug}&status=all`} icon={<LayoutListIcon />} count={perBoard.find((row) => row.boardId === board.id)?._count ?? 0} active={open(`board:${board.slug}`)}>
             {board.name}
           </SectionLink>
         ))}
-        <SectionLink href={`${base}/boards`} icon={<Settings2Icon />}>
+        <SectionLink href={`${base}/boards`} icon={<Settings2Icon />} active={view === undefined ? undefined : false}>
           Manage boards
         </SectionLink>
       </SectionGroup>
       <SectionGroup label="Statuses">
         {STATUSES.map(([param, status]) => (
-          <SectionLink key={status} href={`${base}?status=${param}`} icon={<StatusIcon status={status} />} count={counts.of(status)}>
+          <SectionLink key={status} href={`${base}?status=${param}`} icon={<StatusIcon status={status} />} count={counts.of(status)} active={open(param)}>
             {STATUS_LABELS[status]}
           </SectionLink>
         ))}
       </SectionGroup>
-      {counts.duplicates > 0 && (
+      {/* While there are some, or it's open (as the list's pills). */}
+      {(counts.duplicates > 0 || view === "duplicates") && (
         <SectionGroup label="Smart views">
-          <SectionLink href={`${base}?show=duplicates`} icon={<CopyIcon />} count={counts.duplicates}>
+          <SectionLink href={`${base}?show=duplicates`} icon={<CopyIcon />} count={counts.duplicates} active={open("duplicates")}>
             Possible duplicates
           </SectionLink>
         </SectionGroup>
