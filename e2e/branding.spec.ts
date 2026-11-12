@@ -93,9 +93,12 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await owner.clock.fastForward("30:00");
   await expect(frame).not.toHaveAttribute("src", opened);
   await expect(preview.getByRole("banner").getByRole("link", { name: /Acme Help/ })).toHaveAttribute("href", "https://acme.example");
-  await save.click();
+  // Saved from the keyboard: focus stays on "Save changes" while it saves and once it's disabled again.
+  await save.focus();
+  await save.press("Enter");
   await expect(owner.getByText("Branding saved")).toBeVisible();
   await expect(save).toBeDisabled();
+  await expect(save).toBeFocused();
   // Saved, the preview shows it.
   await expect(preview.getByRole("banner").getByRole("link", { name: "Acme Help" }).locator("img").first()).toBeVisible();
   await checkpoint(owner, "branding-settings");

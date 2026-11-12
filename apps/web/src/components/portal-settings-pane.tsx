@@ -36,7 +36,7 @@ export function PortalSettingsPane({
           description={description}
           actions={
             hasForms && (
-              <Button type="button" disabled={!dirty || pending} onClick={save}>
+              <Button type="button" disabled={!dirty || pending} focusableWhenDisabled onClick={save}>
                 {pending ? "Saving…" : "Save changes"}
               </Button>
             )
