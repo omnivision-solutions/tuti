@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, countTrend, DailyChart, percent, plural, ReportBody, ReportHeading, searchesSince, shareTrend, Stat, Stats } from "@/components/reports";
+import { count, countTrend, DailyChart, percent, plural, ReportPane, searchesSince, shareTrend, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,8 +20,7 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
   const found = report.daily.searches.map((searches, i) => searches - report.daily.failed[i]!);
   const unlisted = totals.failedSearches - report.failedSearches.reduce((sum, search) => sum + search.count, 0);
   return (
-    <ReportBody upgrade={upgrade}>
-      <ReportHeading section="Help center" title="Searches" range={range} locked={locked} />
+    <ReportPane title="Searches" range={range} locked={locked} upgrade={upgrade}>
       <Stats compared={range}>
         <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Portal, widget and API"} trend={countTrend(range, report.daily.searches, before.searches, "up")} />
         <Stat label="Found nothing" value={count(totals.failedSearches)} hint={searchesSince(report.searchesSince) ?? "Searches without a single result"} trend={countTrend(range, report.daily.failed, before.failedSearches, "down")} />
@@ -75,6 +74,6 @@ export default async function ReportingSearchesPage(props: PageProps<"/app/[proj
           {unlisted > 0 && <p className="mt-3 text-sm text-muted-foreground">And {plural(unlisted, "more search", "more searches")} that found nothing.</p>}
         </CardContent>
       </Card>
-    </ReportBody>
+    </ReportPane>
   );
 }

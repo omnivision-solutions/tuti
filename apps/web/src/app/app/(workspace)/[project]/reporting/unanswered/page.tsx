@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { ReportBody, ReportHeading } from "@/components/reports";
+import { ReportPane } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,8 +26,7 @@ export default async function ReportingUnansweredPage(props: PageProps<"/app/[pr
   const { membership, range, locked, sample, upgrade } = await reportingPage(slug, given);
   const gaps = sample ? sampleGaps(range) : await docsGaps(membership.project.id, range.since, range.until);
   return (
-    <ReportBody upgrade={upgrade}>
-      <ReportHeading section="AI support" title="Unanswered questions" range={range} locked={locked} />
+    <ReportPane title="Unanswered questions" range={range} locked={locked} upgrade={upgrade}>
       <Card>
         <CardHeader>
           <CardTitle>Topics to write about</CardTitle>
@@ -93,6 +92,6 @@ export default async function ReportingUnansweredPage(props: PageProps<"/app/[pr
           )}
         </CardContent>
       </Card>
-    </ReportBody>
+    </ReportPane>
   );
 }

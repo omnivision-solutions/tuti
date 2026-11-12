@@ -1,10 +1,10 @@
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import Link from "next/link";
 
+import { FilterPills } from "@/components/filter-pills";
 import { HashHeading } from "@/components/hash-heading";
 import { PastHistoryNotice } from "@/components/inbox/past-history-notice";
-import { count, countTrend, DailyChart, percent, plural, ReportBody, ReportHeading, shareTrend, Stat, Stats } from "@/components/reports";
-import { SubNav } from "@/components/sub-nav";
+import { count, countTrend, DailyChart, percent, plural, ReportPane, shareTrend, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { PageNav } from "@/components/page-nav";
 import { timeAgo } from "@/lib/format";
@@ -39,8 +39,7 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
     return withRange(query ? `${base}?${query}` : base, range.key);
   };
   return (
-    <ReportBody upgrade={upgrade}>
-      <ReportHeading section="AI support" title="AI conversations" range={range} locked={locked} />
+    <ReportPane title="AI conversations" range={range} locked={locked} upgrade={upgrade}>
       <Stats compared={range}>
         <Stat label="Conversations" value={count(totals.conversations)} hint="A question and its follow-ups" trend={countTrend(range, conversations, before?.conversations ?? null, "up")} />
         <Stat label="Answered" value={percent(totals.answered, totals.conversations)} hint="Every question answered from the docs"
@@ -67,9 +66,8 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
         <HashHeading key={page} id="ai-history" className="scroll-mt-8 font-heading text-base font-medium outline-none">
           Latest conversations
         </HashHeading>
-        <SubNav
+        <FilterPills
           label="Show conversations"
-          scroll={false}
           current={withRange(show ? `${base}?show=${show}` : base, range.key)}
           items={[
             { title: "All", href: withRange(base, range.key) },
@@ -159,6 +157,6 @@ export default async function ReportingAiConversationsPage(props: PageProps<"/ap
           </PageNav>
         )}
       </section>
-    </ReportBody>
+    </ReportPane>
   );
 }
