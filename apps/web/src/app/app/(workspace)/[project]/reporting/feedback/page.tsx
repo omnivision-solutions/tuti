@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, countTrend, DailyChart, helpfulTrend, percent, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, countTrend, DailyChart, helpfulTrend, percent, ReportPane, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { docsReport } from "@/server/operations/reports";
@@ -16,8 +16,7 @@ export default async function ReportingFeedbackPage(props: PageProps<"/app/[proj
   const report = sample ? sampleDocsReport(range) : await docsReport(membership.project.id, range);
   const { totals } = report;
   return (
-    <ReportBody upgrade={upgrade}>
-      <ReportHeading section="Help center" title="Feedback" range={range} locked={locked} />
+    <ReportPane title="Feedback" range={range} locked={locked} upgrade={upgrade}>
       <Stats compared={range}>
         <Stat label="Helpful" value={count(totals.helpful)} hint="Readers who answered “Yes”" trend={countTrend(range, report.daily.helpful, report.before.helpful, "up")} />
         <Stat label="Not helpful" value={count(totals.notHelpful)} hint="Readers who answered “No”" trend={countTrend(range, report.daily.notHelpful, report.before.notHelpful, "down")} />
@@ -59,6 +58,6 @@ export default async function ReportingFeedbackPage(props: PageProps<"/app/[proj
           )}
         </CardContent>
       </Card>
-    </ReportBody>
+    </ReportPane>
   );
 }

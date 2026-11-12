@@ -206,10 +206,12 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   await createProject(owner, "Acme", slug, cloudPortalUrl);
 
   await owner.goto(`/app/${slug}/reporting`);
-  await expect(owner.getByRole("heading", { name: "See how your help center, AI and inbox are doing" })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "See how your help center, AI and inbox are doing", level: 2 })).toBeVisible();
   await expect(owner.getByText("Reporting needs the Pro plan.")).toBeVisible();
   // The page behind it (made-up numbers) is out of reach.
   await expect(owner.getByRole("group", { name: "Article views" })).toHaveCount(0);
+  // So is the range picker: no ranges to pick until the plan has Reporting.
+  await expect(owner.getByRole("button", { name: /^Date range: / })).toHaveCount(0);
   await checkpoint(owner, "team-reporting-free-plan");
   // On a phone, less blurred: the chart's thin bars stay bars.
   await owner.setViewportSize({ width: 390, height: 844 });

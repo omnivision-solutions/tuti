@@ -208,7 +208,7 @@ test("app anchors clear each visible toolbar once, and Reporting adds no invisib
   await expectPaneAnchorGap(owner, "#usage", 32);
   await owner.goto(`/app/${slug}/reporting/ai-conversations`);
   await expect.soft(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
-  await expectAnchorGap(owner, "#ai-history", 32, false);
+  await expectPaneAnchorGap(owner, "#ai-history", 32);
   // Turning to a phone still reserves the compact menu row; returning to desktop clears that reservation.
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "48px");

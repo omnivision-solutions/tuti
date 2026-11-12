@@ -911,7 +911,7 @@ test("the team member's own action taking the open conversation out of its view 
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/reporting$`));
   // Read acknowledgements may also be in flight: let their released handlers finish before removing the route.
   await owner.unrouteAll({ behavior: "wait" });
-  await expect(owner.getByRole("heading", { name: "Reporting", level: 1 })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "Help center", level: 1 })).toBeVisible();
   await owner.goBack();
   await expect(meta(owner)).toContainText("#3");
   // A later change shows in the list: a move to the next one, had it started on the way back, would have landed first.

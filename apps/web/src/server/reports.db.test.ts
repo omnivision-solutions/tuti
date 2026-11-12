@@ -17,6 +17,9 @@ import { getDocsInsights } from "./operations/docs-insights";
 import { aiReport, docsReport, getReports, inboxReport } from "./operations/reports";
 import { call } from "./operations/run";
 
+// The pages render here outside Next's router, where the search params a client component reads (FilterPills') are none.
+vi.mock("next/navigation", async (original) => ({ ...(await original<typeof import("next/navigation")>()), useSearchParams: () => new URLSearchParams() }));
+
 /** Reporting: the help center's, the AI's and the inbox's days, by day and in total, for this project only. */
 
 let owner: TestUser;

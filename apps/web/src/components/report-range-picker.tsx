@@ -11,7 +11,7 @@ import { DEFAULT_RANGE, type RangeKey, RANGES } from "@/lib/report-range";
 
 /**
  * Reporting's date range, beside a page's title: links to `?range=` (the default left out), the page's other choices (sort, filter) kept.
- * Each says the days it covers (`dates`, the server's), the current one's beside the button from laptop width up (on a tablet, Past year's would squeeze the title); the menu's groups
+ * Each says the days it covers (`dates`, the server's), the current one's beside the button with 64rem of sidebar inset (less, and Past year's would squeeze the title beside Reporting's menu); the menu's groups
  * (days, months, past days) apart; the button one width whatever the range, so the title's row doesn't move. Those the plan doesn't have
  * (`locked`) are shown with a lock, not picked, and the menu says which plan has them (`lockedHint`).
  */
@@ -41,7 +41,7 @@ export function ReportRangePicker({
   return (
     <div className="flex shrink-0 items-center gap-3">
       {/* The button's label says them too, at every width. */}
-      <span aria-hidden className="text-sm text-muted-foreground tabular-nums max-lg:hidden">
+      <span aria-hidden className="text-sm text-muted-foreground hidden tabular-nums @min-[64rem]/app:inline">
         {dates[current]}
       </span>
       <DropdownMenu>

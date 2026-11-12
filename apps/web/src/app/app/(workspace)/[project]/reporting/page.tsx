@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { ItemList, ItemRow } from "@/components/item-list";
-import { count, countTrend, DailyChart, helpfulTrend, percent, plural, ReportBody, ReportHeading, searchesSince, Stat, Stats } from "@/components/reports";
+import { count, countTrend, DailyChart, helpfulTrend, percent, plural, ReportPane, searchesSince, Stat, Stats } from "@/components/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { withRange } from "@/lib/report-range";
 import { docsReport } from "@/server/operations/reports";
@@ -18,8 +18,7 @@ export default async function ReportingOverviewPage(props: PageProps<"/app/[proj
   const base = `/app/${slug}/reporting`;
   const read = report.articles.filter((article) => article.views > 0).slice(0, 5);
   return (
-    <ReportBody upgrade={upgrade}>
-      <ReportHeading section="Help center" title="Overview" range={range} locked={locked} />
+    <ReportPane title="Help center" range={range} locked={locked} upgrade={upgrade}>
       <Stats compared={range}>
         <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" href={withRange(`${base}/articles`, range.key)} trend={countTrend(range, report.daily.views, report.before.views, "up")} />
         <Stat label="Searches" value={count(totals.searches)} hint={searchesSince(report.searchesSince) ?? "Searches of your docs"} href={withRange(`${base}/searches`, range.key)} trend={countTrend(range, report.daily.searches, report.before.searches, "up")} />
@@ -61,6 +60,6 @@ export default async function ReportingOverviewPage(props: PageProps<"/app/[proj
           )}
         </CardContent>
       </Card>
-    </ReportBody>
+    </ReportPane>
   );
 }

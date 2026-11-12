@@ -1,5 +1,5 @@
 
-import { count, countTrend, DailyChart, duration, ReportBody, ReportHeading, Stat, Stats, timeTrend } from "@/components/reports";
+import { count, countTrend, DailyChart, duration, ReportPane, Stat, Stats, timeTrend } from "@/components/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { inboxReport } from "@/server/operations/reports";
 import { reportingPage, sampleInboxReport } from "@/server/reporting";
@@ -18,8 +18,7 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
   const report = sample ? sampleInboxReport(range) : await inboxReport(membership.project.id, range);
   const { totals, before } = report;
   return (
-    <ReportBody upgrade={upgrade}>
-      <ReportHeading section="Inbox" title="Conversations" range={range} locked={locked} />
+    <ReportPane title="Conversations" range={range} locked={locked} upgrade={upgrade}>
       <Stats compared={range}>
         <Stat label="New conversations" value={count(totals.conversations)} hint="Spam left out" trend={countTrend(range, report.daily.created, before?.conversations ?? null)} />
         <Stat
@@ -80,6 +79,6 @@ export default async function ReportingInboxPage(props: PageProps<"/app/[project
           </CardContent>
         </Card>
       </div>
-    </ReportBody>
+    </ReportPane>
   );
 }

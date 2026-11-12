@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 
-import { count, countTrend, helpfulTrend, percent, plural, ReportBody, ReportHeading, Stat, Stats } from "@/components/reports";
+import { count, countTrend, helpfulTrend, percent, plural, ReportPane, Stat, Stats } from "@/components/reports";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { withRange } from "@/lib/report-range";
@@ -47,8 +47,7 @@ export default async function ReportingArticlesPage(props: PageProps<"/app/[proj
     </th>
   );
   return (
-    <ReportBody upgrade={upgrade}>
-      <ReportHeading section="Help center" title="Articles" range={range} locked={locked} />
+    <ReportPane title="Articles" range={range} locked={locked} upgrade={upgrade}>
       <Stats compared={range}>
         <Stat label="Article views" value={count(totals.views)} hint="Articles opened on the portal" trend={countTrend(range, report.daily.views, report.before.views, "up")} />
         <Stat
@@ -113,6 +112,6 @@ export default async function ReportingArticlesPage(props: PageProps<"/app/[proj
           )}
         </CardContent>
       </Card>
-    </ReportBody>
+    </ReportPane>
   );
 }

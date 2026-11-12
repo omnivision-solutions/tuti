@@ -57,7 +57,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders: 4.5:1 or more on the page, a card, the sidebar and a muted fill, in light and dark (`colours.test.ts`) |
 | `border`, `input` | A card's or divider's edge (1.25:1 on the page), an input's (1.5:1) |
-| `sidebar-active` / `sidebar-active-foreground` | The page open in a page's own menu (`SettingsMenu`: Reporting's): a pale green pill, its label and icon green (4.5:1). The sidebar's open page is a raised neutral pill (the card's colour, a `sidebar-border` ring), so a page with both shows one green. A section pane (Panes) marks its open link with the neutral `accent` instead |
+| `sidebar-active` / `sidebar-active-foreground` | The page open in a page's own menu (`SettingsMenu`, which no area uses now): a pale green pill, its label and icon green (4.5:1). The sidebar's open page is a raised neutral pill (the card's colour, a `sidebar-border` ring), so a page with both shows one green. A section pane (Panes) marks its open link with the neutral `accent` instead |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
@@ -141,7 +141,7 @@ the list picks none to approve at once.
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground` in rows, parts joined with ` · `; under a page's title (`PageHeader`'s `meta`) `text-sm` |
-| Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback), a menu's group (Reporting's) and the part above a Reporting page's title. Quieter than the items under it, never in a colour. A section pane's groups (Panes) are sentence case instead |
+| Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback). Quieter than the items under it, never in a colour. A section pane's groups (Panes) are sentence case instead |
 
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
@@ -325,9 +325,9 @@ the list picks none to approve at once.
   status a badge (one column on phones). A page with sections of its own that isn't a page of panes yet lists them
   under its header with `SubNav`.
   Tabs come in two styles. Switching a page's views or sections (Feedback's
-  statuses, Changelog, Users, Reporting's AI conversations, a docs tab's Content, Access and
+  statuses, Changelog, Users, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is
-  underline tabs, `SubNav` (in a pane's header, pills: `FilterPills`, under Panes); switching a control's mode (the reply
+  underline tabs, `SubNav` (in a pane, pills: `FilterPills`, under Panes; Reporting's AI conversations); switching a control's mode (the reply
   box's Reply and Note) is a segmented
   `Tabs` (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed) are underline tabs (`SubNav`), as the board's sort tabs, so the
@@ -340,17 +340,16 @@ the list picks none to approve at once.
   Portal, Users, Support, AI, Connections, Billing; a drawer from the page's header below 48rem of sidebar inset); it opens
   on General. Each of its pages is a `SettingsPane`: a pane titled by the page, a line on what it's for, then its
   `SettingsCard`s (a form that isn't a row in a `SettingBlock`); the Portal group's pages are `PortalSettingsPane`s
-  instead, their settings beside a preview (Portal settings, below). Reporting has a menu of its
-  own (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
-  small and uppercase, each page with its icon), using the same 48rem inset threshold to put its menu
-  above the report when the app sidebar leaves less room. Each page has its numbers (`Stat`, a
+  instead, their settings beside a preview (Portal settings, below). Reporting is a
+  `SectionPane` (Help center, AI support, Inbox, each page with its icon; a drawer on phones), its links keeping the
+  range. Each report is a pane (`ReportPane`): its title in the `PaneHeader`, the date range picker at its right
+  (`?range=`; on phones in a row under the title; its dates beside it from 64rem of sidebar inset); never a sentence
+  under it. Its numbers sit in one strip as `StatStrip`'s (`Stats`, each `Stat` a
   labelled group; as Ferndesk's, its change on as many days just before as a badge, `soft` when
   better, `destructive` when worse, `secondary` when neither, with an arrow so it isn't colour
   alone, and a line of the range's days in its chart's colour: `countTrend`, `shareTrend` in
-  points, `timeTrend`), a chart (`DailyChart`: a bar a day up to a month, a week up to a
-  quarter, else a month; a bar's numbers on hover) and the lists behind them. Its
-  heading (`ReportHeading`), as Ferndesk's: the part as a Group label, the title as a Page title,
-  and the date range picker on the right (`?range=`, kept by the menu's links); never a sentence under it. The Docs home starts
+  points, `timeTrend`), then a chart (`DailyChart`: a bar a day up to a month, a week up to a
+  quarter, else a month; a bar's numbers on hover) and the lists behind them. The Docs home starts
   with live articles, views and helpful votes for the last 30 days, followed by Waiting to publish and Most read
   side by side (stacked on phones). The queue shows three saved versions, expands to the rest, and confirms
   Publish or Publish all before taking them live. Verify all and the live help center link sit below. Collections
@@ -674,7 +673,7 @@ at desktop and phone widths, in light and dark (in development only).
 
 - **`PaneLayout`**, **`Pane`**, **`PaneBody`** (`components/pane.tsx`): a row of panes (the shell gives it the whole
   width), one white panel (`rounded-2xl`, ~14px corners, a `border` ring, nothing scrolling past its edge), and what scrolls in it.
-  No card inside a card: a pane's lists and row cards sit on the pane.
+  No card inside a card: a pane's lists and row cards sit on the pane. Two exceptions, both data to read at a glance: `StatStrip`, and Reporting's charts and tables, each its own bordered section on the report's pane.
   A pane body scrolls in place of the window, so it keeps its place on each URL for Back and Forward; one whose own
   links replace its list (Users' pages, sorts, searches) starts at the top on a new URL (`resetOnNavigate`).
 - **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line

@@ -416,34 +416,48 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(bars).toHaveCount(7);
   // The button keeps its width whatever the range's name.
   expect((await rangeButton.boundingBox())!.width).toBe(width);
-  // On a tablet, a long title keeps its room beside the picker, whatever the range's dates.
-  await team.setViewportSize({ width: 768, height: 1024 });
-  await team.goto(`/app/${slug}/reporting/ai-conversations?range=year`);
-  // The title's text ends before the picker starts: the dates beside the button wait for a laptop's width.
-  // Measure once the responsive layout has settled.
-  await expect.poll(async () => {
-    const titleRight = await team.getByRole("heading", { name: "AI conversations", level: 2 }).evaluate((heading) => {
+  // On a tablet or a phone, a long title keeps its room beside the picker (or above it), whatever the range's dates: they wait for a
+  // laptop's width.
+  const textBox = (heading: Locator) =>
+    heading.evaluate((element) => {
       const text = document.createRange();
-      text.selectNodeContents(heading);
-      return text.getBoundingClientRect().right;
+      text.selectNodeContents(element);
+      const { right, bottom } = text.getBoundingClientRect();
+      return { right, bottom };
     });
-    return titleRight - (await rangeButton.boundingBox())!.x;
-  }).toBeLessThanOrEqual(0);
-  await expect(team.getByText(/\d{4}\s–\s/)).toBeHidden();
-  // On a phone, a title with a long word has the picker under it rather than over it.
-  await team.setViewportSize({ width: 375, height: 812 });
-  await team.goto(`/app/${slug}/reporting/inbox`);
-  const inboxTitle = team.getByRole("heading", { name: "Conversations", level: 2 });
-  const [titleBox, pickerBox] = [(await inboxTitle.boundingBox())!, (await rangeButton.boundingBox())!];
-  const apart = pickerBox.y >= titleBox.y + titleBox.height || pickerBox.x >= titleBox.x + (await inboxTitle.evaluate((heading) => {
-    const text = document.createRange();
-    text.selectNodeContents(heading);
-    return text.getBoundingClientRect().width;
-  }));
-  expect(apart).toBe(true);
+  for (const [width, page, title] of [[768, "ai-conversations?range=year", "AI conversations"], [375, "inbox", "Conversations"]] as const) {
+    await team.setViewportSize({ width, height: 900 });
+    await team.goto(`/app/${slug}/reporting/${page}`);
+    const heading = team.getByRole("region", { name: title }).getByRole("heading", { name: title, level: 1 });
+    await expect(heading).toBeVisible();
+    await expect.poll(async () => {
+      const [picker, text] = [(await rangeButton.boundingBox())!, await textBox(heading)];
+      return picker.y >= text.bottom || picker.x >= text.right;
+    }).toBe(true);
+    await expect(team.getByText(/\d{4}\s–\s/).filter({ visible: true })).toHaveCount(0);
+    expect(await team.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+  }
+  // On a laptop with the sidebar open, beside Reporting's menu: the title whole, the range's dates waiting for more room.
+  await team.setViewportSize({ width: 1024, height: 900 });
+  await team.goto(`/app/${slug}/reporting/unanswered?range=year`);
+  const sidebarTrigger = team.locator('[data-slot="sidebar"][data-state] [data-slot="sidebar-trigger"]');
+  await sidebarTrigger.click();
+  await expect(team.locator('[data-slot="sidebar"][data-state]')).toHaveAttribute("data-state", "expanded");
+  const unanswered = team.getByRole("heading", { name: "Unanswered questions", level: 1 });
+  await expect.poll(() => unanswered.evaluate((heading) => heading.scrollWidth - heading.clientWidth)).toBe(0);
+  await expect(team.getByText(/\d{4}\s–\s/).filter({ visible: true })).toHaveCount(0);
+  await sidebarTrigger.click();
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.goto(`/app/${slug}/reporting?range=7d`);
-  await stat("Found it helpful").getByRole("link").focus();
+  // The report's title is the page's heading, the menu's a level under it.
+  await expect(team.getByRole("heading", { level: 1 })).toHaveText("Help center");
+  await expect(team.getByRole("heading", { name: "Reporting", level: 2 })).toBeVisible();
+  // A linked number reached by Tab shows its focus ring inside the strip, which clips anything drawn outside it.
+  await stat("Searches that found nothing").getByRole("link").focus();
+  await team.keyboard.press("Tab");
+  const helpfulLink = stat("Found it helpful").getByRole("link");
+  await expect(helpfulLink).toBeFocused();
+  await expect(helpfulLink).toHaveCSS("box-shadow", /inset/);
   await team.keyboard.press("Tab");
   await expect(bars.last()).toBeFocused();
   await team.keyboard.press("Tab");
@@ -482,11 +496,19 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   const failed = team.getByRole("list", { name: "Searches that found nothing" }).getByRole("listitem").filter({ hasText: "refunds" });
   await expect(failed).toContainText("2 searches");
   await checkpoint(team, "team-reporting-searches");
-  // On a phone (in dark mode) the menu folds above the page.
+  // On a phone (in dark mode) the menu opens as a drawer from the pane's header, its links keeping the range.
   await team.setViewportSize({ width: 390, height: 844 });
   await team.emulateMedia({ colorScheme: "dark" });
-  await expect(team.locator("summary").filter({ hasText: "Searches" })).toBeVisible();
+  await team.goto(`/app/${slug}/reporting/searches?range=7d`);
   await checkpoint(team, "team-reporting-searches-phone-dark");
+  await team.getByRole("button", { name: "Open the menu" }).click();
+  const drawer = team.getByRole("dialog", { name: "Reporting" });
+  await expect(drawer.getByRole("link", { name: "Searches" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(team, "team-reporting-menu-phone-dark");
+  await drawer.getByRole("link", { name: "Unanswered questions" }).click();
+  await team.waitForURL(`**/app/${slug}/reporting/unanswered?range=7d`);
+  await expect(drawer).toBeHidden();
+  await expect(team.getByRole("heading", { name: "Unanswered questions", level: 1 })).toBeVisible();
   await team.setViewportSize({ width: 1280, height: 720 });
   await team.emulateMedia({ colorScheme: "light" });
 });
@@ -1827,7 +1849,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await pages.getByRole("link", { name: "Older" }).click();
   await team.waitForURL(`**/app/${slug}/reporting/ai-conversations?page=2#ai-history`);
   await expect(pages).toContainText(/21–\d+ of \d+/);
-  await expect(team.getByRole("heading", { name: "Latest conversations" })).toBeFocused();
+  await expect(team.getByRole("heading", { name: "Latest conversations", level: 2 })).toBeFocused();
   await checkpoint(team, "team-reporting-ai-conversations-page-2");
   // Another range starts at its first page.
   await team.getByRole("button", { name: /^Date range: / }).click();

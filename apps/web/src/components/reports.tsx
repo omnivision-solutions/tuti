@@ -4,6 +4,7 @@ import { ArrowDownRightIcon, ArrowUpRightIcon, LockIcon } from "lucide-react";
 import Link from "next/link";
 import { Children, isValidElement, type ReactNode } from "react";
 
+import { Pane, PaneBody, PaneHeader } from "@/components/pane";
 import { ReportRangePicker } from "@/components/report-range-picker";
 import { RovingList } from "@/components/roving-list";
 import { buttonVariants } from "@/components/ui/button";
@@ -35,25 +36,46 @@ const monthLabel = (day: string, month: "short" | "long") =>
   new Date(`${day}T00:00:00Z`).toLocaleDateString("en", { month, year: "numeric", timeZone: "UTC" });
 
 /**
- * A report page's heading, as Ferndesk's: its part of Reporting in the primary colour, its title, and the date range picker (no sentence
- * under it: design.md), the ranges the plan doesn't have (`locked`) shown but not picked.
+ * A report page: a pane titled by the report, the date range picker in its header (the ranges the plan doesn't have, `locked`, shown but
+ * not picked), then its content (`ReportBody`) in one centred column.
  */
-export function ReportHeading({ section, title, range, locked }: { section: string; title: string; range: ReportRange; locked: RangeKey[] }) {
+export function ReportPane({
+  title,
+  range,
+  locked,
+  upgrade,
+  children,
+}: {
+  title: string;
+  range: ReportRange;
+  locked: RangeKey[];
+  upgrade: { slug: string; admin: boolean } | null;
+  children: ReactNode;
+}) {
+  // Each range's days as of the page's range's day (its numbers' day): one clock reading for the page, even across midnight.
+  const picker = (
+    <ReportRangePicker
+      current={range.key}
+      dates={Object.fromEntries(RANGES.map(({ key }) => [key, rangeDates(reportRange(key, new Date(range.today)))])) as Record<RangeKey, string>}
+      locked={locked}
+      lockedHint={REPORTING_RANGE_NEEDED}
+    />
+  );
   return (
-    // Wraps where the title and the picker don't fit side by side (a phone): the picker under the title, as wide actions go.
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div className="flex min-w-0 flex-col gap-1">
-        <p className="group-label">{section}</p>
-        <h2 className="font-heading text-2xl font-bold">{title}</h2>
-      </div>
-      {/* Each range's days as of the page's range's day (its numbers' day): one clock reading for the page, even across midnight. */}
-      <ReportRangePicker
-        current={range.key}
-        dates={Object.fromEntries(RANGES.map(({ key }) => [key, rangeDates(reportRange(key, new Date(range.today)))])) as Record<RangeKey, string>}
-        locked={locked}
-        lockedHint={REPORTING_RANGE_NEEDED}
+    <Pane aria-label={title}>
+      {/* At the header's right; on phones in a row of its own under the title, which keeps its room. */}
+      {/* None on a plan without Reporting: its ranges would only redraw the made-up numbers behind the card. */}
+      <PaneHeader
+        title={title}
+        filters={!upgrade && <div className="@min-[48rem]/app:hidden">{picker}</div>}
+        actions={!upgrade && <div className="hidden @min-[48rem]/app:contents">{picker}</div>}
       />
-    </div>
+      <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-6">
+        <div className="mx-auto flex max-w-5xl flex-col gap-6">
+          <ReportBody upgrade={upgrade}>{children}</ReportBody>
+        </div>
+      </PaneBody>
+    </Pane>
   );
 }
 
@@ -62,7 +84,7 @@ export function ReportHeading({ section, title, range, locked }: { section: stri
  * card saying which plan has it, with the way to Billing for owners and admins. Each page decides it, as it decides the numbers: the layout
  * stays as the team moves between pages, so it could disagree with them.
  */
-export function ReportBody({ upgrade, children }: { upgrade: { slug: string; admin: boolean } | null; children: ReactNode }) {
+function ReportBody({ upgrade, children }: { upgrade: { slug: string; admin: boolean } | null; children: ReactNode }) {
   if (!upgrade) {
     return children;
   }
@@ -77,7 +99,7 @@ export function ReportBody({ upgrade, children }: { upgrade: { slug: string; adm
           <CardHeader>
             <LockIcon aria-hidden className="mx-auto size-5 text-muted-foreground" />
             <CardTitle>
-              <h3>See how your help center, AI and inbox are doing</h3>
+              <h2>See how your help center, AI and inbox are doing</h2>
             </CardTitle>
             <CardDescription>{planNeeded("reporting")}</CardDescription>
           </CardHeader>
@@ -97,14 +119,16 @@ export function ReportBody({ upgrade, children }: { upgrade: { slug: string; adm
 }
 
 /**
- * A row of numbers, each with what it counts (and, with `href`, a link to its list); with `compared`, a line under them saying what
+ * A row of numbers, as `StatStrip` (one card, side by side between lines; under 40rem two tiles to a row), each with what it counts (and, with `href`, a link to its list); with `compared`, a line under them saying what
  * their changes are on (so it's seen without hovering a badge), where one has a change.
  */
 export function Stats({ children, compared }: { children: ReactNode; compared?: ReportRange }) {
   const changed = Children.toArray(children).some((child) => isValidElement<{ trend?: Trend }>(child) && child.props.trend?.change);
   return (
-    <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>
+    <div className="@container/stats flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-2 @min-[40rem]/stats:flex @min-[40rem]/stats:gap-0 @min-[40rem]/stats:overflow-hidden @min-[40rem]/stats:rounded-xl @min-[40rem]/stats:shadow-xs @min-[40rem]/stats:ring-1 @min-[40rem]/stats:ring-border">
+        {children}
+      </div>
       {compared && changed && <p className="text-xs text-muted-foreground">Changes are on {daysBefore(compared)}.</p>}
     </div>
   );
@@ -212,7 +236,7 @@ export function Stat({ label, value, hint, href, trend }: { label: string; value
     <>
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className="flex flex-wrap items-center gap-2">
-        <span className="text-2xl font-semibold tabular-nums">{value}</span>
+        <span className="font-heading text-2xl font-semibold tracking-tight tabular-nums">{value}</span>
         {change && (
           <Badge variant={TONES[change.tone]} className="tabular-nums">
             {change.direction !== "same" && <Arrow aria-hidden />}
@@ -227,13 +251,17 @@ export function Stat({ label, value, hint, href, trend }: { label: string; value
   );
   // A group named by its label: the number is found by what it counts.
   return (
-    <div role="group" aria-label={label} className="rounded-xl border bg-card">
+    <div
+      role="group"
+      aria-label={label}
+      className="min-w-0 rounded-xl bg-card shadow-xs ring-1 ring-border @min-[40rem]/stats:flex-1 @min-[40rem]/stats:rounded-none @min-[40rem]/stats:shadow-none @min-[40rem]/stats:ring-0 @min-[40rem]/stats:not-first:border-l"
+    >
       {href ? (
-        <Link href={href} className="flex h-full flex-col gap-1 rounded-xl p-4 transition-colors hover:bg-muted/50">
+        <Link href={href} className="flex h-full flex-col gap-1 rounded-[inherit] p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset @min-[40rem]/stats:px-5">
           {body}
         </Link>
       ) : (
-        <div className="flex h-full flex-col gap-1 p-4">{body}</div>
+        <div className="flex h-full flex-col gap-1 p-4 @min-[40rem]/stats:px-5">{body}</div>
       )}
     </div>
   );
