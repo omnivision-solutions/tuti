@@ -1130,8 +1130,11 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await expect(pane).toContainText("Open a conversation to reply here: click it, or press J.");
   // Waiting is the Needs reply view's: it opens it, from another view.
   await owner.goto(`/app/${slug}/inbox?view=closed`);
-  await expect(tile("Waiting for a reply").getByRole("link", { name: "1" })).toHaveAttribute("href", `/app/${slug}/inbox`);
-  await owner.goto(`/app/${slug}/inbox`);
+  await expect(tile("Waiting for a reply").getByRole("link", { name: "Waiting for a reply: 1" })).toHaveAttribute("href", `/app/${slug}/inbox`);
+  // The whole number opens it, its label too.
+  const label = (await tile("Waiting for a reply").locator("dt").boundingBox())!;
+  await owner.mouse.click(label.x + 10, label.y + label.height / 2);
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
   await shots("inbox-stats");
 
   // Opening a conversation puts it in their place.

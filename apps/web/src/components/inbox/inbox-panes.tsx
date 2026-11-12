@@ -409,11 +409,8 @@ export async function InboxPanes({
                       {
                         label: "Waiting for a reply",
                         // The Needs reply view's count: it opens it.
-                        value: (
-                          <Link href={inboxHref(slug, "open")} className="hover:underline">
-                            {stats.waiting}
-                          </Link>
-                        ),
+                        value: stats.waiting,
+                        href: inboxHref(slug, "open"),
                         detail: stats.oldest ? `Longest ${longDuration(stats.oldest)}` : "Nobody's waiting",
                       },
                       {
