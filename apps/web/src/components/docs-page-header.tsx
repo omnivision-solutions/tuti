@@ -96,11 +96,13 @@ export function DocsPageHeader({
   icon?: ReactNode;
   /** An editor whose title field shows the title (PaneHeader). */
   titleInForm?: boolean;
-  /** The page on the help center: "View on help center" in words, under More actions on phones. */
+  /** The page on the help center: "View on help center" in words, under More actions in a narrow pane. */
   helpCenter?: string;
 }) {
   return (
-    <div data-slot="docs-page-header" className="docs-page-header sticky top-0 z-20 -mx-(--docs-pad) bg-card">
+    // What it shows follows its page's pane (`@container/docs-page`), not the window: the tree's width counts. The pills get a
+    // row of their own under the title, the description goes in a narrow pane, and so do the actions' words.
+    <div data-slot="docs-page-header" className="docs-page-header sticky top-0 z-20 -mx-(--docs-pad) bg-card @max-[52rem]/docs-page:[&_h1+p]:hidden">
       <PaneHeader
         title={
           <>
@@ -111,12 +113,11 @@ export function DocsPageHeader({
         description={description}
         titleInForm={titleInForm}
         back={back}
-        filters={filters}
         actions={
           <>
             <DocsBrowseButton />
             {helpCenter && (
-              <a href={helpCenter} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", className: "docs-live-link @max-[48rem]/app:hidden" })}>
+              <a href={helpCenter} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", className: "docs-live-link @max-[44rem]/docs-page:hidden" })}>
                 <ExternalLinkIcon />
                 View on help center
               </a>
@@ -124,9 +125,9 @@ export function DocsPageHeader({
             {actions}
             {(more || helpCenter) && (
               // With only the help center in it, the menu is for phones.
-              <DocsMore className={more ? undefined : "@min-[48rem]/app:hidden"}>
+              <DocsMore className={more ? undefined : "@min-[44rem]/docs-page:hidden"}>
                 {helpCenter && (
-                  <a href={helpCenter} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "sm", className: "@min-[48rem]/app:hidden" })}>
+                  <a href={helpCenter} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "sm", className: "@min-[44rem]/docs-page:hidden" })}>
                     <ExternalLinkIcon />
                     View on help center
                   </a>
@@ -137,6 +138,7 @@ export function DocsPageHeader({
           </>
         }
       />
+      {filters && <div className="flex min-w-0 border-b px-3 py-2 @min-[48rem]/app:px-5">{filters}</div>}
     </div>
   );
 }

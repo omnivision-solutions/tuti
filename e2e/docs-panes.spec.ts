@@ -86,8 +86,24 @@ test("Docs pages are panes: the tree as the area's pane, views as pills, the edi
   expect(more.x + more.width).toBeLessThanOrEqual(pane.x + pane.width);
   await checkpoint(team, "docs-editor-changes-phone", { fullPage: false });
 
-  // A narrow editor's row (the tree at its widest, the tools beside it) drops the state's details, never its actions.
+  // With the tree at its widest beside a 61rem shell, a collection's header keeps its title and pills whole.
   await team.evaluate(() => localStorage.setItem("tuti:docs-tree-width", "440"));
+  await team.setViewportSize({ width: 1024, height: 900 });
+  await team.goto(`/app/${slug}/docs/collections/getting-started`);
+  await expect(team.locator(".docs-tree-pane")).toHaveCSS("width", "440px");
+  const title = header.getByRole("heading", { name: "Getting started", level: 1 });
+  await expect(title).toBeVisible();
+  expect(await title.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  const pills = team.getByRole("navigation", { name: "Collection", exact: true });
+  const row = (await pills.boundingBox())!;
+  for (const name of ["Content", "Settings"]) {
+    const pill = (await pills.getByRole("link", { name, exact: true }).boundingBox())!;
+    expect(pill.x).toBeGreaterThanOrEqual(row.x);
+    expect(pill.x + pill.width).toBeLessThanOrEqual(row.x + row.width);
+  }
+  await checkpoint(team, "docs-collection-wide-tree", { fullPage: false });
+
+  // A narrow editor's row (the tree at its widest, the tools beside it) drops the state's details, never its actions.
   await team.setViewportSize({ width: 1280, height: 900 });
   await team.goto(`/app/${slug}/docs/create-your-first-calendar?history`);
   await expect(team.getByRole("complementary", { name: "Article tools" })).toBeVisible();

@@ -99,10 +99,10 @@ export function AddContentMenu({
           <PlusIcon aria-hidden />
         </DropdownMenuTrigger>
       ) : (
-        <DropdownMenuTrigger render={<Button className={cn("@max-[48rem]/app:w-8 @max-[48rem]/app:px-0", className)} />}>
+        <DropdownMenuTrigger render={<Button className={cn("@max-[44rem]/docs-page:w-8 @max-[44rem]/docs-page:px-0", className)} />}>
           <PlusIcon aria-hidden />
-          <span className="@max-[48rem]/app:sr-only">Add content</span>
-          <ChevronDownIcon aria-hidden className="size-3.5 @max-[48rem]/app:hidden" />
+          <span className="@max-[44rem]/docs-page:sr-only">Add content</span>
+          <ChevronDownIcon aria-hidden className="size-3.5 @max-[44rem]/docs-page:hidden" />
         </DropdownMenuTrigger>
       )}
       <DropdownMenuContent align="end" className="w-auto min-w-40">

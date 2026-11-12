@@ -294,9 +294,11 @@ the list picks none to approve at once.
   owns the "Docs" title row (search, open on help center, fold) and navigation; below 61rem of sidebar inset width each
   page header's round "Browse docs" button opens it as a sheet, including App navigation. Moving back to an inline tree
   closes and resets the sheet; Search docs opens the command menu in either layout. Each page's `PaneHeader` stays at
-  the top of its pane as it scrolls; a tab's and a collection's views are pills (a tab's in `?view=`), and a page's way
-  back ("Docs ›", or the collection's name) precedes its title. "View on help center" is an outline button in words, under
-  More actions below 48rem. An article's editor keeps its title in its text (`titleInForm`: the header's heading for
+  the top of its pane as it scrolls; a tab's and a collection's views are pills (a tab's in `?view=`) on a row of their
+  own under it, and a page's way back ("Docs ›", or the collection's name) precedes its title. The header follows its
+  pane's width (`@container/docs-page`, so the tree's width counts), not the window's: "View on help center" is an
+  outline button in words, under More actions in a pane under 44rem, where Add content is its "+"; the description
+  shows from 52rem. An article's editor keeps its title in its text (`titleInForm`: the header's heading for
   screen readers); its header row has the way back, then the publishing state and live Open link, Saved (Save while there
   are edits), Publish and More actions. As the editor's pane narrows (a container query on it, not the window: the tree's
   width and the tools count) the date and Open go first, then the badge, and the Unpublished changes pill becomes its
