@@ -25,13 +25,22 @@ export function MergePostDialog({
   projectSlug,
   post,
   candidates,
+  open: given,
+  onOpenChange,
+  triggerClassName,
 }: {
   projectSlug: string;
   post: { id: string; number: number; title: string; visibility?: PostVisibility; authorId?: string };
   candidates: PickablePost[];
+  /** Opened from elsewhere too (a menu's item, PostActions on phones). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  triggerClassName?: string;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [own, setOwn] = useState(false);
+  const open = given ?? own;
+  const setOpen = onOpenChange ?? setOwn;
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<PickablePost>();
   const [pending, startTransition] = useTransition();
@@ -46,7 +55,7 @@ export function MergePostDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+      <DialogTrigger render={<Button variant="outline" size="sm" className={triggerClassName} />}>
         <MergeIcon />
         Merge into…
       </DialogTrigger>

@@ -756,7 +756,7 @@ at desktop and phone widths, in light and dark (in development only).
   A section's create button in its header is that primary ("New entry", "Add
   content", "New post") unless an open item beside it has its own: then it's
   outline. "View on portal" beside it is an outline button in words, not a bare icon (an editor keeps it in words under
-  "More actions").
+  "More actions", as a post's pane header does under 48rem of the shell, Merge into… with it).
 - A settings page saves one way: a switch or a select saves as it's changed;
   fields share one primary Save; adding to a list beside its fields (Send
   invite, Create key, Add webhook, Add redirect, Add readers) is an outline

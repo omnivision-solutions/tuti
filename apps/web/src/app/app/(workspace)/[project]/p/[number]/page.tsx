@@ -1,7 +1,7 @@
 import { type PostVisibility, prisma } from "@tuti/db";
 import { mediaStorage } from "@tuti/shared/storage";
 import { historySince, seenAs, visibleConversations } from "@tuti/jobs";
-import { CalendarIcon, ChevronUpIcon, CircleDotIcon, ExternalLinkIcon, EyeIcon, LayoutListIcon, UserRoundIcon } from "lucide-react";
+import { CalendarIcon, ChevronUpIcon, CircleDotIcon, EyeIcon, LayoutListIcon, UserRoundIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -10,13 +10,13 @@ import { CommentList } from "@/components/comments";
 import { CommentSortMenu } from "@/components/comment-actions";
 import { commentSort } from "@/lib/comment-threads";
 import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
-import { MergePostDialog } from "@/components/merge-post-dialog";
 import type { PickablePost } from "@/components/post-picker";
 import { MovePostSelect } from "@/components/move-post-select";
 import { PhoneFold, PostEtaSelect, PostOwnerSelect, PostVisibilitySelect } from "@/components/post-planning";
 import { VisibilityBadge } from "@/components/visibility-badge";
 import { feedbackMenu } from "@/components/feedback-menu";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
+import { PostActions } from "@/components/post-actions";
 import { PostLinks } from "@/components/post-links";
 import { CONVERSATIONS_SHOWN, Property, PropertyRow, PostConversations, QUIET_TRIGGER, PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
 import { PostSteps } from "@/components/post-steps";
@@ -24,7 +24,6 @@ import { PostStatusSelect } from "@/components/post-status-select";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { buttonVariants } from "@/components/ui/button";
 import { SampleBadge } from "@/components/sample-badge";
 import { formatMonth, timeAgo } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
@@ -164,21 +163,14 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         <PaneHeader
           back={{ href: `/app/${slug}/feedback?status=all`, label: "All posts" }}
           title={post.title}
-          // The newer and older post, the portal and Merge; round icons on phones but Merge.
+          // The newer and older post, then the portal and Merge in words (under "More actions" in a narrow pane).
           actions={
             <>
               <PostSteps projectSlug={slug} {...neighbours} />
-              <a
-                href={`${await portalAddress(slug)}${postPath(post)}`}
-                target="_blank"
-                rel="noreferrer"
-                title="View on portal"
-                className={buttonVariants({ variant: "outline", size: "sm", className: "@max-[48rem]/app:size-8 @max-[48rem]/app:px-0" })}
-              >
-                <ExternalLinkIcon />
-                <span className="@max-[48rem]/app:sr-only">View on portal</span>
-              </a>
-              {!post.duplicateOf && <MergePostDialog projectSlug={slug} post={seen(post)} candidates={likeFirst<PickablePost>(like, candidates)} />}
+              <PostActions
+                portal={`${await portalAddress(slug)}${postPath(post)}`}
+                merge={post.duplicateOf ? undefined : { projectSlug: slug, post: seen(post), candidates: likeFirst<PickablePost>(like, candidates) }}
+              />
             </>
           }
         />

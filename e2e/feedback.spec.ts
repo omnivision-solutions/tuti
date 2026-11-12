@@ -1950,7 +1950,7 @@ test("a post's page and the list at tablet and laptop widths: the header stays i
   await reply.scrollIntoViewIfNeeded();
   expect(await team.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   await expect(header.getByRole("link", { name: "All posts" })).toBeInViewport();
-  await expect(header.getByRole("link", { name: "View on portal" })).toBeInViewport();
+  await expect(header.getByRole("button", { name: "More actions" })).toBeInViewport();
   expect(Math.round((await header.boundingBox())!.y)).toBe(0);
   // The focused reply clears it.
   await reply.focus();

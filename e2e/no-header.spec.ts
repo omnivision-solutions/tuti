@@ -91,7 +91,15 @@ test("a long post keeps its title and actions in view, and phones keep the menu 
   // At the top, the way back to the list and the post's actions.
   await owner.evaluate(() => window.scrollTo(0, 0));
   await expect(owner.locator('[data-slot="pane-header"]').getByRole("link", { name: "All posts" })).toBeInViewport();
-  await expect(owner.getByRole("link", { name: "View on portal" })).toBeInViewport();
+  // The post's actions, in words, under the header's round More actions (no bare icon for the portal).
+  await expect(owner.getByRole("link", { name: "View on portal" })).toBeHidden();
+  await owner.locator('[data-slot="pane-header"]').getByRole("button", { name: "More actions" }).click();
+  await expect(owner.getByRole("menuitem", { name: "View on portal" })).toHaveText("View on portal");
+  await expect(owner.getByRole("menuitem", { name: "View on portal" })).toHaveAttribute("href", /\/feedback\/.+/);
+  await owner.getByRole("menuitem", { name: "Merge into…" }).click();
+  await expect(owner.getByRole("dialog", { name: "Merge #1 into…" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("dialog")).toHaveCount(0);
   await bar.getByRole("button", { name: "Toggle Sidebar" }).click();
   const phoneSidebar = owner.getByRole("dialog", { name: "Sidebar" });
   await expect(phoneSidebar).toBeVisible();
