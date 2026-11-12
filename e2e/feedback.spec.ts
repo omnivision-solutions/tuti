@@ -1892,6 +1892,40 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect.poll(scrollY).toBe(300);
 });
 
+test("Feedback's list keeps its place as a post opens and closes beside it, in a small laptop's window", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await Promise.all(Array.from({ length: 30 }, (_, i) => api("/posts", { board: "feature-requests", title: `Idea ${i + 1}` })));
+  // 900px, the sidebar on its rail: the panes are the window's height, the list scrolling in its own.
+  await team.setViewportSize({ width: 900, height: 700 });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  const sidebar = team.locator('[data-slot="sidebar-container"]');
+  if ((await sidebar.boundingBox())!.width > 100) {
+    await team.locator('[data-slot="sidebar-trigger"]:visible').click();
+  }
+  await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(100);
+  expect(await team.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
+  // A row far down the list, opened: the post beside the list, which stays where it was.
+  const row = team.getByRole("main").getByRole("list", { name: "Posts" }).getByRole("listitem").nth(24).getByRole("link");
+  await row.scrollIntoViewIfNeeded();
+  await row.click();
+  const pane = team.getByRole("region", { name: /^Post #/ });
+  await expect(pane).toBeVisible();
+  await expect(row).toBeInViewport();
+  await checkpoint(team, "feedback-split-small-laptop", { fullPage: false });
+  // Closed (Esc, then Close): still there.
+  await team.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect(row).toBeInViewport();
+  await row.click();
+  await pane.getByRole("link", { name: "Close" }).click();
+  await expect(pane).toHaveCount(0);
+  await expect(row).toBeInViewport();
+});
+
 test("Feedback's rows picked for Set status, Move to board and Merge; Completed asks first", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -1993,8 +2027,14 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   }
   await expect(bar).toContainText("2 selected");
   await checkpoint(team, "team-feedback-bulk-beside-post");
-  // Narrower still (a small laptop, the post open): the count stays whole, the actions scroll.
-  await team.setViewportSize({ width: 1024, height: 720 });
+  // Beside the post on the smallest laptop that has both panes, the count is whole too.
+  await team.setViewportSize({ width: 1008, height: 720 });
+  expect(await countWhole()).toBe(true);
+  // Narrower still (a 320px phone; the post closed, the picks kept): the count stays whole, the actions scroll.
+  await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
+  await team.waitForURL((url) => !url.searchParams.has("post"));
+  await team.setViewportSize({ width: 320, height: 720 });
+  await expect(bar).toContainText("2 selected");
   expect(await countWhole()).toBe(true);
   // The actions past the end are faded there, as the tabs are: a cue that the row scrolls.
   const actions = bar.locator("[data-more]");
@@ -2012,10 +2052,8 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   const mergeButton = bar.getByRole("button", { name: "Merge…" });
   await expect(mergeButton).toBeFocused();
   await expect.poll(async () => (await mergeButton.boundingBox())!.x + (await mergeButton.boundingBox())!.width).toBeLessThanOrEqual((await actions.boundingBox())!.x + (await actions.boundingBox())!.width - 32 + 1);
-  await checkpoint(team, "team-feedback-bulk-narrow-beside-post");
+  await checkpoint(team, "team-feedback-bulk-narrow-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
-  await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
-  await team.waitForURL((url) => !url.searchParams.has("post"));
   await expect.poll(fill).toBe(primary);
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Planned" }).click();

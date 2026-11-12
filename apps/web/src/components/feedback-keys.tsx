@@ -26,7 +26,8 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
 
   // On a phone the pane takes the list's place, where the list was scrolled to: it's brought into view, from its
   // top; closed, the list goes back to where it was. Kept as a post is opened (a click on the list, or J), before
-  // the pane hides the list (and the browser moves the page up).
+  // the pane hides the list (and the browser moves the page up). (Where the list is beside the pane, in a window
+  // under 64rem, the window doesn't scroll: both are no-ops there, and the list's pane keeps its own place.)
   const listScroll = useRef<number | null>(null);
   useEffect(() => {
     const phone = window.matchMedia("(max-width: 63.99rem)").matches;

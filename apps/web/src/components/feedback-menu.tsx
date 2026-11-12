@@ -21,8 +21,10 @@ const STATUSES = [
  * a + for a new one, owners and admins with room on their plan), its statuses and Possible duplicates, with counts
  * across every board. On the list, `view` (its tab: "all", "open", a status's, "duplicates") and `board` say which
  * link is open, as the list reads its address; elsewhere the address does.
+ * Not a component: a page starts it beside its own queries and puts `{await menu}` in what it returns, so the page
+ * renders whole, with nothing left to suspend (and renders the same way where tests render it).
  */
-export async function FeedbackMenu({
+export async function feedbackMenu({
   project,
   role,
   view,

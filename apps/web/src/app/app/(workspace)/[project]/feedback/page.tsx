@@ -12,7 +12,7 @@ import { FeedbackPane } from "@/components/feedback-pane";
 import { FeedbackSearch } from "@/components/feedback-search";
 import { FeedbackBulk, FeedbackSelection, FiltersFold, PickedRow, SelectPost, VoteBox } from "@/components/feedback-selection";
 import { ListFilters } from "@/components/list-filters";
-import { FeedbackMenu } from "@/components/feedback-menu";
+import { feedbackMenu } from "@/components/feedback-menu";
 import { FilterPills } from "@/components/filter-pills";
 import { ItemGroup } from "@/components/item-list";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
@@ -139,21 +139,24 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
     ...(counts.duplicates > 0 || tab === "duplicates" ? [{ key: "duplicates", title: "Possible duplicates", count: counts.duplicates }] : []),
   ];
 
+  // A post open beside the list: the menu only where there's room for three panes.
+  const menu = feedbackMenu({ project: membership.project, role: membership.role, view: tab, board, className: cn(open !== null && "@max-[80rem]/app:hidden!") });
   const portal = await portalAddress(slug);
   // The view's name: the board's, filtered to one, else the tab's.
   const title = (board && project.boards.find((b) => b.slug === board)?.name) ?? (tab === "all" ? "All posts" : tabs.find((t) => t.key === tab)!.title);
 
   return (
     <PaneLayout>
-      {/* A post open beside the list: the menu only where there's room for three panes. */}
-      <FeedbackMenu project={membership.project} role={membership.role} view={tab} board={board} className={cn(open !== null && "@max-[80rem]/app:hidden!")} />
+      {await menu}
       <FeedbackKeys order={listed.map((post) => post.number)} open={open} base={withPost(null)} />
       {/* A post open beside the list has the phone's screen to itself: no tab bar. */}
       {open !== null && <HidesTabBar />}
       {/* Rows picked for Set status, Move to board and Merge, the bar over the header's row once some are. */}
       <FeedbackSelection listKey={listKey.toString()} listed={listed.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post), sample: post.sample, visibility: seenAs(post), authorId: post.authorId }))}>
-        {/* The list and, beside it, the post a row opened; narrower than a laptop, one or the other. */}
-        <Pane aria-label="Feedback" className={cn(open !== null && "max-lg:hidden")}>
+        {/* The list and, beside it, the post a row opened. Under the shell's 48rem (where the window scrolls, not the
+            panes: FeedbackKeys keeps the list's place) one or the other; from there up both, so the list's pane is never
+            hidden while it holds its own scroll. */}
+        <Pane aria-label="Feedback" className={cn(open !== null && "@max-[48rem]/app:hidden")}>
           <FeedbackBulk projectSlug={slug} boards={project.boards}>
             <PaneHeader
               // On phones; beside the menu, which marks it, the pills have the room.
@@ -362,7 +365,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       </FeedbackSelection>
       {/* Keyed by the post: each one starts at the top of the pane (scrolling on its own), wherever the last was. */}
       {open !== null && (
-        <Pane className="lg:w-[26rem] lg:flex-none xl:w-[30rem]">
+        <Pane className="@min-[48rem]/app:w-[22rem] @min-[48rem]/app:flex-none @min-[60rem]/app:w-[26rem] @min-[76rem]/app:w-[30rem]">
           <PaneBody key={open} className="p-4 @min-[48rem]/app:p-5">
             <FeedbackPane projectSlug={slug} projectId={project.id} askingProperty={project.askingProperty} formats={formats} number={open} close={withPost(null)} />
           </PaneBody>

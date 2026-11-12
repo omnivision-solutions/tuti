@@ -15,7 +15,7 @@ import type { PickablePost } from "@/components/post-picker";
 import { MovePostSelect } from "@/components/move-post-select";
 import { PhoneFold, PostEtaSelect, PostOwnerSelect, PostVisibilitySelect } from "@/components/post-planning";
 import { VisibilityBadge } from "@/components/visibility-badge";
-import { FeedbackMenu } from "@/components/feedback-menu";
+import { feedbackMenu } from "@/components/feedback-menu";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { PostLinks } from "@/components/post-links";
 import { CONVERSATIONS_SHOWN, Property, PropertyRow, PostConversations, QUIET_TRIGGER, PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
@@ -112,6 +112,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
+  // Feedback's menu, its queries alongside the post's.
+  const menu = feedbackMenu({ project, role: membership.role });
   const [totals, voters, shipped, like, neighbours, emails, toEmail] = await Promise.all([
     voterTotals(project.id, project.askingProperty, [post.id]),
     postVoters(project.id, project.askingProperty, post.id),
@@ -156,7 +158,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
 
   return (
     <PaneLayout>
-      <FeedbackMenu project={project} role={membership.role} />
+      {await menu}
       <Pane aria-label="Post">
         <PaneHeader
           back={{ href: `/app/${slug}/feedback?status=all`, label: "All posts" }}

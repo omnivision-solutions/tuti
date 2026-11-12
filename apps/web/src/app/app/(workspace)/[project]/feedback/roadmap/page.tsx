@@ -3,7 +3,7 @@ import { seenAs } from "@tuti/jobs";
 import { notFound } from "next/navigation";
 
 import { ListFilters } from "@/components/list-filters";
-import { FeedbackMenu } from "@/components/feedback-menu";
+import { feedbackMenu } from "@/components/feedback-menu";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { RoadmapBoard } from "@/components/roadmap-board";
 import { asking } from "@/lib/format";
@@ -26,6 +26,8 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
     notFound();
   }
   const { project } = membership;
+  // Feedback's menu, its queries alongside the roadmap's.
+  const menu = feedbackMenu({ project, role: membership.role });
   const boards = await prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } });
   const board = boards.find((b) => b.slug === searchParams.board)?.slug;
   const columns = await roadmapColumns(project.id, TEAM_VIEWER, { board, completedDays: COMPLETED_DAYS });
@@ -40,7 +42,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
 
   return (
     <PaneLayout>
-      <FeedbackMenu project={project} role={membership.role} />
+      {await menu}
       <Pane aria-label="Roadmap">
       <PaneHeader
         title="Roadmap"

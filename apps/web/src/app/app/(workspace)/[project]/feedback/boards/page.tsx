@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 
 import { BoardMenu, BoardOnButton, EditBoardDialog, NewBoardDialog } from "@/components/boards";
 import { VisibilityBadge } from "@/components/visibility-badge";
-import { FeedbackMenu } from "@/components/feedback-menu";
+import { feedbackMenu } from "@/components/feedback-menu";
 import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -63,7 +63,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
 
   return (
     <PaneLayout>
-      <FeedbackMenu project={{ ...project, plan }} role={role} />
+      {await feedbackMenu({ project: { ...project, plan }, role })}
       <Pane aria-label="Boards">
       <PaneHeader
         title="Boards"
