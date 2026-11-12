@@ -20,7 +20,7 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
 
   // Where are you coming from: starting fresh (picked to begin with).
   await owner.waitForURL(`**/app/${slug}/setup`);
-  await expect(owner.getByRole("heading", { name: "Set up Acme" })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Setup" }).getByRole("heading", { level: 1, name: "Set up Acme" })).toBeVisible();
   await expect(owner.getByText("Step 1 of 4")).toBeVisible();
   await expect(owner.getByRole("radio", { name: /^Starting fresh/ })).toBeChecked();
   await checkpoint(owner, "setup-coming-from");

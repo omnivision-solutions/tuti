@@ -65,7 +65,7 @@ test("someone signs up with Google, and later in with it again", async ({ browse
   await gina.waitForURL(/\/app$/);
   // Signed in with it, and nothing of Google's kept: no token to read anything with.
   expect(await storedTokens(email, "google")).toEqual([{ accessToken: null, refreshToken: null, idToken: null }]);
-  await expect(gina.getByText("Welcome to Tuti")).toBeVisible();
+  await expect(gina.getByRole("region", { name: "Welcome to Tuti" }).getByRole("heading", { level: 1, name: "Welcome to Tuti" })).toBeVisible();
   // Google's name, and an address Google verified: no strip asking to verify it.
   await gina.goto("/app/account");
   await expect(gina.getByLabel("Name")).toHaveValue("Gina Google");
