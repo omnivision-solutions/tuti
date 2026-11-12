@@ -27,8 +27,6 @@ test("the phone tab bar is on a part's own page, its tab open; More's parts open
 
 test("a page of one thing, a new one and a setting have the screen to themselves: no phone tab bar", () => {
   expect(open("/app/acme/p/12", { number: "12" })).toBeNull();
-  expect(phoneTabs(acme, "/app/acme/feedback", { project: "acme" }, new URLSearchParams("post=12"))).toBeNull();
-  expect(phoneTabs(acme, "/app/acme/feedback", { project: "acme" }, new URLSearchParams("status=planned"))?.open?.title).toBe("Feedback");
   expect(open("/app/acme/inbox/4", { number: "4" })).toBeNull();
   expect(open("/app/acme/autopilot/c1", { id: "c1" })).toBeNull();
   expect(open("/app/acme/docs/getting-started", { slug: "getting-started" })).toBeNull();

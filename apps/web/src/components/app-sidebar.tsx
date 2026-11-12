@@ -26,9 +26,9 @@ import {
   UserIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { useEffect } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -167,11 +167,11 @@ const TABS = ["Home", "Inbox", "Feedback", "Autopilot"];
 
 /**
  * The phone tab bar on this page, on a part's lists only (Feedback's posts, its boards, the Roadmap): a page of one
- * thing (a post, a conversation, an article, its history: the route's `params` name it; a post open from Feedback's
- * list, `?post=`), a new one, and a setting have the screen to themselves and their way back; Docs has none.
+ * thing (a post, a conversation, an article, its history: the route's `params` name it; a post open beside Feedback's
+ * list says so itself, HidesTabBar), a new one, and a setting have the screen to themselves and their way back; Docs has none.
  * `open`: its part's tab (Feedback on the Roadmap); none for More's.
  */
-export function phoneTabs(project: ProjectSummary, pathname: string, params: Record<string, unknown>, search = new URLSearchParams()) {
+export function phoneTabs(project: ProjectSummary, pathname: string, params: Record<string, unknown>) {
   const nav = projectNav(project);
   const active = activeItem(nav, pathname);
   if (!active) {
@@ -182,7 +182,6 @@ export function phoneTabs(project: ProjectSummary, pathname: string, params: Rec
   const route = pathname.slice(`/app/${project.slug}`.length);
   const onePage =
     ["number", "id", "slug", "user"].some((key) => key in params) ||
-    (route === "/feedback" && search.has("post")) ||
     route === "/changelog/new" ||
     // Docs has its own phone navigation, and its workspace is the window's height, scrolling inside (DocsWorkspace).
     /^\/docs(\/|$)/.test(route) ||
@@ -195,6 +194,26 @@ export function phoneTabs(project: ProjectSummary, pathname: string, params: Rec
 }
 
 /**
+ * A page of one thing that has no route of its own says so while it's open (a post beside Feedback's list, `?post=`),
+ * rather than the shell reading the query string. TabBarScope holds it for the shell (AppShell).
+ */
+const TabBarHidden = createContext<{ hidden: boolean; hide: (hidden: boolean) => void }>({ hidden: false, hide: () => {} });
+
+export function TabBarScope({ children }: { children: ReactNode }) {
+  const [hidden, hide] = useState(false);
+  return <TabBarHidden value={{ hidden, hide }}>{children}</TabBarHidden>;
+}
+
+export function HidesTabBar() {
+  const { hide } = useContext(TabBarHidden);
+  useEffect(() => {
+    hide(true);
+    return () => hide(false);
+  }, [hide]);
+  return null;
+}
+
+/**
  * On phones, the project's main parts at the bottom of the screen (phoneTabs), and More: the sidebar as a menu. Not
  * where a page pins its actions to the bottom (PageActions).
  */
@@ -203,9 +222,9 @@ export function AppTabBar({ projects, fallbackSlug }: { projects: ProjectSummary
   const current = useCurrentProject(projects, fallbackSlug);
   const params = useParams();
   const { setOpenMobile } = useSidebar();
-  const search = useSearchParams();
-  const bar = params.project && current ? phoneTabs(current, pathname, params, new URLSearchParams(search)) : null;
-  if (!bar) {
+  const { hidden } = useContext(TabBarHidden);
+  const bar = params.project && current ? phoneTabs(current, pathname, params) : null;
+  if (!bar || hidden) {
     return null;
   }
   const tab = "relative flex max-w-20 flex-1 flex-col items-center gap-0.5 rounded-xl pt-1.5 pb-1 text-xs font-medium text-muted-foreground [&>svg]:size-5";
