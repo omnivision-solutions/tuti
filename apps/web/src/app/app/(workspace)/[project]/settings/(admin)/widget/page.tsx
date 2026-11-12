@@ -21,12 +21,14 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
   if (!project) {
     notFound();
   }
-  const [settings, { plan, supportInbox }] = await Promise.all([
+  const [settings, { plan, supportInbox, brandColor }] = await Promise.all([
     widgetSettings({ id: project.id }),
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, supportInbox: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, supportInbox: true, brandColor: true } }),
   ]);
   const widget = settings!;
-  const color = widget.color ?? DEFAULT_WIDGET_COLOR;
+  // Without a colour of its own, the launcher is the portal's accent (Settings → Branding), else the brand green.
+  const defaultColor = brandColor ?? DEFAULT_WIDGET_COLOR;
+  const color = widget.color ?? defaultColor;
   // Set before the plan dropped: kept, but the launcher shows the chat bubble.
   const kept = widget.icon !== "chat";
   const iconLocked = !planIncludes(plan, "launcherIcon") && (
@@ -57,7 +59,8 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
         projectSlug={slug}
         label={widget.label}
         color={color}
-        defaultColor={DEFAULT_WIDGET_COLOR}
+        defaultColor={defaultColor}
+        defaultColorLabel={brandColor ? "Use the accent colour" : undefined}
         position={widget.position}
         links={widget.links}
         icon={widget.icon}

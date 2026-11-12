@@ -28,13 +28,15 @@ export async function GET(request: Request) {
   const [latest, settings, project] = await Promise.all([
     latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
-    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true } }),
+    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true, brandColor: true } }),
   ]);
+  // The launcher's own colour, else the portal's accent (Settings → Branding); null with neither: the loader's brand green,
+  // which has a dark-mode shade.
+  const color = settings?.color ?? project?.brandColor ?? null;
   const launcher = settings && {
     label: settings.label,
-    // Null: the loader's brand green, which has a dark-mode shade.
-    color: settings.color,
-    textColor: settings.color && textColorOn(settings.color),
+    color,
+    textColor: color && textColorOn(color),
     position: settings.position,
     // Built-in icons by name; an image by its lasting link.
     ...(project && servedIcon(settings, project.plan)),

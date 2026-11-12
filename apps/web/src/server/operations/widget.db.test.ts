@@ -55,6 +55,13 @@ test("the team sets the label, colour, corner and up to 5 https links; each chan
   expect((await update({ links: [] })).links).toEqual([]);
 });
 
+test("with the portal's accent colour set, that's the launcher's default: picking it keeps none of its own, so the launcher follows the accent", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
+  expect((await update({ color: "#7c3aed" })).color).toBeNull();
+  // The brand green is then a colour of its own.
+  expect((await update({ color: "#12804a" })).color).toBe("#12804a");
+});
+
 test("settings are checked: https links only, lengths, at most 5 links, a real colour and corner", async () => {
   const refused = async (input: Parameters<typeof update>[0], message: string) =>
     expect(update(input)).rejects.toMatchObject({ status: 400, message });

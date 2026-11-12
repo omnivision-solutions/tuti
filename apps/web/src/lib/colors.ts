@@ -30,8 +30,17 @@ const SURFACES = { light: 0.9823, dark: 0.0106 };
 const MIN_CONTRAST = 3;
 
 /**
+ * The quiet tint of `color` and the text on it (`--soft`, `--soft-foreground`: a voted idea, the open board, the team's
+ * replies), at the lightness of Tuti's own green tints in each mode (globals.css), so they read the same whatever the hue.
+ */
+const softCss = (color: string, dark: boolean) =>
+  dark
+    ? `--soft:oklch(from ${color} 0.3 min(c, 0.05) h);--soft-foreground:oklch(from ${color} 0.86 min(c, 0.11) h)`
+    : `--soft:oklch(from ${color} 0.955 min(c, 0.035) h);--soft-foreground:oklch(from ${color} 0.43 min(c, 0.13) h)`;
+
+/**
  * CSS that makes `color` the accent (`--primary`, with black or white text on it, and the
- * focus ring). In a mode where it would be too faint against the page (a pale yellow in light
+ * focus ring) and its tint (`--soft`). In a mode where it would be too faint against the page (a pale yellow in light
  * mode, a navy in dark mode), the accent there is the text colour instead. Null without a colour.
  */
 export function brandCss(color: string | null): string | null {
@@ -44,7 +53,7 @@ export function brandCss(color: string | null): string | null {
       ? `--primary:${color};--primary-foreground:${textColorOn(color)};--ring:${color}`
       : "--primary:var(--foreground);--primary-foreground:var(--background);--ring:var(--foreground)";
   // html:not(.dark) and html.dark outrank globals.css's :root and .dark wherever this lands.
-  return `html:not(.dark){${accent(SURFACES.light)}}html.dark{${accent(SURFACES.dark)}}`;
+  return `html:not(.dark){${accent(SURFACES.light)};${softCss(color, false)}}html.dark{${accent(SURFACES.dark)};${softCss(color, true)}}`;
 }
 
 /**

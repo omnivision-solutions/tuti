@@ -148,7 +148,7 @@ export function PortalMenu({
                     aria-current={active ? "page" : undefined}
                     className={cn(
                       "rounded-lg px-3 py-2.5 font-heading text-lg font-semibold",
-                      active ? "bg-sidebar-active text-sidebar-active-foreground" : "text-foreground hover:bg-accent",
+                      active ? "bg-soft text-soft-foreground" : "text-foreground hover:bg-accent",
                     )}
                   >
                     {label}

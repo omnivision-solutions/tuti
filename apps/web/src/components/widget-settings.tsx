@@ -42,6 +42,7 @@ export function WidgetSettings({
   label,
   color,
   defaultColor,
+  defaultColorLabel,
   position,
   links,
   icon: initialIcon,
@@ -58,6 +59,8 @@ export function WidgetSettings({
   /** `#rrggbb`, already the default when the project hasn't picked one. */
   color: string;
   defaultColor: string;
+  /** The button that picks `defaultColor` again (ColorField). */
+  defaultColorLabel?: string;
   position: "bottom-right" | "bottom-left";
   links: { label: string; url: string }[];
   icon: WidgetIcon;
@@ -113,7 +116,7 @@ export function WidgetSettings({
             </Field>
             <Field>
               <FieldLabel htmlFor="widget-color">Colour</FieldLabel>
-              <ColorField id="widget-color" name="color" label="Colour" color={color} defaultColor={defaultColor} />
+              <ColorField id="widget-color" name="color" label="Colour" color={color} defaultColor={defaultColor} defaultLabel={defaultColorLabel} />
             </Field>
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-2 text-sm font-medium">Position</legend>

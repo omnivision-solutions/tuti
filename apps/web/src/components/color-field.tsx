@@ -14,7 +14,22 @@ import { parseHex } from "@/lib/colors";
  * colour says so once the field is left and keeps the form from saving; the swatch keeps the last colour
  * that was one.
  */
-export function ColorField({ id, name, label, color, defaultColor }: { id: string; name: string; label: string; color: string; defaultColor: string }) {
+export function ColorField({
+  id,
+  name,
+  label,
+  color,
+  defaultColor,
+  defaultLabel = "Use the default green",
+}: {
+  id: string;
+  name: string;
+  label: string;
+  color: string;
+  defaultColor: string;
+  /** The button that picks `defaultColor` again. */
+  defaultLabel?: string;
+}) {
   const [picked, setPicked] = useState(color);
   const [typed, setTyped] = useState(color);
   const [wrong, setWrong] = useState(false);
@@ -73,7 +88,7 @@ export function ColorField({ id, name, label, color, defaultColor }: { id: strin
               pick(defaultColor);
             }}
           >
-            Use the default green
+            {defaultLabel}
           </Button>
         )}
       </div>
