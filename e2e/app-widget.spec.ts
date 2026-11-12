@@ -64,6 +64,9 @@ test("Tuti's own widget in the team app signs people in with their account once 
   const tabBar = owner.getByRole("navigation", { name: "Main" });
   const more = tabBar.getByRole("button", { name: "More" });
   await expect.poll(async () => (await appLauncher.boundingBox())!.y + (await appLauncher.boundingBox())!.height).toBeLessThanOrEqual((await tabBar.boundingBox())!.y);
+  // However long the list, its end scrolls clear of the raised launcher: the page leaves that much room at its bottom.
+  const room = await owner.evaluate(() => parseFloat(getComputedStyle(document.querySelector("[data-app-widget]")!.parentElement!).paddingBottom));
+  expect(room).toBeGreaterThanOrEqual(844 - (await appLauncher.boundingBox())!.y);
   const moreBox = (await more.boundingBox())!;
   expect(await more.evaluate((button, [x, y]) => button.contains(document.elementFromPoint(x!, y!)), [moreBox.x + moreBox.width / 2, moreBox.y + moreBox.height / 2])).toBe(true);
   await owner.setViewportSize({ width: 700, height: 900 });

@@ -335,6 +335,8 @@ test("on phones the tab bar goes between the main parts and opens the rest under
   await team.waitForURL(`**/app/${slug}/feedback`);
   await expect(bar.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
   await checkpoint(team, "feedback-tab-bar", { fullPage: false });
+  // What's focused near the bottom scrolls clear of the bar.
+  expect(await team.evaluate(() => getComputedStyle(document.documentElement).scrollPaddingBottom)).toBe("96px");
   // A post opened from the list has the screen to itself.
   await team.getByRole("link", { name: "Dark mode" }).first().click();
   await team.waitForURL(/[?&]post=/);
