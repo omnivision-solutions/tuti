@@ -144,7 +144,7 @@ for (const section of ["Reporting", "Autopilot"]) {
   });
 }
 
-test("a collapsed rail preserves the Docs tree and Customize columns at 1024px", async ({ browser }, testInfo) => {
+test("a collapsed rail preserves the Docs tree and the Portal settings' columns at 1024px", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Example Team");
@@ -156,19 +156,19 @@ test("a collapsed rail preserves the Docs tree and Customize columns at 1024px",
   await expect(team.getByRole("navigation", { name: "Docs", exact: true })).toBeVisible();
   await expect(team.getByRole("button", { name: "Browse docs", exact: true })).toBeHidden();
   await checkpoint(team, "docs-collapsed-sidebar-1024", { fullPage: false });
-  await team.goto(`/app/${slug}/customize/branding`);
-  const menu = team.getByRole("navigation", { name: "Customize", exact: true }).first();
-  const settings = team.locator('[data-slot="customize-settings"]');
+  await team.goto(`/app/${slug}/settings/branding`);
+  const menu = team.getByRole("navigation", { name: "Settings", exact: true }).first();
+  const settings = team.locator('[data-slot="portal-settings"]');
   const preview = team.locator('iframe[title="Portal preview"]');
   await expect(menu).toBeVisible();
   await expect(preview).toBeVisible();
-  await expect.poll(async () => (await preview.boundingBox())!.x - (await settings.boundingBox())!.x).toBeGreaterThanOrEqual(384);
+  await expect.poll(async () => (await preview.boundingBox())!.x - (await settings.boundingBox())!.x).toBeGreaterThanOrEqual(300);
   expect((await settings.boundingBox())!.x).toBeGreaterThanOrEqual((await menu.boundingBox())!.x + (await menu.boundingBox())!.width);
   await expect.poll(async () => (await preview.boundingBox())!.width).toBeGreaterThanOrEqual(360);
   await expect(team.frameLocator('iframe[title="Portal preview"]').locator(".portal-header")).toBeVisible();
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   expect(await team.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
-  await checkpoint(team, "customize-collapsed-sidebar-1024", { fullPage: false });
+  await checkpoint(team, "portal-settings-collapsed-sidebar-1024", { fullPage: false });
 });
 
 test("bolding an article leaves the collapsed sidebar and its cookie alone", async ({ browser }, testInfo) => {
@@ -206,7 +206,7 @@ test("bolding an article leaves the collapsed sidebar and its cookie alone", asy
   await checkpoint(team, "docs-bold-with-collapsed-sidebar", { fullPage: false });
 });
 
-test("Customize keeps a usable preview with an opened sidebar on a small laptop", async ({ browser }, testInfo) => {
+test("Portal settings keep a usable preview with an opened sidebar on a small laptop", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Example Team");
@@ -214,9 +214,9 @@ test("Customize keeps a usable preview with an opened sidebar on a small laptop"
   await createProject(team, "Example", slug);
   const sidebar = team.locator('[data-slot="sidebar"][data-state]');
   await sidebar.locator('[data-slot="sidebar-trigger"]').click();
-  await team.goto(`/app/${slug}/customize/branding`);
+  await team.goto(`/app/${slug}/settings/branding`);
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
-  const settings = team.locator('[data-slot="customize-settings"]');
+  const settings = team.locator('[data-slot="portal-settings"]');
   const preview = team.locator('iframe[title="Portal preview"]');
   await expect(preview).toBeVisible();
   await expect.poll(async () => (await preview.boundingBox())!.width).toBeGreaterThanOrEqual(360);
@@ -225,11 +225,11 @@ test("Customize keeps a usable preview with an opened sidebar on a small laptop"
   expect(await team.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
   await preview.scrollIntoViewIfNeeded();
   await expect(team.frameLocator('iframe[title="Portal preview"]').locator(".portal-header")).toBeVisible();
-  await checkpoint(team, "customize-opened-sidebar-small-laptop", { fullPage: false });
+  await checkpoint(team, "portal-settings-opened-sidebar-small-laptop", { fullPage: false });
   // More room restores the three panes without changing the sidebar preference.
   await team.setViewportSize({ width: 1440, height: 768 });
-  await expect(team.getByRole("navigation", { name: "Customize", exact: true }).first()).toBeVisible();
-  await expect.poll(async () => (await preview.boundingBox())!.x - (await settings.boundingBox())!.x).toBeGreaterThanOrEqual(384);
+  await expect(team.getByRole("navigation", { name: "Settings", exact: true }).first()).toBeVisible();
+  await expect.poll(async () => (await preview.boundingBox())!.x - (await settings.boundingBox())!.x).toBeGreaterThanOrEqual(300);
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
 });
 

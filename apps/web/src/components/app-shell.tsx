@@ -55,9 +55,11 @@ export function AppShell({ sidebar, header, banners, tabBar, children, defaultSi
             // whose panes scroll on their own (data-fills-window: the Inbox) is the window's height on phones too. On
             // phones, room at the bottom for actions pinned there (PageActions), for Tuti's own chat launcher (AppWidget; not in
             // the Inbox or on Customize), and for the tab bar (AppTabBar). The admin's new pages of panes (PaneLayout, data-panes) sit on the sidebar's canvas, 8px in, the
-            // window's height from tablet width up.
-            <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 has-data-fills-window:h-dvh has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24 phonebar:tabbar:pb-24 phonebar:tabbar:has-data-app-widget:pb-44 has-data-panes:p-2 md:has-data-panes:pl-0 @min-[48rem]/app:has-data-panes:h-dvh @min-[48rem]/app:has-data-panes:flex-none">
-              {banners}
+            // window's height from tablet width up, their banners taking a third of it at most and scrolling past that.
+            <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6 md:px-8 @min-[48rem]/app:has-data-panes:*:data-[slot=banners]:max-h-1/3 @min-[48rem]/app:has-data-panes:*:data-[slot=banners]:shrink-0 @min-[48rem]/app:has-data-panes:*:data-[slot=banners]:overflow-y-auto has-data-narrow:max-w-2xl has-data-[slot=pane-layout]:max-w-none has-data-wide:max-w-none has-[.docs-workspace]:h-dvh has-[.docs-workspace]:max-h-dvh has-[.docs-workspace]:min-h-0 has-[.docs-workspace]:overflow-hidden phonebar:has-[.docs-workspace]:h-dvh phonebar:has-[.docs-workspace]:pb-6 has-data-fills-window:h-dvh has-data-fills-window:flex-none phonebar:has-data-app-widget:pb-28 phonebar:has-data-pinned-actions:pb-24 phonebar:tabbar:pb-24 phonebar:tabbar:has-data-app-widget:pb-44 has-data-panes:p-2 md:has-data-panes:pl-0 @min-[48rem]/app:has-data-panes:h-dvh @min-[48rem]/app:has-data-panes:flex-none">
+              <div data-slot="banners" className="flex flex-col gap-6 empty:hidden">
+                {banners}
+              </div>
               {children}
             </div>
           )}

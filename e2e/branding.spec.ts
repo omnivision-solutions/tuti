@@ -29,12 +29,12 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   const [light, dark] = [await drawLogo(scratch, "#1d4ed8"), await drawLogo(scratch, "#bfdbfe")];
   await scratch.close();
 
-  // Customize → Branding: the settings beside a preview of the portal (on a clock the journey can move on).
+  // Settings → Branding: the settings beside a preview of the portal (on a clock the journey can move on).
   await owner.clock.install();
-  await owner.goto(`/app/${slug}/customize/branding`);
-  const rail = owner.getByRole("navigation", { name: "Customize" });
+  await owner.goto(`/app/${slug}/settings/branding`);
+  const rail = owner.getByRole("navigation", { name: "Settings" });
   await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
-  // The section has its own heading; wider screens need no app bar above it.
+  // The page has its own heading; wider screens need no app bar above it.
   await expect(owner.locator("main > header")).toBeHidden();
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
   await expect(preview.getByRole("banner")).toBeVisible();
@@ -115,7 +115,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect.poll(() => mark.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   await owner.emulateMedia({ colorScheme: "light" });
 
-  // Customize → Navigation: the header's and footer's links.
+  // Settings → Navigation: the header's and footer's links.
   await rail.getByRole("link", { name: "Navigation" }).click();
   const links = owner.locator("form");
   await links.getByRole("button", { name: "Add header link" }).click();
@@ -140,12 +140,12 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(leave).toBeVisible();
   await leave.getByRole("button", { name: "Keep editing" }).click();
   await expect(leave).toBeHidden();
-  // Its own section in the rail isn't leaving: nothing to ask, the changes stay.
+  // Its own link in the menu isn't leaving: nothing to ask, the changes stay.
   await rail.getByRole("link", { name: "Navigation" }).click();
   await expect(links.getByLabel("Header link 1 label")).toHaveValue("Docs");
   // Nor is picking it in ⌘K.
   await owner.keyboard.press("ControlOrMeta+k");
-  await search.fill("customize · navigation");
+  await search.fill("navigation");
   await search.press("Enter");
   await expect(owner.getByRole("dialog", { name: "Go to or do" })).toBeHidden();
   await expect(leave).toHaveCount(0);
@@ -159,7 +159,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   // "Powered by tuti" (in Branding now; its old address lands there): hiding the badge needs a licence for the
   // project; unticking it asks about one instead.
   await owner.goto(`/app/${slug}/customize/powered-by`);
-  await owner.waitForURL(`**/app/${slug}/customize/branding#powered-by`);
+  await owner.waitForURL(`**/app/${slug}/settings/branding#powered-by`);
   const badge = owner.locator("form").filter({ has: owner.getByLabel('Show "Powered by tuti" in the footer') });
   const poweredBy = badge.getByLabel('Show "Powered by tuti" in the footer');
   await expect(badge.getByText("Hiding it needs a licence for this project.")).toBeVisible();

@@ -1,6 +1,6 @@
 import { permanentRedirect } from "next/navigation";
 
-/** In Customize → Branding now. */
+/** In Settings → Branding now. */
 export default async function Moved(props: PageProps<"/app/[project]/customize/powered-by">) {
-  permanentRedirect(`/app/${(await props.params).project}/customize/branding#powered-by`);
+  permanentRedirect(`/app/${(await props.params).project}/settings/branding#powered-by`);
 }

@@ -34,12 +34,12 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   await checkpoint(owner, "settings-portal-private");
 
   // Customize's preview still shows the portal to the team, not its sign-in page.
-  await owner.goto(`/app/${slug}/customize/branding`);
+  await owner.goto(`/app/${slug}/settings/branding`);
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
   await expect(preview.getByRole("heading", { name: "Feature requests" })).toBeVisible();
   await expect(preview.getByText("Acme is private. Sign in to see it.")).toHaveCount(0);
   // With the header's parts, and on Docs its box to search and ask (the preview has no session on the portal).
-  await owner.goto(`/app/${slug}/customize/docs-home`);
+  await owner.goto(`/app/${slug}/settings/docs-home`);
   await expect(preview.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" })).toBeVisible();
   await expect(preview.getByRole("button", { name: "Search or ask AI" })).toBeVisible();
 

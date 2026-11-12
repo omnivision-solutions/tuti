@@ -2,7 +2,6 @@ import { aiPaused } from "@tuti/jobs";
 import { CREDIT_FEATURES } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
-import { CUSTOMIZE_GROUPS } from "@/app/app/(workspace)/[project]/customize/sections";
 import { AiPaused } from "@/components/ai-paused";
 import { type CommandItem, CommandMenu } from "@/components/command-menu";
 import { LiveRefresh } from "@/components/inbox/live-refresh";
@@ -39,7 +38,6 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
         ["Reporting", "/reporting", "reporting"],
       ] as const
     ).map(([title, path, section]) => ({ title, group: "Pages" as const, section, href: `${base}${path}` })),
-    ...(admin ? CUSTOMIZE_GROUPS.flatMap((group) => group.sections).map((section) => ({ title: `Customize · ${section.title}`, group: "Pages" as const, section: "customize" as const, href: `${base}/customize/${section.slug}` })) : []),
     ...settingsGroups(project, admin).flatMap((group) => group.pages.map((page) => ({ title: page.title, group: "Settings" as const, section: "settings" as const, href: page.href }))),
   ];
   return (

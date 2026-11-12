@@ -179,6 +179,114 @@ export function PreviewChoices({ children }: { children: ReactNode }) {
 }
 
 /**
+ * A page of the portal's settings beside a preview of them: the preview's context (`provider`), the page's forms for
+ * "Save changes" (`hasForms`, `dirty`, `pending`, `save`), and leaving with changes not saved asking first (`leaveDialog`,
+ * rendered with the page; `title` names the page in it). CustomizeShell and PortalSettingsPane lay it out.
+ */
+export function usePreviewPage(title: string) {
+  const router = useRouter();
+  const [version, setVersion] = useState(0);
+  const [draft, setDraftState] = useState<Draft>({});
+  const [forms, setForms] = useState<Record<string, SaveForm>>({});
+  const [leaving, setLeaving] = useState<string | null>(null);
+  // The draft stays: once saved, it's what's saved (and the new frame gets it again when it opens).
+  const reload = useCallback(() => {
+    setVersion((v) => v + 1);
+    router.refresh();
+  }, [router]);
+  const setDraft = useCallback((part: Draft) => setDraftState((current) => ({ ...current, ...part })), []);
+  const register = useCallback(
+    (id: string, next: SaveForm | null) =>
+      setForms((current) => {
+        const others = { ...current };
+        delete others[id];
+        return next ? { ...others, [id]: next } : others;
+      }),
+    [],
+  );
+  const dirty = Object.values(forms).some((form) => form.dirty);
+  const pending = Object.values(forms).some((form) => form.pending);
+  // "Save changes": every form of the page's with a change.
+  const save = () => {
+    for (const [id, form] of Object.entries(forms)) {
+      if (form.dirty) {
+        (document.getElementById(id) as HTMLFormElement | null)?.requestSubmit();
+      }
+    }
+  };
+
+  // Leaving with changes not saved: the browser asks on reloading or closing, we ask on the app's links.
+  useEffect(() => {
+    if (!dirty) {
+      return;
+    }
+    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    const onClick = (event: MouseEvent) => {
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!(link instanceof HTMLAnchorElement) || link.target === "_blank" || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) {
+        return;
+      }
+      const url = new URL(link.href);
+      // Another site, or this very page (its link in the menu): not leaving.
+      if (url.origin !== window.location.origin || (url.pathname === window.location.pathname && url.search === window.location.search)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      setLeaving(`${url.pathname}${url.search}${url.hash}`);
+    };
+    // And on ⌘K's.
+    const onNavigate = (event: Event) => {
+      const href = (event as CustomEvent<string>).detail;
+      const url = new URL(href, window.location.origin);
+      // This very page: not leaving.
+      if (url.pathname === window.location.pathname && url.search === window.location.search) {
+        return;
+      }
+      event.preventDefault();
+      setLeaving(href);
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClick, true);
+    window.addEventListener(COMMAND_MENU_NAVIGATE, onNavigate);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClick, true);
+      window.removeEventListener(COMMAND_MENU_NAVIGATE, onNavigate);
+    };
+  }, [dirty]);
+
+  const provider = (children: ReactNode) => <PreviewContext value={{ reload, version, draft, setDraft, register }}>{children}</PreviewContext>;
+  const leaveDialog = (
+    <AlertDialog open={leaving !== null} onOpenChange={(open) => !open && setLeaving(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Leave without saving?</AlertDialogTitle>
+          <AlertDialogDescription>Your changes to {title} aren&apos;t saved. Leaving drops them.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep editing</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            onClick={() => {
+              const href = leaving;
+              setForms({});
+              setLeaving(null);
+              if (href) {
+                router.push(href);
+              }
+            }}
+          >
+            Leave
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+  return { provider, leaveDialog, version, draft, hasForms: Object.keys(forms).length > 0, dirty, pending, save };
+}
+
+/**
  * A Customize section: Customize's sections in a rail on the far left (the preview stays as you move
  * between them), the section's settings in a panel beside it (its title, "Save changes"),
  * and on the right the portal they change, live in a frame (its Tuti address, which the app may
@@ -204,87 +312,17 @@ export function CustomizeShell({
   children: ReactNode;
 }) {
   const title = sectionTitle(section);
-  const router = useRouter();
-  const [version, setVersion] = useState(0);
-  const [draft, setDraftState] = useState<Draft>({});
-  const [forms, setForms] = useState<Record<string, SaveForm>>({});
-  const [leaving, setLeaving] = useState<string | null>(null);
-  // The draft stays: once saved, it's what's saved (and the new frame gets it again when it opens).
-  const reload = useCallback(() => {
-    setVersion((v) => v + 1);
-    router.refresh();
-  }, [router]);
-  const setDraft = useCallback((part: Draft) => setDraftState((current) => ({ ...current, ...part })), []);
-  const register = useCallback(
-    (id: string, next: SaveForm | null) =>
-      setForms((current) => {
-        const others = { ...current };
-        delete others[id];
-        return next ? { ...others, [id]: next } : others;
-      }),
-    [],
-  );
-  const dirty = Object.values(forms).some((form) => form.dirty);
-  const pending = Object.values(forms).some((form) => form.pending);
-  // "Save changes": every form of the section's with a change.
-  const save = () => {
-    for (const [id, form] of Object.entries(forms)) {
-      if (form.dirty) {
-        (document.getElementById(id) as HTMLFormElement | null)?.requestSubmit();
-      }
-    }
-  };
+  const { provider, leaveDialog, version, draft, hasForms, dirty, pending, save } = usePreviewPage(title);
 
-  // Leaving with changes not saved: the browser asks on reloading or closing, we ask on the app's links.
-  useEffect(() => {
-    if (!dirty) {
-      return;
-    }
-    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
-    const onClick = (event: MouseEvent) => {
-      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
-      if (!(link instanceof HTMLAnchorElement) || link.target === "_blank" || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) {
-        return;
-      }
-      const url = new URL(link.href);
-      // Another site, or this very page (its section in the rail): not leaving.
-      if (url.origin !== window.location.origin || (url.pathname === window.location.pathname && url.search === window.location.search)) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      setLeaving(`${url.pathname}${url.search}${url.hash}`);
-    };
-    // And on ⌘K's.
-    const onNavigate = (event: Event) => {
-      const href = (event as CustomEvent<string>).detail;
-      const url = new URL(href, window.location.origin);
-      // This very section: not leaving.
-      if (url.pathname === window.location.pathname && url.search === window.location.search) {
-        return;
-      }
-      event.preventDefault();
-      setLeaving(href);
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    document.addEventListener("click", onClick, true);
-    window.addEventListener(COMMAND_MENU_NAVIGATE, onNavigate);
-    return () => {
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      document.removeEventListener("click", onClick, true);
-      window.removeEventListener(COMMAND_MENU_NAVIGATE, onNavigate);
-    };
-  }, [dirty]);
-
-  return (
-    <PreviewContext value={{ reload, version, draft, setDraft, register }}>
+  return provider(
+    <>
       <div className="flex flex-1 flex-col @min-[61rem]/app:min-h-0 @min-[61rem]/app:flex-row">
         <CustomizeRail projectSlug={projectSlug} section={section} />
         <div data-slot="customize-settings" className="relative flex flex-col border-b @min-[61rem]/app:w-96 @min-[61rem]/app:shrink-0 @min-[61rem]/app:scroll-pt-12 @min-[61rem]/app:overflow-y-auto @min-[61rem]/app:border-r @min-[61rem]/app:border-b-0">
           {/* Under the phone's menu row; at the top on wider screens, including when the pane scrolls itself. */}
           <div className="sticky top-12 topbar:top-0 z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-4 @min-[61rem]/app:top-0">
             <h1 className="text-sm font-semibold">{title}</h1>
-            {Object.keys(forms).length > 0 && (
+            {hasForms && (
               <Button type="button" size="sm" disabled={!dirty || pending} onClick={save} className="ml-auto">
                 {pending ? "Saving…" : "Save changes"}
               </Button>
@@ -298,36 +336,13 @@ export function CustomizeShell({
           <PortalPreview version={version} draft={draft} {...preview} />
         )}
       </div>
-      <AlertDialog open={leaving !== null} onOpenChange={(open) => !open && setLeaving(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Leave without saving?</AlertDialogTitle>
-            <AlertDialogDescription>Your changes to {title} aren&apos;t saved. Leaving drops them.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                const href = leaving;
-                setForms({});
-                setLeaving(null);
-                if (href) {
-                  router.push(href);
-                }
-              }}
-            >
-              Leave
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </PreviewContext>
+      {leaveDialog}
+    </>,
   );
 }
 
 /** The portal in a frame: it says which page is open, and takes changes not saved yet and light or dark mode. */
-function PortalPreview({
+export function PortalPreview({
   version,
   draft,
   origin,

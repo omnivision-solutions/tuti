@@ -14,7 +14,7 @@ cute at the expense of clarity.
   Portals).
 - **Type:** Figtree for text, Bricolage Grotesque for headings (`h1`–`h3` and
   `font-heading` pick it up automatically) in the app; Inter for both on the public portal, unless the project picks
-  its own (Customize → Branding; see Layout → Portals). Every font is a file: these and the symbols font in
+  its own (Settings → Branding; see Layout → Portals). Every font is a file: these and the symbols font in
   `packages/ui/src/fonts` (`brand-fonts.ts`, the app's and the marketing site's), the portals' 16 in `apps/web/src/fonts`
   (`node scripts/fetch-fonts.mjs` fetches
   them, with their licences), loaded with `next/font/local`: builds never
@@ -170,8 +170,7 @@ the list picks none to approve at once.
   and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. The shortcut leaves typing
   and shortcuts already handled by an editor alone. On phones a compact sticky row keeps the menu and project/section path, the page's title
   once its heading scrolls away, and `PageActions` at its right end. An editor's primary actions (`pinActions`) stay
-  at the bottom on phones. Customize has its own section heading and Save changes row; it sticks at the top on
-  wider screens and below the menu row on phones. Pane heights and sticky menus use the full window on wider screens.
+  at the bottom on phones. Pane heights and sticky menus use the full window on wider screens.
   A page of three panes (the sidebar, a column of its own, the page: Settings (Panes),
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
   width. The app sidebar starts collapsed to the same icon rail on every page. Only its toggle, Ctrl/⌘+B,
@@ -364,21 +363,18 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   Continue with Google and Continue with GitHub are both outline buttons with their marks, under
   nothing louder than the form's own primary. Their header (the account pages' layout, under `/app/auth`)
   is Tuti's logo alone, no Sign in or Start free: the form is the way in. On phones no keyboard hints (`Ctrl K`).
-- **Customize** (`/app/<project>/customize/<section>`): the whole width.
-  `CustomizeShell`: Customize's sections in a rail on
-  the far left when the sidebar inset has at least 61rem (a menu above the panel with less room; no index page, no
-  Back), the section's settings in a panel beside it (title; cards inside),
-  the portal it changes on the right in a browser frame, at desktop or phone
-  width, light or dark. Below that inset width the settings and preview stack and the page scrolls;
-  with room for all three columns, each pane scrolls inside the window. The app sidebar keeps the user’s choice. Settings that
-  change how the portal looks go here, not in Settings. A section's forms use
-  `useCustomizeForm`: "Save changes" in the panel's header saves every one with
-  a change (enabled once something changed), and `toDraft` shows a change in the frame as it's made
-  (the portal's `PortalLookProvider` takes it); leaving with changes not saved
-  asks first.
+- **Portal settings** (Settings' Portal group: `/app/<project>/settings/<page>`, `lib/portal-pages.ts`; Customize's
+  old addresses send people on to them). `PortalSettingsPane`: one pane, the page's title and description in its
+  header with "Save changes"; its settings in a column (cards inside) and beside it, from 61rem of the shell up, the
+  portal it changes in a browser frame at desktop or phone width, light or dark (or the page's own preview: the
+  widget, a search result), each scrolling on its own; with less room the preview comes after the settings. Settings
+  that change how the portal looks go here. A page's forms use `useCustomizeForm`: "Save changes" saves every one with
+  a change (enabled once something changed), and `toDraft` shows a change in the frame as it's made (the portal's
+  `PortalLookProvider` takes it); leaving with changes not saved asks first. Tuti's own chat launcher stays off these
+  pages: their previews show the project's widget.
 - **Portals** (the public portal's own look: a header card per list, a rail led by its one primary action, a calm shell):
   - **Look.** Inter for headings and text by default (preloaded; headings 650, tracked −0.022em; body 15–17px); a project's own
-    fonts (Customize → Branding: `headingFont`, `bodyFont`) still win, and the portal's dialogs and menus take them too.
+    fonts (Settings → Branding: `headingFont`, `bodyFont`) still win, and the portal's dialogs and menus take them too.
     Portal-only tokens in `globals.css` (`:root:has([data-portal-top])`, so the app keeps its own): stronger lines on the
     paper (`border` 0.87 L, `input` 0.81 L), secondary text at 0.48 L, a neutral dark mode (background 0.165, cards
     0.205, lines 0.32/0.40, chroma ≈0.005; green stays the accent), 14px cards and 10px controls (`--radius` 0.625rem),
@@ -506,9 +502,9 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge; the first time, once its page has loaded, half a second at most, so it
   never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
-  Light or dark as the portal's colour scheme says (Customize → Branding; by default the visitor's
+  Light or dark as the portal's colour scheme says (Settings → Branding; by default the visitor's
   device), unless the site picks one (`data-theme`, or `Tuti.setTheme` later), which every panel takes,
-  from its first paint, and the button unless it has its own colour (Customize → Widget).
+  from its first paint, and the button unless it has its own colour (Settings → Widget).
   On screens up to 640px wide the floating panel takes the whole screen, over the
   launcher, kept clear of the phone's status bar and home indicator, and slides up.
   Messages has the team on top in a card (their faces and when they usually reply,
@@ -545,10 +541,10 @@ Use these instead of hand-rolling layout:
   Where Tuti's own chat launcher shows in the app (its cloud), what's held at the
   bottom of the screen keeps its buttons clear of the launcher's corner
   (`launcher:`): a bar (that one, Autopilot's Approve) stops them left of it, a
-  row more if they need it. The launcher isn't in the Inbox or on Customize (`AppWidget`), so
+  row more if they need it. The launcher isn't in the Inbox or on Settings' Portal pages (`AppWidget`), so
   the Inbox's reply box needs no room for it.
   It assumes the launcher at the bottom right, where Tuti's help project keeps it:
-  moved to the left (Customize → Widget), `launcher:` would need its side too.
+  moved to the left (Settings → Widget), `launcher:` would need its side too.
 - **`BackLink`**: "← Feedback" above a detail page's header; in the app it's
   `PageHeader`'s `back` (a post's page draws its own row: the back link, and the newer/older post as ‹ › at its
   other end, away from the title).
@@ -706,8 +702,8 @@ at desktop and phone widths, in light and dark (in development only).
 - **Phone tab bar** (`AppTabBar`): on phones Home, Inbox, Feedback and Autopilot sit at the bottom of the screen, each
   with the sidebar's count, and More opens the sidebar as a menu for the rest. The open part's tab is a raised white
   pill (Feedback on the Roadmap; More on a part without a tab). It shows on a part's lists only: a page of one thing
-  (a post, a conversation, an article, a review), a new one, its history and a settings page of its own (Settings',
-  Customize's, a collection's) have the screen to themselves and their way back, as does a page that pins its actions
+  (a post, a conversation, an article, a review), a new one, its history and a settings page of its own (Settings'
+  (its Portal pages too), a collection's) have the screen to themselves and their way back, as does a page that pins its actions
   to the bottom. A view inside a list's page (`?view=`) keeps the bar with the page. Docs has none: it has its own
   phone navigation, and its workspace is the window's height, scrolling inside. Tuti's own chat launcher sits above it.
 

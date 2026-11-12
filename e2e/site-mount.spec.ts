@@ -79,7 +79,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
 
   // The team's own HTML (Customize → Custom code) runs on their site, and not when the same path is
   // opened on the portal's Tuti host (which answers it too: the site forwards there).
-  await owner.goto(`/app/${slug}/customize/custom-code`);
+  await owner.goto(`/app/${slug}/settings/custom-code`);
   await owner.getByLabel("Custom HTML").fill('<p id="team-html">From the team</p><script>document.body.dataset.teamScript = "ran"</script>');
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Custom code saved")).toBeVisible();
@@ -104,7 +104,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(direct.locator("#team-html")).toHaveCount(0);
   await expect(direct.locator("body")).not.toHaveAttribute("data-team-script", "ran");
   // Customize → Widget says the same as for any portal beside its switch: nothing about a path.
-  await owner.goto(`/app/${slug}/customize/widget`);
+  await owner.goto(`/app/${slug}/settings/widget`);
   await expect(owner.getByText("The launcher on every page of your portal too, opening the same panel as on your site.")).toBeVisible();
   await owner.goto(`/app/${slug}/settings/domain`);
 

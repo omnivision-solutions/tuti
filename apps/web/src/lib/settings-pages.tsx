@@ -2,6 +2,8 @@ import { BoxesIcon, CodeXmlIcon, CpuIcon, CreditCardIcon, DownloadIcon, GitPullR
 import type { ReactNode } from "react";
 import { aiEnabled, codeChangesEnabled } from "@tuti/shared";
 
+import { PORTAL_PAGES } from "@/lib/portal-pages";
+
 export type SettingsGroup = { title: string; pages: { title: string; href: string; icon?: ReactNode }[] };
 
 /** Settings' menu, in groups; `admin`: owners and admins see every page, other team members Team & roles. */
@@ -18,6 +20,10 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
         { title: "Domain", href: at("domain"), icon: <GlobeIcon aria-hidden /> },
         { title: "Import", href: at("import"), icon: <DownloadIcon aria-hidden /> },
       ],
+    },
+    {
+      title: "Portal",
+      pages: PORTAL_PAGES.map(({ slug: page, title, icon: Icon }) => ({ title, href: at(page), icon: <Icon aria-hidden /> })),
     },
     {
       title: "Users",

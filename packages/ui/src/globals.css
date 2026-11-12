@@ -380,17 +380,18 @@
   html:has([data-slot="sidebar-inset"]) {
     scroll-padding-top: var(--app-toolbar-height, 0px);
   }
-  /* Customize below laptop width scrolls under its own title row (and the menu row on phones). */
+  /* A Portal settings page (PortalSettingsPane), where the page scrolls, scrolls under its pane's header (60px; and the
+     menu row on phones). */
   @media (width < 64rem) {
-    html:has([data-slot="customize-settings"]) {
-      scroll-padding-top: 3rem;
+    html:has([data-slot="portal-settings"]) {
+      scroll-padding-top: 3.75rem;
     }
   }
   /* A page's actions pinned to the bottom on phones (PageActions), or the tab bar (AppTabBar): what's focused near the
      bottom scrolls above them. */
   @media (width < 48rem) {
-    html:has([data-slot="customize-settings"]) {
-      scroll-padding-top: 6rem;
+    html:has([data-slot="portal-settings"]) {
+      scroll-padding-top: 6.75rem;
     }
     html:has([data-pinned-actions]),
     html:has([data-tab-bar]) {

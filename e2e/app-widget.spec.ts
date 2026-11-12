@@ -18,14 +18,14 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await panel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await expect(panel.getByRole("button", { name: "Sign in to post" })).toBeVisible();
 
-  // Not on Customize, whose previews show the project's own widget: opened there, the app doesn't install it…
+  // Not on Settings' Portal pages, whose previews show the project's own widget: opened there, the app doesn't install it…
   const appLauncher = owner.locator('body > button[aria-controls="tuti-widget"]');
   const script = owner.locator('script[src*="/widget.js"]');
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
-  await owner.goto(`/app/${APP_WIDGET_SLUG}/customize/widget`);
+  await owner.goto(`/app/${APP_WIDGET_SLUG}/settings/widget`);
   const previewLauncher = owner.getByRole("figure", { name: "Widget preview" }).getByRole("button", { name: "Launcher: Feedback" });
   await expect(previewLauncher).toBeVisible();
-  await checkpoint(owner, "app-widget-customize-widget", { fullPage: false });
+  await checkpoint(owner, "app-widget-settings-widget", { fullPage: false });
   // The preview's panel closing means the page is hydrated, so the app would have added the script by now
   // (a click before that does nothing: clicked again until it closes).
   await expect(async () => {
@@ -34,8 +34,10 @@ test("Tuti's own widget in the team app signs people in with their account once 
   }).toPass();
   await expect(script).toHaveCount(0);
   await expect(appLauncher).toHaveCount(0);
-  // …it comes on leaving, and when Customize opens from another page it's closed (if it was open) and away; back after.
+  // …it comes on leaving (Settings' other pages have it), and when a Portal page opens from another page it's closed (if
+  // it was open) and away; back after.
   await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
+  await owner.waitForURL(`**/app/${APP_WIDGET_SLUG}/settings/general`);
   // Waited for: until it's there, "Feedback" also names the preview's launcher, still on the page.
   await expect(appLauncher).toBeVisible();
   // Under the app's dialogs (⌘K's here), still over the page.
@@ -79,12 +81,14 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await owner.setViewportSize({ width: 1280, height: 720 });
   await launcher.click();
   await expect(panel.getByRole("navigation", { name: "Widget" })).toBeVisible();
-  await sidebar.getByRole("link", { name: "Customize", exact: true }).click();
-  await expect(owner.getByRole("navigation", { name: "Customize" })).toBeVisible();
+  await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
+  const settingsMenu = owner.getByRole("navigation", { name: "Settings" });
+  await settingsMenu.getByRole("link", { name: "Branding" }).click();
+  await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
   await expect(appLauncher).toBeAttached();
   await expect(appLauncher).toBeHidden();
   await expect(owner.locator("#tuti-widget")).toBeHidden();
-  await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
+  await settingsMenu.getByRole("link", { name: "General" }).click();
   await expect(appLauncher).toBeVisible();
   await expect(appLauncher).toHaveAttribute("aria-expanded", "false");
   await expect(owner.locator("#tuti-widget")).toBeHidden();

@@ -99,7 +99,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(visitor.locator('iframe[title="Feedback"]')).toHaveAttribute("src", `${domainUrl}/widget`);
 
   // The team's own HTML (Customize → Custom code) runs on their domain, scripts too, and never on a Tuti address.
-  await owner.goto(`/app/${slug}/customize/custom-code`);
+  await owner.goto(`/app/${slug}/settings/custom-code`);
   await expect(owner.getByText(`It runs on ${domain}`, { exact: false })).toBeVisible();
   // An external script, then one that needs it: they run in that order, as on a page of their own.
   await owner
@@ -144,7 +144,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   // portal's launcher back.
   const api = await apiFor(owner, slug);
   await api("/widget", { onPortal: false }, "PATCH");
-  await owner.goto(`/app/${slug}/customize/custom-code`);
+  await owner.goto(`/app/${slug}/settings/custom-code`);
   await owner.getByLabel("Custom HTML").fill(`<script src="${APP_URL}/api/widget.js" data-project="${slug}" async></script>`);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();

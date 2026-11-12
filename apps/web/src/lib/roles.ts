@@ -8,7 +8,7 @@ export const ROLE_LABELS: Record<TeamRole, string> = {
 
 export const ROLE_DESCRIPTIONS: Record<TeamRole, string> = {
   OWNER: "Everything, including Autopilot's settings and managing owners",
-  ADMIN: "All a member does, plus settings (not Autopilot's), Customize, boards, billing and the team",
+  ADMIN: "All a member does, plus settings (not Autopilot's), boards, billing and the team",
   MEMBER: "Feedback, the inbox, docs, the changelog and Autopilot's reviews",
 };
 
