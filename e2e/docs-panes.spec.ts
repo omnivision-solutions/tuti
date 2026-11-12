@@ -114,3 +114,24 @@ test("Docs pages are panes: the tree as the area's pane, views as pills, the edi
   }
   await checkpoint(team, "docs-editor-narrow", { fullPage: false });
 });
+
+test("a long Docs page's sticky header, pills and all, never covers what's focused", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/collections", { name: "Getting started" });
+  for (let i = 1; i <= 25; i++) await api("/articles", { title: `Guide ${i}`, body: "Instructions for your team.", collection: "getting-started" });
+  await team.setViewportSize({ width: 1280, height: 900 });
+  await team.goto(`/app/${slug}/docs/collections/getting-started`);
+  const pane = team.locator(".docs-page-content");
+  const header = team.locator('[data-slot="docs-page-header"]');
+  await expect(header.getByRole("navigation", { name: "Collection", exact: true })).toBeVisible();
+  await expect.poll(() => pane.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(600);
+  // A row brought into view at the pane's top (as focus or a link to it does) lands below the header, not under it.
+  const row = team.getByRole("region", { name: "Getting started" }).getByRole("link", { name: "Guide 5", exact: true });
+  await row.evaluate((element) => element.scrollIntoView({ block: "start", container: "nearest" } as ScrollIntoViewOptions));
+  await expect.poll(() => pane.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  const bottom = (await header.boundingBox())!;
+  expect((await row.boundingBox())!.y).toBeGreaterThanOrEqual(bottom.y + bottom.height);
+});

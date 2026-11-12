@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { BookOpenIcon, EllipsisIcon, ExternalLinkIcon } from "lucide-react";
-import { createContext, type ReactNode, type RefObject, useContext, useEffect, useRef, useState } from "react";
+import { createContext, type ReactNode, type RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { IconTooltip } from "@/components/icon-tooltip";
 import { Button, buttonVariants } from "@/components/ui/button";
 
@@ -99,10 +99,21 @@ export function DocsPageHeader({
   /** The page on the help center: "View on help center" in words, under More actions in a narrow pane. */
   helpCenter?: string;
 }) {
+  // Its height (one row, or two with the pills), for the pane it sticks to: what's focused or scrolled to clears it.
+  const measure = useCallback((header: HTMLDivElement | null) => {
+    const pane = header?.parentElement;
+    if (!header || !pane) return;
+    const sized = new ResizeObserver(() => pane.style.setProperty("--docs-header-height", `${header.offsetHeight}px`));
+    sized.observe(header);
+    return () => {
+      sized.disconnect();
+      pane.style.removeProperty("--docs-header-height");
+    };
+  }, []);
   return (
     // What it shows follows its page's pane (`@container/docs-page`), not the window: the tree's width counts. The pills get a
     // row of their own under the title, the description goes in a narrow pane, and so do the actions' words.
-    <div data-slot="docs-page-header" className="docs-page-header sticky top-0 z-20 -mx-(--docs-pad) bg-card @max-[52rem]/docs-page:[&_h1+p]:hidden">
+    <div ref={measure} data-slot="docs-page-header" className="docs-page-header sticky top-0 z-20 -mx-(--docs-pad) bg-card @max-[52rem]/docs-page:[&_h1+p]:hidden">
       <PaneHeader
         title={
           <>
