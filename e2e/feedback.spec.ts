@@ -1926,6 +1926,41 @@ test("Feedback's list keeps its place as a post opens and closes beside it, in a
   await expect(row).toBeInViewport();
 });
 
+test("on a laptop another view of the list starts at its top; a post opened and closed beside it keeps the list's place", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await Promise.all(Array.from({ length: 30 }, (_, i) => api("/posts", { board: "feature-requests", title: `Idea ${i + 1}` })));
+  await team.setViewportSize({ width: 1280, height: 800 });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  const rows = team.getByRole("main").getByRole("list", { name: "Posts" }).getByRole("listitem");
+  const last = rows.last().getByRole("link");
+  // The list scrolls in its own pane, not the window.
+  await last.scrollIntoViewIfNeeded();
+  expect(await team.evaluate(() => window.scrollY)).toBe(0);
+  await expect(rows.first()).not.toBeInViewport();
+  // A post opened beside it and closed: the list where it was.
+  await last.click();
+  await expect(team.getByRole("region", { name: /^Post #/ })).toBeVisible();
+  await expect(last).toBeInViewport();
+  await team.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" }).click();
+  await expect(team.getByRole("region", { name: /^Post #/ })).toHaveCount(0);
+  await expect(last).toBeInViewport();
+  // Another view, from Feedback's menu: it starts at its top.
+  await team.getByRole("navigation", { name: "Feedback" }).getByRole("link", { name: /^Needs triage/ }).click();
+  await team.waitForURL(`**/app/${slug}/feedback`);
+  await expect(rows.first()).toBeInViewport();
+  await checkpoint(team, "feedback-view-from-top", { fullPage: false });
+  // And from the status pills, scrolled down again first.
+  await last.scrollIntoViewIfNeeded();
+  await expect(rows.first()).not.toBeInViewport();
+  await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^All/ }).click();
+  await team.waitForURL(`**/app/${slug}/feedback?status=all`);
+  await expect(rows.first()).toBeInViewport();
+});
+
 test("a post's page and the list at tablet and laptop widths: the header stays in view, the properties beside the post", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

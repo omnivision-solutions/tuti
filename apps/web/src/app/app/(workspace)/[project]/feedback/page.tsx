@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 import { HidesTabBar } from "@/components/app-sidebar";
 import { CopyButton } from "@/components/copy-button";
 import { EmptyState } from "@/components/empty-state";
-import { FeedbackKeys } from "@/components/feedback-keys";
+import { FeedbackKeys, ListScrollReset } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
 import { FeedbackSearch } from "@/components/feedback-search";
 import { FeedbackBulk, FeedbackSelection, FiltersFold, PickedRow, SelectPost, VoteBox } from "@/components/feedback-selection";
@@ -227,6 +227,8 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
             />
           </FeedbackBulk>
           <PaneBody className="flex flex-col gap-4 p-2 @min-[48rem]/app:p-3">
+            {/* Another view of the list starts at its top; a post opened or closed beside it keeps its place. */}
+            <ListScrollReset list={listKey.toString()} />
             {posts.length === 0 ? (
               counts.all === 0 && !q && !board && !group ? (
                 <EmptyState

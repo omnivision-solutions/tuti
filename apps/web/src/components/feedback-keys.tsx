@@ -82,3 +82,20 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
   }, [router, order, open, base]);
   return null;
 }
+
+/**
+ * The list's pane back at its top as the list itself changes (a view, a status, a board, a search, the sort), which
+ * keeps the page and so the pane's scroll: not as a post opens or closes beside it (`list` leaves out `post`), nor as
+ * more of it loads (nor `page`). Put first in the pane's scrolling body (PaneBody).
+ */
+export function ListScrollReset({ list }: { list: string }) {
+  const marker = useRef<HTMLSpanElement>(null);
+  const shown = useRef(list);
+  useEffect(() => {
+    if (shown.current !== list) {
+      shown.current = list;
+      marker.current?.parentElement?.scrollTo({ top: 0 });
+    }
+  }, [list]);
+  return <span ref={marker} hidden />;
+}
