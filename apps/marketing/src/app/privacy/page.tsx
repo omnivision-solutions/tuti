@@ -37,7 +37,7 @@ export default function PrivacyPage() {
         <li><strong>Content:</strong> what you and your teammates, customers and visitors put into the Service: posts, comments, votes, articles, changelog entries, messages, emails to support addresses and uploaded files.</li>
         <li><strong>Connected services:</strong> if you connect a GitHub repository, the pull requests, releases and files the GitHub App can read.</li>
         <li><strong>Billing:</strong> your plan and payment history. Card details go straight to Stripe; we never see or store them.</li>
-        <li><strong>Technical data:</strong> IP address, browser and device details, and logs of requests and errors, used to run, secure and debug the Service.</li>
+        <li><strong>Technical data:</strong> IP address, browser and device details, and logs of requests and errors, used to run, secure and debug the Service, and to count page visits.</li>
       </ul>
 
       <h2>Why we use it</h2>
@@ -50,8 +50,8 @@ export default function PrivacyPage() {
         <li>to tell you about important changes to the Service or these policies.</li>
       </ul>
       <p>
-        Our legal bases are performing our contract with you, our legitimate interest in running a secure and reliable
-        Service, and legal obligations such as keeping billing records. We don&apos;t sell personal data, show ads, or use
+        Our legal bases are performing our contract with you, our legitimate interests in running a secure and reliable
+        Service and in understanding how tuti.so and the app are used, and legal obligations such as keeping billing records. We don&apos;t sell personal data, show ads, or use
         your content to train AI models.
       </p>
 

@@ -4,7 +4,7 @@ import { analyticsSettings } from "./analytics";
 import { readdirSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-import { ANALYTICS_CONFIG, APP_ROUTES, isCounted, routeOf, safeAddress, withOwnReferrers } from "./analytics-client";
+import { ANALYTICS_CONFIG, APP_ROUTES, beforeSend, isCounted, routeOf, safeAddress, withOwnReferrers } from "./analytics-client";
 
 describe("analytics", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -58,6 +58,26 @@ describe("analytics", () => {
     expect(isCounted("/app/auth/sign-in", `?bad=%E0%A4%A&next=${encodeURIComponent(back)}`, "/app")).toBe(false);
     expect(isCounted("/app/auth/sign-in", "?next=%2Fapp%2Facme", "/app")).toBe(true);
     expect(isCounted("/app/auth/sign-up", "", "/app")).toBe(true);
+    // A reset link's page can't tell a portal's visitor from a team member: never counted.
+    expect(isCounted("/app/auth/reset-password", "?token=x", "/app")).toBe(false);
+  });
+
+  it("puts the checks together on every event", () => {
+    const pageview = () => ({
+      event: "$pageview",
+      properties: { $current_url: "https://tuti.so/pricing?utm_source=x", $referrer: "https://help.e2e-acme.example.com/?q=x" },
+    });
+    const app = { origin: "https://tuti.so", search: "" };
+    expect(beforeSend(pageview() as never, { ...app, pathname: "/app/auth/continue", search: "?portal=acme" }, "/app")).toBeNull();
+    expect(beforeSend(pageview() as never, { ...app, pathname: "/help/docs" }, "/app")).toBeNull();
+    expect(beforeSend(pageview() as never, { ...app, pathname: "/app/acme" }, "/app")?.properties).toMatchObject({
+      $current_url: "https://tuti.so/pricing",
+      $referrer: "$direct",
+    });
+    // The marketing site: its referrers are kept (how people find Tuti), without their query.
+    expect(beforeSend(pageview() as never, { ...app, pathname: "/pricing" }, undefined)?.properties).toMatchObject({
+      $referrer: "https://help.e2e-acme.example.com/",
+    });
   });
 
   it("sends other sites' referrers as $direct in the app", () => {

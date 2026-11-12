@@ -1,6 +1,6 @@
 "use client";
 
-import type { PostHogConfig } from "posthog-js";
+import type { CaptureResult, PostHogConfig } from "posthog-js";
 import { useEffect } from "react";
 
 /**
@@ -194,14 +194,16 @@ export const ANALYTICS_CONFIG = {
  * Whether a page is one analytics counts: under `under` ("/app": the app's own pages), or anywhere without it. PostHog
  * keeps listening after its page's layout is gone, so a client navigation from /app to a portal (/help) would count.
  * Not the way a portal's visitor signs in either (/app/auth/continue, and the sign-in pages on their way back there):
- * they're a customer's visitors.
+ * they're a customer's visitors. Nor a password reset, whose emailed link may be a portal visitor's, with nothing in it
+ * to tell.
  */
 export function isCounted(pathname: string, search: string, under: string | undefined) {
   if (!under) {
     return true;
   }
   // The continue address in the query, at any depth of nesting: each level encodes its slashes once more (%2F, %252F, …).
-  const portalSignIn = pathname === "/app/auth/continue" || /app(\/|%(25)*2f)auth(\/|%(25)*2f)continue/i.test(search);
+  const portalSignIn =
+    pathname === "/app/auth/continue" || pathname === "/app/auth/reset-password" || /app(\/|%(25)*2f)auth(\/|%(25)*2f)continue/i.test(search);
   return !portalSignIn && (pathname === under || pathname.startsWith(`${under}/`));
 }
 
@@ -225,6 +227,24 @@ export function withOwnReferrers(properties: unknown, origin: string) {
 }
 
 /**
+ * What's sent of an event, on a page at `location`: nothing on a page analytics doesn't count (isCounted), other sites'
+ * referrers as $direct in the app (withOwnReferrers), and no tokens, people or titles anywhere (ANALYTICS_CONFIG).
+ */
+export function beforeSend(
+  event: CaptureResult | null,
+  location: Pick<Location, "origin" | "pathname" | "search">,
+  under: string | undefined,
+) {
+  if (!event || !isCounted(location.pathname, location.search, under)) {
+    return null;
+  }
+  if (under) {
+    withOwnReferrers(event, location.origin);
+  }
+  return ANALYTICS_CONFIG.before_send(event);
+}
+
+/**
  * Tuti's cloud only: page views to PostHog, when the server sets POSTHOG_KEY (a self-hosted server leaves it unset, and
  * sends nothing). PostHog's script is fetched only then. Never on portals: their visitors are customers' visitors.
  */
@@ -234,15 +254,7 @@ export function PostHogAnalytics({ token, host, under }: { token: string; host: 
       posthog.init(token, {
         ...ANALYTICS_CONFIG,
         api_host: host,
-        before_send: (event) => {
-          if (!event || !isCounted(window.location.pathname, window.location.search, under)) {
-            return null;
-          }
-          if (under) {
-            withOwnReferrers(event, window.location.origin);
-          }
-          return ANALYTICS_CONFIG.before_send(event);
-        },
+        before_send: (event) => beforeSend(event, window.location, under),
       }),
     );
   }, [token, host, under]);
