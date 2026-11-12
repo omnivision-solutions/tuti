@@ -22,7 +22,10 @@ for (const pane of [
     await api("/articles", { title: "Set up calendars and invite everyone on your team", collection: "getting-started" });
     await api("/conversations", { user: { id: "calendar-user", name: "Sam Example", email: "e2e-calendar@example.com" }, subject: "How can I share a calendar with everyone on my team?", body: "I would like to share our project calendar and keep everyone up to date." });
     if (pane.name === "conversation list") await api("/conversations", { user: { id: "calendar-user", name: "Sam Example", email: "e2e-calendar@example.com" }, subject: "Can I change a calendar's sharing settings?", body: "I need to change who can see our shared calendar." });
-    await team.setViewportSize({ width: 1280, height: 900 });
+    // The Inbox's section pane takes room beside the list: its windows are wider for the same room.
+    const base = pane.name === "docs tree" ? 1280 : 1600;
+    const wide = pane.name === "docs tree" ? 1600 : 1800;
+    await team.setViewportSize({ width: base, height: 900 });
     await team.goto(`/app/${slug}/${pane.path}`);
     const handle = team.getByRole("separator", { name: pane.label });
     const column = team.locator(pane.selector);
@@ -31,7 +34,7 @@ for (const pane of [
     const maximum = async () => {
       if (pane.name === "docs tree") return pane.max;
       const available = (await team.locator(".inbox-workspace").boundingBox())!.width;
-      return Math.max(pane.min, Math.min(pane.max, available - 480 - 12 - (await team.locator(".inbox-details").isVisible() ? 312 : 0)));
+      return Math.max(pane.min, Math.min(pane.max, available - 480 - 8 - (await team.locator(".inbox-details").isVisible() ? 308 : 0)));
     };
     const initialMax = await maximum();
     const readsAfterUnrelatedChange = () => team.evaluate(async () => {
@@ -61,7 +64,7 @@ for (const pane of [
         message.remove();
       }
     });
-    const fits = async (viewport = 1280) => {
+    const fits = async (viewport = base) => {
       expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport);
       for (const selector of [pane.name === "docs tree" ? ".docs-tree-expanded" : pane.selector, pane.name === "docs tree" ? ".docs-page-content" : ".inbox-thread"]) {
         expect(await team.locator(selector).evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
@@ -73,14 +76,14 @@ for (const pane of [
         expect(await team.locator(".docs-heading-copy p").evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
       }
       if (pane.name === "conversation list") {
-        expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
-        if ((await team.locator('[data-slot="sidebar-inset"]').boundingBox())!.width >= 77 * 16 && (await team.locator(".inbox-workspace").boundingBox())!.width >= 1096) await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeVisible();
+        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        if ((await team.locator(".inbox-workspace").boundingBox())!.width >= 1096) await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeVisible();
         else await expect(team.getByRole("complementary", { name: "Conversation details" })).toBeHidden();
         expect((await team.locator("#conversation").boundingBox())!.width).toBeGreaterThanOrEqual(480);
         const title = (await team.getByRole("heading", { name: "How can I share a calendar with everyone on my team?" }).boundingBox())!;
         expect(title.height).toBeLessThan(150);
         const close = (await team.getByRole("button", { name: "Close", exact: true }).boundingBox())!;
-        expect(Math.abs(close.y - title.y)).toBeLessThanOrEqual(1);
+        expect(Math.abs(close.y + close.height / 2 - title.y - title.height / 2)).toBeLessThanOrEqual(1);
       }
     };
     await expect(handle).toBeVisible();
@@ -102,7 +105,7 @@ for (const pane of [
       await team.keyboard.press("Tab");
       await expect(handle).toBeFocused();
     }
-    expect(initialHandle.x + initialHandle.width / 2 - initialPane.x - initialPane.width).toBe(6);
+    expect(initialHandle.x + initialHandle.width / 2 - initialPane.x - initialPane.width).toBe(pane.name === "docs tree" ? 6 : 4);
     if (pane.name === "conversation list") {
       const list = team.getByRole("region", { name: "Conversations", exact: true });
       await list.getByRole("link", { name: /Can I change a calendar's sharing settings/ }).click();
@@ -171,9 +174,9 @@ for (const pane of [
     await team.keyboard.press("ArrowLeft");
     expect(await width()).toBe(pane.min);
     await team.keyboard.press("End");
-    for (const viewport of [1024, 1200, 1280]) {
+    for (const viewport of pane.name === "docs tree" ? [1024, 1200, 1280] : [1200, 1360, 1600]) {
       await team.setViewportSize({ width: viewport, height: 900 });
-      if (pane.name === "conversation list" && viewport === 1200) await expect(team.locator(".inbox-details")).toBeHidden();
+      if (pane.name === "conversation list" && viewport === 1360) await expect(team.locator(".inbox-details")).toBeHidden();
       const expectedMax = await maximum();
       await expect(handle).toHaveAttribute("aria-valuemax", String(expectedMax));
       await team.keyboard.press("End");
@@ -182,10 +185,10 @@ for (const pane of [
     }
     if (pane.name === "conversation list") {
       // A preference chosen with ample room survives tighter windows and opening/closing details.
-      await team.setViewportSize({ width: 1600, height: 900 });
+      await team.setViewportSize({ width: wide, height: 900 });
       await expect(handle).toHaveAttribute("aria-valuemax", String(pane.max));
       await team.keyboard.press("End");
-      await team.setViewportSize({ width: 1280, height: 900 });
+      await team.setViewportSize({ width: base, height: 900 });
       await expect(handle).toHaveAttribute("aria-valuemax", String(initialMax));
       expect(await width()).toBe(initialMax);
       await fits();
@@ -203,10 +206,10 @@ for (const pane of [
       expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe(String(pane.max));
       await team.unroute(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/);
       await team.reload();
-      await team.setViewportSize({ width: 1600, height: 900 });
+      await team.setViewportSize({ width: wide, height: 900 });
       await expect(handle).toHaveAttribute("aria-valuenow", String(pane.max));
       expect(await width()).toBe(pane.max);
-      await team.setViewportSize({ width: 1280, height: 900 });
+      await team.setViewportSize({ width: base, height: 900 });
       await expect(handle).toHaveAttribute("aria-valuenow", String(initialMax));
       await handle.focus();
     }
@@ -241,7 +244,7 @@ for (const pane of [
     await team.goto(`/app/${slug}/${pane.path}`);
     // Defaults, rendered widths and ARIA agree at both normal and enlarged root text sizes.
     for (const fontSize of [16, 20]) {
-      await team.setViewportSize({ width: fontSize === 20 && pane.name === "docs tree" ? 1440 : 1280, height: 900 });
+      await team.setViewportSize({ width: fontSize === 20 ? (pane.name === "docs tree" ? 1440 : 1800) : base, height: 900 });
       await team.locator("html").evaluate((element, size) => { element.style.fontSize = `${size}px`; }, fontSize);
       const expectedMin = pane.name === "docs tree" ? pane.min : 22 * fontSize;
       const expectedDefault = pane.name === "docs tree" ? pane.default : expectedMin;
@@ -250,7 +253,7 @@ for (const pane of [
       expect(Number(await handle.getAttribute("aria-valuenow"))).toBeGreaterThanOrEqual(Number(await handle.getAttribute("aria-valuemin")));
       expect(await width()).toBe(expectedDefault);
       if (pane.name === "conversation list") {
-        expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
       }
       await handle.focus();
       await team.keyboard.press("ArrowLeft");
@@ -271,7 +274,7 @@ for (const pane of [
         await expect(handle).toHaveAttribute("aria-valuenow", String(expectedMin));
         expect(await width()).toBe(expectedMin);
         expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe("352");
-        expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
         if (fontSize === 20) await checkpoint(team, "inbox-enlarged-text-minimum", { fullPage: false });
         await handle.dblclick();
         await expect(handle).toHaveAttribute("aria-valuenow", String(expectedDefault));
@@ -291,7 +294,7 @@ for (const pane of [
         await expect(team.locator("html")).toHaveCSS("font-size", `${fontSize}px`);
         expect(await width()).toBe(renderedWidth);
         expect(await team.evaluate(() => localStorage.getItem("tuti:inbox-list-width"))).toBe(String(savedWidth));
-        expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+        expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
         // Let hydration resume at the same text size: the reported width must match the first render.
         await team.unroute(/\/_next\/static\/chunks\/.*\.js(?:\?.*)?$/);
         await team.reload();
@@ -321,7 +324,7 @@ for (const pane of [
       }
     }
     await team.locator("html").evaluate((element) => { element.style.removeProperty("font-size"); });
-    await team.setViewportSize({ width: 1280, height: 900 });
+    await team.setViewportSize({ width: base, height: 900 });
     for (const viewport of [{ width: 820, height: 1000 }, { width: 390, height: 844 }]) {
       await team.setViewportSize(viewport);
       await expect(handle).toBeHidden();
@@ -329,7 +332,7 @@ for (const pane of [
     }
     await checkpoint(team, `${pane.name}-phone`, { fullPage: false });
     // Widening reconnects observation and restores working controls after the hidden/mobile state.
-    await team.setViewportSize({ width: 1280, height: 900 });
+    await team.setViewportSize({ width: base, height: 900 });
     await expect(handle).toBeVisible();
     await handle.focus();
     await team.keyboard.press("End");
@@ -341,7 +344,8 @@ for (const pane of [
       await expect(handle).toHaveAttribute("aria-valuemax", String(pane.max));
       await team.getByRole("button", { name: "Show details", exact: true }).click();
       await expect(handle).toHaveAttribute("aria-valuemax", String(initialMax));
-      await team.setViewportSize({ width: 1200, height: 900 });
+      const withSidebar = pane.name === "docs tree" ? 1200 : 1440;
+      await team.setViewportSize({ width: withSidebar, height: 900 });
       await team.getByRole("button", { name: "Toggle Sidebar", exact: true }).first().click();
       await expect(team.locator('[data-slot="sidebar"][data-state]')).toHaveAttribute("data-state", "expanded");
       await expect(team.locator('[data-slot="sidebar-gap"]')).toHaveCSS("width", "240px");
@@ -356,20 +360,20 @@ for (const pane of [
         await expect(sheet).toBeHidden();
       }
       const detailsWidth = await details.isVisible() ? (await details.boundingBox())!.width : 0;
-      const availableMax = Math.min(pane.max, Math.max(pane.min, (await team.locator(".inbox-workspace").boundingBox())!.width - 480 - 12 - (detailsWidth ? detailsWidth + 12 : 0)));
+      const availableMax = Math.min(pane.max, Math.max(pane.min, (await team.locator(".inbox-workspace").boundingBox())!.width - 480 - 8 - (detailsWidth ? detailsWidth + 8 : 0)));
       await expect(handle).toHaveAttribute("aria-valuemax", String(availableMax));
       await handle.focus();
       await team.keyboard.press("End");
       expect(await width()).toBe(availableMax);
-      expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+      expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
       await team.keyboard.press("Home");
       expect(await width()).toBe(pane.min);
-      expect(await team.locator(".inbox-views").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
+      expect(await team.locator('.inbox-list-body [data-slot="pane-header"] > div').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
       expect((await team.locator("#conversation").boundingBox())!.width).toBeGreaterThanOrEqual(480);
-      expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBe(1200);
-      await checkpoint(team, "inbox-sidebar-open-1200", { fullPage: false });
+      expect(await team.evaluate(() => document.documentElement.scrollWidth)).toBe(withSidebar);
+      await checkpoint(team, "inbox-sidebar-open", { fullPage: false });
       // An open sidebar can stack the panes even at a laptop viewport.
-      await team.setViewportSize({ width: 1024, height: 900 });
+      await team.setViewportSize({ width: 1200, height: 900 });
       await expect(column).toBeHidden();
       await expect(handle).toBeHidden();
       expect(await readsAfterUnrelatedChange()).toBe(0);

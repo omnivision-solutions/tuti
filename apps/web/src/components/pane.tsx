@@ -49,7 +49,7 @@ export function PaneBody({ children, className }: { children: ReactNode; classNa
 /**
  * A pane's header, one row (60px): on phones the button that opens the area's menu (with a `SectionPane` on the
  * page), then the way back (`back`: "‹ All posts" on phones, "All posts ›" before the title from tablet width up), the
- * title (20px heading font), a short description from tablet width up, `filters` (pills; on phones a row of their
+ * title (20px heading font; `level` 2 where the page's own heading is in another pane), a short description from tablet width up, `filters` (pills; on phones a row of their
  * own under the title), and `actions` at the right end: round icon buttons and at most one primary button.
  */
 export function PaneHeader({
@@ -58,9 +58,11 @@ export function PaneHeader({
   description,
   filters,
   actions,
+  level = 1,
   className,
 }: {
   title?: ReactNode;
+  level?: 1 | 2;
   back?: { href: string; label: ReactNode };
   description?: ReactNode;
   filters?: ReactNode;
@@ -68,6 +70,7 @@ export function PaneHeader({
   className?: string;
 }) {
   const menu = useContext(SectionMenuContext);
+  const Heading = level === 1 ? "h1" : "h2";
   return (
     <header data-slot="pane-header" className="shrink-0 border-b">
       <div className={cn("flex min-h-15 min-w-0 items-center gap-2 px-3 py-2 @min-[48rem]/app:px-4 @min-[48rem]/app:pl-5", className)}>
@@ -90,7 +93,7 @@ export function PaneHeader({
           </Link>
         )}
         {title && (
-          <h1 className={cn("min-w-0 truncate font-heading text-xl font-semibold tracking-[-0.015em]", back && "@max-[48rem]/app:sr-only @min-[48rem]/app:text-base @min-[48rem]/app:font-sans @min-[48rem]/app:tracking-normal")}>{title}</h1>
+          <Heading className={cn("min-w-0 truncate font-heading text-xl font-semibold tracking-[-0.015em]", back && "@max-[48rem]/app:sr-only @min-[48rem]/app:text-base @min-[48rem]/app:font-sans @min-[48rem]/app:tracking-normal")}>{title}</Heading>
         )}
         {description && <p className="hidden min-w-0 truncate text-sm text-muted-foreground @min-[56rem]/app:block">· {description}</p>}
         {filters && <div className="hidden min-w-0 @min-[48rem]/app:flex">{filters}</div>}
@@ -185,7 +188,8 @@ export function SectionGroup({ label, action, children }: { label?: ReactNode; a
 
 /**
  * A section pane's link: its icon (or a coloured `dot`), its title and a count. The open one is a neutral fill (green
- * is for the page's one main action). Open as its section pane works out, or as `active` says.
+ * is for the page's one main action). Open as its section pane works out, or as `active` says; `currentIs` "true" where
+ * the page is something open beside it (the Inbox's view, a conversation open in it).
  */
 export function SectionLink({
   href,
@@ -193,6 +197,7 @@ export function SectionLink({
   dot,
   count,
   active,
+  currentIs = "page",
   children,
 }: {
   href: string;
@@ -200,6 +205,7 @@ export function SectionLink({
   dot?: string;
   count?: ReactNode;
   active?: boolean;
+  currentIs?: "page" | "true";
   children: ReactNode;
 }) {
   const current = useContext(SectionCurrentContext);
@@ -207,8 +213,8 @@ export function SectionLink({
   return (
     <Link
       href={href}
-      aria-current={open ? "page" : undefined}
-      className="flex h-8.5 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors hover:bg-muted aria-[current=page]:bg-accent [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground aria-[current=page]:[&>svg]:text-foreground"
+      aria-current={open ? currentIs : undefined}
+      className="flex h-8.5 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors hover:bg-muted [&[aria-current]]:bg-accent [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted-foreground [&[aria-current]>svg]:text-foreground"
     >
       {icon}
       {dot && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: dot }} />}

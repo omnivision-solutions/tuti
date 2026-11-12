@@ -227,7 +227,7 @@ test("Inbox keeps the conversation usable as an opened sidebar reduces its room"
   expect(await team.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
   await checkpoint(team, "inbox-opened-sidebar-small-laptop", { fullPage: false });
   // At a wider viewport the list fits, but details still belong in a sheet.
-  await team.setViewportSize({ width: 1280, height: 768 });
+  await team.setViewportSize({ width: 1440, height: 768 });
   await expect(list).toBeVisible();
   await expect.poll(async () => (await conversation.boundingBox())!.width).toBeGreaterThanOrEqual(480);
   await team.getByRole("button", { name: "Show details", exact: true }).click();

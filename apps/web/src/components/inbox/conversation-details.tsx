@@ -43,7 +43,7 @@ const subscribeWidth = (listener: () => void) => {
 
 export function ConversationDetails({ hidden, children }: { hidden: boolean; children: ReactNode }) {
   return (
-    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @min-[77rem]/app:@min-[calc(480px_+_38.5rem)]/inbox:grid-cols-[minmax(480px,1fr)_minmax(15rem,18.75rem)] grid-rows-[auto_minmax(0,1fr)] gap-x-3 data-[details=hidden]:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
+    <div className="inbox-thread group/thread grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @min-[calc(480px_+_38rem)]/inbox:grid-cols-[minmax(480px,1fr)_minmax(15rem,18.75rem)] grid-rows-[minmax(0,1fr)] gap-x-2 data-[details=hidden]:grid-cols-[minmax(0,1fr)] has-[>.inbox-overview]:flex" data-details={useHidden(hidden) ? "hidden" : "shown"}>
       {children}
     </div>
   );
@@ -62,12 +62,14 @@ export function DetailsPanel({ children }: { children: ReactNode }) {
   }, []);
   return (
     <>
-      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details inbox-surface col-start-2 row-span-2 row-start-1 hidden @min-[77rem]/app:@min-[calc(480px_+_38.5rem)]/inbox:flex flex-col overflow-hidden group-data-[details=hidden]/thread:hidden min-w-0 min-h-0 bg-card shadow-inbox rounded-2xl max-md:rounded-xl">
-        <h2 className="px-4.5 pt-5 pb-3 font-sans text-sm leading-[normal] font-semibold">Conversation details</h2>
-        <div className="inbox-details-scroll min-h-0 overflow-y-auto px-4.5 pb-4.5 [scrollbar-width:thin] group-[.inbox-details-sheet]/details:px-5">{children}</div>
+      <aside id="conversation-details" aria-label="Conversation details" className="group/details inbox-details col-start-2 row-start-1 hidden min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border group-data-[details=hidden]/thread:hidden @min-[calc(480px_+_38rem)]/inbox:flex">
+        <div className="flex h-15 shrink-0 items-center border-b px-4.5">
+          <h2 className="text-[1.0625rem] font-semibold tracking-[-0.01em]">Details</h2>
+        </div>
+        <div className="inbox-details-scroll min-h-0 overflow-y-auto px-4.5 pt-3 pb-4.5 [scrollbar-width:thin]">{children}</div>
       </aside>
       <Sheet open={open && !beside} onOpenChange={setOpen}>
-        <SheetContent overlayClassName="bg-(--inbox-overlay) backdrop-filter-none!" side="bottom" className="inbox-details-sheet group/details inset-x-2! top-17.5 bottom-2! h-auto gap-0 rounded-t-3xl rounded-b-xl border-0! bg-card [--card:var(--inbox-surface)] dark:[--muted-foreground:var(--inbox-muted)] dark:[--secondary:var(--inbox-secondary)] [&>[data-slot=sheet-close]]:top-5 [&>[data-slot=sheet-close]]:right-4.5">
+        <SheetContent side="bottom" className="inbox-details-sheet group/details inset-x-2! top-17.5 bottom-2! h-auto gap-0 rounded-t-3xl rounded-b-xl border-0! bg-card [&>[data-slot=sheet-close]]:top-5 [&>[data-slot=sheet-close]]:right-4.5">
           <div className="inbox-sheet-handle mx-auto mt-2.5 h-1 w-8.5 flex-none rounded-sm bg-input" />
           <SheetHeader className="min-h-12 justify-center px-4.5 pt-2 pb-2.5">
             <SheetTitle className="font-sans text-[1.0625rem] leading-[normal] font-semibold">Conversation details</SheetTitle>
@@ -85,7 +87,7 @@ export function DetailsToggle({ hidden: server }: { hidden: boolean }) {
   const label = !beside || hidden ? "Show details" : "Hide details";
   return (
     <Button
-      variant="ghost"
+      variant="outline"
       size="icon-sm"
       aria-label={label}
       title={label}

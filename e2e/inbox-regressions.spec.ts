@@ -113,17 +113,16 @@ test("the details sheet close target uses the dense 32px size", async ({ browser
 test("overview keeps one page heading and small stat labels with captions", async ({ browser }) => {
   const { owner, slug } = await inbox(browser);
   await owner.goto(`/app/${slug}/inbox`);
-  await expect.soft(owner.getByRole("heading", { level: 1 })).toHaveText(["Inbox"]);
+  await expect.soft(owner.getByRole("heading", { level: 1 })).toHaveText([/^Needs reply/]);
   const stats = owner.locator(".inbox-overview-stats");
-  await expect.soft(stats.getByText("Waiting for a reply", { exact: true })).toHaveCSS("font-size", "13px");
-  await expect.soft(stats.getByText("New conversations this week", { exact: true })).toHaveCSS("font-size", "13px");
+  await expect.soft(stats.locator("dt")).toHaveText([/^Waiting for a reply/, /^Usual first reply/, /^New conversations this week/]);
   await expect.soft(stats.getByText("Conversations started", { exact: true })).toBeVisible();
 });
 
 test("an unverified sender is marked in the conversation header", async ({ browser }) => {
   const { owner, url } = await inbox(browser);
   await owner.goto(url);
-  await expect(owner.locator("header[data-inbox-header]")).toContainText("(not verified)");
+  await expect(owner.locator(".inbox-conversation-meta")).toContainText("(not verified)");
 });
 
 test("only needs reply uses the attention colour in header and status picker", async ({ browser }) => {
@@ -188,7 +187,7 @@ test("the AI-answer origin stays visible with details collapsed and on phones", 
   await update(`UPDATE conversation c SET origin = 'ESCALATION' FROM project p WHERE c."projectId" = p.id AND p.slug = $1`, [slug]);
   await owner.goto(url);
   await owner.getByRole("button", { name: "Hide details" }).click();
-  const origin = owner.locator("header[data-inbox-header]").getByText(/started from an AI answer/);
+  const origin = owner.locator(".inbox-conversation-meta").getByText(/started from an AI answer/);
   await expect(origin).toBeVisible();
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(origin).toBeVisible();

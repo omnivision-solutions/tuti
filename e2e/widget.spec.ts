@@ -2048,7 +2048,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await owner.setViewportSize({ width: 390, height: 844 });
   await expect(off).toBeInViewport();
   await checkpoint(owner, "inbox-messages-off-phone");
-  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await off.getByRole("link", { name: "Turn it on" }).click();
   await owner.waitForURL(`**/app/${slug}/settings/support`);
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
@@ -2094,7 +2094,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   // A row opens by its link (who it's with), found by its subject.
   await owner.getByRole("main").getByRole("listitem").filter({ hasText: "How do I export my data?" }).getByRole("link").click();
   await expect(owner.getByRole("img", { name: "screenshot.png" })).toBeVisible();
-  const meta = owner.locator("header[data-inbox-header] > p");
+  const meta = owner.locator(".inbox-conversation-meta");
   await expect(meta).toContainText("Sam from Acme");
   await expect(meta).toContainText("via widget");
   // A widget conversation's composer has no email line: they're emailed only if they haven't seen the reply there.
@@ -2411,6 +2411,8 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(replyWhere).toBeVisible();
 
   // The team sees an address that isn't verified, and only a hint of who it may be.
+  // Wide enough for the conversation's details beside it.
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/inbox`);
   // A row opens by its link (who it's with), found by its subject.
   await owner.getByRole("main").getByRole("listitem").filter({ hasText: "Is there a nonprofit discount?" }).getByRole("link").click();

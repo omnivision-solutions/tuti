@@ -92,10 +92,11 @@ export function ListKeys({
     const current = list.querySelector<HTMLAnchorElement>('a[data-row-link][aria-current="page"]');
     current?.scrollIntoView({ block: "nearest" });
     if (opening) {
-      // Its row; none open (none left in the view), the view's tab. Where the list is hidden (a phone, a conversation
+      // Its row; none open (none left in the view), the view's link in the section pane. Where that's hidden (a phone, a conversation
       // open), the conversation's title: the button that had focus went away with the page it was on.
-      const to = current ?? document.querySelector<HTMLElement>('nav[aria-label="Views"] [aria-current="page"]');
-      const title = document.querySelector<HTMLElement>("[data-inbox-conversation] h1");
+      const to = current ?? document.querySelector<HTMLElement>('[data-slot="section-pane"] [aria-current="page"]');
+      // None open on a phone: the list's own heading.
+      const title = document.querySelector<HTMLElement>("[data-inbox-conversation] h1, .inbox-list-body h1");
       // Shown (laid out at all): getClientRects, as checkVisibility isn't in Safari before 17.4.
       if (to && to.getClientRects().length > 0) {
         to.focus({ preventScroll: true });

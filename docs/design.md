@@ -184,14 +184,12 @@ the list picks none to approve at once.
   tree"; a rail with "Show the docs tree" in its place), remembered per browser on every Docs page (`DocsTreeFold`:
   `data-docs-tree-folded` on `<html>`, set before the page shows by the app layout's script). A pane's column is
   the page's height with a border beside it (`data-slot="pane-layout"`).
-  The Inbox: its views (with their counts), the list
-  and the open conversation side by side when the sidebar inset has at least 57rem, each scrolling on
-  its own from the top of the shell (the page itself doesn't; `InboxPanes`); the views always
-  the row of tabs above the list, in the same place whether or not a conversation is open
-  (they never move as one opens or closes): Needs reply, Mine and Unassigned as tabs, the
-  rest (Waiting on user, Snoozed, Closed, Spam) under More, which reads as the one of them
-  open, with its short title and visible count, so the row fits the list's width (`SubNav`'s `more`); the list about 22rem wide,
-  the conversation the rest; with less room beside the sidebar, the list or the conversation, its Back to the list.
+  The Inbox is panes (`PaneLayout`, under Panes): its views in a section pane titled "Inbox" (Needs reply, Mine,
+  Unassigned, Waiting on user, Snoozed, Closed, Spam, each with its count; on phones the list header's menu), the
+  list and the open conversation side by side when the room beside the section pane has 52.5rem, each scrolling on
+  its own (the page itself doesn't; `InboxPanes`). The list's pane header is its view and count; the conversation's
+  is "Inbox ›" and its subject, with Close, More actions and the details toggle. With less room, the list or the
+  conversation ("‹ Inbox" on phones, its subject on a line of its own under the header).
   Opening the app sidebar can switch to this single-pane layout without changing the sidebar preference. A row reads in three
   lines: who and their company on one (cut short, in full on hover) with,
   at the right, the assignee's face (their name on hover, and in the row's name to the ear) and its age, short ("4m": how long they've waited, or since
@@ -205,35 +203,35 @@ the list picks none to approve at once.
   Every view lists the latest message first, Needs reply too. A conversation keeps
   its own address (`/inbox/<number>`), the list beside it where it was, its row
   marked; J and K open the next and the previous one. Until one opens, the pane
-  beside the list has the Inbox's numbers (`StatTile`, as Home's): who's waiting
-  for a reply and the longest wait (the Needs reply tab's count, opening it), the
+  beside the list has the Inbox's numbers (`StatStrip`): who's waiting
+  for a reply and the longest wait (the Needs reply view's count, opening it), the
   usual first reply (the widget's, "—" with "Not enough yet" below before five answers) and the
   week's new conversations (those two without sample content), with "Open a conversation to
   reply here" under them (an empty Inbox: that new ones show up here, said
   there rather than in the list's empty state too). On phones the list is alone.
   A conversation opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
-  The Inbox uses rounded list, conversation and details surfaces on a warm canvas, separated by space.
+  Its list, conversation and details are white panes on the shell's canvas, 8px apart.
   Rows put who, the subject and the latest message on separate lines. Messages are plain text plus attachments,
   in chat bubbles with the author's avatar and time; internal notes have the highlight tint. The composer is one card.
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
-  kept for the browser; below 77rem of sidebar inset width its toggle opens the same controls and context in a sheet,
+  kept for the browser; without room for it (38rem beside a 480px conversation) its toggle opens the same controls and context in a sheet,
   leaving room for the conversation even with the app sidebar open. The toggle uses the same rem threshold
   and current root font size as the CSS, so the sheet stays reachable with larger text.
   Linked posts and Looks related start open. Customer details, Company, Other conversations from this person,
   Recent page visits, Events and Conversation attributes start folded, each with an icon, count and chevron.
   Other conversations expand to a title, a muted status · number · date line and one line of the latest message.
   Day dividers group each message by its own day in the viewer’s time zone, with "Today · <date>" or "Yesterday · <date>" when applicable. The widget-off notice is
-  13px muted text, and More sits at the end of the views row. Inbox layout uses component Tailwind utilities;
-  its canvas, surface, bubble fills and shadow use the `inbox-*` tokens in `globals.css`.
-  When their columns fit the sidebar inset (61rem for Docs, 57rem for Inbox), the Docs tree (240–440px) and Inbox list (22rem minimum, 352px at default text, up to 520px;
+  13px muted text. Inbox layout uses component Tailwind utilities; its message bubbles' fills use the
+  `inbox-customer`, `inbox-team` and `inbox-note` tokens in `globals.css`.
+  When their columns fit (61rem of sidebar inset for Docs, 52.5rem beside the Inbox's section pane), the Docs tree (240–440px) and Inbox list (22rem minimum, 352px at default text, up to 520px;
   defaulting to the minimum) resize from a 10px handle centred in their gap. Hover, focus and dragging highlight its line in primary; dragging keeps the resize cursor and
   prevents selection across the page. The Inbox maximum also shrinks to keep the conversation at least 480px wide beside visible
   details, recomputing as the window or details change without replacing the saved preference. Details keep a 15rem
   minimum; when the Inbox's actual container cannot fit the list, conversation, details and gaps, their toggle opens
   the details sheet instead. Conversation actions stay
-  beside the subject, which wraps fully in the remaining width and also shows its full text on hover. A narrow Docs page wraps its title actions. Arrow keys resize by 10px, Home/End pick the limits, and double-click resets.
+  beside the subject, which shows its full text on hover (and wraps in full on phones). A narrow Docs page wraps its title actions. Arrow keys resize by 10px, Home/End pick the limits, and double-click resets.
   Each width is remembered in the browser and restored before paint; folded trees and smaller screens have no handle.
   Company keeps company, plan and seats together; Customer details keeps identity, other properties, groups, posts and votes reachable; visits and events show zero until
   recorded. The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
@@ -323,7 +321,7 @@ the list picks none to approve at once.
   A page with sections of its own lists them under its header with `SubNav`
   (Users' People and Companies).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
-  statuses, Changelog, Users, the Inbox's views, Reporting's AI conversations, a docs tab's Content, Access and
+  statuses, Changelog, Users, Reporting's AI conversations, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is
   underline tabs, `SubNav` (in a pane's header, pills: `FilterPills`, under Panes); switching a control's mode (the reply
   box's Reply and Note) is a segmented
@@ -537,7 +535,7 @@ Use these instead of hand-rolling layout:
   An editor whose title field shows the title (an article, a changelog entry) keeps the
   heading for screen readers only (`titleInForm`), with the back link and actions in one compact row.
   In the app on phones the actions are a "More actions" menu from the top bar (`PageActions`). A page whose
-  every visit needs them keeps them in reach. Inbox conversations use their own title row (Close, More actions and details);
+  every visit needs them keeps them in reach. Inbox conversations keep Close, More actions and details in their pane header;
   Assign and Snooze are in the details card or phone sheet. An editor whose
   main action must stay in reach (Save and Publish) pins `actions` (`pinActions`): to a
   bar at the bottom of the screen on phones, the menu keeping `more`, and beside the title

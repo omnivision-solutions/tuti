@@ -438,7 +438,7 @@ test("the inbox comes across from Featurebase: its conversations with their mess
 
   // The one where the user wrote last needs a reply; the snoozed and closed ones are in their views.
   await owner.goto(`/app/${slug}/inbox`);
-  const views = owner.getByRole("navigation", { name: "Views" });
+  const views = owner.getByRole("navigation", { name: "Inbox", exact: true });
   const rows = owner.getByRole("main").getByRole("listitem");
   await expect(views.getByRole("link", { name: "Needs reply 1" })).toBeVisible();
   await expect(rows).toHaveCount(1);
