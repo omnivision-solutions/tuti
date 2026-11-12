@@ -1962,6 +1962,24 @@ test("a post's page and the list at tablet and laptop widths: the header stays i
   expect(await team.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   await expect(team.getByRole("button", { name: /^Filters/ })).toBeInViewport();
   await expect(team.getByRole("navigation", { name: "Statuses" })).toBeInViewport();
+  // A short tablet window (768×600, the rail): the header scrolls away with the page, so the post and the list keep
+  // the height, and the page reserves no room for it; a window made taller (only its height) makes it stick, and
+  // shorter again lets it go.
+  const html = team.locator("html");
+  for (const path of ["/p/1", "/feedback?status=all"]) {
+    await team.setViewportSize({ width: 768, height: 600 });
+    await team.goto(`/app/${slug}${path}`);
+    await onRail();
+    await team.evaluate(() => window.scrollTo(0, 400));
+    await expect(header).not.toHaveCSS("position", "sticky");
+    await expect(html).toHaveCSS("scroll-padding-top", "0px");
+    await team.setViewportSize({ width: 768, height: 1024 });
+    await expect(header).toHaveCSS("position", "sticky");
+    await expect.poll(() => html.evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
+    await team.setViewportSize({ width: 768, height: 600 });
+    await expect(header).not.toHaveCSS("position", "sticky");
+    await expect(html).toHaveCSS("scroll-padding-top", "0px");
+  }
   // A laptop (1024px on the rail, and 1366px with the sidebar open): the post's properties beside it, open, not
   // folded to a line.
   for (const [width, open] of [
