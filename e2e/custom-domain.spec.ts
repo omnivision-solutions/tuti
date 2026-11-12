@@ -75,7 +75,8 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await checkpoint(owner, "settings-custom-domain-certificate-pending");
   await issueCertificate(domain);
   await owner.getByRole("button", { name: "Check again" }).click();
-  await expect(domainStep.getByText("Verified", { exact: true })).toBeVisible();
+  // The domain's own badge: the records below say Verified too.
+  await expect(domainStep.locator('[data-slot="badge"]', { hasText: /^Verified$/ })).toBeVisible();
   await expect(records.getByRole("row").filter({ hasText: "CNAME" })).toContainText("Verified");
   await expect(owner.getByRole("region", { name: "Live" })).toContainText(`Your portal answers at ${domain}`);
   await checkpoint(owner, "settings-custom-domain-verified");
