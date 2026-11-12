@@ -342,6 +342,16 @@ test("on phones the tab bar goes between the main parts and opens the rest under
   await team.goBack();
   await expect(bar.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
 
+  // The Inbox is the window's height and scrolls inside: it ends above the bar.
+  await bar.getByRole("link", { name: "Inbox" }).click();
+  await team.waitForURL(`**/app/${slug}/inbox`);
+  const inbox = team.locator(".inbox-workspace");
+  await expect.poll(async () => (await inbox.boundingBox())!.y + (await inbox.boundingBox())!.height).toBeLessThanOrEqual((await bar.boundingBox())!.y);
+  // Docs keeps its own phone navigation.
+  await team.goto(`/app/${slug}/docs`);
+  await expect(bar).toBeHidden();
+  await team.goto(`/app/${slug}/feedback`);
+
   // More is the sidebar's menu, for the parts without a tab; open on their pages.
   await bar.getByRole("button", { name: "More" }).click();
   await team.getByRole("dialog").getByRole("link", { name: "Changelog", exact: true }).click();
