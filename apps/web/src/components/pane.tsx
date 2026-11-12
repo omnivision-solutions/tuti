@@ -1,12 +1,13 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, XIcon } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { createContext, type ReactNode, useContext, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Children, createContext, isValidElement, type ReactNode, useContext, useState } from "react";
 
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { activeView } from "@/lib/active-link";
 
 /**
  * The admin's panes (docs/design.md → Panes): white panels on the shell's canvas, 8px apart. A page is a `PaneLayout`
@@ -98,37 +99,55 @@ export function PaneHeader({
 
 /**
  * An area's own menu (Feedback's views, boards and statuses; Settings' pages): a 248px pane titled by the area, its
- * links in `SectionGroup`s. On phones it's hidden; the pane header's menu button opens it as a drawer from the left,
- * which closes as a link in it is picked.
+ * links in `SectionGroup`s; one of them is open: the one the URL is on (`activeView`, views in the query string too),
+ * unless a link's `active` says otherwise. On phones it's hidden; the pane header's menu button opens it as a drawer
+ * from the left, with its own Close, which also closes as a link in it is picked.
  */
 export function SectionPane({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
   const menu = useContext(SectionMenuContext);
-  const content = (
-    <>
+  const current = activeView(usePathname(), useSearchParams().toString(), linkHrefs(children));
+  const content = (close?: ReactNode) => (
+    <SectionCurrentContext value={current}>
       <div className="flex h-15 shrink-0 items-center gap-1 border-b pr-2 pl-4.5">
         <h2 className="min-w-0 flex-1 truncate text-[1.0625rem] font-semibold tracking-[-0.01em]">{title}</h2>
         {actions}
+        {close}
       </div>
       <nav aria-label={typeof title === "string" ? title : undefined} className="min-h-0 flex-1 overflow-y-auto p-2.5">
         {children}
       </nav>
-    </>
+    </SectionCurrentContext>
   );
   return (
     <>
       <aside data-slot="section-pane" className="hidden w-62 shrink-0 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border @min-[48rem]/app:flex">
-        {content}
+        {content()}
       </aside>
       {menu && (
         <Sheet open={menu.open} onOpenChange={menu.setOpen}>
           <SheetContent data-pill-buttons side="left" showCloseButton={false} className="w-[19.5rem] gap-0 border-0 bg-card p-0" onClick={(event) => (event.target as HTMLElement).closest("a") && menu.setOpen(false)}>
             <SheetTitle className="sr-only">{title}</SheetTitle>
-            {content}
+            {content(
+              <SheetClose aria-label="Close the menu" className="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground">
+                <XIcon aria-hidden className="size-4.5" />
+              </SheetClose>,
+            )}
           </SheetContent>
         </Sheet>
       )}
     </>
   );
+}
+
+/** The open link's href in a section pane (SectionPane works it out for its links). */
+const SectionCurrentContext = createContext<string | undefined>(undefined);
+
+/** The hrefs of the links in a section pane's tree (SectionLinks, in SectionGroups or not). */
+function linkHrefs(node: ReactNode): string[] {
+  return Children.toArray(node).flatMap((child) => {
+    if (!isValidElement<{ href?: unknown; children?: ReactNode }>(child)) return [];
+    return typeof child.props.href === "string" ? [child.props.href] : linkHrefs(child.props.children);
+  });
 }
 
 /** A group of a section pane's links, under a quiet sentence-case label; `action` at its right (a + to add a board). */
@@ -148,8 +167,7 @@ export function SectionGroup({ label, action, children }: { label?: ReactNode; a
 
 /**
  * A section pane's link: its icon (or a coloured `dot`), its title and a count. The open one is a neutral fill (green
- * is for the page's one main action). Open when the path is its href or under it (`exact`: only its own), or as `active` says
- * (views in the query string).
+ * is for the page's one main action). Open as its section pane works out, or as `active` says.
  */
 export function SectionLink({
   href,
@@ -157,7 +175,6 @@ export function SectionLink({
   dot,
   count,
   active,
-  exact = false,
   children,
 }: {
   href: string;
@@ -165,11 +182,10 @@ export function SectionLink({
   dot?: string;
   count?: ReactNode;
   active?: boolean;
-  exact?: boolean;
   children: ReactNode;
 }) {
-  const pathname = usePathname();
-  const open = active ?? (pathname === href.split("?")[0] || (!exact && pathname.startsWith(`${href.split("?")[0]}/`)));
+  const current = useContext(SectionCurrentContext);
+  const open = active ?? current === href;
   return (
     <Link
       href={href}

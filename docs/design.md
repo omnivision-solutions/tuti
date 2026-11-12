@@ -57,7 +57,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders: 4.5:1 or more on the page, a card, the sidebar and a muted fill, in light and dark (`colours.test.ts`) |
 | `border`, `input` | A card's or divider's edge (1.25:1 on the page), an input's (1.5:1) |
-| `sidebar-active` / `sidebar-active-foreground` | The page open in a page's own menu (`SettingsMenu`: Settings', Reporting's): a pale green pill, its label and icon green (4.5:1). The sidebar's open page is a raised neutral pill (the card's colour, a `sidebar-border` ring), so a page with both shows one green |
+| `sidebar-active` / `sidebar-active-foreground` | The page open in a page's own menu (`SettingsMenu`: Settings', Reporting's): a pale green pill, its label and icon green (4.5:1). The sidebar's open page is a raised neutral pill (the card's colour, a `sidebar-border` ring), so a page with both shows one green. A section pane (Panes) marks its open link with the neutral `accent` instead |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
@@ -141,7 +141,7 @@ the list picks none to approve at once.
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
 | Meta | `text-xs text-muted-foreground` in rows, parts joined with ` · `; under a page's title (`PageHeader`'s `meta`) `text-sm` |
-| Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback), a menu's group (Settings', Reporting's) and the part above a Reporting page's title. Quieter than the items under it, never in a colour |
+| Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback), a menu's group (Settings', Reporting's) and the part above a Reporting page's title. Quieter than the items under it, never in a colour. A section pane's groups (Panes) are sentence case instead |
 
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
 
@@ -325,7 +325,7 @@ the list picks none to approve at once.
   Tabs come in two styles. Switching a page's views or sections (Feedback's
   statuses, Changelog, Users, the Inbox's views, Reporting's AI conversations, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is
-  underline tabs, `SubNav`; switching a control's mode (the reply
+  underline tabs, `SubNav` (in a pane's header, pills: `FilterPills`, under Panes); switching a control's mode (the reply
   box's Reply and Note) is a segmented
   `Tabs` (Autopilot's To review and Reviewed are still segmented till its
 redesign). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
@@ -672,7 +672,7 @@ in its own change; until then its page keeps `PageHeader` and the rest below. `/
 at desktop and phone widths, in light and dark (in development only).
 
 - **`PaneLayout`**, **`Pane`**, **`PaneBody`** (`components/pane.tsx`): a row of panes (the shell gives it the whole
-  width), one white panel (16px corners, a `border` ring, nothing scrolling past its edge), and what scrolls in it.
+  width), one white panel (`rounded-2xl`, ~14px corners, a `border` ring, nothing scrolling past its edge), and what scrolls in it.
   No card inside a card: a pane's lists and row cards sit on the pane.
 - **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`): a pane's one-row header, 60px, a line
   under it. The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
@@ -704,7 +704,7 @@ at desktop and phone widths, in light and dark (in development only).
 - Long user content (titles, emails, URLs) wraps (`break-words` / `break-all`;
   `wrap-anywhere` where it sits in a grid that sizes to it, such as a dialog's
   title, which `break-words` doesn't shrink).
-- Filters wrap onto more lines; they don't scroll sideways.
+- Filters wrap onto more lines; they don't scroll sideways. A pane header's views (`FilterPills`) are one row that scrolls, like `SubNav`'s tabs.
 
 ## Interaction
 
