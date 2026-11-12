@@ -20,7 +20,9 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
 
   // Where are you coming from: starting fresh (picked to begin with).
   await owner.waitForURL(`**/app/${slug}/setup`);
-  await expect(owner.getByRole("heading", { name: "Set up Acme" })).toBeVisible();
+  const setupPane = owner.getByRole("region", { name: "Setup" });
+  await expect(setupPane.getByRole("heading", { level: 1, name: "Set up" })).toBeVisible();
+  await expect(setupPane.getByText("Acme", { exact: true })).toBeVisible();
   await expect(owner.getByText("Step 1 of 4")).toBeVisible();
   await expect(owner.getByRole("radio", { name: /^Starting fresh/ })).toBeChecked();
   await checkpoint(owner, "setup-coming-from");
@@ -112,4 +114,21 @@ test("after Create project, the team starts fresh, picks what it will use, gets 
   await expect(owner.getByRole("button", { name: "Continue" })).toBeEnabled();
   await owner.getByRole("link", { name: "Skip setup" }).click();
   await owner.waitForURL(`**/app/${slug}`);
+});
+
+test("on a phone, setup shows a long project name in full", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const name = "Northwind Customer Analytics and Reporting";
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.goto("/app/new");
+  await owner.getByLabel("Name").fill(name);
+  await owner.getByLabel("URL").fill(slug);
+  await owner.getByRole("button", { name: "Create project" }).click();
+  await owner.waitForURL(`**/app/${slug}/setup`);
+  await owner.setViewportSize({ width: 390, height: 844 });
+  // On a line of its own that wraps, not cut short in the header beside Skip setup.
+  const shown = owner.getByRole("region", { name: "Setup" }).getByText(name, { exact: true });
+  await expect(shown).toBeVisible();
+  expect(await shown.evaluate((element) => { const line = element.closest("p")!; return line.scrollWidth <= line.clientWidth; })).toBe(true);
+  await expect(owner.getByRole("link", { name: "Skip setup" })).toBeVisible();
 });

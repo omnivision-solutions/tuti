@@ -51,6 +51,11 @@ test("a team member switches projects, edits their account, signs out and back i
   await olive.getByRole("button", { name: /Olive Owner/ }).click();
   await olive.getByRole("menuitem", { name: "Account settings" }).click();
   await olive.waitForURL("**/app/account");
+  // One pane, its settings in cards of rows: the address first, then the name.
+  const account = olive.getByRole("region", { name: "Account settings" });
+  await expect(account.getByRole("heading", { level: 1, name: "Account settings" })).toBeVisible();
+  await expect(account.getByRole("heading", { name: "Profile" })).toBeVisible();
+  await expect(account.getByText(olive.email)).toBeVisible();
   await olive.getByLabel("Name").fill("Olive Q. Owner");
   await olive.getByRole("button", { name: "Save" }).click();
   await expect(olive.getByText("Profile updated")).toBeVisible();

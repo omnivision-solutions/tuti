@@ -156,7 +156,7 @@ the list picks none to approve at once.
   operator's links (`/app/auth/*`, `/app/license`, `/app/admin/*`) sit outside it, under Tuti's logo
   over a centred `<main>` (`app/app/(account-pages)/layout.tsx`). Shell pages sit in one of three
   columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, Home, a post), max-w-2xl for a form
-  by itself (`data-narrow` on it: New project, Setup, Account), or the whole width (`data-wide`: the
+  by itself (`data-narrow` on it; New project, Setup and Account are panes now), or the whole width (`data-wide`: the
   team's Roadmap, Users' tables; and pages of panes). Feedback, a page of panes, caps itself at 72rem while
   no post is open beside its list, so its rows stay scannable on a wide screen. It keeps the shell's left edge
   whether or not a post is open, so the clicked row stays in place.
@@ -694,6 +694,9 @@ at desktop and phone widths, in light and dark (in development only).
 - **`SettingsCard`** + **`SettingRow`** (`label`, `description`, `htmlFor`, `inline`): settings as one card of rows,
   the label and a line on what it does on the left, the control on the right. In a card under 34rem wide the control
   goes under them at the card's width; `inline` keeps a short control (a switch, a button) on the right.
+- **A pane of one form or settings** (New project, Setup, Account, the first Welcome): one `Pane` with its
+  `PaneHeader`, the body centred in it, max-w-2xl for a form's card (a wizard's step above it), max-w-3xl for
+  settings cards, as Settings' pages.
 - **`StatStrip`**: a page's numbers in one card, side by side between lines; under 40rem two tiles to a row.
 - **Pill buttons**: every `Button` in the admin is a pill (`--button-radius`, set while the sidebar's shell is on
   the page: its dialogs and menus too), and inside `data-pill-buttons`. Elsewhere (the portal, marketing) buttons

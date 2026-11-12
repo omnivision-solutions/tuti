@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 
 import { CopyField } from "@/components/copy-button";
 import { InviteForm } from "@/components/invitations";
-import { PageHeader } from "@/components/page-header";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { SetupImport } from "@/components/setup-import";
 import { SetupUses } from "@/components/setup-uses";
 import { buttonVariants } from "@/components/ui/button";
@@ -42,82 +42,91 @@ export default async function SetupPage(props: PageProps<"/app/[project]/setup">
   );
 
   return (
-    <>
-      <PageHeader
-        title={`Set up ${membership.project.name}`}
-        meta={`Step ${STEPS.indexOf(step) + 1} of ${STEPS.length}`}
-        actions={
-          <Link href={home} className={buttonVariants({ variant: "outline" })}>
-            Skip setup
-          </Link>
-        }
-      />
-      <Card data-narrow>
-        {step === "from" && (
-          <>
-            <CardHeader>
-              <CardTitle>Where are you coming from?</CardTitle>
-              <CardDescription>Bring what you have in another tool across, or start fresh. You can always import later, in Settings → Import.</CardDescription>
-            </CardHeader>
-            <SetupImport
-              projectSlug={slug}
-              latest={await latestImport(membership.project.id)}
-              mediaStorage={mediaStorage() !== null}
-              boardsNotes={boardsNotes(membership.project.plan)}
-              next={next("use")}
-              skip={skip(next("use"))}
-            />
-          </>
-        )}
-        {step === "use" && (
-          <>
-            <CardHeader>
-              <CardTitle>What will you use?</CardTitle>
-              <CardDescription>Pick as many as you like. Home lists what&apos;s left to set up for them; everything stays available.</CardDescription>
-            </CardHeader>
-            <SetupUses
-              projectSlug={slug}
-              picked={(await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { uses: true } })).uses}
-              sample={await hasSampleContent(membership.project.id)}
-              next={next("widget")}
-              skip={skip(next("widget"))}
-            />
-          </>
-        )}
-        {step === "widget" && (
-          <>
-            <CardHeader>
-              <CardTitle>Add the widget to your site</CardTitle>
-              <CardDescription>A button on your site that opens feedback and what&apos;s new in a panel, and your docs once you publish an article. Paste this script tag into your site&apos;s pages:</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CopyField label="Before </body>" name="the widget's script tag" value={`<script src="${appUrl().origin}/api/widget.js" data-project="${slug}" async></script>`} />
-            </CardContent>
-            <CardFooter className="justify-end gap-2">
-              {skip(next("team"))}
-              <Link href={next("team")} className={buttonVariants()}>
-                Continue
-              </Link>
-            </CardFooter>
-          </>
-        )}
-        {step === "team" && (
-          <>
-            <CardHeader>
-              <CardTitle>Invite your team</CardTitle>
-              <CardDescription>{inviteNote(session.user)}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <InviteForm projectSlug={slug} roles={(["OWNER", "ADMIN", "MEMBER"] as const).filter((r) => canAssignRole(membership.role, r))} />
-            </CardContent>
-            <CardFooter className="justify-end">
-              <Link href={home} className={buttonVariants({ variant: "outline" })}>
-                Go to Home
-              </Link>
-            </CardFooter>
-          </>
-        )}
-      </Card>
-    </>
+    <PaneLayout>
+      <Pane aria-label="Setup">
+        <PaneHeader
+          title="Set up"
+          actions={
+            <Link href={home} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Skip setup
+            </Link>
+          }
+        />
+        <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-7">
+          <div className="mx-auto flex max-w-2xl flex-col gap-3">
+            {/* The project's name on a line of its own, wrapping: the header's title is one line, beside Skip setup. */}
+            <p className="text-sm break-words text-muted-foreground">
+              <span className="font-medium text-foreground">{membership.project.name}</span> · Step {STEPS.indexOf(step) + 1} of {STEPS.length}
+            </p>
+            <Card>
+                {step === "from" && (
+                  <>
+                    <CardHeader>
+                      <CardTitle>Where are you coming from?</CardTitle>
+                      <CardDescription>Bring what you have in another tool across, or start fresh. You can always import later, in Settings → Import.</CardDescription>
+                    </CardHeader>
+                    <SetupImport
+                      projectSlug={slug}
+                      latest={await latestImport(membership.project.id)}
+                      mediaStorage={mediaStorage() !== null}
+                      boardsNotes={boardsNotes(membership.project.plan)}
+                      next={next("use")}
+                      skip={skip(next("use"))}
+                    />
+                  </>
+                )}
+                {step === "use" && (
+                  <>
+                    <CardHeader>
+                      <CardTitle>What will you use?</CardTitle>
+                      <CardDescription>Pick as many as you like. Home lists what&apos;s left to set up for them; everything stays available.</CardDescription>
+                    </CardHeader>
+                    <SetupUses
+                      projectSlug={slug}
+                      picked={(await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { uses: true } })).uses}
+                      sample={await hasSampleContent(membership.project.id)}
+                      next={next("widget")}
+                      skip={skip(next("widget"))}
+                    />
+                  </>
+                )}
+                {step === "widget" && (
+                  <>
+                    <CardHeader>
+                      <CardTitle>Add the widget to your site</CardTitle>
+                      <CardDescription>A button on your site that opens feedback and what&apos;s new in a panel, and your docs once you publish an article. Paste this script tag into your site&apos;s pages:</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <CopyField label="Before </body>" name="the widget's script tag" value={`<script src="${appUrl().origin}/api/widget.js" data-project="${slug}" async></script>`} />
+                    </CardContent>
+                    <CardFooter className="justify-end gap-2">
+                      {skip(next("team"))}
+                      <Link href={next("team")} className={buttonVariants()}>
+                        Continue
+                      </Link>
+                    </CardFooter>
+                  </>
+                )}
+                {step === "team" && (
+                  <>
+                    <CardHeader>
+                      <CardTitle>Invite your team</CardTitle>
+                      <CardDescription>{inviteNote(session.user)}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <InviteForm projectSlug={slug} roles={(["OWNER", "ADMIN", "MEMBER"] as const).filter((r) => canAssignRole(membership.role, r))} />
+                    </CardContent>
+                    <CardFooter className="justify-end">
+                      <Link href={home} className={buttonVariants({ variant: "outline" })}>
+                        Go to Home
+                      </Link>
+                    </CardFooter>
+                  </>
+                )}
+            </Card>
+          </div>
+        </PaneBody>
+      </Pane>
+    </PaneLayout>
   );
 }

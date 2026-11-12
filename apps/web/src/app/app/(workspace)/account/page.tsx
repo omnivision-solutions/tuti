@@ -7,8 +7,8 @@ import { redirect } from "next/navigation";
 
 import { AccountForms } from "@/components/account-forms";
 import { AutopilotEmailsChoice } from "@/components/autopilot-settings";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageHeader } from "@/components/page-header";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
+import { SettingsCard } from "@/components/settings-card";
 import { NotVerified } from "@/components/verify-email-banner";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { SOCIAL_PROVIDER_NAMES, type SocialProvider } from "@/lib/social-sign-in";
@@ -36,47 +36,47 @@ export default async function AccountPage() {
   const projectSlug = mediaStorage() ? (projects.find((p) => p.slug === lastSlug) ?? projects[0])?.slug : undefined;
 
   return (
-    <>
-      <PageHeader
-        title="Account settings"
-        meta={
-          <>
-            {session.user.email}
-            {/* Always here while unverified, so the email can be sent again after the strip is dismissed. */}
-            {!session.user.emailVerified && <NotVerified email={session.user.email} />}
-          </>
-        }
-      />
-      <AccountForms
-        name={session.user.name}
-        noPassword={noPassword}
-        photo={
-          projectSlug || user.image
-            ? {
-                projectSlug,
-                image: user.image,
-                imageId: user.imageId,
-                // Why Upload is off.
-                uploadsOff: !mediaStorage()
-                  ? "Photo uploads aren't set up on this server."
-                  : !projectSlug
-                    ? "Join a project to upload a photo."
-                    : undefined,
+    <PaneLayout>
+      <Pane aria-label="Account settings">
+        <PaneHeader title="Account settings" />
+        <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-7">
+          <div className="mx-auto flex max-w-3xl flex-col gap-7">
+            <AccountForms
+              name={session.user.name}
+              email={
+                <>
+                  {session.user.email}
+                  {/* Always here while unverified, so the email can be sent again after the strip is dismissed. */}
+                  {!session.user.emailVerified && <NotVerified email={session.user.email} />}
+                </>
               }
-            : undefined
-        }
-      />
-      {codeChangesEnabled() && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Autopilot&apos;s email</CardTitle>
-            <CardDescription>For the projects that tell you about their merged pull requests.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <AutopilotEmailsChoice choice={user.autopilotEmails} timeZone={user.autopilotTimeZone} />
-          </CardContent>
-        </Card>
-      )}
-    </>
+              noPassword={noPassword}
+              photo={
+                projectSlug || user.image
+                  ? {
+                      projectSlug,
+                      image: user.image,
+                      imageId: user.imageId,
+                      // Why Upload is off.
+                      uploadsOff: !mediaStorage()
+                        ? "Photo uploads aren't set up on this server."
+                        : !projectSlug
+                          ? "Join a project to upload a photo."
+                          : undefined,
+                    }
+                  : undefined
+              }
+            />
+            {codeChangesEnabled() && (
+              <SettingsCard title="Autopilot's email" description="For the projects that tell you about their merged pull requests.">
+                <div className="px-4 py-3.5 @min-[34rem]/settings:px-5">
+                  <AutopilotEmailsChoice choice={user.autopilotEmails} timeZone={user.autopilotTimeZone} />
+                </div>
+              </SettingsCard>
+            )}
+          </div>
+        </PaneBody>
+      </Pane>
+    </PaneLayout>
   );
 }
