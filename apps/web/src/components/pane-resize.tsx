@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 
 import { PANE_WIDTHS, type ResizablePane } from "@/lib/pane-width";
 
-/** An overlay in the existing 12px pane gap: resizing never adds a column or moves the gap. */
+/** An overlay in the existing pane gap: resizing never adds a column or moves the gap. */
 export function PaneResize({ pane, className }: { pane: ResizablePane; className: string }) {
   const config = PANE_WIDTHS[pane];
   // Rem defaults equal the minimum; server ARIA starts at its baseline pixel value.
@@ -122,7 +122,7 @@ export function PaneResize({ pane, className }: { pane: ResizablePane; className
       aria-valuenow={width}
       aria-valuemin={min}
       aria-valuemax={max}
-      className={cn("pane-resize group/resize z-20 hidden w-2.5 touch-none cursor-col-resize items-center justify-center outline-none", pane === "docs" ? "@min-[61rem]/app:flex" : "@min-[57rem]/app:flex", className)}
+      className={cn("pane-resize group/resize z-20 hidden w-2.5 touch-none cursor-col-resize items-center justify-center outline-none", pane === "docs" ? "@min-[61rem]/app:flex" : "@min-[52.5rem]/inbox:flex", className)}
       onPointerDown={(event) => {
         if (event.button !== 0 || drag.current) return;
         event.preventDefault();

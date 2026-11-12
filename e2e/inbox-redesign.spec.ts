@@ -25,20 +25,13 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/inbox`);
   await expect(owner.getByRole("note").locator("p")).toHaveCSS("font-size", "13px");
-  const views = owner.getByRole("navigation", { name: "Views" });
-  const assertMoreAtEnd = async () => {
-    const bounds = (await views.boundingBox())!;
-    const more = (await views.getByRole("button", { name: "More", exact: true }).boundingBox())!;
-    expect(bounds.x + bounds.width - (more.x + more.width)).toBeCloseTo(12, 0);
-  };
-  await assertMoreAtEnd();
-  const firstReply = owner.locator(".inbox-overview-stats > div").first();
+  const firstReply = owner.locator(".inbox-overview-stats dl > div").nth(1);
   await expect(firstReply).toContainText("—");
   await expect(firstReply).toContainText("Not enough yet");
   await checkpoint(owner, "empty-laptop-light", { fullPage: false });
   await owner.getByRole("link", { name: "See waiting conversations" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=waiting$`));
-  await owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Needs reply 0" }).click();
+  await owner.getByRole("navigation", { name: "Inbox", exact: true }).getByRole("link", { name: "Needs reply 0" }).click();
   await owner.getByRole("button", { name: "Search project", exact: true }).click();
   await expect(owner.getByRole("dialog", { name: "Go to or do" })).toBeVisible();
   await owner.keyboard.press("Escape");
@@ -115,7 +108,7 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   }
   for (const name of ["Linked posts", "Looks related"])
     await expect(details.locator("details").filter({ has: owner.locator("summary", { hasText: name }) })).toHaveAttribute("open");
-  await expect(owner.locator(".inbox-title-row").getByRole("button", { name: "Unassigned, assign conversation", exact: true })).toHaveCount(0);
+  await expect(owner.locator('[data-inbox-conversation] [data-slot="pane-header"]').getByRole("button", { name: "Unassigned, assign conversation", exact: true })).toHaveCount(0);
   await details.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
   await owner.getByRole("menuitem", { name: "Assign to me" }).click();
   await expect(details.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
@@ -137,8 +130,10 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await expect(other).toContainText(/Closed · #4 · \d+ \w+/);
   await expect(other).toContainText("Thanks, that worked. We’re all set!");
   await checkpoint(owner, "section-expanded-dark", { fullPage: false });
+  // At 1280px the views' pane leaves no room for the details beside the conversation: they're in a sheet.
   await owner.setViewportSize({ width: 1280, height: 900 });
-  await expect(details).toBeVisible();
+  await expect(details).toBeHidden();
+  await expect(owner.getByRole("button", { name: "Show details" })).toBeVisible();
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBe(1280);
   await checkpoint(owner, "laptop-1280-dark", { fullPage: false });
   await owner.setViewportSize({ width: 1440, height: 900 });
@@ -149,7 +144,7 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.emulateMedia({ colorScheme: "light" });
   await owner.reload();
-  const title = owner.locator(".inbox-title-row");
+  const title = owner.locator('[data-inbox-conversation] [data-slot="pane-header"]');
   await expect(title.getByRole("button", { name: "Close", exact: true })).toBeVisible();
   await title.getByRole("button", { name: "Show details" }).click();
   const sheet = owner.getByRole("dialog", { name: "Conversation details" });
@@ -186,11 +181,10 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
   await expect(sheet).toBeHidden();
   await expect(title.getByRole("heading", { name: "Inviting a teammate" })).toBeVisible();
-  await owner.locator('[data-slot="page-header"]').getByRole("link", { name: "Inbox" }).click();
+  await owner.locator('[data-inbox-conversation] [data-slot="pane-header"]').getByRole("link", { name: "Inbox" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
   await expect(owner.getByRole("region", { name: "Conversations", exact: true })).toBeVisible();
   await expect(owner.getByRole("note").locator("p")).toHaveCSS("font-size", "13px");
-  await assertMoreAtEnd();
   await checkpoint(owner, "phone-list-light", { fullPage: false });
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
@@ -208,7 +202,7 @@ test("long names and subjects fit both laptop widths with wrapping details label
   await api("/conversations", { user: { id: "long-name", name: person, email: "e2e-long-name@example.com" }, subject, body: "Please keep the full report." });
   await api("/conversations", { user: { id: "long-name", name: person, email: "e2e-long-name@example.com" }, subject: `${subject} The previous question.`, body: "Thanks, the previous export worked." });
   await api("/conversations/2", { status: "closed" }, "PATCH");
-  for (const width of [1440, 1280]) {
+  for (const width of [1440, 1600]) {
     await owner.setViewportSize({ width, height: 900 });
     await owner.goto(`/app/${slug}/inbox/1`);
     const details = owner.getByRole("complementary", { name: "Conversation details", exact: true });
@@ -219,10 +213,10 @@ test("long names and subjects fit both laptop widths with wrapping details label
     await expect(details.getByRole("button", { name: `Assigned to ${teammate}` })).toBeVisible();
     await details.locator("summary", { hasText: "Other conversations from this person" }).click();
     await expect(details.getByRole("link", { name: `${subject} The previous question.` })).toBeVisible();
-    const title = owner.locator(".inbox-title-row");
+    const title = owner.locator('[data-inbox-conversation] [data-slot="pane-header"]');
     const heading = title.getByRole("heading", { name: subject, exact: true });
     await expect(heading).toBeVisible();
-    await expect(heading).toHaveAttribute("title", subject);
+    await expect(heading.locator("[title]")).toHaveAttribute("title", subject);
     expect(await heading.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
     await expect(title.getByRole("button", { name: "Close", exact: true })).toBeInViewport();
     expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBe(width);

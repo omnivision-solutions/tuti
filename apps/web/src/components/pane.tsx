@@ -49,7 +49,7 @@ export function PaneBody({ children, className }: { children: ReactNode; classNa
 /**
  * A pane's header, one row (60px): on phones the button that opens the area's menu (with a `SectionPane` on the
  * page), then the way back (`back`: "‹ All posts" on phones, "All posts ›" before the title from tablet width up), the
- * title (20px heading font), a short description from tablet width up, `filters` (pills; on phones a row of their
+ * title (20px heading font; `level` 2 where the page's own heading is in another pane), a short description from tablet width up, `filters` (pills; on phones a row of their
  * own under the title), and `actions` at the right end: round icon buttons and at most one primary button.
  */
 export function PaneHeader({
@@ -58,9 +58,11 @@ export function PaneHeader({
   description,
   filters,
   actions,
+  level = 1,
   className,
 }: {
   title?: ReactNode;
+  level?: 1 | 2;
   back?: { href: string; label: ReactNode };
   description?: ReactNode;
   filters?: ReactNode;
@@ -68,6 +70,7 @@ export function PaneHeader({
   className?: string;
 }) {
   const menu = useContext(SectionMenuContext);
+  const Heading = level === 1 ? "h1" : "h2";
   return (
     <header data-slot="pane-header" className="shrink-0 border-b">
       <div className={cn("flex min-h-15 min-w-0 items-center gap-2 px-3 py-2 @min-[48rem]/app:px-4 @min-[48rem]/app:pl-5", className)}>
@@ -90,7 +93,7 @@ export function PaneHeader({
           </Link>
         )}
         {title && (
-          <h1 className={cn("min-w-0 truncate font-heading text-xl font-semibold tracking-[-0.015em]", back && "@max-[48rem]/app:sr-only @min-[48rem]/app:text-base @min-[48rem]/app:font-sans @min-[48rem]/app:tracking-normal")}>{title}</h1>
+          <Heading className={cn("min-w-0 truncate font-heading text-xl font-semibold tracking-[-0.015em]", back && "@max-[48rem]/app:sr-only @min-[48rem]/app:text-base @min-[48rem]/app:font-sans @min-[48rem]/app:tracking-normal")}>{title}</Heading>
         )}
         {description && <p className="hidden min-w-0 truncate text-sm text-muted-foreground @min-[56rem]/app:block">· {description}</p>}
         {filters && <div className="hidden min-w-0 @min-[48rem]/app:flex">{filters}</div>}

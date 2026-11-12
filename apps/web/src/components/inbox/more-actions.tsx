@@ -18,10 +18,10 @@ export function ConversationMore({ children, label = "More actions" }: { childre
   }
   return (
     <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={label} />}>
+      <DropdownMenuTrigger render={<Button variant="outline" size="icon-sm" aria-label={label} />}>
         <EllipsisIcon />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" keepMounted className="w-56 rounded-xl shadow-inbox">
+      <DropdownMenuContent align="end" keepMounted className="w-56">
         {children}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -31,7 +31,7 @@ export function ConversationMore({ children, label = "More actions" }: { childre
 /** Opens the existing project search without leaving the Inbox. */
 export function InboxSearchButton() {
   return (
-    <Button variant="ghost" size="icon-sm" aria-label="Search project" onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_MENU))}>
+    <Button variant="outline" size="icon-sm" aria-label="Search project" onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_MENU))}>
       <SearchIcon />
     </Button>
   );

@@ -8,14 +8,17 @@ import { spendCredits } from "./credits";
 import { publishMx } from "./dns";
 import { setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, portalUrl, SUPPORT_EMAIL_DOMAIN } from "./env";
-import { apiFor, createProject, expectMoreView, expectOneRowOfTabs, moreView, openPersonDetails, png, signUp } from "./helpers";
+import { apiFor, createProject, expectMoreView, moreView, openPersonDetails, png, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
 import { sesBounce, verifySesDomain } from "./ses";
 
 /** A conversation's meta line, its status first: "Waiting on user · #1 · Sam Smith …". */
-const meta = (page: Page) => page.locator('[data-slot="page-header"] > p');
+// Wide enough for the Inbox's four panes: its views, the list, the conversation and its details.
+test.use({ viewport: { width: 1440, height: 900 } });
+
+const meta = (page: Page) => page.locator(".inbox-conversation-meta");
 
 /** Sends the reply and closes the conversation: Send and close, in Send's menu. */
 async function sendAndClose(page: Page) {
@@ -57,18 +60,14 @@ test("conversations from the API land in the inbox, where the team replies, assi
   expect(notice.subject).toBe("New conversation: Do you have a discount for nonprofits?");
   expect(notice.text).toContain(`/app/${slug}/inbox/2`);
 
-  const views = owner.getByRole("navigation", { name: "Views" });
+  const views = owner.getByRole("navigation", { name: "Inbox", exact: true });
   await owner.goto(`/app/${slug}/inbox`);
   // The sidebar and the tab's title count what's open.
   await expect(owner.getByRole("link", { name: "Inbox", exact: true }).locator("..")).toContainText("2 open");
   await expect(owner).toHaveTitle(/^\(2\) /);
   await expect(views.getByRole("link", { name: "Needs reply 2" })).toHaveAttribute("aria-current", "page");
-  // What needs the team first as tabs: Needs reply, Mine, Unassigned; then the rest under More, Waiting on user first.
-  await expect(views.getByRole("link")).toHaveText([/^Needs reply/, /^Mine/, /^Unassigned/]);
-  await views.getByRole("button", { name: "More" }).click();
-  await expect(owner.getByRole("menuitem")).toHaveText([/^Waiting on user/, /^Snoozed/, /^Closed/, /^Spam/]);
-  await owner.keyboard.press("Escape");
-  await expect(owner.getByRole("menuitem")).toHaveCount(0);
+  // What needs the team first: Needs reply, Mine, Unassigned; then the rest, Waiting on user first.
+  await expect(views.getByRole("link")).toHaveText([/^Needs reply/, /^Mine/, /^Unassigned/, /^Waiting on user/, /^Snoozed/, /^Closed/, /^Spam/]);
   await checkpoint(owner, "inbox-views");
   await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
   const rows = owner.getByRole("main").getByRole("listitem");
@@ -116,14 +115,11 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await checkpoint(owner, "inbox-1440", { fullPage: false });
   await owner.setViewportSize({ width: 390, height: 844 });
   await rowsRead(390);
-  // Its views fit, on a phone too (the rest under More): nothing faded out, no tab cut short.
-  // Measured, not the fade the page marks once its script runs: nothing past the row's width (a pixel's rounding aside, as
-  // showMore allows).
-  await expect.poll(() => views.evaluate((row) => row.scrollWidth - row.clientWidth)).toBeLessThanOrEqual(1);
   await checkpoint(owner, "inbox-phone-rows", { fullPage: false });
-  // The phone list scrolls within its surface, leaving navigation in reach.
-  await expect(owner.locator(".inbox-phone-project").getByRole("button")).toBeVisible();
-  await owner.setViewportSize({ width: 1280, height: 720 });
+  // The phone list scrolls within its pane, leaving its views' menu and the tab bar in reach.
+  await expect(owner.getByRole("button", { name: "Open the menu" })).toBeInViewport();
+  await expect(owner.getByRole("navigation", { name: "Main" })).toBeInViewport();
+  await owner.setViewportSize({ width: 1440, height: 900 });
 
   // j and k open the next and the previous conversation beside the list, the open one marked in it.
   await owner.keyboard.press("j");
@@ -355,7 +351,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.getByRole("menuitem", { name: "In 3 hours" }).click();
   await expect(owner.getByText(/^Snoozed till /).first()).toBeVisible();
   await owner.goto(`/app/${slug}/inbox?view=snoozed`);
-  await expect(views.getByRole("button", { name: "Snoozed 1" })).toHaveAttribute("aria-current", "page");
+  await expect(views.getByRole("link", { name: "Snoozed 1" })).toHaveAttribute("aria-current", "page");
   // Out of Mine (it's assigned to Olive) while it's snoozed.
   await expect(views.getByRole("link", { name: "Mine 0" })).toBeVisible();
   await expect(owner.getByRole("main").getByRole("listitem")).toContainText(["Can't export to CSV"]);
@@ -669,7 +665,7 @@ test("on a phone the title keeps Close and details, and the sheet's assignment m
   await teammate.close();
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.goto(`/app/${slug}/inbox/1?view=closed`);
-  const title = owner.locator(".inbox-title-row");
+  const title = owner.locator('[data-inbox-conversation] [data-slot="pane-header"]');
   for (const name of ["Close", "More actions", "Show details"]) await expect(title.getByRole("button", { name, exact: true })).toBeVisible();
   await title.getByRole("button", { name: "Show details" }).click();
   const sheet = owner.getByRole("dialog", { name: "Conversation details" });
@@ -711,41 +707,38 @@ test("the views, the list and the open conversation side by side, each scrolling
   }
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/inbox`);
-  const views = owner.getByRole("navigation", { name: "Views" });
+  const views = owner.getByRole("navigation", { name: "Inbox", exact: true });
   const list = owner.getByRole("region", { name: "Conversations", exact: true });
   const conversation = owner.getByRole("region", { name: "Conversation", exact: true });
   await expect(conversation).toContainText("Open a conversation to reply here: click it, or press J.");
 
-  // Opened from the list, it's beside it, the list still there, the views above the list.
+  // Opened from the list, it's beside it, the list still there, the views beside the list.
   await list.getByRole("link", { name: /Can't export to CSV/ }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
   await expect(messages).toHaveCount(15);
   await expect(list.getByRole("link", { name: /Can't export to CSV/ })).toHaveAttribute("aria-current", "page");
   // The view the list shows is still the current one, for screen readers too.
-  await expect(views.getByRole("link", { name: "Needs reply 20" })).toHaveAttribute("aria-current", "true");
+  await expect(views.getByRole("link", { name: "Needs reply 20" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByRole("complementary", { name: "About them" })).toBeVisible();
-  const [v, l, c] = [(await views.boundingBox())!, (await list.boundingBox())!, (await conversation.boundingBox())!];
-  expect(v.x).toBe(l.x);
-  expect(v.y + v.height).toBeLessThanOrEqual(l.y + 1);
+  const listPane = owner.locator(".inbox-list-body");
+  const [v, l, c] = [(await views.boundingBox())!, (await listPane.boundingBox())!, (await conversation.boundingBox())!];
+  expect(v.x + v.width).toBeLessThanOrEqual(l.x);
   expect(l.x + l.width).toBeLessThanOrEqual(c.x + 1);
   expect(c.x + c.width).toBeLessThanOrEqual(1440);
   // The messages beside who they're from, with room to read.
-  expect((await owner.getByRole("list", { name: "Messages" }).boundingBox())!.width).toBeGreaterThan(500);
-  // The list and the conversation the rest of the window's height, under the header (and the banner asking to verify
-  // the email); the page itself doesn't scroll.
-  expect(v.y).toBeGreaterThanOrEqual(48);
-  // The conversation from the top of the window under the header, beside the list's title and then its views.
-  expect(c.y).toBeLessThan(v.y);
-  expect(c.y).toBe((await owner.locator('.inbox-list-title').boundingBox())!.y);
-  const listSurface = (await owner.locator(".inbox-list-body").boundingBox())!;
-  for (const pane of [listSurface, c]) {
-    expect(pane.y + pane.height).toBe(884);
+  expect((await owner.getByRole("list", { name: "Messages" }).boundingBox())!.width).toBeGreaterThan(400);
+  // The list and the conversation side by side, the rest of the window's height (under the banner asking to verify the
+  // email), 8px in from its edge; the page itself doesn't scroll.
+  expect(c.y).toBe(l.y);
+  for (const pane of [l, c]) {
+    expect(pane.y + pane.height).toBe(892);
   }
-  // Between the views and the list, the note that Messages in the widget is off.
+  // Between the list's header and the list, the note that Messages in the widget is off.
   const note = (await owner.getByRole("note").boundingBox())!;
-  expect(note.y).toBeGreaterThanOrEqual(v.y + v.height - 1);
-  expect(note.y + note.height).toBeLessThanOrEqual(l.y);
+  const header = (await listPane.locator('[data-slot="pane-header"]').boundingBox())!;
+  expect(note.y).toBeGreaterThanOrEqual(header.y + header.height - 1);
+  expect(note.y + note.height).toBeLessThanOrEqual((await list.boundingBox())!.y);
   expect(await owner.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(900);
   await checkpoint(owner, "inbox-panes", { fullPage: false });
   // A reply started here is still here after another conversation opens beside the list.
@@ -825,7 +818,7 @@ test("the team member's own action taking the open conversation out of its view 
   const checkpoint = checkpoints(testInfo);
   const { slug, owner, api, list, reply } = await twoConversations(browser);
   await api("/conversations", { email: "e2e-third@example.com", body: "A third question" });
-  const views = owner.getByRole("navigation", { name: "Views" });
+  const views = owner.getByRole("navigation", { name: "Inbox", exact: true });
   const row = (number: number) => list.getByRole("link", { name: new RegExp(`\\(#${number}\\)$`) });
 
   // Needs reply, the latest first: #3, #2, #1. Closed in the middle, the next one down opens, its row focused.
@@ -876,7 +869,7 @@ test("the team member's own action taking the open conversation out of its view 
   await owner.getByRole("button", { name: "Reopen" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=closed$`));
   await expect(owner.getByText("No closed conversations yet.")).toBeVisible();
-  await expect(views.getByRole("button", { name: "Closed 0" })).toBeFocused();
+  await expect(views.getByRole("link", { name: "Closed 0" })).toBeFocused();
 
   // Closed, but the team went to another page (Reporting) through ⌘K before it was done (its answer held here): they stay there,
   // and back on it, it stays open.
@@ -934,7 +927,7 @@ test("the team member's own action taking the open conversation out of its view 
   await expect(owner.getByRole("heading", { level: 1, name: "A later question" })).toBeFocused();
 
   // Another one picked while their action saves (its answer held here): that's where they stay, not the next one down.
-  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.setViewportSize({ width: 1440, height: 900 });
   await api("/conversations", { email: "e2e-fifth@example.com", body: "A fifth question" });
   await api("/conversations", { email: "e2e-sixth@example.com", body: "A sixth question" });
   await owner.goto(`/app/${slug}/inbox/4`);
@@ -1029,56 +1022,9 @@ test("the details beside a conversation hide for every conversation, after a rel
 
 });
 
-test("the Inbox's views are one row of tabs above the list, where they stay as a conversation opens: too narrow, it scrolls sideways to the current one", async ({ browser }, testInfo) => {
-  const checkpoint = checkpoints(testInfo);
-  const slug = `e2e-${randomUUID().slice(0, 8)}`;
-  const owner = await signUp(browser, APP_URL, "Olive Owner");
-  await createProject(owner, "Acme", slug);
-  const views = owner.getByRole("navigation", { name: "Views" });
-  // Above the list at 1440px, at laptop width (its third of the window at 1280px), then on a phone.
-  for (const [width, height] of [
-    [1440, 900],
-    [1280, 800],
-    [390, 844],
-  ]) {
-    await owner.setViewportSize({ width, height });
-    await owner.goto(`/app/${slug}/inbox`);
-    await expectOneRowOfTabs(owner, views);
-    await checkpoint(owner, `inbox-${width}`, { fullPage: false });
-  }
-  // The last view, past the window's edge: opened, the row is scrolled to it.
-  await owner.goto(`/app/${slug}/inbox?view=spam`);
-  await expect(views.getByRole("button", { name: "Spam 0" })).toHaveAttribute("aria-current", "page");
-  await expectOneRowOfTabs(owner, views);
-  await checkpoint(owner, "inbox-390-last-view", { fullPage: false });
-
-  // Opening a conversation and closing it again moves neither the views nor their first tab, sideways or up and down.
-  const api = await apiFor(owner, slug);
-  await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
-  const list = owner.getByRole("region", { name: "Conversations", exact: true });
-  const boxes = async () => [(await views.boundingBox())!, (await views.getByRole("link").first().boundingBox())!];
-  for (const [width, height] of [
-    [1440, 900],
-    [1280, 800],
-  ]) {
-    await owner.setViewportSize({ width, height });
-    await owner.goto(`/app/${slug}/inbox`);
-    await expectOneRowOfTabs(owner, views);
-    const before = await boxes();
-    await list.getByRole("link", { name: /discount for nonprofits/ }).click();
-    await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
-    await expect(views.getByRole("link", { name: "Needs reply 1" })).toHaveAttribute("aria-current", "true");
-    expect(await boxes()).toEqual(before);
-    if (width === 1440) await checkpoint(owner, "inbox-1440-conversation-open", { fullPage: false });
-    await owner.goBack();
-    await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
-    await expect(views.getByRole("link", { name: "Needs reply 1" })).toHaveAttribute("aria-current", "page");
-    expect(await boxes()).toEqual(before);
-  }
-});
-
-test("with two-digit counts the views still fit, at every laptop width and on a phone, with one under More open too", async ({ browser }) => {
+test("the Inbox's views are its section pane's links with their counts, where they stay as a conversation opens; on a phone its menu opens them", async ({ browser }, testInfo) => {
   test.setTimeout(60_000);
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
@@ -1087,41 +1033,51 @@ test("with two-digit counts the views still fit, at every laptop width and on a 
   for (let i = 1; i <= 24; i++) {
     await api("/conversations", { email: `e2e-asker-${i}@example.com`, body: `Question ${i}` });
   }
-  // Answered by the team: waiting on the user.
   for (let i = 13; i <= 24; i++) {
     await api(`/conversations/${i}/messages`, { body: "Here's how." });
   }
-  const views = owner.getByRole("navigation", { name: "Views" });
-  // 1024: laptop width at its narrowest, the list's column at its narrowest (22rem).
-  for (const [width, height] of [
-    [1024, 768],
-    [1280, 800],
-    [390, 844],
-  ]) {
-    await owner.setViewportSize({ width, height });
-    for (const view of ["", "?view=waiting"]) {
-      await owner.goto(`/app/${slug}/inbox${view}`);
-      await expect(views.getByRole("link", { name: "Unassigned 12" })).toBeVisible();
-      // Not one cut short at either end (the row would fade there and scroll).
-      // Measured, not the fade the page marks once its script runs: nothing past the row's width (a pixel's rounding aside, as
-      // showMore allows).
-      await expect.poll(() => views.evaluate((row) => row.scrollWidth - row.clientWidth)).toBeLessThanOrEqual(1);
-    }
-    // Open under More: its short name and visible count, with the full name to the ear.
-    const open = views.getByRole("button", { name: "Waiting on user 12" });
-    await expect(open).toHaveAttribute("aria-current", "page");
-    await expect(open).toHaveText(/^Waiting\s*12$/);
-    await expect(open.getByText("12", { exact: true })).toBeVisible();
-    if (width === 390) {
-      for (const [view, title] of [["snoozed", "Snoozed"], ["closed", "Closed"], ["spam", "Spam"]]) {
-        await owner.goto(`/app/${slug}/inbox?view=${view}`);
-        const selected = views.getByRole("button", { name: `${title} 0` });
-        await expect(selected).toHaveAttribute("aria-current", "page");
-        await expect(selected).toHaveText(new RegExp(`^${title}\\s*0$`));
-        await expect(selected.getByText("0", { exact: true })).toBeVisible();
-      }
-    }
-  }
+  const views = owner.getByRole("navigation", { name: "Inbox", exact: true });
+  const list = owner.getByRole("region", { name: "Conversations", exact: true });
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox`);
+  await expect(views.getByRole("link")).toHaveText([/^Needs reply\s*12$/, /^Mine\s*0$/, /^Unassigned\s*12$/, /^Waiting on user\s*12$/, /^Snoozed\s*0$/, /^Closed\s*0$/, /^Spam\s*0$/]);
+  await expect(views.getByRole("link", { name: "Needs reply 12" })).toHaveAttribute("aria-current", "page");
+  // The list's pane is titled by its view, with its count.
+  await expect(owner.getByRole("heading", { level: 1 })).toHaveText(/^Needs reply\s*12$/);
+  // Beside the list, which is beside the conversation.
+  const before = (await views.boundingBox())!;
+  const placed = () => expect.poll(() => views.boundingBox()).toEqual(before);
+  expect(before.x + before.width).toBeLessThan((await list.boundingBox())!.x);
+  await checkpoint(owner, "inbox-section-pane", { fullPage: false });
+
+  // Opening a conversation and closing it again doesn't move the views; the one the list shows stays the open one.
+  await list.getByRole("link", { name: /Question 12 / }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/12$`));
+  await expect(views.getByRole("link", { name: "Needs reply 12" })).toHaveAttribute("aria-current", "page");
+  await placed();
+  // Only the conversation's title is the page's heading.
+  await expect(owner.getByRole("heading", { level: 1 })).toHaveText("Question 12");
+  await owner.goBack();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox$`));
+  await placed();
+
+  // Another view: its link is the open one.
+  await views.getByRole("link", { name: "Waiting on user 12" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=waiting$`));
+  await expect(views.getByRole("link", { name: "Waiting on user 12" })).toHaveAttribute("aria-current", "page");
+  await expect(owner.getByRole("heading", { level: 1 })).toHaveText(/^Waiting on user\s*12$/);
+
+  // On a phone the pane is a menu, opened from the list's header and closed as a view opens.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(views).toBeHidden();
+  await owner.getByRole("button", { name: "Open the menu" }).click();
+  const menu = owner.getByRole("dialog", { name: "Inbox" });
+  await menu.getByRole("link", { name: "Closed 0" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?view=closed$`));
+  await expect(menu).toBeHidden();
+  await expect(owner.getByRole("heading", { level: 1 })).toHaveText(/^Closed\s*0$/);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "inbox-390", { fullPage: false });
 });
 
 test("until a conversation opens, the pane beside the list has the Inbox's numbers; on a phone the list is alone", async ({ browser }, testInfo) => {
@@ -1131,7 +1087,7 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await createProject(owner, "Acme", slug);
   const pane = owner.getByRole("region", { name: "Conversation", exact: true });
   const list = owner.getByRole("region", { name: "Conversations", exact: true });
-  const tile = (label: string) => pane.getByText(label, { exact: true }).locator("..");
+  const tile = (label: string) => pane.locator(".inbox-overview-stats dl > div").filter({ hasText: label });
   const shots = async (name: string) => {
     for (const [width, height] of [
       [1280, 800],
@@ -1150,9 +1106,9 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   // An empty Inbox: its numbers at zero and that new ones show up here, beside the list (not said twice).
   await owner.setViewportSize({ width: 1280, height: 800 });
   await owner.goto(`/app/${slug}/inbox`);
-  await expect(tile("Waiting for a reply")).toHaveText(/^0\s*Waiting for a reply\s*Nobody's waiting$/);
+  await expect(tile("Waiting for a reply")).toHaveText(/^Waiting for a reply\s*Nobody's waiting\s*0$/);
   await expect(tile("Usual first reply")).toContainText("Not enough yet");
-  await expect(tile("New conversations this week")).toHaveText(/^0\s*New conversations this week\s*Conversations started$/);
+  await expect(tile("New conversations this week")).toHaveText(/^New conversations this week\s*Conversations started\s*0$/);
   await expect(pane.getByText("Nothing needs a reply. New conversations from your widget, email and API will appear here.")).toBeVisible();
   await expect(list.getByText("New conversations show up here as they come in.")).toBeHidden();
   await shots("inbox-stats-empty");
@@ -1165,13 +1121,9 @@ test("until a conversation opens, the pane beside the list has the Inbox's numbe
   await api("/conversations/2", { status: "closed" }, "PATCH");
   await api("/conversations/3", { spam: true }, "PATCH");
   await owner.goto(`/app/${slug}/inbox`);
-  await expect(tile("Waiting for a reply")).toHaveText(/^1\s*Waiting for a reply\s*Longest \d+ minutes?$/);
-  await expect(tile("New conversations this week")).toHaveText(/^2\s*New conversations this week\s*Conversations started$/);
+  await expect(tile("Waiting for a reply")).toHaveText(/^Waiting for a reply\s*Longest \d+ minutes?\s*1$/);
+  await expect(tile("New conversations this week")).toHaveText(/^New conversations this week\s*Conversations started\s*2$/);
   await expect(pane).toContainText("Open a conversation to reply here: click it, or press J.");
-  // Waiting is the Needs reply view's: it opens it, from another view.
-  await owner.goto(`/app/${slug}/inbox?view=closed`);
-  await expect(tile("Waiting for a reply")).toHaveAttribute("href", `/app/${slug}/inbox`);
-  await owner.goto(`/app/${slug}/inbox`);
   await shots("inbox-stats");
 
   // Opening a conversation puts it in their place.
@@ -1225,10 +1177,14 @@ test("on a phone a long conversation keeps its title and Close in view while mes
   await owner.reload();
   await expect(messages).toHaveCount(9);
   await expect(messages.last()).toBeInViewport();
-  await expect(owner.getByRole("heading", { level: 1, name: "Can I export?" })).toBeInViewport();
+  // The subject under its pane's header ("‹ Inbox", with the conversation's buttons), which stay as the messages scroll.
+  const subject = owner.locator(".inbox-conversation-subject");
+  await expect(subject).toHaveText("Can I export?");
+  await expect(subject).toBeInViewport();
   await expect(owner.getByRole("button", { name: "Close", exact: true })).toBeInViewport();
   await messages.first().scrollIntoViewIfNeeded();
-  await expect(owner.getByRole("heading", { level: 1, name: "Can I export?" })).toBeInViewport();
+  await expect(subject).toBeInViewport();
+  await expect(owner.getByRole("link", { name: "Inbox", exact: true })).toBeInViewport();
   await checkpoint(owner, "phone-title-kept", { fullPage: false });
 });
 
@@ -1405,12 +1361,12 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
     await Promise.all(Array.from({ length: 10 }, (_, i) => api("/conversations", { email: `e2e-asker-${batch * 10 + i}@example.com`, body: "A question" })));
   }
   await api("/conversations", { email: "e2e-first@example.com", subject: "The newest question", body: "And another thing" });
-  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.setViewportSize({ width: 1440, height: 720 });
   await owner.goto(`/app/${slug}/inbox`);
   const list = owner.getByRole("region", { name: "Conversations" });
   const rows = list.locator("a[data-row-link]");
   const more = list.getByRole("link", { name: "Load more" });
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Needs reply 102" })).toBeVisible();
+  await expect(owner.getByRole("navigation", { name: "Inbox", exact: true }).getByRole("link", { name: "Needs reply 102" })).toBeVisible();
   await expect(rows).toHaveCount(100);
   await expect(list).not.toContainText("The oldest question");
   await more.scrollIntoViewIfNeeded();
@@ -1451,7 +1407,7 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
   await expect(rows.last()).toHaveAttribute("aria-current", "page");
 
   // Back to the list from a conversation, it's as long as it was.
-  await owner.locator('[data-slot="page-header"]').getByRole("link", { name: "Inbox" }).click();
+  await owner.locator('[data-inbox-conversation] [data-slot="pane-header"]').getByRole("link", { name: "Inbox" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?page=2$`));
   await expect(rows).toHaveCount(102);
 
@@ -1768,7 +1724,7 @@ test("only a conversation the list opens gets its row focused: not after a click
   await openPersonDetails(owner);
   await owner.getByRole("complementary", { name: "About them" }).getByRole("link", { name: /And invoices\?/ }).click();
   await expect(owner).toHaveURL(/\/inbox\/3\?view=unassigned$/);
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Unassigned 3" })).toHaveAttribute("aria-current", "true");
+  await expect(owner.getByRole("navigation", { name: "Inbox", exact: true }).getByRole("link", { name: "Unassigned 3" })).toHaveAttribute("aria-current", "page");
   await expect(list.getByRole("link", { name: /And invoices\?/ })).toHaveAttribute("aria-current", "page");
   await expect(list.getByRole("link", { name: /And invoices\?/ })).not.toBeFocused();
   // One that isn't in Unassigned opens in the first view, where it has its row.
@@ -1845,7 +1801,7 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
   const properties = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`property${i}`, `value ${i}`]));
   await api("/users", { users: [{ id: "user-7", properties }] });
   await api("/conversations", { user: { id: "user-7", name: "Pat Props", email: "e2e-pat@example.com" }, body: "A short question" });
-  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.setViewportSize({ width: 1440, height: 720 });
   const reply = owner.getByRole("textbox", { name: "Reply" });
   const send = owner.getByRole("button", { name: "Send", exact: true });
 
@@ -2291,7 +2247,7 @@ test("on a server selling plans, a conversation closed before the plan's history
   await expect(owner.getByRole("link", { name: "See plans" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
   for (const width of [1440, 1280]) {
     await owner.setViewportSize({ width, height: 900 });
-    const header = (await owner.locator('[data-inbox-conversation] [data-slot="page-header"]').boundingBox())!;
+    const header = (await owner.locator('[data-inbox-conversation] [data-slot="pane-header"]').boundingBox())!;
     const empty = (await owner.getByText("Past your plan's history", { exact: true }).locator("..").boundingBox())!;
     expect.soft(empty.y, `empty state starts below the header at ${width}px`).toBeGreaterThanOrEqual(header.y + header.height);
     expect.soft(empty.width, `empty state uses the conversation width at ${width}px`).toBeGreaterThan(400);
@@ -2384,7 +2340,7 @@ test("customer messages are bold until this teammate opens the conversation, the
   await expect(link).toHaveCSS("font-weight", "400");
   await expect(subject).toHaveCSS("font-weight", "400");
   await expect(row.getByText("Needs reply", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("navigation", { name: "Views" }).getByRole("link", { name: "Needs reply 1" })).toBeVisible();
+  await expect(owner.getByRole("navigation", { name: "Inbox", exact: true }).getByRole("link", { name: "Needs reply 1" })).toBeVisible();
   await checkpoint(owner, "inbox-read-still-needs-reply");
   await owner.goto(`/app/${slug}/inbox?view=unassigned`);
   await api("/conversations/1/messages", { body: "Any update?", author: { id: "sam" } });

@@ -4,30 +4,9 @@ import pg from "pg";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
-import { expect, type Page, test } from "./fixtures";
+import { expect, test } from "./fixtures";
 import { apiFor, createProject, signUp } from "./helpers";
 
-/** Labels fit on one line, the counts share a right edge, and the popup ends at the trigger. */
-async function expectViewsMenu(page: Page) {
-  const menu = page.getByRole("menu");
-  await menu.evaluate(async (popup) => { await Promise.all(popup.getAnimations({ subtree: true }).map((animation) => animation.finished)); });
-  const trigger = page.getByRole("navigation", { name: "Views", exact: true }).getByRole("button", { name: "More", exact: true });
-  const items = menu.getByRole("menuitem");
-  const rightEdges: number[] = [];
-  for (const item of await items.all()) {
-    const label = (await item.locator("span").first().boundingBox())!;
-    const count = (await item.locator("span").last().boundingBox())!;
-    expect.soft(label.height).toBeLessThanOrEqual(22);
-    expect.soft(Math.abs(label.y + label.height / 2 - count.y - count.height / 2)).toBeLessThanOrEqual(1);
-    rightEdges.push(count.x + count.width);
-  }
-  expect.soft(Math.max(...rightEdges) - Math.min(...rightEdges)).toBeLessThanOrEqual(1);
-  const popup = (await menu.boundingBox())!;
-  const button = (await trigger.boundingBox())!;
-  expect.soft(Math.abs(popup.x + popup.width - button.x - button.width)).toBeLessThanOrEqual(1);
-  expect.soft(popup.x).toBeGreaterThanOrEqual(0);
-  expect.soft(popup.x + popup.width).toBeLessThanOrEqual(page.viewportSize()!.width);
-}
 
 test("Inbox list, composer and views at laptop and phone widths in light and dark", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
@@ -96,20 +75,17 @@ test("Inbox list, composer and views at laptop and phone widths in light and dar
     await expect(send).toHaveAttribute("aria-disabled", "false");
     await team.goto(`/app/${slug}/inbox`);
     await checkpoint(team, `list-laptop-${theme}`, { fullPage: false });
-    const views = team.getByRole("navigation", { name: "Views", exact: true });
-    await views.getByRole("button", { name: "More", exact: true }).click();
-    await expect(team.getByRole("menuitem", { name: "Waiting on user 1234" })).toBeVisible();
+    const views = team.getByRole("navigation", { name: "Inbox", exact: true });
+    // A four-digit count fits beside its view's name, on one line.
+    const waiting = views.getByRole("link", { name: "Waiting on user 1234" });
+    await expect(waiting).toBeVisible();
+    expect.soft((await waiting.boundingBox())!.height).toBeLessThanOrEqual(36);
     await checkpoint(team, `views-laptop-${theme}`, { fullPage: false });
-    await expectViewsMenu(team);
-    await team.keyboard.press("Escape");
     await team.setViewportSize({ width: 390, height: 844 });
-    await views.getByRole("button", { name: "More", exact: true }).click();
+    await team.getByRole("button", { name: "Open the menu" }).click();
     await checkpoint(team, `views-phone-${theme}`, { fullPage: false });
-    await expectViewsMenu(team);
-    await team.getByRole("menuitem", { name: "Waiting on user 1234" }).click();
-    const selected = views.getByRole("button", { name: "Waiting on user 1234" });
-    await expect(selected).toHaveAttribute("aria-current", "page");
-    await expect.soft(selected).toHaveText(/^Waiting\s*1234$/);
+    await team.getByRole("dialog", { name: "Inbox" }).getByRole("link", { name: "Waiting on user 1234" }).click();
+    await expect(team.getByRole("heading", { level: 1 })).toHaveText(/^Waiting on user\s*1234$/);
     await checkpoint(team, `view-count-phone-${theme}`, { fullPage: false });
   }
 });
