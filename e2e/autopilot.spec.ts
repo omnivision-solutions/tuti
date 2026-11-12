@@ -84,7 +84,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(catchUp.getByRole("listitem")).toHaveText([new RegExp(title), new RegExp(article)]);
   await expect(catchUp).not.toContainText("goes out");
   await expect(catchUp.getByRole("listitem").filter({ hasText: title }).getByRole("link", { name: "Review" })).toHaveAttribute("href", new RegExp(`/autopilot/feedback/`));
-  await expect(owner.getByRole("link", { name: /^2\s*Posts and articles to review$/ })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Posts and articles to review: 2" })).toBeVisible();
   await checkpoint(owner, "home-catch-up");
   const list = owner.getByRole("complementary", { name: "Changes" });
   // From laptop width up, To review opens its first beside the list (Feedback's post), never an empty page. A tab

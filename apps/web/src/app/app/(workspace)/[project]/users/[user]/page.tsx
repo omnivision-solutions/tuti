@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { PersonPanel } from "@/components/inbox/person-panel";
-import { PageHeader } from "@/components/page-header";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { initial } from "@/lib/format";
 import { getMembership } from "@/server/membership";
@@ -27,35 +27,35 @@ export default async function UserPage(props: PageProps<"/app/[project]/users/[u
   }
 
   return (
-    <>
-      {/* Who they are in the header: their face, their name, their address. */}
-      <PageHeader
-        back={{ href: `/app/${slug}/users`, label: "Users" }}
-        title={
-          <span className="flex items-center gap-3">
-            <Avatar aria-hidden className="size-10 text-base sm:size-11">
-              {identity.user.image && <AvatarImage src={identity.user.image} alt="" />}
-              <AvatarFallback>{initial(identity.user.name)}</AvatarFallback>
-            </Avatar>
-            <span className="min-w-0">{identity.user.name}</span>
-          </span>
-        }
-        description={
-          <span className="break-all">
-            {identity.email && `${identity.email} · `}id {externalId}
-          </span>
-        }
-      />
-      {/* The whole width (data-wide), their profile beside what they did. Their app's address, as it asserted it; what
-          they did with every account that is them, as Users counts it. */}
-      <div data-wide>
-        <PersonPanel
-          projectId={projectId}
-          slug={slug}
-          person={{ userId: identity.userId, email: identity.email, emailVerified: true, accounts: await userAccounts(projectId, identity) }}
-          page
-        />
-      </div>
-    </>
+    <PaneLayout>
+      <Pane aria-label={identity.user.name}>
+        <PaneHeader back={{ href: `/app/${slug}/users`, label: "All users" }} title={identity.user.name} />
+        <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-7">
+          <div className="flex flex-col gap-6">
+            {/* Who they are, first: their face, their name, their address and their app's id for them. */}
+            <div data-slot="person-header" className="flex min-w-0 items-center gap-3">
+              <Avatar aria-hidden className="size-11 text-base">
+                {identity.user.image && <AvatarImage src={identity.user.image} alt="" />}
+                <AvatarFallback>{initial(identity.user.name)}</AvatarFallback>
+              </Avatar>
+              <div className="flex min-w-0 flex-col">
+                <p className="font-heading text-xl font-semibold break-words">{identity.user.name}</p>
+                <p className="text-sm break-all text-muted-foreground">
+                  {identity.email && `${identity.email} · `}id {externalId}
+                </p>
+              </div>
+            </div>
+            {/* Their profile beside what they did. Their app's address, as it asserted it; what they did with every
+                account that is them, as Users counts it. */}
+            <PersonPanel
+              projectId={projectId}
+              slug={slug}
+              person={{ userId: identity.userId, email: identity.email, emailVerified: true, accounts: await userAccounts(projectId, identity) }}
+              page
+            />
+          </div>
+        </PaneBody>
+      </Pane>
+    </PaneLayout>
   );
 }

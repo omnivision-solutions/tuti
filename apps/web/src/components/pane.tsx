@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { ChevronLeftIcon, ChevronRightIcon, PanelLeftIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useState } from "react";
+import { Children, createContext, isValidElement, type ReactNode, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { activeView } from "@/lib/active-link";
@@ -41,9 +41,42 @@ export function Pane({ children, className, "aria-label": label }: { children: R
   );
 }
 
-/** What scrolls in a pane, under its header. */
-export function PaneBody({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("min-h-0 flex-1 overflow-y-auto", className)}>{children}</div>;
+/** Each pane body's place on each URL (the URL and which pane body on the page it is), for Back and Forward. */
+const places = new Map<string, number>();
+/** Whether the latest navigation is Back or Forward (popstate), not a link or a search (a click, submit or key first). */
+let traversal = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", () => (traversal = true));
+  for (const event of ["click", "submit", "keydown"]) {
+    document.addEventListener(event, () => (traversal = false), true);
+  }
+}
+
+/**
+ * What scrolls in a pane, under its header, in place of the window: so it returns to where it was on Back and Forward,
+ * as the window would. `resetOnNavigate`: its list is replaced by its own links (Users' pages, sorts and searches),
+ * so it starts at its top on each new URL; otherwise a new URL leaves it where it is (a list with a post open beside it).
+ */
+export function PaneBody({ children, className, resetOnNavigate = false }: { children: ReactNode; className?: string; resetOnNavigate?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const url = `${usePathname()}?${useSearchParams()}`;
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const place = `${[...document.querySelectorAll("[data-slot=pane-body]")].indexOf(box)} ${url}`;
+    if (traversal) box.scrollTop = places.get(place) ?? box.scrollTop;
+    else if (resetOnNavigate) box.scrollTop = 0;
+    const keep = () => places.set(place, box.scrollTop);
+    // Every URL the body shows has a place, scrolled or not: a body kept across a navigation keeps it on Back.
+    keep();
+    box.addEventListener("scroll", keep, { passive: true });
+    return () => box.removeEventListener("scroll", keep);
+  }, [url, resetOnNavigate]);
+  return (
+    <div ref={ref} data-slot="pane-body" className={cn("min-h-0 flex-1 overflow-y-auto", className)}>
+      {children}
+    </div>
+  );
 }
 
 /**

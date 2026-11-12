@@ -8,6 +8,8 @@ import { apiFor, createProject, signUp } from "./helpers";
 import { sesComplaint } from "./ses";
 
 test("the team syncs its users over the API and finds them on the Users page, by name and by group", async ({ browser }, testInfo) => {
+  // A long journey (pages of a hundred users, Back to a place in the list): more than the default 30s on a loaded runner.
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -34,6 +36,12 @@ test("the team syncs its users over the API and finds them on the Users page, by
   // A table the whole width: each with their email and id, company and plan to start with (headed in words), their
   // groups, and what they did here.
   await owner.goto(`/app/${slug}/users`);
+  // One pane: Users in its header, its views as pills (People with how many), Sync from your app at its right end.
+  const header = owner.getByRole("region", { name: "Users" }).locator('[data-slot="pane-header"]');
+  await expect(header.getByRole("heading", { name: "Users", level: 1 })).toBeVisible();
+  await expect(header.getByRole("navigation", { name: "Users views" }).getByRole("link")).toHaveText(["People3", "Companies"]);
+  await expect(header.getByRole("link", { name: /^People\s*3$/ })).toHaveAttribute("aria-current", "page");
+  await expect(header.getByRole("link", { name: "Sync from your app" })).toHaveAttribute("href", "/api/docs#users.sync");
   const table = owner.getByRole("main").getByRole("table");
   const rows = table.locator("tbody").getByRole("row");
   await expect(rows).toHaveCount(3);
@@ -81,6 +89,12 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows.first()).toContainText("Bea Byte");
   await expect(rows.first().getByRole("cell").last()).not.toHaveText("Never");
   await checkpoint(owner, "team-users");
+  // On a phone: the views a row of pills under the title, each row who they are and when they were last seen.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(owner.getByRole("navigation", { name: "Users views" })).toBeVisible();
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(owner, "team-users-phone");
+  await owner.setViewportSize({ width: 1280, height: 720 });
   // A search keeps the sort.
   await owner.getByRole("searchbox", { name: "Search users" }).fill("example.com");
   await owner.getByRole("searchbox", { name: "Search users" }).press("Enter");
@@ -93,8 +107,11 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users/user-2$`));
   const who = owner.getByRole("region", { name: "Who" });
   await expect(owner.getByRole("heading", { name: "Bea Byte", level: 1 })).toBeVisible();
-  await expect(owner.locator("[data-slot=page-header] [data-slot=avatar]")).toHaveText("B");
-  await expect(owner.locator("[data-slot=page-header]")).toContainText("e2e-bea@example.com");
+  await expect(owner.locator("[data-slot=person-header] [data-slot=avatar]")).toHaveText("B");
+  await expect(owner.locator("[data-slot=person-header]")).toContainText("e2e-bea@example.com");
+  // The way back in the pane's header: "All users ›" before her name.
+  const back = owner.locator('[data-slot="pane-header"]').getByRole("link", { name: "All users" });
+  await expect(back).toHaveAttribute("href", `/app/${slug}/users`);
   const votes = owner.getByRole("region", { name: "Votes" });
   await expect(votes.getByRole("link")).toHaveCount(6);
   await expect(votes.getByRole("listitem").filter({ hasText: "Dark mode" }).locator("[data-slot=badge]")).toHaveText("Planned");
@@ -104,10 +121,24 @@ test("the team syncs its users over the API and finds them on the Users page, by
   const [profile, activity] = [(await owner.getByRole("region", { name: "Properties" }).boundingBox())!, (await votes.boundingBox())!];
   expect(profile.x + profile.width).toBeLessThan(activity.x);
   await checkpoint(owner, "team-user");
-  // On a phone, her name once: the page's title, above the profile.
+  // In a short window her page scrolls in its pane: a vote far down, opened, then Back is where it was, that vote in view.
+  await owner.setViewportSize({ width: 1280, height: 420 });
+  const last = votes.getByRole("link", { name: "Dark mode" });
+  await last.scrollIntoViewIfNeeded();
+  await expect(owner.locator("[data-slot=person-header]")).not.toBeInViewport();
+  await last.click();
+  await expect(owner.getByRole("heading", { name: "Dark mode", level: 1 })).toBeVisible();
+  await owner.goBack();
+  await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users/user-2$`));
+  await expect(last).toBeInViewport();
+  await expect(owner.locator("[data-slot=person-header]")).not.toBeInViewport();
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  // On a phone, "‹ All users" in the header (her name there for screen readers) and her name once, above the profile.
   await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(back).toBeVisible();
   await expect(who.getByRole("heading", { name: "Bea Byte" })).toBeHidden();
-  await expect(owner.getByRole("heading", { name: "Bea Byte", level: 1 })).toBeVisible();
+  await expect(owner.locator("[data-slot=person-header]")).toContainText("Bea Byte");
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "team-user-phone");
   await owner.setViewportSize({ width: 1280, height: 720 });
   // She marks one of the project's emails as spam: her page says replies aren't emailed to her any more.
@@ -163,12 +194,17 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.getByRole("searchbox", { name: "Search users" }).press("Enter");
   await expect(owner.getByText("No users match")).toBeVisible();
 
-  // By group.
+  // By group, picked with the keyboard: the list follows and focus stays on Group (nothing remounted under it).
   await owner.goto(`/app/${slug}/users`);
-  await owner.getByRole("combobox", { name: "Group" }).click();
-  await owner.getByRole("option", { name: "Enterprise" }).click();
+  const groupPicker = owner.getByRole("combobox", { name: "Group" });
+  await groupPicker.focus();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("option", { name: "Enterprise" })).toBeVisible();
+  await owner.keyboard.press("ArrowDown");
+  await owner.keyboard.press("Enter");
   await expect(owner).toHaveURL(/\?group=enterprise$/);
   await expect(rows).toHaveCount(2);
+  await expect(groupPicker).toBeFocused();
   await expect(rows.filter({ hasText: "Bea Byte" })).toHaveCount(0);
 
   // A group named "All" is a group like any other, not every user.
@@ -199,6 +235,25 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows).toHaveCount(5);
   await expect(pages).toContainText("51–55 of 55");
   await checkpoint(owner, "team-users-second-page", { fullPage: false });
+  // Next from the bottom of a page: the next one starts at its top (the pane scrolls, not the window).
+  await api("/users", { users: Array.from({ length: 50 }, (_, i) => ({ id: `more-${i}`, name: `Zoe ${String(i).padStart(2, "0")}` })) });
+  await owner.goto(`/app/${slug}/users`);
+  await pages.getByRole("link", { name: "Next" }).scrollIntoViewIfNeeded();
+  await expect(table.getByRole("columnheader", { name: "User" })).not.toBeInViewport();
+  await pages.getByRole("link", { name: "Next" }).click();
+  await expect(owner).toHaveURL(/\?page=2$/);
+  await expect(rows).toHaveCount(50);
+  await expect(table.getByRole("columnheader", { name: "User" })).toBeInViewport();
+  // Someone from far down the list, then Back: the list is where it was, their row in view.
+  const far = rows.nth(45).getByRole("link").first();
+  await far.scrollIntoViewIfNeeded();
+  const name = (await far.textContent())!;
+  await far.click();
+  await expect(owner.getByRole("heading", { name, level: 1 })).toBeAttached();
+  await owner.goBack();
+  await expect(owner).toHaveURL(/\?page=2$/);
+  await expect(rows.getByRole("link", { name, exact: true })).toBeInViewport();
+  await expect(table.getByRole("columnheader", { name: "User" })).not.toBeInViewport();
   await owner.getByRole("combobox", { name: "Group" }).click();
   await owner.getByRole("option", { name: "Enterprise" }).click();
   await expect(owner).toHaveURL(/\?group=enterprise$/);

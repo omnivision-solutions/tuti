@@ -9,7 +9,7 @@ import { apiFor, createProject, signUp } from "./helpers";
 import { rawEmail, receive } from "./inbound";
 
 /** The kinds "Needs your attention" lists, in order. */
-const groups = (page: Page) => page.getByRole("main").locator("section[aria-label]").evaluateAll((sections) => sections.map((s) => s.getAttribute("aria-label")));
+const groups = (page: Page) => page.getByRole("region", { name: "Needs your attention" }).locator("section[aria-label]").evaluateAll((sections) => sections.map((s) => s.getAttribute("aria-label")));
 
 test("Home: what needs the team by kind, customers waiting first, three of each; the numbers open their lists; on a phone each row reads in two lines", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -55,6 +55,17 @@ test("Home: what needs the team by kind, customers waiting first, three of each;
   }
 
   await owner.goto(`/app/${slug}`);
+  // One pane on the canvas, titled Home in its header; the four numbers in one strip, side by side.
+  const home = owner.getByRole("region", { name: "Home" });
+  await expect(home.locator('[data-slot="pane-header"]').getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+  const numbers = home.getByRole("link", { name: /^(New posts this week|Need a reply|Posts and articles to review|Searches that found nothing): \d+$/ });
+  await expect(numbers).toHaveCount(4);
+  const tops = await numbers.evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
+  // People wait on the team: Need a reply's number in the highlight colour with its dot; the others plain.
+  const colour = (name: RegExp) => home.getByRole("link", { name }).evaluate((link) => getComputedStyle(link.closest("dd")!).color);
+  expect(await colour(/^Need a reply: [1-9]/)).not.toBe(await colour(/^New posts this week:/));
+  await expect(home.getByRole("link", { name: /^Need a reply: [1-9]/ }).locator("xpath=ancestor::dd").locator("span[aria-hidden]")).toHaveCount(1);
   // Conversations, then Autopilot, then posts to triage.
   expect(await groups(owner)).toEqual(["Need a reply", "To review in Autopilot", "New posts to triage"]);
   // Three of the seven posts, oldest first, each with its action; See all opens Feedback's Needs triage.
@@ -72,7 +83,7 @@ test("Home: what needs the team by kind, customers waiting first, three of each;
   // as the tile above and the sidebar count them, each opening its review.
   const changes = owner.getByRole("region", { name: "To review in Autopilot" });
   await expect(changes.getByRole("heading")).toHaveText("To review in Autopilot 2");
-  await expect(owner.getByRole("link", { name: /^2\s*Posts and articles to review$/ })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Posts and articles to review: 2" })).toBeVisible();
   await expect(owner.locator('[data-sidebar="menu-button"][href$="/autopilot"]')).toHaveAccessibleDescription("2 to review");
   await expect(changes.getByRole("listitem").getByRole("link", { name: "Pick a theme" })).toHaveAttribute("href", new RegExp(`^/app/${slug}/autopilot/articles/`));
   const change = changes.getByRole("listitem").filter({ hasText: "Use the dark theme" });
@@ -90,7 +101,7 @@ test("Home: what needs the team by kind, customers waiting first, three of each;
   expect((await title.boundingBox())!.height).toBeLessThanOrEqual(lineHeight * 1.5);
   const publish = change.getByRole("button", { name: "Publish now" });
   expect((await publish.boundingBox())!.y).toBeGreaterThan((await title.boundingBox())!.y + (await title.boundingBox())!.height);
-  for (const row of await owner.getByRole("main").locator("section[aria-label] li").all()) {
+  for (const row of await owner.getByRole("region", { name: "Needs your attention" }).locator("section[aria-label] li").all()) {
     expect((await row.locator("a").first().boundingBox())!.height).toBeLessThanOrEqual(lineHeight * 2.5);
   }
   await checkpoint(owner, "home-phone");
@@ -121,7 +132,7 @@ test("Home: what needs the team by kind, customers waiting first, three of each;
   await owner.unroute(`**/app/${slug}`);
 
   // A number opens its list: every post, newest first.
-  await owner.getByRole("link", { name: /^8\s*New posts this week$/ }).click();
+  await owner.getByRole("link", { name: "New posts this week: 8" }).click();
   await owner.waitForURL(`**/app/${slug}/feedback?status=all&sort=new`);
   await expect(owner.getByRole("main").getByRole("listitem").getByRole("link", { name: /^(Dark mode|Exports)$/ })).toHaveText(["Exports", "Dark mode"]);
 });
@@ -156,7 +167,7 @@ test("a new project: Home leads with sample content and each setup step's action
   // No row of four 0s before there's anything to count.
   await expect(owner.getByRole("link", { name: /New posts this week/ })).toHaveCount(0);
   // Add sample content is the empty card's main action, Set up your project to its left.
-  const attention = owner.locator('[data-slot="card"]', { hasText: "Needs your attention" });
+  const attention = owner.getByRole("region", { name: "Needs your attention" });
   await expect(attention.getByRole("button", { name: "Add sample content" })).toHaveClass(/\bbg-primary\b/);
   await expect(attention.getByRole("link", { name: "Set up your project" })).toHaveAttribute("href", `/app/${slug}/setup`);
   // The primary on the right, Set up your project to its left.
@@ -212,7 +223,7 @@ test("a new project: Home leads with sample content and each setup step's action
     await db.end();
   }
   await owner.goto(`/app/${slug}`);
-  await expect(owner.getByRole("link", { name: /Searches that found nothing/ })).toHaveText(/^1Searches that found nothing/);
+  await expect(owner.getByRole("link", { name: "Searches that found nothing: 1" })).toBeVisible();
   // With something in Needs your attention, sample content is still offered, in that card's header (so with Get set up done too), while there's nothing of the project's own.
   await expect(owner.getByRole("region", { name: "Queries that found nothing" })).toBeVisible();
   await expect(attention.getByRole("button", { name: "Add sample content" })).toBeVisible();

@@ -251,7 +251,8 @@ test("scroll padding clears a sticky toolbar pushed out of view by a short conta
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   await owner.setViewportSize({ width: 1440, height: 900 });
-  await owner.goto(`/app/${slug}`);
+  // A page still with a PageHeader (Home and Changelog are pages of panes).
+  await owner.goto(`/app/${slug}/feedback/roadmap`);
   const toolbar = owner.locator('[data-slot="page-header"]');
   await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
   // Reproduce a shortened containing block independently of any page's current markup.

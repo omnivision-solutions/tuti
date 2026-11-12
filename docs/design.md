@@ -155,9 +155,9 @@ the list picks none to approve at once.
   (`app/app/(workspace)/layout.tsx`, `components/app-shell.tsx`); the pages for the signed out and the
   operator's links (`/app/auth/*`, `/app/license`, `/app/admin/*`) sit outside it, under Tuti's logo
   over a centred `<main>` (`app/app/(account-pages)/layout.tsx`). Shell pages sit in one of three
-  columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, Home, a post), max-w-2xl for a form
+  columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, a post), max-w-2xl for a form
   by itself (`data-narrow` on it; New project, Setup and Account are panes now), or the whole width (`data-wide`: the
-  team's Roadmap, Users' tables; and pages of panes). Feedback, a page of panes, caps itself at 72rem while
+  team's Roadmap; and pages of panes: Home, Users). Feedback, a page of panes, caps itself at 72rem while
   no post is open beside its list, so its rows stay scannable on a wide screen. It keeps the shell's left edge
   whether or not a post is open, so the clicked row stays in place.
   From tablet width up there is no separate app header: the page starts at the top of the shell. Its own
@@ -316,15 +316,14 @@ the list picks none to approve at once.
   "Why Autopilot made this change" folded away, and what it touched as a tree (Help
   center → collection → article, then Feedback), each opening its review. On phones
   and tablets it's the list right under the page's title, then the page picked.
-  Users' tables take the whole width (`data-wide` on the table's
-  card): who (name, email, and their id from tablet width up), the properties the team
+  Users is a pane (Panes): People and Companies as pills in its header, Sync from your app at its right end, its
+  tables on the pane at its whole width: who (name, email, and their id from tablet width up), the properties the team
   picks, headed by the team's name for each or the key in words ("plan_name": "Plan
-  name"), their groups in a column, then what they did. A person's page is the whole
-  width too: their profile (avatar, their name as its heading, email, id, groups,
-  properties) beside all their posts, votes and conversations, each status a badge
-  (one column on phones, where the page's title is their name and the profile has no heading of its own).
-  A page with sections of its own lists them under its header with `SubNav`
-  (Users' People and Companies).
+  name"), their groups in a column, then what they did. A person's page is a pane too, "All users ›" before their
+  name in its header (on phones "‹ All users", the name for screen readers): their avatar, name, email and id first,
+  then their profile (groups, properties, on a muted fill) beside all their posts, votes and conversations, each
+  status a badge (one column on phones). A page with sections of its own that isn't a page of panes yet lists them
+  under its header with `SubNav`.
   Tabs come in two styles. Switching a page's views or sections (Feedback's
   statuses, Changelog, Users, Reporting's AI conversations, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is
@@ -531,7 +530,7 @@ Use these instead of hand-rolling layout:
   its title the page's heading at every width (the Page title style), `back` above it, then
   `description`: one short muted line saying what the page is for ("Ideas and problems your
   users posted, by status."; on portals the team's own words), on a section's main page
-  (Home, Feedback, Roadmap, Changelog, Docs, Users, Settings), not on a page
+  (Feedback, Roadmap, Docs; a page of panes has `PaneHeader`'s instead), not on a page
   about one thing; then `meta`, facts about the thing shown ("#12 · Ada · 3 votes").
   The actions sit beside the title and description, on the right, from tablet width up.
   `more` is the actions used less often, behind "More actions".
@@ -623,10 +622,11 @@ Use these instead of hand-rolling layout:
   - Compact actions (a badge, one or two small buttons) stay on the right.
   - Pickers or several buttons → `wideActions`: on phones they move under the
     title and share the row width. Give select triggers `w-full sm:w-…`.
-  - A card listing several kinds of thing (Home's "Needs your attention")
+  - A card or a pane's section listing several kinds of thing (Home's "Needs your attention", a section on its pane)
     groups them by kind, the most urgent first: each a heading with how many,
     its first few rows, the longest waiting first (or, where its list shows only the top few, as that list ranks them; Autopilot's, To review's first rows in its order, so the two read the same), and a link to that list ("See all" when it holds them all, else named for where it goes); no kind badge per row.
-- A list compared across columns (Users) is a table in a `Card`: its headings
+- A list compared across columns is a table, in a `Card` on a page or straight on its pane (Users' People and
+  Companies, the pane's whole width): its headings
   sort it (a link each, `aria-sort` on the one in use, the most first; a rate whose low end is what needs the team,
   Reporting's Articles' Found it helpful, the least first and marked ascending), and on
   phones it keeps who and the column that matters most (Last seen), the rest
@@ -675,6 +675,8 @@ at desktop and phone widths, in light and dark (in development only).
 - **`PaneLayout`**, **`Pane`**, **`PaneBody`** (`components/pane.tsx`): a row of panes (the shell gives it the whole
   width), one white panel (`rounded-2xl`, ~14px corners, a `border` ring, nothing scrolling past its edge), and what scrolls in it.
   No card inside a card: a pane's lists and row cards sit on the pane.
+  A pane body scrolls in place of the window, so it keeps its place on each URL for Back and Forward; one whose own
+  links replace its list (Users' pages, sorts, searches) starts at the top on a new URL (`resetOnNavigate`).
 - **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line
   under it. The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
   type), and on phones "‹ All posts" alone, the title for screen readers. `description` follows the title from 56rem
@@ -703,7 +705,8 @@ at desktop and phone widths, in light and dark (in development only).
 - **A pane of one form or settings** (New project, Setup, Account, the first Welcome): one `Pane` with its
   `PaneHeader`, the body centred in it, max-w-2xl for a form's card (a wizard's step above it), max-w-3xl for
   settings cards, as Settings' pages.
-- **`StatStrip`**: a page's numbers in one card, side by side between lines; under 40rem two tiles to a row.
+- **`StatStrip`**: a page's numbers in one card, side by side between lines; under 40rem two tiles to a row. A number
+  with `href` opens its list (the whole number, named "Need a reply: 4"); `attention` (people waiting) in the highlight colour with its dot.
 - **Pill buttons**: every `Button` in the admin is a pill (`--button-radius`, set while the sidebar's shell is on
   the page: its dialogs and menus too), and inside `data-pill-buttons`. Elsewhere (the portal, marketing) buttons
   keep their corners.

@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { AppWindowIcon, BookOpenIcon, CheckCircle2Icon, ChevronRightIcon, GitMergeIcon, InboxIcon, KeyRoundIcon, type LucideIcon, MegaphoneIcon, UserPlusIcon } from "lucide-react";
 import Link from "next/link";
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
 
 import { ResumeAllButton, ScheduledButtons } from "@/components/code-changes";
@@ -10,13 +10,12 @@ import { GoesOut } from "@/components/goes-out";
 import { WaitingNotice } from "@/components/dns-setup";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { PageHeader } from "@/components/page-header";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { ImportDetails, InvitationsToSend, RefreshWhile } from "@/components/setup-import";
 import { AddSampleContent, RemoveSampleContent } from "@/components/sample-content";
-import { StatTile } from "@/components/stat-tile";
+import { StatStrip } from "@/components/stat-tile";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { formatDate, timeAgo } from "@/lib/format";
 import { homeInvitationsToSend, importBrief, importSummary, importTitle, onHome } from "@/lib/import-parts";
@@ -67,73 +66,61 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   const importShown = imported && onHome(imported);
 
   return (
-    <>
-      <PageHeader title="Home" description="What needs the team, and what's left to set up." />
+    <PaneLayout>
+      <Pane aria-label="Home">
+        <PaneHeader title="Home" description="What needs the team, and what's left to set up." />
+        <PaneBody className="p-4 @min-[48rem]/app:px-6 @min-[48rem]/app:py-7">
+          <div className="mx-auto flex max-w-4xl flex-col gap-8">
       {/* Four numbers, each opening its list; not while the project has nothing of its own and all four are 0. */}
       {(overview.started || Object.values(overview.numbers).some((n) => n > 0)) && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {(
-            [
-              ["New posts this week", overview.numbers.newPosts, `/app/${slug}/feedback?status=all&sort=new`],
-              ["Need a reply", overview.numbers.needReply, `/app/${slug}/inbox`],
-              ["Posts and articles to review", overview.numbers.toReview, `/app/${slug}/autopilot`],
-              ["Searches that found nothing", overview.numbers.searchesFailed, `/app/${slug}/reporting/searches`],
-            ] as const
-          ).map(([label, value, href]) => (
-            <StatTile key={label} value={value} label={label} href={href} attention={label === "Need a reply" && value > 0} />
-          ))}
-        </div>
+        <StatStrip
+          items={[
+            { label: "New posts this week", value: overview.numbers.newPosts, href: `/app/${slug}/feedback?status=all&sort=new` },
+            { label: "Need a reply", value: overview.numbers.needReply, href: `/app/${slug}/inbox`, attention: overview.numbers.needReply > 0 },
+            { label: "Posts and articles to review", value: overview.numbers.toReview, href: `/app/${slug}/autopilot` },
+            { label: "Searches that found nothing", value: overview.numbers.searchesFailed, href: `/app/${slug}/reporting/searches` },
+          ]}
+        />
       )}
       {sample && admin && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Sample content</CardTitle>
-            <CardDescription>Here to try things with, labelled Sample in your lists and on the portal&apos;s boards, docs and changelog. Home&apos;s numbers leave it out.</CardDescription>
-            <CardAction>
-              <RemoveSampleContent projectSlug={slug} />
-            </CardAction>
-          </CardHeader>
-        </Card>
+        <HomeSection
+          tinted
+          title="Sample content"
+          description="Here to try things with, labelled Sample in your lists and on the portal's boards, docs and changelog. Home's numbers leave it out."
+          action={<RemoveSampleContent projectSlug={slug} />}
+        />
       )}
       {importShown && (
-        <Card>
-          <RefreshWhile on={imported.state === "running"} />
-          <CardHeader>
-            <CardTitle>{importTitle(imported)}</CardTitle>
-            <CardDescription>{importBrief(imported)}</CardDescription>
-            {/* Heard when it starts and ends, not with each page's count while it runs. */}
-            <p role="status" className="sr-only">
-              {imported.state === "running" ? importTitle(imported) : `${importTitle(imported)}. ${importSummary(imported)}`}
-            </p>
-            {/* Stacked on a phone, so two buttons leave the title room. */}
-            <CardAction className="flex flex-col items-end gap-2 sm:flex-row">
+        <HomeSection
+          tinted
+          title={importTitle(imported)}
+          description={importBrief(imported)}
+          action={
+            // Stacked on a phone, so two buttons leave the title room.
+            <div className="flex flex-col items-end gap-2 sm:flex-row">
               <ImportDetails projectSlug={slug} run={imported} invitations={homeInvitationsToSend(imported, admin)} />
               {imported.state === "failed" && (
                 <Link href={`/app/${slug}/setup`} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   Start again
                 </Link>
               )}
-            </CardAction>
-          </CardHeader>
-          {homeInvitationsToSend(imported, admin) > 0 && (
-            <CardContent>
-              <InvitationsToSend projectSlug={slug} count={homeInvitationsToSend(imported, admin)} />
-            </CardContent>
-          )}
-        </Card>
+            </div>
+          }
+        >
+          <RefreshWhile on={imported.state === "running"} />
+          {/* Heard when it starts and ends, not with each page's count while it runs. */}
+          <p role="status" className="sr-only">
+            {imported.state === "running" ? importTitle(imported) : `${importTitle(imported)}. ${importSummary(imported)}`}
+          </p>
+          {homeInvitationsToSend(imported, admin) > 0 && <InvitationsToSend projectSlug={slug} count={homeInvitationsToSend(imported, admin)} />}
+        </HomeSection>
       )}
       {overview.setup && admin && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Get set up</CardTitle>
-            <CardDescription>
-              {overview.setup.filter((step) => step.done).length} of {overview.setup.length} done
-            </CardDescription>
-            <CardAction className="self-center">
-              <Progress aria-label="Steps done" value={overview.setup.filter((step) => step.done).length} max={overview.setup.length} className="w-28 sm:w-36" />
-            </CardAction>
-          </CardHeader>
-          <CardContent>
+        <HomeSection
+          title="Get set up"
+          description={`${overview.setup.filter((step) => step.done).length} of ${overview.setup.length} done`}
+          action={<Progress aria-label="Steps done" value={overview.setup.filter((step) => step.done).length} max={overview.setup.length} className="w-28 sm:w-36" />}
+        >
             {/* A card per step left to do, two to a row: what it's for under its title, its own button; the first stands out
                 (its border and icon in green, its button an outline: the page's one primary is elsewhere). The done ones
                 under them, a line of them together. */}
@@ -184,20 +171,13 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                 );
               })}
             </ul>
-          </CardContent>
-        </Card>
+        </HomeSection>
       )}
-      <Card>
-        <CardHeader>
-          <CardTitle>Needs your attention</CardTitle>
-          {/* Sample content until the project has content of its own: here once the card lists something, in its empty state until then. */}
-          {admin && !sample && !overview.started && overview.attention.length > 0 && (
-            <CardAction>
-              <AddSampleContent projectSlug={slug} />
-            </CardAction>
-          )}
-        </CardHeader>
-        <CardContent>
+      <HomeSection
+        title="Needs your attention"
+        // Sample content until the project has content of its own: here once the section lists something, in its empty state until then.
+        action={admin && !sample && !overview.started && overview.attention.length > 0 && <AddSampleContent projectSlug={slug} />}
+      >
           {overview.attention.length > 0 ? (
             <div className="flex flex-col gap-6">
               {/* By kind, customers waiting first; each kind's oldest few, and its list for the rest. */}
@@ -273,15 +253,9 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               }
             />
           )}
-        </CardContent>
-      </Card>
+      </HomeSection>
       {overview.trending.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Trending feedback</CardTitle>
-            <CardDescription>The most votes in the last 7 days.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <HomeSection title="Trending feedback" description="The most votes in the last 7 days.">
             <ItemList>
               {overview.trending.map((post) => (
                 <ItemRow
@@ -295,25 +269,18 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                 />
               ))}
             </ItemList>
-          </CardContent>
-        </Card>
+        </HomeSection>
       )}
       {paused.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Paused</CardTitle>
-            <CardDescription>
-              {included
-                ? "Merged pull requests not analysed yet: the project ran out of AI credits. Resume them once it has more."
-                : "Merged pull requests not analysed yet: this project's plan doesn't include Autopilot. They wait for it."}
-            </CardDescription>
-            {included && (
-              <CardAction>
-                <ResumeAllButton projectSlug={slug} />
-              </CardAction>
-            )}
-          </CardHeader>
-          <CardContent>
+        <HomeSection
+          title="Paused"
+          description={
+            included
+              ? "Merged pull requests not analysed yet: the project ran out of AI credits. Resume them once it has more."
+              : "Merged pull requests not analysed yet: this project's plan doesn't include Autopilot. They wait for it."
+          }
+          action={included && <ResumeAllButton projectSlug={slug} />}
+        >
             <ItemList>
               {paused.slice(0, 10).map((change) => (
                 <ItemRow
@@ -338,9 +305,31 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                 And {pausedCount - 10} more in Autopilot{included && "; Resume all resumes them too"}.
               </p>
             )}
-          </CardContent>
-        </Card>
+        </HomeSection>
       )}
-    </>
+          </div>
+        </PaneBody>
+      </Pane>
+    </PaneLayout>
+  );
+}
+
+/**
+ * One of Home's parts, on the pane (no card in a card): its title, a line on it and its action at the right, then
+ * what it lists. `tinted`: a notice (sample content, an import), on a muted fill.
+ */
+function HomeSection({ title, description, action, tinted = false, children }: { title: string; description?: ReactNode; action?: ReactNode; tinted?: boolean; children?: ReactNode }) {
+  return (
+    <section aria-label={title} className={tinted ? "flex flex-col gap-3 rounded-xl bg-muted/60 p-4" : "flex flex-col gap-3"}>
+      {/* Its action under its title when there isn't room for both (a phone). */}
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <div className="flex min-w-0 grow basis-64 flex-col gap-0.5">
+          <h2 className="font-heading text-base font-semibold">{title}</h2>
+          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </div>
+      {children}
+    </section>
   );
 }
