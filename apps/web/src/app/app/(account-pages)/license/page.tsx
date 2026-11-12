@@ -17,8 +17,8 @@ export const metadata: Metadata = { title: 'Remove "Powered by tuti"', robots: {
 const LICENSE_EMAIL = "hello@tuti.so";
 
 /**
- * tuti.so/app/license?installation=…&project=… is where "Get a licence" in Settings → Branding → Powered by tuti goes,
- * on any installation: a licence is for that project on that installation, so the page shows both
+ * tuti.so/app/license?installation=…&project=… is where "Get a licence" in Branding → Powered by tuti goes (in Settings,
+ * or Customize on older releases, which self-hosters may still run: the page names both), on any installation: a licence is for that project on that installation, so the page shows both
  * ids, and buys it for them with Stripe Checkout (or, without Stripe, says to email). Only on Tuti's
  * own installation, the licence server.
  */
@@ -38,7 +38,7 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
     return (
       <EmptyState
         title="Open this page from your Tuti"
-        description='In Settings → Branding, untick "Powered by tuti" and choose Get a licence: the link says which project it is for.'
+        description='In Branding (in Settings; Customize on older versions), untick "Powered by tuti" and choose Get a licence: the link says which project it is for.'
       />
     );
   }
@@ -79,7 +79,7 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
         <div className="flex flex-col gap-2" role="status">
           <p className="font-medium">This project is licensed.</p>
           <p>
-            In Settings → Branding, choose Check now (or wait for the daily check), then untick &quot;Powered by tuti&quot;.
+            In Branding (in Settings; Customize on older versions), choose Check now (or wait for the daily check), then untick &quot;Powered by tuti&quot;.
           </p>
           {license.stripeSubscriptionId && (
             <p className="text-sm text-muted-foreground">
@@ -125,7 +125,7 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
       ) : (
         <>
           <p>
-            To buy one, email {email} with both IDs. Once it&apos;s active, choose Check now in Settings → Branding, or wait for the daily check.
+            To buy one, email {email} with both IDs. Once it&apos;s active, choose Check now in Branding (in Settings; Customize on older versions), or wait for the daily check.
           </p>
           <a href={mailto} className={buttonVariants({ className: "self-start" })}>
             Email {LICENSE_EMAIL}

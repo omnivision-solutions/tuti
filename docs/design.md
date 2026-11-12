@@ -333,9 +333,10 @@ redesign). Filters are chips, not tabs, except a public list's one filter that s
   never wraps (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
   into view, faded at the end that has more (`useScrollingRow`; the portal's
   parts and their rows too). Settings has a section pane of its own (Panes), in groups (Project,
-  Users, Support, AI, Connections, Billing; a drawer from the page's header below 48rem of sidebar inset); it opens
+  Portal, Users, Support, AI, Connections, Billing; a drawer from the page's header below 48rem of sidebar inset); it opens
   on General. Each of its pages is a `SettingsPane`: a pane titled by the page, a line on what it's for, then its
-  `SettingsCard`s (a form that isn't a row in a `SettingBlock`). Reporting has a menu of its
+  `SettingsCard`s (a form that isn't a row in a `SettingBlock`); the Portal group's pages are `PortalSettingsPane`s
+  instead, their settings beside a preview (Portal settings, below). Reporting has a menu of its
   own (`SettingsMenu` with `label`: Help center, AI support, Inbox, a group's name
   small and uppercase, each page with its icon), using the same 48rem inset threshold to put its menu
   above the report when the app sidebar leaves less room. Each page has its numbers (`Stat`, a
