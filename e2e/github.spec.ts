@@ -9,6 +9,8 @@ import { connectGithub, nextInstall } from "./github";
 import { createProject, signUp } from "./helpers";
 
 test("an admin connects two projects to one GitHub account, gives each its repositories, and disconnects", async ({ browser }, testInfo) => {
+  // Two projects, each connected, given repositories, Autopilot's settings and a disconnect: near 30 seconds on a busy runner.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const [web, mobile] = [`e2e-${randomUUID().slice(0, 8)}`, `e2e-${randomUUID().slice(0, 8)}`];
   const owner = await signUp(browser, APP_URL, "Olive Owner");
