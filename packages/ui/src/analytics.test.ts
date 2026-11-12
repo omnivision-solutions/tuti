@@ -90,6 +90,25 @@ describe("analytics", () => {
     expect(safeAddress("https://tuti.so/pricing")).toBe("https://tuti.so/pricing");
   });
 
+  it("strips tokens, people and titles from every event it sends", () => {
+    const event = {
+      event: "$pageview",
+      properties: {
+        $current_url: "https://tuti.so/app/admin/email/resume?token=secret#x",
+        $pathname: "/app/acme/users/secret",
+        $prev_pageview_pathname: "/app/auth/invite/secret",
+        $browser: "Chrome",
+        title: "secret · Users",
+        $title: "secret · Users",
+        $set_once: { $initial_current_url: "https://tuti.so/app/auth/reset-password?token=secret", $initial_pathname: "/app/auth/invite/secret" },
+      },
+      $set_once: { $initial_current_url: "https://tuti.so/app/auth/invite/secret" },
+    };
+    ANALYTICS_CONFIG.before_send(event as never);
+    expect(JSON.stringify(event)).not.toContain("secret");
+    expect(event.properties).toMatchObject({ $pathname: "/app/[project]/users/[user]", $browser: "Chrome" });
+  });
+
   it("hides a project or id that happens to be a page's name", () => {
     expect(routeOf("/app/support/users/billing")).toBe("/app/[project]/users/[user]");
     expect(routeOf("/app/settings/docs/history")).toBe("/app/[project]/docs/[slug]");
