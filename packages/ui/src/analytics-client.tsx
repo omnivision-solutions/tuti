@@ -193,9 +193,40 @@ export const ANALYTICS_CONFIG = {
 /**
  * Whether a page is one analytics counts: under `under` ("/app": the app's own pages), or anywhere without it. PostHog
  * keeps listening after its page's layout is gone, so a client navigation from /app to a portal (/help) would count.
+ * Not the way a portal's visitor signs in either (/app/auth/continue, and the sign-in pages on their way back there):
+ * they're a customer's visitors.
  */
-export function isCounted(pathname: string, under: string | undefined) {
-  return !under || pathname === under || pathname.startsWith(`${under}/`);
+export function isCounted(pathname: string, search: string, under: string | undefined) {
+  if (!under) {
+    return true;
+  }
+  let query = search;
+  try {
+    query = decodeURIComponent(decodeURIComponent(search));
+  } catch {
+    // Kept as it came: a malformed query still can't hide the continue address below, only spell it encoded.
+  }
+  const portalSignIn = pathname === "/app/auth/continue" || /\/app\/auth(\/|%2f)continue/i.test(query);
+  return !portalSignIn && (pathname === under || pathname.startsWith(`${under}/`));
+}
+
+/**
+ * The app's referrers, other sites' as $direct: the app is reached from tuti.so, an email or a bookmark, and another
+ * site (a customer's portal) mustn't be named. The marketing site keeps its referrers: they're how people find Tuti.
+ */
+export function withOwnReferrers(properties: unknown, origin: string) {
+  if (!properties || typeof properties !== "object") {
+    return;
+  }
+  const record = properties as Record<string, unknown>;
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value === "string" && /referr/i.test(key)) {
+      const own = /domain/i.test(key) ? value === new URL(origin).host : value.startsWith(`${origin}/`) || value === origin;
+      record[key] = own || value === "$direct" ? value : "$direct";
+    } else {
+      withOwnReferrers(value, origin);
+    }
+  }
 }
 
 /**
@@ -208,7 +239,15 @@ export function PostHogAnalytics({ token, host, under }: { token: string; host: 
       posthog.init(token, {
         ...ANALYTICS_CONFIG,
         api_host: host,
-        before_send: (event) => (isCounted(window.location.pathname, under) ? ANALYTICS_CONFIG.before_send(event) : null),
+        before_send: (event) => {
+          if (!event || !isCounted(window.location.pathname, window.location.search, under)) {
+            return null;
+          }
+          if (under) {
+            withOwnReferrers(event, window.location.origin);
+          }
+          return ANALYTICS_CONFIG.before_send(event);
+        },
       }),
     );
   }, [token, host, under]);

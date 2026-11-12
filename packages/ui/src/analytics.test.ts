@@ -4,7 +4,7 @@ import { analyticsSettings } from "./analytics";
 import { readdirSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-import { ANALYTICS_CONFIG, APP_ROUTES, isCounted, routeOf, safeAddress } from "./analytics-client";
+import { ANALYTICS_CONFIG, APP_ROUTES, isCounted, routeOf, safeAddress, withOwnReferrers } from "./analytics-client";
 
 describe("analytics", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -41,11 +41,36 @@ describe("analytics", () => {
   });
 
   it("counts the app's pages only, not a portal reached from them in the same app", () => {
-    expect(isCounted("/app", "/app")).toBe(true);
-    expect(isCounted("/app/acme/inbox", "/app")).toBe(true);
-    expect(isCounted("/help/docs", "/app")).toBe(false);
-    expect(isCounted("/application", "/app")).toBe(false);
-    expect(isCounted("/pricing", undefined)).toBe(true);
+    expect(isCounted("/app", "", "/app")).toBe(true);
+    expect(isCounted("/app/acme/inbox", "", "/app")).toBe(true);
+    expect(isCounted("/help/docs", "", "/app")).toBe(false);
+    expect(isCounted("/application", "", "/app")).toBe(false);
+    expect(isCounted("/pricing", "", undefined)).toBe(true);
+  });
+
+  it("doesn't count a portal visitor signing in through the app", () => {
+    const back = `/app/auth/continue?${new URLSearchParams({ portal: "acme", state: "x" })}`;
+    expect(isCounted("/app/auth/continue", "?portal=acme&state=x", "/app")).toBe(false);
+    expect(isCounted("/app/auth/sign-in", `?${new URLSearchParams({ next: back })}`, "/app")).toBe(false);
+    expect(isCounted("/app/auth/sign-up", `?${new URLSearchParams({ next: `/app/auth/sign-in?${new URLSearchParams({ next: back })}` })}`, "/app")).toBe(false);
+    expect(isCounted("/app/auth/sign-in", "?next=%2Fapp%2Facme", "/app")).toBe(true);
+    expect(isCounted("/app/auth/sign-up", "", "/app")).toBe(true);
+  });
+
+  it("sends other sites' referrers as $direct in the app", () => {
+    const event = {
+      properties: {
+        $referrer: "https://help.e2e-acme.example.com/",
+        $referring_domain: "help.e2e-acme.example.com",
+        $set_once: { $initial_referrer: "https://tuti.so/pricing", $initial_referring_domain: "tuti.so" },
+      },
+    };
+    withOwnReferrers(event, "https://tuti.so");
+    expect(event.properties).toEqual({
+      $referrer: "$direct",
+      $referring_domain: "$direct",
+      $set_once: { $initial_referrer: "https://tuti.so/pricing", $initial_referring_domain: "tuti.so" },
+    });
   });
 
   it("sends addresses without the tokens in reset, resume and invite links", () => {
