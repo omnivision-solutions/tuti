@@ -30,7 +30,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await team.getByRole("textbox", { name: "Comment" }).fill("Thanks! We're on it.");
   await team.getByRole("button", { name: "Comment", exact: true }).click();
   await expect(team.getByText("Thanks! We're on it.")).toBeVisible();
-  await team.getByLabel("Status").click();
+  await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
   // And says when they expect it (the key's page is on the way: back to the post after).
@@ -288,7 +288,7 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
 
   // The team ships it, told first that it emails Cy too (and Ada, who posted it, and Di); Cy hears.
   await team.goto(`/app/${slug}/p/1`);
-  await team.getByLabel("Status").click();
+  await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Completed" }).click();
   const ask = team.getByRole("alertdialog", { name: `Mark “${dark}” completed?` });
   await expect(ask).toContainText("This emails up to 3 people who asked for it that it shipped.");

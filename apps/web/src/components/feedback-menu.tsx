@@ -1,0 +1,81 @@
+import { prisma } from "@tuti/db";
+import { boardLimit } from "@tuti/shared";
+import { CopyIcon, InboxIcon, LayoutListIcon, MapIcon, Settings2Icon, SparklesIcon } from "lucide-react";
+
+import { NewBoardDialog } from "@/components/boards";
+import { SectionGroup, SectionLink, SectionPane } from "@/components/pane";
+import { STATUS_LABELS, StatusIcon } from "@/components/post-status-badge";
+import { isAdminRole } from "@/lib/roles";
+import { teamPostCounts } from "@/server/post-lists";
+
+/** The statuses the menu lists, as the list's tabs take them (Needs triage is a view of its own, above). */
+const STATUSES = [
+  ["under-review", "UNDER_REVIEW"],
+  ["planned", "PLANNED"],
+  ["in-progress", "IN_PROGRESS"],
+  ["completed", "COMPLETED"],
+] as const;
+
+/**
+ * Feedback's section pane, beside its list, the Roadmap, Boards and a post: its views, its boards (each one's posts;
+ * a + for a new one, owners and admins with room on their plan), its statuses and Possible duplicates, with counts
+ * across every board.
+ */
+export async function FeedbackMenu({
+  project,
+  role,
+  className,
+}: {
+  project: { id: string; slug: string; plan: Parameters<typeof boardLimit>[0] };
+  role: Parameters<typeof isAdminRole>[0];
+  className?: string;
+}) {
+  const base = `/app/${project.slug}/feedback`;
+  const [boards, perBoard, counts] = await Promise.all([
+    prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, slug: true, name: true } }),
+    // As Feedback lists them: merged duplicates aside.
+    prisma.post.groupBy({ by: ["boardId"], where: { projectId: project.id, duplicateOfId: null }, _count: true }),
+    teamPostCounts(project.id, {}),
+  ]);
+  const limit = boardLimit(project.plan);
+  const canAdd = isAdminRole(role) && (limit === null || boards.length < limit);
+  return (
+    <SectionPane title="Feedback" className={className}>
+      <SectionGroup>
+        <SectionLink href={`${base}?status=all`} icon={<InboxIcon />} count={counts.all}>
+          All posts
+        </SectionLink>
+        <SectionLink href={base} icon={<SparklesIcon />} count={counts.of("OPEN")}>
+          Needs triage
+        </SectionLink>
+        <SectionLink href={`${base}/roadmap`} icon={<MapIcon />}>
+          Roadmap
+        </SectionLink>
+      </SectionGroup>
+      <SectionGroup label="Boards" action={canAdd && <NewBoardDialog projectSlug={project.slug} icon />}>
+        {boards.map((board) => (
+          <SectionLink key={board.id} href={`${base}?board=${board.slug}&status=all`} icon={<LayoutListIcon />} count={perBoard.find((row) => row.boardId === board.id)?._count ?? 0}>
+            {board.name}
+          </SectionLink>
+        ))}
+        <SectionLink href={`${base}/boards`} icon={<Settings2Icon />}>
+          Manage boards
+        </SectionLink>
+      </SectionGroup>
+      <SectionGroup label="Statuses">
+        {STATUSES.map(([param, status]) => (
+          <SectionLink key={status} href={`${base}?status=${param}`} icon={<StatusIcon status={status} />} count={counts.of(status)}>
+            {STATUS_LABELS[status]}
+          </SectionLink>
+        ))}
+      </SectionGroup>
+      {counts.duplicates > 0 && (
+        <SectionGroup label="Smart views">
+          <SectionLink href={`${base}?show=duplicates`} icon={<CopyIcon />} count={counts.duplicates}>
+            Possible duplicates
+          </SectionLink>
+        </SectionGroup>
+      )}
+    </SectionPane>
+  );
+}

@@ -3,7 +3,8 @@ import { seenAs } from "@tuti/jobs";
 import { notFound } from "next/navigation";
 
 import { ListFilters } from "@/components/list-filters";
-import { PageHeader } from "@/components/page-header";
+import { FeedbackMenu } from "@/components/feedback-menu";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { RoadmapBoard } from "@/components/roadmap-board";
 import { asking } from "@/lib/format";
 import { storedPropertyFormats } from "@/lib/property-formats";
@@ -38,12 +39,13 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
   const plan = new Map(plans.map(({ id, ...rest }) => [id, rest]));
 
   return (
-    <>
-      <PageHeader
+    <PaneLayout>
+      <FeedbackMenu project={project} role={membership.role} />
+      <Pane aria-label="Roadmap">
+      <PaneHeader
         title="Roadmap"
         description="What's planned, in progress and done. Drag a card to change its status."
-        back={{ href: `/app/${slug}/feedback`, label: "Feedback" }}
-        // The board picked beside the title.
+        // The board picked at the right.
         actions={
           <ListFilters
             filters={[
@@ -57,6 +59,7 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
           />
         }
       />
+      <PaneBody className="flex flex-col gap-4 p-2 @min-[48rem]/app:p-3">
       <RoadmapBoard
         projectSlug={slug}
         completedDays={COMPLETED_DAYS}
@@ -81,6 +84,8 @@ export default async function TeamRoadmapPage(props: PageProps<"/app/[project]/f
           })),
         }))}
       />
-    </>
+      </PaneBody>
+      </Pane>
+    </PaneLayout>
   );
 }

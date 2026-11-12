@@ -5,10 +5,9 @@ import Form from "next/form";
 import { type ReactNode, useEffect, useRef } from "react";
 
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 
 /** Feedback's search keeps one input node, its focus and any newer typing while a search loads. */
-export function FeedbackSearch({ action, q, compact, children }: { action: string; q?: string; compact: boolean; children: ReactNode }) {
+export function FeedbackSearch({ action, q, children }: { action: string; q?: string; children: ReactNode }) {
   const input = useRef<HTMLInputElement>(null);
   const submitted = useRef<string | null>(null);
   useEffect(() => {
@@ -27,11 +26,12 @@ export function FeedbackSearch({ action, q, compact, children }: { action: strin
       scroll={false}
       role="search"
       onSubmit={() => { submitted.current = input.current?.value.trim().slice(0, 255) ?? null; }}
-      className={cn("relative flex min-w-0 flex-1 @min-[64rem]/page:flex-none", compact ? "@min-[64rem]/page:w-40" : "@min-[64rem]/page:w-60")}
+      // A round field among the pane header's actions.
+      className="relative flex w-32 min-w-0 @min-[64rem]/app:w-40"
     >
       {children}
       <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input ref={input} type="search" name="q" defaultValue={q} placeholder={compact ? "Search" : "Search feedback"} aria-label="Search feedback" className="h-9 pl-8" />
+      <Input ref={input} type="search" name="q" defaultValue={q} placeholder="Search" aria-label="Search feedback" className="h-8 rounded-full pl-8" />
     </Form>
   );
 }

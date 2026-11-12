@@ -24,7 +24,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
 
   // The team plans it, so the changelog can pick it.
   await team.goto(`/app/${slug}/p/1`);
-  await team.getByLabel("Status").click();
+  await team.getByLabel("Status", { exact: true }).click();
   await team.getByRole("option", { name: "Planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
 

@@ -149,7 +149,7 @@ export function PaneHeader({
  * Its links are found in its children (in groups, fragments and arrays, and what server components render): a client
  * component that renders SectionLinks hides them, so pass them in as elements, or give them `active`.
  */
-export function SectionPane({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
+export function SectionPane({ title, actions, className, children }: { title: ReactNode; actions?: ReactNode; /** The pane's own (not the drawer's). */ className?: string; children: ReactNode }) {
   const menu = useContext(SectionMenuContext);
   // The drawer closes as this pane shows beside the page (the shell's 48rem, a container query: watched as it renders),
   // whenever it mounts (a page of its own, streamed in).
@@ -178,7 +178,7 @@ export function SectionPane({ title, actions, children }: { title: ReactNode; ac
   );
   return (
     <>
-      <aside ref={watch} data-slot="section-pane" className="hidden w-62 shrink-0 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border @min-[48rem]/app:flex">
+      <aside ref={watch} data-slot="section-pane" className={cn("hidden w-62 shrink-0 flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border @min-[48rem]/app:flex", className)}>
         {content()}
       </aside>
       {menu && (
@@ -256,6 +256,8 @@ export function SectionLink({
       {icon}
       {dot && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: dot }} />}
       <span className="min-w-0 flex-1 truncate">{children}</span>
+      {/* A space for its name ("Planned 4"); a flex row drops it from the layout. */}
+      {count != null && " "}
       {count != null && <span className="text-xs text-muted-foreground tabular-nums">{count}</span>}
     </Link>
   );

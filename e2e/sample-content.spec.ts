@@ -68,7 +68,6 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   // And a sample post's "Merge into…" lists only the other sample posts, even the team's post most like it ("Darker mode").
   await api("/posts", { board: "feature-requests", title: "Darker mode" });
   await owner.goto(`/app/${slug}/p/1`);
-  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Merge into…" }).click();
   const mergeInto = owner.getByRole("dialog");
   await expect(mergeInto.getByRole("button", { name: /Export reports to CSV/ })).toBeVisible();

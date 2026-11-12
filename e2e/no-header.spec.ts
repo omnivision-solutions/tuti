@@ -60,7 +60,7 @@ test("pages use their own toolbar above tablet width and the sidebar rail works 
   await checkpoint(owner, "home-without-header", { fullPage: false });
 });
 
-test("a long post keeps its title and actions in view, and phones keep the menu and page actions", async ({ browser }, testInfo) => {
+test("a long post keeps its title and actions in view, and phones keep the menu and its way back", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -69,32 +69,29 @@ test("a long post keeps its title and actions in view, and phones keep the menu 
   await api("/posts", { board: "feature-requests", title: "Export reports to CSV", body: "Our team needs the full report.\n\n".repeat(60) });
   await owner.setViewportSize({ width: 1440, height: 900 });
   await owner.goto(`/app/${slug}/p/1`);
-  await owner.evaluate(() => window.scrollTo(0, 700));
+  // The post scrolls in its pane, under its header: the title and its actions stay in view.
+  const reply = owner.getByRole("textbox", { name: "Comment", exact: true });
+  await reply.scrollIntoViewIfNeeded();
+  await expect(reply).toBeInViewport();
   const heading = owner.getByRole("heading", { name: "Export reports to CSV", level: 1 });
   await expect(heading).toBeInViewport();
   await expect(owner.getByRole("link", { name: "View on portal" })).toBeInViewport();
-  expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(0);
-  // A keyboard-focused reply clears the whole sticky row, including a wrapped heading.
-  const reply = owner.getByRole("textbox", { name: "Comment", exact: true });
-  await reply.evaluate((element) => window.scrollBy(0, element.getBoundingClientRect().bottom - 20));
-  await reply.focus();
-  await expect.poll(async () => (await reply.boundingBox())!.y).toBeGreaterThanOrEqual((await owner.locator('[data-slot="post-header"]').boundingBox())!.height);
-  await owner.evaluate(() => window.scrollTo(0, 700));
+  expect(await owner.evaluate(() => window.scrollY)).toBe(0);
   await checkpoint(owner, "post-sticky-toolbar", { fullPage: false });
 
   await owner.setViewportSize({ width: 390, height: 844 });
   const bar = owner.locator("main > header");
   await expect(bar).toBeInViewport();
   await expect(bar.getByRole("button", { name: "Toggle Sidebar" })).toBeInViewport();
-  // A page loaded on desktop measures the phone row when narrowed: even a heading still inside the window
-  // but entirely behind the row must hand its title over to it.
-  await heading.evaluate((element) => window.scrollBy(0, element.getBoundingClientRect().bottom - 40));
+  // A page loaded on desktop measures the phone row when narrowed: the pane header's heading, scrolled up behind the
+  // row, hands its title over to it.
+  await owner.evaluate(() => window.scrollTo(0, 400));
   await afterIntersections(owner);
   await expect(bar.locator('[data-slot="bar-title"]')).toHaveText("Export reports to CSV");
-  await expect(owner.getByRole("button", { name: "More actions" })).toBeInViewport();
-  await owner.getByRole("button", { name: "More actions" }).click();
+  // At the top, the way back to the list and the post's actions.
+  await owner.evaluate(() => window.scrollTo(0, 0));
+  await expect(owner.locator('[data-slot="pane-header"]').getByRole("link", { name: "All posts" })).toBeInViewport();
   await expect(owner.getByRole("link", { name: "View on portal" })).toBeInViewport();
-  await owner.keyboard.press("Escape");
   await bar.getByRole("button", { name: "Toggle Sidebar" }).click();
   const phoneSidebar = owner.getByRole("dialog", { name: "Sidebar" });
   await expect(phoneSidebar).toBeVisible();
@@ -103,7 +100,7 @@ test("a long post keeps its title and actions in view, and phones keep the menu 
   await checkpoint(owner, "phone-navigation-and-actions", { fullPage: false });
 });
 
-test("short windows let a wrapped post header scroll away and give comments the full height", async ({ browser }, testInfo) => {
+test("short windows: a long post's comments get the pane's height under its one-row header", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -112,37 +109,19 @@ test("short windows let a wrapped post header scroll away and give comments the 
   const title = "Export the filtered report for the entire team as a CSV download";
   await api("/posts", { board: "feature-requests", title, body: "Our team needs the full report.\n\n".repeat(30) });
   await api("/posts/1/comments", { body: "Please include the complete report for everyone on the team.\n\n".repeat(30) });
-  await owner.setViewportSize({ width: 1024, height: 900 });
-  await owner.goto(`/app/${slug}/p/1`);
-  const heading = owner.getByRole("heading", { name: title, level: 1 });
-  const toolbar = owner.locator('[data-slot="post-header"]');
-  await expect(toolbar).toHaveCSS("position", "sticky");
-  await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
-
-  // Resizing only the height must also clear the measured sticky offset.
   await owner.setViewportSize({ width: 1024, height: 450 });
-  expect((await heading.boundingBox())!.height).toBeGreaterThan(40);
-  await expect.soft(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
+  await owner.goto(`/app/${slug}/p/1`);
+  const header = owner.locator('[data-slot="pane-header"]');
+  // The header is one row, however long the title (cut short in it; whole over the post).
+  expect((await header.boundingBox())!.height).toBeLessThanOrEqual(61);
   const comments = owner.getByRole("region", { name: "Comments", exact: true });
   await comments.evaluate((element) => element.scrollIntoView({ block: "start" }));
-  await expect.soft(heading).not.toBeInViewport();
-  await expect.soft.poll(async () => (await comments.boundingBox())!.y).toBeLessThanOrEqual(24);
+  const box = (await header.boundingBox())!;
+  await expect.poll(async () => (await comments.boundingBox())!.y - (box.y + box.height)).toBeLessThanOrEqual(32);
   await checkpoint(owner, "short-window-comments-without-sticky-header", { fullPage: false });
-
-  // Standalone PageHeaders follow the same height guard, on a short initial load and after resizing.
-  await owner.goto(`/app/${slug}/feedback`);
-  const pageToolbar = owner.locator('[data-slot="page-header"]');
-  await expect(pageToolbar).not.toHaveCSS("position", "sticky");
-  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
-  await owner.setViewportSize({ width: 1024, height: 900 });
-  await expect(pageToolbar).toHaveCSS("position", "sticky");
-  await expect.poll(() => owner.locator("html").evaluate((element) => parseFloat(getComputedStyle(element).scrollPaddingTop))).toBeGreaterThan(0);
-  await owner.setViewportSize({ width: 1024, height: 450 });
-  await expect(pageToolbar).not.toHaveCSS("position", "sticky");
-  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "0px");
 });
 
-test("an open feedback pane stays below the page toolbar while the list scrolls", async ({ browser }, testInfo) => {
+test("an open feedback pane stays in view while the list scrolls", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -150,13 +129,14 @@ test("an open feedback pane stays below the page toolbar while the list scrolls"
   const api = await apiFor(owner, slug);
   await Promise.all(Array.from({ length: 20 }, (_, i) => api("/posts", { board: "feature-requests", title: `Report idea ${i + 1}` })));
   await owner.setViewportSize({ width: 1440, height: 900 });
-  await owner.goto(`/app/${slug}/feedback?post=1`);
-  await owner.evaluate(() => window.scrollTo(0, 600));
-  const toolbar = owner.locator('[data-slot="page-header"]');
+  await owner.goto(`/app/${slug}/feedback?status=all&post=1`);
   const close = owner.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Close" });
   await expect(close).toBeInViewport();
-  const box = (await toolbar.boundingBox())!;
-  expect((await close.boundingBox())!.y).toBeGreaterThanOrEqual(box.y + box.height);
+  // The list scrolls in its own pane, to its last row: the post's pane doesn't move.
+  const before = (await close.boundingBox())!.y;
+  await owner.getByRole("main").getByRole("list", { name: "Posts" }).getByRole("listitem").last().scrollIntoViewIfNeeded();
+  await expect(close).toBeInViewport();
+  expect((await close.boundingBox())!.y).toBe(before);
   await checkpoint(owner, "feedback-pane-below-toolbar", { fullPage: false });
 });
 

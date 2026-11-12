@@ -15,8 +15,8 @@ import type { PickablePost } from "@/components/post-picker";
 import { MovePostSelect } from "@/components/move-post-select";
 import { PhoneFold, PostEtaSelect, PostOwnerSelect, PostVisibilitySelect } from "@/components/post-planning";
 import { VisibilityBadge } from "@/components/visibility-badge";
-import { BackLink } from "@/components/back-link";
-import { PageHeader } from "@/components/page-header";
+import { FeedbackMenu } from "@/components/feedback-menu";
+import { Pane, PaneBody, PaneHeader, PaneLayout } from "@/components/pane";
 import { PostLinks } from "@/components/post-links";
 import { CONVERSATIONS_SHOWN, Property, PropertyRow, PostConversations, QUIET_TRIGGER, PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
 import { PostSteps } from "@/components/post-steps";
@@ -155,22 +155,41 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   const suggestions = suggestionRows.map((s) => ({ ...s, post: seen(s.post), original: seen(s.original) }));
 
   return (
-    <>
-      {/* The post (its header, then it) beside its sidebar, both from the top. On phones one column: the header, the
-          properties, the post, the rest of the sidebar (each placed by its order, the columns' boxes dropped). */}
-      {/* The whole width (data-wide): the post's column up to a reading width, the sidebar beside it. */}
-      <div data-wide className="grid gap-6 lg:grid-cols-[minmax(0,48rem)_18rem] lg:grid-rows-[auto_1fr] lg:items-start lg:justify-center lg:gap-12">
-          <div data-slot="post-header" className="flex min-w-0 flex-col gap-6 topbar:[@media(height>=40rem)]:sticky topbar:top-0 topbar:z-10 topbar:bg-background lg:col-start-1 lg:row-start-1">
-        {/* Back to the list, and the newer and older post at the other end of the same row (away from the title, so they
-          don't read as votes). */}
-      <div className="flex items-center justify-between gap-2 -mb-3">
-        <BackLink href={`/app/${slug}/feedback`}>Feedback</BackLink>
-        <PostSteps projectSlug={slug} {...neighbours} />
-      </div>
-      <PageHeader
-          title={<span className="text-balance">{post.title}</span>}
-          meta={
+    <PaneLayout>
+      <FeedbackMenu project={project} role={membership.role} />
+      <Pane aria-label="Post">
+        <PaneHeader
+          back={{ href: `/app/${slug}/feedback`, label: "All posts" }}
+          title={post.title}
+          // The newer and older post, the portal and Merge; round icons on phones but Merge.
+          actions={
             <>
+              <PostSteps projectSlug={slug} {...neighbours} />
+              <a
+                href={`${await portalAddress(slug)}${postPath(post)}`}
+                target="_blank"
+                rel="noreferrer"
+                title="View on portal"
+                className={buttonVariants({ variant: "outline", size: "sm", className: "@max-[48rem]/app:size-8 @max-[48rem]/app:px-0" })}
+              >
+                <ExternalLinkIcon />
+                <span className="@max-[48rem]/app:sr-only">View on portal</span>
+              </a>
+              {!post.duplicateOf && <MergePostDialog projectSlug={slug} post={seen(post)} candidates={likeFirst<PickablePost>(like, candidates)} />}
+            </>
+          }
+        />
+        <PaneBody className="@container/post p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-7">
+      {/* The post (its title, then it) beside its properties, both from the top. In a narrow pane one column: the
+          title, the properties, the post, the rest of the sidebar (each placed by its order, the columns' boxes dropped). */}
+      <div className="grid gap-6 @min-[56rem]/post:grid-cols-[minmax(0,48rem)_18rem] @min-[56rem]/post:grid-rows-[auto_1fr] @min-[56rem]/post:items-start @min-[56rem]/post:justify-center @min-[56rem]/post:gap-10">
+        <div data-slot="post-header" className="flex min-w-0 flex-col gap-4 @min-[56rem]/post:col-start-1 @min-[56rem]/post:row-start-1">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            {/* The title large, over the post: the pane header's heading says it to screen readers. */}
+            <p aria-hidden className="font-heading text-2xl font-semibold tracking-[-0.02em] text-balance break-words @min-[48rem]/app:text-[1.75rem]">
+              {post.title}
+            </p>
+            <p className="text-sm text-muted-foreground">
               {/* Its status is in its properties, beside it. */}
               {post.sample && <SampleBadge />} <VisibilityBadge visibility={seenAs(post)} /> #{post.number} · {post.author.name} · {timeAgo(post.createdAt)}
               {/* A merged post's votes moved with it. */}
@@ -182,36 +201,21 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                   </span>
                 </>
               )}
-            </>
-          }
-          actions={
-            <>
-              <a
-                href={`${await portalAddress(slug)}${postPath(post)}`}
-                target="_blank"
-                rel="noreferrer"
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                <ExternalLinkIcon />
-                View on portal
-              </a>
-            </>
-          }
-          more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={seen(post)} candidates={likeFirst<PickablePost>(like, candidates)} />}
-        />
-
-        {post.duplicateOf ? (
-          <Alert>
-            <AlertTitle>
-              Merged into{" "}
-              <Link href={`/app/${slug}/p/${post.duplicateOf.number}`} className="underline underline-offset-4">
-                #{post.duplicateOf.number} {post.duplicateOf.title}
-              </Link>
-            </AlertTitle>
-            <AlertDescription>Its votes and comments moved there, and its link points there.</AlertDescription>
-          </Alert>
-        ) : null}
+            </p>
           </div>
+
+          {post.duplicateOf ? (
+            <Alert>
+              <AlertTitle>
+                Merged into{" "}
+                <Link href={`/app/${slug}/p/${post.duplicateOf.number}`} className="underline underline-offset-4">
+                  #{post.duplicateOf.number} {post.duplicateOf.title}
+                </Link>
+              </AlertTitle>
+              <AlertDescription>Its votes and comments moved there, and its link points there.</AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
         {/* In the page's order on phones (the header, the properties, the post), so the keyboard and screen readers
             meet them in the order they're seen; beside the post from laptop width up, from the top. */}
         {/* Its properties, beside it (after it, narrower than a laptop): held in view as the page scrolls, scrolling on their own when taller than the screen. */}
@@ -220,11 +224,11 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           // (what triage changes, in reach), the rest (voters, what shipped it, …) after its comments.
           <aside
             aria-label="Properties"
-            className="text-sm lg:sticky lg:top-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:flex-col lg:gap-6 lg:overflow-y-auto lg:border-l lg:pl-6"
+            className="text-sm @min-[56rem]/post:sticky @min-[56rem]/post:top-0 @min-[56rem]/post:col-start-2 @min-[56rem]/post:row-span-2 @min-[56rem]/post:row-start-1 @min-[56rem]/post:flex @min-[56rem]/post:flex-col @min-[56rem]/post:gap-6 @min-[56rem]/post:max-h-[calc(100dvh-9rem)] @min-[56rem]/post:overflow-y-auto @min-[56rem]/post:border-l @min-[56rem]/post:pl-6"
           >
             {/* A card on phones, folded to a line (status, owner, ETA); beside the post, open rows under a heading. */}
-            <div className="flex flex-col rounded-xl bg-card px-4 py-3 shadow-xs ring-1 ring-border lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none lg:ring-0">
-              <h2 className="group-label mb-1 lg:mb-2">Properties</h2>
+            <div className="flex flex-col rounded-xl bg-card px-4 py-3 shadow-xs ring-1 ring-border @min-[56rem]/post:rounded-none @min-[56rem]/post:bg-transparent @min-[56rem]/post:p-0 @min-[56rem]/post:shadow-none @min-[56rem]/post:ring-0">
+              <h2 className="group-label mb-1 @min-[56rem]/post:mb-2">Properties</h2>
               <PhoneFold
                 summary={
                   <>
@@ -266,7 +270,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               )}
               </PhoneFold>
             </div>
-            <div className="flex flex-col gap-6 empty:hidden max-lg:hidden lg:border-t lg:pt-5">
+            <div className="flex flex-col gap-6 empty:hidden @max-[56rem]/post:hidden @min-[56rem]/post:border-t @min-[56rem]/post:pt-5">
             <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} formats={formats} total={total} />
             <PostConversations
               projectSlug={slug}
@@ -295,7 +299,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </div>
           </aside>
         )}
-          <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-2">
+          <div className="flex min-w-0 flex-col gap-6 @min-[56rem]/post:col-start-1 @min-[56rem]/post:row-start-2">
           {isEmptyDoc(displayDoc(post)) ? (
             <p className="text-sm text-muted-foreground italic">No description.</p>
           ) : (
@@ -354,7 +358,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           {/* On phones the rest of the sidebar (voters, what shipped it, …) after the post, here in the page's order
               too (beside it, from laptop width up, it's the aside's). */}
           {!post.duplicateOf && (
-            <div className="flex flex-col gap-6 text-sm empty:hidden lg:hidden">
+            <div className="flex flex-col gap-6 text-sm empty:hidden @min-[56rem]/post:hidden">
               <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} formats={formats} total={total} />
               <PostConversations
                 projectSlug={slug}
@@ -383,6 +387,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </div>
           )}
       </div>
-    </>
+        </PaneBody>
+      </Pane>
+    </PaneLayout>
   );
 }
