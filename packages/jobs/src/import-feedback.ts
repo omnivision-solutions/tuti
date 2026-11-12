@@ -2,6 +2,7 @@ import { type HtmlContent, htmlToContent, type LeftOut, type LeftOutReason, type
 import { imageKey, imageWidths } from "@tuti/content/media";
 import { type PostStatus, type Prisma, prisma } from "@tuti/db";
 import { boardLimit, embeddingsEnabled, log } from "@tuti/shared";
+import { savedPicture } from "@tuti/shared/media-links";
 import { titleSlug } from "@tuti/shared/post-urls";
 import { mediaStorage } from "@tuti/shared/storage";
 
@@ -10,7 +11,6 @@ import { type FeaturebaseAuthor, type FeaturebaseBoard, type FeaturebaseComment,
 import { mediaImporter } from "./import-media";
 import { IMPORT_SOURCES } from "./import-sources";
 import { adminMember, ALREADY_HERE, contactUsers, type ImportJob, loadAdmins, sourceUserId, type StepPage, tally } from "./imports";
-import { lastingMediaUrl } from "./lasting-media";
 import { syncUsersIn } from "./project-users";
 
 /**
@@ -604,8 +604,8 @@ async function commentsPage(job: ImportJob, cursor: string | null): Promise<Step
 
 /**
  * Contacts' uploaded avatars (those whose user still has the link the import gave them) copied into media storage and
- * pointed at, as Account's photo is (a lasting link to its smallest size); Featurebase's generated ones never came
- * across (contactDetails). One that can't be copied is left out, counted, and their initials show. Without media
+ * pointed at, as Account's photo is (its smallest size, saved without host or path and read as a lasting link);
+ * Featurebase's generated ones never came across (contactDetails). One that can't be copied is left out, counted, and their initials show. Without media
  * storage, the links stay as they are. The `avatars` part, last of all: the least of what an import brings, and the
  * slowest (a fetch each), so nothing waits for it; several are copied at a time.
  */
@@ -644,7 +644,7 @@ export async function avatarsPage(job: ImportJob, cursor: string | null): Promis
     save: async (tx) => {
       for (const { user, copy } of copies) {
         const width = "mediaId" in copy ? copy.width : null;
-        const data = "mediaId" in copy && width ? { image: lastingMediaUrl(imageKey(copy.mediaId, imageWidths(width)[0]!)), imageId: copy.mediaId } : { image: null };
+        const data = "mediaId" in copy && width ? { image: savedPicture(imageKey(copy.mediaId, imageWidths(width)[0]!)), imageId: copy.mediaId } : { image: null };
         // Unless their avatar changed meanwhile (an SSO sign-in).
         const { count } = await tx.user.updateMany({ where: { id: user.id, imageId: null, image: user.image }, data });
         if (count > 0) {

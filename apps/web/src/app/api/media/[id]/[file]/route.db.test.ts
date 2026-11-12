@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { emailImageKey, fileKey, imageKey, videoKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
+import { savedPicture } from "@tuti/shared/media-links";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -117,4 +118,27 @@ test("profile pictures saved with the old /media links point at /api/media after
   const pictures = await prisma.user.findMany({ where: { id: { in: [moved.id, copied.id, kept.id] } }, select: { id: true, image: true } });
   expect(Object.fromEntries(pictures.map((user) => [user.id, user.image]))).toEqual({ [moved.id]: link, [copied.id]: link, [kept.id]: elsewhere });
   expect((await open(link)).status).toBe(302);
+});
+
+test("the migration saves links to the app's own images without host or path; a picture from elsewhere stays", async () => {
+  const media = await image();
+  const key = emailImageKey(media.id);
+  // Uploaded (imageId) or copied from another user (none of its own); and one from another site, whatever its path.
+  const elsewhere = `https://avatars.example.com/api/media/u1/1.png?s=2`;
+  const [uploaded, copied, kept] = await Promise.all([signUp("Uploaded"), signUp("Copied"), signUp("Elsewhere")]);
+  await prisma.user.update({ where: { id: uploaded.id }, data: { image: lastingMediaUrl(key), imageId: media.id } });
+  await prisma.user.update({ where: { id: copied.id }, data: { image: lastingMediaUrl(key) } });
+  await prisma.user.update({ where: { id: kept.id }, data: { image: elsewhere } });
+
+  await prisma.$executeRawUnsafe(
+    readFileSync(new URL("../../../../../../../../packages/db/prisma/migrations/20261112160000_pictures_saved_without_host/migration.sql", import.meta.url), "utf8"),
+  );
+
+  const ids = [uploaded.id, copied.id, kept.id];
+  const saved = await prisma.$queryRaw<{ id: string; image: string }[]>`SELECT id, image FROM "user" WHERE id = ANY(${ids})`;
+  expect(Object.fromEntries(saved.map((user) => [user.id, user.image]))).toEqual({ [uploaded.id]: savedPicture(key), [copied.id]: savedPicture(key), [kept.id]: elsewhere });
+  // Read as the same link as before, which still opens.
+  const read = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, image: true } });
+  expect(Object.fromEntries(read.map((user) => [user.id, user.image]))).toEqual({ [uploaded.id]: lastingMediaUrl(key), [copied.id]: lastingMediaUrl(key), [kept.id]: elsewhere });
+  expect((await open(lastingMediaUrl(key))).status).toBe(302);
 });
