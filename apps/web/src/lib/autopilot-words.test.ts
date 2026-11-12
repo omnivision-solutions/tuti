@@ -236,8 +236,8 @@ test("an article's review with nothing to show says why, and offers Write again 
 });
 
 test("an edit being written again is looked at every 3 seconds for 2 minutes, then every 15 seconds, never given up on", () => {
-  expect([0, 1, 39].map(lookAgainIn)).toEqual([3_000, 3_000, 3_000]);
-  expect([40, 41, 500].map(lookAgainIn)).toEqual([15_000, 15_000, 15_000]);
+  expect([0, 3_000, 119_999].map(lookAgainIn)).toEqual([3_000, 3_000, 3_000]);
+  expect([120_000, 121_000, 30 * 60_000].map(lookAgainIn)).toEqual([15_000, 15_000, 15_000]);
 });
 
 test("a post's review says what happens to its status", () => {
