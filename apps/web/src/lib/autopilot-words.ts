@@ -472,9 +472,12 @@ export function nothingToShow(
   return `${lead} Write ${some} again to see what ${rewritable === 1 ? "it changes" : "they change"}, or dismiss ${it}.${rest}`;
 }
 
-/** While an edit is written again, its review looks again every 3 seconds for 2 minutes (40 looks), then every 15 seconds. */
-export const LOOKS_BEFORE_STILL = 40;
-export const lookAgainIn = (looks: number) => (looks < LOOKS_BEFORE_STILL ? 3_000 : 15_000);
+/**
+ * While an edit is written again, its review looks again every 3 seconds for 2 minutes, then every 15 seconds. Timed
+ * by the clock, not by counting looks: a background tab's timers are slowed, so 40 looks there can take far longer.
+ */
+export const STILL_AFTER = 2 * 60_000;
+export const lookAgainIn = (elapsed: number) => (elapsed < STILL_AFTER ? 3_000 : 15_000);
 
 /** A post's part (its pull request's progress update or completion), not an article's. */
 export const POST_PART = new Set(["resolves", "moves_forward"]);

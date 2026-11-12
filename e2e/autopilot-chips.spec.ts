@@ -315,8 +315,9 @@ test("an edit the previous release wrote, while its pull request is analysed aga
   await expect(owner.getByRole("dialog").getByRole("button", { name: "Writing…" })).toBeDisabled();
   await owner.keyboard.press("Escape");
 
-  // Two minutes on: still being written, and looked at every 15 seconds now (not every 3).
-  await owner.clock.runFor(2 * 60_000);
+  // Two minutes on (in one jump, as a laptop's lid closed: firing each 3-second look on the way would send 40 refreshes
+  // at once): still being written, and looked at every 15 seconds now (not every 3).
+  await owner.clock.fastForward(2 * 60_000);
   await expect(owner.getByText("Still writing it again… It shows here once it's written.", { exact: false })).toBeVisible();
   // The refreshes those 2 minutes started all answered (none in flight, none started since the last look), and the
   // page's time stopped: from here only the clock's steps make it look again.

@@ -26,7 +26,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dismissOrder, type DraftPick, draftPick, goesLive, LOOKS_BEFORE_STILL, lookAgainIn, nothingToShow, partState as statusOf, plural, POST_PART, undoQuestion, updateKind } from "@/lib/autopilot-words";
+import { dismissOrder, type DraftPick, draftPick, goesLive, lookAgainIn, STILL_AFTER, nothingToShow, partState as statusOf, plural, POST_PART, undoQuestion, updateKind } from "@/lib/autopilot-words";
 import { analyseCodeChange, applyCodeChange, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { TargetReview } from "@/server/operations/code-changes";
 
@@ -221,15 +221,15 @@ export function ArticleReview({
     if (!isWriting) {
       return;
     }
-    let looks = 0;
+    const since = Date.now();
     let timer: ReturnType<typeof setTimeout>;
     const look = () => {
-      looks += 1;
-      if (looks === LOOKS_BEFORE_STILL) {
+      const elapsed = Date.now() - since;
+      if (elapsed >= STILL_AFTER) {
         setStill(true);
       }
       router.refresh();
-      timer = setTimeout(look, lookAgainIn(looks));
+      timer = setTimeout(look, lookAgainIn(elapsed));
     };
     timer = setTimeout(look, lookAgainIn(0));
     return () => {
