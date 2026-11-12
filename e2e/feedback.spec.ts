@@ -1953,11 +1953,14 @@ test("on a laptop another view of the list starts at its top; a post opened and 
   await team.waitForURL(`**/app/${slug}/feedback`);
   await expect(rows.first()).toBeInViewport();
   await checkpoint(team, "feedback-view-from-top", { fullPage: false });
-  // And from the status pills, scrolled down again first.
-  await last.scrollIntoViewIfNeeded();
-  await expect(rows.first()).not.toBeInViewport();
-  await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^All/ }).click();
+  // Back to All posts: where it was left, at its last row (Back puts a view back, it doesn't start it over).
+  await team.goBack();
   await team.waitForURL(`**/app/${slug}/feedback?status=all`);
+  await expect(last).toBeInViewport();
+  await expect(rows.first()).not.toBeInViewport();
+  // And from the status pills (All still scrolled to its end): Needs triage starts at its top.
+  await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Needs triage/ }).click();
+  await team.waitForURL(`**/app/${slug}/feedback`);
   await expect(rows.first()).toBeInViewport();
 });
 

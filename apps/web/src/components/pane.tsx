@@ -61,6 +61,8 @@ if (typeof window !== "undefined") {
     document.addEventListener(event, () => (traversal = false), true);
   }
 }
+/** Whether the latest navigation is Back or Forward: a pane body is put back where it was then, not reset. */
+export const isTraversal = () => traversal;
 
 /**
  * What scrolls in a pane, under its header, in place of the window: so it returns to where it was on Back and Forward,
