@@ -47,10 +47,10 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
             fallbackSlug={fallbackSlug}
             user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
           />
-          <AppTabBar projects={projects} fallbackSlug={fallbackSlug} />
         </>
       }
       header={<AppHeader projects={projects} fallbackSlug={fallbackSlug} />}
+      tabBar={<AppTabBar projects={projects} fallbackSlug={fallbackSlug} />}
       banners={
         <>
           {asksToVerifyEmail(session.user) && <VerifyEmailBanner email={session.user.email} />}

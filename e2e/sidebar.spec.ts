@@ -329,6 +329,8 @@ test("on phones the tab bar goes between the main parts and opens the rest under
   await team.goto(`/app/${slug}`);
 
   const bar = team.getByRole("navigation", { name: "Main" });
+  // After the page in reading and focus order, as it's at the bottom of the screen.
+  expect(await bar.evaluate((nav) => !!(document.querySelector("main")!.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   await expect(bar.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   await checkpoint(team, "home-tab-bar", { fullPage: false });
   await bar.getByRole("link", { name: "Feedback" }).click();

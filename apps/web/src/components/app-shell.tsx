@@ -22,7 +22,7 @@ const CUSTOMIZE = /^\/app\/[^/]+\/customize(\/|$)/;
 /** Docs supplies its own phone navigation instead of the shared header. */
 const DOCS = /^\/app\/[^/]+\/docs(\/|$)/;
 
-export function AppShell({ sidebar, header, banners, children, defaultSidebarOpen = false }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode; defaultSidebarOpen?: boolean }) {
+export function AppShell({ sidebar, header, banners, tabBar, children, defaultSidebarOpen = false }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; tabBar?: ReactNode; children: ReactNode; defaultSidebarOpen?: boolean }) {
   // The inline script covers full loads; client entry from marketing or sign-in restores the fold before paint too.
   useLayoutEffect(() => {
     restorePaneWidths();
@@ -60,6 +60,8 @@ export function AppShell({ sidebar, header, banners, children, defaultSidebarOpe
           </div>
         )}
       </SidebarInset>
+      {/* After the page in reading and focus order, as it's at the bottom of the screen. */}
+      {tabBar}
     </SidebarProvider>
   );
 }
