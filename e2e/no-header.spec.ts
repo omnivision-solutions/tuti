@@ -280,4 +280,10 @@ test("billing's plan and usage anchors keep only their gap below the pane's head
   await owner.goto(`/app/${slug}/settings/billing`);
   await expectPaneAnchorGap(owner, "#plans", 32);
   await expectPaneAnchorGap(owner, "#usage", 32);
+  // On a phone the window scrolls, under the top bar: the plans land clear of it.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await expect(owner.locator("html")).toHaveCSS("scroll-padding-top", "48px");
+  await owner.getByRole("link", { name: "Choose a plan" }).click();
+  await expect.poll(async () => (await owner.locator("#plans").boundingBox())!.y).toBeGreaterThanOrEqual(48);
 });

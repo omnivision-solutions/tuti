@@ -53,7 +53,7 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     // The page's heading that shows at this width: a page with one for phones and one for wider screens (Settings'
     // layout) has the other hidden, which takes no room and so never goes up under the bar.
     const pick = () => {
-      const headings = [...document.querySelectorAll<HTMLElement>('main [data-slot="page-header"] h1')];
+      const headings = [...document.querySelectorAll<HTMLElement>('main :is([data-slot="page-header"], [data-slot="pane-header"]) h1')];
       // Shown (laid out at all): getClientRects where checkVisibility is missing (Safari before 17.4).
       return headings.find((h) => h.checkVisibility?.() ?? h.getClientRects().length > 0) ?? headings[0];
     };
@@ -63,7 +63,7 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     }
     const phone = window.matchMedia("(width < 48rem)");
     const tall = window.matchMedia("(height >= 40rem)");
-    let toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"]')!;
+    let toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"], [data-slot="pane-header"]')!;
     // Focused fields and anchor targets must clear the actual toolbar, including wrapped titles and editor actions.
     const measure = () => {
       // A query-only navigation can remount the page's header without rerunning this effect.
@@ -109,7 +109,8 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
         },
         { rootMargin: `-${bar}px 0px 0px 0px` },
       );
-      observer.observe(heading!);
+      // A pane header's heading is for screen readers alone on phones (PaneHeader): watch its row instead.
+      observer.observe(heading!.closest('[data-slot="pane-header"]') ?? heading!);
       renamed.observe(heading!, { childList: true, characterData: true, subtree: true });
     };
     // A width change or a remounted toolbar needs the current heading and all its observers afresh.
@@ -122,7 +123,7 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
       renamed.disconnect();
       sizes.unobserve(toolbar);
       heading = next;
-      toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"]')!;
+      toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"], [data-slot="pane-header"]')!;
       sizes.observe(toolbar);
       measure();
       watch();
