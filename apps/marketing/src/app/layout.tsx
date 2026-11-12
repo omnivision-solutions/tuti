@@ -1,3 +1,4 @@
+import { Analytics } from "@tuti/ui/analytics";
 import { brandFonts } from "@tuti/ui/brand-fonts";
 import { TutiLogo } from "@tuti/ui/tuti-logo";
 import type { Metadata } from "next";
@@ -8,6 +9,9 @@ import { SECTIONS } from "./sections";
 import { MobileNav, SignedOutLinks, SiteNav } from "./site-nav";
 
 import "./globals.css";
+
+// Rendered per request, so analytics follows the server's POSTHOG_KEY (@tuti/ui/analytics), not the build's.
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Tuti",
@@ -74,6 +78,7 @@ export default function MarketingLayout({ children }: LayoutProps<"/">) {
             </nav>
           </div>
         </footer>
+        <Analytics />
       </body>
     </html>
   );

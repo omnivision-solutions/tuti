@@ -4,7 +4,7 @@
  * these set it up themselves (e.g. the database tests start their own Postgres).
  */
 for (const name of Object.keys(process.env)) {
-  if (name === "DATABASE_URL" || name.startsWith("OPENAI_") || name.startsWith("HATCHET_CLIENT_") || name.startsWith("SMTP_") || name.startsWith("MEDIA_") || name.startsWith("GITHUB_") || name.startsWith("OPENROUTER_") || name.startsWith("AI_") || name === "DECISION_MODEL" || name.startsWith("CODE_CHANGES_") || name.startsWith("STRIPE_") || name.startsWith("SES_") || name === "PLANS" || name.startsWith("ARTICLE_VERSIONS_") || name.startsWith("ARTICLE_LIMIT_") || name.startsWith("FEATUREBASE_") || name.startsWith("INTERCOM_") || name.startsWith("FERNDESK_") || name.startsWith("CANNY_") || name.startsWith("FRILL_") || name.startsWith("NOLT_")) {
+  if (name === "DATABASE_URL" || name.startsWith("OPENAI_") || name.startsWith("HATCHET_CLIENT_") || name.startsWith("SMTP_") || name.startsWith("MEDIA_") || name.startsWith("GITHUB_") || name.startsWith("OPENROUTER_") || name.startsWith("AI_") || name === "DECISION_MODEL" || name.startsWith("CODE_CHANGES_") || name.startsWith("STRIPE_") || name.startsWith("SES_") || name === "PLANS" || name.startsWith("ARTICLE_VERSIONS_") || name.startsWith("ARTICLE_LIMIT_") || name.startsWith("FEATUREBASE_") || name.startsWith("INTERCOM_") || name.startsWith("FERNDESK_") || name.startsWith("CANNY_") || name.startsWith("FRILL_") || name.startsWith("NOLT_") || name.startsWith("POSTHOG_")) {
     delete process.env[name];
   }
 }

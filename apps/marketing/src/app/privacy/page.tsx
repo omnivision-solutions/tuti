@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Privacy Policy · Tuti", description
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" updated="6 November 2026">
+    <LegalPage title="Privacy Policy" updated="12 November 2026">
       <p>
         This policy explains what personal data Tuti&apos;s hosted service at tuti.so (the &quot;Service&quot;) handles,
         why, and your choices. It sits alongside our{" "}
@@ -37,7 +37,7 @@ export default function PrivacyPage() {
         <li><strong>Content:</strong> what you and your teammates, customers and visitors put into the Service: posts, comments, votes, articles, changelog entries, messages, emails to support addresses and uploaded files.</li>
         <li><strong>Connected services:</strong> if you connect a GitHub repository, the pull requests, releases and files the GitHub App can read.</li>
         <li><strong>Billing:</strong> your plan and payment history. Card details go straight to Stripe; we never see or store them.</li>
-        <li><strong>Technical data:</strong> IP address, browser and device details, and logs of requests and errors, used to run, secure and debug the Service.</li>
+        <li><strong>Technical data:</strong> IP address, browser and device details, and logs of requests and errors, used to run, secure and debug the Service, and to count page visits.</li>
       </ul>
 
       <h2>Why we use it</h2>
@@ -46,18 +46,19 @@ export default function PrivacyPage() {
         <li>to run AI features you use, such as duplicate detection, AI answers and Autopilot;</li>
         <li>to bill paid plans and AI credits;</li>
         <li>to keep the Service secure, prevent abuse and fix problems;</li>
+        <li>to count which pages of tuti.so and the app are visited, so we know what to improve;</li>
         <li>to tell you about important changes to the Service or these policies.</li>
       </ul>
       <p>
-        Our legal bases are performing our contract with you, our legitimate interest in running a secure and reliable
-        Service, and legal obligations such as keeping billing records. We don&apos;t sell personal data, show ads, or use
+        Our legal bases are performing our contract with you, our legitimate interests in running a secure and reliable
+        Service and in understanding how tuti.so and the app are used, and legal obligations such as keeping billing records. We don&apos;t sell personal data, show ads, or use
         your content to train AI models.
       </p>
 
       <h2>Cookies</h2>
       <p>
         We use only the cookies the Service needs to work, such as the one that keeps you signed in. tuti.so sets no
-        advertising or analytics cookies. A company may add its own code, such as analytics, to its portal; its policy
+        advertising or analytics cookies: we count page visits without storing anything in your browser. A company may add its own code, such as analytics, to its portal; its policy
         covers that.
       </p>
 
@@ -69,6 +70,7 @@ export default function PrivacyPage() {
         <li><strong>Amazon Web Services</strong> (Amazon SES) to send and receive email;</li>
         <li><strong>OpenRouter</strong> and the AI model providers it routes to, for AI features, only when they&apos;re used;</li>
         <li><strong>Stripe</strong> for payments;</li>
+        <li><strong>PostHog</strong> (in the EU) to count page visits on tuti.so and in the app, never on portals;</li>
         <li><strong>Google</strong> and <strong>GitHub</strong> if you choose to sign in or connect with them.</li>
       </ul>
       <p>We may also disclose data when the law requires it, or to a buyer if Tuti is sold, who must keep this policy.</p>

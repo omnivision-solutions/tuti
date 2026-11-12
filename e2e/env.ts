@@ -50,6 +50,9 @@ export const serverEnv = {
   // Autopilot's settings at their defaults, whatever a local .env tries (every CODE_CHANGES_ variable, and the old name).
   ...Object.fromEntries(Object.keys(readCodeChangesSettings({}).inUse).map((name) => [name, ""])),
   DECISION_MODEL: "",
+  // No analytics: journeys never send page views to PostHog, whatever a local .env holds.
+  POSTHOG_KEY: "",
+  POSTHOG_HOST: "",
   // A cap on the models projects pick, like Tuti's cloud: the model fake's Sonnet ($15 per million output tokens) is the most it allows.
   AI_MODEL_MAX_PRICE: "15",
   // AI credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).

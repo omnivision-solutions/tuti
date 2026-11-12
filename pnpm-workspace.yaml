@@ -17,6 +17,7 @@ allowBuilds:
   protobufjs: false
   cpu-features: false
   ssh2: false
+  core-js: false
 
 minimumReleaseAgeExclude:
   - "@next/env@16.3.8"
