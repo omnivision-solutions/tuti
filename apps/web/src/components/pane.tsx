@@ -121,7 +121,7 @@ export function SectionPane({ title, actions, children }: { title: ReactNode; ac
       </aside>
       {menu && (
         <Sheet open={menu.open} onOpenChange={menu.setOpen}>
-          <SheetContent side="left" showCloseButton={false} className="w-[19.5rem] gap-0 border-0 bg-card p-0" onClick={(event) => (event.target as HTMLElement).closest("a") && menu.setOpen(false)}>
+          <SheetContent data-pill-buttons side="left" showCloseButton={false} className="w-[19.5rem] gap-0 border-0 bg-card p-0" onClick={(event) => (event.target as HTMLElement).closest("a") && menu.setOpen(false)}>
             <SheetTitle className="sr-only">{title}</SheetTitle>
             {content}
           </SheetContent>

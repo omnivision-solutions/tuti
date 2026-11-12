@@ -47,10 +47,10 @@ function Mode({ mode }: { mode: "light" | "dark" }) {
         <Feedback />
       </Frame>
       <Frame width="72rem">
-        <Settings />
+        <Settings id={`${mode}-wide`} />
       </Frame>
       <Frame width="390px">
-        <Settings />
+        <Settings id={`${mode}-phone`} />
       </Frame>
     </div>
   );
@@ -162,7 +162,8 @@ function Feedback() {
   );
 }
 
-function Settings() {
+/** `id`: this copy's, so its label and description point at its own input. */
+function Settings({ id }: { id: string }) {
   return (
     <PaneLayout>
       <SectionPane title="Settings">
@@ -188,8 +189,8 @@ function Settings() {
               ]}
             />
             <SettingsCard>
-              <SettingRow label="Project name" description="Shown on your portal, in its emails and in the app." htmlFor="demo-name">
-                <Input id="demo-name" defaultValue="Acme Calendar" aria-describedby="demo-name-description" className="sm:w-60" />
+              <SettingRow label="Project name" description="Shown on your portal, in its emails and in the app." htmlFor={`${id}-name`}>
+                <Input id={`${id}-name`} defaultValue="Acme Calendar" aria-describedby={`${id}-name-description`} className="sm:w-60" />
               </SettingRow>
               <SettingRow label="Portal address" description="acme-calendar.tuti.so" inline>
                 <Button variant="outline" size="sm">
