@@ -705,7 +705,7 @@ at desktop and phone widths, in light and dark (in development only).
   `PaneHeader`, the body centred in it, max-w-2xl for a form's card (a wizard's step above it), max-w-3xl for
   settings cards, as Settings' pages.
 - **`StatStrip`**: a page's numbers in one card, side by side between lines; under 40rem two tiles to a row. A number
-  with `href` opens its list (Home's), read number first; `attention` (people waiting) in the highlight colour with its dot.
+  with `href` opens its list (the whole number, named "Need a reply: 4"); `attention` (people waiting) in the highlight colour with its dot.
 - **Pill buttons**: every `Button` in the admin is a pill (`--button-radius`, set while the sidebar's shell is on
   the page: its dialogs and menus too), and inside `data-pill-buttons`. Elsewhere (the portal, marketing) buttons
   keep their corners.

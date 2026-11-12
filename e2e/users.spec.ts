@@ -8,6 +8,8 @@ import { apiFor, createProject, signUp } from "./helpers";
 import { sesComplaint } from "./ses";
 
 test("the team syncs its users over the API and finds them on the Users page, by name and by group", async ({ browser }, testInfo) => {
+  // A long journey (pages of a hundred users, Back to a place in the list): more than the default 30s on a loaded runner.
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");

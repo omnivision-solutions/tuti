@@ -37,8 +37,8 @@ test("sample content from the setup, labelled Sample in Feedback, Docs, Changelo
   // Home: the sample content to remove, and numbers that count only the team's own post.
   await owner.goto(`/app/${slug}`);
   await expect(owner.getByText(/^Here to try things with, labelled Sample/)).toBeVisible();
-  await expect(owner.getByRole("link", { name: /New posts this week/ })).toHaveText(/^1New posts this week/);
-  await expect(owner.getByRole("link", { name: /Need a reply/ })).toHaveText(/^0Need a reply/);
+  await expect(owner.getByRole("link", { name: "New posts this week: 1" })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Need a reply: 0" })).toBeVisible();
   await checkpoint(owner, "home-sample-content");
 
   // Labelled Sample wherever it's listed; the team's own post isn't.
