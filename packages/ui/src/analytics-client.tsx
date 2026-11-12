@@ -4,19 +4,60 @@ import type { PostHogConfig } from "posthog-js";
 import { useEffect } from "react";
 
 /**
+ * A page address as it's sent: no query (reset, resume and sign-in links carry tokens there, and campaigns' utm_*
+ * come through PostHog's own properties) and no invite token in the path. Anything that isn't an address is kept.
+ */
+export function safeAddress(value: string) {
+  if (value === "$direct") {
+    return value;
+  }
+  try {
+    const url = new URL(value, "http://relative.invalid");
+    const path = url.pathname.replace(/\/auth\/invite\/[^/]+/, "/auth/invite/[token]");
+    return url.origin === "http://relative.invalid" ? path : url.origin + path;
+  } catch {
+    return "";
+  }
+}
+
+/** Every address PostHog sends (the page's, the referrer, the first ones of the visit), through safeAddress. */
+function withSafeAddresses(properties: Record<string, unknown> | undefined) {
+  for (const key of Object.keys(properties ?? {})) {
+    const value = properties![key];
+    if (typeof value === "string" && /url|referrer|pathname/i.test(key)) {
+      properties![key] = safeAddress(value);
+    }
+  }
+}
+
+/**
  * Cookieless: memory only, so nothing is stored in the browser and the privacy page's "no analytics cookies" holds (a
- * reload is a new visitor). Page views only, no autocapture (it would read what people type and click), no session
- * recordings, surveys or feature flags.
+ * reload is a new visitor). Page views only: no autocapture (it would read what people type and click), heatmaps,
+ * recordings, surveys, feature flags, errors or performance, whatever the PostHog project turns on, and no scripts
+ * of PostHog's beyond this one. Addresses lose their tokens (safeAddress).
  */
 export const ANALYTICS_CONFIG = {
   persistence: "memory",
   capture_pageview: "history_change",
   capture_pageleave: false,
   autocapture: false,
+  capture_heatmaps: false,
+  capture_dead_clicks: false,
+  capture_exceptions: false,
+  capture_performance: false,
   disable_session_recording: true,
   disable_surveys: true,
   advanced_disable_flags: true,
+  disable_external_dependency_loading: true,
   person_profiles: "identified_only",
+  before_send: (event) => {
+    if (event) {
+      withSafeAddresses(event.properties);
+      withSafeAddresses(event.$set);
+      withSafeAddresses(event.$set_once);
+    }
+    return event;
+  },
 } satisfies Partial<PostHogConfig>;
 
 /**
