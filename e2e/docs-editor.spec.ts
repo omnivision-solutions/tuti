@@ -97,7 +97,7 @@ test("typing in a phone article editor keeps its title, parent link and Save in 
   const { team, slug } = await editor(browser);
   await team.setViewportSize({ width: 390, height: 844 });
   await team.goto(`/app/${slug}/docs/invite-your-team`);
-  const back = team.locator('[data-slot="docs-page-header"]').getByRole("link", { name: "All articles", exact: true });
+  const back = team.locator('[data-slot="docs-page-header"]').getByRole("link", { name: "Docs", exact: true });
   const title = team.getByRole("textbox", { name: "Title", exact: true });
   const article = team.getByRole("textbox", { name: "Article", exact: true });
   const save = team.getByRole("button", { name: /^(Save|Saved|Saving…)$/ });

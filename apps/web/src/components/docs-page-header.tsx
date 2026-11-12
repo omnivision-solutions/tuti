@@ -1,16 +1,17 @@
 "use client";
 
-import { BookOpenIcon, EllipsisIcon } from "lucide-react";
+import { cn } from "cn";
+import { BookOpenIcon, EllipsisIcon, ExternalLinkIcon } from "lucide-react";
 import { createContext, type ReactNode, type RefObject, useContext, useEffect, useRef, useState } from "react";
 import { IconTooltip } from "@/components/icon-tooltip";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 import { PaneHeader } from "@/components/pane";
 
 const DocsMoreFocus = createContext<RefObject<HTMLButtonElement | null> | undefined>(undefined);
 export const useDocsMoreFocus = () => useContext(DocsMoreFocus);
 
-export function DocsMore({ children }: { children: ReactNode }) {
+export function DocsMore({ children, className }: { children: ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
@@ -35,7 +36,7 @@ export function DocsMore({ children }: { children: ReactNode }) {
     };
   }, [open]);
   return (
-    <div ref={root} className="docs-more relative text-[13px]">
+    <div ref={root} className={cn("docs-more relative text-[13px]", className)}>
       <IconTooltip label="More actions"><Button ref={toggle} type="button" variant="outline" size="icon-sm" aria-label="More actions" aria-expanded={open} onClick={() => setOpen(!open)}>
         <EllipsisIcon className="size-4" />
       </Button></IconTooltip>
@@ -84,6 +85,7 @@ export function DocsPageHeader({
   more,
   icon,
   titleInForm,
+  helpCenter,
 }: {
   title: ReactNode;
   description?: ReactNode;
@@ -94,6 +96,8 @@ export function DocsPageHeader({
   icon?: ReactNode;
   /** An editor whose title field shows the title (PaneHeader). */
   titleInForm?: boolean;
+  /** The page on the help center: "View on help center" in words, under More actions on phones. */
+  helpCenter?: string;
 }) {
   return (
     <div data-slot="docs-page-header" className="docs-page-header sticky top-0 z-20 -mx-(--docs-pad) bg-card">
@@ -111,8 +115,25 @@ export function DocsPageHeader({
         actions={
           <>
             <DocsBrowseButton />
+            {helpCenter && (
+              <a href={helpCenter} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", className: "docs-live-link @max-[48rem]/app:hidden" })}>
+                <ExternalLinkIcon />
+                View on help center
+              </a>
+            )}
             {actions}
-            {more && <DocsMore>{more}</DocsMore>}
+            {(more || helpCenter) && (
+              // With only the help center in it, the menu is for phones.
+              <DocsMore className={more ? undefined : "@min-[48rem]/app:hidden"}>
+                {helpCenter && (
+                  <a href={helpCenter} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "sm", className: "@min-[48rem]/app:hidden" })}>
+                    <ExternalLinkIcon />
+                    View on help center
+                  </a>
+                )}
+                {more}
+              </DocsMore>
+            )}
           </>
         }
       />

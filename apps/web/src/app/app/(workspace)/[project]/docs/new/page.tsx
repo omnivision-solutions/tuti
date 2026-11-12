@@ -58,7 +58,7 @@ export default async function NewArticlePage(
         <DocsPageHeader
           title="New article"
           titleInForm
-          back={{ href: `/app/${slug}/docs`, label: "All articles" }}
+          back={{ href: `/app/${slug}/docs`, label: "Docs" }}
           actions={
             <>
               <span className="text-xs whitespace-nowrap text-muted-foreground @max-[40rem]/app:hidden">

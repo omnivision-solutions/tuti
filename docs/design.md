@@ -230,7 +230,7 @@ the list picks none to approve at once.
   details, recomputing as the window or details change without replacing the saved preference. Details keep a 15rem
   minimum; when the Inbox's actual container cannot fit the list, conversation, details and gaps, their toggle opens
   the details sheet instead. Conversation actions stay
-  beside the subject, which shows its full text on hover (and wraps in full on phones). A narrow Docs page wraps its title actions. Arrow keys resize by 10px, Home/End pick the limits, and double-click resets.
+  beside the subject, which shows its full text on hover (and wraps in full on phones). A Docs page's header is one row that never wraps: a narrow article editor drops its state's details, never its actions. Arrow keys resize by 10px, Home/End pick the limits, and double-click resets.
   Each width is remembered in the browser and restored before paint; folded trees and smaller screens have no handle.
   Company keeps company, plan and seats together; Customer details keeps identity, other properties, groups, posts and votes reachable; visits and events show zero until
   recorded. The conversation title stays in view as its messages scroll, and the composer stays at the bottom.
@@ -289,12 +289,18 @@ the list picks none to approve at once.
   editor, a save refused because the article changed since it opened (Autopilot's
   edit to the same part, or a teammate's save) keeps what was typed and shows the
   newest version beside it, to merge by hand; the next Save goes on top of it.
-  The team Docs workspace uses rounded tree, page and tools surfaces on the canvas, separated by 12px gaps,
-  with no breadcrumb bar or embedded preview. Its tree defaults to 274px and owns the Docs title, search and navigation;
-  below 61rem of sidebar inset width the Docs button opens it as a sheet, including App navigation. Moving back to an inline tree
-  closes and resets the sheet; Search docs opens the command menu in either layout. Subpages have a small parent link.
-  An article's editable title sits beside Saved (Save while there are edits) and Publish; its publishing state
-  and live Open link sit below. New and saved articles use the same inset thresholds for editor padding and formatting controls.
+  The team Docs workspace is panes (`PaneLayout`, 8px apart) on the canvas: the tree, styled as a section pane, then the
+  page, and beside an article's editor its tools; no breadcrumb bar or embedded preview. Its tree defaults to 274px and
+  owns the "Docs" title row (search, open on help center, fold) and navigation; below 61rem of sidebar inset width each
+  page header's round "Browse docs" button opens it as a sheet, including App navigation. Moving back to an inline tree
+  closes and resets the sheet; Search docs opens the command menu in either layout. Each page's `PaneHeader` stays at
+  the top of its pane as it scrolls; a tab's and a collection's views are pills (a tab's in `?view=`), and a page's way
+  back ("Docs ›", or the collection's name) precedes its title. "View on help center" is an outline button in words, under
+  More actions below 48rem. An article's editor keeps its title in its text (`titleInForm`: the header's heading for
+  screen readers); its header row has the way back, then the publishing state and live Open link, Saved (Save while there
+  are edits), Publish and More actions. As the editor's pane narrows (a container query on it, not the window: the tree's
+  width and the tools count) the date and Open go first, then the badge, and the Unpublished changes pill becomes its
+  dot. New and saved articles use the same inset thresholds for editor padding and formatting controls.
   The formatting row stays pinned while the article body scrolls. Settings,
   History and Verify share one collapsible card (20.625rem, 18.75rem below 77rem of sidebar inset width), opening from icons at the
   end of the formatting row. Below 76rem of inset width the tools use a bottom sheet so the editor keeps its room,

@@ -228,7 +228,7 @@ export default async function ArticlePage(
           "[&_.article-text_blockquote]:pr-4 [&_.article-text_blockquote]:pl-10 [&_.article-text_blockquote]:text-soft-foreground",
           "[&_.article-text_blockquote]:text-[14px] [&_.article-text_blockquote]:before:absolute [&_.article-text_blockquote]:before:left-3",
           "[&_.article-text_blockquote]:before:top-3.5 [&_.article-text_blockquote]:before:text-primary",
-          "[&_.article-text_blockquote]:before:content-['i'] [&_.article-text_blockquote]:before:flex [&_.article-text_blockquote]:before:size-3.5 [&_.article-text_blockquote]:before:items-center [&_.article-text_blockquote]:before:justify-center [&_.article-text_blockquote]:before:rounded-full [&_.article-text_blockquote]:before:border [&_.article-text_blockquote]:before:border-current [&_.article-text_blockquote]:before:font-mono [&_.article-text_blockquote]:before:text-xs [&_.article-text_blockquote]:before:leading-none flex flex-col flex-1 min-w-0 overflow-hidden [--docs-pad:0px]",
+          "[&_.article-text_blockquote]:before:content-['i'] [&_.article-text_blockquote]:before:flex [&_.article-text_blockquote]:before:size-3.5 [&_.article-text_blockquote]:before:items-center [&_.article-text_blockquote]:before:justify-center [&_.article-text_blockquote]:before:rounded-full [&_.article-text_blockquote]:before:border [&_.article-text_blockquote]:before:border-current [&_.article-text_blockquote]:before:font-mono [&_.article-text_blockquote]:before:text-xs [&_.article-text_blockquote]:before:leading-none @container/editor flex flex-col flex-1 min-w-0 overflow-hidden [--docs-pad:0px]",
           "@max-[61rem]/app:[&_.docs-article-form]:px-7 @max-[61rem]/app:[&_.docs-article-form]:max-w-[min(43rem,_calc(100%_-_56px))]",
           "max-sm:[&_.docs-article-form]:p-[20px_23px_48px] max-sm:[&_.docs-article-form]:max-w-[calc(100%_-_46px)]",
           "[&_.article-text]:text-[15.5px] [&_.article-text]:leading-[1.7]",
@@ -244,7 +244,7 @@ export default async function ArticlePage(
                 : edited.collection
                   ? `/app/${slug}/docs/collections/${edited.collection.slug}`
                   : `/app/${slug}/docs`,
-              label: fromReview ? "Review" : (edited.collection?.name ?? "All articles"),
+              label: fromReview ? "Review" : (edited.collection?.name ?? "Docs"),
             }}
             title={edited.title}
             titleInForm
@@ -252,8 +252,10 @@ export default async function ArticlePage(
               <>
               <div className={cn(
                 "docs-editor-state mr-2 flex min-w-0 items-center gap-3 text-xs whitespace-nowrap text-muted-foreground [&_[data-slot='badge']]:text-xs",
-                // On phones the way back keeps the room: Publish says it's a draft, Open is in More actions; changes keep their controls.
-                "@max-[40rem]/app:[&>:not(#article-state-tools)]:hidden",
+                // The row never wraps: as the editor's pane narrows (the window, the tree's width, the tools beside it), the date
+                // and Open go (Open is in More actions), then the badge (Publish says it's a draft); changes keep their
+                // controls, so Save, Publish and More actions stay in the pane.
+                "@max-[52rem]/editor:[&>:not([data-slot=badge],#article-state-tools)]:hidden @max-[30rem]/editor:[&>:not(#article-state-tools)]:hidden",
               )}>
                 {article.changes ? (
                   <span id="article-state-tools" className="relative" />

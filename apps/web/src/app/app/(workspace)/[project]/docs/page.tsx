@@ -13,7 +13,6 @@ import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { DocsPageHeader } from "@/components/docs-page-header";
-import { buttonVariants } from "@/components/ui/button";
 import { DocsPublishQueue } from "@/components/docs-publish-queue";
 import {
   Card,
@@ -132,24 +131,8 @@ export default async function TeamDocsPage(
       <DocsPageHeader
         title="Overview"
         description={`${plural(articles.length, "article")} in ${plural(docs.collections.length, "collection")}`}
-        actions={
-          <>
-            <a
-              href={`${portal}/docs`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonVariants({ variant: "outline", className: "docs-live-link" })}
-            >
-              <ExternalLinkIcon />
-              <span className="@max-[48rem]/app:sr-only">View on help center</span>
-            </a>
-            <AddContentMenu
-              parent={null}
-              tab={docs.tabs[0]?.slug}
-              article={null}
-            />
-          </>
-        }
+        helpCenter={`${portal}/docs`}
+        actions={<AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} />}
       />
       <section aria-label="At a glance" className={cn(
         "docs-overview-stats flex gap-16.5 p-[4px_0_28px] border-b border-border [&_>_div]:flex [&_>_div]:flex-col [&_>_div]:gap-0.5",

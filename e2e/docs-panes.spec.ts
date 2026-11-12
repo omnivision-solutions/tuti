@@ -45,19 +45,24 @@ test("Docs pages are panes: the tree as the area's pane, views as pills, the edi
   await team.goto(`/app/${slug}/docs/create-your-first-calendar`);
   const editorHeader = team.locator('[data-slot="docs-page-header"]');
   await expect(editorHeader.getByRole("link", { name: "Getting started", exact: true })).toHaveAttribute("href", `/app/${slug}/docs/collections/getting-started`);
-  // The title field shows the title: the heading is for screen readers, and the phone bar doesn't repeat it.
+  // The title field shows the title: the heading is for screen readers.
   expect((await editorHeader.getByRole("heading", { name: "Create your first calendar", level: 1 }).boundingBox())!.width).toBeLessThanOrEqual(1);
   await expect(editorHeader.locator('[data-slot="pane-header"]')).toHaveAttribute("data-title-in-form", "true");
   await expect(team.locator(".docs-editor-scroll").getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Create your first calendar");
   await checkpoint(team, "docs-editor", { fullPage: false });
   // One in no collection goes back to all the articles.
   await team.goto(`/app/${slug}/docs/contact-support`);
-  await expect(editorHeader.getByRole("link", { name: "All articles", exact: true })).toHaveAttribute("href", `/app/${slug}/docs`);
+  await expect(editorHeader.getByRole("link", { name: "Docs", exact: true })).toHaveAttribute("href", `/app/${slug}/docs`);
 
   // On a phone the header's Browse docs opens the tree; a page of one article shows only its way back.
   await team.setViewportSize({ width: 390, height: 844 });
   await team.goto(`/app/${slug}/docs`);
   await checkpoint(team, "docs-overview-phone", { fullPage: false });
+  // "View on help center" stays in words: under More actions, the header keeping room for the page's title.
+  await expect(header.getByRole("link", { name: "View on help center", exact: true })).toBeHidden();
+  await header.getByRole("button", { name: "More actions", exact: true }).click();
+  await expect(header.getByRole("link", { name: "View on help center", exact: true })).toHaveText("View on help center");
+  await header.getByRole("button", { name: "More actions", exact: true }).click();
   await header.getByRole("button", { name: "Browse docs", exact: true }).click();
   const tree = team.getByRole("dialog", { name: "Docs navigation", exact: true });
   await expect(tree.getByRole("link", { name: "Getting started", exact: true })).toBeVisible();
@@ -67,6 +72,8 @@ test("Docs pages are panes: the tree as the area's pane, views as pills, the edi
   await team.goto(`/app/${slug}/docs/create-your-first-calendar`);
   await expect(editorHeader.getByRole("link", { name: "Getting started", exact: true })).toBeVisible();
   expect((await editorHeader.getByRole("heading", { name: "Create your first calendar", level: 1 }).boundingBox())!.width).toBeLessThanOrEqual(1);
+  // Docs has no phone bar to repeat the title: the title field says it once.
+  await expect(team.locator('[data-slot="bar-title"], [data-slot="bar-path"]')).toHaveCount(0);
   await checkpoint(team, "docs-editor-phone", { fullPage: false });
 
   // With unpublished changes the header's row still fits a phone: More actions inside the pane.
@@ -78,4 +85,16 @@ test("Docs pages are panes: the tree as the area's pane, views as pills, the edi
   const more = (await editorHeader.getByRole("button", { name: "More actions", exact: true }).boundingBox())!;
   expect(more.x + more.width).toBeLessThanOrEqual(pane.x + pane.width);
   await checkpoint(team, "docs-editor-changes-phone", { fullPage: false });
+
+  // A narrow editor's row (the tree at its widest, the tools beside it) drops the state's details, never its actions.
+  await team.evaluate(() => localStorage.setItem("tuti:docs-tree-width", "440"));
+  await team.setViewportSize({ width: 1280, height: 900 });
+  await team.goto(`/app/${slug}/docs/create-your-first-calendar?history`);
+  await expect(team.getByRole("complementary", { name: "Article tools" })).toBeVisible();
+  const editor = (await team.locator(".docs-editor-page").boundingBox())!;
+  for (const name of ["Publish changes", "More actions"]) {
+    const button = (await editorHeader.getByRole("button", { name, exact: true }).boundingBox())!;
+    expect(button.x + button.width).toBeLessThanOrEqual(editor.x + editor.width);
+  }
+  await checkpoint(team, "docs-editor-narrow", { fullPage: false });
 });

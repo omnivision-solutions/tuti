@@ -11,7 +11,6 @@ import { CollectionIcon } from "@/components/collection-icon";
 import { DocsPageHeader } from "@/components/docs-page-header";
 import { portalAddress } from "@/server/custom-domains";
 import { FilterPills } from "@/components/filter-pills";
-import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SampleBadge } from "@/components/sample-badge";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
@@ -353,7 +352,8 @@ export async function CollectionHeader({
         title={collection.name}
         icon={collection.knownIcon && collection.icon ? <CollectionIcon name={collection.icon} /> : <FolderIcon />}
         description={collection.description || undefined}
-        actions={settings ? <div id="collection-actions" className="flex items-center gap-[8px]" /> : <><a href={`${portal}/docs/${collection.slug}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", className: "docs-live-link" })}><ExternalLinkIcon /><span className="@max-[48rem]/app:sr-only">View on help center</span></a><AddContentMenu parent={collection.slug} article={collection.slug} /></>}
+        helpCenter={settings ? undefined : `${portal}/docs/${collection.slug}`}
+        actions={settings ? <div id="collection-actions" className="flex items-center gap-[8px]" /> : <AddContentMenu parent={collection.slug} article={collection.slug} />}
         more={settings ? undefined : <DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={hasChildren} />}
         filters={
           <FilterPills
