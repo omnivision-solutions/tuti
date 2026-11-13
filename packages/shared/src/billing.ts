@@ -53,6 +53,10 @@ const plan = z
       })
       .strict(),
     extras: z.array(z.string().min(1)).default([]).describe('More lines its pricing card lists after what the file says it has, e.g. "Priority support".'),
+    hidden: z
+      .boolean()
+      .default(false)
+      .describe("Left off the pricing page and Billing's plans (a default plan nobody picks, such as one a trial ends on); the next plan shown lists everything."),
     featured: z.boolean().default(false).describe("Its card stands out on the pricing page, and its Upgrade is Billing's main button."),
     monthlyCredits: count.default(0).describe("AI credits each paid month gives (a year: twelve months' worth), with AI credits on."),
   })

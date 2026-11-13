@@ -191,6 +191,11 @@
               "minLength": 1
             }
           },
+          "hidden": {
+            "default": false,
+            "description": "Left off the pricing page and Billing's plans (a default plan nobody picks, such as one a trial ends on); the next plan shown lists everything.",
+            "type": "boolean"
+          },
           "featured": {
             "default": false,
             "description": "Its card stands out on the pricing page, and its Upgrade is Billing's main button.",

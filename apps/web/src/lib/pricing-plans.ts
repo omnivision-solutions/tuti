@@ -109,7 +109,8 @@ const feature = (plan: PlanKey, name: PlanFeature, text: string): PlanLine[] =>
  * server's settings.
  */
 export function pricingPlans(): PricingPlan[] {
-  const plans = listedPlans();
+  // The plans shown: a hidden one (a default nobody picks) is left off, and the first shown lists everything.
+  const plans = listedPlans().filter((plan) => !planTerms(plan).hidden);
   return plans.map((plan, index) => {
     const previous = plans[index - 1];
     // Its lines that the plan before it doesn't have (all of them on the first).
