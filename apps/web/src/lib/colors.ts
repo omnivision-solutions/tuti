@@ -60,8 +60,9 @@ export function brandCss(color: string | null): string | null {
       ? `--primary:${color};--primary-foreground:${textColorOn(color)};--ring:${color}`
       : "--primary:var(--foreground);--primary-foreground:var(--background);--ring:var(--foreground)";
   // html:not(.dark) and html.dark outrank globals.css's :root and .dark wherever this lands.
-  // The tints need relative colours: a browser without them keeps the default tint rather than none.
-  return `html:not(.dark){${accent(SURFACES.light)}}html.dark{${accent(SURFACES.dark)}}@supports (color:oklch(from red l c h)){html:not(.dark){${softCss(color, false)}}html.dark{${softCss(color, true)}}}`;
+  // The tints need relative colours with maths on a channel (Safari 16.4–17 has relative colours without it): a browser
+  // without them keeps the default tint rather than none.
+  return `html:not(.dark){${accent(SURFACES.light)}}html.dark{${accent(SURFACES.dark)}}@supports (color:oklch(from red 0.5 min(c, 0.1) h)){html:not(.dark){${softCss(color, false)}}html.dark{${softCss(color, true)}}}`;
 }
 
 /**
