@@ -3,6 +3,7 @@
 import { ChevronDownIcon, FileTextIcon, SparklesIcon, LockKeyholeIcon, ArrowRightIcon, MailIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { cn } from "cn";
 
 import { AttachButton, type Upload, UploadList, useUploads } from "@/components/attachment-uploads";
 import { actOn } from "@/components/inbox/list-keys";
@@ -18,6 +19,10 @@ import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
+
+/** Reply and Note: tabs underlined across the top of the box. */
+const TAB =
+  "-mb-px inline-flex items-center gap-1.25 rounded-none border-b-2 border-transparent px-0.5 py-2 text-xs leading-5 data-active:border-primary data-active:bg-transparent data-active:font-semibold data-active:shadow-none dark:data-active:bg-transparent";
 
 /** Why Draft with AI is off, while the project is out of AI credits. */
 const PAUSED = "This project is out of AI credits";
@@ -197,13 +202,21 @@ export function ReplyForm({
     <>
       <form
         ref={form}
-        className="inbox-composer flex flex-col gap-0 rounded-xl border border-input bg-card p-2.5 shadow-[0_2px_7px] shadow-black/3.5 @max-[57rem]/app:p-2 [&_button[type=submit]]:h-8 [&_button[type=submit]]:text-xs [&_button[aria-label='More_ways_to_send']]:h-8 [&_button[aria-label='More_ways_to_send']]:text-xs"
+        // One surface: the box lights up as a whole while it's written in, and turns red when a send fails (the text field has no
+        // border or ring of its own),
+        // in the note's colours on Note, so a note doesn't look like a reply before it's added.
+        className={cn(
+          "inbox-composer flex flex-col gap-0 rounded-2xl border border-input bg-card p-2.5 shadow-[0_2px_7px] shadow-black/3.5 transition-[border-color,box-shadow] has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-ring/50 has-[textarea[aria-invalid=true]]:border-destructive has-[textarea[aria-invalid=true]]:ring-3 has-[textarea[aria-invalid=true]]:ring-destructive/20 @max-[57rem]/app:p-2",
+          note && "border-highlight-foreground/40 bg-inbox-note has-[textarea:focus-visible]:border-highlight-foreground/60 has-[textarea:focus-visible]:ring-highlight-foreground/20",
+          "[&_button[type=submit]]:h-8 [&_button[type=submit]]:text-xs [&_button[aria-label='More_ways_to_send']]:h-8 [&_button[aria-label='More_ways_to_send']]:text-xs",
+        )}
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
       >
-        <div className="inbox-composer-top flex items-center gap-3">
+        {/* Reply and Note as the box's own header, edge to edge. */}
+        <div className="inbox-composer-top -mx-2.5 -mt-2.5 mb-1 flex items-center gap-3 border-b px-3 @max-[57rem]/app:-mx-2 @max-[57rem]/app:-mt-2">
           <Tabs
             value={kind}
             onValueChange={(value) => {
@@ -212,15 +225,15 @@ export function ReplyForm({
               setError(undefined);
             }}
           >
-            <TabsList className="h-7">
-              <TabsTrigger value="reply" className="inline-flex items-center gap-1.25 text-xs leading-5">Reply</TabsTrigger>
-              <TabsTrigger value="note" className="inline-flex items-center gap-1.25 text-xs leading-5 [&>svg]:size-3.25">
+            <TabsList className="h-auto gap-4 overflow-visible rounded-none bg-transparent p-0">
+              <TabsTrigger value="reply" className={TAB}>Reply</TabsTrigger>
+              <TabsTrigger value="note" className={cn(TAB, "data-active:border-highlight-foreground [&>svg]:size-3.25")}>
                 <LockKeyholeIcon aria-hidden />
                 Note
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          {!note && recipient && <span className="inbox-composer-to truncate text-xs leading-normal text-muted-foreground">To {recipient}</span>}
+          {!note && recipient && <span className="inbox-composer-to ml-auto truncate text-xs leading-normal text-muted-foreground">To {recipient}</span>}
         </div>
         <Field data-invalid={error ? true : undefined}>
           <Textarea
@@ -243,7 +256,7 @@ export function ReplyForm({
             rows={2}
             // While it's sending, what's there is what's sent: nothing to add that the send would then clear or repeat.
             readOnly={pending}
-            className={note ? "inbox-reply-text inbox-reply-note min-h-10 border-0 bg-transparent dark:bg-transparent px-1 py-0.75 text-sm shadow-none bg-highlight dark:bg-highlight" : "inbox-reply-text min-h-10 border-0 bg-transparent dark:bg-transparent px-1 py-0.75 text-sm shadow-none"}
+            className={cn("inbox-reply-text min-h-10 border-0 bg-transparent px-1 py-0.75 text-sm shadow-none focus-visible:ring-0 aria-invalid:ring-0 dark:bg-transparent dark:aria-invalid:ring-0", note && "inbox-reply-note")}
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
           />

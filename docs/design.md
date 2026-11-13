@@ -53,7 +53,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 
 | Token | Use for |
 | --- | --- |
-| `primary` | The one main action on a screen, votes you've cast, active tab, links that need emphasis |
+| `primary` | The one main action on a screen, votes you've cast, active tab, links that need emphasis; the fill of the team's chat bubbles in the Inbox (with `primary-foreground` text at full strength) |
 | `soft` / `soft-foreground` | Quiet green emphasis (on the portal and the widget, the project's accent: Layout → Portals → Accent) |
 | `highlight` / `highlight-foreground` | Things that need the team's attention ("Possible duplicate") |
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
@@ -210,7 +210,12 @@ the list picks none to approve at once.
   the bottom of the screen as the messages scroll under it, however many there are.
   Its list, conversation and details are white panes on the shell's canvas, 8px apart.
   Rows put who, the subject and the latest message on separate lines. Messages are plain text plus attachments,
-  in chat bubbles with the author's avatar and time; internal notes have the highlight tint. The composer is one card.
+  in chat bubbles as in a messaging app: as wide as their text, up to 72% of the conversation and at most 30rem, so a line stays readable on a wide screen (82% on phones), the team's
+  in primary with primary's text colour and the customer's in `inbox-customer`; messages from one sender within five minutes,
+  their name and email status the same, are a run with one avatar and that line once, under the last. Internal notes
+  are centred with the highlight tint. The composer is one card: Reply and Note are underline tabs across its top, its text
+  field has no border or ring of its own (the card takes the focus ring while it's written in), and on Note the whole card
+  takes the note's tint.
   Close, More actions and the details toggle share the conversation's title row at every width. Assign lives in
   details, followed by Status and Snooze (Waiting until while snoozed). The details card collapses, with that choice
   kept for the browser; without room for it (38rem beside a 480px conversation) its toggle opens the same controls and context in a sheet,
@@ -220,8 +225,8 @@ the list picks none to approve at once.
   Recent page visits, Events and Conversation attributes start folded, each with an icon, count and chevron.
   Other conversations expand to a title, a muted status · number · date line and one line of the latest message.
   Day dividers group each message by its own day in the viewer’s time zone, with "Today · <date>" or "Yesterday · <date>" when applicable. The widget-off notice is
-  13px muted text. Inbox layout uses component Tailwind utilities; its message bubbles' fills use the
-  `inbox-customer`, `inbox-team` and `inbox-note` tokens in `globals.css`.
+  13px muted text. Inbox layout uses component Tailwind utilities; its message bubbles' fills use
+  primary (the team's) and the `inbox-customer` and `inbox-note` tokens in `globals.css`.
   When their columns fit (61rem of sidebar inset for Docs, 52.5rem beside the Inbox's section pane), the Docs tree (240–440px) and Inbox list (22rem minimum, 352px at default text, up to 520px;
   defaulting to the minimum) resize from a 10px handle centred in their gap. Hover, focus and dragging highlight its line in primary; dragging keeps the resize cursor and
   prevents selection across the page. The Inbox maximum also shrinks to keep the conversation at least 480px wide beside visible
@@ -333,9 +338,8 @@ the list picks none to approve at once.
   statuses, Changelog, Users, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is
   pills in its pane header (`FilterPills`, under Panes; Reporting's AI conversations); on the portal underline tabs
-  (`SubNav`); switching a control's mode (the reply
-  box's Reply and Note) is a segmented
-  `Tabs` (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
+  (`SubNav`); switching a control's mode is a segmented
+  `Tabs` (the reply box's Reply and Note are underline tabs across the top of its card instead, under Inbox) (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed, each with its count) are `FilterPills`, as the board's sort, so
   the portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
   count): a second row of chips or tabs would put more between the visitor and the list. The portal roadmap's three columns, one at a time on phones, are a segmented control:

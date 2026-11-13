@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import pg from "pg";
 import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { verifyEmail } from "./mail";
@@ -237,4 +238,178 @@ test("long names and subjects fit both laptop widths with wrapping details label
     await expect(owner.locator("[data-sonner-toast]")).toHaveCount(0);
     await checkpoint(owner, `long-content-${width}`, { fullPage: false });
   }
+});
+
+test("messages read as chat bubbles, a run from one sender under one name, and the reply box lights up as one", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme Calendar", slug);
+  await verifyEmail(owner);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", {
+    user: { id: "demo-sam", name: "Sam Smith", email: "e2e-sam@example.com" },
+    subject: "Can I export my reports?",
+    body: "Can I export reports for our weekly planning? We plan every Monday and would love to share them with the whole team.",
+  });
+  await api("/conversations/1/messages", { body: "Hi Sam! Yes, from Reports → Export: https://docs.example.com/export" });
+  await api("/conversations/1/messages", { body: "Would a CSV work, or do you need a PDF?" });
+  await api("/conversations/1/messages", { body: "thanks!!", author: { id: "demo-sam" } });
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const messages = owner.getByRole("list", { name: "Messages" });
+  const bubbles = messages.locator(".inbox-bubble");
+  await expect(bubbles).toHaveCount(4);
+
+  // The team's two replies are a run: one avatar shown, their name and time once, under the second (the first's line is
+  // there for screen readers only).
+  const lines = messages.locator(".team .inbox-message-by");
+  await expect(lines).toHaveCount(2);
+  await expect(lines.first()).toHaveCSS("height", "0px");
+  await expect(lines.last()).not.toHaveCSS("height", "0px");
+  // The shown avatar's foot is level with its bubble's.
+  const avatar = (await messages.locator(".team .inbox-chat-avatar").last().boundingBox())!;
+  const bubble = (await bubbles.nth(2).boundingBox())!;
+  expect(Math.abs(avatar.y + avatar.height - (bubble.y + bubble.height))).toBeLessThanOrEqual(2);
+  // Said to screen readers from a copy: the folded line itself is hidden from them.
+  await expect(lines.first()).toHaveAttribute("aria-hidden", "true");
+  await expect(messages.getByRole("listitem").nth(1).locator("p.sr-only")).toContainText("Olive Owner · ");
+  await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "hidden");
+  await expect(messages.locator(".team .inbox-chat-avatar").last()).toHaveCSS("visibility", "visible");
+  // The team's in the primary colour; the customer's long message stays well short of the pane's width.
+  const primary = await owner.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.className = "bg-primary";
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return colour;
+  });
+  await expect(bubbles.nth(1)).toHaveCSS("background-color", primary);
+  const list = (await messages.boundingBox())!;
+  expect((await bubbles.first().boundingBox())!.width).toBeLessThanOrEqual(list.width * 0.72);
+  // A link in the team's colour shows its keyboard focus: an outline in the bubble's text colour, not primary on primary.
+  const link = bubbles.nth(1).getByRole("link", { name: "https://docs.example.com/export" });
+  await link.focus();
+  await expect(link).not.toHaveCSS("outline-style", "none");
+  await expect(link).toHaveCSS("outline-color", await bubbles.nth(1).evaluate((bubble) => getComputedStyle(bubble).color));
+  // A short one stays short.
+  expect((await bubbles.last().boundingBox())!.width).toBeLessThan(120);
+
+  // The reply box, not its text field, lights up while it's written in.
+  const composer = owner.locator("form.inbox-composer");
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  await reply.click();
+  expect(await reply.evaluate((field) => getComputedStyle(field).boxShadow)).not.toMatch(/0px 0px 0px [1-9]/);
+  // Its 3px ring, once the transition has run.
+  await expect.poll(() => composer.evaluate((form) => getComputedStyle(form).boxShadow)).toMatch(/0px 0px 0px 3px/);
+  await reply.fill("Thanks for flagging this, I’ve refunded the charge");
+  await checkpoint(owner, "laptop-reply-focused", { fullPage: false });
+  // A failed send (nothing written) marks the box, not a ring of the field's own inside it.
+  await reply.fill("");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(reply).toHaveAttribute("aria-invalid", "true");
+  expect(await reply.evaluate((field) => getComputedStyle(field).boxShadow)).not.toMatch(/0px 0px 0px [1-9]/);
+  const destructive = await owner.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.className = "border border-destructive";
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).borderTopColor;
+    probe.remove();
+    return colour;
+  });
+  await expect.poll(() => composer.evaluate((form) => getComputedStyle(form).borderTopColor)).toBe(destructive);
+  // Reply and Note keep their focus ring and full underline: the tab list doesn't clip them.
+  await expect(owner.getByRole("tablist")).toHaveCSS("overflow-x", "visible");
+  // On Note the whole box takes the note's colours.
+  const card = await composer.evaluate((form) => getComputedStyle(form).backgroundColor);
+  await owner.getByRole("tab", { name: "Note" }).click();
+  await expect(composer).not.toHaveCSS("background-color", card);
+  await owner.getByRole("textbox", { name: "Note" }).fill("Refunded in Stripe, check again Friday");
+  await checkpoint(owner, "laptop-note-focused", { fullPage: false });
+
+  // A file sent in the team's colour stays readable: its card's name in the card's own text colour.
+  await owner.getByRole("tab", { name: "Reply" }).click();
+  await reply.fill("Here it is.");
+  await owner.getByLabel("Files to attach").setInputFiles({ name: "report.csv", mimeType: "text/csv", buffer: Buffer.from("week,hours\n1,40") });
+  await expect(composer.getByText("report.csv")).toBeVisible();
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  const file = messages.getByRole("list", { name: "Attachments" }).getByRole("link", { name: /report\.csv/ });
+  await expect(file).toBeVisible();
+  const cardText = await owner.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.className = "text-card-foreground";
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  });
+  await expect(file).toHaveCSS("color", cardText);
+  // Its focus outline is the ring's, seen on the card, not the bubble's text colour.
+  // From the keyboard (after the Send click, the browser would only show focus for keys).
+  await owner.keyboard.press("Shift");
+  await file.focus();
+  // Focus shows (the browser draws an outline only for :focus-visible), so the colour below is the focused one.
+  await expect(file).not.toHaveCSS("outline-style", "none");
+  await expect(file).not.toHaveCSS("outline-color", await file.locator("xpath=ancestor::*[contains(@class,'inbox-bubble')]").evaluate((bubble) => getComputedStyle(bubble).color));
+
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await reply.click();
+  await checkpoint(owner, "phone-bubbles", { fullPage: false });
+  expect((await bubbles.first().boundingBox())!.width).toBeLessThanOrEqual((await messages.boundingBox())!.width * 0.82 + 1);
+  await owner.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(owner, "phone-bubbles-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+
+  // Two replies minutes apart either side of midnight are two days, not a run: each keeps its avatar and line.
+  await api("/conversations", { user: { id: "demo-sam" }, subject: "Late night", body: "Still up?" });
+  await api("/conversations/2/messages", { body: "Yes, still here." });
+  await api("/conversations/2/messages", { body: "What can I do?" });
+  // Midnight in the browser's own time zone (its sessions don't all take the file's), three days back.
+  const midnight = await owner.evaluate(() => {
+    const day = new Date();
+    day.setDate(day.getDate() - 3);
+    day.setHours(0, 0, 0, 0);
+    return day.toISOString();
+  });
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `UPDATE conversation_message m SET "createdAt" = ($2::timestamptz AT TIME ZONE 'UTC') + (CASE m.body WHEN 'Still up?' THEN interval '-10 minutes' WHEN 'Yes, still here.' THEN interval '-2 minutes' ELSE interval '2 minutes' END)
+     FROM conversation c JOIN project p ON p.id = c."projectId" WHERE c.id = m."conversationId" AND c.number = 2 AND p.slug = $1`,
+    [slug, midnight],
+  );
+  // And two teammates of one name, a minute apart, are two senders.
+  await api("/conversations", { user: { id: "demo-sam" }, subject: "Two Olives", body: "Hello?" });
+  await api("/conversations/3/messages", { body: "Hi from one Olive." });
+  await api("/conversations/3/messages", { body: "Hi from the other." });
+  const twin = `e2e-${randomUUID()}`;
+  await db.query(`INSERT INTO "user" (id, name, email, "updatedAt") VALUES ($1, 'Olive Owner', $2, now())`, [twin, `${twin}@example.com`]);
+  await db.query(
+    `UPDATE conversation_message m SET "authorId" = $2 FROM conversation c JOIN project p ON p.id = c."projectId"
+     WHERE c.id = m."conversationId" AND c.number = 3 AND p.slug = $1 AND m.body = 'Hi from the other.'`,
+    [slug, twin],
+  );
+  await db.end();
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox/3`);
+  await expect(messages.locator(".team .inbox-message-by")).toHaveCount(2);
+  for (const line of await messages.locator(".team .inbox-message-by").all()) {
+    // Back with its spacing: a line's height and the gap under it.
+    await expect(line).not.toHaveCSS("height", "0px");
+    await expect(line).toHaveCSS("padding-top", "3px");
+    await expect(line).toHaveCSS("margin-bottom", "8px");
+  }
+  await owner.goto(`/app/${slug}/inbox/2`);
+  await expect(messages.locator(".inbox-day")).toHaveCount(2);
+  for (const line of await messages.locator(".team .inbox-message-by").all()) {
+    // Back with its spacing: a line's height and the gap under it.
+    await expect(line).not.toHaveCSS("height", "0px");
+    await expect(line).toHaveCSS("padding-top", "3px");
+    await expect(line).toHaveCSS("margin-bottom", "8px");
+  }
+  await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "visible");
+  // And each its tail: the corner by the avatar as small on both.
+  const tails = await messages.locator(".team .inbox-bubble").evaluateAll((all) => all.map((bubble) => getComputedStyle(bubble).borderBottomRightRadius));
+  expect(tails[0]).toBe(tails[1]);
 });

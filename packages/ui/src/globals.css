@@ -43,7 +43,6 @@
   --color-docs-edge: var(--docs-edge);
   --color-docs-selection: var(--docs-selection);
   --color-inbox-customer: var(--inbox-customer);
-  --color-inbox-team: var(--inbox-team);
   --color-inbox-note: var(--inbox-note);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -137,7 +136,6 @@
   --docs-overlay: color-mix(in srgb, var(--foreground) 42%, transparent);
   /* Inbox cards keep the approved warm canvas and chat fills. */
   --inbox-customer: #f8f4f1;
-  --inbox-team: color-mix(in srgb, var(--soft) 70%, var(--card));
   --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--card));
   --background: oklch(0.982 0.008 88.6);
   --foreground: oklch(0.216 0.006 56);
@@ -217,7 +215,6 @@
   --docs-selection: color-mix(in srgb, var(--primary) 12%, var(--card));
   --docs-overlay: color-mix(in srgb, var(--background) 65%, transparent);
   --inbox-customer: oklch(0.292 0.016 160);
-  --inbox-team: oklch(0.325 0.052 157);
   --inbox-note: color-mix(in srgb, var(--highlight) 70%, oklch(0.218 0.013 160.1));
   --background: oklch(0.185 0.01 158.9);
   --foreground: oklch(0.966 0.006 153.8);
