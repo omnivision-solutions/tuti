@@ -401,7 +401,7 @@ the list picks none to approve at once.
     colour on any site, so it's the brand green then). What keeps a
     colour of its own, whatever the accent: statuses (Completed stays green: it says what happened), the changelog's
     other tags, destructive red, the info blue, the unread orange, people's initials, and "Powered by tuti" (Tuti's own
-    mark). The portal never uses the app's own green tokens (`sidebar-active`, `series-*`, `chart-*`, `kind-*`), and
+    mark). The portal never uses the app's own green tokens (`series-*`, `chart-*`, `kind-*`), and
     `e2e/accent-colour.spec.ts` checks every page type and the widget in light and dark for any green but those.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
