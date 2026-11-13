@@ -380,6 +380,7 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   await expect(messages.locator(".team .inbox-message-by")).toHaveCount(2);
   for (const line of await messages.locator(".team .inbox-message-by").all()) {
     // Back with its spacing: a line's height and the gap under it.
+    await expect(line).not.toHaveCSS("height", "0px");
     await expect(line).toHaveCSS("padding-top", "3px");
     await expect(line).toHaveCSS("margin-bottom", "8px");
   }
@@ -387,6 +388,7 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   await expect(messages.locator(".inbox-day")).toHaveCount(2);
   for (const line of await messages.locator(".team .inbox-message-by").all()) {
     // Back with its spacing: a line's height and the gap under it.
+    await expect(line).not.toHaveCSS("height", "0px");
     await expect(line).toHaveCSS("padding-top", "3px");
     await expect(line).toHaveCSS("margin-bottom", "8px");
   }
