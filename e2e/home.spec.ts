@@ -151,8 +151,13 @@ test("Get set up's cards wrap a long project name inside the card, on a phone an
     expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   };
   await fits();
+  // Home's pane scrolls inside the window: scrolled past its end, the window doesn't bounce (macOS) to show what's under it.
+  const windowBounce = () => owner.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY);
+  expect(await windowBounce()).toBe("none");
   await owner.setViewportSize({ width: 390, height: 844 });
   await fits();
+  // On a phone the window scrolls the page, and bounces as usual.
+  expect(await windowBounce()).toBe("auto");
 });
 
 test("a new project: Home leads with sample content and each setup step's action, no numbers; empty Feedback and Changelog each say what to do", async ({ browser }, testInfo) => {
