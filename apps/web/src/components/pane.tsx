@@ -73,6 +73,7 @@ export const restoredPlace = (box: HTMLElement | null | undefined) => (box ? (re
  * What scrolls in a pane, under its header, in place of the window: so it returns to where it was on Back and Forward,
  * as the window would. `resetOnNavigate`: its list is replaced by its own links (Users' pages, sorts and searches),
  * so it starts at its top on each new URL; otherwise a new URL leaves it where it is (a list with a post open beside it).
+ * Positioned, so what's absolutely placed in it (sr-only labels) scrolls inside it instead of stretching the window.
  */
 export function PaneBody({ children, className, resetOnNavigate = false }: { children: ReactNode; className?: string; resetOnNavigate?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -92,7 +93,7 @@ export function PaneBody({ children, className, resetOnNavigate = false }: { chi
     return () => box.removeEventListener("scroll", keep);
   }, [url, resetOnNavigate]);
   return (
-    <div ref={ref} data-slot="pane-body" className={cn("min-h-0 flex-1 overflow-y-auto", className)}>
+    <div ref={ref} data-slot="pane-body" className={cn("relative min-h-0 flex-1 overflow-y-auto", className)}>
       {children}
     </div>
   );
@@ -191,7 +192,7 @@ export function SectionPane({ title, actions, className, children }: { title: Re
         {actions}
         {close}
       </div>
-      <nav aria-label={typeof title === "string" ? title : undefined} className="min-h-0 flex-1 overflow-y-auto p-2.5">
+      <nav aria-label={typeof title === "string" ? title : undefined} className="relative min-h-0 flex-1 overflow-y-auto p-2.5">
         {children}
       </nav>
     </SectionCurrentContext>

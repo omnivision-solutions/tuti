@@ -155,6 +155,9 @@ test("Get set up's cards wrap a long project name inside the card, on a phone an
   const windowBounce = () => owner.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY);
   expect(await windowBounce()).toBe("none");
   expect(await owner.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorX)).toBe("auto");
+  // A short window: the pane scrolls, not the window (Get set up's hidden "(to do)" labels stay inside the pane).
+  await owner.setViewportSize({ width: 1000, height: 590 });
+  expect(await owner.evaluate(() => document.documentElement.scrollHeight)).toBe(590);
   // Narrower, the sidebar can leave the pane less than its window-height width: the window may scroll, and bounces.
   await owner.setViewportSize({ width: 900, height: 800 });
   expect(await windowBounce()).toBe("auto");
