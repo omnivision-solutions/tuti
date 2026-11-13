@@ -85,7 +85,7 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
 }
 
 /**
- * The list's pane back at its top as the list itself changes (a view, a status, a board, a search, the sort), which
+ * The list back at its top (its pane body, or the window where that scrolls it) as the list itself changes (a view, a status, a board, a search, the sort), which
  * keeps the page and so the pane's scroll: not as a post opens or closes beside it (`list` leaves out `post`), nor as
  * more of it loads (nor `page`), nor where Back or Forward put it back (`restoredPlace`). Put first in its PaneBody.
  */
@@ -98,7 +98,11 @@ export function ListScrollReset({ list }: { list: string }) {
       // Not where PaneBody has just put the list back where it was on this address (Back or Forward to a place it
       // saved); Back with none saved (after a reload) starts at the top too. A passive effect: after PaneBody's.
       const body = marker.current?.parentElement;
-      if (!restoredPlace(body)) body?.scrollTo({ top: 0 });
+      if (!body || restoredPlace(body)) return;
+      // What scrolls the list: its pane body where the pane is the window's height, else (under 48rem of the shell,
+      // its header stuck to the top) the window.
+      if (body.scrollHeight > body.clientHeight) body.scrollTo({ top: 0 });
+      else window.scrollTo({ top: 0 });
     }
   }, [list]);
   return <span ref={marker} hidden />;

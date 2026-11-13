@@ -2042,6 +2042,10 @@ test("a post's page and the list at tablet and laptop widths: the header stays i
   expect(await team.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   await expect(team.getByRole("button", { name: /^Filters/ })).toBeInViewport();
   await expect(team.getByRole("navigation", { name: "Statuses" })).toBeInViewport();
+  // Another view from the stuck header's pills starts at the list's top (the window brought back, as it's what scrolls).
+  await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Needs triage/ }).click();
+  await team.waitForURL(`**/app/${slug}/feedback`);
+  await expect(team.getByRole("main").getByRole("list", { name: "Posts" }).getByRole("listitem").first()).toBeInViewport();
   // A short tablet window (768×600, the rail): the header scrolls away with the page, so the post and the list keep
   // the height, and the page reserves no room for it; a window made taller (only its height) makes it stick, and
   // shorter again lets it go.
