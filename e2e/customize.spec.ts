@@ -260,7 +260,8 @@ test("the team's own CSS shows in the preview as it's typed, and on the portal o
   await expect(visitor.locator(".portal-header")).toHaveCSS("background-color", "rgb(1, 2, 3)");
 });
 
-test("custom code typed before the page's scripts ran is still a change to save", async ({ browser }) => {
+test("custom code typed before the page's scripts ran is still a change to save", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
@@ -274,12 +275,14 @@ test("custom code typed before the page's scripts ran is still a change to save"
   });
   await owner.goto(`/app/${slug}/settings/custom-code`, { waitUntil: "commit" });
   await owner.getByLabel("Custom HTML").fill('<p id="early">Typed early</p>');
+  await checkpoint(owner, "customize-custom-code-typed-early");
   release();
   // Once the page runs, Save changes sees it differs from what's saved.
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Custom code saved")).toBeVisible();
   await owner.reload();
   await expect(owner.getByLabel("Custom HTML")).toHaveValue('<p id="early">Typed early</p>');
+  await checkpoint(owner, "customize-custom-code-typed-early-saved");
   await owner.unroute(scripts);
 });
 
