@@ -323,7 +323,9 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
   await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
   // Reviewed opens its own first row beside it (the article), never the post still waiting with its Approve; Activity
-  // its pull request; To review the post again.
+  // its pull request; To review the post again, with the comment typed on it before (not approved yet) still there.
+  const typed = owner.getByRole("region", { name: "What happens to the post" }).getByRole("textbox", { name: "Comment on #1 (optional)" });
+  await typed.fill("Typed before looking at Reviewed.");
   await list.getByRole("tab", { name: "Reviewed" }).click();
   await expect(owner.getByRole("heading", { name: article, level: 1 })).toBeVisible();
   await expect(list.getByRole("link", { name: article })).toHaveAttribute("aria-current", "page");
@@ -334,6 +336,10 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("link", { name: pr })).toHaveAttribute("aria-current", "page");
   await list.getByRole("tab", { name: "To review 1" }).click();
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(typed).toHaveValue("Typed before looking at Reviewed.");
+  // And after a reload (kept in this tab).
+  await owner.reload();
+  await expect(typed).toHaveValue("Typed before looking at Reviewed.");
   const happens = owner.getByRole("region", { name: "What happens to the post" });
   await expect(happens).toContainText("Open → Completed");
   // Why it waits, in plain words: its only follower is the team's, so completing it emails nobody, and it's the setting

@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useRef, useState, useTransition } from "react";
+import { type ReactNode, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useDecided } from "@/components/autopilot-list";
@@ -38,6 +38,34 @@ type Update = TargetReview["actions"][number] & { parts?: TargetReview["actions"
  * one Dismiss for all of it (going out by itself: when, with Publish now and Stop). Each pull request's part, and what
  * became of it (Dismiss, Undo), is in its chip's popover. Nothing waiting, nothing: the page's Outcome says what became of it.
  */
+/**
+ * The team's comment on a waiting update, kept in this tab (sessionStorage) per update and version till it's approved
+ * or dismissed: a tab picked beside the list, or another row, opens another page, and coming back finds it. Storage
+ * off: kept only while the page is open.
+ */
+const commentDrafts = {
+  key: (key: string) => `autopilot-comment:${key}`,
+  take(key: string): string | null {
+    try {
+      return window.sessionStorage.getItem(this.key(key));
+    } catch {
+      return null;
+    }
+  },
+  save(key: string, text: string | null) {
+    try {
+      if (text === null) {
+        window.sessionStorage.removeItem(this.key(key));
+      } else {
+        window.sessionStorage.setItem(this.key(key), text);
+      }
+    } catch {}
+  },
+};
+
+/** Storage isn't watched: what's typed here goes into state as well, and another tab's typing isn't this page's. */
+const noChanges = () => () => {};
+
 export function PostReview({
   projectSlug,
   post,
@@ -61,14 +89,20 @@ export function PostReview({
   const went = useRef(false);
   // The team's words, kept per version: one whose parts changed shows (and posts) its new comment.
   const [edits, setEdits] = useState<Record<string, string>>({});
+  const key = update && `${update.id}@${update.version ?? ""}`;
+  // Typed before, on a page left since (in the browser only: the server has no storage, so both render the same first).
+  const saved = useSyncExternalStore(
+    noChanges,
+    () => (key ? commentDrafts.take(key) : null),
+    () => null,
+  );
   // Nothing waits: the page's outcome says what became of it (see Outcome).
-  if (!update) {
+  if (!update || !key) {
     return null;
   }
-  const key = `${update.id}@${update.version ?? ""}`;
   // A comment to post: a progress update's, or one completing it with progress updates folded in.
   const commented = update.kind === "moves_forward" || update.comment !== undefined;
-  const text = edits[key] ?? update.comment ?? "";
+  const text = edits[key] ?? saved ?? update.comment ?? "";
   const emails = update.emails ?? 0;
   const waiting = update.status === "pending";
   // Completing it with no comment of its own: the team may write one, which goes into the email.
@@ -78,6 +112,7 @@ export function PostReview({
   const parts = update.parts ?? [update];
 
   const done = (message: string) => {
+    commentDrafts.save(key, null);
     went.current = true;
     focusChipsAfterRefresh();
     toast.success(message);
@@ -150,6 +185,7 @@ export function PostReview({
             onChange={(event) => {
               const value = event.currentTarget.value;
               setEdits((current) => ({ ...current, [key]: value }));
+              commentDrafts.save(key, value);
             }}
           />
         )}
