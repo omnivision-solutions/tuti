@@ -720,14 +720,22 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "88px");
   // There, an open panel is the whole screen, over the launcher: its tabs at the bottom right take taps.
   await visitor.reload();
+  // Closed, the portal keeps its scrollbar's room (its header doesn't shift between pages); while the panel is the whole
+  // screen it doesn't, so the panel is edge to edge, as on a customer's site, with no strip of the portal down its side.
+  const html = visitor.locator("html");
+  await expect(html).toHaveCSS("scrollbar-gutter", "stable");
   await launcher.click();
-  // Edge to edge, as on a customer's site: no strip of the portal down its side (the room the portal keeps for a scrollbar).
   const frame = visitor.locator('iframe[title="Feedback"]');
-  await expect.poll(async () => await frame.boundingBox()).toEqual({ x: 0, y: 0, width: 390, height: 844 });
+  const wholeScreen = { x: 0, y: 0, width: 390, height: 844 };
+  await expect.poll(async () => await frame.boundingBox()).toEqual(wholeScreen);
+  await expect(html).toHaveCSS("scrollbar-gutter", "auto");
   await checkpoint(visitor, "portal-widget-open-phone", { fullPage: false });
   const phonePanel = visitor.frameLocator('iframe[title="Feedback"]');
   await phonePanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await expect(phonePanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
+  await visitor.keyboard.press("Escape");
+  await expect(visitor.locator("#tuti-widget")).toBeHidden();
+  await expect(html).toHaveCSS("scrollbar-gutter", "stable");
   await visitor.reload();
   await visitor.setViewportSize({ width: 1280, height: 720 });
   await expect(visitor.locator("body")).toHaveCSS("padding-bottom", "0px");
@@ -748,6 +756,16 @@ test("the portal shows the project's own widget, until the team turns it off in 
   // Its script stays, without the launcher, for Ask AI; on phones the page needs no room for one.
   await expect(script).toHaveAttribute("data-hide-launcher", "");
   await askAI();
+  // Opened by the page's own call on a phone, the panel is the whole screen too; closed, the room for a scrollbar is back.
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await expect(html).toHaveCSS("scrollbar-gutter", "stable");
+  await visitor.evaluate(() => (window as unknown as { Tuti: { open(): void } }).Tuti.open());
+  await expect.poll(async () => await frame.boundingBox()).toEqual(wholeScreen);
+  await expect(html).toHaveCSS("scrollbar-gutter", "auto");
+  await visitor.evaluate(() => (window as unknown as { Tuti: { close(): void } }).Tuti.close());
+  await expect(visitor.locator("#tuti-widget")).toBeHidden();
+  await expect(html).toHaveCSS("scrollbar-gutter", "stable");
+  await visitor.setViewportSize({ width: 1280, height: 720 });
   // Without the widget after all (its script didn't load), Ask AI is the docs' search, with its AI answer.
   const unloaded = await newPerson(browser, portalUrl(slug));
   await unloaded.route("**/widget.js*", (route) => route.abort());
