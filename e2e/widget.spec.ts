@@ -38,10 +38,11 @@ async function closeWithEscape(page: Page, panel: Locator) {
 }
 
 /**
- * Waits for a sheet to finish opening: it slides in for a moment after `data-starting-style` goes, and a click on its
- * Close meanwhile can land where the button was, not where it is.
+ * Waits for a sheet to finish opening: its slide-in starts as `data-starting-style` goes (nothing runs before that) and
+ * goes on for a moment after, when a click on its Close can land where the button was, not where it is.
  */
 async function finishedOpening(sheet: Locator) {
+  await expect(sheet).not.toHaveAttribute("data-starting-style");
   await expect.poll(() => sheet.evaluate((element) => element.getAnimations().length)).toBe(0);
 }
 
