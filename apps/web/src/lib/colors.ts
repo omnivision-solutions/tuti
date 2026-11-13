@@ -17,9 +17,12 @@ const SURFACES = { light: 0.9823, dark: 0.0106 };
 /** WCAG's minimum for buttons, focus rings and large text. */
 const MIN_CONTRAST = 3;
 
-const readsOn = (color: string, surface: number) => {
+/** WCAG's minimum for text at body size: a shade made for a too-faint accent is also its links' colour. */
+const TEXT_CONTRAST = 4.5;
+
+const readsOn = (color: string, surface: number, min = MIN_CONTRAST) => {
   const l = luminance(color);
-  return (Math.max(l, surface) + 0.05) / (Math.min(l, surface) + 0.05) >= MIN_CONTRAST;
+  return (Math.max(l, surface) + 0.05) / (Math.min(l, surface) + 0.05) >= min;
 };
 
 /** Whether `color` stands out from the page in light mode and in dark (a button on any site: the widget's launcher). */
@@ -36,7 +39,7 @@ const softCss = (color: string, dark: boolean) =>
 
 /**
  * `color`, or where it's too faint on `surface` the nearest shade of it that reads: mixed toward black on the light page,
- * toward white on the dark one (the same hue), by as little as reaches the contrast. Null for a grey that doesn't read
+ * toward white on the dark one (the same hue), by as little as reads as text at body size (its links). Null for a grey that doesn't read
  * (white on the light page, or a pale tint whose shade is near grey): a mid grey would look disabled, so the text colour is the accent there.
  */
 const toHex = (channels: number[]) => `#${channels.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
@@ -51,7 +54,7 @@ const readableOn = (color: string, surface: number): string | null => {
   let [low, high] = [0, 1];
   for (let step = 0; step < 16; step++) {
     const middle = (low + high) / 2;
-    [low, high] = readsOn(toHex(mix(middle)), surface) ? [low, middle] : [middle, high];
+    [low, high] = readsOn(toHex(mix(middle)), surface, TEXT_CONTRAST) ? [low, middle] : [middle, high];
   }
   const shade = mix(high);
   // Judged on the shade: a pale tint (beige) keeps too little colour once it's dark enough to read.

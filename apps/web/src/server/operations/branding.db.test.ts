@@ -449,12 +449,13 @@ test("the colour becomes the accent and its tint, with readable text on it; wher
   expect(brandCss("#2563eb")).toBe(
     `html:not(.dark){--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}html.dark{--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}${tints("#2563eb")}`,
   );
-  // A pale yellow is lost on the light page: a darker yellow there (never the text colour), itself on the dark one.
-  expect(brandCss("#fde047")).toBe(`html:not(.dark){--primary:#a7932f;--primary-foreground:#000000;--ring:#a7932f}html.dark{--primary:#fde047;--primary-foreground:#000000;--ring:#fde047}${tints("#fde047")}`);
+  // A pale yellow is lost on the light page: a darker yellow there (never the text colour), dark enough for its links
+  // at body size (4.5:1); itself on the dark one.
+  expect(brandCss("#fde047")).toBe(`html:not(.dark){--primary:#857525;--primary-foreground:#ffffff;--ring:#857525}html.dark{--primary:#fde047;--primary-foreground:#000000;--ring:#fde047}${tints("#fde047")}`);
   // A light blue the same: still blue on the light page.
-  expect(brandCss("#45b5f0")).toBe(`html:not(.dark){--primary:#3c9cd0;--primary-foreground:#000000;--ring:#3c9cd0}html.dark{--primary:#45b5f0;--primary-foreground:#000000;--ring:#45b5f0}${tints("#45b5f0")}`);
+  expect(brandCss("#45b5f0")).toBe(`html:not(.dark){--primary:#2f7ca5;--primary-foreground:#ffffff;--ring:#2f7ca5}html.dark{--primary:#45b5f0;--primary-foreground:#000000;--ring:#45b5f0}${tints("#45b5f0")}`);
   // A navy is the other way round: lighter on the dark page.
-  expect(brandCss("#172554")).toBe(`html:not(.dark){--primary:#172554;--primary-foreground:#ffffff;--ring:#172554}html.dark{--primary:#5b6586;--primary-foreground:#ffffff;--ring:#5b6586}${tints("#172554")}`);
+  expect(brandCss("#172554")).toBe(`html:not(.dark){--primary:#172554;--primary-foreground:#ffffff;--ring:#172554}html.dark{--primary:#79829d;--primary-foreground:#000000;--ring:#79829d}${tints("#172554")}`);
   // A grey has no hue to keep: where it doesn't read (white on the light page, black on the dark one), the text colour.
   expect(brandCss("#ffffff")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#ffffff;--primary-foreground:#000000;--ring:#ffffff}${tints("#ffffff")}`);
   // A pale tint the same: beige's readable shade is all but grey.
