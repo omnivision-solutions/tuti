@@ -152,6 +152,9 @@ test("a trial's plan holds until it ends, only on the default plan, and never af
   expect(trialState({ plan: null, planStatus: null, trialEndsAt: later }, now)).toEqual({ endsAt: later, ended: false });
   expect(trialState({ plan: null, planStatus: null, trialEndsAt: now }, now)).toEqual({ endsAt: now, ended: true });
   expect([trialState({ plan: null, planStatus: null, trialEndsAt: null }, now), trialState({ plan: "pro", planStatus: "active", trialEndsAt: later }, now)]).toEqual([null, null]);
+  // The file stops offering a trial: a project mid-trial isn't told it ended (it just has no trial).
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  expect(trialState({ plan: null, planStatus: null, trialEndsAt: later }, now)).toBeNull();
   // Billing off: no trials, every project has everything.
   vi.stubEnv("BILLING_CONFIG", "");
   expect([trialTerms(), effectivePlan(null, later, now), trialState({ plan: null, planStatus: null, trialEndsAt: later }, now)]).toEqual([null, null, null]);

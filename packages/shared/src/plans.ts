@@ -278,8 +278,9 @@ export function effectivePlan(plan: PlanKey, trialEndsAt: Date | null, now = new
  * project has a plan of its own. `plan` as stored (select trialEndsAt with it: see @tuti/db).
  */
 export function trialState(project: { plan: PlanKey; planStatus: string | null; trialEndsAt: Date | null }, now = new Date()): { endsAt: Date; ended: boolean } | null {
-  if (!plansEnabled() || !project.trialEndsAt || project.planStatus !== null || !onDefaultPlan(project.plan)) {
+  // None where the file no longer offers a trial: it gives nothing then, so there's nothing to say about it.
+  if (!trialTerms() || !project.trialEndsAt || project.planStatus !== null || !onDefaultPlan(project.plan)) {
     return null;
   }
-  return { endsAt: project.trialEndsAt, ended: effectivePlan(project.plan, project.trialEndsAt, now) === project.plan };
+  return { endsAt: project.trialEndsAt, ended: project.trialEndsAt <= now };
 }
