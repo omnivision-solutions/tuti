@@ -168,6 +168,20 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
       await checkpoint(page, `${scheme} ${path}`);
     }
   }
+  // On a phone, the header's menu marks the open part in the accent's tint, not Tuti's green.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.emulateMedia({ colorScheme: "light" });
+  await reader.goto("/feedback/feature-requests");
+  await reader.getByRole("button", { name: "Menu" }).click();
+  const menu = reader.getByRole("dialog", { name: "Menu" });
+  const open = menu.getByRole("navigation", { name: "Portal" }).locator('[aria-current="page"]');
+  await expect(open).toHaveText("Feedback");
+  // The tint (globals.css's oklch, from the accent): a pale purple, not transparent.
+  expect(await open.evaluate((link) => getComputedStyle(link).backgroundColor)).toMatch(/^oklch\(0\.955 0\.035 29[0-9.]+\)$/);
+  expect(await greens(reader)).toEqual([]);
+  await checkpoint(reader, "phone-menu");
+  await reader.setViewportSize({ width: 1280, height: 720 });
+
   // The widget's panel opened from the launcher, with its header in the accent.
   await reader.goto(`/feedback/feature-requests/${planned.number}`);
   await reader.locator('body > button[aria-controls="tuti-widget"]').click();

@@ -29,7 +29,8 @@ The launcher is a round button with an icon. In the Tuti app, your project's
 
 - **Button name** (default "Feedback", up to 30 characters): what screen readers say, and
   the button's tooltip; the panel it opens has the same name. It isn't shown on the button.
-- **Colour** (default the Tuti green; the icon on it is black or white, whichever reads better).
+- **Colour** (default the portal's accent colour, Settings → Branding, or the Tuti green where the accent wouldn't
+  stand out on both light and dark pages; the icon on it is black or white, whichever reads better).
 - **Position**: bottom right or bottom left.
 - **Icon**: a chat bubble (the default), a question mark, a megaphone, a light bulb, or an
   image you upload (a square one with a transparent background works best; it shows at 28
