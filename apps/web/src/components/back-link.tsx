@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-/** "← Feedback": the way back to the list a page belongs to, above its header (in the app, PageHeader's `back`). */
+/** "← Feedback": the way back to the list a page belongs to, above its header (a portal page's: `PortalPageHeader`'s `back`). */
 export function BackLink({ href, children, className }: { href: string; children: ReactNode; className?: string }) {
   return (
     <Link

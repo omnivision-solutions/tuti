@@ -173,11 +173,9 @@ export function DocsSearch({ askAI }: { askAI: boolean }) {
 export function PartRow({
   label,
   links,
-  className,
 }: {
   label: string;
   links: { href: string; name: string; active: boolean; locked?: boolean }[];
-  className?: string;
 }) {
   const nav = useScrollingRow(links.find((link) => link.active)?.href, links);
   if (links.length < 2) {
@@ -185,7 +183,7 @@ export function PartRow({
   }
   return (
     // Over the header's line (-mt-px, the paper's colour), so that line is under the row; where the row is hidden, the header keeps it.
-    <div data-part-row className={cn("relative -mt-px border-b bg-background [:root:has([data-portal-not-found])_&]:hidden", className)}>
+    <div data-part-row className="relative -mt-px border-b bg-background [:root:has([data-portal-not-found])_&]:hidden">
       <nav ref={nav} className={cn("relative mx-auto flex w-full max-w-6xl gap-1 [:root:has([data-docs-wide])_&]:max-w-[82rem] xl:[:root:has([data-docs-layout])_&]:max-w-[82rem] px-4 sm:px-6", SCROLLING_ROW)} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link

@@ -139,11 +139,11 @@ the list picks none to approve at once.
 
 | Role | Classes |
 | --- | --- |
-| Page title | A portal page's `h1` (`PageHeader`'s: heading font, semibold, tracked -0.02em, 32px from 640px up, 24px under); in the app a pane header's title (Panes) |
+| Page title | A portal page's `h1` (`PortalPageHeader`'s: heading font, 650, tracked -0.022em, 36px from 640px up, 28px under); in the app a pane header's title (Panes) |
 | Section / card title | `CardTitle` (18px, semibold, Figtree: the heading font is for page titles and big numbers; 16px on a small card) or `h2` |
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
-| Meta | `text-xs text-muted-foreground` in rows, parts joined with ` · `; under a page's title (`PageHeader`'s `meta`, a post's in its pane) `text-sm` |
+| Meta | `text-xs text-muted-foreground` in rows, parts joined with ` · `; under a post's title in its pane `text-sm` |
 | Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback). Quieter than the items under it, never in a colour. A section pane's groups (Panes) are sentence case instead |
 
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
@@ -337,8 +337,7 @@ the list picks none to approve at once.
   Tabs come in two styles. Switching a page's views or sections (Feedback's
   statuses, Changelog, Users, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is
-  pills in its pane header (`FilterPills`, under Panes; Reporting's AI conversations); on the portal underline tabs
-  (`SubNav`); switching a control's mode is a segmented
+  pills in its pane header (`FilterPills`, under Panes; Reporting's AI conversations), and on the portal the same pills; switching a control's mode is a segmented
   `Tabs` (the reply box's Reply and Note are underline tabs across the top of its card instead, under Inbox) (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed, each with its count) are `FilterPills`, as the board's sort, so
   the portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
@@ -386,7 +385,7 @@ the list picks none to approve at once.
   a change (enabled once something changed), and `toDraft` shows a change in the frame as it's made (the portal's
   `PortalLookProvider` takes it); leaving with changes not saved asks first. Tuti's own chat launcher stays off these
   pages: their previews show the project's widget.
-- **Portals** (the public portal's own look: a header card per list, a rail led by its one primary action, a calm shell):
+- **Portals** (the public portal's own look: one page header, rows on the paper, a plain rail, a calm shell):
   - **Look.** Inter for headings and text by default (preloaded; headings 650, tracked −0.022em; body 15–17px); a project's own
     fonts (Settings → Branding: `headingFont`, `bodyFont`) still win, and the portal's dialogs and menus take them too.
     Portal-only tokens in `globals.css` (`:root:has([data-portal-top])`, so the app keeps its own): stronger lines on the
@@ -610,9 +609,6 @@ the list picks none to approve at once.
 
 Use these instead of hand-rolling layout:
 
-- **`PageHeader`** (the portal's: `title`, `back`, `description`, `meta`, `actions`): the top of a portal page, its
-  title the page's heading (the Page title style), `back` above it, then `description` (the team's own words) and
-  `meta`, facts about the thing shown.
 - **`PageActions`** (`children`, `more`, `pinned`): a page's actions in the app (a pane header's, Changelog's editor).
   On phones they're a "More actions" menu from the top bar; a page whose
   every visit needs them keeps them in reach. Inbox conversations keep Close, More actions and details in their pane header;
@@ -627,7 +623,7 @@ Use these instead of hand-rolling layout:
   the Inbox's reply box needs no room for it.
   It assumes the launcher at the bottom right, where Tuti's help project keeps it:
   moved to the left (Settings → Widget), `launcher:` would need its side too.
-- **`BackLink`**: "← Feedback" above a portal detail page's header (`PageHeader`'s `back`); in the app the way back
+- **`BackLink`**: "← Feedback" above a portal detail page's header (`PortalPageHeader`'s `back`); in the app the way back
   is `PaneHeader`'s `back` (a post's: "All posts", its newer and older post as ‹ ›
   among the header's actions, away from the title).
 - **A post's page** (the team's): its header and text in one column (up to 48rem, the page the whole width), its
@@ -673,7 +669,7 @@ Use these instead of hand-rolling layout:
     the count stays whole and the actions scroll sideways, faded at the end
     that has more; a mouse's wheel scrolls them, and a button tabbed to comes
     clear of the fade (`showMore`, `FADE_AT_MORE`, `wheelSideways`,
-    `focusClearOfFade`, as `SubNav`'s tabs). The bar's buttons
+    `focusClearOfFade`, as the portal's parts). The bar's buttons
     keep focus while an action runs (`focusableWhenDisabled`); when the bar goes
     away (the action done, Clear), focus moves to the first filter (Feedback: its Filters button, once its
     transitions are done: `invisible` takes `visibility` with them, and a hidden button can't take focus). Each is done as it is
@@ -771,7 +767,7 @@ widths, in light and dark (in development only).
   string too); the pane finds its links in its children, so a client component that renders SectionLinks hides them
   (pass them as elements, or give them `active`).
 - **`FilterPills`** (`pillClass` for a pill that isn't a link): a page's views as rounded pills with counts, the open
-  one filled; one row that scrolls sideways when it doesn't fit, like `SubNav`'s.
+  one filled; one row that scrolls sideways when it doesn't fit (`useScrollingRow`).
 - **`ItemGroup`**: a list's group (posts by status): a tinted (`muted`) bar with its icon, title and count that folds
   what's under it.
 - **`SettingsCard`** + **`SettingRow`** (`label`, `description`, `htmlFor`, `inline`): settings as one card of rows,
@@ -803,7 +799,7 @@ widths, in light and dark (in development only).
 - Long user content (titles, emails, URLs) wraps (`break-words` / `break-all`;
   `wrap-anywhere` where it sits in a grid that sizes to it, such as a dialog's
   title, which `break-words` doesn't shrink).
-- Filters wrap onto more lines; they don't scroll sideways. A pane header's views (`FilterPills`) are one row that scrolls, like `SubNav`'s tabs.
+- Filters wrap onto more lines; they don't scroll sideways. A pane header's views (`FilterPills`) are one row that scrolls.
 
 ## Interaction
 

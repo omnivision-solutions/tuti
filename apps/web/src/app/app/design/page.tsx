@@ -8,7 +8,7 @@ import { BoardSearch } from "@/components/board-search";
 import { DnsRecords, SetupStep, SetupSteps, SetupValue, WaitingNotice } from "@/components/dns-setup";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow, VoteCount } from "@/components/item-list";
-import { PageHeader } from "@/components/page-header";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { PostStatusBadge, STATUS_LABELS } from "@/components/post-status-badge";
 import { TutiLogo, TutiMark } from "@tuti/ui/tuti-logo";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -158,10 +158,10 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
 
         <Section title="Page header">
           <div className="flex flex-col gap-4 rounded-xl border border-dashed p-4">
-            <BackLink href="/app/design">Feedback</BackLink>
-            <PageHeader
+            <PortalPageHeader
+              back={<BackLink href="/app/design">Feedback</BackLink>}
               title="Dark mode for the dashboard"
-              meta="#12 · Alexandra · 2 hours ago · 42 votes"
+              description="#12 · Alexandra · 2 hours ago · 42 votes"
               actions={
                 <a href="#" className={buttonVariants({ variant: "outline", size: "sm" })}>
                   <ExternalLinkIcon />

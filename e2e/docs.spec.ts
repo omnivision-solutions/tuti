@@ -1231,11 +1231,10 @@ test("the team splits the docs into tabs: the first takes the collections, other
   // And a top-level collection's is its tab.
   await expect(main.getByRole("link", { name: "Guides", exact: true })).toHaveAttribute("href", "/docs/guides");
   await visitor.setViewportSize({ width: 1280, height: 720 });
-  // Off Docs, its row goes (the boards' row isn't there either, with one board).
+  // Off Docs, its row goes.
   await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Feedback" }).click();
   await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
   await expect(docsTabs).toHaveCount(0);
-  await expect(visitor.getByRole("navigation", { name: "Boards" })).toHaveCount(0);
   // The first tab has one address: /docs.
   await visitor.goto("/docs/api-reference");
   await expect(visitor).toHaveURL(/\/docs$/);
