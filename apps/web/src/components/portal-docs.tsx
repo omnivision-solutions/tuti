@@ -452,7 +452,7 @@ async function ArticleEnd({ end, support }: { end: Awaited<ReturnType<typeof art
       href={at(`/docs/${article.slug}`)}
       rel={rel}
       className={cn(
-        "flex flex-col gap-1 rounded-xl bg-card p-4 shadow-xs ring-1 ring-card-edge transition-shadow hover:shadow-md hover:ring-primary/40",
+        "flex flex-col gap-1 rounded-xl bg-card p-4 shadow-card ring-1 ring-card-edge transition-shadow hover:shadow-md hover:ring-primary/40",
         rel === "next" && "sm:col-start-2 sm:items-end sm:text-right",
       )}
     >

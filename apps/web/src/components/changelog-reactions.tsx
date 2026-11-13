@@ -48,7 +48,7 @@ export function ChangelogReactions({
               quiet && !on && "[&>span:first-child]:opacity-70 [&>span:first-child]:grayscale",
               // On the portal a reaction of yours is like a vote cast: the accent's tint and a thin inset ring in it (not a fill alone).
               on &&
-                "border-primary bg-soft hover:bg-soft/80 portal:border-transparent portal:bg-soft portal:text-soft-foreground portal:ring-1 portal:ring-primary/45 portal:ring-inset portal:hover:bg-soft/80",
+                "border-primary bg-soft hover:bg-soft/80 portal:border-transparent portal:bg-soft portal:text-soft-foreground portal:ring-1 portal:ring-primary/45 portal:ring-inset portal:hover:bg-soft/80 portal:focus-visible:ring-3 portal:focus-visible:ring-ring/50",
             )}
             disabled={!signedIn || pending}
             title={signedIn ? undefined : "Sign in to react"}

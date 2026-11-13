@@ -310,6 +310,13 @@ test("a vote cast and a reaction of yours show more than a tint, with Tuti's gre
     await expect(thumbs).toHaveAttribute("aria-pressed", "true");
     expect.soft(await ring(thumbs), `${color} reaction of yours`).not.toBe("");
     expect.soft(await ring(main.getByRole("button", { name: /^React with 🎉/ })), `${color} no reaction`).toBe("");
+    // Keyboard focus still shows on it: the focus ring replaces the thin one.
+    const unfocused = await thumbs.evaluate((element) => getComputedStyle(element).boxShadow);
+    await main.getByRole("button", { name: /^React with ❤️/ }).focus();
+    await reader.keyboard.press("Shift+Tab");
+    await expect(thumbs).toBeFocused();
+    // (polled: the button's shadow transitions)
+    await expect.soft.poll(() => thumbs.evaluate((element) => getComputedStyle(element).boxShadow), `${color} focused reaction of yours`).not.toBe(unfocused);
     await checkpoint(reader, `changelog ${color ?? "default"}`, { fullPage: false });
   }
 });
