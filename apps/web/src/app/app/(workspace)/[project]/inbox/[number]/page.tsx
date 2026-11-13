@@ -293,8 +293,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   const fromTeam = message.author !== "USER";
                   const name = byName(message);
                   const status = emailed(message);
-                  // A run from one sender, as in a messaging app: the next message from them within minutes, its line under it the
-                  // same, carries the avatar and that line for both (this one's line kept for screen readers). A run ends where the
+                  // A run from one sender, as in a messaging app: the next message from them within minutes, by the same name with the
+                  // same email status, carries the avatar and that line for both (this one's line kept for screen readers). A run ends where the
                   // next message starts a new day in the viewer's time zone: its divider, shown in the browser, brings them back.
                   const next = conversation.messages[index + 1];
                   const runs =
@@ -304,7 +304,6 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                     next.author === message.author &&
                     byName(next) === name &&
                     next.createdAt.getTime() - message.createdAt.getTime() < RUN_MS &&
-                    timeAgo(next.createdAt) === timeAgo(message.createdAt) &&
                     emailed(next) === status;
                   return (
                     <li key={message.id} data-message={message.id}>

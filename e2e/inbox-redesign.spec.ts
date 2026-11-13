@@ -290,7 +290,8 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   const reply = owner.getByRole("textbox", { name: "Reply" });
   await reply.click();
   expect(await reply.evaluate((field) => getComputedStyle(field).boxShadow)).not.toMatch(/0px 0px 0px [1-9]/);
-  await expect(composer).not.toHaveCSS("box-shadow", /^none$/);
+  // Its 3px ring, once the transition has run.
+  await expect.poll(() => composer.evaluate((form) => getComputedStyle(form).boxShadow)).toMatch(/0px 0px 0px 3px/);
   await reply.fill("Thanks for flagging this, I’ve refunded the charge");
   await checkpoint(owner, "laptop-reply-focused", { fullPage: false });
   // On Note the whole box takes the note's colours.

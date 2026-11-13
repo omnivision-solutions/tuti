@@ -213,7 +213,7 @@ the list picks none to approve at once.
   Rows put who, the subject and the latest message on separate lines. Messages are plain text plus attachments,
   in chat bubbles as in a messaging app: as wide as their text, up to 72% of the conversation (82% on phones), the team's
   in primary with primary's text colour and the customer's in `inbox-customer`; messages from one sender within five minutes,
-  their name, time and email status the same, are a run with one avatar and that line once, under the last. Internal notes
+  their name and email status the same, are a run with one avatar and that line once, under the last. Internal notes
   are centred with the highlight tint. The composer is one card: Reply and Note are underline tabs across its top, its text
   field has no border or ring of its own (the card takes the focus ring while it's written in), and on Note the whole card
   takes the note's tint.
