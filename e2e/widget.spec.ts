@@ -652,7 +652,7 @@ test("someone a customer's site signs in sees what's new on one device, and it i
 });
 
 test("the portal shows the project's own widget, until the team turns it off in Settings → Widget", async ({ browser }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -858,7 +858,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
     await page.goto(linkIn(await latestEmailTo(email), `${portalUrl(slug)}/sign-in/link?`));
     await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("button", { name: "Account" })).toBeVisible();
-    return page;
+    return Object.assign(page, { email });
   };
   const reader = await signInReader();
   const readerLauncher = reader.locator('body > button[aria-controls="tuti-widget"]');
@@ -870,21 +870,33 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(readerLauncher).toHaveCount(0);
   // Off on the portal, the widget is there for Ask AI alone: a reader who asked leaves nothing of it either once signed out.
   await api("/widget", { onPortal: false }, "PATCH");
+  const askedAI = async (page: Page) => {
+    await page.goto(`/docs/${article.slug}`);
+    await page.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+    await page.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
+    const assistant = page.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+    await expect(assistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
+    await expect(assistant).not.toHaveAttribute("data-starting-style");
+    await assistant.getByRole("button", { name: "Close the assistant" }).click();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#tuti-widget")).toBeHidden();
+  };
   const asker = await signInReader();
-  await asker.goto(`/docs/${article.slug}`);
-  await asker.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
-  await asker.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
-  const askerAssistant = asker.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
-  await expect(askerAssistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
-  await expect(askerAssistant).not.toHaveAttribute("data-starting-style");
-  await askerAssistant.getByRole("button", { name: "Close the assistant" }).click();
-  await asker.keyboard.press("Escape");
-  await expect(asker.locator("#tuti-widget")).toBeHidden();
+  await askedAI(asker);
   await asker.getByRole("button", { name: "Account" }).click();
   await asker.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(asker.getByText("Acme is private. Sign in to see it.")).toBeVisible();
   await expect(asker.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(asker.locator("#tuti-widget")).toHaveCount(0);
+  // Taken off the portal's readers while on it, a reader's next click in the portal (a client navigation) lands on the
+  // sign-in page: nothing of the widget stays there either.
+  const dropped = await signInReader();
+  await askedAI(dropped);
+  await api(`/portal/readers/${encodeURIComponent(dropped.email)}`, undefined, "DELETE");
+  await dropped.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
+  await expect(dropped.getByText("Acme is private. Sign in to see it.")).toBeVisible();
+  await expect(dropped.locator("script[data-on-portal]")).toHaveCount(0);
+  await expect(dropped.locator("#tuti-widget")).toHaveCount(0);
 });
 
 test("a new message in the widget's Messages gets the AI's answer first, with Ask a person; turned off, it goes to the team", async ({ browser }, testInfo) => {
