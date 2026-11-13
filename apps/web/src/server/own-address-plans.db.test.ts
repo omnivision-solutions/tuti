@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
-const onPlan = async (plan: null | "pro" | "business") => {
+const onPlan = async (plan: string | null) => {
   await prisma.project.update({ where: { id: project.id }, data: { plan } });
   // What this server remembers about addresses (for 10 seconds) is read again.
   forgetCustomDomain(hostname);
@@ -89,4 +89,13 @@ test("self-hosted (no plans), every project has both", async () => {
   await prisma.customDomain.update({ where: { projectId: project.id }, data: { verifiedAt: new Date() } });
   forgetCustomDomain(hostname);
   expect(await requestTarget(hostname)).toMatchObject({ kind: "portal", slug: project.slug });
+});
+
+test("where the default plan has custom domains, a project without a paid plan, or on one the file no longer lists, is served on its own", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.features.push("customDomain"); }));
+  await prisma.customDomain.create({ data: { projectId: project.id, hostname, verificationToken: "t", verifiedAt: new Date() } });
+  for (const plan of [null, "retired"]) {
+    await onPlan(plan);
+    expect(await requestTarget(hostname)).toMatchObject({ kind: "portal", slug: project.slug, customDomain: hostname });
+  }
 });
