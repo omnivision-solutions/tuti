@@ -331,12 +331,19 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   await api("/conversations", { user: { id: "demo-sam" }, subject: "Late night", body: "Still up?" });
   await api("/conversations/2/messages", { body: "Yes, still here." });
   await api("/conversations/2/messages", { body: "What can I do?" });
+  // Midnight in the browser's own time zone (its sessions don't all take the file's), three days back.
+  const midnight = await owner.evaluate(() => {
+    const day = new Date();
+    day.setDate(day.getDate() - 3);
+    day.setHours(0, 0, 0, 0);
+    return day.toISOString();
+  });
   const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await db.connect();
   await db.query(
-    `UPDATE conversation_message m SET "createdAt" = date_trunc('day', now() AT TIME ZONE 'UTC') - interval '3 days' + (CASE m.body WHEN 'Still up?' THEN interval '-10 minutes' WHEN 'Yes, still here.' THEN interval '-2 minutes' ELSE interval '2 minutes' END)
+    `UPDATE conversation_message m SET "createdAt" = ($2::timestamptz AT TIME ZONE 'UTC') + (CASE m.body WHEN 'Still up?' THEN interval '-10 minutes' WHEN 'Yes, still here.' THEN interval '-2 minutes' ELSE interval '2 minutes' END)
      FROM conversation c JOIN project p ON p.id = c."projectId" WHERE c.id = m."conversationId" AND c.number = 2 AND p.slug = $1`,
-    [slug],
+    [slug, midnight],
   );
   await db.end();
   await owner.setViewportSize({ width: 1440, height: 900 });
