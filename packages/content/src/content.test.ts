@@ -170,6 +170,9 @@ describe("plain text", () => {
     expect(excerpt(entry as never, 20)).toEqual({ text: "Dark mode is here…", cut: true });
     expect(excerpt(doc(p(text("Supercalifragilistic"))) as never, 5)).toEqual({ text: "Super…", cut: true });
     expect(excerpt(doc(image()) as never, 100)).toEqual({ text: "", cut: false });
+    // Without spaces near the limit it's cut there, not back at an earlier line, and never inside a character.
+    expect(excerpt(doc(p(text("New")), p(text("界".repeat(30)))) as never, 20).text).toBe(`New\n${"界".repeat(16)}…`);
+    expect(excerpt(doc(p(text("😀".repeat(10)))) as never, 5).text).toBe("😀😀…");
   });
 });
 

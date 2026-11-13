@@ -252,9 +252,11 @@ export function excerpt(doc: Doc, max: number): { text: string; cut: boolean } {
   if (text.length <= max) {
     return { text, cut: false };
   }
-  // The last whole word that fits (one longer word than that is cut where it must be).
+  // At the last word's end that fits, if it's near the limit; otherwise (text without spaces, as Chinese, or one long
+  // word) at the limit, never halfway through a character.
   const end = text.slice(0, max + 1).search(/\s\S*$/);
-  return { text: `${text.slice(0, end > 0 ? end : max).replace(/[\s.,;:!?]+$/, "")}…`, cut: true };
+  const kept = end >= max * 0.8 ? text.slice(0, end) : text.slice(0, max).replace(/[\uD800-\uDBFF]$/, "");
+  return { text: `${kept.replace(/[\s.,;:!?]+$/, "")}…`, cut: true };
 }
 
 export type Heading = { id: string; text: string; level: 2 | 3 };

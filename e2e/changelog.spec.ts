@@ -1098,6 +1098,14 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   const widgetCover = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here" });
   await expect(widgetCover).toBeVisible();
   await expect.poll(() => widgetCover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+  // Once a newer entry is out, the list shows only the newest's cover: this one's is on its page.
+  const { number: newer } = (await api("/changelog", { title: "Faster exports", body: "Exports finish sooner." })) as unknown as { number: number };
+  await api(`/changelog/${newer}/publish`, {});
+  await ada.goto("/changelog");
+  await expect(ada.getByRole("heading", { name: "Faster exports" })).toBeVisible();
+  await expect(cover).toHaveCount(0);
+  await ada.goto("/changelog/1");
+  await expect(cover).toBeVisible();
 
   // A cover changed elsewhere (another tab, a teammate) shows here once the page refreshes, not the one it had.
   await team.goto(`/app/${slug}/changelog/1`);
