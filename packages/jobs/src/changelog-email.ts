@@ -354,7 +354,7 @@ export async function resubmitChangelogEmails(_input: JobInput<"resubmitChangelo
   if (full.length > 0) {
     // Not a paused one's: what the pause holds, its resume lets go (or drops).
     // Nor sample content, which never has effects outside (the team's notice included).
-    const moving = { projectId: { in: full }, project: { emailPausedAt: null }, sample: false, subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } };
+    const moving = { projectId: { in: full }, project: { emailPausedAt: null }, sample: false, publishedAt: { not: null }, subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } };
     const projects = await prisma.changelogEntry.findMany({ where: moving, distinct: ["projectId"], select: { projectId: true } });
     await prisma.changelogEntry.updateMany({ where: moving, data: { subscribersEmailDueAt: nextMonth(new Date()) } });
     // Their teams hear (once a month), as when a claim is refused.

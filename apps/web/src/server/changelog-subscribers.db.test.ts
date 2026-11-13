@@ -958,6 +958,16 @@ describe("the project's email limits", () => {
       await handlers.resubmitChangelogEmails({}, log);
       expect(await due()).toEqual(nextMonth);
     });
+
+    test("an entry unpublished since isn't moved to next month, nor told about: it wouldn't be sent anyway", async () => {
+      await confirmed(newAddress());
+      await publishEntry("Dark mode");
+      await prisma.projectEmailMonth.updateMany({ where: { projectId: project.id }, data: { emails: 1 } });
+      const dueAt = new Date(Date.now() - 15 * 60_000);
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { subscribersEmailDueAt: dueAt, publishedAt: null } });
+      await handlers.resubmitChangelogEmails({}, log);
+      expect(await due()).toEqual(dueAt);
+    });
   });
 
   test("past a new project's daily cap the rest wait, still due, and the cron sends them once they may", async () => {
