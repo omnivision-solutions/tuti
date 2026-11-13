@@ -170,3 +170,15 @@ test("the migration counts an account that already owns a project as having had 
   });
   expect((await newProject()).trialEndsAt).toBeNull();
 });
+
+test("an account whose first project was made without a trial on offer gets none on its next once trials are", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  const first = await newProject();
+  expect(first.trialEndsAt).toBeNull();
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.trial = { plan: "pro", days: 7, credits: 500, emails: 1000 }; }));
+  const second = await newProject();
+  expect(second.trialEndsAt).toBeNull();
+  expect((await creditBalance(second.id)).grants.filter(({ source }) => source === "PLAN")).toEqual([]);
+  // And it's counted as had: a later project doesn't start one either.
+  expect((await prisma.user.findUniqueOrThrow({ where: { id: owner.id }, select: { trialStartedAt: true } })).trialStartedAt).not.toBeNull();
+});

@@ -18,6 +18,11 @@ export async function startTrial(tx: Prisma.TransactionClient, projectId: string
   if (count === 0) {
     return;
   }
+  // Nor for an owner who already owns another project (made before trials, or while a deploy ran the release before):
+  // the marker is set now, and the trial is only ever an account's first project's.
+  if ((await tx.teamMember.count({ where: { userId: ownerId, role: "OWNER", projectId: { not: projectId } } })) > 0) {
+    return;
+  }
   const trialEndsAt = new Date(now.getTime() + trial.days * 86_400_000);
   await tx.project.update({ where: { id: projectId }, data: { trialEndsAt } });
   if (trial.credits > 0) {
