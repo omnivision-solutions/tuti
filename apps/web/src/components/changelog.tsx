@@ -1001,7 +1001,7 @@ export function ChangelogEntryActions({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {unwritten === "titles" && `“${title}” still lists what the pull requests were called, not what changed for your users. `}
-            {unwritten === "lines" && `“${title}” is still one line for each pull request, as Autopilot wrote them, not release notes. `}
+            {unwritten === "lines" && `“${title}” still lists its pull requests a line each, as they came in, not release notes. `}
             {unwritten === "empty" && `“${title}” has no text yet, only its pull requests. `}
             {aiFirst && "Draft with AI writes release notes from them. "}
             {sample || importedOn
