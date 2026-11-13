@@ -146,7 +146,10 @@ test("a folded section opens for the focus after an unlink, and stays folded as 
   await api("/conversations", { email: "e2e-reader@example.com", subject: "Export reports", body: "Can I export my reports?" });
   for (const title of ["Export reports to CSV", "Export reports to PDF"]) await api("/posts", { board: "feature-requests", title, author: { id: "user-42" } });
   await api("/conversations/2/posts", { post: 1 });
+  // A click on a heading is remembered once the app's code runs: before it, the section toggles but isn't saved.
+  const ready = () => owner.waitForFunction(() => [...document.querySelectorAll("details")].every((details) => Object.keys(details).some((key) => key.startsWith("__reactFiber"))));
   await owner.goto(`/app/${slug}/inbox/2`);
+  await ready();
   const section = (name: string) => owner.locator("details").filter({ has: owner.locator("summary", { hasText: name }) });
   await expect(section("Looks related")).toHaveAttribute("open");
   await section("Looks related").locator("summary").click();
@@ -167,6 +170,7 @@ test("a folded section opens for the focus after an unlink, and stays folded as 
   await expect(section("Customer details")).toHaveAttribute("open");
   await owner.unroute("**/_next/static/chunks/**");
   await owner.reload();
+  await ready();
   // Folded by hand, Linked posts stays folded when its first post is linked (its default would open it).
   await section("Linked posts").locator("summary").click();
   await section("Linked posts").locator("summary").click();
@@ -178,6 +182,17 @@ test("a folded section opens for the focus after an unlink, and stays folded as 
   await expect(owner.getByText("Linked to #2")).toBeVisible();
   await expect(section("Linked posts").locator("summary small")).toHaveText("1");
   await expect(section("Linked posts")).not.toHaveAttribute("open");
+  // Opened in the phone's sheet, it's open beside the conversation once there's room again.
+  const beside = owner.getByRole("complementary", { name: "Conversation details", exact: true });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.getByRole("button", { name: "Show details" }).click();
+  const sheet = owner.getByRole("dialog", { name: "Conversation details" });
+  await sheet.locator("summary", { hasText: "Conversation attributes" }).click();
+  await expect(sheet.locator("details").filter({ has: owner.locator("summary", { hasText: "Conversation attributes" }) })).toHaveAttribute("open");
+  await owner.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await expect(beside.locator("details").filter({ has: owner.locator("summary", { hasText: "Conversation attributes" }) })).toHaveAttribute("open");
 });
 
 test("inline link trigger retains keyboard focus when dismissed while saving", async ({ browser }) => {
