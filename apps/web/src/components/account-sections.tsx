@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { pillClass } from "@/components/filter-pills";
 
 const ICONS = { profile: UserIcon, emails: MailIcon, posts: LightbulbIcon, votes: ChevronUpIcon };
-const RELEASE = ["wheel", "touchstart", "keydown", "pointerdown", "scrollend"];
+const RELEASE = ["wheel", "touchstart", "keydown", "pointerdown"];
 type Section = { id: keyof typeof ICONS; title: string; count?: number };
 
 /**
@@ -22,7 +22,12 @@ export function AccountSections({ sections }: { sections: Section[] }) {
   // The list has read the page (the server's HTML marks the first section, whatever the page shows), committed with its mark.
   const [settled, setSettled] = useState(false);
   const picked = useRef(false);
+  // Where a jump of the list's own stopped (null: none under way): a scrollend there keeps the section it picked.
+  const jumpedTo = useRef<number | null>(null);
   const pills = useScrollingRow(current, sections);
+  // The sections by id, a string: a navigation within the page (a section link is the router's) renders the list again
+  // with an equal but new array, which mustn't run the effect again (its settle would pin the hash's section anew).
+  const ids = sections.map((section) => section.id).join(" ");
   const rail = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -36,14 +41,15 @@ export function AccountSections({ sections }: { sections: Section[] }) {
     const top = (id: string) => document.getElementById(id)?.getBoundingClientRect().top;
     const follow = () => {
       if (picked.current) return;
-      let at = sections[0]!.id;
-      for (const { id } of sections) {
+      const order = ids.split(" ") as Section["id"][];
+      let at = order[0]!;
+      for (const id of order) {
         const y = top(id);
         if (y !== undefined && (y <= line() || atEnd())) at = id;
       }
       setCurrent(at);
     };
-    const hashed = () => sections.find((section) => `#${section.id}` === window.location.hash)?.id;
+    const hashed = () => ids.split(" ").find((id) => `#${id}` === window.location.hash) as Section["id"] | undefined;
     const fromHash = () => {
       const id = hashed();
       if (id) {
@@ -51,7 +57,21 @@ export function AccountSections({ sections }: { sections: Section[] }) {
         setCurrent(id);
       }
     };
-    const release = () => (picked.current = false);
+    // The reader's own wheel, touch, key or pointer (a scrollbar's drag): the scrolling that follows marks what it shows.
+    const release = () => {
+      picked.current = false;
+      jumpedTo.current = null;
+    };
+    // The end of a scroll: the list's own jump keeps its pick; any other (the scrollbar's, the page's own scrollTo)
+    // marks what it shows, its scroll events having been skipped while the pick held.
+    const ended = () => {
+      const jump = jumpedTo.current;
+      jumpedTo.current = null;
+      if (jump !== null && Math.abs(window.scrollY - jump) < 2) return;
+      if (!picked.current) return;
+      picked.current = false;
+      follow();
+    };
     // On load and on a hash change, the hash only where the browser took the page to it (a reload or Back can restore the
     // page elsewhere): its section at the line, or on screen at the page's end. Otherwise what the page shows.
     const settle = () => {
@@ -67,14 +87,15 @@ export function AccountSections({ sections }: { sections: Section[] }) {
     settle();
     window.addEventListener("scroll", follow, { passive: true });
     window.addEventListener("hashchange", settle);
-    // The reader's own scrolling (the scrollbar's drag too), or the jump's end: the list follows the page again.
+    window.addEventListener("scrollend", ended);
     for (const event of RELEASE) window.addEventListener(event, release, { passive: true });
     return () => {
       window.removeEventListener("scroll", follow);
       window.removeEventListener("hashchange", settle);
+      window.removeEventListener("scrollend", ended);
       for (const event of RELEASE) window.removeEventListener(event, release);
     };
-  }, [sections, pills]);
+  }, [ids, pills]);
 
   // As a hash link does (the router's Link doesn't): to the section, again when the address already has its hash, and
   // focus there, so the next Tab and a screen reader go on from it.
@@ -84,7 +105,10 @@ export function AccountSections({ sections }: { sections: Section[] }) {
     picked.current = true;
     setCurrent(id);
     const section = document.getElementById(id);
+    const before = window.scrollY;
     section?.scrollIntoView();
+    // Only a jump that moved the page ends with a scrollend of its own.
+    jumpedTo.current = window.scrollY !== before ? window.scrollY : null;
     section?.focus({ preventScroll: true });
   };
 
