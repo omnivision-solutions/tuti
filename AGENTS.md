@@ -38,6 +38,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 ## Pull requests
 
 - One topic per PR, small enough to review in a few minutes. Squash-merged into `main`.
+- A UI change covers one screen per PR. Every screen and window width adds edge cases, and each one the review finds costs a push and another ~12-minute CI run, so a PR spanning several screens can take hours to land. Split anything bigger.
 - The description says **Why**, **What changed**, and **How tested**. Why is the product reason: what was wrong and what this changes, never `<name> wants` or a briefing about a named person; the maintainer is the author. Describe results in words; don't paste tool output.
 - New user-facing text: quote it in the description and say why it's needed.
 - UI changes: include a screenshot of the changed screen.
