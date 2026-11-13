@@ -362,9 +362,11 @@
     scrollbar-gutter: stable;
   }
   /* The portal roadmap's sticky column headings (or, on phones, its column switcher) sit under the header too: focus
-     moving up a column scrolls a card out from under them. */
-  html:has([data-roadmap-columns]) {
-    scroll-padding-top: calc(var(--portal-header-height, 12rem) + 6rem);
+     moving up a column scrolls a card out from under them (their height measured by RoadmapStickyHeight; about it until
+     then). On the cards' links and buttons, not the page's scroll-padding: the switcher's own links, stuck under the header,
+     would count as hidden there, and focusing one would scroll the page. */
+  [data-roadmap-columns] :is(a, button) {
+    scroll-margin-top: var(--roadmap-sticky-height, 6rem);
   }
   /* The portal's hairlines (between rows, under the header): the lighter divider. Controls keep their edge (`border-input`). */
   :root:has([data-portal-top], [data-portal-look]) * {

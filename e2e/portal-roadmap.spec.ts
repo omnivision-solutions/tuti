@@ -232,18 +232,35 @@ test("the portal's roadmap: the columns' headings stay under the header as the c
   const planned = visitor.getByRole("heading", { name: "Planned" });
   const point = (await planned.boundingBox())!;
   expect(await visitor.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest("h2")?.textContent, { x: point.x + 30, y: point.y + point.height / 2 })).toContain("Planned");
-  // Shift+Tab up a column scrolls the card it reaches out from under the headings.
-  const headingBottom = async () => {
-    const box = (await visitor.getByRole("region", { name: "Planned" }).getByRole("paragraph").first().boundingBox())!;
-    return box.y + box.height;
+  // Shift+Tab up a column scrolls the card it reaches out from under the headings, however tall they are.
+  const focusUpAColumn = async () => {
+    const stuckBottom = async () =>
+      Math.max(
+        ...(await Promise.all(
+          ["Planned", "In progress", "Completed"].map(async (name) => {
+            const box = (await visitor.getByRole("region", { name }).locator("[data-roadmap-sticky]").boundingBox())!;
+            return box.y + box.height;
+          }),
+        )),
+      );
+    // Idea 4's title just below the headings, Idea 5's vote chip above it under them.
+    const idea4 = visitor.getByRole("link", { name: "Idea 4", exact: true });
+    await idea4.evaluate((link, top) => window.scrollBy(0, link.getBoundingClientRect().top - top), (await stuckBottom()) + 4);
+    await idea4.evaluate((link) => (link as HTMLElement).focus({ preventScroll: true }));
+    await visitor.keyboard.press("Shift+Tab");
+    const focused = visitor.locator(":focus");
+    await expect(focused).toHaveAccessibleName(/^Sign in to vote/);
+    expect((await focused.boundingBox())!.y).toBeGreaterThanOrEqual((await stuckBottom()) - 1);
   };
-  const idea4 = visitor.getByRole("link", { name: "Idea 4", exact: true });
-  await idea4.evaluate((link, top) => window.scrollBy(0, link.getBoundingClientRect().top - top), (await headerBottom()) + 100);
-  await idea4.evaluate((link) => (link as HTMLElement).focus({ preventScroll: true }));
-  await visitor.keyboard.press("Shift+Tab");
-  const focused = visitor.locator(":focus");
-  await expect(focused).toHaveAccessibleName(/^Sign in to vote/);
-  expect((await focused.boundingBox())!.y).toBeGreaterThanOrEqual(await headingBottom());
+  await focusUpAColumn();
+  await visitor.setViewportSize({ width: 800, height: 800 });
+  await scrollFar();
+  // In narrower columns, in the team's own wider font, the meanings wrap and the headings are taller.
+  await visitor.addStyleTag({ content: "[data-roadmap-sticky] p { font-size: 1.375rem }" });
+  expect((await visitor.getByRole("region", { name: "Planned" }).locator("[data-roadmap-sticky]").boundingBox())!.height).toBeGreaterThan(120);
+  await focusUpAColumn();
+  await visitor.setViewportSize({ width: 1280, height: 800 });
+  await visitor.reload();
   await scrollFar();
   await checkpoint(visitor, "roadmap-sticky-headings", { fullPage: false });
   await visitor.emulateMedia({ colorScheme: "dark" });
@@ -263,8 +280,21 @@ test("the portal's roadmap: the columns' headings stay under the header as the c
   await visitor.emulateMedia({ colorScheme: "dark" });
   await checkpoint(visitor, "roadmap-phone-sticky-switcher-dark", { fullPage: false });
   await visitor.emulateMedia({ colorScheme: "light" });
+  const inProgress = visitor.getByRole("navigation", { name: "Columns" }).getByRole("link", { name: "In progress 8" });
+  // Tabbing through the stuck switcher leaves the page where it is.
+  const deep = await visitor.evaluate(() => scrollY);
+  await visitor.getByRole("navigation", { name: "Columns" }).getByRole("link", { name: "Planned 12" }).evaluate((link) => (link as HTMLElement).focus({ preventScroll: true }));
+  await visitor.keyboard.press("Tab");
+  await expect(inProgress).toBeFocused();
+  expect(await visitor.evaluate(() => scrollY)).toBe(deep);
+  // Opening another column in a new tab leaves this one where it was.
+  const scrolled = await visitor.evaluate(() => scrollY);
+  const [tab] = await Promise.all([visitor.context().waitForEvent("page"), inProgress.click({ modifiers: ["ControlOrMeta"] })]);
+  await tab.close();
+  expect(await visitor.evaluate(() => scrollY)).toBe(scrolled);
+  await expect(visitor).toHaveURL(/\/roadmap$/);
   // Switching from down there shows the other column from its first card, just under the switcher.
-  await visitor.getByRole("navigation", { name: "Columns" }).getByRole("link", { name: "In progress 8" }).click();
+  await inProgress.click();
   await visitor.waitForURL("**/roadmap?column=inProgress");
   const first = (await visitor.getByRole("link", { name: "Idea 20" }).boundingBox())!;
   const switcherNow = (await visitor.getByRole("navigation", { name: "Columns" }).boundingBox())!;
