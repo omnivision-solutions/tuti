@@ -57,9 +57,9 @@ Use it instead of reading checks and comments with `gh api` by hand. A verdict i
 
 ## On each wake
 
-1. **Failed checks.** Read the log before guessing: `gh run view <run-id> --log-failed` (the run id is in the `FAIL` line's URL). Fix the cause and push. Before calling a failure unrelated or flaky, restore the touched files to `main`, rerun that test, and say what happened in the PR.
+1. **Failed checks.** Read the log before guessing: `gh run view <run-id> --log-failed` (the run id is in the `FAIL` line's URL). Fix the cause; it goes out in the same push as step 2's fixes. Before calling a failure unrelated or flaky, restore the touched files to `main`, rerun that test, and say what happened in the PR.
 2. **Review comments.** Each `[…]` block is a comment with no reply from you after its latest edit, an unresolved thread, or a change request. Judge each on its merits; bots are confidently wrong often enough to check.
-   - Real issue: fix every open finding in one push, not one per push, and check whether the same problem shows up elsewhere in the diff (other widths, other views, Back/Forward). Run the local review once on the fixes before you push, skipping what it raises that the PR's threads already answered: a fix that brings a new finding costs another round. Push, then reply in each thread saying what changed.
+   - Real issue: fix every open finding, and any failed check from step 1, in one push, not one per push, and check whether the same problem shows up elsewhere in the diff (other widths, other views, Back/Forward). Run the local review once on the fixes before you push, skipping what it raises that the PR's threads already answered: a fix that brings a new finding costs another round. Push, then reply in each thread saying what changed.
    - Wrong: reply with the evidence (code, test, docs).
    - A product decision: ask the user.
    Reply to an inline comment in its thread: `gh api repos/{owner}/{repo}/pulls/<n>/comments/<id>/replies -f body='…'`. A conversation comment or a review's own text (a person's review, or CodeRabbit's comments outside the diff and nitpicks) has no thread: answer with a new `gh pr comment` that quotes its full permalink (the digest prints it). A person's follow-up in a thread, or their edit after your reply, needs another reply; a bot's follow-ups and edits to its own comments don't.
