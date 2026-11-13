@@ -1492,12 +1492,14 @@ test("Feedback's search keeps what was typed before the page's scripts ran", asy
   const search = team.getByRole("searchbox", { name: "Search feedback" });
   await search.fill("dark");
   release();
-  // Hydrated (React has the field) and its effects run: what was typed is still there, and Enter searches for it.
-  await team.waitForFunction(() => {
-    const box = document.querySelector('input[name="q"]');
-    return !!box && Object.keys(box).some((key) => key.startsWith("__reactFiber"));
-  });
-  await team.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 200))));
+  // Hydrated, its effects run: J (Feedback's keys, listening from an effect in the same page, hydrated and run with
+  // the field's) opens the first post only then. Tried until it does, from the page (not typed into the field).
+  await search.blur();
+  await expect(async () => {
+    await team.keyboard.press("j");
+    await expect(team).toHaveURL(/[?&]post=\d+/, { timeout: 1000 });
+  }).toPass();
+  // What was typed is still there, and Enter searches for it.
   await expect(search).toHaveValue("dark");
   await search.press("Enter");
   await expect(team).toHaveURL(/\?q=dark$/);
