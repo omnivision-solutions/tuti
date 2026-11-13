@@ -23,8 +23,8 @@ it from the code or covering it, is not keeping it.
 
 You may hide the attribution on the pages of a project while that project has a current licence
 from Tuti for the installation of Tuti that serves it. Licences are sold at https://tuti.so. The
-licence is what permits hiding the attribution; the setting in Tuti that does it (Customize →
-Powered by) is how, not a permission of its own.
+licence is what permits hiding the attribution; the setting in Tuti that does it (Powered by tuti,
+in Settings → Branding; Customize → Powered by in older versions) is how, not a permission of its own.
 
 ## 3. Keeping these terms
 
