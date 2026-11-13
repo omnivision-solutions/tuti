@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import pg from "pg";
 import { expect, test } from "./fixtures";
 import { checkpoints } from "./checkpoint";
 import { verifyEmail } from "./mail";
@@ -260,8 +261,13 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   const bubbles = messages.locator(".inbox-bubble");
   await expect(bubbles).toHaveCount(4);
 
-  // The team's two replies are a run: one avatar shown, their name and time once, under the second.
-  await expect(messages.getByText("Olive Owner ·")).toHaveCount(1);
+  // The team's two replies are a run: one avatar shown, their name and time once, under the second (the first's line is
+  // there for screen readers only).
+  const lines = messages.locator(".team .inbox-message-by");
+  await expect(lines).toHaveCount(2);
+  await expect(lines.first()).toHaveCSS("position", "absolute");
+  await expect(lines.last()).toHaveCSS("position", "static");
+  await expect(messages.getByRole("listitem").nth(1)).toContainText("Olive Owner · just now");
   await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "hidden");
   await expect(messages.locator(".team .inbox-chat-avatar").last()).toHaveCSS("visibility", "visible");
   // The team's in the primary colour; the customer's long message stays well short of the pane's width.
@@ -294,11 +300,49 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   await owner.getByRole("textbox", { name: "Note" }).fill("Refunded in Stripe, check again Friday");
   await checkpoint(owner, "laptop-note-focused", { fullPage: false });
 
-  await owner.setViewportSize({ width: 390, height: 844 });
+  // A file sent in the team's colour stays readable: its card's name in the card's own text colour.
   await owner.getByRole("tab", { name: "Reply" }).click();
+  await reply.fill("Here it is.");
+  await owner.getByLabel("Files to attach").setInputFiles({ name: "report.csv", mimeType: "text/csv", buffer: Buffer.from("week,hours\n1,40") });
+  await expect(composer.getByText("report.csv")).toBeVisible();
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  const file = messages.getByRole("list", { name: "Attachments" }).getByRole("link", { name: /report\.csv/ });
+  await expect(file).toBeVisible();
+  const cardText = await owner.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.className = "text-card-foreground";
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  });
+  await expect(file).toHaveCSS("color", cardText);
+
+  await owner.setViewportSize({ width: 390, height: 844 });
   await reply.click();
   await checkpoint(owner, "phone-bubbles", { fullPage: false });
   expect((await bubbles.first().boundingBox())!.width).toBeLessThanOrEqual((await messages.boundingBox())!.width * 0.82 + 1);
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "phone-bubbles-dark", { fullPage: false });
+  await owner.emulateMedia({ colorScheme: "light" });
+
+  // Two replies minutes apart either side of midnight are two days, not a run: each keeps its avatar and line.
+  await api("/conversations", { user: { id: "demo-sam" }, subject: "Late night", body: "Still up?" });
+  await api("/conversations/2/messages", { body: "Yes, still here." });
+  await api("/conversations/2/messages", { body: "What can I do?" });
+  const db = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await db.connect();
+  await db.query(
+    `UPDATE conversation_message m SET "createdAt" = date_trunc('day', now() AT TIME ZONE 'UTC') - interval '3 days' + (CASE m.body WHEN 'Still up?' THEN interval '-10 minutes' WHEN 'Yes, still here.' THEN interval '-2 minutes' ELSE interval '2 minutes' END)
+     FROM conversation c JOIN project p ON p.id = c."projectId" WHERE c.id = m."conversationId" AND c.number = 2 AND p.slug = $1`,
+    [slug],
+  );
+  await db.end();
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox/2`);
+  await expect(messages.locator(".inbox-day")).toHaveCount(2);
+  for (const line of await messages.locator(".team .inbox-message-by").all()) {
+    await expect(line).toHaveCSS("position", "static");
+  }
+  await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "visible");
 });

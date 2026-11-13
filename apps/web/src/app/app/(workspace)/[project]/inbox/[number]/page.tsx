@@ -294,7 +294,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   const name = byName(message);
                   const status = emailed(message);
                   // A run from one sender, as in a messaging app: the next message from them within minutes, its line under it the
-                  // same, carries the avatar and that line for both.
+                  // same, carries the avatar and that line for both (this one's line kept for screen readers). A run ends where the
+                  // next message starts a new day in the viewer's time zone: its divider, shown in the browser, brings them back.
                   const next = conversation.messages[index + 1];
                   const runs =
                     !!next &&
@@ -309,11 +310,11 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                     <li key={message.id} data-message={message.id}>
                       <MessageDay at={message.createdAt.toISOString()} previous={conversation.messages[index - 1]?.createdAt.toISOString()} />
                       <div className={cn("inbox-message flex items-end gap-2", fromTeam && "team flex-row-reverse justify-start", message.note && "note mx-5 flex-row justify-center @max-[57rem]/app:mx-3.75 @min-[77rem]/app:group-data-[details=hidden]/thread:mx-17.5")}>
-                        <Avatar className={cn("inbox-chat-avatar mb-5.75 size-6.5 flex-none text-xs max-md:size-6", message.note && "hidden", runs && "invisible mb-0")}>
+                        <Avatar className={cn("inbox-chat-avatar mb-5.75 size-6.5 flex-none text-xs max-md:size-6", message.note && "hidden", runs && "invisible mb-0 in-[li:has(+li_.inbox-day)]:visible in-[li:has(+li_.inbox-day)]:mb-5.75")}>
                           <AvatarFallback>{initial(name)}</AvatarFallback>
                         </Avatar>
                         <div className={cn("inbox-message-body min-w-0 max-w-[min(30rem,72%)] max-md:max-w-[82%]", message.note && "max-w-full max-md:max-w-full")}>
-                          <div className={cn("inbox-bubble rounded-2xl bg-inbox-customer px-3.25 py-2.25 wrap-anywhere max-md:px-2.75 [&_p]:text-sm [&>p:not(.inbox-message-by)]:leading-normal", !runs && (fromTeam ? "rounded-br-sm" : "rounded-bl-sm"), message.attachments.length === 0 && "w-fit max-w-full", fromTeam && !message.note && "ml-auto bg-primary text-primary-foreground [&_details]:text-primary-foreground/80", message.note && "mx-auto rounded-lg border border-dashed border-highlight-foreground/40 bg-inbox-note px-3 py-2 max-md:px-3 max-md:py-2 [&_.inbox-note-by]:text-xs [&_.inbox-note-by]:leading-4.5")}>
+                          <div className={cn("inbox-bubble rounded-2xl bg-inbox-customer px-3.25 py-2.25 wrap-anywhere max-md:px-2.75 [&_p]:text-sm [&>p:not(.inbox-message-by)]:leading-normal", !runs && (fromTeam ? "rounded-br-sm" : "rounded-bl-sm"), message.attachments.length === 0 && "w-fit max-w-full", fromTeam && !message.note && "ml-auto bg-primary text-primary-foreground [&_details]:text-primary-foreground/80 [&>div>p.text-muted-foreground]:text-primary-foreground/80 [&_[aria-label=Attachments]>li]:text-card-foreground", message.note && "mx-auto rounded-lg border border-dashed border-highlight-foreground/40 bg-inbox-note px-3 py-2 max-md:px-3 max-md:py-2 [&_.inbox-note-by]:text-xs [&_.inbox-note-by]:leading-4.5")}>
                             {message.note && (
                               <p className="inbox-note-by mb-0.5 flex items-center gap-1.25 text-xs leading-4.5 font-semibold text-highlight-foreground [&>svg]:size-3.25 [&>svg]:flex-none">
                                 <LockKeyholeIcon aria-hidden />
@@ -338,13 +339,11 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               </details>
                             )}
                           </div>
-                          {!runs && (
-                            <p className={cn("inbox-message-by m-0 mb-2 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center")}>
-                              {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
-                              {!message.note && `${name} · `}
-                              {timeAgo(message.createdAt)} {status && <span>{status}</span>}
-                            </p>
-                          )}
+                          <p className={cn("inbox-message-by m-0 mb-2 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center", runs && "sr-only in-[li:has(+li_.inbox-day)]:not-sr-only")}>
+                            {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
+                            {!message.note && `${name} · `}
+                            {timeAgo(message.createdAt)} {status && <span>{status}</span>}
+                          </p>
                         </div>
                       </div>
                     </li>
