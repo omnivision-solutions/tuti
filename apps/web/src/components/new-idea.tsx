@@ -6,7 +6,6 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { NewPostForm } from "@/components/new-post-form";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 
 const OpenContext = createContext<(() => void) | null>(null);
 
@@ -53,14 +52,14 @@ export function NewIdea({
 }
 
 /** The board's primary (`label`: its own button text, Boards → Button, or "New post"): opens the page's NewIdea. `round`: a round + named by it (phones). */
-export function NewIdeaButton({ label, round = false, className }: { label: string; round?: boolean; className?: string }) {
+export function NewIdeaButton({ label, round = false }: { label: string; round?: boolean }) {
   const open = useContext(OpenContext);
   return round ? (
-    <Button onClick={() => open?.()} size="icon-lg" aria-label={label} className={cn("rounded-full", className)}>
+    <Button onClick={() => open?.()} size="icon-lg" aria-label={label} className="rounded-full">
       <PlusIcon />
     </Button>
   ) : (
-    <Button onClick={() => open?.()} className={cn("font-semibold", className)}>
+    <Button onClick={() => open?.()} className="font-semibold">
       <PlusIcon />
       {label}
     </Button>

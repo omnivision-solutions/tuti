@@ -8,7 +8,7 @@ import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 /**
- * A page's actions (PageHeader's): `children` are the ones it uses most, `more` the others. From
+ * A page's actions (its pane header's): `children` are the ones it uses most, `more` the others. From
  * tablet width up the first are beside the page's title and `more` behind its "More actions" button; in the
  * app on phones, that button (in the bar) opens all of them as a menu. They're hidden while it's
  * closed, not taken away, so a dialog one of them opened (Settings, Delete) stays open when it closes.

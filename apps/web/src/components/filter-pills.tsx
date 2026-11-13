@@ -23,7 +23,7 @@ export const pillClass = (picked = false, className?: string) =>
 /**
  * A page's views as pills in its pane header ("All 38", "Mine 4"): links, the open one filled (views in the query string
  * too: `activeView`). One row that never
- * wraps; with too little room it scrolls sideways, faded at the end that has more (SubNav's row).
+ * wraps; with too little room it scrolls sideways, faded at the end that has more (`useScrollingRow`).
  */
 export function FilterPills({ label, items, current: given }: { label: string; items: { title: ReactNode; href: string; count?: ReactNode }[]; current?: string }) {
   const pathname = usePathname();

@@ -125,7 +125,7 @@ export async function apiFor(team: Page, slug: string) {
 }
 
 /**
- * A row of tabs (`SubNav`) on one line however narrow the window, the page no wider than it, and the current tab
+ * A row of tabs or pills (`FilterPills`) on one line however narrow the window, the page no wider than it, and the current tab
  * scrolled into the row's view.
  */
 export async function expectOneRowOfTabs(page: Page, tabs: Locator) {

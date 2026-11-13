@@ -148,9 +148,6 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   // Images only once signed in: uploads are someone's.
   const uploads = session && mediaStorage() ? { projectSlug, mediaUrls: {} } : undefined;
   const address = `${await portalAddress(projectSlug)}${postPath(post)}`;
-  const vote = (shape: "upvote") => (
-    <VoteButton shape={shape} postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
-  );
   const voterFaces = post.voteCount > 0 && (
     // The faces, then how many more (the vote button has the count).
     <VoterFaces
@@ -223,7 +220,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         aria-label="About this idea"
         className="flex flex-wrap items-center gap-x-2 gap-y-4 text-sm lg:sticky lg:top-[calc(var(--portal-header-height,4rem)+1.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-[2.375rem] lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-5 max-lg:[&>:first-child]:grow lg:[&>a]:w-full lg:[&>button]:w-full"
       >
-        {vote("upvote")}
+        <VoteButton shape="upvote" postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!voter} signedOut={!session} />
         {subscribe}
         {voterFaces && (
           <div className="flex flex-col gap-2 max-lg:order-last max-lg:basis-full">

@@ -12,7 +12,7 @@ import { activeView } from "@/lib/active-link";
 /**
  * A pane's header where the window scrolls the page, not the pane: under 48rem of the shell from a 48rem window
  * (the sidebar open on a tablet), where there's no phone bar to say what the page is, it stays at the top (in a
- * window at least 40rem tall, as `PageHeader`). For what holds a pane's header (Feedback's bar for picked rows).
+ * window at least 40rem tall). For what holds a pane's header (Feedback's bar for picked rows).
  */
 // Its z-index only there too: a grid item with one paints over what follows it in its cell (Feedback's bar).
 export const STICKY_PANE_HEADER =

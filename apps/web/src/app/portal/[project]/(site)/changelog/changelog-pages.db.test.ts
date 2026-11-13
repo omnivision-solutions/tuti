@@ -61,7 +61,7 @@ async function changelog(page?: string, tag?: string) {
       if (node.type === ChangelogSeen) {
         seen = (node.props as { at: string }).at;
       }
-      // A row of tabs (the tags': SubNav), its links given as items.
+      // A row of pills (the tags': FilterPills), its links given as items.
       for (const item of (node.props as { items?: { title: ReactNode; href: string }[] }).items ?? []) {
         if (typeof item.title === "string") {
           links[item.title] = item.href;

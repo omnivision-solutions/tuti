@@ -330,7 +330,6 @@
   --shadow-card: var(--portal-shadow);
 }
 
-/* A group's label: the heading of a group inside a list, card or menu (docs/design.md, Group label). */
 /* Buttons are pills in the admin (its sidebar's page, dialogs and menus too) and where `data-pill-buttons` is set
    (docs/design.md → Panes); elsewhere, the portals, a button's corners come from `--radius` where it is (Button). */
 :root:has([data-slot="sidebar-wrapper"]),
@@ -339,6 +338,7 @@
   --button-radius-sm: 9999px;
 }
 
+/* A group's label: the heading of a group inside a list, card or menu (docs/design.md, Group label). */
 @utility group-label {
   @apply text-[0.75rem] leading-4 font-semibold tracking-[0.06em] text-muted-foreground uppercase;
 }
@@ -779,9 +779,9 @@
 :root:has([data-portal-top]) .article-text :where(.rich-steps > li:not(:last-child))::after {
   content: none;
 }
-/* On a fill (a callout, a details block), inline code and step numbers on the card's colour, so they still stand out. */
+/* On a fill (a callout, a details block), inline code and step numbers (only a callout holds steps) on the card's colour, so they still stand out. */
 :root:has([data-portal-top]) .article-text :where(blockquote, .rich-details) :where(:not(pre) > code),
-:root:has([data-portal-top]) .article-text :where(blockquote, .rich-details) :where(.rich-steps > li)::before {
+:root:has([data-portal-top]) .article-text :where(blockquote) :where(.rich-steps > li)::before {
   background: var(--color-card);
 }
 

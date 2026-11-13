@@ -1168,7 +1168,7 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   await expect(shippedRow.getByText(/^\d+ votes?$/)).toBeAttached();
   await expect(visitor.getByRole("main").getByRole("listitem").filter({ hasText: "Calendar sync" }).getByRole("link", { name: /^Sign in to vote/ })).toBeVisible();
 
-  // On a phone no sidebar: the boards' row is above, the latest shipped and Get updates under the list, and nothing runs off the side. Light and dark.
+  // On a phone no sidebar: the board's pills are above, the latest shipped and Get updates under the list, and nothing runs off the side. Light and dark.
   const signedIn = await ada.context().storageState();
   for (const colorScheme of ["light", "dark"] as const) {
     const page = await (await browser.newContext({ colorScheme, baseURL: portalUrl(slug), storageState: signedIn })).newPage();
