@@ -48,6 +48,15 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   const sections = bo.getByRole("navigation", { name: "Account sections" });
   await expect(sections.getByRole("link")).toHaveText(["Profile", "Emails", "Your posts 1", "Your votes 2"]);
   await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  // From the keyboard, as a hash link: the next Tab goes on inside the section jumped to (a screen reader is taken there too).
+  await sections.getByRole("link", { name: /Your votes/ }).focus();
+  await bo.keyboard.press("Enter");
+  await expect(bo.getByRole("heading", { name: "Your votes" })).toBeInViewport();
+  await bo.keyboard.press("Tab");
+  await expect(bo.getByRole("region", { name: "Your votes" }).getByRole("link", { name: "Offline mode" })).toBeFocused();
+  await bo.mouse.wheel(0, -5000);
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  // Clicked, even when the address already has its hash (as a hash link, it jumps again).
   await sections.getByRole("link", { name: /Your votes/ }).click();
   await expect(bo).toHaveURL(/\/account#votes$/);
   await expect(sections.getByRole("link", { name: /Your votes/ })).toHaveAttribute("aria-current", "location");

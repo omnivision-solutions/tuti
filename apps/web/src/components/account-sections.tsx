@@ -66,10 +66,16 @@ export function AccountSections({ sections }: { sections: Section[] }) {
   }, [sections]);
 
   const pills = useScrollingRow(current, sections);
+  // As a hash link does (the router's Link doesn't): to the section, again when the address already has its hash, and
+  // focus there, so the next Tab and a screen reader go on from it.
   const pick = (id: Section["id"]) => {
     picked.current = true;
     setCurrent(id);
+    const section = document.getElementById(id);
+    section?.scrollIntoView();
+    section?.focus({ preventScroll: true });
   };
+
 
   return (
     <>
