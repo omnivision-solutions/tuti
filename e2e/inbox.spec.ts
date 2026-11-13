@@ -153,17 +153,14 @@ test("conversations from the API land in the inbox, where the team replies, assi
     expect(onTop).toBe(true);
   }
 
-  // Beside it, who Sam is: their company, plan and seats at a glance; their app's id, other properties and groups under
-  // Details, and nothing else from them yet.
+  // Beside it, who Sam is, open from the start: their app's id, all their properties (company, plan and seats among
+  // them) and groups, and nothing else from them yet.
   const about = owner.getByRole("complementary", { name: "About them" });
   await expect(about).toContainText("Sam Smith");
   await expect(about).toContainText("e2e-sam@example.com");
-  await expect(about.getByRole("definition")).toHaveCount(0);
-  await expect(about.getByText("id user-42")).toBeHidden();
-  await openPersonDetails(owner);
   await expect(about).toContainText("id user-42");
   await expect(about).toContainText("Enterprise");
-  await expect(about.getByRole("definition")).toHaveText(["x", "Initech", "enterprise", "40"]);
+  await expect(about.getByRole("definition")).toHaveText(["enterprise", "40", "Initech", "x"]);
   // Long names wrap inside the panel, never past it.
   const panel = (await about.boundingBox())!;
   const name = (await about.getByText("averyveryveryverylongpropertynamewithoutanyspacesatallinit").boundingBox())!;
@@ -171,6 +168,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // And they leave the values room: "enterprise" stays on one line, as tall as the email above it.
   const line = (await about.getByText("e2e-sam@example.com", { exact: true }).boundingBox())!.height;
   expect((await about.getByRole("definition").filter({ hasText: "enterprise" }).boundingBox())!.height).toBeLessThan(line * 1.5);
+  await openPersonDetails(owner);
   await expect(about.getByRole("region", { name: "Other conversations" })).toContainText("None.");
 
   // The team replies (⌘/Ctrl+Enter sends): it's waiting on the user now, out of Needs reply, and stays open (only Send
@@ -678,7 +676,7 @@ test("on a phone the title keeps Close and details, and the sheet's assignment m
   await checkpoint(owner, "phone-assignment", { fullPage: false });
   await menu.getByRole("menuitem", { name: "Assign to me" }).click();
   await expect(sheet.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
-  await sheet.locator("summary", { hasText: "Customer details" }).click();
+  // Open from the start.
   await expect(sheet).toContainText(address);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(owner, "phone-customer-details", { fullPage: false });

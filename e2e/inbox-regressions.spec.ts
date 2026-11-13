@@ -141,11 +141,67 @@ test("only needs reply uses the attention colour in header and status picker", a
   }
 });
 
+test("a folded section opens for the focus after an unlink, and stays folded as remembered", async ({ browser }) => {
+  const { owner, slug, api } = await inbox(browser);
+  await api("/conversations", { email: "e2e-reader@example.com", subject: "Export reports", body: "Can I export my reports?" });
+  for (const title of ["Export reports to CSV", "Export reports to PDF"]) await api("/posts", { board: "feature-requests", title, author: { id: "user-42" } });
+  await api("/conversations/2/posts", { post: 1 });
+  // A click on a heading is remembered once the app's code runs: before it, the section toggles but isn't saved.
+  const ready = () => owner.waitForFunction(() => [...document.querySelectorAll("details")].every((details) => Object.keys(details).some((key) => key.startsWith("__reactFiber"))));
+  await owner.goto(`/app/${slug}/inbox/2`);
+  await ready();
+  const section = (name: string) => owner.locator("details").filter({ has: owner.locator("summary", { hasText: name }) });
+  await expect(section("Looks related")).toHaveAttribute("open");
+  await section("Looks related").locator("summary").click();
+  await expect(section("Looks related")).not.toHaveAttribute("open");
+  await owner.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
+  await expect(owner.getByText("Unlinked #1")).toBeVisible();
+  // Its Link is in Looks related now: the section opens so the focus can be on it.
+  await expect(owner.getByRole("button", { name: "Link “Export reports to CSV”" })).toBeFocused();
+  await expect(section("Looks related")).toHaveAttribute("open");
+  // Opened for them, not by them: still folded on the next load.
+  await owner.reload();
+  await expect(section("Looks related").locator("summary small")).toHaveText("2");
+  await expect(section("Looks related")).not.toHaveAttribute("open");
+  // Restored as the page loads, not once the app's code runs: as it is with that code blocked.
+  await owner.route("**/_next/static/chunks/**", (route) => route.abort());
+  await owner.reload();
+  await expect(section("Looks related")).not.toHaveAttribute("open");
+  await expect(section("Customer details")).toHaveAttribute("open");
+  await owner.unroute("**/_next/static/chunks/**");
+  await owner.reload();
+  await ready();
+  // Folded by hand, Linked posts stays folded when its first post is linked (its default would open it).
+  await section("Linked posts").locator("summary").click();
+  await section("Linked posts").locator("summary").click();
+  await expect(section("Linked posts")).not.toHaveAttribute("open");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("menuitem", { name: "Link a post…" }).click();
+  await owner.getByRole("dialog").getByRole("textbox", { name: "Search posts" }).fill("PDF");
+  await owner.getByRole("dialog").getByRole("button", { name: /Export reports to PDF/ }).click();
+  await expect(owner.getByText("Linked to #2")).toBeVisible();
+  await expect(section("Linked posts").locator("summary small")).toHaveText("1");
+  await expect(section("Linked posts")).not.toHaveAttribute("open");
+  // Opened in the phone's sheet, it's open beside the conversation once there's room again.
+  const beside = owner.getByRole("complementary", { name: "Conversation details", exact: true });
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.getByRole("button", { name: "Show details" }).click();
+  const sheet = owner.getByRole("dialog", { name: "Conversation details" });
+  await sheet.locator("summary", { hasText: "Conversation attributes" }).click();
+  await expect(sheet.locator("details").filter({ has: owner.locator("summary", { hasText: "Conversation attributes" }) })).toHaveAttribute("open");
+  await owner.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await expect(beside.locator("details").filter({ has: owner.locator("summary", { hasText: "Conversation attributes" }) })).toHaveAttribute("open");
+});
+
 test("inline link trigger retains keyboard focus when dismissed while saving", async ({ browser }) => {
   const { owner, api, url } = await inbox(browser);
   await api("/users", { users: [{ id: "author", name: "Sam", email: "e2e-author@example.com" }] });
   await api("/posts", { board: "feature-requests", title: "Report exports", body: "Export reports", author: { id: "author" } });
   await owner.goto(url);
+  // Nothing linked yet: Linked posts starts folded.
+  await owner.locator("summary", { hasText: "Linked posts" }).click();
   const trigger = owner.getByRole("button", { name: "Link a post to this conversation", includeHidden: true });
   await trigger.click();
   const dialog = owner.getByRole("dialog", { name: "Link a post" });
@@ -175,7 +231,7 @@ test("other conversations use a status dot alongside the text", async ({ browser
   await api("/conversations", { email: "e2e-reader@example.com", subject: "Previous question", body: "All sorted" });
   await api("/conversations/2", { status: "closed" }, "PATCH");
   await owner.goto(url);
-  await owner.locator("summary", { hasText: "Other conversations from this person" }).click();
+  await owner.locator("summary", { hasText: "Other conversations" }).click();
   const other = owner.getByRole("region", { name: "Other conversations", exact: true });
   await expect(other).toContainText("Closed");
   await expect(other.locator(".bg-status-closed")).toBeVisible();
@@ -205,9 +261,9 @@ test("conversation dates use the viewer's day and a written month", async ({ bro
   await page.locator("summary", { hasText: "Conversation attributes" }).click();
   const started = page.getByText("Started", { exact: true }).locator("+ dd");
   await expect.soft(started).toHaveText("7 March 2026");
-  await page.locator("summary", { hasText: "Other conversations from this person" }).click();
+  await page.locator("summary", { hasText: "Other conversations" }).click();
   const other = page.getByRole("region", { name: "Other conversations", exact: true });
-  await expect.soft(other).toContainText("#2 · 7 March");
+  await expect.soft(other).toContainText(/7 March · [^·]+ · #2/);
   await checkpoints(testInfo)(page, "viewer-local-conversation-dates");
   await context.close();
 });

@@ -107,14 +107,20 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await expect(details).toBeVisible();
   // A run across midnight can make the first message yesterday by the time it opens.
   await expect(owner.locator(".inbox-day")).toHaveText(/^(Today|Yesterday) · /);
-  const folded = ["Customer details", "Company", "Other conversations from this person", "Recent page visits", "Events", "Conversation attributes"];
+  // Who they are first and open (company and plan are their properties like any other); the posts open once there are
+  // some; the rest folded. Every heading the same height, a line between each.
+  const sectionNamed = (within: typeof details, name: string) => within.locator("details").filter({ has: owner.locator("summary", { hasText: name }) });
+  await expect(details.locator("summary > span")).toHaveText(["Customer details", "Other conversations", "Linked posts", "Looks related", "Conversation attributes"]);
+  const folded = ["Other conversations", "Conversation attributes"];
   for (const name of folded) {
-    const section = details.locator("details").filter({ has: owner.locator("summary", { hasText: name }) });
-    await expect(section).not.toHaveAttribute("open");
-    await expect(section.locator("summary small")).toHaveText(/^\d+$/);
+    await expect(sectionNamed(details, name)).not.toHaveAttribute("open");
+    await expect(sectionNamed(details, name).locator("summary small")).toHaveText(/^\d+$/);
   }
-  for (const name of ["Linked posts", "Looks related"])
-    await expect(details.locator("details").filter({ has: owner.locator("summary", { hasText: name }) })).toHaveAttribute("open");
+  for (const name of ["Customer details", "Linked posts", "Looks related"]) await expect(sectionNamed(details, name)).toHaveAttribute("open");
+  await expect(sectionNamed(details, "Customer details").getByRole("definition")).toContainText(["Business", "12", "Northwind"]);
+  const heights = await details.locator("summary").evaluateAll((summaries) => summaries.map((summary) => summary.getBoundingClientRect().height));
+  expect(new Set(heights).size).toBe(1);
+  await expect(details.locator("details").first()).toHaveCSS("border-top-width", "1px");
   await expect(owner.locator('[data-inbox-conversation] [data-slot="pane-header"]').getByRole("button", { name: "Unassigned, assign conversation", exact: true })).toHaveCount(0);
   await details.getByRole("button", { name: "Unassigned, assign conversation", exact: true }).click();
   await owner.getByRole("menuitem", { name: "Assign to me" }).click();
@@ -131,10 +137,10 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await checkpoint(owner, "laptop-light", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "laptop-dark", { fullPage: false });
-  await details.locator("summary", { hasText: "Other conversations from this person" }).click();
+  await details.locator("summary", { hasText: "Other conversations" }).click();
   await expect(details.getByRole("link", { name: "Inviting a teammate" })).toBeVisible();
   const other = details.getByRole("region", { name: "Other conversations", exact: true }).getByRole("listitem");
-  await expect(other).toContainText(/Closed · #4 · \d+ \w+/);
+  await expect(other).toContainText(/\d+ \w+ · Closed · #4/);
   await expect(other).toContainText("Thanks, that worked. We’re all set!");
   await checkpoint(owner, "section-expanded-dark", { fullPage: false });
   // At 1280px the views' pane leaves no room for the details beside the conversation: they're in a sheet.
@@ -157,7 +163,10 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   const sheet = owner.getByRole("dialog", { name: "Conversation details" });
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole("button", { name: "Assigned to Olive Owner" })).toBeVisible();
-  for (const name of folded) await expect(sheet.locator("details").filter({ has: owner.locator("summary", { hasText: name }) })).not.toHaveAttribute("open");
+  // As this browser left them: Other conversations was opened above, so it opens here too, after a reload.
+  await expect(sectionNamed(sheet, "Other conversations")).toHaveAttribute("open");
+  await expect(sectionNamed(sheet, "Conversation attributes")).not.toHaveAttribute("open");
+  await expect(sectionNamed(sheet, "Customer details")).toHaveAttribute("open");
   await checkpoint(owner, "phone-details-light", { fullPage: false });
   await owner.emulateMedia({ colorScheme: "dark" });
   await checkpoint(owner, "phone-details-dark", { fullPage: false });
@@ -183,7 +192,6 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await sheet.getByRole("button", { name: "Waiting on user, change status" }).click();
   await owner.getByRole("menuitem", { name: "Needs reply", exact: true }).click();
   await expect(sheet.getByRole("button", { name: "Needs reply, change status" })).toContainText("Needs reply");
-  await sheet.locator("summary", { hasText: "Other conversations from this person" }).click();
   await sheet.getByRole("link", { name: "Inviting a teammate" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/4$`));
   await expect(sheet).toBeHidden();
@@ -218,7 +226,8 @@ test("long names and subjects fit both laptop widths with wrapping details label
       await owner.getByRole("menuitem", { name: "Assign to me" }).click();
     }
     await expect(details.getByRole("button", { name: `Assigned to ${teammate}` })).toBeVisible();
-    await details.locator("summary", { hasText: "Other conversations from this person" }).click();
+    // Opened once, it stays open at the next width (this browser remembers).
+    if (width === 1440) await details.locator("summary", { hasText: "Other conversations" }).click();
     await expect(details.getByRole("link", { name: `${subject} The previous question.` })).toBeVisible();
     const title = owner.locator('[data-inbox-conversation] [data-slot="pane-header"]');
     const heading = title.getByRole("heading", { name: subject, exact: true });
@@ -227,7 +236,7 @@ test("long names and subjects fit both laptop widths with wrapping details label
     expect(await heading.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
     await expect(title.getByRole("button", { name: "Close", exact: true })).toBeInViewport();
     expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
-    for (const box of [title, details, details.locator("summary", { hasText: "Other conversations from this person" })]) {
+    for (const box of [title, details, details.locator("summary", { hasText: "Other conversations" })]) {
       expect(await box.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
     }
     // Capture the layout after transient assignment feedback has cleared the heading.

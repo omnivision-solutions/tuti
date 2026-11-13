@@ -80,6 +80,9 @@ export function ConversationPosts({
       ? [`[data-unlink="${change.post}"]`]
       : [...(change.next === null ? [] : [`[data-unlink="${change.next}"]`]), `[data-link="${change.post}"]`];
     const target = targets.map((selector) => section.current?.querySelector<HTMLButtonElement>(selector)).find(Boolean);
+    // Folded (this browser keeps it so), its section opens to show where the focus went.
+    const folded = target?.closest("details");
+    if (folded) folded.open = true;
     (target ?? moreActions())?.focus();
   }, [pending, posts, number]);
 
@@ -102,10 +105,10 @@ export function ConversationPosts({
   };
 
   return (
-    <div className="inbox-posts [&_.inbox-detail-section]:mb-3.5 [&_summary]:text-[0.875rem] [&_.inbox-section-body]:pl-0 [&_a]:text-[0.875rem] [&_a]:font-medium">
+    <div className="inbox-posts [&_a]:text-[0.875rem] [&_a]:font-medium">
       {/* A region named Linked posts only once there are some: before, it holds only what looks related. */}
-      <section ref={section} aria-label={posts.length > 0 ? "Linked posts" : undefined} className="flex flex-col gap-2">
-        <DetailSection title="Linked posts" count={posts.length} icon={LinkIcon} open>
+      <section ref={section} aria-label={posts.length > 0 ? "Linked posts" : undefined}>
+        <DetailSection title="Linked posts" count={posts.length} icon={LinkIcon} open={posts.length > 0}>
           <ul className="flex flex-col gap-2">
             {posts.map((post) => (
               <li key={post.number} className="flex items-start gap-2">
@@ -136,7 +139,7 @@ export function ConversationPosts({
           <LinkPostButton projectSlug={projectSlug} number={number} linked={posts.map((post) => post.number)} inline />
         </DetailSection>
         <section aria-label="Looks related">
-          <DetailSection title="Looks related" count={related.length} icon={SparklesIcon} open>
+          <DetailSection title="Looks related" count={related.length} icon={SparklesIcon} open={related.length > 0}>
             <ul className="flex flex-col gap-2">
               {related.map((post) => (
                 <li key={post.number} className="flex items-start gap-2">
