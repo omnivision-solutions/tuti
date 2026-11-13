@@ -52,7 +52,7 @@ export function PlanPicker({ projectSlug, plans, current }: { projectSlug: strin
               ))}
             </ul>
             {plan.key !== current && plan.price?.[interval] != null && (
-              <Button type="button" variant={plan.featured ? "default" : "outline"} disabled={pending} onClick={() => upgrade(plan.key as "pro" | "business", interval)}>
+              <Button type="button" variant={plan.featured ? "default" : "outline"} disabled={pending} focusableWhenDisabled onClick={() => upgrade(plan.key as "pro" | "business", interval)}>
                 Upgrade to {plan.name}
               </Button>
             )}
@@ -94,7 +94,7 @@ export function ManagePlan({ projectSlug }: { projectSlug: string }) {
   return (
     <div className="flex flex-col gap-2">
       <div>
-        <Button type="button" variant="outline" disabled={pending} onClick={manage}>
+        <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={manage}>
           {pending ? "Opening Stripe…" : "Manage plan"}
         </Button>
       </div>
@@ -118,7 +118,7 @@ export function BadgeAddOn({ projectSlug, on, perMonth }: { projectSlug: string;
   if (on) {
     return (
       <div>
-        <Button type="button" variant="outline" disabled={pending} onClick={() => change(false)}>
+        <Button type="button" variant="outline" disabled={pending} focusableWhenDisabled onClick={() => change(false)}>
           Show the badge again
         </Button>
       </div>
