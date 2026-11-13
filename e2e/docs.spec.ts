@@ -2530,6 +2530,13 @@ test("on the portal a code block's Copy sits in a strip above the code, never ov
   await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe("requests.post(f'{API}/calendars/team/import', files=files)");
   await copies.first().click();
   await expect.poll(() => visitor.evaluate(() => navigator.clipboard.readText())).toBe(curl);
+  // By keyboard: from that Copy into its code (which scrolls), its focus ring drawn inside it, not clipped by the card.
+  await visitor.keyboard.press("Tab");
+  await expect(long).toBeFocused();
+  await expect(long).toHaveCSS("outline-offset", "-2px");
+  // The tabs' Copy comes right after the tabs, before their code.
+  const order = await main.locator(".rich-code-tabs").evaluate((tabs) => [...tabs.children].map((child) => child.className || child.tagName));
+  expect(order.slice(0, 2)).toEqual(["rich-code-tab-row", "code-copy-bar"]);
 });
 
 test("a link in an article to another of the portal's articles stays on the portal and previews it; in the widget it opens in the panel", async ({ browser }, testInfo) => {

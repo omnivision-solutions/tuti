@@ -46,8 +46,9 @@ export function CodeCopyButtons() {
         const radios = [...tabs.querySelectorAll<HTMLInputElement>(":scope > .rich-code-tab-row input")];
         return tabs.querySelectorAll(":scope > pre")[Math.max(radios.findIndex((radio) => radio.checked), 0)]!;
       };
+      // Right after the tabs (where it's shown), so keyboards and screen readers reach it before the code.
       added.push(bar(copyButton(shown)));
-      tabs.append(added.at(-1)!);
+      tabs.querySelector(":scope > .rich-code-tab-row")?.after(added.at(-1)!);
     }
     for (const pre of article.querySelectorAll<HTMLPreElement>("pre:not(.rich-code-tabs > pre)")) {
       const caption = pre.parentElement?.matches(".rich-code") ? pre.parentElement.querySelector("figcaption") : null;

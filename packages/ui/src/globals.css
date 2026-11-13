@@ -705,8 +705,8 @@
 
 /*
  * The portal's articles (docs/design.md, Portal): 17px text, and asides as fills, not outlines: inline code, a callout (a
- * quote: an info blue rule and icon), a details block and a step's number on the grey fill; code blocks as cards (a
- * labelled one has its label in a grey strip over the code, with Copy: CodeCopyButtons). Unlayered, after `.article-text`,
+ * quote: an info blue rule and icon), a details block and a step's number on the grey fill; code blocks as cards, a grey
+ * strip over the code holding Copy (CodeCopyButtons) and the block's label or tabs. Unlayered, after `.article-text`,
  * so it wins over it.
  */
 :root:has([data-portal-top]) .article-text {
@@ -743,6 +743,11 @@
   overflow-x: auto;
   padding: 1.25rem 1.5rem;
 }
+/* Its focus ring inside it: the block clips anything outside. */
+:root:has([data-portal-top]) .article-text :where(pre > code:focus-visible) {
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}
 @supports (animation-timeline: scroll()) {
   :root:has([data-portal-top]) .article-text :where(pre > code) {
     mask-image: linear-gradient(to right, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent);
@@ -773,7 +778,10 @@
 :root:has([data-portal-top]) .article-text :where(.rich-code-tabs > .code-copy-bar) {
   grid-area: 1 / 2;
 }
-/* Its tabs as tall as Copy's strip, their names level with Copy. */
+/* The tab row as tall as the other strips (so Copy's coming doesn't move the page), its names level with Copy. */
+:root:has([data-portal-top]) .article-text :where(.rich-code-tab-row) {
+  min-height: 2.75rem;
+}
 :root:has([data-portal-top]) .article-text :where(.rich-code-tab-row label) {
   display: flex;
   align-items: center;
