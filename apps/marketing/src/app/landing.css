@@ -300,7 +300,8 @@
 
   /* Sections */
   section { padding: 120px 0; }
-  section.flush { padding-top: 0; }
+  /* Flush under a section on the page's colour; under the green band (the FAQ when there's no pricing) it keeps its space. */
+  section.flush:not(.switch + *) { padding-top: 0; }
   .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--g); }
   h2 { font-size: clamp(38px, 4.8vw, 60px); letter-spacing: -0.04em; margin-top: 16px; line-height: 1; }
   .sub { font-size: 19px; color: var(--muted); margin-top: 18px; max-width: 30em; line-height: 1.5; }
