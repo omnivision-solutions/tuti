@@ -91,6 +91,8 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   const header = owner.locator('[data-inbox-conversation] [data-slot="pane-header"]');
   await expect(header.getByRole("heading", { name: "Can I export my reports?" })).toBeVisible();
   await expect(header.getByRole("link", { name: "Inbox" })).toBeHidden();
+  // A pane title again, as it is with nothing before it.
+  await expect(header.getByRole("heading", { name: "Can I export my reports?" }).locator("span")).toHaveCSS("font-size", "20px");
   const details = owner.getByRole("complementary", { name: "Conversation details", exact: true });
   const assertTeamAtRight = async () => {
     const messages = owner.getByRole("list", { name: "Messages" });

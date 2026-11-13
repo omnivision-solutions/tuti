@@ -63,6 +63,8 @@ const EMAIL_STATUS: Record<EmailStatus, (error: string | null) => string> = {
 
 /** The way back to the inbox, hidden where its list is beside the conversation (it would only close the conversation's pane). */
 const INBOX_BACK = "@min-[52.5rem]/inbox:hidden";
+/** The title there, with nothing before it: a pane title again (20px, heading font), as PaneHeader styles one without a way back. */
+const INBOX_TITLE = "@min-[52.5rem]/inbox:font-heading @min-[52.5rem]/inbox:text-xl @min-[52.5rem]/inbox:tracking-[-0.015em]";
 
 /** A conversation shows its latest this many messages, and this many earlier ones with each "Show earlier messages" (`?messages=`). */
 const MESSAGES_PER_PAGE = 50;
@@ -215,7 +217,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         <Pane className="inbox-conversation col-start-1 row-start-1">
           <PaneHeader
             back={{ href: inboxHref(slug, view, null, pages), label: "Inbox", className: INBOX_BACK }}
-            title={<span title={conversation.subject}>{conversation.subject}</span>}
+            title={<span title={conversation.subject} className={INBOX_TITLE}>{conversation.subject}</span>}
             actions={
               <>
                 <CloseButton projectSlug={slug} number={conversation.number} closed={conversation.status === "CLOSED"} />
@@ -436,7 +438,7 @@ function PastHistory({
     <ConversationPane open>
       {/* The whole thread's grid: there are no details beside it. */}
       <Pane className="col-span-full">
-        <PaneHeader back={{ href: inboxHref(slug, view, null, pages), label: "Inbox", className: INBOX_BACK }} title={`Conversation #${number}`} />
+        <PaneHeader back={{ href: inboxHref(slug, view, null, pages), label: "Inbox", className: INBOX_BACK }} title={<span className={INBOX_TITLE}>{`Conversation #${number}`}</span>} />
         <PaneBody className="p-6">
           <EmptyState
             title="Past your plan's history"

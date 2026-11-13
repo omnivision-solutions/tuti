@@ -2316,6 +2316,12 @@ test("on a server selling plans, a conversation closed before the plan's history
     const pane = (await owner.locator('[data-inbox-conversation] [data-slot="pane"]').boundingBox())!;
     expect.soft(pane.width, `empty state uses the conversation width at ${width}px`).toBeGreaterThanOrEqual(region.width - 1);
   }
+  // Beside the list, no way back to it; on a phone, "‹ Inbox".
+  const back = owner.locator('[data-inbox-conversation] [data-slot="pane-header"]').getByRole("link", { name: "Inbox" });
+  await expect(back).toBeHidden();
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(back).toBeVisible();
+  await owner.setViewportSize({ width: 1280, height: 900 });
   await checkpoint(owner, "conversation-past-plan-history");
 });
 
