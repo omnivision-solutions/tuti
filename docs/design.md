@@ -427,9 +427,11 @@ the list picks none to approve at once.
     underlined on the header's bottom edge; Sign in a secondary (grey fill) at the end; 64px tall (56px on phones). Its contents in
     the pages' container (max-w-6xl; 82rem on every docs page from 1280px, and on docs articles with sections below 1280px too).
     On phones the header is one line (mark and name, Sign in or the account, the
-    menu): the parts are in the menu. Under it, on Docs, the docs tabs' row when there are two or more (Feedback's boards
-    are in its pages: pills, a board's rail and switcher). Feedback opens the boards' overview (one board: that board).
-    A "Powered by tuti" footer under a line.
+    menu): the parts are in the menu. Under it, on Docs, the docs tabs' row when there are two or more: an underlined row
+    the whole width, scrolling sideways on phones, the open tab underlined in the foreground (the accent's underline is
+    the site bar's); the site bar's line moves under it. It's on the docs home, a tab's, collection's and article's page
+    and the search results, and nowhere else on those pages (Feedback's boards are in its pages: pills, a board's rail and
+    switcher). Feedback opens the boards' overview (one board: that board). A "Powered by tuti" footer under a line.
   - **Feedback's overview** (`/feedback`, with two or more boards; one board opens it): the shared header, "Feedback"
     and "Vote for the ideas you want most, or share your own.", the board pills on the left (All boards and each board,
     with their ideas not done yet), on the right the search (it looks through every board shown, every status), Get
@@ -519,30 +521,32 @@ the list picks none to approve at once.
     dialog (`DocsSearchBox`), where "Ask AI" hands the question to the assistant, and before anything's typed "Open the
     assistant" goes back to the conversation as it was. The assistant is the widget's, the one conversation with AI
     answers: the portal opens its own widget with it (`Tuti.open({ ask })`), and has no panel of its own. Its results
-    page says what it's for ("Results for “invoice”"), the first tab marked. On phones and tablets the header's menu
+    page says what it's for ("Results for “invoice”"), the first tab marked, the results rows on the paper. On phones and tablets the header's menu
     button (`PortalMenu`) opens a full-screen menu with the parts (phones), the current part's navigation (the docs'
     tree, the boards) and the team's links. The header and the part's row stay at the top as the page scrolls, phones
     included (`PortalTop`; their height is `--portal-header-height`).
-  - **The docs home** (a tab's overview): centred, over a soft green glow, the team's title (default "How can we
+  - **The docs home** (a tab's overview; the portal's one hero, no glow): centred, the team's title (default "How can we
     help?") and subtitle, the big box (from tablet width, where the header's is hidden: the same box) with ⌘K and
-    **Ask AI** at its end, and the three most-read articles as chips; then a card per collection (its icon and name on
-    one row, the description, how many articles the reader may open at the bottom; two per row), Popular articles as a
-    card in two columns (three or more, a tab's own), the articles in no collection, and "Can't find it?" (Contact us)
-    where the project answers messages. The overview takes the container's width.
+    **Ask AI** at its end (the page's one filled primary), and the three most-read articles as chips (grey fills); then a
+    card per collection (its icon on a 40px neutral tile beside its name, the description, how many articles the reader
+    may open at the bottom; two per row), Popular articles as rows on the paper in two columns (three or more, a tab's
+    own), the articles in no collection as rows, and "Can't find it?" (Contact us) where the project answers messages,
+    a soft grey fill. The overview takes the container's width.
   - **Content first.** A page's core content gets the room it needs before anything goes beside it: a long read (an
     article with sections) about 70 characters a line, 64 at least from 1280px up. Short pages and lists stay as compact as
     reads best (a wider short article or collection only stretched, in blind reviews): the measure is what the visitor
     came for, not a share of the screen. Side columns
     are slim and quiet (muted type, nothing heavier than a hairline competing with the content); what a reader may want but
     didn't come for sits one click away (a menu, a disclosure) rather than in another column.
-  - **An article**: the tab's tree on the left (`DocsLayout`, 16rem, a line beside it the page's height): each
-    collection a row with its icon that opens (`<details>`), the page's own open with a line down its articles and the
+  - **An article**: the tab's tree on the left (`DocsLayout`, 16rem, a plain column the page's height): each
+    collection a row with its icon that opens (`<details>`), the page's own open (no line down its articles) and the
     current one a neutral fill; the articles in no collection under a line. Then "Docs › <collection>" with Reading mode (a ghost book icon, named in its tooltip; from tablet
     width, on an article with sections) and Copy page at
-    the row's end, a 42px title, "Updated <date> · N min read" (about 200 words a minute), and the text at 17px (`article-text` on top of `rich-text`): 26px section headings, steps numbered in soft green circles, inline code on
-    a sunken chip, code blocks as cards (a labelled one with its label in a strip, and Copy: `CodeCopyButtons`), quotes
-    as callouts (an info-blue rule and icon on the card's surface). At its end: "Was this helpful?" (Yes and No with
-    thumbs), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI and Contact us, secondary grey fills). With two or more
+    the row's end, a 36px title (28px on phones), "Updated <date> · N min read" (about 200 words a minute), and the text at 17px (`article-text` on top of `rich-text`): 26px section headings, steps numbered in grey circles, inline code,
+    details blocks and callouts as grey fills (a callout: quotes, with an info-blue rule and icon), code blocks as cards (a
+    labelled one with its label in a grey strip, no line under it, and Copy: `CodeCopyButtons`). At its end: "Was this
+    helpful?" (Yes and No with thumbs, no rule above), Previous and Next cards, Related articles, and "Still stuck?" (Ask AI
+    and Contact us as quiet buttons) on a soft grey fill. With two or more
     sections, "On this page" on the right from 1280px (13rem, the section being read marked). Every docs page uses
     the same desktop container (79rem, the header 82rem) so navigation keeps the logo, tree and article's left edge in place.
     The text keeps 65–70 characters a line between the two (a 46rem column; 64ch

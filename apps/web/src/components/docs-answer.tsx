@@ -6,6 +6,7 @@ import { type FormEvent, useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,14 +80,15 @@ export function DocsAnswer({
   );
 
   const askButton = (
-    <Button variant="outline" disabled={pending} onClick={ask}>
+    // The portal's search page's one filled primary.
+    <Button variant={widget ? "outline" : "default"} disabled={pending} onClick={ask}>
       <SparklesIcon />
       {pending ? "Asking…" : "Ask AI"}
     </Button>
   );
 
   return (
-    <section aria-label="AI answer" aria-busy={pending} className="flex flex-col gap-3 rounded-xl border p-4">
+    <section aria-label="AI answer" aria-busy={pending} className={cn("flex flex-col gap-3 rounded-xl p-4", widget ? "border" : "bg-card shadow-card ring-1 ring-card-edge")}>
       {(!answer || answer.status === "failed") && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">

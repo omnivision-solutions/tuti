@@ -1185,6 +1185,11 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(docsTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("href", "/docs");
+  // An underlined row the whole width under the site bar, which gives it its line; the open tab underlined in the foreground.
+  await expect(visitor.locator("header.portal-header")).toHaveCSS("border-bottom-width", "0px");
+  await expect(visitor.locator("[data-part-row]")).toHaveCSS("border-bottom-width", "1px");
+  await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveCSS("border-bottom-color", await token(visitor, "--foreground"));
+  await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveCSS("border-bottom-color", "rgba(0, 0, 0, 0)");
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks"]);
   await checkpoint(visitor, "portal-docs-tabs");
   await docsTabs.getByRole("link", { name: "Guides" }).click();
@@ -1223,6 +1228,8 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
   await expect(docsTabs).toHaveCount(0);
   await expect(visitor.getByRole("navigation", { name: "Boards" })).toHaveCount(0);
+  // The site bar has its line back.
+  await expect(visitor.locator("header.portal-header")).toHaveCSS("border-bottom-width", "1px");
   // The first tab has one address: /docs.
   await visitor.goto("/docs/api-reference");
   await expect(visitor).toHaveURL(/\/docs$/);
@@ -1311,6 +1318,10 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(cards).toHaveText([/^Getting started.*1 article$/, /^Billing.*2 articles$/, /^Teams.*1 article$/]);
   await expect(cards.first()).toContainText("The basics, in five minutes.");
   await expect(cards.first().locator("svg.lucide-rocket")).toBeVisible();
+  // The icon on a neutral tile, not in the accent; popular articles are rows on the paper, not a card.
+  await expect(cards.first().locator("span:has(> svg.lucide-rocket)")).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  await expect(cards.first().locator("svg.lucide-rocket")).toHaveCSS("color", await token(visitor, "--foreground"));
+  await expect(main.getByRole("region", { name: "Popular articles" })).toHaveCSS("box-shadow", "none");
   await expect(main.getByRole("region", { name: "More articles" }).getByRole("link")).toHaveText(["Contact us"]);
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
   await expect(main.getByRole("search")).toHaveCount(1);
@@ -1614,6 +1625,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.goto("/docs");
   // The docs home's big box has Ask AI at its end too, straight to the assistant.
   await expect(visitor.getByRole("main").getByRole("button", { name: "Ask AI", exact: true })).toBeVisible();
+  // The home's one filled primary.
+  await expect(visitor.getByRole("main").getByRole("button", { name: "Ask AI", exact: true })).toHaveCSS("background-color", await token(visitor, "--primary"));
   await typeSearch(visitor, question);
   const first = visitor.getByRole("dialog").getByRole("option").first();
   await expect(first).toContainText("Ask AI:");
@@ -1783,6 +1796,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   // Another question it can't answer.
   const another = "Is there a dark mode?";
   await visitor.goto(`/docs?${new URLSearchParams({ q: another })}`);
+  // Ask AI is the search page's one filled primary.
+  await expect(ai.getByRole("button", { name: "Ask AI" })).toHaveCSS("background-color", await token(visitor, "--primary"));
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
   const answers = (await modelRequests()).length;
@@ -2285,8 +2300,16 @@ test("an article ends with the previous and next in reading order, related ones,
   const stuck = main.getByRole("region", { name: "Still stuck?" });
   await expect(stuck.getByRole("button", { name: "Ask AI" })).toBeVisible();
   await expect(stuck.getByRole("link")).toHaveCount(0);
-  // "Was this helpful?" stays.
+  // "Was this helpful?" stays, without a rule above it.
   await expect(main.getByRole("region", { name: "Was this helpful?" })).toBeVisible();
+  await expect(main.getByRole("region", { name: "Was this helpful?" })).toHaveCSS("border-top-width", "0px");
+  // "Still stuck?" a soft grey fill, not a card; the title 36px; the tree without a rule beside it.
+  await expect(stuck).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  await expect(stuck).toHaveCSS("box-shadow", "none");
+  await expect(main.getByRole("heading", { level: 1 })).toHaveCSS("font-size", "36px");
+  // Copy page a grey fill, as the portal's secondaries are.
+  await expect(main.getByRole("button", { name: "Copy page" }).locator("..")).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  await expect(visitor.locator("aside").filter({ has: visitor.getByRole("navigation", { name: "Docs", exact: true }) })).toHaveCSS("border-right-width", "0px");
   // Ask AI opens the widget's assistant.
   await stuck.getByRole("button", { name: "Ask AI" }).click();
   const stuckAssistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
@@ -2446,3 +2469,14 @@ test("an article's editor bar: saved state, Publish and the pinned tools fit fro
     expect(await team.evaluate(() => document.documentElement.scrollWidth), `at ${width}px`).toBeLessThanOrEqual(width);
   }
 });
+
+/** A colour token (`--primary`) as the browser computes it, to compare with an element's computed colour. */
+function token(page: Page, name: string) {
+  return page.evaluate((n) => {
+    const probe = document.body.appendChild(document.createElement("i"));
+    probe.style.color = `var(${n})`;
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, name);
+}

@@ -77,14 +77,15 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
     );
   }
   return (
-    <ul aria-label="Search results" className="flex flex-col gap-4">
+    // Rows on the paper.
+    <ul aria-label="Search results" className="flex flex-col">
       {results.map((result) => (
-        <li key={result.slug} className="flex flex-col gap-0.5">
-          <Link href={at(`/docs/${result.slug}`)} className="break-words text-primary hover:underline">
+        <li key={result.slug} className="flex flex-col gap-1 border-b py-4 first:pt-0">
+          <Link href={at(`/docs/${result.slug}`)} className="text-[1.0625rem] font-semibold break-words hover:underline">
             {result.title}
             {result.locked && <LockedMark />}
           </Link>
-          {result.snippet && <p className="text-sm break-words text-muted-foreground">{result.snippet}</p>}
+          {result.snippet && <p className="text-[0.9375rem] break-words text-muted-foreground">{result.snippet}</p>}
         </li>
       ))}
     </ul>
@@ -140,7 +141,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
       {home ? (
         <div
           data-docs-hero
-          className="-mx-4 flex flex-col items-center gap-5 bg-[radial-gradient(ellipse_50%_70%_at_50%_30%,color-mix(in_oklch,var(--color-primary)_10%,transparent),transparent)] px-4 pt-2 pb-2 sm:-mx-6 sm:gap-6 sm:px-6 sm:pt-10 sm:pb-4"
+          className="flex flex-col items-center gap-5 pt-2 pb-2 sm:gap-6 sm:pt-10 sm:pb-4"
         >
           <DocsHomeHeader />
           {/* The header's box gives way to it here (the same box). */}
@@ -157,25 +158,26 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
         <ul aria-label="Collections" className="grid gap-4 sm:grid-cols-2">
           {collections.map((collection) => (
             <li key={collection.slug}>
+              {/* A card: its icon on a neutral tile beside its name, description and count. */}
               <Link
                 href={at(`/docs/${collection.slug}`)}
-                className="group flex h-full flex-col gap-2 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge transition-shadow hover:ring-primary/40 sm:p-6"
+                className="flex h-full gap-4 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge transition-shadow hover:shadow-md sm:px-6"
               >
-                <h2 className="flex items-center gap-3 font-sans text-[1.0625rem] font-semibold break-words group-hover:text-primary">
-                  {collection.icon && (
-                    <span className="flex shrink-0 text-[1.25rem] text-primary">
-                      <CollectionIcon name={collection.icon} />
-                    </span>
-                  )}
-                  <span className="min-w-0">
+                {collection.icon && (
+                  <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-lg bg-secondary text-[1.1875rem]">
+                    <CollectionIcon name={collection.icon} />
+                  </span>
+                )}
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <h2 className="font-sans text-[1.0625rem] font-semibold break-words">
                     {collection.name}
                     {collection.locked && <LockedMark />}
-                  </span>
-                </h2>
-                {collection.sample && <SampleBadge />}
-                {collection.description && <p className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
-                <div className="mt-auto pt-2">
-                  <ArticleCount count={articleCount(collection)} />
+                  </h2>
+                  {collection.sample && <SampleBadge />}
+                  {collection.description && <p className="line-clamp-2 text-[0.9375rem] break-words text-muted-foreground">{collection.description}</p>}
+                  <div className="mt-auto pt-2">
+                    <ArticleCount count={articleCount(collection)} />
+                  </div>
                 </div>
               </Link>
             </li>
@@ -186,7 +188,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
       {uncollected.length > 0 && (
         <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-3">
           {collections.length > 0 && (
-            <h2 id="more-articles" className="group-label">
+            <h2 id="more-articles" className="font-sans text-[0.8125rem] font-medium text-muted-foreground">
               More articles
             </h2>
           )}
@@ -298,10 +300,10 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
           </Link>
           <PortalPageHeader
             title={
-              // Its icon, in the accent colour, before its name.
+              // Its icon before its name.
               <span className="flex items-center gap-3">
                 {collection.icon && (
-                  <span className="text-primary">
+                  <span className="text-muted-foreground">
                     <CollectionIcon name={collection.icon} />
                   </span>
                 )}
@@ -381,7 +383,7 @@ export async function DocsArticle({
               </div>
             )}
           </div>
-          <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[2rem] leading-[1.1] font-[650] tracking-[-0.025em] break-words sm:text-[2.625rem]">
+          <h1 id={ARTICLE_TITLE_ID} className="font-heading text-[1.75rem] leading-[1.15] font-[650] tracking-[-0.025em] break-words sm:text-[2.25rem]">
             {article.title}
           </h1>
           {readable?.sample && <SampleBadge />}
@@ -452,7 +454,7 @@ async function ArticleEnd({ end, support }: { end: Awaited<ReturnType<typeof art
       href={at(`/docs/${article.slug}`)}
       rel={rel}
       className={cn(
-        "flex flex-col gap-1 rounded-xl bg-card p-4 shadow-card ring-1 ring-card-edge transition-shadow hover:shadow-md hover:ring-primary/40",
+        "flex flex-col gap-1 rounded-xl bg-card p-4 shadow-card ring-1 ring-card-edge transition-shadow hover:shadow-md",
         rel === "next" && "sm:col-start-2 sm:items-end sm:text-right",
       )}
     >
@@ -482,7 +484,7 @@ async function ArticleEnd({ end, support }: { end: Awaited<ReturnType<typeof art
       )}
       {end.related.length > 0 && (
         <section aria-labelledby="related-articles" className="flex flex-col gap-3">
-          <h2 id="related-articles" className="group-label">
+          <h2 id="related-articles" className="font-sans text-[0.8125rem] font-medium text-muted-foreground">
             Related articles
           </h2>
           <ArticleLinks articles={end.related} href={(s) => at(`/docs/${s}`)} />
@@ -542,11 +544,11 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
       {collection.collections.map((child) => (
         <li key={child.slug}>
           <details open={child.open}>
-            <summary className="flex cursor-pointer list-none items-center rounded-md hover:bg-accent/50 [&::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer list-none items-center rounded-md hover:bg-muted [&::-webkit-details-marker]:hidden">
               <ChevronRightIcon aria-hidden className="ml-1 size-4 shrink-0 text-muted-foreground transition-transform [[open]>summary>&]:rotate-90" />
               {link(child.slug, child.name, named(child), "min-w-0 flex-1 gap-2 pl-1")}
             </summary>
-            <div className="ml-3 border-l pl-2">{contents(child)}</div>
+            <div className="ml-3 pl-2">{contents(child)}</div>
           </details>
         </li>
       ))}
@@ -555,14 +557,14 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
   return (
     <nav aria-label="Docs" className="flex flex-col gap-1 text-[0.9375rem]">
       <DocsSidebarLinks className="mb-3 border-b pb-4" />
-      {/* Each collection a row that opens (`<details>`, so it works without JavaScript): the page's own open, a line down its articles. */}
+      {/* Each collection a row that opens (`<details>`, so it works without JavaScript): the page's own open. */}
       {tree.collections.map((collection) => (
         <details key={collection.slug} open={collection.open} className="group/collection">
-          <summary className="flex cursor-pointer list-none items-center rounded-lg hover:bg-accent/50 [&::-webkit-details-marker]:hidden">
+          <summary className="flex cursor-pointer list-none items-center rounded-lg hover:bg-muted [&::-webkit-details-marker]:hidden">
             {link(collection.slug, collection.name, named(collection), "min-w-0 flex-1 gap-2.5 font-medium text-foreground [&>svg]:size-4 [&>svg]:text-muted-foreground")}
             <ChevronRightIcon aria-hidden className="mr-2 size-4 shrink-0 text-muted-foreground transition-transform group-open/collection:rotate-90" />
           </summary>
-          <div className="my-1 ml-[1.0625rem] border-l pl-2.5">{contents(collection)}</div>
+          <div className="my-1 ml-[1.0625rem] pl-2.5">{contents(collection)}</div>
         </details>
       ))}
       {tree.uncollected.length > 0 && (
@@ -609,12 +611,12 @@ export function DocsLayout({
   // measure, aligned to the longer article's left edge, with empty space where its outline would be.
   const sections = outlined(headings);
   return (
-    // At least the window's height (flex-1 in <main>), so the tree's line runs to the bottom on a short page.
+    // At least the window's height (flex-1 in <main>), so the tree runs to the bottom on a short page.
     // In the header's 82rem container, less its padding, so the tree's left edge is the logo's.
     <div data-docs-layout data-docs-wide={sections ? "" : undefined} className={cn("mx-auto flex w-full flex-1 xl:max-w-[79rem] xl:gap-8", sections ? "max-w-[79rem] gap-8" : "max-w-[71rem] gap-10")}>
-      {/* From the header to the bottom of the page, with a line beside it; the tree scrolls on its own, under the header. */}
+      {/* From the header to the bottom of the page; the tree scrolls on its own, under the header. */}
       {column(
-        <aside className={cn("-my-10 hidden w-64 shrink-0 border-r md:block", reading && READING_HIDES)}>
+        <aside className={cn("-my-10 hidden w-64 shrink-0 md:block", reading && READING_HIDES)}>
           <div className="sticky top-[var(--portal-header-height,0px)] max-h-[calc(100dvh-var(--portal-header-height,0px))] overflow-y-auto py-8 pr-4 [scrollbar-width:thin]">
             {nav}
           </div>
