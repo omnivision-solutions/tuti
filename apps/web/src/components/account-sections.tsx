@@ -54,6 +54,8 @@ export function AccountSections({ sections }: { sections: Section[] }) {
       const id = hashed();
       if (id) {
         picked.current = true;
+        // The browser's own jump to it, as a pick's: its scroll end (after the hash change) keeps the section.
+        jumpedTo.current = window.scrollY;
         setCurrent(id);
       }
     };
