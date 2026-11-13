@@ -60,7 +60,7 @@ export const getPlan = defineOperation({
     return {
       enabled: plansEnabled(),
       // Its plan's key in the billing file; the default plan's without a paid one ("free" where nothing is sold).
-      plan: project.plan ?? defaultPlanKey() ?? "free",
+      plan: (project.plan !== null && !onDefaultPlan(project.plan) ? project.plan : defaultPlanKey()) ?? "free",
       interval: project.planInterval as "month" | "year" | null,
       status: project.planStatus,
       periodEnd: project.planPeriodEnd,

@@ -307,14 +307,19 @@ test("while a deploy runs both releases, the previous one's plan writes follow i
   expect((await key()).plan).toBe("scale");
   await prisma.project.update({ where: { id }, data: { plan: null } });
   // Its webhook keeps the enum in step for the previous release's worker.
-  const { events } = await subscribe("business");
+  const { subscription, events } = await subscribe("business");
   await deliver(...events);
   expect(await key()).toMatchObject({ plan: "business", planEnum: "BUSINESS" });
+  // And once it ends: the previous release's worker sees Free too.
+  await deliver(stripe.update(subscription, { status: "canceled" }));
+  expect(await key()).toEqual({ plan: null, planEnum: "FREE" });
 });
 
 test("a project on a plan the file no longer lists is on the default plan: it can buy one, and the webhook gives it", async () => {
   // Set by hand once (a Business no longer sold), with no subscription.
   await prisma.project.update({ where: { id: project.id }, data: { plan: "retired" } });
+  // plan.get says so: the default plan's key, not one the file doesn't have.
+  expect(await plan()).toMatchObject({ plan: "free" });
   const { events } = await subscribe("pro");
   await deliver(...events);
   expect(await plan()).toMatchObject({ plan: "pro" });
@@ -326,4 +331,13 @@ test("a project still paying for a plan the file no longer lists can't buy a sec
   // Pro taken out of the file (it should be kept, sold: false), its subscription still live.
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.plans = config.plans.filter(({ key }) => key !== "pro"); }));
   await expect(call(subscribePlan, as(), { plan: "business", interval: "month" })).rejects.toMatchObject({ status: 409, code: "has_plan" });
+});
+
+test("a plan the file sells set by hand (by quote) isn't overwritten by a stray subscription's webhook", async () => {
+  // A Checkout opened on the default plan, then the project set to Business by hand, then the old Checkout paid.
+  await call(subscribePlan, as(), { plan: "pro", interval: "month" });
+  const session = stripe.sessions.at(-1)!;
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
+  await deliver(...stripe.pay(session.id));
+  expect(await plan()).toMatchObject({ plan: "business" });
 });
