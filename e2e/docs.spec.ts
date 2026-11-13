@@ -1963,7 +1963,7 @@ test("a docs-first team makes the docs the portal's home page", async ({ browser
   await team.goto(`/app/${slug}/customize/home-page`);
   await team.getByRole("combobox", { name: "Home page" }).click();
   await team.getByRole("option", { name: "Documentation" }).click();
-  await expect(team.getByText("Your portal opens with docs now")).toBeVisible();
+  await expect(team.getByText("Your portal opens with documentation now")).toBeVisible();
   await checkpoint(team, "settings-home-page");
   await visitor.goto("/");
   await expect(visitor).toHaveURL(`${portalUrl(slug)}/docs`);
