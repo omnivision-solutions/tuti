@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { creditBalance, projectWith } from "@tuti/jobs";
@@ -11,7 +12,7 @@ import { acceptInvitation, createInvitation } from "@/server/invitations";
 import { getPlan, requirePlan, subscribePlan } from "@/server/operations/plan";
 import { call } from "@/server/operations/run";
 import { createProject } from "@/server/projects";
-import { actAs, redirectTarget, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject as projectOf, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 
 /** Free trials (docs/plan.md, Plans): an account's first project is on the trial's plan until it ends, then on the default plan unless it bought one. */
 
@@ -148,4 +149,24 @@ test("during the trial its team and boards have the trial plan's room, under the
   actAs(await signUp("Invitee", invites[2]));
   expect(await acceptInvitation(tokenOf(urls[2]!))).toMatchObject({ error: expect.any(String) });
   expect(await prisma.teamMember.count({ where: { projectId: project.id } })).toBe(3);
+});
+
+test("the migration counts an account that already owns a project as having had its first: its next project starts on the default plan", async () => {
+  const older = await projectOf(owner);
+  await projectOf(owner);
+  await prisma.project.update({ where: { id: older.id }, data: { createdAt: new Date("2026-01-02T03:04:05Z") } });
+  const member = await addMember(older.id, "ADMIN");
+  const loner = await signUp("Loner");
+  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261113200000_trials/migration.sql", import.meta.url), "utf8");
+  // Back to before it (this file's database is its own).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "project" DROP COLUMN "trialEndsAt"; ALTER TABLE "user" DROP COLUMN "trialStartedAt";`);
+  await prisma.$executeRawUnsafe(sql);
+
+  const started = await prisma.$queryRaw<{ id: string; trialStartedAt: Date | null }[]>`SELECT id, "trialStartedAt" FROM "user" WHERE id = ANY(${[owner.id, member.id, loner.id]})`;
+  expect(Object.fromEntries(started.map(({ id, trialStartedAt }) => [id, trialStartedAt]))).toEqual({
+    [owner.id]: new Date("2026-01-02T03:04:05Z"),
+    [member.id]: null,
+    [loner.id]: null,
+  });
+  expect((await newProject()).trialEndsAt).toBeNull();
 });
