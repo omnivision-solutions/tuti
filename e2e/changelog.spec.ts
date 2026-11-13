@@ -838,6 +838,8 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   // Fixed's newest, Release 20, fits its eight lines on a laptop (no fade); on a phone it wraps past them, and fades
   // where the clamp cuts it.
   await reader.goto("/changelog?tag=fixed");
+  // (once it has measured itself: the server's page has no fade either way)
+  await expect(excerptOf("Release 20")).toHaveAttribute("data-measured", "true");
   await expect(excerptOf("Release 20")).toHaveCSS("mask-image", "none");
   await reader.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => style(excerptOf("Release 20"), "mask-image")).toContain("gradient");

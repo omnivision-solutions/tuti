@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
  */
 export function ChangelogExcerpt({ text, size, cut }: { text: string; size: "medium" | "short"; cut: boolean }) {
   const ref = useRef<HTMLParagraphElement>(null);
-  const [clamped, setClamped] = useState(false);
+  // null until measured (on the server, and before the effect runs).
+  const [clamped, setClamped] = useState<boolean | null>(null);
   useEffect(() => {
     const p = ref.current;
     if (!p || size !== "medium") {
@@ -25,6 +26,7 @@ export function ChangelogExcerpt({ text, size, cut }: { text: string; size: "med
   return (
     <p
       ref={ref}
+      data-measured={clamped !== null || undefined}
       className={cn(
         "text-base leading-7 break-words whitespace-pre-line text-foreground/85",
         size === "medium" ? "line-clamp-8" : "line-clamp-3",
