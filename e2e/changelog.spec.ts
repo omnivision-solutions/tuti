@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "./fixtures";
+import { expect, type Locator, test } from "./fixtures";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -251,7 +251,16 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // Readers react on the entry's own page, one of each, on and off; the team's list shows the counts.
   await entry.getByRole("link", { name: "Dark mode is here" }).click();
   await ada.waitForURL(/\/changelog\/1$/);
+  // Its page: the way back, the 36px title, its tags and date under it.
+  await expect(entry.getByRole("link", { name: "Changelog" })).toHaveAttribute("href", "/changelog");
+  const pageTitle = entry.getByRole("heading", { level: 1, name: "Dark mode is here" });
+  await expect(pageTitle).toHaveCSS("font-size", "36px");
+  const pageTitleBox = (await pageTitle.boundingBox())!;
+  expect((await entry.getByText("New", { exact: true }).boundingBox())!.y).toBeGreaterThan(pageTitleBox.y + pageTitleBox.height);
   const tada = entry.getByRole("button", { name: /^React with 🎉/ });
+  // Reactions are grey fills until one is yours (the accent's tint).
+  const unpicked = await tada.evaluate((button) => getComputedStyle(button).backgroundColor);
+  expect(unpicked).not.toBe("rgba(0, 0, 0, 0)");
   // No count until there is one.
   await expect(tada).toHaveAccessibleName("React with 🎉");
   await expect(tada).toHaveText("🎉");
@@ -259,6 +268,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(tada).toHaveAccessibleName("React with 🎉 (1)");
   await expect(tada).toHaveAttribute("aria-pressed", "true");
   await expect(tada).toBeEnabled();
+  await expect.poll(() => tada.evaluate((button) => getComputedStyle(button).backgroundColor)).not.toBe(unpicked);
   await checkpoint(ada, "portal-changelog-reacted");
   await team.goto(`/app/${slug}/changelog`);
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).filter({ hasText: "Published" })).toContainText("🎉 1");
@@ -272,6 +282,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // On the list too, under the entry.
   await ada.goto("/changelog");
   await expect(ada.getByRole("article", { name: "Dark mode is here" }).getByRole("button", { name: /^React with 🎉/ })).toHaveAccessibleName("React with 🎉 (1)");
+  // There as grey fills too, not bare emoji.
+  await expect(ada.getByRole("article", { name: "Dark mode is here" }).getByRole("button", { name: /^React with 👍/ })).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await ada.goBack();
   // Taken back.
   await tada.click();
@@ -286,8 +298,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(ada.locator('link[rel="alternate"][type="application/rss+xml"]')).toHaveAttribute("href", `${portalUrl(slug)}/changelog/rss.xml`);
   const feed = await (await ada.request.get(`${portalUrl(slug)}/changelog/rss.xml`)).text();
   expect(feed).toContain("<title>Dark mode is here</title>");
-  // The idea it shipped, with how many asked for it.
-  await entry.getByRole("link", { name: /^Built from an idea · \d+ votes?\s*: Dark mode$/ }).click();
+  // The idea it shipped, with how many asked for it: a grey pill, as the tag.
+  const built = entry.getByRole("link", { name: /^Built from an idea · \d+ votes?\s*: Dark mode$/ });
+  await expect(built).toHaveCSS("background-color", await entry.getByText("New", { exact: true }).filter({ visible: true }).evaluate((tag) => getComputedStyle(tag).backgroundColor));
+  await built.click();
   await ada.waitForURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   await expect(ada.getByText("Completed").first()).toBeVisible();
   await expect(ada.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("href", "/changelog/1");
@@ -665,24 +679,40 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   const main = reader.getByRole("main");
   await expect(main.getByRole("heading", { name: "Release 21" })).toBeVisible();
   await expect(main.getByRole("heading", { name: "Release 1", exact: true })).toHaveCount(0);
-  // A chip for each tag the entries have.
+  // A pill for each tag the entries have, with its count.
   const tags = main.getByRole("navigation", { name: "Tags" });
-  await expect(tags.getByRole("link")).toHaveText(["All", "New", "Fixed"]);
+  await expect(tags.getByRole("link")).toHaveText(["All 21", "New 11", "Fixed 10"]);
   await expect(tags.getByRole("link", { name: "All" })).toHaveAttribute("aria-current", "page");
+  // The accent is Subscribe's alone (the page's one filled button): the tags are one grey, the timeline's dot and the
+  // month index's current month neutral.
+  const style = (locator: Locator, property: string) => locator.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), property);
+  const accent = await style(main.getByRole("button", { name: "Subscribe" }), "background-color");
+  const tagOf = (title: string, tag: string) => main.getByRole("article", { name: title }).getByText(tag, { exact: true }).filter({ visible: true });
+  const grey = await style(tagOf("Release 21", "New"), "background-color");
+  expect(await style(tagOf("Release 20", "Fixed"), "background-color")).toBe(grey);
+  expect(grey).not.toBe(accent);
   // On wide screens the date sits in a margin left of the entry.
   const latest = main.getByRole("article", { name: "Release 21" });
   const date = (await latest.locator("time:visible").boundingBox())!;
   const title = (await latest.getByRole("heading").boundingBox())!;
   expect(date.x + date.width).toBeLessThan(title.x);
   // The month index, beside the list, stays in view as the page scrolls; a month opens the page its newest entry is on.
+  const dot = latest.locator("p:has(> time) > span[aria-hidden]");
+  expect(await style(dot, "background-color")).not.toBe(accent);
+  expect(await style(dot, "box-shadow")).not.toContain(accent);
   const months = main.getByRole("navigation", { name: "Months" });
   await expect(months.getByRole("link")).toHaveCount(3);
   await expect(months.getByRole("link", { name: "October 2026, 10 entries" })).toBeVisible();
+  // Plain rows: the current month in the neutral fill, no accent bar beside it.
+  const october = months.getByRole("link", { name: "October 2026, 10 entries" });
+  expect(await style(october, "border-left-width")).toBe("0px");
+  expect(await style(october, "background-color")).not.toBe(accent);
+  expect(await style(october, "background-color")).not.toBe(await style(months.getByRole("link", { name: "September 2026, 10 entries" }), "background-color"));
   expect((await months.boundingBox())!.x).toBeGreaterThan(title.x + title.width);
   // The keyboard reaches it right after the tags' row (its RSS and Subscribe), before the entries.
   await tags.getByRole("link", { name: "Fixed" }).focus();
   await reader.keyboard.press("Tab");
-  await expect(main.getByRole("link", { name: "RSS" })).toBeFocused();
+  await expect(main.getByRole("link", { name: "RSS feed" })).toBeFocused();
   await reader.keyboard.press("Tab");
   await expect(main.getByRole("button", { name: "Subscribe" })).toBeFocused();
   await reader.keyboard.press("Tab");
@@ -724,10 +754,14 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   expect((await fix.locator("time:visible").boundingBox())!.y).toBeLessThan((await fix.getByRole("heading").boundingBox())!.y);
   await expect(months).toBeHidden();
   expect(await reader.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  // RSS and Subscribe on a line of their own under the title and its line, which keep the width.
+  // RSS and Subscribe as round buttons beside the title; the row's own pair is hidden.
   const heading = (await main.getByRole("heading", { level: 1, name: "Changelog" }).boundingBox())!;
-  const rss = (await main.getByRole("link", { name: "RSS" }).boundingBox())!;
-  expect(rss.y).toBeGreaterThan(heading.y + heading.height);
+  await expect(main.getByRole("link", { name: "RSS feed" })).toHaveCount(1);
+  const rss = (await main.getByRole("link", { name: "RSS feed" }).boundingBox())!;
+  const bell = (await main.getByRole("button", { name: "Subscribe" }).boundingBox())!;
+  expect(rss.x).toBeGreaterThanOrEqual(heading.x + heading.width);
+  expect(rss.y).toBeLessThan(heading.y + heading.height);
+  expect(bell.width).toBe(bell.height);
   await checkpoint(reader, "portal-changelog-fixed-phone");
   await reader.emulateMedia({ colorScheme: "dark" });
   await checkpoint(reader, "portal-changelog-fixed-phone-dark");

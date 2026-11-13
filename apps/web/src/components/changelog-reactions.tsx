@@ -25,14 +25,14 @@ export function ChangelogReactions({
   counts: ReactionCounts;
   reacted: Reaction[];
   signedIn: boolean;
-  /** Small, without borders, the emoji in grey until picked (a list's entries, under each one). */
+  /** Small (a list's entries, under each one). */
   quiet?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic({ counts, reacted });
 
   return (
-    <div className={cn("flex flex-wrap", quiet ? "-ml-2 gap-0.5" : "gap-2")}>
+    <div className={cn("flex flex-wrap", quiet ? "gap-1.5" : "gap-2")}>
       {REACTIONS.map((reaction) => {
         const on = optimistic.reacted.includes(reaction);
         const count = optimistic.counts[reaction];
@@ -40,12 +40,13 @@ export function ChangelogReactions({
           <Button
             key={reaction}
             size="sm"
-            variant={quiet ? "ghost" : "outline"}
-            // Signed out the counts still read at full strength: a disabled button's fade made them look broken.
+            variant="outline"
+            // Grey fills (the portal's outline), the emoji in grey until picked. Signed out the counts still read at full
+            // strength: a disabled button's fade made them look broken.
             className={cn(
               "rounded-full px-3 disabled:opacity-100",
-              quiet && "h-7 gap-1.5 px-2 text-[0.8125rem] text-muted-foreground",
-              quiet && !on && "[&>span:first-child]:opacity-70 [&>span:first-child]:grayscale",
+              quiet && "h-7 gap-1.5 px-2.5 text-[0.8125rem]",
+              !on && "text-muted-foreground [&>span:first-child]:opacity-70 [&>span:first-child]:grayscale",
               // On the portal a reaction of yours is like a vote cast: the accent's tint and a thin inset ring in it (not a fill alone).
               on &&
                 "border-primary bg-soft hover:bg-soft/80 portal:border-transparent portal:bg-soft portal:text-soft-foreground portal:ring-1 portal:ring-primary/45 portal:ring-inset portal:hover:bg-soft/80 portal:focus-visible:ring-3 portal:focus-visible:ring-ring/50",

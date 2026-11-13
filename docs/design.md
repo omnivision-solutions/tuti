@@ -82,9 +82,8 @@ the badge.
 
 Changelog tags (`TagBadge`, `TAG_VARIANTS` the one map): Breaking in the
 destructive colour (its text `destructive-foreground`), the rest neutral, the same in the widget and
-in the team's list; a tag picked in the editor takes its badge's colours. On the portal's own changelog pages
-(`ChangelogEntryView`'s `TAG_TINTS`) New, Improved and Fixed are tinted by kind (soft green, `tag-improved` blue, the
-orange `highlight`) so a list can be scanned; Breaking keeps its destructive look.
+in the team's list, and on the portal's own changelog pages (there a little bigger); a tag picked in the editor takes its
+badge's colours.
 States that aren't a status (the running draft's "Collecting pull requests")
 are neutral (outline), never a status's colour.
 
@@ -338,8 +337,8 @@ the list picks none to approve at once.
   (`SubNav`); switching a control's mode (the reply
   box's Reply and Note) is a segmented
   `Tabs` (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
-  portal changelog's tags (All, New, Improved, Fixed) are underline tabs (`SubNav`), as the board's sort tabs, so the
-  portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
+  portal changelog's tags (All, New, Improved, Fixed, each with its count) are `FilterPills`, as the board's sort, so
+  the portal's lists read the same way. A portal board's status is a menu at the end of its sort row (each status with its
   count): a second row of chips or tabs would put more between the visitor and the list. The portal roadmap's three columns, one at a time on phones, are a segmented control:
   three fixed parts of one board that always fit, side by side on wider screens. A row of tabs
   never wraps (one with more than fits puts the rest under More): too narrow, it scrolls sideways, with the active tab scrolled
@@ -390,7 +389,7 @@ the list picks none to approve at once.
     Portal-only tokens in `globals.css` (`:root:has([data-portal-top])`, so the app keeps its own): stronger lines on the
     paper (`border` 0.87 L, `input` 0.81 L; rows' hairlines the lighter `divider`, 0.925 L), secondary text at 0.48 L, a neutral dark mode (background 0.165, cards
     0.205, lines 0.32/0.40, chroma ≈0.005; green stays the accent), 14px cards and 10px controls (`--radius` 0.625rem),
-    a soft card shadow (`shadow-card`), `sunken` for inline code, `info` for callouts and `tag-improved` for the changelog.
+    a soft card shadow (`shadow-card`), `sunken` for inline code, and `info` for callouts.
     Statuses there are one hue each in both themes: Under review violet, Planned blue, In progress orange, Completed
     green, Open grey (`status-*` overridden), shown as `StatusLabel` (its icon and name in its colour: eye, calendar, a
     half-filled circle, a circled check) or `StatusPill` (the same on a light tint of it). People's initials are one
@@ -475,14 +474,19 @@ the list picks none to approve at once.
     lines, "Expected <month>", the poster, the comment count and a vote chip, `shape="chip"`; "In the changelog →" in
     the accent on a shipped one); an empty column a soft fill, "Nothing here yet.". On phones one column at a time,
     picked from a segmented control over them (`?column=`; the portal's only segmented control).
-  - **The changelog**: a 48px title and "What's new, improved and fixed in <project>.", then one row: the tags as text
-    tabs (links, `?tag=`, only the tags its entries have) and RSS (secondary, grey fill) and **Subscribe** (filled; a popover with
-    the email form) at its end (above the tabs on phones). On wide screens a timeline: each entry's short date and a dot
-    on a line in a 110px margin; beside it the tag (New soft green, Improved blue, Fixed the orange highlight, Breaking
-    destructive) above a 28px title, the cover framed as a card, the text, "Built from an idea · N votes →" (with more than one idea, each pill shows its title; with one, the title is read out after the pill's words)
-    it shipped, and its reactions, small and grey until picked; a line between entries. A "Jump to month" index beside
-    the list past eight entries (the page's month marked): the latest six months, older ones under "Earlier months" (open when the page's month is among them). An entry's page: a 40px title, the reactions, then Get
-    updates by email.
+  - **The changelog**: the page header (`PortalPageHeader`): "Changelog", "What's new, improved and fixed in
+    <project>.", then one row: the tags as pills (`FilterPills`, links, `?tag=`, All and only the tags its entries
+    have, each with its count) and RSS (a round grey icon button) and **Subscribe** (the one filled button; a popover
+    with the email form) at its end; on phones a round RSS and a round filled bell beside the title. On wide screens a
+    timeline: each entry's short date and a neutral dot (a ring in the muted text colour) on a `divider` line in a
+    110px margin; beside it the grey tag (Breaking destructive) above a 28px title, the cover framed as a card, the
+    text, "Built from an idea · N votes →" (a grey pill; with more than one idea, each pill shows its title; with one,
+    the title is read out after the pill's words) it shipped, and its reactions as grey pills, the emoji grey until
+    picked (your own the accent's tint and ring); a line between entries. A "Jump to month" index beside the list past
+    eight entries, plain rows (the page's month in the neutral fill): the latest six months, older ones under "Earlier
+    months" (open when the page's month is among them). An entry's page: the page header (← Changelog, the 36px
+    title, its tags and date under it), the reactions, then "Get updates by email" as a plain section under a line
+    (no card), its Subscribe the page's one filled button.
   - **Sign-in**: one card (max-w-sm, the width and offset of every sign-in page) under the portal's mark (its logo, or the letter square), "Sign in to <project>",
     "Vote, comment and follow ideas. We'll email you when they ship.", the email with a mail icon, **Email me a sign-in
     link**, "Use a password instead · Forgot your password?", then under a line "New here? Create an account" and

@@ -7,10 +7,9 @@ import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { subscribeToChangelog } from "@/server/changelog-subscribe";
-import { Card } from "@/components/ui/card";
 
 /**
- * "Get updates by email" on the portal's changelog: a link to confirm is emailed first (subscribeToChangelog). `inCard`:
+ * "Get updates by email" on the portal's changelog (a plain section, under an entry): a link to confirm is emailed first (subscribeToChangelog). `inCard`:
  * just the form, in a card with its own heading (a board's Get updates).
  */
 export function ChangelogSubscribe({
@@ -75,11 +74,11 @@ export function ChangelogSubscribe({
   return inCard ? (
     form
   ) : (
-    <Card role="region" aria-labelledby={headingId} className="gap-3 px-5">
-      <h2 id={headingId} className="font-semibold">
+    <section role="region" aria-labelledby={headingId} className="flex flex-col gap-1">
+      <h2 id={headingId} className="font-heading text-lg font-semibold">
         Get updates by email
       </h2>
       {form}
-    </Card>
+    </section>
   );
 }
