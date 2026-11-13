@@ -183,6 +183,12 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
   }
   const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(slug, request.headers, request.cookies.get(PREVIEW_READER_COOKIE)?.value);
   if (visitor === "refused") {
+    // A client navigation (the page's router asking for the next page's payload) gets no redirect: followed, it would show
+    // the sign-in page inside the layout as it was for someone who could read the portal (its parts, its widget). Refused,
+    // the router loads the address as a page instead, which comes back here and is sent to sign in.
+    if (request.headers.has("rsc")) {
+      return framedByApp(new NextResponse(null, { status: 403, headers: { "cache-control": "private, no-store" } }));
+    }
     const signIn = new URL(`${new URL(origin).pathname.replace(/\/$/, "")}/sign-in`, origin);
     if (pathname !== "/") {
       signIn.searchParams.set("next", pathname + request.nextUrl.search);

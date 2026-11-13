@@ -889,12 +889,13 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(asker.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(asker.locator("#tuti-widget")).toHaveCount(0);
   // Taken off the portal's readers while on it, a reader's next click in the portal (a client navigation) lands on the
-  // sign-in page: nothing of the widget stays there either.
+  // sign-in page, loaded afresh: none of the portal's parts, nothing of the widget.
   const dropped = await signInReader();
   await askedAI(dropped);
   await api(`/portal/readers/${encodeURIComponent(dropped.email)}`, undefined, "DELETE");
   await dropped.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
-  await expect(dropped.getByText("Acme is private. Sign in to see it.")).toBeVisible();
+  await expect(dropped.getByText(`Acme is private, and ${dropped.email} doesn't have access.`, { exact: false })).toBeVisible();
+  await expect(dropped.getByRole("navigation", { name: "Portal" })).toHaveCount(0);
   await expect(dropped.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(dropped.locator("#tuti-widget")).toHaveCount(0);
 });
