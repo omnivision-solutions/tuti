@@ -52,6 +52,8 @@ const PreviewContext = createContext<Preview>({ reload: () => {}, version: 0, dr
 /** The preview beside a Customize section's settings (a no-op anywhere else). */
 export const usePreview = () => useContext(PreviewContext);
 
+const snapshotOf = (data: FormData) => JSON.stringify([...data.entries()].map(([name, value]) => [name, typeof value === "string" ? value : ""]));
+
 /**
  * A Customize section's form: "Save changes" in the panel's header submits it (`save`, an action like
  * useActionState's), enabled once something in it differs from what was saved and while nothing is
@@ -86,7 +88,7 @@ export function useCustomizeForm({
       return;
     }
     const data = new FormData(form);
-    const snapshot = JSON.stringify([...data.entries()].map(([name, value]) => [name, typeof value === "string" ? value : ""]));
+    const snapshot = snapshotOf(data);
     baseline.current ??= snapshot;
     setDirty(snapshot !== baseline.current);
     if (draftOf.current) {
@@ -110,6 +112,11 @@ export function useCustomizeForm({
     if (!form) {
       return;
     }
+    // What's saved is the fields as the page was sent (their defaults), not what's in them now: typed before the page's
+    // scripts ran, that's a change to save.
+    const sent = form.cloneNode(true) as HTMLFormElement;
+    sent.reset();
+    baseline.current ??= snapshotOf(new FormData(sent));
     read();
     // As a transition: these listeners run before React's own for the event, and an urgent render here would
     // put a controlled field's old value back (the hex beside a colour) before its onChange saw the new one.

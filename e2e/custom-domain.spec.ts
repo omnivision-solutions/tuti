@@ -74,9 +74,17 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(records.getByRole("row").filter({ hasText: "CNAME" })).toContainText("Pending");
   await checkpoint(owner, "settings-custom-domain-certificate-pending");
   await issueCertificate(domain);
-  await owner.getByRole("button", { name: "Check again" }).click();
-  // The domain's own badge: the records below say Verified too.
-  await expect(domainStep.locator('[data-slot="badge"]', { hasText: /^Verified$/ })).toBeVisible();
+  // Check again asks for the page afresh. A render still on its way from the check above may get there first (asked after
+  // the certificate came), and the button's gone: either way the page shows it.
+  const verifiedBadge = domainStep.locator('[data-slot="badge"]', { hasText: /^Verified$/ });
+  await expect(async () => {
+    const checkAgain = owner.getByRole("button", { name: "Check again" });
+    if (await checkAgain.isVisible()) {
+      await checkAgain.click({ timeout: 1_000 });
+    }
+    // The domain's own badge: the records below say Verified too.
+    await expect(verifiedBadge).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
   await expect(records.getByRole("row").filter({ hasText: "CNAME" })).toContainText("Verified");
   await expect(owner.getByRole("region", { name: "Live" })).toContainText(`Your portal answers at ${domain}`);
   await checkpoint(owner, "settings-custom-domain-verified");
