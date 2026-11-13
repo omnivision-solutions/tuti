@@ -79,3 +79,11 @@ test("an add-on that's on keeps its card where it's no longer sold for the plan'
   expect(page).toContain("Show the badge again");
   expect(page).not.toContain("Hide the badge");
 });
+
+test("a project on a plan the file no longer lists sees the plans to buy, as on the default plan", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "retired" } });
+  const page = await billing();
+  expect(page).toContain("Upgrade to Pro");
+  expect(page).not.toContain("Manage plan");
+});

@@ -308,3 +308,11 @@ test("while a deploy runs both releases, the previous one's plan writes follow i
   await deliver(...events);
   expect(await key()).toMatchObject({ plan: "business", planEnum: "BUSINESS" });
 });
+
+test("a project on a plan the file no longer lists is on the default plan: it can buy one, and the webhook gives it", async () => {
+  // Set by hand once (a Business no longer sold), with no subscription.
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "retired" } });
+  const { events } = await subscribe("pro");
+  await deliver(...events);
+  expect(await plan()).toMatchObject({ plan: "pro" });
+});

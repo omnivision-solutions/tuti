@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { articleLimit, badgePrice, defaultPlanKey, isBadgePrice, log, planDisplay, type PlanFeature, planIncludes, type PlanKey, planNeeded, planPrice, planSalesEnabled, plansEnabled, upgradeFor } from "@tuti/shared";
+import { articleLimit, badgePrice, defaultPlanKey, isBadgePrice, log, onDefaultPlan, planDisplay, type PlanFeature, planIncludes, type PlanKey, planNeeded, planPrice, planSalesEnabled, plansEnabled, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
 import { appUrl, portalUrl } from "@/lib/hosts";
@@ -90,7 +90,7 @@ export const subscribePlan = defineOperation({
       actor.kind === "user" ? prisma.user.findUnique({ where: { id: actor.userId }, select: { email: true } }) : null,
       billingUrl(projectId),
     ]);
-    if (project.plan !== null) {
+    if (!onDefaultPlan(project.plan)) {
       throw new OperationError(409, "has_plan", "This project has a plan already. Change it from Manage plan.");
     }
     try {
@@ -159,7 +159,7 @@ export const setBadgeAddOn = defineOperation({
     if (on && !price) {
       throw new OperationError(503, "plans_unavailable", 'Hiding "Powered by tuti" isn\'t sold on this server');
     }
-    if (project.plan === null || !project.stripeSubscriptionId) {
+    if (onDefaultPlan(project.plan) || !project.stripeSubscriptionId) {
       if (on) {
         throw new OperationError(409, "free_plan", 'Hiding "Powered by tuti" needs a paid plan');
       }
