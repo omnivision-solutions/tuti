@@ -870,7 +870,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(readerLauncher).toHaveCount(0);
   // Off on the portal, the widget is there for Ask AI alone: a reader who asked leaves nothing of it either once signed out,
   // however the page gets to the sign-in page. Signing out mostly ends in a full load already; a client navigation there
-  // (signed out in another tab, then the router's) is the case to cover.
+  // and a refresh, as signing out asks for (here signed out in another tab, then the router's), is the case to cover.
   await api("/widget", { onPortal: false }, "PATCH");
   const asker = await signInReader();
   await asker.goto(`/docs/${article.slug}`);
@@ -887,7 +887,11 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await otherTab.getByRole("button", { name: "Account" }).click();
   await otherTab.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(otherTab.getByText("Acme is private. Sign in to see it.")).toBeVisible();
-  await asker.evaluate(() => (window as unknown as { next: { router: { push: (href: string) => void } } }).next.router.push("/sign-in"));
+  await asker.evaluate(() => {
+    const { router } = (window as unknown as { next: { router: { push: (href: string) => void; refresh: () => void } } }).next;
+    router.push("/sign-in");
+    router.refresh();
+  });
   await expect(asker.getByText("Acme is private. Sign in to see it.")).toBeVisible();
   await expect(asker.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(asker.locator("#tuti-widget")).toHaveCount(0);
