@@ -44,7 +44,7 @@ cute at the expense of clarity.
   the standard control's height, radius and light-mode fill; it gives the board's search room to lead the list.
 - **Surfaces:** a ladder: the sidebar (a step darker than the page in light), the page (`background`, a soft
   cream), cards on it (`card`: white in light, a step lighter than the page in dark)
-  with a `border` ring and a soft shadow (`Card`, `StatTile`), never a card without its edge.
+  with a `border` ring and a soft shadow (`Card`, `StatStrip`), never a card without its edge.
 
 ## Tokens
 
@@ -60,7 +60,6 @@ Never hard-code a colour in a component; add a token if one is missing.
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders: 4.5:1 or more on the page, a card, the sidebar and a muted fill, in light and dark (`colours.test.ts`) |
 | `border`, `input` | A card's or divider's edge (1.25:1 on the page), an input's (1.5:1) |
-| `sidebar-active` / `sidebar-active-foreground` | The page open in a page's own menu (`SettingsMenu`, which no area uses now): a pale green pill, its label and icon green (4.5:1). The sidebar's open page is a raised neutral pill (the card's colour, a `sidebar-border` ring), so a page with both shows one green. A section pane (Panes) marks its open link with the neutral `accent` instead |
 | `secondary`, `accent` | Neutral fills and hover backgrounds |
 | `destructive` | Delete, remove, errors |
 | `destructive-foreground` | Text on the destructive tint (a destructive badge or button, the picked Breaking tag), dark enough for 4.5:1 at small sizes; a tint under it stays light enough to keep that (a destructive button hovers at 15% in light mode, 25% in dark, also on a dialog's muted footer) |
@@ -139,11 +138,11 @@ the list picks none to approve at once.
 
 | Role | Classes |
 | --- | --- |
-| Page title | `PageHeader`'s `h1` (heading font, semibold, tracked -0.02em, 32px from 640px up, 24px under), on the page at every width |
+| Page title | A portal page's `h1` (`PageHeader`'s: heading font, semibold, tracked -0.02em, 32px from 640px up, 24px under); in the app a pane header's title (Panes) |
 | Section / card title | `CardTitle` (18px, semibold, Figtree: the heading font is for page titles and big numbers; 16px on a small card) or `h2` |
 | Body | default (`text-base`) or `text-sm` in dense UI |
 | Secondary | `text-sm text-muted-foreground` |
-| Meta | `text-xs text-muted-foreground` in rows, parts joined with ` · `; under a page's title (`PageHeader`'s `meta`) `text-sm` |
+| Meta | `text-xs text-muted-foreground` in rows, parts joined with ` · `; under a page's title (`PageHeader`'s `meta`, a post's in its pane) `text-sm` |
 | Group label | `group-label` (a utility in `globals.css`: 12px semibold capitals, tracked 0.06em, muted; capitals read a size up, the one size under 13px): the heading of a group inside a list or card (Home's Needs your attention, with its count as a `secondary` badge; a pull request's activity page's Help center and Feedback). Quieter than the items under it, never in a colour. A section pane's groups (Panes) are sentence case instead |
 
 | Tree level | `text-sm text-muted-foreground` after its icon, sentence case: a tree's sections and their groups (Autopilot's list: Feedback, Help center, a board, a collection) |
@@ -157,22 +156,17 @@ the list picks none to approve at once.
 - **Admin app** (`/app`): every signed-in page lives in the sidebar shell
   (`app/app/(workspace)/layout.tsx`, `components/app-shell.tsx`); the pages for the signed out and the
   operator's links (`/app/auth/*`, `/app/license`, `/app/admin/*`) sit outside it, under Tuti's logo
-  over a centred `<main>` (`app/app/(account-pages)/layout.tsx`). Shell pages sit in one of three
-  columns, each starting 32px past the sidebar (one left edge on every page, pages of panes too): max-w-5xl (lists, a post), max-w-2xl for a form
-  by itself (`data-narrow` on it; New project, Setup and Account are panes now), or the whole width (`data-wide`: the
-  team's Roadmap; and pages of panes: Home, Users). Feedback is a page of panes: its menu, its list and, beside
+  over a centred `<main>` (`app/app/(account-pages)/layout.tsx`). Every shell page is made of panes (Panes, under
+  Components): they take the shell's whole width. Feedback's are its menu, its list and, beside
   them, a post the list opened; the list keeps its place whether or not a post is open, so the clicked row stays put.
-  From tablet width up there is no separate app header: the page starts at the top of the shell. Its own
-  `PageHeader` keeps the title, description, metadata and actions together and, in windows at least 40rem tall, sticks
-  to the top as the page scrolls; a page of panes keeps its `PaneHeader` (a post's way back, its newer and older post
-  and its actions) at the top of its pane, the pane scrolling under it. Editors keep Save and Publish beside
-  their page context, in the same sticky header at any window height. Shorter or zoomed windows let other headers scroll
-  away to leave room for the content. An article's back link and draft state share one compact block beside its actions,
+  From tablet width up there is no separate app header: the page starts at the top of the shell, each pane's
+  `PaneHeader` (a post's way back, its newer and older post and its actions) at the top of its pane, the pane
+  scrolling under it. An article's back link and draft state share one compact block beside its actions,
   with a lower divider; the toolbar and text share a reading column, at the portal's width. The sidebar's visible "Toggle Sidebar"
   button sits beside the project switcher when expanded and at the top of the icon rail when collapsed. The edge rail
   and Ctrl/⌘B shortcut also toggle it, with a visible keyboard focus indicator. The shortcut leaves typing
   and shortcuts already handled by an editor alone. On phones a compact sticky row keeps the menu and project/section path, the page's title
-  once its heading scrolls away, and `PageActions` at its right end. An editor's primary actions (`pinActions`) stay
+  once its heading scrolls away, and `PageActions` at its right end. An editor's primary actions (`PageActions`' `pinned`) stay
   at the bottom on phones. Pane heights and sticky menus use the full window on wider screens.
   A page of three panes (the sidebar, a column of its own, the page: Settings (Panes),
   Reporting, every Docs page with the docs' tree, Autopilot, the Inbox) takes the whole
@@ -333,12 +327,12 @@ the list picks none to approve at once.
   name"), their groups in a column, then what they did. A person's page is a pane too, "All users ›" before their
   name in its header (on phones "‹ All users", the name for screen readers): their avatar, name, email and id first,
   then their profile (groups, properties, on a muted fill) beside all their posts, votes and conversations, each
-  status a badge (one column on phones). A page with sections of its own that isn't a page of panes yet lists them
-  under its header with `SubNav`.
+  status a badge (one column on phones).
   Tabs come in two styles. Switching a page's views or sections (Feedback's
   statuses, Changelog, Users, a docs tab's Content, Access and
   Settings, a collection's Content and Settings) is
-  underline tabs, `SubNav` (in a pane, pills: `FilterPills`, under Panes; Reporting's AI conversations); switching a control's mode (the reply
+  pills in its pane header (`FilterPills`, under Panes; Reporting's AI conversations); on the portal underline tabs
+  (`SubNav`); switching a control's mode (the reply
   box's Reply and Note) is a segmented
   `Tabs` (Autopilot's To review, Reviewed and Activity are tabs drawn as pills, as `FilterPills`). Filters are chips, not tabs, except a public list's one filter that splits it into views of itself: the
   portal changelog's tags (All, New, Improved, Fixed) are underline tabs (`SubNav`), as the board's sort tabs, so the
@@ -407,7 +401,7 @@ the list picks none to approve at once.
     colour on any site, so it's the brand green then). What keeps a
     colour of its own, whatever the accent: statuses (Completed stays green: it says what happened), the changelog's
     other tags, destructive red, the info blue, the unread orange, people's initials, and "Powered by tuti" (Tuti's own
-    mark). The portal never uses the app's own green tokens (`sidebar-active`, `series-*`, `chart-*`, `kind-*`), and
+    mark). The portal never uses the app's own green tokens (`series-*`, `chart-*`, `kind-*`), and
     `e2e/accent-colour.spec.ts` checks every page type and the widget in light and dark for any green but those.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
@@ -547,22 +541,15 @@ the list picks none to approve at once.
 
 Use these instead of hand-rolling layout:
 
-- **`PageHeader`** (Docs uses `DocsPageHeader` and its pinned editor layout above; elsewhere `title`, `back`, `description`, `meta`, `actions`, `more`): the top of every page,
-  its title the page's heading at every width (the Page title style), `back` above it, then
-  `description`: one short muted line saying what the page is for ("Ideas and problems your
-  users posted, by status."; on portals the team's own words), on a section's main page
-  (Feedback, Roadmap, Docs; a page of panes has `PaneHeader`'s instead), not on a page
-  about one thing; then `meta`, facts about the thing shown ("#12 · Ada · 3 votes").
-  The actions sit beside the title and description, on the right, from tablet width up.
-  `more` is the actions used less often, behind "More actions".
-  An editor whose title field shows the title (an article, a changelog entry) keeps the
-  heading for screen readers only (`titleInForm`), with the back link and actions in one compact row.
-  In the app on phones the actions are a "More actions" menu from the top bar (`PageActions`). A page whose
+- **`PageHeader`** (the portal's: `title`, `back`, `description`, `meta`, `actions`): the top of a portal page, its
+  title the page's heading (the Page title style), `back` above it, then `description` (the team's own words) and
+  `meta`, facts about the thing shown.
+- **`PageActions`** (`children`, `more`, `pinned`): a page's actions in the app (a pane header's, Changelog's editor).
+  On phones they're a "More actions" menu from the top bar; a page whose
   every visit needs them keeps them in reach. Inbox conversations keep Close, More actions and details in their pane header;
   Assign and Snooze are in the details card or phone sheet. An editor whose
-  main action must stay in reach (Save and Publish) pins `actions` (`pinActions`): to a
-  bar at the bottom of the screen on phones, the menu keeping `more`, and beside the title
-  in the page’s sticky header from tablet width up;
+  main action must stay in reach (Save and Publish) pins them (`pinned`): to a
+  bar at the bottom of the screen on phones, the menu keeping `more`, and in its pane header from tablet width up;
   the bar steps aside while text is being typed (the keyboard is up then).
   Where Tuti's own chat launcher shows in the app (its cloud), what's held at the
   bottom of the screen keeps its buttons clear of the launcher's corner
@@ -571,8 +558,8 @@ Use these instead of hand-rolling layout:
   the Inbox's reply box needs no room for it.
   It assumes the launcher at the bottom right, where Tuti's help project keeps it:
   moved to the left (Settings → Widget), `launcher:` would need its side too.
-- **`BackLink`**: "← Feedback" above a detail page's header; in the app it's
-  `PageHeader`'s `back`, or on a page of panes `PaneHeader`'s (a post's: "All posts", its newer and older post as ‹ ›
+- **`BackLink`**: "← Feedback" above a portal detail page's header (`PageHeader`'s `back`); in the app the way back
+  is `PaneHeader`'s `back` (a post's: "All posts", its newer and older post as ‹ ›
   among the header's actions, away from the title).
 - **A post's page** (the team's): its header and text in one column (up to 48rem, the page the whole width), its
   sidebar beside it from the top with a line on its left: "Properties" as icon + label rows whose values are quiet
@@ -684,12 +671,11 @@ Use these instead of hand-rolling layout:
   as a button use `<Link className={buttonVariants(...)}>`, not
   `<Button render={<Link />}>` (that adds `role="button"`).
 
-### Panes (the admin's new layout)
+### Panes (how the admin is built)
 
-The admin is moving, area by area, to one layout shared with every page: the sidebar and the page on the shell's canvas
-(the sidebar's colour, no line between them), the page made of white panes 8px apart. Each area moves to these once,
-in its own change; until then its page keeps `PageHeader` and the rest below. `/app/design/panes` shows them together,
-at desktop and phone widths, in light and dark (in development only).
+Every admin page shares one layout: the sidebar and the page on the shell's canvas (the sidebar's colour, no line
+between them), the page made of white panes 8px apart. `/app/design/panes` shows them together, at desktop and phone
+widths, in light and dark (in development only).
 
 - **`PaneLayout`**, **`Pane`**, **`PaneBody`** (`components/pane.tsx`): a row of panes (the shell gives it the whole
   width), one white panel (`rounded-2xl`, ~14px corners, a `border` ring, nothing scrolling past its edge), and what scrolls in it.
@@ -698,7 +684,7 @@ at desktop and phone widths, in light and dark (in development only).
   links replace its list (Users' pages, sorts, searches) starts at the top on a new URL (`resetOnNavigate`).
 - **`PaneHeader`** (`title`, `back`, `description`, `filters`, `actions`, `level`, `titleInForm`): a pane's one-row header, 60px, a line
   under it. Where the window scrolls the page rather than the pane (under 48rem of the shell, from a 48rem
-  window, at least 40rem tall) it sticks to the top (`STICKY_PANE_HEADER`), as `PageHeader` does. The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
+  window, at least 40rem tall) it sticks to the top (`STICKY_PANE_HEADER`). The title in the heading font at 20px; with `back`, "All posts ›" before it (the title then in body
   type), and on phones "‹ All posts" alone, the title for screen readers. `description` follows the title from 56rem
   of the shell up ("· Your project's name…"). `filters` are pills after the title, on phones a row of their own under
   it. `actions` at the right end: round icon buttons (`outline`, `icon-sm`, with an `aria-label`) and at most one

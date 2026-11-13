@@ -9,7 +9,7 @@ import { portalPage } from "@/lib/portal-pages";
 
 /**
  * A Portal page of Settings (lib/portal-pages.ts): one pane, titled by the page with "Save changes" in its header, its
- * settings in a column and beside it the portal they change, live in a frame (CustomizeShell's PortalPreview: as a
+ * settings in a column and beside it the portal they change, live in a frame (PortalPreview: as a
  * desktop or a phone shows it, in light or dark mode, changes showing as they're made), or a preview of its own
  * (`custom`). From 61rem of the shell each side scrolls on its own; with less room the preview comes after the
  * settings, and on phones the page scrolls with the header held at the top. Leaving with changes not saved asks first.
@@ -21,7 +21,7 @@ export function PortalSettingsPane({
 }: {
   /** The page's slug (lib/portal-pages.ts). */
   page: string;
-  /** As CustomizeShell's: the portal page to show (`portalPreview`), or something of its own. */
+  /** The portal page to show (`portalPreview`): `origin`, its Tuti address; `path`, the page; `address`, where readers find it, for the address bar. Or something of its own to show. */
   preview: { origin: string; path: string; address: string; token?: string } | { custom: ReactNode };
   children: ReactNode;
 }) {
