@@ -242,7 +242,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // On the portal: the entry, its tag and what it completes; the post says where it shipped.
   await ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Changelog" }).click();
   const entry = ada.getByRole("article", { name: "Dark mode is here" });
-  await expect(entry.getByRole("heading", { name: "A darker look", level: 2 })).toBeVisible();
+  // The list shows its text as an excerpt, plain (its own page has the headings).
+  await expect(entry).toContainText("A darker look");
+  await expect(entry.getByRole("heading", { name: "A darker look" })).toHaveCount(0);
   await expect(entry).toContainText("New");
   // (On wide screens the tags are in the date's margin; a phone's copy, above the title, is hidden there.)
   await expect(entry.getByText("Breaking").filter({ visible: true })).toHaveCSS("color", breaking);
@@ -251,6 +253,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // Readers react on the entry's own page, one of each, on and off; the team's list shows the counts.
   await entry.getByRole("link", { name: "Dark mode is here" }).click();
   await ada.waitForURL(/\/changelog\/1$/);
+  await expect(entry.getByRole("heading", { name: "A darker look", level: 2 })).toBeVisible();
   // Its page: the way back, the 36px title, its tags and date under it.
   await expect(entry.getByRole("link", { name: "Changelog" })).toHaveAttribute("href", "/changelog");
   const pageTitle = entry.getByRole("heading", { level: 1, name: "Dark mode is here" });
@@ -673,8 +676,10 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
   // One more than a page holds (20): the odd ones new, the even ones fixes.
+  // The newest two run long: the list shows excerpts, the rest on their pages.
+  const long = `${"Faster boards and fewer clicks. ".repeat(24)}\n\nAnd last, exports in CSV.`;
   for (let n = 1; n <= 21; n++) {
-    await api("/changelog", { title: `Release ${n}`, body: "Faster boards and fewer clicks.", tags: [n % 2 ? "new" : "fixed"] });
+    await api("/changelog", { title: `Release ${n}`, body: n >= 20 ? long : "Faster boards and fewer clicks.", tags: [n % 2 ? "new" : "fixed"] });
     await api(`/changelog/${n}/publish`, {});
   }
   // Over three months: 12 to 21 in October, 2 to 11 in September, Release 1 in August (on page 2).
@@ -702,6 +707,20 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   const date = (await latest.locator("time:visible").boundingBox())!;
   const title = (await latest.getByRole("heading").boundingBox())!;
   expect(date.x + date.width).toBeLessThan(title.x);
+  // Excerpts: the newest a medium one (eight lines at most, fading out), the others two or three lines; neither
+  // reaches the long entries' last paragraph, which their pages have.
+  const lines = async (excerpt: Locator) => (await excerpt.evaluate((p) => p.getBoundingClientRect().height)) / 28;
+  const excerptOf = (title: string) => main.getByRole("article", { name: title }).locator("p", { hasText: "Faster boards" });
+  expect(await lines(excerptOf("Release 21"))).toBeGreaterThan(3);
+  expect(await lines(excerptOf("Release 21"))).toBeLessThanOrEqual(8);
+  expect(await style(excerptOf("Release 21"), "mask-image")).toContain("gradient");
+  expect(await lines(excerptOf("Release 20"))).toBeLessThanOrEqual(3);
+  await expect(main.getByText("exports in CSV")).toHaveCount(0);
+  // The excerpt opens the entry's page.
+  await excerptOf("Release 20").click();
+  await expect(reader).toHaveURL(/\/changelog\/20$/);
+  await expect(main.getByText("And last, exports in CSV.")).toBeVisible();
+  await reader.goBack();
   // The month index, beside the list, stays in view as the page scrolls; a month opens the page its newest entry is on.
   const dot = latest.locator("p:has(> time) > span[aria-hidden]");
   expect(await style(dot, "background-color")).not.toBe(accent);
@@ -789,6 +808,10 @@ test("the changelog's tags filter it, a page further are older entries, and mont
 
   // On a phone, the header's menu lists the entries by date (with their titles), the one being read marked.
   await reader.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(reader, "portal-changelog-phone", { fullPage: false });
+  await reader.emulateMedia({ colorScheme: "dark" });
+  await checkpoint(reader, "portal-changelog-phone-dark", { fullPage: false });
+  await reader.emulateMedia({ colorScheme: "light" });
   await reader.goto("/changelog/21");
   await reader.getByRole("banner").getByRole("button", { name: "Menu" }).click();
   const entries = reader.getByRole("dialog", { name: "Menu" }).getByRole("navigation", { name: "Changelog entries" });

@@ -236,6 +236,27 @@ export function toPlainText(node: JSONContent): string {
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** What a preview leaves out: media (no text worth reading) and code (it doesn't read as prose). */
+const NOT_PROSE = new Set(["image", "file", "video", "codeBlock"]);
+
+/**
+ * A preview's text (the changelog's list): the doc's prose as plain text, blocks on their own lines, cut at `max`
+ * characters at a word's end with "…"; `cut` says whether it was.
+ */
+export function excerpt(doc: Doc, max: number): { text: string; cut: boolean } {
+  const prose = (node: JSONContent): JSONContent => ({
+    ...node,
+    content: node.content?.filter((child) => !NOT_PROSE.has(child.type ?? "")).map(prose),
+  });
+  const text = toPlainText(prose(doc));
+  if (text.length <= max) {
+    return { text, cut: false };
+  }
+  // The last whole word that fits (one longer word than that is cut where it must be).
+  const end = text.slice(0, max + 1).search(/\s\S*$/);
+  return { text: `${text.slice(0, end > 0 ? end : max).replace(/[\s.,;:!?]+$/, "")}…`, cut: true };
+}
+
 export type Heading = { id: string; text: string; level: 2 | 3 };
 
 /** The id of the article page's own title (its h1), which no heading takes. */

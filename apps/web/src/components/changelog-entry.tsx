@@ -1,6 +1,6 @@
 import type { ChangelogTag } from "@tuti/db";
 import { RichText } from "@tuti/content/react";
-import type { Doc, MediaUrls } from "@tuti/content";
+import { excerpt as excerptOf, type Doc, type MediaUrls } from "@tuti/content";
 import { ArrowRightIcon, LightbulbIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -18,6 +18,9 @@ import { cn } from "@/lib/utils";
 /** "7 Nov 2026": the timeline's margin (every month three letters, as "Sep", not "Sept"). */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+
+/** The list's excerpts: the newest entry's medium one (up to eight lines), the others' two or three; in characters. */
+const EXCERPT = { medium: 600, short: 300 };
 
 export type PublishedEntry = {
   id: string;
@@ -46,6 +49,7 @@ export function ChangelogEntryView({
   base = "",
   dateMargin = false,
   back,
+  excerpt,
 }: {
   entry: PublishedEntry;
   mediaUrls: MediaUrls | null;
@@ -60,6 +64,8 @@ export function ChangelogEntryView({
   dateMargin?: boolean;
   /** Its own page on the portal: the shared page header (this way back, the 36px title, its tags and date under it). */
   back?: ReactNode;
+  /** The changelog's list: its text as an excerpt linking to its page, "medium" (with its cover; the newest) or "short". */
+  excerpt?: "medium" | "short";
 }) {
   const Title = heading;
   // The portal's own pages (its list, or an entry's page, which has the reactions): a reading size and bigger (still grey)
@@ -110,14 +116,18 @@ export function ChangelogEntryView({
             </Title>
           </>
         )}
-        {entry.cover && (
+        {entry.cover && excerpt !== "short" && (
           <RichText
             doc={entry.cover}
             mediaUrls={mediaUrls}
             className={cn("rich-text", onPage && "[&_img]:rounded-xl [&_img]:border-0 [&_img]:shadow-card [&_img]:ring-1 [&_img]:ring-card-edge")}
           />
         )}
-        <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
+        {excerpt ? (
+          <Excerpt entry={entry} size={excerpt} href={at(`/changelog/${entry.number}`)} />
+        ) : (
+          <RichText doc={entry.doc} mediaUrls={mediaUrls} className={cn("rich-text break-words", onPage && "text-base leading-7 text-foreground/85")} />
+        )}
         {onPage && entry.posts.length > 0 ? (
           // The ideas it shipped, with how many asked: a pill each. One idea: the entry's title says which (its title is read
           // out after the pill's words); more than one: each pill shows its idea's title.
@@ -164,5 +174,29 @@ export function ChangelogEntryView({
         )}
       </div>
     </article>
+  );
+}
+
+/**
+ * An entry's text in the list: plain (no images, embeds or code), cut at a word's end, the medium one fading out where
+ * it's cut; the rest is on its page, which it links to (the title is the link for keyboards and screen readers).
+ */
+function Excerpt({ entry, size, href }: { entry: PublishedEntry; size: "medium" | "short"; href: string }) {
+  const { text, cut } = excerptOf(entry.doc, EXCERPT[size]);
+  if (!text) {
+    return null;
+  }
+  return (
+    <Link href={href} tabIndex={-1} className="block">
+      <p
+        className={cn(
+          "text-base leading-7 break-words whitespace-pre-line text-foreground/85",
+          size === "medium" ? "line-clamp-8" : "line-clamp-3",
+          size === "medium" && cut && "[mask-image:linear-gradient(to_bottom,black_55%,transparent)]",
+        )}
+      >
+        {text}
+      </p>
+    </Link>
   );
 }
