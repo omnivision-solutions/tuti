@@ -307,6 +307,11 @@ test("while a deploy runs both releases, the previous one's plan writes follow i
   await prisma.$executeRaw`UPDATE project SET "planKey" = 'starter' WHERE id = ${id}`;
   await prisma.project.update({ where: { id }, data: { plan: "starter", planEnum: "FREE" } });
   expect(await key()).toEqual({ plan: "starter", planEnum: "FREE" });
+  // The previous release's Pro over a paid plan it has no name for (a second subscription): the key stays.
+  await prisma.$executeRaw`UPDATE project SET plan = 'PRO' WHERE id = ${id}`;
+  expect((await key()).plan).toBe("starter");
+  await prisma.$executeRaw`UPDATE project SET plan = 'FREE' WHERE id = ${id}`;
+  expect((await key()).plan).toBe("starter");
   // That plan ended by the previous release (its enum already Free): the key follows.
   await prisma.$executeRaw`UPDATE project SET plan = 'FREE', "planStatus" = NULL WHERE id = ${id}`;
   expect(await key()).toEqual({ plan: null, planEnum: "FREE" });

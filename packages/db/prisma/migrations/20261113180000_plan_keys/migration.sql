@@ -15,7 +15,9 @@ BEGIN
     AND (NEW."plan" IS DISTINCT FROM OLD."plan" OR (NEW."planStatus" IS NULL AND OLD."planStatus" IS NOT NULL)) THEN
     IF NEW."plan" = 'FREE' AND NEW."planStatus" IS NULL THEN
       NEW."planKey" := NULL;
-    ELSIF NEW."plan" <> 'FREE' AND NEW."planKey" IS DISTINCT FROM lower(NEW."plan"::text) THEN
+    -- Pro or Business only over a key it could have known: none, pro or business (never over a paid plan it has no name for).
+    ELSIF NEW."plan" <> 'FREE' AND NEW."planKey" IS DISTINCT FROM lower(NEW."plan"::text)
+      AND (NEW."planKey" IS NULL OR NEW."planKey" IN ('pro', 'business')) THEN
       NEW."planKey" := lower(NEW."plan"::text);
     END IF;
   END IF;
