@@ -15,11 +15,11 @@ import { PortalAvatar } from "@/components/portal-avatar";
 import { CopyLinkButton, ShareButton } from "@/components/share-button";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
-import { CalendarIcon, LayoutListIcon, MessageCircleIcon, PlusIcon } from "lucide-react";
+import { CalendarIcon, CircleDotIcon, ClockIcon, LayoutListIcon, MessageCircleIcon } from "lucide-react";
 import { SubscribeButton } from "@/components/subscribe-button";
 import { VoterFaces } from "@/components/voter-faces";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { VoteButton } from "@/components/vote-button";
 import { SampleBadge } from "@/components/sample-badge";
 import { etaOnPortal, formatDate, formatMonth, timeAgo } from "@/lib/format";
@@ -171,169 +171,194 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   );
 
   return (
-    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_18.5rem] lg:items-start lg:gap-x-14">
-      <div className="flex min-w-0 flex-col gap-6 lg:col-start-1">
-        {/* A public post on a Team only board: back to the portal's feedback (its home, when it has no board of its own), not
-            to a board only the team may open. */}
-        {onTeamBoard ? (
-          (await firstBoardPath(projectSlug)) ? (
-            <BackLink href={at("/feedback")}>Feedback</BackLink>
-          ) : (
-            <BackLink href={at("/")}>Home</BackLink>
-          )
-        ) : (
-          <BackLink href={at(boardPath(post.board))} className="font-medium">
-            {post.board.name}
-          </BackLink>
-        )}
-
-        <article className="flex flex-col gap-3">
-          <h1 className="font-heading text-[1.75rem] leading-[1.1] font-[650] tracking-[-0.022em] break-words sm:text-[2.375rem]">{post.title}</h1>
-          {/* Who asked, then where it stands. */}
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.9375rem] text-muted-foreground">
-            <PortalAvatar person={post.author} className="size-6 text-xs" />
-            <span className="font-medium text-foreground/80">{post.author.name}</span>
-            <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2 text-[0.9375rem]">
-            <StatusPill status={post.status} />
-            {eta && (
-              <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                <CalendarIcon aria-hidden className="size-4" />
-                Expected {formatMonth(eta)}
-              </span>
-            )}
-            {post.sample && <SampleBadge />}
-            <VisibilityBadge visibility={post.visibility} />
-          </div>
-          {!isEmptyDoc(displayDoc(post)) && (
-            <RichText
-              doc={displayDoc(post)}
-              mediaUrls={await mediaUrls(displayDoc(post))}
-              className="rich-text mt-3 text-base leading-[1.65] break-words sm:text-[1.0625rem]"
-            />
+    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-16">
+      <article className="flex min-w-0 flex-col gap-3.5 lg:col-start-1">
+        <PortalPageHeader
+          title={post.title}
+          back={
+            // A public post on a Team only board: back to the portal's feedback (its home, when it has no board of its own),
+            // not to a board only the team may open.
+            onTeamBoard ? (
+              (await firstBoardPath(projectSlug)) ? (
+                <BackLink href={at("/feedback")}>Feedback</BackLink>
+              ) : (
+                <BackLink href={at("/")}>Home</BackLink>
+              )
+            ) : (
+              <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
+            )
+          }
+        />
+        {/* Who asked, then where it stands. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          <PortalAvatar person={post.author} className="size-6 text-xs" />
+          <span className="text-foreground">{post.author.name}</span>
+          <span aria-hidden>·</span>
+          <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-sm">
+          <StatusPill status={post.status} />
+          {eta && (
+            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+              <CalendarIcon aria-hidden className="size-4" />
+              Expected {formatMonth(eta)}
+            </span>
           )}
-        </article>
-      </div>
+          {post.sample && <SampleBadge />}
+          <VisibilityBadge visibility={post.visibility} />
+        </div>
+        {!isEmptyDoc(displayDoc(post)) && (
+          <RichText
+            doc={displayDoc(post)}
+            mediaUrls={await mediaUrls(displayDoc(post))}
+            className="rich-text mt-2.5 text-base leading-[1.65] break-words sm:text-[1.0625rem]"
+          />
+        )}
+      </article>
 
-      {/* Beside the post on wide screens: one card led by Upvote, then Subscribe, the voters, its details and its link. On phones
-          and tablets the actions in a row under the post, the voters under them (the details and the way to a new idea aren't). */}
+      {/* Beside the post on wide screens, a plain column (no card): Upvote (the page's one primary until voted), Subscribe,
+          the voters, its details, its link and the way to a new idea. On phones and tablets the actions in one row under the
+          post, the voters under them (the details and the way to a new idea aren't). */}
       <aside
         aria-label="About this idea"
-        className="flex flex-wrap items-center gap-x-2 gap-y-4 text-sm lg:sticky lg:top-[calc(var(--portal-header-height,4rem)+1.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-12 lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-4 lg:rounded-xl lg:bg-card lg:p-5 lg:shadow-card lg:ring-1 lg:ring-card-edge lg:[&>a]:w-full lg:[&>button]:w-full"
+        className="flex flex-wrap items-center gap-x-2 gap-y-4 text-sm lg:sticky lg:top-[calc(var(--portal-header-height,4rem)+1.5rem)] lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-[2.375rem] lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-5 max-lg:[&>:first-child]:grow lg:[&>a]:w-full lg:[&>button]:w-full"
       >
         {vote("upvote")}
         {subscribe}
         {voterFaces && (
-          <div className="flex items-center gap-3 max-lg:order-last max-lg:basis-full lg:border-t lg:pt-4">
-            {/* On phones the faces are under the actions: named. */}
-            <span aria-hidden className="group-label lg:hidden">
+          <div className="flex flex-col gap-2 max-lg:order-last max-lg:basis-full">
+            {/* Beside the rail's other parts: named. */}
+            <span aria-hidden className="text-[0.8125rem] text-muted-foreground max-lg:hidden">
               Voters
             </span>
             {voterFaces}
           </div>
         )}
-        <dl className="flex flex-col border-t text-[0.9375rem] max-lg:hidden [&>div]:flex [&>div]:items-center [&>div]:justify-between [&>div]:gap-4 [&>div]:py-3 [&>div+div]:border-t">
+        <dl className="flex flex-col border-t pt-2 max-lg:hidden [&>div]:flex [&>div]:items-center [&>div]:justify-between [&>div]:gap-4 [&>div]:py-2 [&_dt]:flex [&_dt]:items-center [&_dt]:gap-2 [&_dt]:text-muted-foreground [&_dt_svg]:size-4 [&_dd]:font-medium">
           {/* A Team only board isn't named to readers (as the way back above doesn't). */}
           {!onTeamBoard && (
             <div>
-              <dt className="flex items-center gap-2 text-muted-foreground">
-                <LayoutListIcon aria-hidden className="size-4" />
+              <dt>
+                <LayoutListIcon aria-hidden />
                 Board
               </dt>
-              <dd className="min-w-0 truncate font-semibold">{post.board.name}</dd>
+              <dd className="min-w-0 truncate">{post.board.name}</dd>
             </div>
           )}
           <div>
-            <dt className="flex items-center gap-2 text-muted-foreground">
-              <CalendarIcon aria-hidden className="size-4" />
+            <dt>
+              <CircleDotIcon aria-hidden />
+              Status
+            </dt>
+            <dd>
+              <StatusLabel status={post.status} className="text-sm [&>svg]:hidden" />
+            </dd>
+          </div>
+          {eta && (
+            <div>
+              <dt>
+                <CalendarIcon aria-hidden />
+                Expected
+              </dt>
+              <dd>{formatMonth(eta)}</dd>
+            </div>
+          )}
+          <div>
+            <dt>
+              <ClockIcon aria-hidden />
               Posted
             </dt>
-            <dd className="font-semibold">{formatDate(post.createdAt)}</dd>
+            <dd>{formatDate(post.createdAt)}</dd>
           </div>
         </dl>
         {shippedIn && <p className="text-muted-foreground max-lg:order-last max-lg:basis-full">Shipped in {shippedIn}</p>}
-        <div className="flex flex-wrap items-center gap-1 lg:border-t lg:pt-3 [&>button]:w-auto lg:[&>button:first-child]:-ml-2.5">
+        <div className="flex items-center gap-2">
           <CopyLinkButton url={address} />
           <ShareButton url={address} title={post.title} />
         </div>
         {!onTeamBoard && (
-          <p className="flex items-center gap-2 border-t pt-4 text-[0.9375rem] text-muted-foreground max-lg:hidden">
-            <PlusIcon aria-hidden className="size-4" />
-            Have another idea?
-            <Link href={`${at(boardPath(post.board))}?new`} className="font-medium text-foreground underline decoration-primary/55 decoration-[1.5px] underline-offset-[3px]">
+          <p className="text-muted-foreground max-lg:hidden">
+            Have another idea?{" "}
+            <Link href={`${at(boardPath(post.board))}?new`} className="font-medium text-foreground underline decoration-primary/55 decoration-[1.5px] underline-offset-[3px] hover:decoration-primary">
               Post it
             </Link>
           </p>
         )}
       </aside>
 
-      <div className="flex min-w-0 flex-col gap-6 lg:col-start-1">
-        {/* Signed out: one bar to sign in (commenting and voting both need it), above the thread. */}
-        {!session && (
-          <div className="flex flex-col gap-4 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge sm:flex-row sm:items-center sm:gap-4 sm:py-4">
-            <span aria-hidden className="hidden size-10 shrink-0 place-items-center rounded-lg bg-soft text-soft-foreground sm:grid">
-              <MessageCircleIcon className="size-[1.125rem]" />
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <h2 className="font-sans text-base font-semibold">Join the conversation</h2>
-              <p className="text-[0.9375rem] text-muted-foreground">Sign in to comment and vote.</p>
-            </div>
-            <SignInLink className={buttonVariants({ size: "lg", className: "font-semibold" })}>Sign in</SignInLink>
-          </div>
-        )}
-
-        <section className="flex flex-col gap-4 pt-2" aria-label="Comments">
-          <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-col gap-10 lg:col-start-1">
+        <section className="flex flex-col pt-6" aria-label="Comments">
+          <div className="flex items-center justify-between gap-3 pb-1.5">
             <h2 className="font-sans text-lg font-semibold">
               {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
             </h2>
             {post.comments.length > 1 && <CommentSortMenu sort={sort} />}
           </div>
-          <CommentList
-            portal
-            sort={sort}
-            ability={{ can: voter ? "act" : session ? "none" : "signIn", postId: post.id, portal: true, uploads }}
-            comments={post.comments.map(({ _count, likes, ...comment }) => ({ ...comment, likes: _count.likes, liked: likes.length > 0 }))}
-            teamUserIds={teamUserIds}
-            events={post.events}
-            mediaUrls={await mediaUrls(...post.comments.map(displayDoc))}
-          />
-          {session && <CommentForm postId={post.id} signedIn uploads={uploads} />}
+          {/* The box under the count, before the thread; signed out, one bar to sign in instead (commenting and voting both
+              need it): a fill, not a card. */}
+          {session ? (
+            <div className="flex gap-3 border-b py-5">
+              <PortalAvatar person={{ name: session.user.name, image: session.user.image ?? null }} className="size-8 text-[0.8125rem]" />
+              <div className="min-w-0 flex-1">
+                <CommentForm postId={post.id} signedIn uploads={uploads} />
+              </div>
+            </div>
+          ) : (
+            <div className="my-4 flex flex-col gap-4 rounded-xl bg-muted p-5 sm:flex-row sm:items-center sm:gap-4 sm:py-4">
+              <span aria-hidden className="hidden size-10 shrink-0 place-items-center rounded-lg bg-card text-muted-foreground sm:grid">
+                <MessageCircleIcon className="size-[1.125rem]" />
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <h2 className="font-sans text-base font-semibold">Join the conversation</h2>
+                <p className="text-[0.9375rem] text-muted-foreground">Sign in to comment and vote.</p>
+              </div>
+              {/* A secondary: Upvote is the page's primary. On the fill, the card's white. */}
+              <SignInLink className={buttonVariants({ variant: "outline", size: "lg", className: "font-semibold portal:bg-card portal:hover:bg-card/70" })}>
+                Sign in
+              </SignInLink>
+            </div>
+          )}
+          <div className="pt-3">
+            <CommentList
+              portal
+              sort={sort}
+              ability={{ can: voter ? "act" : session ? "none" : "signIn", postId: post.id, portal: true, uploads }}
+              comments={post.comments.map(({ _count, likes, ...comment }) => ({ ...comment, likes: _count.likes, liked: likes.length > 0 }))}
+              teamUserIds={teamUserIds}
+              events={post.events}
+              mediaUrls={await mediaUrls(...post.comments.map(displayDoc))}
+            />
+          </div>
         </section>
 
+        {/* Rows on the paper, as every list on the portal. */}
         {similar.length > 0 && (
-          <Card role="region" aria-labelledby="similar-ideas">
-            <CardHeader>
-              <CardTitle>
-                <h2 id="similar-ideas">Similar ideas</h2>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ItemList>
-                {similar.map((like) => (
-                  <ItemRow
-                    key={like.id}
-                    title={
-                      <Link href={at(postPath({ ...like, board: { slug: like.boardSlug } }))} className="hover:underline">
-                        {like.title}
-                      </Link>
-                    }
-                    badges={
-                      <>
-                        <VisibilityBadge visibility={like.visibility} />
-                        <StatusLabel status={like.status} />
-                      </>
-                    }
-                    meta={`${like.voteCount} ${like.voteCount === 1 ? "vote" : "votes"}`}
-                  />
-                ))}
-              </ItemList>
-            </CardContent>
-          </Card>
+          <section aria-labelledby="similar-ideas" className="flex flex-col gap-2">
+            <h2 id="similar-ideas" className="font-sans text-lg font-semibold">
+              Similar ideas
+            </h2>
+            <ItemList>
+              {similar.map((like) => (
+                <ItemRow
+                  key={like.id}
+                  title={
+                    <Link href={at(postPath({ ...like, board: { slug: like.boardSlug } }))} className="hover:underline">
+                      {like.title}
+                    </Link>
+                  }
+                  badges={
+                    <>
+                      <VisibilityBadge visibility={like.visibility} />
+                      <StatusLabel status={like.status} />
+                    </>
+                  }
+                  meta={`${like.voteCount} ${like.voteCount === 1 ? "vote" : "votes"}`}
+                />
+              ))}
+            </ItemList>
+          </section>
         )}
       </div>
-
     </div>
   );
 }

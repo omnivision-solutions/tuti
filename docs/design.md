@@ -452,13 +452,19 @@ the list picks none to approve at once.
     and the latest shipped idea as one line ("Shipped 9 Nov: <title>"; the rest under Completed in the status menu).
     Phones: New idea beside the title, no card, the status menu's count without its words, the shipped line and Get
     updates under the list.
-  - **A post**: back link, a 38px title (28px on phones), the byline, then the status pill and "Expected <month>" with a
-    calendar, the body at 17px. The rail is one card: **Upvote** filled with the count after a rule (`shape="upvote"`;
-    voted, "Upvoted" in the accent's soft tint with a thin inset ring in it), Subscribe a secondary grey fill with "Get an email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces, Board and Posted as
-    rows, Copy link and Share (the device's share sheet, where it has one), "Have another idea? Post it". On phones the
-    same actions in a row under the body (Copy link and Share as icon buttons), the voters under them. Signed out, one
-    "Join the conversation" bar (Sign in) above the thread instead of a comment box. In the thread, the team's replies
-    on a soft green fade with a green rule and the Team badge, status changes as rows with the status's icon and pill.
+  - **A post**: the shared page header (back link to the board, the 36px title, 28px on phones), the byline, then the
+    status pill and "Expected <month>" with a calendar, the body at 17px. The rail is a plain column, no card:
+    **Upvote** with the count after a rule (`shape="upvote"`; the page's one filled primary before voting; voted,
+    "Upvoted" in the accent's soft tint with a thin inset ring in it), Subscribe a secondary grey fill with "Get an
+    email when it ships." under it (Unsubscribe quiet, without the line), the voters' faces under a "Voters" label, then
+    under one line Board, Status, Expected and Posted as rows without lines between them, Copy link and Share (the
+    device's share sheet, where it has one) as round icon buttons, "Have another idea? Post it". On phones and tablets
+    the same actions in one row under the body (Upvote widest, Subscribe without its bell; the row wraps rather
+    squeezing Upvote), "You'll hear when it ships." and the voters under them. The thread: "N comments" and its
+    sort, the comment box under them (the face, the box, a grey Comment button: Upvote stays the one primary); signed
+    out, one "Join the conversation" bar (a fill, Sign in a secondary) instead. The team's replies on the accent's soft
+    tint with a 2px accent rule and the Team badge, status changes inline with the status's icon and pill. Similar ideas
+    as rows on the paper under the thread.
   - **Comment threads** (the portal's post and the team's): "N comments" with "Oldest first ▾" at its right (Newest
     first; kept in the address as `?sort=newest`, shown once there are two). Under each comment **Reply** and a heart
     with its count ("Like" at none; liked, filled green); signed out, both are links to sign in, as voting is. Replies

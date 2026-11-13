@@ -8,6 +8,16 @@ import { apiFor, backToPortal, createProject, fillSignUp, postFeedback, signInWi
 import { latestEmailTo, linkIn } from "./mail";
 import { similar } from "./openai";
 
+/** A colour token as the browser computes an element's colour (custom properties keep the CSS's own spelling). */
+const token = (page: Page, name: string) =>
+  page.evaluate((n) => {
+    const probe = document.body.appendChild(document.createElement("i"));
+    probe.style.color = `var(${n})`;
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, name);
+
 test("a portal post: the team's reply stands out, its status history and voters; signed out, a bar to sign in; signed in, the comment box keeps what was written", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
@@ -24,6 +34,8 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await bo.goto("/feedback/feature-requests/dark-mode-1");
   await bo.getByRole("button", { name: "Upvote" }).click();
   await expect(bo.getByRole("button", { name: "Upvoted" })).toHaveText("Upvoted2");
+  // Voted, it's no longer the primary: the accent's soft tint.
+  await expect(bo.getByRole("button", { name: "Upvoted" })).toHaveCSS("background-color", await token(bo, "--soft"));
 
   // The team answers and plans it.
   await team.goto(`/app/${slug}/p/1`);
@@ -52,7 +64,7 @@ test("a portal post: the team's reply stands out, its status history and voters;
       // The team's reply: "Team" by the name, on a tint.
       const reply = activity.getByRole("listitem").filter({ hasText: "Thanks! We're on it." });
       await expect(reply.getByText("Team", { exact: true })).toBeVisible();
-      await expect(reply.locator(":scope > div").first()).not.toHaveCSS("background-image", "none");
+      await expect(reply.locator(":scope > div").first()).toHaveCSS("background-color", await token(visitor, "--soft"));
       // Its status history, after the reply: the change and when, not who made it.
       await expect(activity.getByRole("listitem").last()).toHaveText(/^Moved to Planned · /);
       // When the team expects it, beside its status.
@@ -69,6 +81,29 @@ test("a portal post: the team's reply stands out, its status history and voters;
       await expect(voters.getByText("want this", { exact: true })).toBeVisible();
       await expect(voters.getByText("2 people want this", { exact: true })).toHaveClass(/sr-only/);
       await expect(voters).toContainText("2 people want this");
+      // Before voting, Upvote is the page's one filled primary.
+      const rail = visitor.getByRole("complementary", { name: "About this idea" });
+      await expect(rail.getByRole("link", { name: /^Upvote \(/ })).toHaveCSS("background-color", await token(visitor, "--primary"));
+      // Copy link: a round icon button.
+      const copy = rail.getByRole("button", { name: "Copy link" });
+      expect(await copy.evaluate((button) => [button.clientWidth === button.clientHeight, parseFloat(getComputedStyle(button).borderTopLeftRadius) >= button.clientWidth / 2])).toEqual([true, true]);
+      if (name === "desktop") {
+        // The rail is a plain column, not a card; its details are rows without lines between them.
+        await expect(rail).toHaveCSS("box-shadow", "none");
+        await expect(rail).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+        await expect(rail.locator("dt")).toHaveText(["Board", "Status", "Expected", "Posted"]);
+        await expect(rail.locator("dd").nth(1)).toHaveText("Planned");
+        await expect(rail.locator("dl > div").nth(1)).toHaveCSS("border-top-width", "0px");
+      } else {
+        // On a phone the actions are one row under the post: Upvote and Copy link side by side, under its body.
+        const [up, link, body] = [
+          (await rail.getByRole("link", { name: /^Upvote \(/ }).boundingBox())!,
+          (await copy.boundingBox())!,
+          (await visitor.getByRole("article").boundingBox())!,
+        ];
+        expect(Math.abs(up.y + up.height / 2 - (link.y + link.height / 2))).toBeLessThan(2);
+        expect(up.y).toBeGreaterThanOrEqual(body.y + body.height);
+      }
       // No comment box: one bar to sign in, above the thread.
       await expect(visitor.getByRole("textbox", { name: "Comment" })).toHaveCount(0);
       await expect(visitor.getByRole("heading", { name: "Join the conversation" })).toBeVisible();
@@ -138,13 +173,18 @@ test("a portal post: the team's reply stands out, its status history and voters;
   await visitor.getByRole("button", { name: "Comment", exact: true }).click();
   const mine = visitor.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Me too, please!" });
   await expect(mine).toBeVisible();
+  // The box is above the thread, where the new comment may be out of view: it says it's posted.
+  await expect(visitor.getByText("Comment posted")).toBeVisible();
   // Not the team's: no tint, no badge.
-  await expect(mine).toHaveCSS("background-image", "none");
+  await expect(mine.locator(":scope > div").first()).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(mine.getByText("Team", { exact: true })).toHaveCount(0);
   await expect(box).toHaveText("");
   await visitor.reload();
   await expect(box).toBeVisible();
   await expect(box).toHaveText("");
+  // The box is under the count, above the thread; its Comment a grey secondary (Upvote is the page's primary).
+  expect((await box.boundingBox())!.y).toBeLessThan((await mine.boundingBox())!.y);
+  await expect(visitor.getByRole("button", { name: "Comment", exact: true })).toHaveCSS("background-color", await token(visitor, "--secondary"));
   await checkpoint(visitor, "portal-post-commented");
 });
 
@@ -238,6 +278,8 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
       const page = await (await browser.newContext({ baseURL: portalUrl(slug), viewport, colorScheme, storageState: signedIn })).newPage();
       await page.goto(darkPath);
       await expect(page.getByRole("button", { name: "Unsubscribe" })).toBeVisible();
+      // Upvote's words fit inside it, beside Unsubscribe and Copy link on a phone (the row wraps rather than squeezing it).
+      expect(await page.getByRole("button", { name: /^Upvote \(/ }).evaluate((button) => button.scrollWidth <= button.clientWidth)).toBe(true);
       await expect(page.getByRole("region", { name: "Similar ideas" }).getByRole("link", { name: night })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
       await checkpoint(page, `portal-post-subscribed-${name}-${colorScheme}`);
@@ -263,6 +305,12 @@ test("a portal post: Subscribe, for people who don't vote, and they hear when it
   await expect(di.getByRole("button", { name: "Upvoted" })).toBeEnabled();
   await di.reload();
   await expect(hears).toBeVisible();
+  // On a phone the line sits under the row of actions, and Upvote's words still fit inside it.
+  await di.setViewportSize({ width: 390, height: 844 });
+  const upvoted = di.getByRole("button", { name: "Upvoted" });
+  expect(await upvoted.evaluate((button) => button.scrollWidth <= button.clientWidth)).toBe(true);
+  expect((await hears.boundingBox())!.y).toBeGreaterThanOrEqual((await upvoted.boundingBox())!.y + (await upvoted.boundingBox())!.height);
+  await di.setViewportSize({ width: 1280, height: 720 });
   // The line from the start (a fresh page), and still the vote taken back brings Subscribe.
   await di.getByRole("button", { name: "Upvoted" }).click();
   await expect(di.getByRole("button", { name: "Upvote" })).toHaveText("Upvote1");

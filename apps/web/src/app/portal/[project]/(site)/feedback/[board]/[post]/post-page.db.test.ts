@@ -27,12 +27,12 @@ function propsOf<P>(node: ReactNode, type: (props: P) => ReactNode): P | undefin
   return node.type === type ? (node.props as P) : propsOf(node.props.children, type);
 }
 
-/** The text of the page's tree (components in it aren't run). */
+/** The text of the page's tree (components in it aren't run; the page header's back link and title are read too). */
 const textOf = (node: ReactNode): string =>
   Array.isArray(node)
     ? node.map(textOf).join("")
-    : isValidElement<{ children?: ReactNode }>(node)
-      ? textOf(node.props.children)
+    : isValidElement<{ back?: ReactNode; title?: ReactNode; children?: ReactNode }>(node)
+      ? textOf([node.props.back, node.props.title, node.props.children])
       : typeof node === "string" || typeof node === "number"
         ? String(node)
         : "";
