@@ -20,6 +20,12 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await newBoard.getByLabel("URL").fill("all");
   await newBoard.getByRole("button", { name: "Create board" }).click();
   await expect(team.getByText("Board created")).toBeVisible();
+  // Feature requests' own words for posting; Bug reports keeps none.
+  await team.getByRole("listitem").filter({ hasText: "Feature requests" }).getByRole("button", { name: "Edit" }).click();
+  const editBoard = team.getByRole("dialog", { name: "Edit board" });
+  await editBoard.getByLabel("Button").fill("Suggest a feature");
+  await editBoard.getByRole("button", { name: "Save" }).click();
+  await expect(team.getByText("Board updated")).toBeVisible();
 
   const api = await apiFor(team, slug);
   await api("/posts", { board: "feature-requests", title: "Dark mode" }); // 1
@@ -85,27 +91,32 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await columns.getByRole("link", { name: "Completed 2" }).click();
   await visitor.waitForURL("**/roadmap?column=completed");
   await expect(column("Completed")).toBeVisible();
-  // A board's chip keeps the column open, and so does All boards.
-  const boardChips = visitor.getByRole("navigation", { name: "Board" });
-  await boardChips.getByRole("link", { name: "Bug reports" }).click();
+  // New post is a round + beside the title, with the same menu.
+  await visitor.getByRole("button", { name: "New post" }).click();
+  await expect(visitor.getByRole("menuitem")).toHaveText(["Suggest a feature Feature requests", "New post Bug reports"]);
+  await visitor.keyboard.press("Escape");
+  // A board's pill keeps the column open, and so does All boards.
+  const boardPills = visitor.getByRole("navigation", { name: "Board" });
+  await boardPills.getByRole("link", { name: "Bug reports" }).click();
   await visitor.waitForURL("**/roadmap?board=all&column=completed");
   await expect(column("Completed")).toBeVisible();
-  await expect(boardChips.getByRole("link", { name: "All boards" })).toHaveAttribute("href", "/roadmap?column=completed");
+  await expect(boardPills.getByRole("link", { name: "All boards" })).toHaveAttribute("href", "/roadmap?column=completed");
   await visitor.goto("/roadmap?column=completed");
   await expect(column("Planned")).toBeHidden();
   await checkpoint(visitor, "roadmap-phone-completed", { fullPage: false });
   await visitor.goto("/roadmap");
   await visitor.setViewportSize({ width: 1440, height: 900 });
 
-  // With every board shown, New idea asks which.
-  await visitor.getByRole("button", { name: "New idea" }).click();
-  await expect(visitor.getByRole("menuitem")).toHaveText(["Feature requests", "Bug reports"]);
+  // With every board shown, New post asks which, in each board's own words (New post without them).
+  await visitor.getByRole("button", { name: "New post" }).click();
+  await expect(visitor.getByRole("menuitem")).toHaveText(["Suggest a feature Feature requests", "New post Bug reports"]);
+  await expect(visitor.getByRole("menuitem", { name: /Suggest a feature/ })).toHaveAttribute("href", "/feedback/feature-requests?new");
   await checkpoint(visitor, "roadmap-signed-out", { fullPage: false });
   await visitor.keyboard.press("Escape");
 
-  // The boards' chips narrow the cards and stay in the address.
+  // The boards' pills, with their ideas on the roadmap, narrow the cards and stay in the address.
   const boards = visitor.getByRole("navigation", { name: "Board" });
-  await expect(boards.getByRole("link")).toHaveText(["All boards", "Feature requests", "Bug reports"]);
+  await expect(boards.getByRole("link")).toHaveText(["All boards 5", "Feature requests 4", "Bug reports 1"]);
   await expect(boards.getByRole("link", { name: "All boards" })).toHaveAttribute("aria-current", "page");
   // Pills without an outline: the open one a neutral fill (not the accent), the others on the paper.
   const accent = await visitor.evaluate(() => {
@@ -117,7 +128,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   });
   await expect(boards.getByRole("link", { name: "All boards" })).toHaveCSS("background-color", accent);
   await expect(boards.getByRole("link", { name: "Bug reports" })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(boards.getByRole("link", { name: "Bug reports" })).toHaveCSS("border-top-width", "0px");
+  await expect(boards.getByRole("link", { name: "Bug reports" })).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
   await boards.getByRole("link", { name: "Bug reports" }).click();
   await visitor.waitForURL("**/roadmap?board=all");
   await expect(column("Planned")).toContainText("Nothing here yet.");
@@ -125,8 +136,13 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await expect(column("In progress").getByRole("link", { name: "Login fails on Safari" })).toBeVisible();
   await expect(visitor.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
   await expect(boards.getByRole("link", { name: "Bug reports" })).toHaveAttribute("aria-current", "page");
-  // New idea opens that board's idea form.
-  await expect(visitor.getByRole("link", { name: "New idea" })).toHaveAttribute("href", "/feedback/all?new");
+  // On one board, its button opens that board's form, in its words: New post, as it has none of its own.
+  await expect(visitor.getByRole("link", { name: "New post" })).toHaveAttribute("href", "/feedback/all?new");
+  await boards.getByRole("link", { name: "Feature requests" }).click();
+  await visitor.waitForURL("**/roadmap?board=feature-requests");
+  await expect(visitor.getByRole("link", { name: "Suggest a feature" })).toHaveAttribute("href", "/feedback/feature-requests?new");
+  // The columns' headings have no line under them.
+  await expect(column("Planned").getByRole("heading", { name: "Planned" }).locator("..")).toHaveCSS("border-bottom-width", "0px");
 
   // Signed in, a vote from a card counts.
   const ada = await signUp(browser, portalUrl(slug), "Ada");

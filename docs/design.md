@@ -466,11 +466,15 @@ the list picks none to approve at once.
     Reply on a reply answers the same comment. Reply opens one box under the thread's last reply ("Reply to <name>…",
     Cancel and Reply). A comment whose parent is gone (its author's account deleted, Autopilot's comment undone) stays,
     as a comment of its own. Internal notes have neither: only the team sees them.
-  - **The roadmap**: a 48px title, its line with "Sign in to vote." after it, New idea at the right (to a board's
-    dialog, or a pick of boards), the boards as chips (All boards first), a line, then three open columns headed by
-    the status's icon, name and count, its meaning and a line; a card per idea (the board, the title, two lines,
-    "Expected <month>", the poster, the comment count and a vote chip, `shape="chip"`; "In the changelog →" on a
-    shipped one). On phones one column at a time, picked from a segmented control over them (`?column=`).
+  - **The roadmap**: the shared page header (`PortalPageHeader`): "Roadmap", its line with "Sign in to vote." after
+    it, then the boards as pills with their ideas' counts (`FilterPills`, All boards first, `?board=`) and the one
+    primary at the row's end: on every board "New post", a menu of each board's own button text with the board's name
+    under it; on one board (picked, or the only one) that board's button text ("New post" without one), straight to its
+    form (`NewPostMenu`). On phones it's a round + beside the title, named the same. Then three open columns headed by
+    the status's icon, name and count and its meaning, no line under them; a card per idea (the board, the title, two
+    lines, "Expected <month>", the poster, the comment count and a vote chip, `shape="chip"`; "In the changelog →" in
+    the accent on a shipped one); an empty column a soft fill, "Nothing here yet.". On phones one column at a time,
+    picked from a segmented control over them (`?column=`; the portal's only segmented control).
   - **The changelog**: a 48px title and "What's new, improved and fixed in <project>.", then one row: the tags as text
     tabs (links, `?tag=`, only the tags its entries have) and RSS (secondary, grey fill) and **Subscribe** (filled; a popover with
     the email form) at its end (above the tabs on phones). On wide screens a timeline: each entry's short date and a dot

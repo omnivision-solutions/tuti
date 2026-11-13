@@ -1,5 +1,5 @@
 import { type PostStatus, prisma } from "@tuti/db";
-import { ArrowRightIcon, CalendarIcon, CheckIcon, ChevronDownIcon, LayoutListIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
+import { ArrowRightIcon, CalendarIcon, CheckIcon, LayoutListIcon, MessageSquareIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PortalAvatar } from "@/components/portal-avatar";
@@ -8,11 +8,13 @@ import { notFound } from "next/navigation";
 
 import { STATUS_ICONS, STATUS_LABELS, STATUS_TEXT } from "@/components/post-status-badge";
 import { SignInLink } from "@/components/sign-in-link";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { FilterPills } from "@/components/filter-pills";
+import { NewPostMenu } from "@/components/new-post-menu";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { VoteButton, VoteCount } from "@/components/vote-button";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { canActIn } from "@/server/membership";
+import { visiblePosts } from "@/server/post-visibility";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
 import { portalLinks } from "@/server/portal-base";
 import { getSession } from "@/server/session";
@@ -41,7 +43,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
   const viewer = await currentPostViewer(found.id);
   const project = {
     id: found.id,
-    boards: await prisma.board.findMany({ where: { projectId: found.id, ...shownBoards(viewer) }, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } }),
+    boards: await prisma.board.findMany({ where: { projectId: found.id, ...shownBoards(viewer) }, orderBy: { createdAt: "asc" }, select: { id: true, slug: true, name: true, postButton: true } }),
   };
   const session = await getSession();
   // As voting checks it: someone signed in through another project's single sign-on can't vote here.
@@ -49,7 +51,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
   const board = project.boards.find((b) => b.slug === searchParams.board);
   const columns = await roadmapColumns(project.id, viewer, { board: board?.slug });
   const ids = columns.flat().map((post) => post.id);
-  const [votes, shipped] = await Promise.all([
+  const [votes, shipped, perBoard] = await Promise.all([
     voter ? prisma.vote.findMany({ where: { userId: voter, postId: { in: ids } }, select: { postId: true } }) : [],
     // The published changelog entry that shipped each completed one, the latest first (as on the post's page).
     prisma.changelogEntryPost.findMany({
@@ -57,7 +59,14 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
       orderBy: { entry: { publishedAt: "desc" } },
       select: { postId: true, entry: { select: { number: true, title: true } } },
     }),
+    // Each board's ideas on the roadmap, for its pill (every board's, whichever is shown).
+    prisma.post.groupBy({
+      by: ["boardId"],
+      where: { projectId: project.id, status: { in: ROADMAP.map((c) => c.status) }, duplicateOfId: null, boardId: { in: project.boards.map((b) => b.id) }, ...visiblePosts(viewer) },
+      _count: true,
+    }),
   ]);
+  const counts = new Map(perBoard.map((row) => [row.boardId, row._count]));
   const voted = new Set(votes.map((vote) => vote.postId));
   const entries = new Map<string, { number: number; title: string }>();
   for (const { postId, entry } of shipped) {
@@ -71,8 +80,8 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
     const params = new URLSearchParams({ ...(board && { board: board.slug }), ...(key !== "planned" && { column: key }) });
     return params.size > 0 ? `${at("/roadmap")}?${params}` : at("/roadmap");
   };
-  // New idea: on the board shown (or the only one), or a pick of them.
-  const ideaBoard = board ?? (project.boards.length === 1 ? project.boards[0] : undefined);
+  // New post: on the board shown, or a pick of every board (one board: its own).
+  const postBoards = (board ? [board] : project.boards).map((b) => ({ name: b.name, postButton: b.postButton, href: `${at(boardPath(b))}?new` }));
   // A board's chip keeps the column open on phones (`?column=`).
   const boardHref = (slug?: string) => {
     const params = new URLSearchParams({ ...(slug && { board: slug }), ...(column !== "planned" && { column }) });
@@ -81,73 +90,39 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
   const now = new Date();
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* New idea beside the title: the page's one action; the line under both. */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="font-heading text-[2.25rem] leading-tight font-[650] tracking-[-0.022em] sm:text-5xl">Roadmap</h1>
-          <div className="shrink-0">
-            {ideaBoard ? (
-              <Link href={`${at(boardPath(ideaBoard))}?new`} className={buttonVariants({ size: "lg", className: "font-semibold" })}>
-                <PlusIcon />
-                New idea
-              </Link>
-            ) : (
-              project.boards.length > 1 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger render={<Button size="lg" className="font-semibold" />}>
-                    <PlusIcon />
-                    New idea
-                    <ChevronDownIcon />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-auto min-w-40">
-                    {project.boards.map((b) => (
-                      <DropdownMenuItem key={b.slug} render={<Link href={`${at(boardPath(b))}?new`} />}>
-                        {b.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )
+    <div className="flex flex-col gap-6 sm:gap-8">
+      <PortalPageHeader
+        title="Roadmap"
+        description={
+          <>
+            What&apos;s planned, what we&apos;re building and what&apos;s done.
+            {/* Said on the cards' vote buttons too. */}
+            {!voter && (
+              <>
+                {" "}
+                <SignInLink className="font-medium text-primary underline underline-offset-[3px]">Sign in</SignInLink> to vote.
+              </>
             )}
-          </div>
-        </div>
-        <p className="text-base text-muted-foreground sm:text-lg">
-          What&apos;s planned, what we&apos;re building and what&apos;s done.
-          {/* Said on the cards' vote buttons too. */}
-          {!voter && (
-            <>
-              {" "}
-              <SignInLink className="font-medium text-foreground underline decoration-primary/55 decoration-[1.5px] underline-offset-[3px]">Sign in</SignInLink> to
-              vote.
-            </>
-          )}
-        </p>
-      </div>
-      {/* The boards, one at a time or all: chips (wrapping on phones). */}
-      {project.boards.length > 1 && (
-        <nav aria-label="Board" className="flex flex-wrap gap-2">
-          {[{ slug: undefined, name: "All boards" }, ...project.boards].map((b) => {
-            const active = b.slug === board?.slug;
-            return (
-              <Link
-                key={b.slug ?? "*"}
-                href={boardHref(b.slug)}
-                scroll={false}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "inline-flex h-9 shrink-0 items-center rounded-full px-4 text-[0.9375rem] font-medium whitespace-nowrap transition-colors",
-                  active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {b.name}
-              </Link>
-            );
-          })}
-        </nav>
-      )}
+          </>
+        }
+        pills={
+          // The boards, one at a time or all, with their ideas' counts.
+          project.boards.length > 1 && (
+            <FilterPills
+              label="Board"
+              current={boardHref(board?.slug)}
+              items={[
+                { title: "All boards", href: boardHref(), count: [...counts.values()].reduce((sum, n) => sum + n, 0) },
+                ...project.boards.map((b) => ({ title: b.name, href: boardHref(b.slug), count: counts.get(b.id) ?? 0 })),
+              ]}
+            />
+          )
+        }
+        actions={<NewPostMenu boards={postBoards} />}
+        phoneActions={<NewPostMenu boards={postBoards} round />}
+      />
       {/* Below tablet width, a column at a time, picked from a segmented control. */}
-      <nav aria-label="Columns" className="flex rounded-xl bg-muted p-1 ring-1 ring-border md:hidden">
+      <nav aria-label="Columns" className="flex rounded-xl bg-muted p-1 md:hidden">
         {ROADMAP.map(({ status, key }, i) => {
           const active = key === column;
           return (
@@ -168,7 +143,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
         })}
       </nav>
       {/* Three columns, each headed by its status's icon; a card per idea. */}
-      <div className="grid gap-x-10 gap-y-10 border-t pt-2 max-md:border-t-0 max-md:pt-0 md:grid-cols-3">
+      <div className="grid gap-x-6 gap-y-10 md:grid-cols-3">
         {ROADMAP.map(({ status, key }, i) => {
           const posts = columns[i]!;
           const Icon = STATUS_ICONS[status];
@@ -179,7 +154,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
               aria-describedby={`roadmap-${status}-meaning`}
               className={cn("flex min-w-0 flex-col gap-3", key !== column && "max-md:hidden")}
             >
-              <div className="flex flex-col gap-1 border-b pt-4 pb-4 max-md:border-b-0 max-md:pt-0 max-md:pb-0">
+              <div className="flex flex-col gap-1 pb-1 max-md:pb-0">
                 {/* Below tablet width the control over the column names it. */}
                 <h2 className="flex items-center gap-2.5 font-heading text-[1.1875rem] font-[650] tracking-[-0.01em] max-md:sr-only">
                   <Icon aria-hidden data-status-icon className={cn("size-5 shrink-0", STATUS_TEXT[status])} />
@@ -191,7 +166,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                 </p>
               </div>
               {posts.length === 0 ? (
-                <p className="rounded-xl border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">Nothing here yet.</p>
+                <p className="rounded-xl bg-muted px-3 py-8 text-center text-sm text-muted-foreground">Nothing here yet.</p>
               ) : (
                 <ul className="flex flex-col gap-2.5">
                   {posts.map((post) => {
@@ -235,7 +210,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                           <Link
                             href={at(`/changelog/${entry.number}`)}
                             aria-label={`In the changelog: ${entry.title}`}
-                            className="mt-3 inline-flex items-center gap-1.5 self-start text-sm font-semibold text-soft-foreground hover:underline"
+                            className="mt-3 inline-flex items-center gap-1.5 self-start text-sm font-semibold text-primary hover:underline"
                           >
                             <CheckIcon aria-hidden className="size-3.5" />
                             In the changelog
