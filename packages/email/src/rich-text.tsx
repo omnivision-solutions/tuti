@@ -3,10 +3,10 @@ import { type Doc, isMediaId, isPixelSize, isSafeLink, isVideo } from "@tuti/con
 import { emailImageKey, EMAIL_IMAGE_WIDTH, type MediaUrls } from "@tuti/content/media";
 import { Fragment, type ReactNode } from "react";
 
-import { colors } from "./layout";
+import { accentColors, colors } from "./layout";
 
 type Node = NonNullable<Doc["content"]>[number];
-type Context = { media?: MediaUrls; linkUrl: string; tight?: boolean };
+type Context = { media?: MediaUrls; linkUrl: string; accent: string; tight?: boolean };
 
 /** Width of the text inside Layout's card (480 container − 2×24 padding − 2×24 card padding). */
 export const CONTENT_WIDTH = 384;
@@ -20,10 +20,10 @@ const mono = { fontFamily: "SFMono-Regular, Menlo, Consolas, monospace", fontSiz
  * skipped and unsafe links render as text. Images use the email JPEG from the image
  * job, from `mediaUrls` (left out without one there); those URLs must keep working
  * (lastingMediaUrls in apps/web). Videos become a link to `linkUrl`, the page where
- * they play (e.g. the changelog entry).
+ * they play (e.g. the changelog entry). Links take the project's `accent` where it reads as text (accentColors' `link`).
  */
-export function EmailRichText({ doc, mediaUrls, linkUrl }: { doc: Doc; mediaUrls?: MediaUrls | null; linkUrl: string }) {
-  return <>{children(doc, { media: mediaUrls ?? undefined, linkUrl })}</>;
+export function EmailRichText({ doc, mediaUrls, linkUrl, accent }: { doc: Doc; mediaUrls?: MediaUrls | null; linkUrl: string; accent?: string | null }) {
+  return <>{children(doc, { media: mediaUrls ?? undefined, linkUrl, accent: accentColors(accent).link })}</>;
 }
 
 function children(node: Node, ctx: Context): ReactNode[] {
@@ -34,7 +34,7 @@ function renderNode(node: Node, key: number, ctx: Context): ReactNode {
   const inner = (next: Context = ctx) => children(node, next);
   switch (node.type) {
     case "text":
-      return renderText(node, key);
+      return renderText(node, key, ctx.accent);
     case "paragraph":
       return (
         <p key={key} style={{ ...text, margin: ctx.tight ? 0 : "0 0 16px" }}>
@@ -99,7 +99,7 @@ function renderNode(node: Node, key: number, ctx: Context): ReactNode {
         <p key={key} style={{ margin: "0 0 16px" }}>
           <Button
             href={ctx.linkUrl}
-            style={{ color: colors.green, border: `1px solid ${colors.border}`, borderRadius: 10, padding: "10px 16px", fontSize: 15, fontWeight: 600 }}
+            style={{ color: ctx.accent, border: `1px solid ${colors.border}`, borderRadius: 10, padding: "10px 16px", fontSize: 15, fontWeight: 600 }}
           >
             Watch the video
           </Button>
@@ -130,7 +130,7 @@ function renderNode(node: Node, key: number, ctx: Context): ReactNode {
   }
 }
 
-function renderText(node: Node, key: number): ReactNode {
+function renderText(node: Node, key: number, accent: string): ReactNode {
   let element: ReactNode = node.text ?? "";
   for (const mark of node.marks ?? []) {
     switch (mark.type) {
@@ -146,7 +146,7 @@ function renderText(node: Node, key: number): ReactNode {
       case "link":
         if (isSafeLink(mark.attrs?.href)) {
           element = (
-            <a href={mark.attrs.href} style={{ color: colors.green, textDecoration: "underline" }}>
+            <a href={mark.attrs.href} style={{ color: accent, textDecoration: "underline" }}>
               {element}
             </a>
           );

@@ -80,6 +80,20 @@ describe("when a post ships", () => {
     expect(emailsTo(author.email)).toHaveLength(1);
   });
 
+  test("the email takes the project's accent colour; Tuti's wordmark stays green", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
+    const voter = await verified("Voter");
+    const post = await call(createPost, as(owner.id), { board: "feature-requests", title: "Dark mode" });
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+
+    await setStatus(post.number, "completed");
+
+    const [email] = emailsTo(voter.email);
+    expect(email!.html).toContain("border-top:4px solid #7c3aed");
+    expect(email!.html).toMatch(/background-color:#7c3aed;color:#ffffff/);
+    expect(email!.html).toContain("color:#12804a");
+  });
+
   test("on a private portal, only people who may still read it hear about it: its SSO users and verified readers", async () => {
     const [author, voter, reader] = [await verified("Author"), await verified("Voter"), await verified("Reader")];
     const unverified = await signUp("Unverified reader");

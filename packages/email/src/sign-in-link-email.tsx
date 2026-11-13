@@ -1,18 +1,18 @@
 import { Button, Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { buttonStyle, colors, Layout } from "./layout";
 
-type SignInLinkProps = { projectName: string; url: string; minutes: number };
+type SignInLinkProps = { projectName: string; url: string; minutes: number; accent?: string | null };
 
-export function SignInLinkEmail({ projectName, url, minutes }: SignInLinkProps) {
+export function SignInLinkEmail({ projectName, url, minutes, accent }: SignInLinkProps) {
   return (
-    <Layout preview={`Your sign-in link for ${projectName}.`}>
+    <Layout preview={`Your sign-in link for ${projectName}.`} accent={accent}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         Here&apos;s your link to sign in to <strong>{projectName}</strong>.
       </Text>
       <Button
         href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
+        style={buttonStyle(accent)}
       >
         Sign in
       </Button>

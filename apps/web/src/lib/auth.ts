@@ -31,10 +31,10 @@ async function sendSignInLink({ email, token, metadata }: { email: string; token
     url.searchParams.set("next", next);
   }
   // From the project (see projectSender); it never waits for approval: people need to sign in.
-  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, brandColor: true } });
   await sendEmail({
     to: email,
-    ...signInLinkEmail({ projectName, url: url.toString(), minutes: SIGN_IN_LINK_MINUTES }),
+    ...signInLinkEmail({ projectName, url: url.toString(), minutes: SIGN_IN_LINK_MINUTES, accent: project?.brandColor }),
     ...(project && (await projectSender(project.id))),
   });
 }
@@ -50,13 +50,13 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
   const { project } = await prisma.signInLink.update({
     where: { id: linkId },
     data: { tokenHash: hashSecret(token) },
-    select: { project: { select: { id: true, name: true } } },
+    select: { project: { select: { id: true, name: true, brandColor: true } } },
   });
   const link = new URL("/app/auth/reset-password", appUrl());
   link.searchParams.set("token", token);
   await sendEmail({
     to: user.email,
-    ...passwordResetEmail({ siteName: project?.name ?? "Tuti", url: link.toString(), minutes: PASSWORD_RESET_MINUTES }),
+    ...passwordResetEmail({ siteName: project?.name ?? "Tuti", url: link.toString(), minutes: PASSWORD_RESET_MINUTES, accent: project?.brandColor }),
     // A portal's reset comes from its project; the app's from Tuti.
     ...(project && (await projectSender(project.id))),
   });

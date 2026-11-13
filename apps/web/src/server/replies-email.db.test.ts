@@ -47,6 +47,8 @@ const emailsTo = (address: string) => mailbox.emails.filter((email) => email.to.
 
 test("a reply they haven't seen a minute on is emailed from the project's address, Reply-To the conversation's, threaded", async () => {
   const { project, subdomain, team, kim } = await setup();
+  // In the project's accent colour.
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
   await call(replyToConversation, team, { number: 1, body: "It's under Billing → Invoices." });
   // Not yet a minute.
   await run();
@@ -55,6 +57,7 @@ test("a reply they haven't seen a minute on is emailed from the project's addres
   await aMinuteOn(project.id);
   await run();
   const [email] = emailsTo(kim);
+  expect(email!.html).toContain("border-top:4px solid #7c3aed");
   expect(email).toMatchObject({
     from: `"Olive Owner at ${project.name}" <support@${subdomain}.${DOMAIN}>`,
     subject: "Re: Invoice missing",

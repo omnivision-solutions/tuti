@@ -1,19 +1,19 @@
 import { Button, Text } from "@react-email/components";
 
-import { colors, Layout } from "./layout";
+import { buttonStyle, colors, Layout } from "./layout";
 
-/** `siteName` is where it was asked for: a portal's project name, or Tuti for the app. */
-type PasswordResetProps = { siteName: string; url: string; minutes: number };
+/** `siteName` is where it was asked for: a portal's project name, or Tuti for the app; `accent` the portal's colour. */
+type PasswordResetProps = { siteName: string; url: string; minutes: number; accent?: string | null };
 
-export function PasswordResetEmail({ siteName, url, minutes }: PasswordResetProps) {
+export function PasswordResetEmail({ siteName, url, minutes, accent }: PasswordResetProps) {
   return (
-    <Layout preview={`Set a new password for ${siteName}.`}>
+    <Layout preview={`Set a new password for ${siteName}.`} accent={accent}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         Someone asked to reset the password for your account on <strong>{siteName}</strong>.
       </Text>
       <Button
         href={url}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
+        style={buttonStyle(accent)}
       >
         Set a new password
       </Button>

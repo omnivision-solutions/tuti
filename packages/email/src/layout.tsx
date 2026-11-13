@@ -1,4 +1,5 @@
 import { Body, Column, Container, Head, Html, Img, Preview, Row, Section, Text } from "@react-email/components";
+import { luminance, textColorOn } from "@tuti/shared/colors";
 import type { ReactNode } from "react";
 
 // Brand colours: the light theme tokens in packages/ui/src/globals.css, as hex.
@@ -20,15 +21,37 @@ export const colors = {
   destructiveSoft: "#fde6e7",
 };
 
+/**
+ * A project's accent (`Project.brandColor`, `#rrggbb`; null for Tuti's green) in the emails sent on its behalf: the
+ * colour, or the text colour where it's too faint on the white card (under 3:1, as the portal's brandCss), with black
+ * or white text on it; and for text in it (`link`: links at body size), the colour only where it reads as text (4.5:1).
+ */
+export function accentColors(accent?: string | null): { accent: string; onAccent: string; link: string } {
+  if (!accent || !/^#[0-9a-f]{6}$/i.test(accent)) {
+    return { accent: colors.green, onAccent: colors.onGreen, link: colors.green };
+  }
+  // Contrast with white is 1.05 / (L + 0.05).
+  const contrast = 1.05 / (luminance(accent) + 0.05);
+  const shown = contrast >= 3 ? accent : colors.text;
+  return { accent: shown, onAccent: textColorOn(shown), link: contrast >= 4.5 ? accent : colors.text };
+}
+
+/** The main button's style, in the project's accent (accentColors). */
+export function buttonStyle(accent?: string | null) {
+  const { accent: backgroundColor, onAccent: color } = accentColors(accent);
+  return { backgroundColor, color, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 };
+}
+
 /** The parrot mark, from the app's public files (an email can't show the SVG): none without APP_URL. */
 const logoUrl = () => (process.env.APP_URL ? new URL("/api/email-logo.png", process.env.APP_URL).href : null);
 
 /**
  * The frame every Tuti email shares. Those to a team about Tuti itself name the part of Tuti they're from
  * (`label`: "Autopilot"), with the logo and a line on what Tuti is. Those a team's own customers get (on the
- * team's behalf) keep the plain wordmark they always had, with nothing more advertising Tuti.
+ * team's behalf) keep the plain wordmark they always had, with nothing more advertising Tuti, and take the project's
+ * `accent` (accentColors) for the card's top border.
  */
-export function Layout({ preview, label, children }: { preview: string; label?: string; children: ReactNode }) {
+export function Layout({ preview, label, accent, children }: { preview: string; label?: string; accent?: string | null; children: ReactNode }) {
   const logo = label ? logoUrl() : null;
   return (
     <Html lang="en">
@@ -50,10 +73,11 @@ export function Layout({ preview, label, children }: { preview: string; label?: 
               </Column>
             </Row>
           ) : (
+            // Tuti's own mark stays Tuti's green whatever the project's accent, like the portal's "Powered by tuti".
             <Text style={{ fontSize: 20, fontWeight: 700, color: colors.green, margin: "0 0 16px" }}>tuti</Text>
           )}
           <Section
-            style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderTop: `4px solid ${colors.green}`, borderRadius: 14, padding: "4px 20px 20px" }}
+            style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, borderTop: `4px solid ${accentColors(accent).accent}`, borderRadius: 14, padding: "4px 20px 20px" }}
           >
             {children}
           </Section>

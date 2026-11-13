@@ -134,7 +134,7 @@ export const addPortalReaders = defineOperation({
   run: async ({ actor, projectId }, input) => {
     await requirePlan(projectId, "privatePortal");
     const emails = [...new Set(input.emails)];
-    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, portalAccess: true } });
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, portalAccess: true, brandColor: true } });
     const notify = input.notify && project.portalAccess === "PRIVATE" && emailConfigured();
     // Before the readers are added: if it failed after, a retry would find them added and email nobody.
     const signInUrl = notify ? `${await portalAddress(project.slug)}/sign-in` : "";
@@ -169,7 +169,7 @@ export const addPortalReaders = defineOperation({
           sendEmail({
             to: email,
             ...(await sender),
-            ...portalReaderEmail({ inviterName: inviter?.name ?? project.name, projectName: project.name, email, url }),
+            ...portalReaderEmail({ inviterName: inviter?.name ?? project.name, projectName: project.name, email, url, accent: project.brandColor }),
           }),
         ),
       );

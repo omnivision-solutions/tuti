@@ -2,7 +2,7 @@ import { Button, Link, Text } from "@react-email/components";
 import type { Doc } from "@tuti/content";
 import type { MediaUrls } from "@tuti/content/media";
 
-import { colors, Layout } from "./layout";
+import { buttonStyle, colors, Layout } from "./layout";
 import { EmailRichText } from "./rich-text";
 
 /** How much of the reply the email quotes; the rest is on the post. */
@@ -18,15 +18,17 @@ type ReplyProps = {
   mediaUrls?: MediaUrls | null;
   postUrl: string;
   unsubscribeUrl: string;
+  /** The project's accent (Project.brandColor; null for Tuti's green): see accentColors. */
+  accent?: string | null;
 };
 
 /** The team's reply to a post, sent to the people who voted for it (Email voters). */
-export function ReplyEmail({ projectName, authorName, postTitle, text, doc, mediaUrls, postUrl, unsubscribeUrl }: ReplyProps) {
+export function ReplyEmail({ projectName, authorName, postTitle, text, doc, mediaUrls, postUrl, unsubscribeUrl, accent }: ReplyProps) {
   const quoted = text.length > QUOTED ? `${text.slice(0, QUOTED).trimEnd()}…` : text;
   // A comment's images are top-level blocks (its profile has no lists or quotes to hold one).
   const images = doc?.content?.filter((node) => node.type === "image") ?? [];
   return (
-    <Layout preview={`${authorName} replied to ${postTitle}`}>
+    <Layout preview={`${authorName} replied to ${postTitle}`} accent={accent}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         {authorName} from {projectName} replied to <strong>{postTitle}</strong>:
       </Text>
@@ -36,10 +38,10 @@ export function ReplyEmail({ projectName, authorName, postTitle, text, doc, medi
           {quoted}
         </Text>
       )}
-      {images.length > 0 && <EmailRichText doc={{ type: "doc", content: images }} mediaUrls={mediaUrls} linkUrl={postUrl} />}
+      {images.length > 0 && <EmailRichText doc={{ type: "doc", content: images }} mediaUrls={mediaUrls} linkUrl={postUrl} accent={accent} />}
       <Button
         href={postUrl}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
+        style={buttonStyle(accent)}
       >
         See the post
       </Button>

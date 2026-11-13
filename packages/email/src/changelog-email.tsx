@@ -2,7 +2,7 @@ import { Button, Heading, Img, Link, Text } from "@react-email/components";
 import { type Doc, toPlainText } from "@tuti/content";
 import type { MediaUrls } from "@tuti/content/media";
 
-import { colors, Layout } from "./layout";
+import { buttonStyle, colors, Layout } from "./layout";
 import { CONTENT_WIDTH, EmailRichText } from "./rich-text";
 
 type ChangelogProps = {
@@ -15,21 +15,23 @@ type ChangelogProps = {
   /** Lasting URLs of its images' files (lastingMediaUrls in apps/web); images without one are left out. */
   mediaUrls?: MediaUrls | null;
   unsubscribeUrl: string;
+  /** The project's accent (Project.brandColor; null for Tuti's green): see accentColors. */
+  accent?: string | null;
 };
 
 /** A published changelog entry, in full, to the changelog's subscribers. */
-export function ChangelogEmail({ projectName, entryTitle, entryUrl, doc, coverUrl, mediaUrls, unsubscribeUrl }: ChangelogProps) {
+export function ChangelogEmail({ projectName, entryTitle, entryUrl, doc, coverUrl, mediaUrls, unsubscribeUrl, accent }: ChangelogProps) {
   return (
-    <Layout preview={toPlainText(doc).slice(0, 140) || entryTitle}>
+    <Layout preview={toPlainText(doc).slice(0, 140) || entryTitle} accent={accent}>
       <Text style={{ fontSize: 13, color: colors.muted, margin: "16px 0 0" }}>New from {projectName}</Text>
       <Heading as="h1" style={{ fontSize: 22, lineHeight: "30px", color: colors.text, margin: "4px 0 16px" }}>
         {entryTitle}
       </Heading>
       {coverUrl && <Img src={coverUrl} alt={entryTitle} width={CONTENT_WIDTH} style={{ borderRadius: 10, margin: "0 0 16px", maxWidth: "100%", height: "auto" }} />}
-      <EmailRichText doc={doc} mediaUrls={mediaUrls} linkUrl={entryUrl} />
+      <EmailRichText doc={doc} mediaUrls={mediaUrls} linkUrl={entryUrl} accent={accent} />
       <Button
         href={entryUrl}
-        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
+        style={buttonStyle(accent)}
       >
         See the update
       </Button>

@@ -275,7 +275,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
         email: true,
         subject: true,
         replyToken: true,
-        project: { select: { name: true, plan: true, emailDomain: { select: { domain: true, address: true, verifiedAt: true } } } },
+        project: { select: { name: true, plan: true, brandColor: true, emailDomain: { select: { domain: true, address: true, verifiedAt: true } } } },
       },
     }),
     prisma.conversationMessage.findMany({
@@ -353,6 +353,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
         projectName: conversation.project.name,
         subject: conversation.subject,
         messages: messages.map((m) => ({ name: m.authorUser?.name ?? conversation.project.name, body: m.body })),
+        accent: conversation.project.brandColor,
       }),
     });
   } catch (error) {
