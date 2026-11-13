@@ -721,6 +721,10 @@ test("the portal shows the project's own widget, until the team turns it off in 
   // There, an open panel is the whole screen, over the launcher: its tabs at the bottom right take taps.
   await visitor.reload();
   await launcher.click();
+  // Edge to edge, as on a customer's site: no strip of the portal down its side (the room the portal keeps for a scrollbar).
+  const frame = visitor.locator('iframe[title="Feedback"]');
+  await expect.poll(async () => await frame.boundingBox()).toEqual({ x: 0, y: 0, width: 390, height: 844 });
+  await checkpoint(visitor, "portal-widget-open-phone", { fullPage: false });
   const phonePanel = visitor.frameLocator('iframe[title="Feedback"]');
   await phonePanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await expect(phonePanel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");

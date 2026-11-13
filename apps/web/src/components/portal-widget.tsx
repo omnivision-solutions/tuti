@@ -61,8 +61,10 @@ export function PortalWidget({
   }
   return (
     <>
-      {/* Room at the end of the page on phones only for a launcher there is. */}
-      <style>{`body > button[aria-controls="tuti-widget"] { z-index: 45 !important; } #tuti-widget { z-index: 46 !important; }${launcher ? " @media (width < 48rem) { body { padding-bottom: 5.5rem; } }" : ""}`}</style>
+      {/* Room at the end of the page on phones only for a launcher there is. Where the open panel is the whole screen (the
+          loader's phone width), no room kept for a scrollbar either: a fixed panel stops short of it, leaving a strip of
+          the portal down its side. (Unlayered, over the portal's base rule.) */}
+      <style>{`body > button[aria-controls="tuti-widget"] { z-index: 45 !important; } #tuti-widget { z-index: 46 !important; } @media (max-width: 640px) { html { scrollbar-gutter: auto; } }${launcher ? " @media (width < 48rem) { body { padding-bottom: 5.5rem; } }" : ""}`}</style>
       <script src={src} data-project={slug} data-on-portal={base} {...(!launcher && { "data-hide-launcher": "" })} async />
     </>
   );
