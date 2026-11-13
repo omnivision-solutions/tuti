@@ -1186,8 +1186,12 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("href", "/docs");
   // An underlined row the whole width under the site bar, which gives it its line; the open tab underlined in the foreground.
-  await expect(visitor.locator("header.portal-header")).toHaveCSS("border-bottom-width", "0px");
-  await expect(visitor.locator("[data-part-row]")).toHaveCSS("border-bottom-width", "1px");
+  // (It covers the header's own line, which stays for when the row is hidden.)
+  const header = (await visitor.locator("header.portal-header").boundingBox())!;
+  const row = visitor.locator("[data-part-row]");
+  expect((await row.boundingBox())!.y).toBe(header.y + header.height - 1);
+  await expect(row).toHaveCSS("background-color", await token(visitor, "--background"));
+  await expect(row).toHaveCSS("border-bottom-width", "1px");
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveCSS("border-bottom-color", await token(visitor, "--foreground"));
   await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveCSS("border-bottom-color", "rgba(0, 0, 0, 0)");
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks"]);
@@ -1228,8 +1232,6 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
   await expect(docsTabs).toHaveCount(0);
   await expect(visitor.getByRole("navigation", { name: "Boards" })).toHaveCount(0);
-  // The site bar has its line back.
-  await expect(visitor.locator("header.portal-header")).toHaveCSS("border-bottom-width", "1px");
   // The first tab has one address: /docs.
   await visitor.goto("/docs/api-reference");
   await expect(visitor).toHaveURL(/\/docs$/);
@@ -2350,6 +2352,55 @@ test("an article ends with the previous and next in reading order, related ones,
   await expect(steps.getByRole("link")).toHaveText([/Next\s*Installing/]);
   await visitor.goto("/docs/paying-invoices");
   await expect(steps.getByRole("link")).toHaveText([/Previous\s*Plans/]);
+});
+
+test("on the portal an article's asides are fills: inline code, callouts, details and step numbers, and a code block's label strip", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  const text = (value: string, marks?: object[]) => ({ type: "text", text: value, ...(marks && { marks }) });
+  const p = (...content: object[]) => ({ type: "paragraph", content });
+  const code = (value: string) => text(value, [{ type: "code" }]);
+  const steps = { type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [text("Open Settings")] }] }] };
+  const content = {
+    type: "doc",
+    content: [
+      p(text("Run "), code("acme login"), text(" first.")),
+      steps,
+      { type: "blockquote", content: [p(text("Then run "), code("acme sync"), text("."))] },
+      { type: "details", content: [{ type: "detailsSummary", content: [text("More")] }, { type: "detailsContent", content: [p(text("Or run "), code("acme sync --all"), text("."))] }] },
+      { type: "codeBlock", attrs: { language: "bash", filename: "Terminal" }, content: [text("acme sync --all")] },
+    ],
+  };
+  const article = await api("/articles", { title: "Syncing", content });
+  await api(`/articles/${article.slug}/publish`, {});
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto(`/docs/${article.slug}`);
+  const main = visitor.getByRole("main");
+  const [grey, card] = [await token(visitor, "--secondary"), await token(visitor, "--card")];
+  const background = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const before = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element, "::before").backgroundColor);
+  // On the paper: inline code and a step's number on the grey fill, with no edge.
+  const inline = main.locator("p > code").filter({ hasText: "acme login" });
+  expect(await background(inline)).toBe(grey);
+  await expect(inline).toHaveCSS("border-top-width", "0px");
+  expect(await before(main.locator(".rich-steps > li").first())).toBe(grey);
+  // A callout and a details block are grey fills without an edge; inline code in them on the card's colour.
+  const callout = main.locator("blockquote");
+  expect(await background(callout)).toBe(grey);
+  await expect(callout).toHaveCSS("border-top-width", "0px");
+  expect(await background(callout.locator("code"))).toBe(card);
+  const details = main.locator(".rich-details");
+  expect(await background(details)).toBe(grey);
+  await expect(details).toHaveCSS("border-top-width", "0px");
+  await details.getByText("More").click();
+  expect(await background(details.locator("code"))).toBe(card);
+  // A code block's label in a grey strip, no line under it.
+  const strip = main.getByRole("figure", { name: "Terminal" }).locator("figcaption");
+  expect(await background(strip)).toBe(grey);
+  await expect(strip).toHaveCSS("border-bottom-width", "0px");
 });
 
 test("a link in an article to another of the portal's articles stays on the portal and previews it; in the widget it opens in the panel", async ({ browser }, testInfo) => {

@@ -785,6 +785,11 @@
 :root:has([data-portal-top]) .article-text :where(.rich-steps > li:not(:last-child))::after {
   content: none;
 }
+/* On a fill (a callout, a details block), inline code and step numbers on the card's colour, so they still stand out. */
+:root:has([data-portal-top]) .article-text :where(blockquote, .rich-details) :where(:not(pre) > code),
+:root:has([data-portal-top]) .article-text :where(blockquote, .rich-details) :where(.rich-steps > li)::before {
+  background: var(--color-card);
+}
 
 /* Pointer capture keeps resizing outside the gap; descendants keep the same cursor and cannot select text. */
 :root[data-pane-resizing],
