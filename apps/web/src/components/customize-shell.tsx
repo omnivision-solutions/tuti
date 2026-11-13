@@ -54,14 +54,14 @@ const PreviewContext = createContext<Preview>({ reload: () => {}, version: 0, dr
 /** The preview beside a Customize section's settings (a no-op anywhere else). */
 export const usePreview = () => useContext(PreviewContext);
 
+const snapshotOf = (data: FormData) => JSON.stringify([...data.entries()].map(([name, value]) => [name, typeof value === "string" ? value : ""]));
+
 /**
  * A Customize section's form: "Save changes" in the panel's header submits it (`save`, an action like
  * useActionState's), enabled once something in it differs from what was saved and while nothing is
  * `busy` (an upload); `toDraft` (when given) turns what's in it into a change for the preview, shown as
  * it's made. Spread `form` on the form. Fields set by code rather than typing say so with useFieldChanged.
  */
-const snapshotOf = (data: FormData) => JSON.stringify([...data.entries()].map(([name, value]) => [name, typeof value === "string" ? value : ""]));
-
 export function useCustomizeForm({
   save,
   onSaved,
