@@ -98,7 +98,7 @@ export async function skipSetup(page: Page, slug: string) {
  */
 /** Posts an idea on the portal board that's open: its New idea, then the dialog's form. */
 export async function postFeedback(page: Page, title: string) {
-  await page.getByRole("button", { name: "New idea" }).click();
+  await page.getByRole("button", { name: "New post" }).click();
   const dialog = page.getByRole("dialog", { name: "Share an idea" });
   await dialog.getByLabel("Title").fill(title);
   await dialog.getByRole("button", { name: "Submit post" }).click();

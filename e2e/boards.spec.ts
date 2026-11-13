@@ -7,6 +7,8 @@ import { APP_URL, portalUrl } from "./env";
 import { apiFor, createProject, newPerson, signUp } from "./helpers";
 
 test("a team adds, renames and deletes boards; old board links keep working", async ({ browser }, testInfo) => {
+  // A long journey: the team's boards, then the portal's overview, board pages and phones.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -69,26 +71,74 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/feedback/bug-reports");
   await expect(visitor).toHaveURL(/\/feedback\/bugs$/);
-  // The header's Feedback opens the first board; under it, a row of the boards.
+  // With two boards the header's Feedback opens their overview; a board's rail lists them.
   const parts = visitor.getByRole("navigation", { name: "Portal" });
   await expect(parts.getByRole("link")).toHaveText(["Feedback", "Roadmap", "Changelog", "Docs"]);
   await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
-  await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("href", "/feedback/feature-requests");
+  await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("href", "/feedback");
   const boards = visitor.getByRole("navigation", { name: "Boards" });
   await expect(boards.getByRole("link", { name: "Bug reports" })).toHaveAttribute("aria-current", "page");
   await expect(boards.getByRole("link", { name: "Feature requests" })).not.toHaveAttribute("aria-current");
   await expect(visitor.getByText("Something broken? Tell us here.")).toBeVisible();
   await checkpoint(visitor, "portal-board-tabs");
+  // No second row of boards under the site bar: the rail has them.
+  await expect(boards).toHaveCount(1);
+  await expect(visitor.getByRole("complementary", { name: "About this board" }).getByRole("navigation", { name: "Boards" })).toBeVisible();
+
+  // The overview (the portal's home too): a card per board with its open ideas, the boards as pills, New post asks which board.
+  await visitor.goto("/");
+  await expect(visitor).toHaveURL(/\/feedback$/);
+  const overview = visitor.getByRole("main");
+  await expect(overview.getByRole("heading", { level: 1, name: "Feedback" })).toBeVisible();
+  await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
+  const pills = overview.getByRole("navigation", { name: "Boards" });
+  await expect(pills.getByRole("link")).toHaveText(["All boards 1", "Feature requests 1", "Bug reports 0"]);
+  await expect(pills.getByRole("link", { name: /^All boards/ })).toHaveAttribute("aria-current", "page");
+  const card = (name: string) => overview.getByRole("region", { name });
+  await expect(card("Feature requests").getByRole("link", { name: "Dark mode" })).toBeVisible();
+  // Shipped ideas aren't among a card's; they're under Recently shipped.
+  await expect(card("Feature requests").getByRole("link", { name: "CSV export" })).toHaveCount(0);
+  await expect(card("Feature requests")).toContainText("1 idea still to come");
+  await expect(card("Bug reports")).toContainText("Something broken? Tell us here.");
+  await expect(card("Bug reports")).toContainText("0 ideas still to come");
+  await expect(overview.getByRole("region", { name: "Recently shipped" }).getByRole("link", { name: "CSV export" })).toBeVisible();
+  await expect(overview.getByRole("button", { name: "Get updates" })).toBeVisible();
+  await overview.getByRole("button", { name: "New post" }).click();
+  const newPost = visitor.getByRole("menu");
+  await expect(newPost.getByRole("menuitem")).toHaveText(["New post Feature requests", "New post Bug reports"]);
+  await checkpoint(visitor, "portal-feedback-overview");
+  await newPost.getByRole("menuitem", { name: /Bug reports/ }).click();
+  await visitor.waitForURL(/\/feedback\/bugs$/);
+  await expect(visitor.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
+  await visitor.keyboard.press("Escape");
+  // Its search looks through every board.
+  await visitor.goto("/feedback?q=csv");
+  await expect(overview.getByRole("listitem").getByRole("link", { name: "CSV export" })).toBeVisible();
+  await expect(overview.getByRole("region", { name: "Feature requests" })).toHaveCount(0);
+  // A card's Open board opens it.
+  await visitor.goto("/feedback");
+  await card("Feature requests").getByRole("link", { name: "Open board" }).click();
+  await visitor.waitForURL(/\/feedback\/feature-requests$/);
+  // On a phone: round search and New post beside the title, the board pills scroll, nothing runs off the side.
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await visitor.goto("/feedback");
+  await expect(overview.getByRole("button", { name: "Search", exact: true })).toBeVisible();
+  await expect(overview.getByRole("button", { name: "New post" })).toBeVisible();
+  expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await checkpoint(visitor, "portal-feedback-overview-phone");
+  await visitor.setViewportSize({ width: 1280, height: 720 });
+  await visitor.goto("/feedback/bugs");
   // Roadmap has no row of its own.
   await parts.getByRole("link", { name: "Roadmap" }).click();
   await expect(visitor.getByRole("heading", { name: "Roadmap" })).toBeVisible();
   await expect(parts.getByRole("link", { name: "Roadmap" })).toHaveAttribute("aria-current", "page");
   await expect(parts.getByRole("link", { name: "Feedback" })).not.toHaveAttribute("aria-current");
   await expect(boards).toHaveCount(0);
-  // On a phone the header is one line: the parts are in its menu, with the boards.
+  // On a phone the header is one line: the parts are in its menu, with the boards; the page's pill row starts with a board switcher.
   await visitor.setViewportSize({ width: 390, height: 844 });
   await visitor.goto("/feedback/bugs");
-  await expect(boards).toBeVisible();
+  await expect(visitor.getByRole("button", { name: "Board: Bug reports" })).toBeVisible();
+  await expect(boards).toBeHidden();
   await expect(parts).toBeHidden();
   expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(visitor, "portal-header-phone");
@@ -147,11 +197,14 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   expect((await visitor.goto("/fedback"))?.status()).toBe(404);
   await expect(visitor.getByRole("heading", { name: "Page not found" })).toBeVisible();
   await expect(visitor.getByRole("banner")).toBeVisible();
-  // With one board there's no row of them.
+  // With one board there's no list of them, and Feedback (and /feedback) opens that board.
   await visitor.setViewportSize({ width: 1280, height: 800 });
-  await visitor.goto("/feedback/feature-requests");
+  await visitor.goto("/feedback");
+  await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
   await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
+  await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("href", "/feedback/feature-requests");
   await expect(boards).toHaveCount(0);
+  await expect(visitor.getByRole("button", { name: /^Board: / })).toHaveCount(0);
 });
 
 test("a board's own words for posting: the team sees them in a preview as they type, and the portal's button and form use them", async ({ browser }, testInfo) => {
@@ -167,6 +220,8 @@ test("a board's own words for posting: the team sees them in a preview as they t
   // Until the team writes its own, the preview shows the defaults.
   await expect(preview).toContainText("Submit post");
   await expect(preview).toContainText("Short, descriptive title");
+  // The Button names the portal's button that opens the form, and the form's own.
+  await expect(dialog.getByText("The button that opens the board's form on your portal, and the form's submit button")).toBeVisible();
   await dialog.getByLabel("Description").fill("What should we build next?");
   await dialog.getByLabel("Button").fill("Request a feature");
   await dialog.getByLabel("Title placeholder").fill("What should it do?");
@@ -190,11 +245,12 @@ test("a board's own words for posting: the team sees them in a preview as they t
   await expect(preview).not.toContainText("Not saved");
   await owner.keyboard.press("Escape");
 
-  // On the portal: the description under the name, and the board's words in its New idea dialog.
+  // On the portal: the description under the name, the board's button text as the header's button, and its words in the dialog.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
   await expect(ada.getByText("What should we build next?")).toBeVisible();
-  await ada.getByRole("button", { name: "New idea" }).click();
+  await expect(ada.getByRole("button", { name: "New post" })).toHaveCount(0);
+  await ada.getByRole("main").locator("header").getByRole("button", { name: "Request a feature" }).click();
   const form = ada.getByRole("dialog", { name: "Share an idea" }).locator("form");
   await expect(form.getByLabel("Title")).toHaveAttribute("placeholder", "What should it do?");
   await expect(form.getByRole("textbox", { name: "Details" }).locator("p")).toHaveAttribute("data-placeholder", "How would it help you?");
@@ -204,7 +260,7 @@ test("a board's own words for posting: the team sees them in a preview as they t
   // Posted (saving runs its jobs first, see postFeedback): the post is on the board, the dialog closed; it opens empty again.
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible({ timeout: 15_000 });
   await expect(ada.getByRole("dialog")).toHaveCount(0);
-  await ada.getByRole("button", { name: "New idea" }).click();
+  await ada.getByRole("main").locator("header").getByRole("button", { name: "Request a feature" }).click();
   await expect(form.getByLabel("Title")).toHaveValue("");
   await ada.keyboard.press("Escape");
   // The widget's Feedback tab uses the same words (signed in on the portal, it posts as them).

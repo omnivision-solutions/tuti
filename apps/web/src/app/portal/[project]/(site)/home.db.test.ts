@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
 import { getPortal, updatePortal } from "@/server/operations/portal";
@@ -7,7 +8,7 @@ import { createProject, redirectTarget, signUp, type TestUser } from "@/test/hel
 import FeedbackHome from "./feedback/page";
 import PortalHome from "./page";
 
-/** The portal's home opens what the team picked (Customize → Navigation → Home page): the first board unless they did. */
+/** The portal's home opens what the team picked (Customize → Navigation → Home page): Feedback (its one board, or its overview) unless they did. */
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -34,9 +35,16 @@ test("the first board, then the roadmap, the changelog or the docs once picked",
   }
 });
 
-test("/feedback opens the first board, whatever the home page", async () => {
+test("/feedback opens the only board, whatever the home page", async () => {
   await call(updatePortal, as(), { home: "docs" });
   expect(await redirectTarget(FeedbackHome({ params: Promise.resolve({ project: project.slug }) } as never))).toBe("/feedback/feature-requests");
+});
+
+test("with two boards on the portal, the home opens Feedback's overview (a Team only board doesn't count)", async () => {
+  await prisma.board.create({ data: { projectId: project.id, slug: "team", name: "Team", postVisibility: "TEAM" } });
+  expect(await home()).toBe("/feedback/feature-requests");
+  await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+  expect(await home()).toBe("/feedback");
 });
 
 test("each setting changes on its own; bad values are refused", async () => {

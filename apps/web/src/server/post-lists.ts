@@ -293,7 +293,7 @@ export function boardPosts(
   });
 }
 
-/** A project's boards `viewer` sees, for a portal board's sidebar, oldest first (as the header's row), each with how many ideas on it they see aren't done yet. */
+/** A project's boards `viewer` sees, for a portal board's sidebar and Feedback's overview, oldest first, each with how many ideas on it they see aren't done yet. */
 export function boardsWithCounts(projectId: string, viewer: PostViewer) {
   return prisma.board.findMany({
     where: { projectId, ...shownBoards(viewer) },
@@ -302,6 +302,8 @@ export function boardsWithCounts(projectId: string, viewer: PostViewer) {
       id: true,
       slug: true,
       name: true,
+      description: true,
+      postButton: true,
       _count: { select: { posts: { where: { duplicateOfId: null, status: { in: ACTIVE_STATUSES }, ...visiblePosts(viewer) } } } },
     },
   });

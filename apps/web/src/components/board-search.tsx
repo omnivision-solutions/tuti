@@ -7,13 +7,14 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SearchIcon } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 /**
  * A board's search: a form that navigates without a reload (so an idea being written on the page stays),
  * its box following changes to the address's search (`q`). One element throughout, so it keeps focus.
- * `children`: the hidden fields that go with the search. It searches as it's typed (a pause after the last key), and on Enter.
+ * `children`: the hidden fields that go with the search; `className`: the box's (a board header's is 36px high). It searches as it's typed (a pause after the last key), and on Enter.
  */
-export function BoardSearch({ action, q, children }: { action: string; q: string; children?: ReactNode }) {
+export function BoardSearch({ action, q, children, className }: { action: string; q: string; children?: ReactNode; className?: string }) {
   const router = useRouter();
   const [value, setValue] = useState(q);
   const [shown, setShown] = useState(q);
@@ -102,7 +103,7 @@ export function BoardSearch({ action, q, children }: { action: string; q: string
         placeholder="Search ideas"
         aria-label="Search ideas"
         // 16px on phones: iOS zooms into a smaller field as it's focused.
-        className="h-10 rounded-xl bg-background pl-10 text-base sm:h-11 md:text-[0.9375rem]"
+        className={cn("h-10 rounded-xl bg-background pl-10 text-base sm:h-11 md:text-[0.9375rem]", className)}
       />
       <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
     </Form>

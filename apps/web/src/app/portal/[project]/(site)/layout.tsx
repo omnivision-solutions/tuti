@@ -148,7 +148,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           </div>
         </div>
         </header>
-        {canRead && <PartRows boards={project.boards} docsTabs={docsTabs} />}
+        {canRead && <PartRows docsTabs={docsTabs} />}
         </PortalTop>
         {/* Without JavaScript the menu can't open: on phones and tablets, the team's links under the
             header. Not in it: however many lines they take, the header stays the height its scroll-padding allows for. */}

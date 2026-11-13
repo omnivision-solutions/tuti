@@ -541,7 +541,7 @@ test("a board opens on the ideas not done yet, the latest shipped in one line, t
   await checkpoint(visitor, "portal-board-recently-shipped-phone");
   await visitor.setViewportSize({ width: 1280, height: 720 });
   // Signed out, New idea's box takes an idea and shows the similar ones as it's typed.
-  await visitor.getByRole("button", { name: "New idea" }).click();
+  await visitor.getByRole("button", { name: "New post" }).click();
   const box = visitor.getByRole("dialog", { name: "Share an idea" });
   await box.getByLabel("Title").fill("Dark theme");
   await expect(box.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" })).toContainText("Dark mode");
@@ -552,7 +552,7 @@ test("a board opens on the ideas not done yet, the latest shipped in one line, t
   await expect(box.getByRole("button", { name: "Sign in to post" })).toBeFocused();
   // Signing in to post (Enter does it too) comes back to the board as it was: its sort, and the idea in the box.
   await visitor.goto("/feedback/feature-requests?sort=new");
-  await visitor.getByRole("button", { name: "New idea" }).click();
+  await visitor.getByRole("button", { name: "New post" }).click();
   await box.getByLabel("Title").fill("Dark theme");
   await box.getByLabel("Title").press("Enter");
   await visitor.waitForURL(/\/sign-in\?next=/);
@@ -920,7 +920,7 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   // The search keeps the order and looks through every status, the shipped one too (it's no longer only in Recently shipped).
   await expect(main.getByRole("region", { name: "Recently shipped" })).toBeVisible();
   // An idea half written in New idea's box stays there through a search.
-  await visitor.getByRole("button", { name: "New idea" }).click();
+  await visitor.getByRole("button", { name: "New post" }).click();
   const idea = visitor.getByRole("dialog", { name: "Share an idea" }).getByLabel("Title");
   await idea.fill("Calendar in week view");
   await visitor.keyboard.press("Escape");
@@ -934,7 +934,7 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await expect(main.getByRole("status").filter({ hasText: "ideas match" })).toHaveText('2 ideas match "sync"');
   await expect(main.getByRole("listitem").filter({ hasText: "Sync contacts" })).toContainText("Completed");
   await expect(main.getByRole("region", { name: "Recently shipped" })).toHaveCount(0);
-  await visitor.getByRole("button", { name: "New idea" }).click();
+  await visitor.getByRole("button", { name: "New post" }).click();
   await expect(idea).toHaveValue("Calendar in week view");
   await visitor.keyboard.press("Escape");
   // The tabs keep the search.
@@ -945,8 +945,8 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
   await expect(main.getByText("No ideas match", { exact: true })).toBeVisible();
   await expect(main.getByRole("status").filter({ hasText: "No ideas match" })).toHaveText('No ideas match "nothing like it"');
-  // Not there: New idea says so, and the empty list has the way to post it too; both open the box.
-  await expect(visitor.getByRole("complementary", { name: "About this board" }).getByRole("button", { name: "Not here? Post it" })).toBeVisible();
+  // Not there: the header's button says so, and the empty list has the way to post it too; both open the box.
+  await expect(main.locator("header").getByRole("button", { name: "Not here? Post it" })).toBeVisible();
   await checkpoint(visitor, "portal-board-search-no-match");
   await main.getByRole("button", { name: "Post it as a new idea" }).click();
   await expect(visitor.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
@@ -956,7 +956,7 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await visitor.waitForURL(/\?q=sync$/);
   await expect(main.getByRole("searchbox", { name: "Search ideas" })).toHaveValue("sync");
   // Under a search's results, the way to post it if it isn't among them.
-  await expect(visitor.getByRole("complementary", { name: "About this board" }).getByRole("button", { name: "New idea" })).toBeVisible();
+  await expect(main.locator("header").getByRole("button", { name: "New post" })).toBeVisible();
   await main.getByRole("button", { name: "Post it", exact: true }).click();
   await expect(visitor.getByRole("dialog", { name: "Share an idea" })).toBeVisible();
   await visitor.keyboard.press("Escape");
@@ -1023,7 +1023,12 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
       await page.goto("/feedback/feature-requests");
       await expect(page.getByRole("main").getByRole("link", { name: "Dark mode" })).toBeVisible();
       if (width === 390) {
+        // The search is a round button beside the title; its box is 16px (iOS zooms into a smaller one).
+        await page.getByRole("button", { name: "Search", exact: true }).click();
         await expect(page.getByRole("searchbox", { name: "Search ideas" })).toHaveCSS("font-size", "16px");
+        await checkpoint(page, `portal-board-phone-search-${colorScheme}`, { fullPage: false });
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("searchbox", { name: "Search ideas" })).toBeHidden();
       }
       const sized = page.getByRole("main").getByRole("listitem").filter({ has: page.getByRole("link", { name: "Dark mode" }) });
       const title = (await sized.getByRole("link", { name: "Dark mode" }).boundingBox())!;
@@ -1075,7 +1080,7 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   const background = (button: typeof voted) => button.evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(await background(voted)).not.toBe(await background(notVoted));
 
-  // The sidebar, beside the list: New idea, the boards with their ideas not done yet (this one marked), the latest shipped.
+  // The sidebar, beside the list: the boards with their ideas not done yet (this one marked), the latest shipped.
   const sidebar = ada.getByRole("complementary", { name: "About this board" });
   const boards = sidebar.getByRole("navigation", { name: "Boards" });
   await expect(boards.getByRole("link")).toHaveCount(2);
@@ -1165,12 +1170,21 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
       await page.goto("/feedback/feature-requests");
       await expect(page.getByRole("main").getByRole("button", { name: "Remove vote" })).toHaveCount(2);
       await expect(page.getByRole("complementary", { name: "About this board" })).toHaveCount(width === 390 ? 0 : 1);
-      await expect(page.getByRole("navigation", { name: "Boards" }).getByRole("link", { name: "Feature requests" })).toHaveAttribute("aria-current", "page");
+      if (width === 390) {
+        // The board switcher starts the pill row: a menu pill named after the board; the title's row has search and +, named by the board's button.
+        await expect(page.getByRole("button", { name: "Board: Feature requests" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Search", exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: "New post" })).toBeVisible();
+        await expect(page.getByRole("searchbox", { name: "Search ideas" })).toBeHidden();
+      } else {
+        await expect(page.getByRole("navigation", { name: "Boards" }).getByRole("link", { name: "Feature requests" })).toHaveAttribute("aria-current", "page");
+        await expect(page.getByRole("button", { name: "Board: Feature requests" })).toBeHidden();
+      }
       if (width === 390) {
         const phoneList = (await page.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" }).boundingBox())!;
         const phoneShipped = (await page.getByRole("region", { name: "Recently shipped" }).boundingBox())!;
         expect(phoneShipped.y).toBeGreaterThan(phoneList.y);
-        // Get updates too: the title's row has New idea only.
+        // Get updates too: the title's row has search and + only.
         const phoneUpdates = (await page.getByRole("main").getByRole("button", { name: "Get updates" }).boundingBox())!;
         expect(phoneUpdates.y).toBeGreaterThan(phoneShipped.y);
       }
@@ -1179,7 +1193,7 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
     }
   }
 
-  // More boards than a phone's width: the row scrolls to the current one, faded at the end that has more.
+  // More boards than a phone's width: the switcher pill names the board and lists them all; the pill row scrolls, the page doesn't.
   const more = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await more.connect();
   // Eight more boards, a second apart so their order is theirs, then Integrations last.
@@ -1194,19 +1208,19 @@ test("on wide screens a board has a sidebar: the boards with their counts and th
   await more.end();
   await visitor.setViewportSize({ width: 390, height: 844 });
   await visitor.goto("/feedback/integrations");
-  const row = visitor.getByRole("navigation", { name: "Boards" });
-  await expect(row.getByRole("link", { name: "Integrations and the public API" })).toBeInViewport({ ratio: 1 });
-  await expect.poll(() => row.evaluate((nav) => [nav.dataset.more, getComputedStyle(nav).maskImage !== "none"])).toEqual(["start", true]);
+  const switcher = visitor.getByRole("button", { name: "Board: Integrations and the public API" });
+  await expect(switcher).toBeVisible();
+  expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(visitor, "portal-board-row-phone", { fullPage: false });
-  // Narrower than a laptop the row is centred with room either side: a board halfway along is scrolled to the row's middle.
-  await visitor.setViewportSize({ width: 1000, height: 800 });
-  await visitor.goto("/feedback/more-4");
-  const middle = async () => {
-    const [link, nav] = [(await row.getByRole("link", { name: "More ideas 4" }).boundingBox())!, (await row.boundingBox())!];
-    return Math.abs(link.x + link.width / 2 - (nav.x + nav.width / 2));
-  };
-  await expect.poll(middle).toBeLessThan(2);
-  await checkpoint(visitor, "portal-board-row-tablet", { fullPage: false });
+  await switcher.click();
+  const boardMenu = visitor.getByRole("menu");
+  await expect(boardMenu.getByRole("menuitem")).toHaveCount(12);
+  await expect(boardMenu.getByRole("menuitem").first()).toHaveText("All boards");
+  await expect(boardMenu.getByRole("menuitem", { name: /^Integrations and the public API/ })).toHaveAttribute("aria-current", "page");
+  await checkpoint(visitor, "portal-board-switcher-phone", { fullPage: false });
+  await boardMenu.getByRole("menuitem", { name: /^More ideas 4/ }).click();
+  await visitor.waitForURL(/\/feedback\/more-4$/);
+  await expect(visitor.getByRole("button", { name: "Board: More ideas 4" })).toBeVisible();
 });
 
 test("the team's roadmap: a card dragged to another column changes its status; Completed asks first, saying who's emailed", async ({ browser }, testInfo) => {

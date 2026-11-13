@@ -1,23 +1,24 @@
 import { prisma } from "@tuti/db";
 import type { Metadata } from "next";
-import { BellIcon, CircleCheckIcon, Clock3Icon, FlameIcon, MessageSquareIcon, RssIcon, TrendingUpIcon, UserIcon } from "lucide-react";
+import { CircleCheckIcon, Clock3Icon, FlameIcon, MessageSquareIcon, SearchIcon, TrendingUpIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
 import { BoardSearch } from "@/components/board-search";
 import { BoardStatusMenu, type StatusChoice } from "@/components/board-status-menu";
-import { changelogByEmail } from "@/components/changelog-pages";
+import { boardGetUpdates } from "@/components/board-get-updates";
 import { EmptyState } from "@/components/empty-state";
 import { NewIdea, NewIdeaButton, NewIdeaLink } from "@/components/new-idea";
+import { postButtonText } from "@/components/new-post-menu";
 import { ShareIdeaBox } from "@/components/new-post-form";
 import { PortalAvatar } from "@/components/portal-avatar";
 import { STATUS_LABELS, StatusLabel } from "@/components/post-status-badge";
 import { SampleBadge } from "@/components/sample-badge";
-import { SubNav } from "@/components/sub-nav";
+import { BoardPillRow, BoardSwitcher } from "@/components/board-switcher";
+import { FilterPills } from "@/components/filter-pills";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SignInLink } from "@/components/sign-in-link";
-import { ResendVerificationButton } from "@/components/verify-email-banner";
 import { VoteButton, VoteCount } from "@/components/vote-button";
 import { boardTexts } from "@/lib/board-texts";
 import { formatDay, timeAgo } from "@/lib/format";
@@ -31,7 +32,7 @@ import { currentPostViewer } from "@/server/portal-access";
 import { seesBoard } from "@/server/post-visibility";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
-import { boardPosts, boardStatusCounts, boardsWithCounts, emailReach, recentlyShipped } from "@/server/post-lists";
+import { boardPosts, boardStatusCounts, boardsWithCounts, recentlyShipped } from "@/server/post-lists";
 import { VisibilityBadge } from "@/components/visibility-badge";
 
 /** A board's tabs, its orders: Trending (the most votes in the last 7 days, then the most votes) first. */
@@ -88,13 +89,11 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   const tab = mine ? "mine" : filters.sort;
   // A search looks through every status (it's for one idea, shipped or not), unless the address asks for one; so does Mine.
   const statuses = (q || mine) && !first(searchParams.status) ? undefined : boardStatuses(searchParams);
-  const [{ posts, more }, shipped, boards, reach, counts] = await Promise.all([
+  const [{ posts, more }, shipped, boards, counts] = await Promise.all([
     boardPosts(board, filters, viewer, { statuses, q, mine }),
     // Beside the default list (however it's asked for), which leaves completed ideas out; not beside a search's results.
     !q && statuses && statuses.length > 1 ? recentlyShipped(board.id, viewer) : [],
     boardsWithCounts(board.projectId, viewer),
-    // Whether the shipped email would reach them, by the rule that sends it.
-    voter ? emailReach(board.projectId, voter) : undefined,
     boardStatusCounts(board.id, viewer),
   ]);
   const texts = boardTexts(board);
@@ -146,63 +145,22 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
       </p>
     </section>
   );
-  // Get updates: a bell in the board's card, its popover saying where the reader stands, the changelog by email, its page and feed.
-  const byEmail = await changelogByEmail(board.project, session, true);
-  // Its words always shown (phones: under the list, where the title's row has no room for it).
-  const getUpdates = (
-    <Popover>
-      <PopoverTrigger
-        render={<Button variant="outline" className="shrink-0 gap-1.5 font-medium text-muted-foreground hover:text-foreground" />}
-      >
-        <BellIcon aria-hidden />
-        Get updates
-      </PopoverTrigger>
-      <PopoverContent align="end" aria-labelledby="get-updates" className="flex w-80 flex-col gap-3 p-4 text-sm">
-        <h2 id="get-updates" className="font-sans text-[0.9375rem] font-semibold">
-          Get updates
-        </h2>
-        {/* Only what holds for them: the team, someone the project's sign-on gave no address, or not a reader of a private portal hears nothing. */}
-        {!session ? (
-          <p className="text-muted-foreground">Vote for an idea to hear when it ships.</p>
-        ) : !voter ? (
-          // Signed in through another project's single sign-on: as the vote buttons say.
-          <p className="text-muted-foreground">
-            <SignInLink className="text-foreground underline underline-offset-4">Sign in</SignInLink> to vote
-          </p>
-        ) : reach?.status === "emailed" ? (
-          <p className="text-muted-foreground">Vote for an idea to get an email when it ships.</p>
-        ) : reach?.status === "unconfirmed" ? (
-          <div className="flex flex-col items-start gap-1">
-            <p className="text-muted-foreground">Confirm your email to hear when ideas you vote on ship.</p>
-            <ResendVerificationButton email={session.user.email} callbackURL={at(boardPath(board))} />
-          </div>
-        ) : reach?.status === "optedOut" || reach?.status === "turnedOff" ? (
-          // All of the project's emails, or those about ideas they vote on: either way, their Account turns them back on.
-          <p className="text-muted-foreground">
-            <Link href={at("/account")} className="text-foreground underline underline-offset-4">
-              You&apos;ve unsubscribed from these emails.
-            </Link>
-          </p>
-        ) : null}
-        {byEmail}
-        <div className="flex items-center justify-between gap-2">
-          <Link href={at("/changelog")} className="font-medium text-foreground underline decoration-primary/55 decoration-[1.5px] underline-offset-[3px]">
-            Read the changelog
-          </Link>
-          <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm", className: "text-muted-foreground" })}>
-            <RssIcon aria-hidden /> RSS
-          </a>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-  // A search that found nothing: New idea is the next step, and says so.
-  const newIdeaLabel = q && posts.length === 0 ? "Not here? Post it" : undefined;
+  const getUpdates = await boardGetUpdates({ project: board.project, session, voter, back: boardPath(board) });
+  // The header's primary: the board's own button text (Boards → Button), else "New post".
+  const postLabel = postButtonText(board);
+  // A search that found nothing: it's the next step, and says so.
+  const newIdeaLabel = q && posts.length === 0 ? "Not here? Post it" : postLabel;
   const sortIcons = { trending: FlameIcon, top: TrendingUpIcon, new: Clock3Icon, mine: UserIcon } as const;
+  const search = (className?: string) => (
+    <BoardSearch action={at(boardPath(board))} q={q ?? ""} className={className}>
+      {tab !== "trending" && <input type="hidden" name="sort" value={tab} />}
+      {first(searchParams.status) && <input type="hidden" name="status" value={first(searchParams.status)} />}
+    </BoardSearch>
+  );
   return (
-    // The visitor's job: is my idea here? then vote or post it. So the list leads, and little competes with it: on wide screens a
-    // rail beside it with New idea, the boards (when there are two or more, as the header's row) and the latest shipped
-    // idea; Get updates one click away in the card.
+    // The visitor's job: is my idea here? then vote or post it. So the list leads: the header's one row has the sort and
+    // status pills, the search, Get updates and the board's button; on wide screens a rail beside the list with the boards
+    // (two or more) and the latest shipped idea.
     <NewIdea
       signedIn={!!session}
       opened={searchParams.new !== undefined}
@@ -212,66 +170,78 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
       defaultTitle={title}
       {...texts}
     >
-      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_18.5rem] lg:items-start lg:gap-10">
-        <div className="flex min-w-0 flex-col gap-6">
-          {/* The list's card: what it's for (the team's words, Feedback → Boards, or a line that says how it works) and Get
-              updates, the search, then the sort tabs and the status menu on one row. The search and `?status=` go with each
-              tab; the sort and `?status=` with a search; the sort and search with a status. Phones: no card, the title
-              beside New idea. */}
-          <section aria-label="Ideas" className="flex flex-col gap-2">
-            <div className="flex flex-col sm:rounded-xl sm:bg-card sm:shadow-card sm:ring-1 sm:ring-card-edge">
-              <div className="flex items-start gap-3 sm:px-7 sm:pt-7">
-                <div className="flex min-w-0 flex-1 flex-col gap-2">
-                  <h1 className="font-heading text-[1.625rem] leading-tight font-[650] tracking-[-0.022em] break-words sm:text-[2.125rem]">{board.name}</h1>
-                  <p className="text-[0.9375rem] text-muted-foreground sm:text-base">{board.description || "Vote for the ideas you want most, or share your own."}</p>
-                </div>
-                <div className="mt-0.5 flex shrink-0 items-center gap-2">
-                  <div className="max-sm:hidden">{getUpdates}</div>
-                  {/* Its own words here: on a phone the longer label would push the title onto two lines (the empty search's link says it). */}
-                  <NewIdeaButton className="lg:hidden" />
-                </div>
-              </div>
-              {/* The search first: it's where "is my idea here?" starts. */}
-              <div className="mt-3 sm:mt-5 sm:px-7">
-                <BoardSearch action={at(boardPath(board))} q={q ?? ""}>
-                  {tab !== "trending" && <input type="hidden" name="sort" value={tab} />}
-                  {first(searchParams.status) && <input type="hidden" name="status" value={first(searchParams.status)} />}
-                </BoardSearch>
-              </div>
-              <div className="mt-1 flex items-center gap-2 border-b sm:mt-5 sm:border-t sm:border-b-0 sm:px-5">
-                <div className="min-w-0 flex-1">
-                  <SubNav
-                    label="Sort"
-                    current={tabHref(tab)}
-                    // A tab reorders the list under it: the page stays where it is.
-                    scroll={false}
-                    className="mt-0 shadow-none"
-                    itemClassName="inline-flex items-center gap-1.5 px-2.5 py-0 h-11 sm:h-[3.375rem] text-[0.9375rem] font-medium data-[active]:[&>svg]:text-primary"
-                    items={[...TABS, ...(voter ? [["mine", "Mine"] as const] : [])].map(([key, title]) => {
-                      const Icon = sortIcons[key];
-                      return {
-                        href: tabHref(key),
-                        title: (
-                          <>
-                            <Icon aria-hidden className="size-4" />
-                            {title}
-                          </>
-                        ),
-                      };
-                    })}
-                  />
-                </div>
-                <BoardStatusMenu choices={statusChoices} counted={!searching} />
-              </div>
+      <PortalPageHeader
+        title={board.name}
+        description={board.description || "Vote for the ideas you want most, or share your own."}
+        // The search and `?status=` go with each sort; the sort and `?status=` with a search; the sort and search with a status.
+        // Phones: one row that scrolls sideways, the board switcher first (the rail's boards are on wide screens only).
+        pills={
+          <BoardPillRow>
+            {boards.length > 1 && (
+              <>
+                <BoardSwitcher
+                  name={board.name}
+                  allHref={at("/feedback")}
+                  boards={boards.map((other) => ({ name: other.name, href: at(boardPath(other)), count: other._count.posts, current: other.id === board.id }))}
+                  className="lg:hidden"
+                />
+                <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border lg:hidden" />
+              </>
+            )}
+            <div className="shrink-0">
+              <FilterPills
+                label="Sort"
+                current={tabHref(tab)}
+                items={[...TABS, ...(voter ? [["mine", "Mine"] as const] : [])].map(([key, name]) => {
+                  const Icon = sortIcons[key];
+                  return {
+                    href: tabHref(key),
+                    title: (
+                      <>
+                        <Icon aria-hidden />
+                        {name}
+                      </>
+                    ),
+                  };
+                })}
+              />
             </div>
+            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
+            <BoardStatusMenu choices={statusChoices} counted={!searching} />
+          </BoardPillRow>
+        }
+        actions={
+          <>
+            <div className="w-60">{search("h-9 sm:h-9 rounded-[0.625rem]")}</div>
+            {getUpdates(true)}
+            <NewIdeaButton label={newIdeaLabel} />
+          </>
+        }
+        phoneActions={
+          <>
+            <Popover>
+              <PopoverTrigger aria-label="Search" render={<Button variant="outline" size="icon-lg" className="rounded-full" />}>
+                <SearchIcon aria-hidden />
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-[calc(100vw-2rem)] p-2">
+                {search()}
+              </PopoverContent>
+            </Popover>
+            <NewIdeaButton label={postLabel} round />
+          </>
+        }
+      />
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_15.5rem] lg:items-start lg:gap-14">
+        <div className="flex min-w-0 flex-col gap-6">
+          <section aria-label="Ideas" className="flex flex-col gap-2">
             {/* Without JavaScript New idea can't open its dialog: the board's box in the page instead (signed out, it goes to sign in
               and back with the title; ShareIdeaBox). */}
-          <noscript>
-            <div>
-              <ShareIdeaBox signedIn={!!session} projectSlug={projectSlug} boardSlug={boardSlug} mediaUrls={null} defaultTitle={title} {...texts} />
-            </div>
-          </noscript>
-          {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
+            <noscript>
+              <div>
+                <ShareIdeaBox signedIn={!!session} projectSlug={projectSlug} boardSlug={boardSlug} mediaUrls={null} defaultTitle={title} {...texts} />
+              </div>
+            </noscript>
+            {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
             <p role="status" className="sr-only">
               {q &&
                 (posts.length === 0
@@ -279,9 +249,9 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                   : `${posts.length}${more ? "+" : ""} ${posts.length === 1 && !more ? "idea matches" : "ideas match"} "${q}"`)}
             </p>
             {posts.length > 0 && (
-              <ul className="flex flex-col divide-y">
+              <ul className="flex flex-col divide-y border-b">
                 {posts.map((post) => (
-                  <li key={post.id} className="flex items-start gap-4 py-5 sm:gap-5 sm:px-7 sm:py-[1.375rem]">
+                  <li key={post.id} className="flex items-start gap-4 py-5 sm:gap-5 sm:py-[1.375rem]">
                     <div className="flex min-w-0 flex-1 flex-col items-start">
                       {/* Its status above the title (not Open, every new idea's), in its colour. */}
                       {post.status !== "OPEN" && <StatusLabel status={post.status} className="mb-1.5" />}
@@ -352,7 +322,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             !q &&
             !mine &&
             !first(searchParams.status) && (
-              <p className="border-t pt-8 text-center text-sm text-muted-foreground">
+              <p className="pt-2 text-center text-sm text-muted-foreground">
                 That&apos;s all {posts.length} ideas still to come in {board.name}. <NewIdeaLink>Share yours</NewIdeaLink>
               </p>
             )
@@ -360,44 +330,51 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
 
           {/* A search that found some: the way to post it if it isn't among them. */}
           {q && posts.length > 0 && !more && (
-            <p className="border-t pt-6 text-center text-sm text-muted-foreground">
+            <p className="pt-2 text-center text-sm text-muted-foreground">
               Not here? <NewIdeaLink>Post it</NewIdeaLink>
             </p>
           )}
 
           {/* On wide screens it's in the rail. */}
           {shippedLine && <div className="lg:hidden">{shippedLine}</div>}
-          <div className="sm:hidden">{getUpdates}</div>
+          <div className="sm:hidden">{getUpdates(false)}</div>
         </div>
 
-        <aside aria-label="About this board" className="hidden flex-col gap-6 lg:flex">
-          <NewIdeaButton size="lg" className="h-12 w-full rounded-xl text-[0.9375rem]" label={newIdeaLabel} />
-          {boards.length > 1 && (
-            <nav aria-label="Boards" className="flex flex-col gap-1 rounded-xl bg-card p-2.5 shadow-card ring-1 ring-card-edge">
-              <h2 className="group-label px-2.5 pt-2 pb-1.5">Boards</h2>
-              <ul className="flex flex-col gap-0.5">
-                {boards.map((other) => (
-                  <li key={other.id}>
-                    <Link
-                      href={at(boardPath(other))}
-                      aria-current={other.id === board.id ? "page" : undefined}
-                      // Read out as "Bugs, 3 open ideas", not "Bugs3".
-                      aria-label={`${other.name}, ${other._count.posts} ${other._count.posts === 1 ? "open idea" : "open ideas"}`}
-                      className={cn(
-                        "flex min-h-10 items-center gap-2 rounded-lg px-2.5 py-2 text-[0.9375rem] font-medium transition-colors",
-                        other.id === board.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                      )}
-                    >
-                      <span className="min-w-0 flex-1 break-words">{other.name}</span>
-                      <span className="text-[0.8125rem] tabular-nums">{other._count.posts}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          )}
-          {shippedLine && <div className="px-2.5">{shippedLine}</div>}
-        </aside>
+        {/* A plain column (no card): the boards, the open one a neutral fill, and the latest shipped idea. */}
+        {(boards.length > 1 || shippedLine) && (
+          <aside aria-label="About this board" className="hidden flex-col gap-7 lg:flex">
+            {boards.length > 1 && (
+              <nav aria-label="Boards" className="flex flex-col gap-1.5">
+                <h2 className="text-[0.8125rem] font-medium text-muted-foreground">Boards</h2>
+                <ul className="flex flex-col gap-0.5">
+                  {boards.map((other) => (
+                    <li key={other.id}>
+                      <Link
+                        href={at(boardPath(other))}
+                        aria-current={other.id === board.id ? "page" : undefined}
+                        // Read out as "Bugs, 3 open ideas", not "Bugs3".
+                        aria-label={`${other.name}, ${other._count.posts} ${other._count.posts === 1 ? "open idea" : "open ideas"}`}
+                        className={cn(
+                          "-mx-2.5 flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[0.9375rem] font-medium transition-colors",
+                          other.id === board.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        <span className="min-w-0 flex-1 break-words">{other.name}</span>
+                        <span className="text-[0.8125rem] tabular-nums">{other._count.posts}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
+            {shippedLine && (
+              <div className="flex flex-col gap-2">
+                <h2 className="text-[0.8125rem] font-medium text-muted-foreground">Recently shipped</h2>
+                {shippedLine}
+              </div>
+            )}
+          </aside>
+        )}
       </div>
     </NewIdea>
   );
