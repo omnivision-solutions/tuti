@@ -160,6 +160,24 @@ test("a folded section opens for the focus after an unlink, and stays folded as 
   await owner.reload();
   await expect(section("Looks related").locator("summary small")).toHaveText("2");
   await expect(section("Looks related")).not.toHaveAttribute("open");
+  // Restored as the page loads, not once the app's code runs: as it is with that code blocked.
+  await owner.route("**/_next/static/chunks/**", (route) => route.abort());
+  await owner.reload();
+  await expect(section("Looks related")).not.toHaveAttribute("open");
+  await expect(section("Customer details")).toHaveAttribute("open");
+  await owner.unroute("**/_next/static/chunks/**");
+  await owner.reload();
+  // Folded by hand, Linked posts stays folded when its first post is linked (its default would open it).
+  await section("Linked posts").locator("summary").click();
+  await section("Linked posts").locator("summary").click();
+  await expect(section("Linked posts")).not.toHaveAttribute("open");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("menuitem", { name: "Link a post…" }).click();
+  await owner.getByRole("dialog").getByRole("textbox", { name: "Search posts" }).fill("PDF");
+  await owner.getByRole("dialog").getByRole("button", { name: /Export reports to PDF/ }).click();
+  await expect(owner.getByText("Linked to #2")).toBeVisible();
+  await expect(section("Linked posts").locator("summary small")).toHaveText("1");
+  await expect(section("Linked posts")).not.toHaveAttribute("open");
 });
 
 test("inline link trigger retains keyboard focus when dismissed while saving", async ({ browser }) => {
