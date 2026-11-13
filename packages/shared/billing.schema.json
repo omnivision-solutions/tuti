@@ -311,7 +311,7 @@
         },
         "emails": {
           "default": null,
-          "description": "Emails the project may send during the trial; null: its plan's.",
+          "description": "The trial's email allowance (trialTerms), for email limits; null: none.",
           "anyOf": [
             {
               "type": "integer",

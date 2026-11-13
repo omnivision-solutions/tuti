@@ -78,7 +78,7 @@ export const billingSchema = z
         plan: z.string().describe("The plan the trial gives: one of the plans."),
         days: days.describe("How long it lasts."),
         credits: count.default(0).describe("AI credits it gives, expiring when it ends (with AI credits on)."),
-        emails: count.nullable().default(null).describe("Emails the project may send during the trial; null: its plan's."),
+        emails: count.nullable().default(null).describe("The trial's email allowance (trialTerms), for email limits; null: none."),
       })
       .strict()
       .optional()
