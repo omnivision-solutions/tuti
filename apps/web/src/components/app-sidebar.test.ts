@@ -1,3 +1,4 @@
+import { InboxIcon, LightbulbIcon } from "lucide-react";
 import { expect, test } from "vitest";
 
 import { phoneTabs, type ProjectSummary } from "./app-sidebar";
@@ -11,6 +12,13 @@ const open = (pathname: string, params: Record<string, string> = {}) => {
 test("the phone tab bar has Home, Inbox, Feedback and Autopilot, with their counts", () => {
   expect(phoneTabs(acme, "/app/acme", { project: "acme" })?.tabs.map((tab) => tab.title)).toEqual(["Home", "Inbox", "Feedback", "Autopilot"]);
   expect(phoneTabs(acme, "/app/acme", { project: "acme" })?.tabs[1]?.badge).toEqual({ count: 4, label: "open", urgent: true });
+});
+
+// The same items make the rail and the menu: the Inbox's tray, Feedback's lightbulb (as the widget's Feedback tab).
+test("Inbox has the inbox tray and Feedback the lightbulb", () => {
+  const tabs = phoneTabs(acme, "/app/acme", { project: "acme" })?.tabs;
+  expect(tabs?.find((tab) => tab.title === "Inbox")?.icon).toBe(InboxIcon);
+  expect(tabs?.find((tab) => tab.title === "Feedback")?.icon).toBe(LightbulbIcon);
 });
 
 test("the phone tab bar is on a part's own page, its tab open; More's parts open More", () => {

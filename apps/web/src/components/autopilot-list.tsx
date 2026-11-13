@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { FileTextIcon, FolderIcon, InboxIcon, LayersIcon, type LucideIcon, MessageSquareIcon, SquareKanbanIcon } from "lucide-react";
+import { FileTextIcon, FolderIcon, LayersIcon, LightbulbIcon, type LucideIcon, MessageSquareIcon, SquareKanbanIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams, useSelectedLayoutSegments } from "next/navigation";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
@@ -24,7 +24,7 @@ type Row = { id: string; title?: string; section?: string; group?: { id: string;
 
 /** Each section's icon, its groups' (a board, a collection without its own icon) and its rows' (a post, an article). */
 const TREE = {
-  Feedback: { icon: InboxIcon, group: SquareKanbanIcon, row: MessageSquareIcon },
+  Feedback: { icon: LightbulbIcon, group: SquareKanbanIcon, row: MessageSquareIcon },
   "Help center": { icon: LayersIcon, group: FolderIcon, row: FileTextIcon },
 } as Record<string, { icon: LucideIcon; group: LucideIcon; row: LucideIcon }>;
 

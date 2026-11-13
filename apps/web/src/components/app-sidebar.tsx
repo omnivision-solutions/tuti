@@ -15,7 +15,7 @@ import {
   LogOutIcon,
   MapIcon,
   MegaphoneIcon,
-  MessagesSquareIcon,
+  LightbulbIcon,
   MonitorIcon,
   MoonIcon,
   PlusIcon,
@@ -335,9 +335,9 @@ function projectNav(project: ProjectSummary): NavItem[][] {
   return [
     [
       { title: "Home", href: base, icon: HouseIcon },
-      { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: waits(project.openConversations, "open", true) },
+      { title: "Inbox", href: `${base}/inbox`, icon: InboxIcon, section: true, badge: waits(project.openConversations, "open", true) },
       // Its Boards (/feedback/boards) too, and a post's page (/p/<number>).
-      { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon, section: true, also: `${base}/p`, badge: waits(project.toTriage, "to triage") },
+      { title: "Feedback", href: `${base}/feedback`, icon: LightbulbIcon, section: true, also: `${base}/p`, badge: waits(project.toTriage, "to triage") },
       { title: "Roadmap", href: `${base}/feedback/roadmap`, icon: MapIcon },
       { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon, section: true },
       { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon, section: true },
