@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { changelogEmail } from "./changelog-email";
 import { conversationEmail } from "./conversation-email";
-import { colors } from "./layout";
+import { accentColors, colors } from "./layout";
 import { shippedEmail } from "./shipped-email";
 
 afterEach(() => {
@@ -37,11 +37,11 @@ test("emails a project's customers get take its accent; Tuti's own wordmark stay
 
   // A mid-tone that reads on white gets black text on its button.
   expect(await html("#ea580c")).toContain("background-color:#ea580c;color:#000000");
-  // Too faint on the white card (a pale yellow): the text colour instead, with white on it.
+  // Too faint on the white card (a pale yellow): the darker shade of it the portal uses.
   const yellow = await html("#fde047");
   expect(yellow).not.toContain("#fde047");
-  expect(yellow).toContain(`border-top:4px solid ${colors.text}`);
-  expect(yellow).toContain(`background-color:${colors.text};color:#ffffff`);
+  expect(yellow).toContain("border-top:4px solid #857525");
+  expect(yellow).toContain("background-color:#857525;color:#ffffff");
 
   // Without one (or with something that isn't a colour), Tuti's green as before.
   for (const accent of [null, "red;x:y"]) {
@@ -63,4 +63,18 @@ test("a changelog entry's links take the project's accent", async () => {
   );
   expect(grey).toMatch(new RegExp(`<a href="https://acme.example/docs" style="color:${colors.text}`));
   expect(grey).toContain("border-top:4px solid #808080");
+});
+
+test("an accent too faint on the white card takes the portal's shade of it, buttons and links alike; a grey or a pale tint, the text colour", () => {
+  // The shades the portal's light mode gets (brandCss, branding.db.test.ts): mixed toward black until they read as text (4.5:1).
+  expect(accentColors("#fde047")).toEqual({ accent: "#857525", onAccent: "#ffffff", link: "#857525" });
+  expect(accentColors("#45b5f0")).toEqual({ accent: "#2f7ca5", onAccent: "#ffffff", link: "#2f7ca5" });
+  // Beige's shade would be near grey, and white has no hue: the text colour, with white on it.
+  for (const pale of ["#f5f5dc", "#ffffff"]) {
+    expect(accentColors(pale)).toEqual({ accent: colors.text, onAccent: "#ffffff", link: colors.text });
+  }
+  // A dark blue already reads: as it is.
+  expect(accentColors("#1e3a8a")).toEqual({ accent: "#1e3a8a", onAccent: "#ffffff", link: "#1e3a8a" });
+  // Enough for a button (3:1) but not for text this size: the button as it is, links in its shade.
+  expect(accentColors("#ea580c")).toEqual({ accent: "#ea580c", onAccent: "#000000", link: "#cb4c0a" });
 });
