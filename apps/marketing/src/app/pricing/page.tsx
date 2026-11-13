@@ -5,7 +5,7 @@ import { CheckIcon } from "lucide-react";
 import type { Metadata } from "next";
 
 import { contact } from "../legal";
-import { appPlans, type Plans, SIGN_UP } from "../links";
+import { appPlans, type Plans, REPO_URL, SIGN_UP } from "../links";
 import { PricingTable } from "./pricing-table";
 
 export const metadata: Metadata = {
@@ -37,6 +37,7 @@ export default async function PricingPage() {
       {loaded ? (
         <>
           <PricingTable plans={loaded.plans} yearlyNote={loaded.yearlyNote} />
+          <SelfHosted />
           <Enterprise {...loaded.enterprise} top={loaded.plans.findLast((plan) => plan.price)?.name} />
         </>
       ) : (
@@ -48,6 +49,31 @@ export default async function PricingPage() {
         </section>
       )}
     </div>
+  );
+}
+
+const SELF_HOSTED = ["Every feature, no limits", "Your server, your data", "Your own AI keys"];
+
+/** The free way to run Tuti: on your own server. */
+function SelfHosted() {
+  return (
+    <section className="flex flex-col gap-5 rounded-2xl border p-7 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3">
+        <h2 className="flex items-baseline gap-3 font-heading text-xl font-bold">
+          Self-hosted <span className="text-base font-semibold text-muted-foreground">Free</span>
+        </h2>
+        <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          {SELF_HOSTED.map((feature) => (
+            <li key={feature} className="flex items-center gap-2">
+              <CheckIcon aria-hidden className="size-4 text-primary" strokeWidth={2.5} /> {feature}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <a href={REPO_URL} className={cn(buttonVariants({ size: "lg", variant: "outline" }), "h-11 shrink-0 border-primary/60 text-base text-primary hover:text-primary")}>
+        Self-host Tuti
+      </a>
+    </section>
   );
 }
 
