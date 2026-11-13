@@ -404,11 +404,11 @@ export async function DocsArticle({
           {/* Where "On this page" isn't beside it (below wide screens, or in reading mode), a compact menu under the title. */}
           {readable && outlined(headings) && (
             <details className="group/toc mt-1 text-sm xl:hidden xl:[:root[data-docs-reading]_&]:block">
-              <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
                 On this page
                 <ChevronDownIcon aria-hidden className="size-4 transition-transform group-open/toc:rotate-180" />
               </summary>
-              <ul className="mt-2 flex w-fit max-w-full min-w-64 flex-col rounded-lg border bg-card p-1.5 shadow-sm">
+              <ul className="mt-2 flex w-fit max-w-full min-w-64 flex-col rounded-lg border border-border bg-card p-1.5 shadow-sm">
                 {headings.map((heading) => (
                   <li key={heading.id}>
                     <a href={`#${heading.id}`} className={cn("block rounded-md px-2 py-1.5 text-muted-foreground hover:text-foreground", heading.level === 3 && "pl-5")}>
