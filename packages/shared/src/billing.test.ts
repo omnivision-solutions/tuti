@@ -59,3 +59,14 @@ test("prices are whole dollars", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.prices.month!.perMonth = 8.33; }));
   expect(() => billingConfig()).toThrow(/plans\[1\]\.prices\.month\.perMonth/);
 });
+
+test("a plan's Reporting range is no shorter than the plan before it's, counted only where a plan has Reporting", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro, business }) => {
+    pro.limits.reportingDays = 90;
+    business.limits.reportingDays = 31;
+  }));
+  expect(() => billingConfig()).toThrow(/is lower than pro's\n {2}→ at plans\[2\]\.limits\.reportingDays/);
+  // Free has no Reporting: its range counts as none, so a Pro with 7 days still has more.
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.limits.reportingDays = 7; }));
+  expect(billingConfig()?.plans[1]?.limits.reportingDays).toBe(7);
+});
