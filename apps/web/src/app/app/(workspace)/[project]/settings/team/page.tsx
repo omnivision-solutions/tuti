@@ -1,6 +1,6 @@
 import { type TeamRole, prisma } from "@tuti/db";
 import { pendingInvitation } from "@tuti/jobs";
-import { teamLimit } from "@tuti/shared";
+import { planDisplay, roomierPlan, teamLimit } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -111,11 +111,18 @@ export default async function TeamPage(props: PageProps<"/app/[project]/settings
               {limit !== null && (
                 <>
                   {" "}
-                  Projects on the Free plan have up to {limit} team members, invites included ({members.length + invitations.length} now);{" "}
-                  <Link href={`/app/${project.slug}/settings/billing`} className="underline underline-offset-4">
-                    upgrade
-                  </Link>{" "}
-                  for more.
+                  Projects on the {planDisplay(plan).name} plan have up to {limit} team members, invites included ({members.length + invitations.length} now)
+                  {roomierPlan(plan, teamLimit) ? (
+                    <>
+                      ;{" "}
+                      <Link href={`/app/${project.slug}/settings/billing`} className="underline underline-offset-4">
+                        upgrade
+                      </Link>{" "}
+                      for more.
+                    </>
+                  ) : (
+                    "."
+                  )}
                 </>
               )}
             </>

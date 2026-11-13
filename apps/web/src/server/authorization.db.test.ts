@@ -3,25 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { type TeamRole, prisma } from "@tuti/db";
 import { importsSettled, resumeToken } from "@tuti/jobs";
 import { SignJWT } from "jose";
-import {
-  type DnsFake,
-  FAKE_FEATUREBASE_KEY,
-  type FeaturebaseFake,
-  startFeaturebaseFake,
-  type GithubFake,
-  startGithubFake,
-  type SiteFake,
-  startSiteFake,
-  type ModelFake,
-  type S3Fake,
-  startDnsFake,
-  startModelFake,
-  startS3Fake,
-  startStripeFake,
-  type StripeFake,
-  startWebhookReceiver,
-  type WebhookReceiver,
-} from "@tuti/testkit";
+import { billingFile, type DnsFake, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, type GithubFake, type ModelFake, type S3Fake, type SiteFake, startDnsFake, startFeaturebaseFake, startGithubFake, startModelFake, startS3Fake, startSiteFake, startStripeFake, startWebhookReceiver, type StripeFake, type WebhookReceiver } from "@tuti/testkit";
 import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
@@ -186,7 +168,7 @@ const matrix: Matrix = {
   credits: {
     buyCredits: { allowed: "ADMIN", call: (slug) => withEnv({ AI_CREDITS: "on" }, () => credits.buyCredits(slug, 10)) },
     // Plans on just for that call; Manage plan opens Stripe's portal for the fixture's customer.
-    subscribe: { allowed: "ADMIN", call: (slug) => withEnv({ PLANS: "on" }, () => credits.subscribe(slug, "pro", "month")) },
+    subscribe: { allowed: "ADMIN", call: (slug) => withEnv({ BILLING_CONFIG: billingFile() }, () => credits.subscribe(slug, "pro", "month")) },
     manageSubscription: { allowed: "ADMIN", call: (slug) => credits.manageSubscription(slug) },
     // Off on the free plan: nothing to remove (adding it is in plans.db.test.ts).
     setBadge: { allowed: "ADMIN", call: (slug) => credits.setBadge(slug, false) },

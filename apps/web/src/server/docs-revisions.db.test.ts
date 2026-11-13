@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
@@ -94,15 +95,12 @@ describe("revisions", () => {
   });
 
   test.each([
-    ["FREE", {}, 2],
-    ["PRO", {}, 5],
-    ["BUSINESS", {}, 50],
-    ["FREE", { ARTICLE_VERSIONS_FREE: "3" }, 3],
-  ] as const)("selling plans, a project on %s with %o keeps the newest %i", async (plan, env, kept) => {
-    vi.stubEnv("PLANS", "on");
-    for (const [name, value] of Object.entries(env)) {
-      vi.stubEnv(name, value);
-    }
+    ["FREE", null, 2],
+    ["PRO", null, 5],
+    ["BUSINESS", null, 50],
+    ["FREE", 3, 3],
+  ] as const)("selling plans, a project on %s with Free keeping %o keeps the newest %i", async (plan, free, kept) => {
+    vi.stubEnv("BILLING_CONFIG", billingFile((_, plans) => { plans.free.limits.articleVersions = free ?? 2; }));
     await prisma.project.update({ where: { id: project.id }, data: { plan } });
     await call(createArticle, as(owner), { title: "Shortcuts", body: "Save 0" });
     for (let n = 1; n <= kept + 1; n++) {
@@ -114,7 +112,7 @@ describe("revisions", () => {
   });
 
   test("selling plans, a lower plan hides the versions past its own, stored up to the largest plan's, and its plan back shows them", async () => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
     await call(createArticle, as(owner), { title: "Shortcuts", body: "Save 0" });
     for (let n = 1; n <= 51; n++) {

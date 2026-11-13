@@ -1,0 +1,39 @@
+{
+  "$schema": "./billing.schema.json",
+  "defaultPlan": "free",
+  "plans": [
+    {
+      "key": "free",
+      "name": "Free",
+      "features": ["codeChanges"],
+      "limits": { "seats": 3, "boards": 2, "articles": 50, "historyDays": 7, "articleVersions": 2, "reportingDays": 31 }
+    },
+    {
+      "key": "pro",
+      "name": "Pro",
+      "prices": {
+        "month": { "perMonth": 39, "stripe": ["price_pro_monthly"] },
+        "year": { "perMonth": 32, "stripe": ["price_pro_yearly"] }
+      },
+      "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting"],
+      "limits": { "seats": null, "boards": 5, "articles": null, "historyDays": 30, "articleVersions": 5, "reportingDays": 31 },
+      "monthlyCredits": 1000
+    },
+    {
+      "key": "business",
+      "name": "Business",
+      "prices": {
+        "month": { "perMonth": 99, "stripe": ["price_business_monthly"] },
+        "year": { "perMonth": 79, "stripe": ["price_business_yearly"] }
+      },
+      "features": ["customDomain", "codeChanges", "emailDomain", "launcherIcon", "reporting", "privatePortal", "sitePath", "aiTuning"],
+      "limits": { "seats": null, "boards": null, "articles": null, "historyDays": 90, "articleVersions": 50, "reportingDays": null },
+      "monthlyCredits": 5000
+    }
+  ],
+  "badge": {
+    "month": { "perMonth": 49, "stripe": ["price_badge_monthly"] },
+    "year": { "perMonth": 49, "stripe": ["price_badge_yearly"] }
+  },
+  "historyKeptDays": 365
+}

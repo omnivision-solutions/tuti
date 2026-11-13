@@ -8,12 +8,12 @@ import { useState } from "react";
 import { inApp } from "../links";
 
 /** The plans side by side, priced monthly or yearly as picked. */
-export function PricingTable({ plans, yearlyNote }: { plans: PricingPlan[]; yearlyNote: string }) {
+export function PricingTable({ plans, yearlyNote }: { plans: PricingPlan[]; yearlyNote: string | null }) {
   const [interval, setBilled] = useState<"month" | "year">("month");
 
   return (
     <div className="flex flex-col items-center gap-8">
-      <BilledToggle value={interval} onChange={setBilled} yearlyNote={yearlyNote} />
+      <BilledToggle value={interval} onChange={setBilled} yearlyNote={yearlyNote ?? undefined} />
       <ul className="grid w-full gap-5 lg:grid-cols-3">
         {plans.map((plan) => (
           <li

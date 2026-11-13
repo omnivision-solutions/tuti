@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
@@ -202,7 +203,7 @@ test("a licence bought from this project's link is claimed by this installation,
 });
 
 test("on Tuti's cloud a licence key doesn't hide the badge: only the add-on on a paid plan does", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const key = issueLicense({ installation: await installationId(), project: project.id });
   await prisma.project.update({ where: { id: project.id }, data: { licenseKey: key, poweredBy: false } });
   expect(await poweredBy()).toBe(true);

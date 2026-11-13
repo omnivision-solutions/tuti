@@ -12,7 +12,7 @@ export const REPO_URL = "https://github.com/omnivision-solutions/tuti";
 export type Plans = {
   plans: PricingPlan[];
   enterprise: { features: string[]; cta: { label: string; href: string } };
-  yearlyNote: string;
+  yearlyNote: string | null;
   aiInEveryPlan: boolean;
 };
 

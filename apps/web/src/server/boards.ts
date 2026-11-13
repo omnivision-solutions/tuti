@@ -1,7 +1,7 @@
 "use server";
 
 import { Prisma, prisma } from "@tuti/db";
-import { boardLimit } from "@tuti/shared";
+import { boardLimit, planDisplay, type PlanKey, upgradeFor } from "@tuti/shared";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -57,8 +57,8 @@ function isUniqueViolation(error: unknown) {
 
 const ADMIN_ONLY = { error: "Only project owners and admins can manage boards" };
 
-const boardsFull = (plan: "FREE" | "PRO" | "BUSINESS", limit: number) =>
-  `Projects on the ${plan === "FREE" ? "Free" : "Pro"} plan have up to ${limit} feedback boards. Upgrade to ${plan === "FREE" ? "Pro" : "Business"} in Settings → Billing to add more.`;
+const boardsFull = (plan: PlanKey, limit: number) =>
+  [`Projects on the ${planDisplay(plan).name} plan have up to ${limit} feedback boards.`, upgradeFor(plan, boardLimit, " in Settings → Billing to add more.")].filter(Boolean).join(" ");
 
 export async function createBoard(projectSlug: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const project = await getAdminProject(projectSlug);
@@ -75,7 +75,7 @@ export async function createBoard(projectSlug: string, _prev: FormState, formDat
       // Room on the plan, counted under the project's lock so two boards made at once can't both take the
       // last place. A project already past its limit (after a downgrade, or an import's boards turned off) keeps its
       // boards; it can't add more. Boards turned off count too, so turning one off never makes room for another.
-      const [locked] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR UPDATE`;
+      const [locked] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR UPDATE`;
       const limit = locked ? boardLimit(locked.plan) : null;
       if (locked && limit !== null && (await tx.board.count({ where: { projectId: project.id } })) >= limit) {
         return boardsFull(locked.plan, limit);
@@ -152,7 +152,7 @@ export async function setBoardOff(projectSlug: string, boardId: string, off: boo
   }
   const error = await prisma.$transaction(async (tx) => {
     // The project's row locked as deleteBoard's (createBoard's lock waits on it too), so two can't both take the last place.
-    const [locked] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR NO KEY UPDATE`;
+    const [locked] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR NO KEY UPDATE`;
     const board = await tx.board.findFirst({ where: { id: boardId, projectId: project.id }, select: { off: true } });
     if (!locked || !board) {
       return "Board not found";

@@ -1,15 +1,7 @@
 import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { resetCodeChangesSettings } from "@tuti/shared";
-import {
-  type FakeDecision,
-  type GithubFake,
-  type ModelFake,
-  type ModelRequest,
-  type OpenAIFake,
-  startGithubFake,
-  startModelFake,
-} from "@tuti/testkit";
+import { billingFile, type FakeDecision, type GithubFake, type ModelFake, type ModelRequest, type OpenAIFake, startGithubFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { publishCodeChangesNow } from "@/server/code-changes";
@@ -692,7 +684,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
   const EDIT_AT = (probability: number) => answer([{ slug: "appearance", problem: "missing", probability, reason: "It doesn't name the dark theme." }]);
 
   test("its picked models decide (and the double-check is off), its tuning is used on Business, and the analysis keeps the values it ran with", async () => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     await prisma.project.update({
       where: { id: project.id },
       data: {
@@ -747,7 +739,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
   });
 
   test("after a downgrade off Business the values are kept but not used (its models still are); back on Business, they're used again", async () => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     await prisma.project.update({
       where: { id: project.id },
       data: { plan: "PRO", aiModels: { code_changes_decide: "acme/tiny" }, codeChangesTuning: { "propose.edit.maybe": 0.3 } },
@@ -794,7 +786,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
 
   // Each value is read by the step that uses it, inside the project's settings: these fail if a step reads the server's.
   const business = (codeChangesTuning: Record<string, number>, aiModels: Record<string, string> = {}) => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     return prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS", codeChangesTuning, aiModels } });
   };
   const NEW_AT = (probability: number) =>

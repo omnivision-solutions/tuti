@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "plans": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "The plan's id, which projects and the API know it by."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What it's called in the app and on the pricing page."
+          },
+          "prices": {
+            "default": {},
+            "description": "How it's billed, each month and each year (perMonth: what a month shows; stripe: price ids, the one sold first). Without prices (usually the default plan) it isn't sold.",
+            "type": "object",
+            "properties": {
+              "month": {
+                "type": "object",
+                "properties": {
+                  "perMonth": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "stripe": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "perMonth",
+                  "stripe"
+                ],
+                "additionalProperties": false
+              },
+              "year": {
+                "type": "object",
+                "properties": {
+                  "perMonth": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "stripe": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "perMonth",
+                  "stripe"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "customDomain",
+                "sitePath",
+                "privatePortal",
+                "codeChanges",
+                "emailDomain",
+                "launcherIcon",
+                "reporting",
+                "aiTuning"
+              ]
+            },
+            "description": "What it includes."
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "seats": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Team members; null: no limit."
+              },
+              "boards": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Feedback boards; null: no limit."
+              },
+              "articles": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Published help center articles; null: no limit."
+              },
+              "historyDays": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "description": "How many days back closed inbox conversations and AI conversations show."
+              },
+              "articleVersions": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991,
+                "description": "Saved versions of a help center article its team sees, the latest included."
+              },
+              "reportingDays": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The longest range Reporting shows, in days; null: every range."
+              }
+            },
+            "required": [
+              "seats",
+              "boards",
+              "articles",
+              "historyDays",
+              "articleVersions",
+              "reportingDays"
+            ],
+            "additionalProperties": false
+          },
+          "monthlyCredits": {
+            "default": 0,
+            "description": "AI credits each paid month gives (a year: twelve months' worth), with AI credits on.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "features",
+          "limits"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The plans, cheapest first: an upgrade names the first one after the project's that has what it needs."
+    },
+    "defaultPlan": {
+      "type": "string",
+      "description": "The plan of a project without a live paid plan (none yet, or it ended), and of one whose plan this file doesn't list."
+    },
+    "badge": {
+      "description": "The add-on hiding \"Powered by tuti\", priced for plans billed each month and each year (and self-hosted licences, on Tuti's licence server). Absent: not sold.",
+      "type": "object",
+      "properties": {
+        "month": {
+          "type": "object",
+          "properties": {
+            "perMonth": {
+              "type": "number",
+              "minimum": 0
+            },
+            "stripe": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "perMonth",
+            "stripe"
+          ],
+          "additionalProperties": false
+        },
+        "year": {
+          "type": "object",
+          "properties": {
+            "perMonth": {
+              "type": "number",
+              "minimum": 0
+            },
+            "stripe": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "perMonth",
+            "stripe"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "historyKeptDays": {
+      "default": 365,
+      "description": "Days closed conversations and AI conversations are kept before they're deleted, never fewer than the longest plan's history.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "plans",
+    "defaultPlan"
+  ],
+  "additionalProperties": false
+}

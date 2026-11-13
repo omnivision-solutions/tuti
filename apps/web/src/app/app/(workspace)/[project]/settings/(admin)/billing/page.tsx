@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
+import { badgePerMonth, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
@@ -9,7 +9,7 @@ import { SettingBlock, SettingRow, SettingsCard, SettingsPane } from "@/componen
 import { UsageMonths } from "@/components/usage-months";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
-import { BADGE_PRICE, PLAN_PRICES, planPriceText } from "@/lib/plans";
+import { planPriceText } from "@/lib/plans";
 import { pricingPlans } from "@/lib/pricing-plans";
 import { credits } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
@@ -43,6 +43,8 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const searchParams = await props.searchParams;
   const paid = searchParams.paid === "1";
   const subscribed = searchParams.subscribed === "1";
+  const shown = planDisplay(plan.plan);
+  const badge = badgePerMonth();
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (
@@ -54,12 +56,12 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
       )}
       {plansEnabled() && (
         <SettingsCard
-          title={`${plan.plan === "FREE" ? "Free" : PLAN_PRICES[plan.plan].name} plan`}
+          title={`${shown.name} plan`}
           description={
             plan.plan === "FREE"
                 ? "Upgrade this project for more. Plans are per project: readers are always unlimited."
                 : [
-                    planPriceText(plan.plan, plan.planInterval === "year" ? "year" : "month"),
+                    planPriceText(shown.price, plan.planInterval === "year" ? "year" : "month"),
                     plan.planEndsAt ? `Ends on ${day(plan.planEndsAt)}` : plan.planPeriodEnd && `Renews on ${day(plan.planPeriodEnd)}`,
                   ]
                     .filter(Boolean)
@@ -82,16 +84,16 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </SettingBlock>
         </SettingsCard>
       )}
-      {plansEnabled() && (
+      {plansEnabled() && badge !== null && (
         <SettingsCard>
           <SettingRow
             label='Hide "Powered by tuti"'
             description={
               plan.badgeAddOn
-                ? `Hidden: $${BADGE_PRICE} a month on this project's plan. It ends with the plan.`
+                ? `Hidden: $${badge} a month on this project's plan. It ends with the plan.`
                 : plan.plan === "FREE"
-                  ? `Paid plans can hide the badge at the foot of the portal for $${BADGE_PRICE} a month.`
-                  : `The badge at the foot of the portal: hide it for $${BADGE_PRICE} a month, added to this project's plan.`
+                  ? `Paid plans can hide the badge at the foot of the portal for $${badge} a month.`
+                  : `The badge at the foot of the portal: hide it for $${badge} a month, added to this project's plan.`
             }
           >
             {(plan.badgeAddOn || planSalesEnabled()) &&
@@ -101,7 +103,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   Choose a plan
                 </a>
               ) : (
-                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} />
+                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge} />
               ))}
           </SettingRow>
         </SettingsCard>

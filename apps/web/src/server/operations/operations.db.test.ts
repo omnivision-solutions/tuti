@@ -1,14 +1,5 @@
 import { prisma } from "@tuti/db";
-import {
-  type DnsFake,
-  type ModelFake,
-  type SiteFake,
-  startDnsFake,
-  startModelFake,
-  startSiteFake,
-  startStripeFake,
-  type StripeFake,
-} from "@tuti/testkit";
+import { billingFile, type DnsFake, type ModelFake, type SiteFake, startDnsFake, startModelFake, startSiteFake, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { type SesFake, startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
@@ -499,7 +490,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   let fixture = await createFixture(own);
   // AI credits on for buying them only: elsewhere a project with none would be refused its AI.
   vi.stubEnv("AI_CREDITS", operation.name === "credits.topUp" ? "on" : "");
-  vi.stubEnv("PLANS", operation.name === "plan.subscribe" ? "on" : "");
+  vi.stubEnv("BILLING_CONFIG", operation.name === "plan.subscribe" ? billingFile() : "");
   // Email, and Amazon SES for teams' own domains, for the support settings; for a key's escalation, which only email answers.
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", operation.name.startsWith("support.") || operation.name === "docs.escalate" ? "tuti.email" : "");
   for (const [name, value] of Object.entries(ses.env)) {

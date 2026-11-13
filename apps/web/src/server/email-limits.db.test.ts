@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { claimProjectEmail, handlers, resumeToken } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
@@ -35,7 +36,7 @@ afterAll(() => ses.close());
 beforeEach(() => {
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", DOMAIN);
   vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("APP_PORTAL_OWNER", OPERATOR);
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -79,7 +80,7 @@ test("in a new project's first week, replies past its daily cap wait; once it's 
 });
 
 test("on a server that doesn't sell plans, there's no cap", async () => {
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   const { project, team } = await setup();
   const emailed = await twoReplies(project, team);
   await handlers.sendConversationReplies({}, log);
@@ -300,7 +301,7 @@ test("not paused under the limits: bounces before 100 sent, or a few complaints 
 });
 
 test("on a server that doesn't sell plans, nothing is counted or paused, and a pause from before holds nothing", async () => {
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   const { project, team } = await setup();
   await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 100, bounced: 50 } });
   await sesEvent(project.id, "Bounce");

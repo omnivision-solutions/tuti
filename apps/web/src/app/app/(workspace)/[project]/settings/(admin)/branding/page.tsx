@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { plansEnabled } from "@tuti/shared";
+import { badgePerMonth, plansEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BrandingSettings, PoweredBySettings } from "@/components/branding-settings";
@@ -49,7 +49,7 @@ export default async function BrandingPage(props: PageProps<"/app/[project]/sett
             poweredBy={brand.poweredBy}
             licensedUntil={license.licensedUntil}
             buyLicenseUrl={license.buyUrl}
-            plan={plansEnabled() ? { addOn: badgeAddOn, billingUrl: `/app/${slug}/settings/billing` } : null}
+            plan={plansEnabled() ? { addOn: badgeAddOn, billingUrl: `/app/${slug}/settings/billing`, perMonth: badgePerMonth() } : null}
           />
         </CardContent>
       </Card>

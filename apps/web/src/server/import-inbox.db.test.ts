@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { cutImportedQuotes, handlers, IMPORT_KEY, importsSettled } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
-import { FAKE_FEATUREBASE_FILES, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
+import { billingFile, FAKE_FEATUREBASE_FILES, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, type S3Fake, startFeaturebaseFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { widgetToken } from "@/lib/widget-session";
@@ -35,7 +35,7 @@ afterEach(() => {
 beforeEach(async () => {
   vi.stubEnv("FEATUREBASE_API_URL", fake.url);
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
   }
@@ -139,7 +139,7 @@ test("conversations still going and the closed ones Tuti keeps come across, numb
 });
 
 test("without plans, every closed conversation comes across: none is deleted", async () => {
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   const done = await importInbox();
   expect(done.counts).toMatchObject({ conversations: { imported: 4, leftOut: {} } });
   expect((await conversations()).map((c) => [c.number, c.subject, c.status])).toEqual([

@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { GET } from "./route";
@@ -5,10 +6,10 @@ import { GET } from "./route";
 afterEach(() => vi.unstubAllEnvs());
 
 test("the plans are served where they're sold, for the marketing site, and not found elsewhere", async () => {
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   expect(GET().status).toBe(404);
 
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("AI_CREDITS", "on");
   vi.stubEnv("AI_CREDITS_FREE", "0");
   const body = await GET().json();

@@ -1,6 +1,6 @@
 import { Prisma, prisma } from "@tuti/db";
 import { historySince, SEARCHES_KEPT_DAYS } from "@tuti/jobs";
-import { historyKeptDays, type PaidPlan, REPORTING_RANGE_NEEDED, reportingDays } from "@tuti/shared";
+import { historyKeptDays, type PaidPlan, reportingDays, reportingRangeNeeded } from "@tuti/shared";
 import { z } from "zod";
 
 import { DEFAULT_RANGE, RANGE_KEYS, type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
@@ -384,7 +384,7 @@ export const getReports = defineOperation({
   run: async ({ projectId }, input) => {
     const plan = await requirePlan(projectId, "reporting");
     if (lockedRanges(plan).includes(input.range)) {
-      throw new OperationError(402, "plan_required", `${REPORTING_RANGE_NEEDED} See Settings → Billing.`);
+      throw new OperationError(402, "plan_required", `${reportingRangeNeeded()} See Settings → Billing.`);
     }
     const range = reportRange(input.range);
     const [docs, ai, gaps, inbox] = await Promise.all([

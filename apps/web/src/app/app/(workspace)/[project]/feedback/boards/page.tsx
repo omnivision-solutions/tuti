@@ -1,5 +1,5 @@
 import { prisma, type PostStatus } from "@tuti/db";
-import { boardLimit } from "@tuti/shared";
+import { boardLimit, planDisplay, roomierPlan } from "@tuti/shared";
 import { ArrowUpRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -56,6 +56,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
   // A project past its plan's limit (after a downgrade, or an import's boards, brought off) keeps its boards; it just
   // can't add more. One that's off turns on while there's room for one more that's on.
   const limit = boardLimit(plan);
+  const roomier = roomierPlan(plan, boardLimit);
   const on = boards.filter((board) => !board.off).length;
   const full = limit !== null && boards.length >= limit;
   const room = limit === null || on < limit;
@@ -76,11 +77,16 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/feedba
         <Alert>
           <AlertDescription>
             <p>
-              Projects on the {plan === "FREE" ? "free" : "Pro"} plan have up to {limit} feedback boards.{" "}
-              <Link href={`/app/${project.slug}/settings/billing`} className="underline underline-offset-4">
-                Upgrade to {plan === "FREE" ? "Pro" : "Business"}
-              </Link>{" "}
-              {someOff && !room ? "to add more, or to turn on the boards that are off." : "to add more."}
+              Projects on the {planDisplay(plan).name} plan have up to {limit} feedback boards.
+              {roomier && (
+                <>
+                  {" "}
+                  <Link href={`/app/${project.slug}/settings/billing`} className="underline underline-offset-4">
+                    Upgrade to {roomier.name}
+                  </Link>{" "}
+                  {someOff && !room ? "to add more, or to turn on the boards that are off." : "to add more."}
+                </>
+              )}
             </p>
           </AlertDescription>
         </Alert>

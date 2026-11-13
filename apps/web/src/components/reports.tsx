@@ -1,4 +1,4 @@
-import { planNeeded, REPORTING_RANGE_NEEDED } from "@tuti/shared";
+import { planNeeded, reportingRangeNeeded } from "@tuti/shared";
 import { cn } from "cn";
 import { ArrowDownRightIcon, ArrowUpRightIcon, LockIcon } from "lucide-react";
 import Link from "next/link";
@@ -58,7 +58,7 @@ export function ReportPane({
       current={range.key}
       dates={Object.fromEntries(RANGES.map(({ key }) => [key, rangeDates(reportRange(key, new Date(range.today)))])) as Record<RangeKey, string>}
       locked={locked}
-      lockedHint={REPORTING_RANGE_NEEDED}
+      lockedHint={reportingRangeNeeded()}
     />
   );
   return (

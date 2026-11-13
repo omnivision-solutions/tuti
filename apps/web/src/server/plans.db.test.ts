@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { FAKE_STRIPE_PRICES, startStripeFake, type FakeStripeEvent, type StripeFake } from "@tuti/testkit";
+import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
@@ -20,7 +20,7 @@ beforeAll(async () => {
 });
 afterAll(() => stripe.close());
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...stripe.env, PLANS: "on", AI_CREDITS: "on", APP_URL: "https://app.tuti.example" })) {
+  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billingFile(), AI_CREDITS: "on", APP_URL: "https://app.tuti.example" })) {
     vi.stubEnv(name, value);
   }
   owner = await signUp("Owner");
@@ -82,7 +82,7 @@ test("paid, the project is on the plan, with the month's credits once, however o
   expect(grants[0]!.credits.toNumber()).toBe(1000);
   expect(grants[0]!.expiresAt).toEqual(new Date(sub.items.data[0]!.current_period_end * 1000));
   // Credits a month are the operator's to set.
-  vi.stubEnv("AI_CREDITS_PRO", "250");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.monthlyCredits = 250; }));
   await deliver(...stripe.renew(subscription));
   expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000, 250]);
   expect((await creditBalance(project.id)).balance).toBe(1250);
@@ -205,7 +205,7 @@ test("a renewal reported after its subscription ended and another took the plan 
 test("a plan's price replaced in Stripe: those on the older price keep their plan", async () => {
   const { subscription, events } = await subscribe("pro");
   await deliver(...events);
-  vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", `price_new_pro,${stripe.env.STRIPE_PRICE_PRO_MONTHLY}`);
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.prices.month!.stripe.unshift("price_new_pro"); }));
   await deliver(stripe.update(subscription, {}));
   expect(await plan()).toMatchObject({ plan: "pro" });
   // New plans are sold at the new price.
@@ -215,12 +215,12 @@ test("a plan's price replaced in Stripe: those on the older price keep their pla
 });
 
 test("not sold: plans off, Stripe not set up, or a plan without its price; plan.get says plans are off", async () => {
-  vi.stubEnv("STRIPE_PRICE_PRO_YEARLY", "");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { delete pro.prices.year; }));
   await expect(call(subscribePlan, as(), { plan: "pro", interval: "year" })).rejects.toMatchObject({ status: 503, code: "plans_unavailable" });
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
   await expect(call(subscribePlan, as(), { plan: "pro", interval: "month" })).rejects.toMatchObject({ status: 503 });
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", stripe.env.STRIPE_WEBHOOK_SECRET!);
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   await expect(call(subscribePlan, as(), { plan: "pro", interval: "month" })).rejects.toMatchObject({ status: 503 });
   expect(await plan()).toMatchObject({ enabled: false, plan: "free" });
   expect(stripe.sessions.filter((session) => session.client_reference_id === project.id)).toEqual([]);
@@ -230,7 +230,7 @@ test("Manage plan opens Stripe's customer portal for the project's customer, eve
   await expect(call(managePlan, as(), {})).rejects.toMatchObject({ status: 409, code: "no_plan" });
   const { subscription, events } = await subscribe("pro");
   await deliver(...events);
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   const { url } = await call(managePlan, as(), {});
   expect(stripe.portals.at(-1)).toMatchObject({
     url,

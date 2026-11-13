@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
@@ -383,7 +384,7 @@ describe("pending invitations on the dashboard", () => {
 
 describe("on the free plan (where plans are sold)", () => {
   beforeEach(() => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -436,7 +437,7 @@ describe("on the free plan (where plans are sold)", () => {
   });
 
   test("self-hosted (no plans), no limit", async () => {
-    vi.stubEnv("PLANS", "");
+    vi.stubEnv("BILLING_CONFIG", "");
     for (let i = 0; i < 3; i++) {
       await addMember(project.id, "MEMBER");
     }

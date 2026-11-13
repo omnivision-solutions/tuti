@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { FAKE_STRIPE_PRICES, startStripeFake, type FakeStripeEvent, type StripeFake } from "@tuti/testkit";
+import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
@@ -19,7 +19,7 @@ beforeAll(async () => {
 });
 afterAll(() => stripe.close());
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...stripe.env, PLANS: "on", APP_URL: "https://app.tuti.example" })) {
+  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billingFile(), APP_URL: "https://app.tuti.example" })) {
     vi.stubEnv(name, value);
   }
   stripe.declining = false;
@@ -78,7 +78,7 @@ test("refused on the free plan, while a payment is failing, and when the card is
   expect(await shown()).toBe(true);
   // And not sold where its price isn't set.
   stripe.declining = false;
-  vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", "");
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { delete badge!.month; }));
   await expect(badge(true)).rejects.toMatchObject({ status: 503 });
 });
 
@@ -139,7 +139,7 @@ test("it ends with the plan: the badge is back, and can't be hidden again withou
 test("its price replaced in Stripe: an add-on bought at the older one still hides the badge, and can still be removed", async () => {
   const subscription = await subscribe();
   await badge(true);
-  vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", `price_new_badge,${stripe.env.STRIPE_PRICE_BADGE_MONTHLY}`);
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { badge!.month!.stripe.unshift("price_new_badge"); }));
   await deliver(stripe.update(subscription, {}));
   expect(await shown()).toBe(false);
   expect(await badge(false)).toEqual({ on: false });

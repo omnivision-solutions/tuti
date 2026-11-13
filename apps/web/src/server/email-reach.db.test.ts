@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { audienceReach, postAudience } from "@tuti/jobs";
 import { expect, test, vi } from "vitest";
@@ -64,7 +65,7 @@ test("a post's email reaches a confirmed or SSO address, not the team, the unsub
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
   expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "turnedOff", "emailed", "noAddress", "notReader", "emailed", "emailed", "notReader"]);
   // On a plan without private portals, it's the team's only: nobody else hears.
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   try {
     expect(await statuses()).toEqual(["notReader", "notReader", "team", "optedOut", "turnedOff", "notReader", "notReader", "notReader", "notReader", "notReader", "notReader"]);
   } finally {

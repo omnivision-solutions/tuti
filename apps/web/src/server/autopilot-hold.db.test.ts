@@ -2,7 +2,7 @@ import type { Doc } from "@tuti/content";
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotDue, autopilotDueToken, lockProject, scheduleByItself } from "@tuti/jobs";
 import { log } from "@tuti/shared";
-import { startModelFake, startWebhookReceiver } from "@tuti/testkit";
+import { billingFile, startModelFake, startWebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { POST as due } from "@/app/api/autopilot/due/route";
@@ -198,12 +198,11 @@ test("a changelog line the previous release scheduled is written into the draft 
 });
 
 test("an edit that can't go live because the project publishes more articles than its plan allows waits, saying so; once there's room it goes", async () => {
-  vi.stubEnv("PLANS", "on");
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   // The file's AI fakes stay stubbed: only these go back.
   onTestFinished(() => {
-    vi.stubEnv("PLANS", "");
-    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+    vi.stubEnv("BILLING_CONFIG", "");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
   const edit = await articleEdit();
@@ -231,11 +230,10 @@ test("an edit that can't go live because the project publishes more articles tha
 });
 
 test("an edit waiting for the plan's published articles, once there's room, says what holds it now when an unsure edit lands on its article", async () => {
-  vi.stubEnv("PLANS", "on");
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   onTestFinished(() => {
-    vi.stubEnv("PLANS", "");
-    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+    vi.stubEnv("BILLING_CONFIG", "");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO", autopilotMinSure: 80 } });
   const first = await articleEdit();
@@ -256,11 +254,10 @@ test("an edit waiting for the plan's published articles, once there's room, says
 });
 
 test("Publish now past the plan's published articles: the edit waits, saying so; Home's other updates still go, and it says which didn't", async () => {
-  vi.stubEnv("PLANS", "on");
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   onTestFinished(() => {
-    vi.stubEnv("PLANS", "");
-    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+    vi.stubEnv("BILLING_CONFIG", "");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
   const edit = await articleEdit();
@@ -301,11 +298,10 @@ test("Publish now past the plan's published articles: the edit waits, saying so;
 });
 
 test("Publish now on an article's two scheduled edits past the plan's published articles: both wait, saying why, and it's told the limit", async () => {
-  vi.stubEnv("PLANS", "on");
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   onTestFinished(() => {
-    vi.stubEnv("PLANS", "");
-    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+    vi.stubEnv("BILLING_CONFIG", "");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
   const first = await articleEdit();
@@ -325,11 +321,10 @@ test("Publish now on an article's two scheduled edits past the plan's published 
 });
 
 test("Publish now from Home with an article edit held by one refused earlier past the plan's published articles: the rest go, and it says which waits", async () => {
-  vi.stubEnv("PLANS", "on");
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   onTestFinished(() => {
-    vi.stubEnv("PLANS", "");
-    vi.stubEnv("ARTICLE_LIMIT_FREE", "");
+    vi.stubEnv("BILLING_CONFIG", "");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
   const first = await articleEdit();

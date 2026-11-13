@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -20,7 +21,7 @@ let project: Awaited<ReturnType<typeof createProject>>;
 let hostname: string;
 
 beforeEach(async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   owner = await signUp("Owner");
   project = await createProject(owner);
@@ -83,7 +84,7 @@ test("a path of the site on a project that drops to Pro isn't served either", as
 });
 
 test("self-hosted (no plans), every project has both", async () => {
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   expect((await call(setDomain, as(), { hostname })).domain.hostname).toBe(hostname);
   await prisma.customDomain.update({ where: { projectId: project.id }, data: { verifiedAt: new Date() } });
   forgetCustomDomain(hostname);

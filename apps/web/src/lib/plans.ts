@@ -1,30 +1,23 @@
-/**
- * What tuti.so's plans cost and include, as shown on Settings → Billing and the pricing page (docs/plan.md,
- * Plans). Stripe's prices (STRIPE_PRICE_*) are what's charged: change both together. Yearly is about two
- * months free.
- */
-export const PLAN_PRICES = {
-  PRO: { name: "Pro", month: 39, year: 32 },
-  BUSINESS: { name: "Business", month: 99, year: 79 },
-} as const;
+/** Dollars a month a plan shows, billed monthly and billed yearly (a year's monthly share); null where it isn't sold that way. */
+export type PlanPrice = { month: number | null; year: number | null };
 
-/** Beside the Yearly toggle: "Save up to 20%", the most a plan saves billed yearly. */
-export const YEARLY_NOTE = `Save up to ${Math.max(...Object.values(PLAN_PRICES).map(({ month, year }) => Math.round((1 - year / month) * 100)))}%`;
+/** Beside the Yearly toggle: "Save up to 20%", the most a plan saves billed yearly; null where none does. */
+export function yearlyNote(prices: PlanPrice[]): string | null {
+  const saved = Math.max(0, ...prices.map(({ month, year }) => (month && year !== null ? Math.round((1 - year / month) * 100) : 0)));
+  return saved > 0 ? `Save up to ${saved}%` : null;
+}
 
 /** "$39 a month", or for yearly "$32 a month, billed yearly". */
-export const planPriceText = (plan: keyof typeof PLAN_PRICES, interval: "month" | "year") =>
-  `$${PLAN_PRICES[plan][interval]} a month${interval === "year" ? ", billed yearly" : ""}`;
-
-/** The add-on hiding "Powered by tuti", a month (decided 2026-10-25); a yearly plan pays twelve of them a year. */
-export const BADGE_PRICE = 49;
+export const planPriceText = (price: PlanPrice, interval: "month" | "year") =>
+  `$${price[interval] ?? price.month ?? price.year} a month${interval === "year" ? ", billed yearly" : ""}`;
 
 /**
- * How tuti.so/app/license describes a licence's price and billing, from the intervals it's sold in:
- * "$49 a month" and "each month or each year", or "billed yearly" when only yearly is.
+ * How tuti.so/app/license describes a licence's price and billing (`perMonth`, the badge add-on's), from the intervals
+ * it's sold in: "$49 a month" and "each month or each year", or "billed yearly" when only yearly is.
  */
-export function licenseBilling({ month, year }: { month: boolean; year: boolean }): { price: string; billed: string } {
+export function licenseBilling(perMonth: number, { month, year }: { month: boolean; year: boolean }): { price: string; billed: string } {
   return {
-    price: `$${BADGE_PRICE} a month${year && !month ? ", billed yearly" : ""}`,
+    price: `$${perMonth} a month${year && !month ? ", billed yearly" : ""}`,
     billed: month && year ? "each month or each year" : year ? "each year" : "each month",
   };
 }

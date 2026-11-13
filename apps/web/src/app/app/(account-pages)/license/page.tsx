@@ -1,11 +1,12 @@
 import { prisma } from "@tuti/db";
+import { badgePerMonth } from "@tuti/shared";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TermsAgreement } from "@/components/terms-agreement";
-import { BADGE_PRICE, licenseBilling } from "@/lib/plans";
+import { licenseBilling } from "@/lib/plans";
 import { isCloudInstallation, LICENSE_CLAIM } from "@/server/license";
 import { buyLicense } from "@/server/license-checkout";
 import { LICENSE_ID, licensePrice } from "@/server/license-sales";
@@ -51,7 +52,8 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
   });
   const monthly = licensePrice("month");
   const yearly = licensePrice("year");
-  const billing = licenseBilling({ month: Boolean(monthly), year: Boolean(yearly) });
+  const perMonth = badgePerMonth() ?? 0;
+  const billing = licenseBilling(perMonth, { month: Boolean(monthly), year: Boolean(yearly) });
   const portal = process.env.STRIPE_PORTAL_LOGIN_URL?.trim();
   const body = `Hi,\n\nI'd like a licence to remove "Powered by tuti".\n\nInstallation ID: ${installation}\nProject ID: ${project}\n`;
   const mailto = `mailto:${LICENSE_EMAIL}?${new URLSearchParams({ subject: "Tuti licence", body }).toString().replaceAll("+", "%20")}`;
@@ -112,12 +114,12 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
           <div className="flex flex-wrap gap-2">
             {monthly && (
               <Button type="submit" name="interval" value="month">
-                Buy for ${BADGE_PRICE} a month
+                Buy for ${perMonth} a month
               </Button>
             )}
             {yearly && (
               <Button type="submit" name="interval" value="year" variant={monthly ? "outline" : "default"}>
-                Buy for ${BADGE_PRICE * 12} a year
+                Buy for ${perMonth * 12} a year
               </Button>
             )}
           </div>

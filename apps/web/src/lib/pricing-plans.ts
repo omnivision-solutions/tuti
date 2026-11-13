@@ -1,8 +1,6 @@
-import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
+import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planDisplay, planIncludes, type PlanKey, teamLimit, topupsEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
-
-import { PLAN_PRICES } from "./plans";
 
 const SALES_EMAIL = "hello@tuti.so";
 
@@ -23,7 +21,7 @@ export function about(credits: number, cost: number): number {
 const number = (value: number) => value.toLocaleString("en");
 
 /** "1,000 AI credits a month", opening what they buy on `plan`; nothing where AI isn't paid with credits. */
-function credits(plan: "FREE" | PaidPlan, count: number, per: string): PlanLine[] {
+function credits(plan: PlanKey, count: number, per: string): PlanLine[] {
   if (!creditsEnabled() || count <= 0) {
     return [];
   }
@@ -58,39 +56,50 @@ const AUTOPILOT: PlanLine = {
 };
 
 /** Autopilot, on the plans that include it. */
-const autopilot = (plan: "FREE" | PaidPlan) => (planIncludes(plan, "codeChanges") ? [AUTOPILOT] : []);
+const autopilot = (plan: PlanKey) => (planIncludes(plan, "codeChanges") ? [AUTOPILOT] : []);
 
-const boards = (plan: "FREE" | PaidPlan): PlanLine => {
+const boards = (plan: PlanKey): PlanLine => {
   const limit = boardLimit(plan);
   return { text: limit === null ? "Unlimited boards" : `Up to ${limit} boards` };
 };
 
-const articles = (plan: "FREE" | PaidPlan): PlanLine => {
+const articles = (plan: PlanKey): PlanLine => {
   const limit = articleLimit(plan);
   return { text: limit === null ? "Unlimited articles" : `Up to ${number(limit)} published articles` };
 };
 
 /** "7 days of inbox history": how far back closed conversations and AI conversations show (none without plans: all of it). */
-const history = (plan: "FREE" | PaidPlan): PlanLine[] => {
+const history = (plan: PlanKey): PlanLine[] => {
   const days = historyDays(plan);
   return days === null ? [] : [{ text: `${days} days of inbox history` }];
 };
 
-const versions = (plan: "FREE" | PaidPlan): PlanLine => {
+const versions = (plan: PlanKey): PlanLine => {
   const kept = articleVersionsKept(plan);
   return { text: kept === 1 ? "1 version kept per help article" : `${kept} versions kept per help article` };
+};
+
+/** A plan's name and price as a card shows them; a plan sold one way only shows that price both ways. */
+function shown(plan: PlanKey): Pick<PricingPlan, "name" | "price"> {
+  const { name, price } = planDisplay(plan);
+  const month = price.month ?? price.year;
+  return { name, price: month === null ? null : { month, year: price.year ?? month } };
+}
+
+const seats = (plan: PlanKey): PlanLine => {
+  const limit = teamLimit(plan);
+  return { text: limit === null ? "Unlimited team members" : `${limit} team ${limit === 1 ? "member" : "members"}` };
 };
 
 /** tuti.so's plans as the pricing page shows them (and Settings → Billing compares them): server only, it reads the server's settings. */
 export function pricingPlans(): PricingPlan[] {
   return [
     {
-      name: "Free",
-      price: null,
+      ...shown("FREE"),
       highlights: [...autopilot("FREE"), ...credits("FREE", freeCredits(), "to start")],
       features: [
         { text: "Unlimited end users" },
-        { text: "3 team members" },
+        seats("FREE"),
         { text: "Help center, roadmap and changelog" },
         { text: "Unlimited feedback posts" },
         boards("FREE"),
@@ -101,12 +110,11 @@ export function pricingPlans(): PricingPlan[] {
       cta: { label: "Start free", href: "/app/auth/sign-up" },
     },
     {
-      name: PLAN_PRICES.PRO.name,
-      price: PLAN_PRICES.PRO,
+      ...shown("PRO"),
       highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
-      intro: "Everything in Free, plus:",
+      intro: `Everything in ${planDisplay("FREE").name}, plus:`,
       features: [
-        { text: "Unlimited team members" },
+        seats("PRO"),
         boards("PRO"),
         articles("PRO"),
         ...history("PRO"),
@@ -116,14 +124,13 @@ export function pricingPlans(): PricingPlan[] {
         versions("PRO"),
         { text: "Reporting, up to a month" },
       ],
-      cta: { label: "Start with Pro", href: "/app/auth/sign-up" },
+      cta: { label: `Start with ${planDisplay("PRO").name}`, href: "/app/auth/sign-up" },
       featured: true,
     },
     {
-      name: PLAN_PRICES.BUSINESS.name,
-      price: PLAN_PRICES.BUSINESS,
+      ...shown("BUSINESS"),
       highlights: [...autopilot("BUSINESS"), ...credits("BUSINESS", planCredits("BUSINESS"), "a month")],
-      intro: "Everything in Pro, plus:",
+      intro: `Everything in ${planDisplay("PRO").name}, plus:`,
       features: [
         boards("BUSINESS"),
         // Only where the operator gives Business a limit of its own (it has everything in Pro).
@@ -135,7 +142,7 @@ export function pricingPlans(): PricingPlan[] {
         { text: "Your help center under a path of your site" },
         { text: "Priority support" },
       ],
-      cta: { label: "Start with Business", href: "/app/auth/sign-up" },
+      cta: { label: `Start with ${planDisplay("BUSINESS").name}`, href: "/app/auth/sign-up" },
     },
   ];
 }

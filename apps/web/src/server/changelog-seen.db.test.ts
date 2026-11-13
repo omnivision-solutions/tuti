@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
@@ -182,7 +183,7 @@ test("the count has their conversations by email from their address too, as the 
 });
 
 test("on a private portal, it also says when the latest announcement was, to someone who may read the portal only", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const publishedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
   await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "Dark mode", publishedAt, announced: true } });
   // Public: /api/widget/latest says it to anyone, so it isn't said here.

@@ -2,16 +2,7 @@ import { type Doc, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { addToRunningDraft, codeChange, creditBalance, enqueue, grantCredits, handlers, setChangelogLine, writeChangelogLine } from "@tuti/jobs";
 import { log, resetCodeChangesSettings } from "@tuti/shared";
-import {
-  type FakeDecision,
-  type FakePullRequest,
-  type GithubFake,
-  type ModelFake,
-  type OpenAIFake,
-  startGithubFake,
-  startModelFake,
-  startWebhookReceiver,
-} from "@tuti/testkit";
+import { billingFile, type FakeDecision, type FakePullRequest, type GithubFake, type ModelFake, type OpenAIFake, startGithubFake, startModelFake, startWebhookReceiver } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { actAs, createProject, landArticleEdit, sectionsDoc, signUp, type TestUser } from "@/test/helpers";
@@ -1434,7 +1425,7 @@ describe("out of AI credits", () => {
 
 describe("plans", () => {
   beforeEach(() => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   test("Autopilot is on every plan: on the free plan, a merge is a code change", async () => {
     github.pullRequest(repo, pullRequest(50));
@@ -1460,7 +1451,7 @@ describe("plans", () => {
   });
 
   test("self-hosted (no plans), every project has code changes", async () => {
-    vi.stubEnv("PLANS", "");
+    vi.stubEnv("BILLING_CONFIG", "");
     github.pullRequest(repo, pullRequest(53));
     model.decide(INTERNAL);
     noDocs();

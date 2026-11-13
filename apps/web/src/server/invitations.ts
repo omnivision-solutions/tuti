@@ -3,7 +3,7 @@
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { emailConfigured, inviteEmail, sendEmail } from "@tuti/email";
 import { DAILY_INVITE_LIMIT, generateInvitationToken, handOverPlaceholders, hashInvitationToken, invitationExpiry, lockProject, pendingInvitation, teamPlacesTaken, UNSENT_EXPIRY } from "@tuti/jobs";
-import { log, teamLimit } from "@tuti/shared";
+import { log, planDisplay, type PlanKey, teamLimit, upgradeFor } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -17,9 +17,11 @@ import { getAccountSession, getSession } from "./session";
 
 type Result = { error?: string };
 
-/** Said when a project's plan has no room for another team member (Free: 3). */
-const teamFull = (limit: number) =>
-  `Projects on the Free plan have up to ${limit} team members, invites included. Upgrade to Pro in Settings → Billing to invite more.`;
+/** Said when a project's plan has no room for another team member. */
+const teamFull = (plan: PlanKey, limit: number) =>
+  [`Projects on the ${planDisplay(plan).name} plan have up to ${limit} team members, invites included.`, upgradeFor(plan, teamLimit, " in Settings → Billing to invite more.")]
+    .filter(Boolean)
+    .join(" ");
 
 const roleSchema = z.enum(["OWNER", "ADMIN", "MEMBER"]);
 
@@ -65,7 +67,7 @@ export async function createInvitation(
   const full = await prisma.$transaction(async (tx) => {
     // Room on the plan for members and invites still pending (a new invite to the same address replaces
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
-    const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
+    const [project] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
     // Their role again, under that lock: taking someone off the team or changing their role takes it too, then revokes their invites.
     const me = await teamRoleIn(tx, projectId, session.user.id);
     if (!me || !canAssignRole(me, parsed.data.role)) {
@@ -78,7 +80,7 @@ export async function createInvitation(
     }
     const limit = project ? teamLimit(project.plan) : null;
     if (limit !== null && (await teamPlacesTaken(tx, projectId, parsed.data.email)) >= limit) {
-      return limit;
+      return { plan: project!.plan, limit };
     }
     // Replacing a pending invite revokes it, so it takes what revoking it would: an owner's owner invite is for owners to change.
     const pending = await tx.invitation.findMany({ where: { projectId, email: parsed.data.email, ...pendingInvitation() }, select: { role: true } });
@@ -112,7 +114,7 @@ export async function createInvitation(
     return { error: `${parsed.data.email} has a pending owner invite. Only owners can change it.` };
   }
   if (full !== null) {
-    return { error: teamFull(full) };
+    return { error: teamFull(full.plan, full.limit) };
   }
   const url = `${appUrl().origin}/app/auth/invite/${token}`;
   if (linkOnly) {
@@ -356,7 +358,7 @@ async function join(invitation: InvitationForJoining, userId: string) {
       await prisma.$transaction(async (tx) => {
         // The project's lock first, as inviting takes it before the invites, so the two can't deadlock:
         // room on the plan is counted under it, and two people joining at once can't both take the last place.
-        const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${invitation.projectId} FOR UPDATE`;
+        const [project] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT plan FROM project WHERE id = ${invitation.projectId} FOR UPDATE`;
         // Claim the invite atomically so it can only be used once.
         const claimed = await tx.invitation.updateMany({
           where: { id: invitation.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, sentAt: { not: null } },

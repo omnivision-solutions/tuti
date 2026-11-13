@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
@@ -459,11 +460,11 @@ test("each report's tiles compare it with as many days just before: those days' 
   expect(inbox.before).toEqual({ conversations: 2, fromAi: 1, medianFirstReply: 3600 });
 
   // With plans, conversations and AI questions are deleted after a year: Past year's previous days aren't compared, a quarter's are.
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   expect((await aiReport(project.id, reportRange("year"))).before).toBeNull();
   expect((await inboxReport(project.id, reportRange("year"))).before).toBeNull();
   expect((await inboxReport(project.id, reportRange("quarter"))).before).toMatchObject({ conversations: 0 });
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
 
   // The tiles: up or down on the 30 days before, and better or worse.
   actAs(owner);
@@ -625,7 +626,7 @@ test("reports.get by plan: Free refused, Pro up to a month, Business every range
   const plan = (to: "FREE" | "PRO" | "BUSINESS") => prisma.project.update({ where: { id: project.id }, data: { plan: to } });
   expect((await report("year")).docs.days).toHaveLength(365);
 
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   await expect(report("7d")).rejects.toMatchObject({ status: 402, message: "Reporting needs the Pro plan. See Settings → Billing." });
   // Nor its numbers through docs.insights (the past 30 days).
   const insights = () => call(getDocsInsights, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
@@ -636,7 +637,7 @@ test("reports.get by plan: Free refused, Pro up to a month, Business every range
   }
   await expect(insights()).resolves.toHaveProperty("gaps");
   for (const range of ["quarter", "year"] as const) {
-    await expect(report(range)).rejects.toMatchObject({ status: 402, message: "Ranges longer than a month need the Business plan. See Settings → Billing." });
+    await expect(report(range)).rejects.toMatchObject({ status: 402, message: "Longer ranges need the Business plan. See Settings → Billing." });
   }
   await plan("BUSINESS");
   expect((await report("year")).docs.days).toHaveLength(365);
@@ -648,7 +649,7 @@ test("on Free, Reporting's pages are made-up numbers, blurred under a card sayin
   actAs(owner);
   expect(await page(ReportingOverviewPage)).toContain("7,777");
 
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const free = await page(ReportingOverviewPage);
   expect(free).toContain("Reporting needs the Pro plan.");
   expect(free).toContain("See plans");

@@ -1,5 +1,5 @@
 import { aiFor, aiPaused, creditBalance } from "@tuti/jobs";
-import { startStripeFake, type FakeStripeEvent, type StripeFake } from "@tuti/testkit";
+import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
@@ -20,7 +20,7 @@ beforeAll(async () => {
 });
 afterAll(() => stripe.close());
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...stripe.env, PLANS: "on", AI_CREDITS: "on", APP_URL: "https://app.tuti.example" })) {
+  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billingFile(), AI_CREDITS: "on", APP_URL: "https://app.tuti.example" })) {
     vi.stubEnv(name, value);
   }
   owner = await signUp("Owner");
@@ -116,7 +116,7 @@ test("the add-on's own charge refunded in full removes it, with nothing more cre
     (invoice) => invoice.billing_reason === "subscription_update" && invoice.parent.subscription_details.subscription === subscription,
   )!;
   await deliver(stripe.refund(stripe.chargeFor(proration.id).id));
-  expect(stripe.subscriptions.get(subscription)!.items.data.map((item) => item.price.id)).toEqual([stripe.env.STRIPE_PRICE_PRO_MONTHLY]);
+  expect(stripe.subscriptions.get(subscription)!.items.data.map((item) => item.price.id)).toEqual([FAKE_STRIPE_PRICES.STRIPE_PRICE_PRO_MONTHLY.id]);
   expect(await call(getPlan, as(), {})).toMatchObject({ plan: "pro", badge: false });
   expect(await shown()).toBe(true);
 });

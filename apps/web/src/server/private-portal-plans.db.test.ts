@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
@@ -22,7 +23,7 @@ let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   owner = await signUp("Owner");
   project = await createProject(owner);
 });
@@ -85,7 +86,7 @@ test("on a lower plan, nobody past the team is in a group, so content for groups
 });
 
 test("self-hosted (no plans), every project has them", async () => {
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   await call(updatePortal, as(), { access: "private" });
   await call(createGroup, as(), { name: "Beta", conditions: BETA });
   expect(await prisma.readerGroup.count({ where: { projectId: project.id } })).toBe(1);

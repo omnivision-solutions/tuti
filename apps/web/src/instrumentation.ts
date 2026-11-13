@@ -1,4 +1,4 @@
-import { assertEnv, checkAiProvider, checkCodeChangesSettings, log } from "@tuti/shared";
+import { assertEnv, billingConfig, checkAiProvider, checkCodeChangesSettings, log } from "@tuti/shared";
 import { assertSesSettings } from "@tuti/shared/ses";
 
 // Runs once when the server starts (not during `next build`).
@@ -8,6 +8,7 @@ export async function register() {
   // Once, where the server's code runs (not again for the edge runtime): a bad value stops start-up, the values are logged.
   if (process.env.NEXT_RUNTIME === "nodejs") {
     checkCodeChangesSettings();
+    billingConfig();
     // Not awaited: a slow or wrong AI provider is logged, never holds up the start (AI is optional).
     void checkAiProvider();
   }

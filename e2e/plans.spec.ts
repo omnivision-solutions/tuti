@@ -94,7 +94,7 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByText("Hiding it is an add-on to a paid plan.")).toBeVisible();
   await owner.getByLabel('Show "Powered by tuti" in the footer').click();
   const dialog = owner.getByRole("dialog", { name: 'Keep "Powered by tuti"?' });
-  await expect(dialog).toContainText("add it to its plan in Billing: $49 a month, on Pro or Business.");
+  await expect(dialog).toContainText("add it to its plan in Billing: $49 a month, on a paid plan.");
   await expect(dialog.getByRole("link", { name: "Get a licence" })).toHaveCount(0);
   await dialog.getByRole("link", { name: "See Billing" }).click();
   await expect(owner).toHaveURL(`${CLOUD_URL}/app/${slug}/settings/billing`);
@@ -233,7 +233,7 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   await expect(owner.getByRole("menuitem", { name: "Past quarter" })).toHaveAttribute("aria-disabled", "true");
   // Not faded, so they read in dark mode too: their lock says they can't be picked.
   await expect(owner.getByRole("menuitem", { name: "Past year" })).toHaveCSS("opacity", "1");
-  await expect(owner.getByText("Ranges longer than a month need the Business plan.")).toBeVisible();
+  await expect(owner.getByText("Longer ranges need the Business plan.")).toBeVisible();
   await checkpoint(owner, "team-reporting-pro-ranges", { fullPage: false });
   await owner.getByRole("menuitem", { name: "Last month" }).click();
   await owner.waitForURL(`**/app/${slug}/reporting?range=last-month`);

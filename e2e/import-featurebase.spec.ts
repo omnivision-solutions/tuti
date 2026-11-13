@@ -299,7 +299,7 @@ test("on a plan with a board limit, the setup step says before starting what hap
   await owner.goto(`/app/${slug}/setup`);
   await owner.getByRole("radio", { name: /^Featurebase/ }).check();
   const note = owner.getByText(
-    "Projects on the free plan have up to 2 feedback boards: Featurebase's boards past that come across turned off, seen only by your team in the app until an upgrade lets you turn them on. Pro has up to 5, and Business any number.",
+    "Projects on the Free plan have up to 2 feedback boards: Featurebase's boards past that come across turned off, seen only by your team in the app until an upgrade lets you turn them on. Pro has up to 5, and Business any number.",
   );
   // Only while Feedback is picked.
   await expect(note).toHaveCount(0);
