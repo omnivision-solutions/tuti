@@ -257,8 +257,8 @@ test("the daily job deletes closed conversations and AI questions after a year (
   // Its totals count every project's (other tests leave theirs): what's left of this one's says what it deleted.
   expect(await handlers.deleteOldHistory({}, quiet)).toMatchObject({ failedFiles: 0 });
   expect(await left()).toEqual({ conversations: [2, 3, 5], questions: ["Kept"], file: false });
-  // Kept less long: never under Business's 90 days, so #3 (100 days) goes.
-  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.historyKeptDays = 30; }));
+  // Kept less long: as long as Business's 90 days, the least the file allows, so #3 (100 days) goes.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.historyKeptDays = 90; }));
   await handlers.deleteOldHistory({}, quiet);
   expect((await left()).conversations).toEqual([2, 5]);
   expect(await prisma.conversationMessage.count({ where: { conversationId: old.id } })).toBe(0);

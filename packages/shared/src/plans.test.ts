@@ -76,7 +76,7 @@ test("history: by plan, kept for historyKeptDays, never less than the longest pl
   expect([historyDays("FREE"), historyDays("PRO"), historyDays("BUSINESS"), longestHistoryDays(), historyKeptDays()]).toEqual([7, 30, 90, 90, 365]);
   vi.stubEnv("BILLING_CONFIG", billingFile((config, { business }) => {
     business.limits.historyDays = 400;
-    config.historyKeptDays = 30;
+    config.historyKeptDays = 400;
   }));
   expect([longestHistoryDays(), historyKeptDays()]).toEqual([400, 400]);
 });

@@ -111,6 +111,10 @@ export const billingSchema = z
         context.addIssue({ code: "custom", path: ["plans", index, "limits", "reportingDays"], message: `is lower than ${before.key}'s` });
       }
     });
+    const longest = Math.max(...config.plans.map(({ limits }) => limits.historyDays));
+    if (config.historyKeptDays < longest) {
+      context.addIssue({ code: "custom", path: ["historyKeptDays"], message: `must be at least ${longest}, the longest plan's history` });
+    }
     const stripe = [...config.plans.flatMap(({ prices }) => Object.values(prices)), ...Object.values(config.badge ?? {})].flatMap((price) => price.stripe);
     stripe.forEach((id, index) => {
       if (stripe.indexOf(id) !== index) {

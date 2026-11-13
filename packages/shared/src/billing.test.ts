@@ -70,3 +70,8 @@ test("a plan's Reporting range is no shorter than the plan before it's, counted 
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.limits.reportingDays = 7; }));
   expect(billingConfig()?.plans[1]?.limits.reportingDays).toBe(7);
 });
+
+test("history is kept at least as long as the longest plan shows it", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.historyKeptDays = 30; }));
+  expect(() => billingConfig()).toThrow(/must be at least 90, the longest plan's history\n {2}→ at historyKeptDays/);
+});
