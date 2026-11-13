@@ -1,7 +1,7 @@
 import { planIncludes, reportingRangeNeeded } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
-import { type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
+import { RANGE_KEYS, type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
 
 import { getMembership, isAdminRole } from "./membership";
 import type { docsGaps } from "./operations/docs-insights";
@@ -19,7 +19,8 @@ export async function reportingPage(slug: string, given: unknown) {
   }
   const { plan } = membership.project;
   const ranges = lockedRanges(plan);
-  const key = typeof given === "string" && !ranges.includes(given as RangeKey) ? given : defaultRange(plan);
+  // A range the plan has; anything else (locked, unknown, an old bookmark) is its default.
+  const key = (RANGE_KEYS as readonly unknown[]).includes(given) && !ranges.includes(given as RangeKey) ? (given as RangeKey) : defaultRange(plan);
   const sample = !planIncludes(plan, "reporting");
   return { membership, range: reportRange(key), locked: { ranges, hint: reportingRangeNeeded(plan) }, sample, upgrade: sample ? { slug, admin: isAdminRole(membership.role) } : null };
 }

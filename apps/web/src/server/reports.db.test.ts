@@ -17,6 +17,7 @@ import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/h
 import { getDocsInsights } from "./operations/docs-insights";
 import { aiReport, docsReport, getReports, inboxReport } from "./operations/reports";
 import { call } from "./operations/run";
+import { reportingPage } from "./reporting";
 
 // The pages render here outside Next's router, where the search params a client component reads (FilterPills') are none.
 vi.mock("next/navigation", async (original) => ({ ...(await original<typeof import("next/navigation")>()), useSearchParams: () => new URLSearchParams() }));
@@ -647,6 +648,11 @@ test("reports.get by plan: Free refused, Pro up to a month, Business every range
   await plan("PRO");
   const unpicked = await call(getReports, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
   expect(unpicked.docs.days).toHaveLength(7);
+  // Its pages too, for no range, a locked one or one that isn't a range (an old bookmark).
+  actAs(owner);
+  for (const range of [undefined, "30d", "forever"]) {
+    expect((await reportingPage(project.slug, range)).range.days).toHaveLength(7);
+  }
 });
 
 test("on Free, Reporting's pages are made-up numbers, blurred under a card saying which plan has them; a Pro range past a month shows the default", async () => {
