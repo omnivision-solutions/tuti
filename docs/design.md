@@ -388,7 +388,7 @@ the list picks none to approve at once.
     Portal-only tokens in `globals.css` (`:root:has([data-portal-top])`, so the app keeps its own): stronger lines on the
     paper (`border` 0.87 L, `input` 0.81 L; rows' hairlines the lighter `divider`, 0.925 L), secondary text at 0.48 L, a neutral dark mode (background 0.165, cards
     0.205, lines 0.32/0.40, chroma ≈0.005; green stays the accent), 14px cards and 10px controls (`--radius` 0.625rem),
-    a soft card shadow (`shadow-card`), `sunken` for inline code, and `info` for callouts.
+    a soft card shadow (`shadow-card`) and `info` for callouts.
     Statuses there are one hue each in both themes: Under review violet, Planned blue, In progress orange, Completed
     green, Open grey (`status-*` overridden), shown as `StatusLabel` (its icon and name in its colour: eye, calendar, a
     half-filled circle, a circled check) or `StatusPill` (the same on a light tint of it). People's initials are one

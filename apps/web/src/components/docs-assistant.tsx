@@ -564,7 +564,7 @@ export function StillStuck({ support, home = false }: { support: SupportContact 
       </div>
       <div className="flex shrink-0 gap-2">
         {ask && (
-          <Button variant="ghost" onClick={assistant.open} className="font-semibold hover:bg-secondary-hover">
+          <Button variant="ghost" onClick={assistant.open} className="font-semibold portal:hover:bg-secondary-hover">
             <SparklesIcon />
             Ask AI
           </Button>
@@ -580,7 +580,7 @@ export function StillStuck({ support, home = false }: { support: SupportContact 
                 widget.open({ tab: "messages" });
               }
             }}
-            className={buttonVariants({ variant: "ghost", className: "font-semibold hover:bg-secondary-hover" })}
+            className={buttonVariants({ variant: "ghost", className: "font-semibold portal:hover:bg-secondary-hover" })}
           >
             Contact us
           </a>

@@ -2337,6 +2337,20 @@ test("an article ends with the previous and next in reading order, related ones,
 
   await checkpoint(visitor, "portal-article-end");
   await visitor.emulateMedia({ colorScheme: "dark" });
+  // In dark too, hovering its buttons steps their fill toward the text (secondary-hover), not to a muted tint the fill hides.
+  await expect(stuck).toHaveCSS("background-color", await token(visitor, "--secondary"));
+  const stepped = await visitor.evaluate(() => {
+    // `secondary-hover` (globals.css; an inline theme colour, so no variable of its own to read).
+    const probe = document.body.appendChild(document.createElement("i"));
+    probe.style.backgroundColor = "color-mix(in oklch, var(--secondary), var(--foreground) 5%)";
+    const colour = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return colour;
+  });
+  expect(stepped).not.toBe(await token(visitor, "--secondary"));
+  await contactUs.hover();
+  await expect(contactUs).toHaveCSS("background-color", stepped);
+  await visitor.mouse.move(0, 0);
   await checkpoint(visitor, "portal-article-end-dark");
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(contactUs).toBeVisible();
@@ -2371,6 +2385,13 @@ test("on the portal an article's asides are fills: inline code, callouts, detail
       { type: "blockquote", content: [p(text("Then run "), code("acme sync"), text("."))] },
       { type: "details", content: [{ type: "detailsSummary", content: [text("More")] }, { type: "detailsContent", content: [p(text("Or run "), code("acme sync --all"), text("."))] }] },
       { type: "codeBlock", attrs: { language: "bash", filename: "Terminal" }, content: [text("acme sync --all")] },
+      {
+        type: "codeTabs",
+        content: [
+          { type: "codeBlock", attrs: { filename: "npm" }, content: [text("npm i acme")] },
+          { type: "codeBlock", attrs: { filename: "pnpm" }, content: [text("pnpm add acme")] },
+        ],
+      },
     ],
   };
   const article = await api("/articles", { title: "Syncing", content });
@@ -2401,6 +2422,17 @@ test("on the portal an article's asides are fills: inline code, callouts, detail
   const strip = main.getByRole("figure", { name: "Terminal" }).locator("figcaption");
   expect(await background(strip)).toBe(grey);
   await expect(strip).toHaveCSS("border-bottom-width", "0px");
+  // Code tabs: the block is the card (its shadow), its tab row a grey strip with no line under it, the tab's code on the card.
+  const tabs = main.locator(".rich-code-tabs");
+  await expect(tabs).not.toHaveCSS("box-shadow", "none");
+  expect(await background(tabs)).toBe(card);
+  const tabRow = tabs.locator(".rich-code-tab-row");
+  expect(await background(tabRow)).toBe(grey);
+  await expect(tabRow).toHaveCSS("border-bottom-width", "0px");
+  const shown = tabs.locator("pre").filter({ hasText: "npm i acme" });
+  await expect(shown).toBeVisible();
+  await expect(shown).toHaveCSS("box-shadow", "none");
+  expect(await background(shown)).toBe("rgba(0, 0, 0, 0)");
 });
 
 test("a link in an article to another of the portal's articles stays on the portal and previews it; in the widget it opens in the panel", async ({ browser }, testInfo) => {
