@@ -223,7 +223,11 @@ function ThemeSwitch() {
                 showTheme(value);
                 return;
               }
-              localStorage.removeItem(THEME_DEFAULT_KEY);
+              try {
+                localStorage.removeItem(THEME_DEFAULT_KEY);
+              } catch {
+                // Storage blocked (privacy settings): the pick still applies to this page.
+              }
               setTheme(value);
             }}
             className="sr-only"

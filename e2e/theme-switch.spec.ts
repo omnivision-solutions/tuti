@@ -60,3 +60,22 @@ test("a reader picks dark mode in the portal's footer and keeps it; with the swi
   await expect(html).toHaveClass(/\blight\b/);
   await expect(html).not.toHaveClass(/\bdark\b/);
 });
+
+test("with storage blocked by the browser, the footer switch still changes the theme on the page", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const reader = await (await browser.newContext({ baseURL: portalUrl(slug), colorScheme: "light" })).newPage();
+  // As privacy settings do: writing to the page's storage throws.
+  await reader.addInitScript(() => {
+    const blocked = () => {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    };
+    Storage.prototype.setItem = blocked;
+    Storage.prototype.removeItem = blocked;
+  });
+  await reader.goto("/feedback/feature-requests");
+  const theme = reader.getByRole("contentinfo").getByRole("radiogroup", { name: "Theme" });
+  await theme.getByRole("radio", { name: "Dark" }).locator("..").click();
+  await expect(reader.locator("html")).toHaveClass(/\bdark\b/);
+});
