@@ -5,9 +5,9 @@ import { expect, type Locator, type Page, type Request, test } from "./fixtures"
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
-import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, scheduledDraft } from "./autopilot";
+import { articlesIn, editStatuses, markUnsure, placeDraft, runAutopilot, joinTeam, scheduleAgain, scheduledDraft } from "./autopilot";
 import { latestEmailTo } from "./mail";
-import { apiFor, createProject, signUp } from "./helpers";
+import { apiFor, createProject, fillSignUp, signUp } from "./helpers";
 import { nextDecision, nextDocsAgentAnswer, nextModelReply } from "./model";
 import { similar } from "./openai";
 
@@ -336,6 +336,30 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(list.getByRole("link", { name: pr })).toHaveAttribute("aria-current", "page");
   await list.getByRole("tab", { name: "To review 1" }).click();
   await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(typed).toHaveValue("Typed before looking at Reviewed.");
+  // The latest pick wins: Activity picked, then To review again before Activity's page came (held), the post stays.
+  let letActivityGo = () => {};
+  const activityHeld = new Promise<void>((resolve) => (letActivityGo = resolve));
+  let activityAsked = () => {};
+  const activityAsking = new Promise<void>((resolve) => (activityAsked = resolve));
+  await owner.route("**/autopilot/activity/**", async (route) => {
+    if (route.request().headers()["next-router-prefetch"]) {
+      await route.continue();
+      return;
+    }
+    activityAsked();
+    await activityHeld;
+    await route.continue().catch(() => {});
+  });
+  await list.getByRole("tab", { name: "Activity" }).click();
+  await activityAsking;
+  await list.getByRole("tab", { name: "To review 1" }).click();
+  letActivityGo();
+  await owner.waitForLoadState("networkidle");
+  await owner.unroute("**/autopilot/activity/**");
+  await expect(owner).toHaveURL(/\/autopilot\/feedback\//);
+  await expect(owner.getByRole("heading", { name: title, level: 1 })).toBeVisible();
+  await expect(list.getByRole("tab", { name: "To review 1" })).toHaveAttribute("aria-selected", "true");
   await expect(typed).toHaveValue("Typed before looking at Reviewed.");
   // And after a reload (kept in this tab).
   await owner.reload();
@@ -910,6 +934,41 @@ test("updates going out by themselves: Dismiss beside Stop on an article's and a
   await expect(happens.getByText(/^Stopped by Olive Owner · would have gone out tomorrow at \d/)).toBeVisible();
   await expect(rowOf(posts[0]!)).toContainText("Stopped by Olive Owner");
   await checkpoint(owner, "autopilot-stopped");
+  // A comment typed while it waits, never sent, then it goes out by itself again (not from here): its own comment is
+  // what shows, and goes, and the one typed is dropped.
+  const update = happens.getByRole("textbox", { name: "Progress update on #1" });
+  await update.fill("Typed here, never sent.");
+  const kept = () => owner.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("autopilot-comment:")).length);
+  expect(await kept()).toBe(1);
+  // It's this teammate's: another account signed in on the same tab doesn't see it; back, its typer does.
+  const review = owner.url();
+  await owner.context().clearCookies();
+  await owner.goto("/app/auth/sign-up");
+  const otherEmail = `e2e-${randomUUID()}@example.com`;
+  await fillSignUp(owner, "Ada Admin", otherEmail);
+  await owner.waitForURL((url) => url.pathname !== "/app/auth/sign-up");
+  await joinTeam(slug, otherEmail);
+  await owner.goto(review);
+  await expect(owner.getByRole("heading", { name: posts[0]!, level: 1 })).toBeVisible();
+  // (Once the page runs in the browser, where a draft would show: a chip's popover opens only then.)
+  await owner.getByRole("list", { name: "Pull requests" }).getByRole("button", { name: /^PR #/ }).first().click();
+  await expect(owner.getByRole("dialog")).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(update).toHaveValue(`${posts[0]!} are out.`);
+  await owner.context().clearCookies();
+  await owner.goto("/app/auth/sign-in");
+  await owner.getByLabel("Email").fill(owner.email);
+  await owner.getByLabel("Password").fill("correct horse battery staple");
+  await owner.getByRole("button", { name: "Sign in", exact: true }).click();
+  await owner.waitForURL((url) => url.pathname !== "/app/auth/sign-in");
+  await owner.goto(review);
+  await expect(update).toHaveValue("Typed here, never sent.");
+  await scheduleAgain(slug, posts[0]!);
+  await owner.reload();
+  await expect(owner.getByRole("button", { name: "Stop" })).toBeVisible();
+  // (Dropped once the page runs in the browser, where a draft would show.)
+  await expect.poll(kept).toBe(0);
+  await expect(update).toHaveValue(`${posts[0]!} are out.`);
 
   // The other post's, dismissed from its bar (asking why, as Dismiss does): it's gone from To review.
   await list.getByRole("link", { name: posts[1]! }).click();

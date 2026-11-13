@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useDecided } from "@/components/autopilot-list";
@@ -39,7 +39,8 @@ type Update = TargetReview["actions"][number] & { parts?: TargetReview["actions"
  * became of it (Dismiss, Undo), is in its chip's popover. Nothing waiting, nothing: the page's Outcome says what became of it.
  */
 /**
- * The team's comment on a waiting update, kept in this tab (sessionStorage) per update and version till it's approved
+ * The team's comment on a waiting update, kept in this tab (sessionStorage) per teammate (another account signed in
+ * here doesn't see it), update and version till it's approved
  * or dismissed: a tab picked beside the list, or another row, opens another page, and coming back finds it. Storage
  * off: kept only while the page is open.
  */
@@ -51,6 +52,15 @@ const commentDrafts = {
     } catch {
       return null;
     }
+  },
+  /** Every version's of one update (`<viewer>:<update id>@`): it isn't waiting any more. */
+  drop(prefix: string) {
+    try {
+      const all = Object.keys(window.sessionStorage).filter((key) => key.startsWith(this.key(prefix)));
+      for (const key of all) {
+        window.sessionStorage.removeItem(key);
+      }
+    } catch {}
   },
   save(key: string, text: string | null) {
     try {
@@ -68,12 +78,15 @@ const noChanges = () => () => {};
 
 export function PostReview({
   projectSlug,
+  viewer,
   post,
   reach,
   update,
   notice,
 }: {
   projectSlug: string;
+  /** The signed-in teammate's id: their comment drafts are theirs. */
+  viewer: string;
   post: { number: number; status: string };
   /** How many follow the post now. */
   reach: number | null;
@@ -89,13 +102,22 @@ export function PostReview({
   const went = useRef(false);
   // The team's words, kept per version: one whose parts changed shows (and posts) its new comment.
   const [edits, setEdits] = useState<Record<string, string>>({});
-  const key = update && `${update.id}@${update.version ?? ""}`;
+  const key = update && `${viewer}:${update.id}@${update.version ?? ""}`;
+  const pendingNow = update?.status === "pending";
+  const ofUpdate = update && `${viewer}:${update.id}@`;
   // Typed before, on a page left since (in the browser only: the server has no storage, so both render the same first).
   const saved = useSyncExternalStore(
     noChanges,
-    () => (key ? commentDrafts.take(key) : null),
+    () => (key && pendingNow ? commentDrafts.take(key) : null),
     () => null,
   );
+  // Not waiting any more (it goes out by itself, or went another way): what goes out is its own comment, so one typed
+  // here and never sent is dropped.
+  useEffect(() => {
+    if (ofUpdate && !pendingNow) {
+      commentDrafts.drop(ofUpdate);
+    }
+  }, [ofUpdate, pendingNow]);
   // Nothing waits: the page's outcome says what became of it (see Outcome).
   if (!update || !key) {
     return null;

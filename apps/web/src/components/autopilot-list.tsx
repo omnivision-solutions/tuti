@@ -146,6 +146,12 @@ export function AutopilotPanes({
   }
   const opened = useRef<string | null>(null);
   const aside = useRef<HTMLElement>(null);
+  // The tab whose page a pick asked for and that hasn't come yet (null once the page moves): a later pick is
+  // compared with it, so the latest pick's page is the one that opens.
+  const asked = useRef<string | null>(null);
+  useEffect(() => {
+    asked.current = null;
+  }, [selected]);
   // From laptop width up the list and the open page are side by side (the CSS layout says so).
   const beside = () => {
     const panes = aside.current?.closest<HTMLElement>("[data-slot=pane-layout]");
@@ -174,14 +180,22 @@ export function AutopilotPanes({
   }, [selected, tab, first, notice, router, projectSlug]);
   // A tab picked (or To review's "see Activity"). Beside the list, the page shows one of the tab's own rows, never
   // another tab's (a review still waiting, with its Approve, under Reviewed): its first, or none while it has none.
-  // A page opened by itself on the way in, not there yet, is dropped for it.
+  // A page opened by itself on the way in, or asked for by an earlier pick, not there yet, is dropped for it: back to
+  // the open page's own tab, that page again.
   const pick = (value: string) => {
     setTab(value);
-    if (value !== where && beside()) {
-      const rows = value === "review" ? treeOrder(toReview) : value === "reviewed" ? treeOrder(reviewed) : activity;
-      const top = rows[0]?.id ?? (value === "activity" ? "activity" : null);
-      router.push(top ? `/app/${projectSlug}/autopilot/${top}` : `/app/${projectSlug}/autopilot`);
+    if (value === (asked.current ?? where) || !beside()) {
+      return;
     }
+    if (value === where) {
+      asked.current = null;
+      router.push(`/app/${projectSlug}/autopilot${selected ? `/${selected}` : ""}`);
+      return;
+    }
+    asked.current = value;
+    const rows = value === "review" ? treeOrder(toReview) : value === "reviewed" ? treeOrder(reviewed) : activity;
+    const top = rows[0]?.id ?? (value === "activity" ? "activity" : null);
+    router.push(top ? `/app/${projectSlug}/autopilot/${top}` : `/app/${projectSlug}/autopilot`);
   };
   // Once it's open, focus goes to its row in the list, which says which one opened (the page it was on, and
   // the button that was focused, went away); where the list is hidden, to the page's title, or on phones (where
