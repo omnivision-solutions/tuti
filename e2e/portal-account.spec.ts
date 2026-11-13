@@ -90,9 +90,12 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   expect(await bo.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeGreaterThan((await emailsTop()) + 100);
   await sections.getByRole("link", { name: "Emails" }).click();
   await expect(bo).toHaveURL(/\/account#emails$/);
-  await bo.mouse.wheel(0, 10);
-  await expect.poll(() => bo.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-  await bo.waitForTimeout(200);
+  // It stops just under the header, at the list's line (header + 32px), not a header's height further down.
+  await expect
+    .poll(() =>
+      bo.getByRole("region", { name: "Emails" }).evaluate((section) => section.getBoundingClientRect().top - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--portal-header-height")) || 64)),
+    )
+    .toBeLessThanOrEqual(32);
   await expect(sections.getByRole("link", { name: "Emails" })).toHaveAttribute("aria-current", "location");
   await bo.goto("/roadmap");
   await bo.goto("/account#emails");
