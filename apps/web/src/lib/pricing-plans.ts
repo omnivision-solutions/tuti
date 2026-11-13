@@ -142,7 +142,10 @@ export function pricingPlans(): PricingPlan[] {
         ...more((key) => feature(key, "sitePath", "Your help center under a path of your site")),
         ...extras.map((text) => ({ text })),
       ],
-      cta: { label: price === null && isDefault ? "Start free" : `Start with ${name}`, href: "/app/auth/sign-up" },
+      // A plan without prices is free where it's the default, and otherwise sold by quote.
+      ...(price === null && !isDefault
+        ? { byQuote: true, cta: { label: "Contact us", href: `mailto:${SALES_EMAIL}?subject=${encodeURIComponent(`Tuti ${name}`)}` } }
+        : { cta: { label: price === null ? "Start free" : `Start with ${name}`, href: "/app/auth/sign-up" } }),
       ...(featured && { featured }),
     };
   });

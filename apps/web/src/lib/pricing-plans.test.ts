@@ -129,3 +129,11 @@ test("the cards are the file's plans, each listing what the file gives it", () =
   expect(pro.at(-1)).toBe("Onboarding call");
   expect(pricingPlans().map(({ featured }) => Boolean(featured))).toEqual([false, true]);
 });
+
+test("a plan without prices is free where it's the default, and otherwise by quote, asking to get in touch", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
+  const [free, , business] = pricingPlans();
+  expect([free!.price, free!.byQuote, free!.cta.label]).toEqual([null, undefined, "Start free"]);
+  expect([business!.price, business!.byQuote, business!.cta.label]).toEqual([null, true, "Contact us"]);
+  expect(business!.cta.href).toMatch(/^mailto:/);
+});

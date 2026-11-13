@@ -19,6 +19,8 @@ export type PricingPlan = {
   intro?: string;
   features: PlanLine[];
   cta: { label: string; href: string };
+  /** Not the free plan, but not for sale here either: sold by quote, so its card asks to get in touch. */
+  byQuote?: boolean;
   featured?: boolean;
 };
 

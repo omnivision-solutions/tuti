@@ -39,7 +39,21 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   // The badge's card has a way to it on the free plan too: to the plans, billed as picked there.
   await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
   await checkpoint(owner, "team-settings-billing-free-plan");
-  await owner.getByRole("button", { name: "Upgrade to Pro" }).click();
+  // From the keyboard: while Stripe's page is being opened (its request held here), Upgrade is off but keeps the focus.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/settings/billing", async (route) => {
+    if (route.request().method() === "POST") {
+      await held;
+    }
+    await route.fallback();
+  });
+  const upgrade = owner.getByRole("button", { name: "Upgrade to Pro" });
+  await upgrade.focus();
+  await owner.keyboard.press("Enter");
+  await expect(upgrade).toBeDisabled();
+  await expect(upgrade).toBeFocused();
+  release();
 
   // Stripe's page (the fake), then back to Billing on Pro, with its credits for the month.
   await owner.getByRole("button", { name: "Subscribe" }).click();

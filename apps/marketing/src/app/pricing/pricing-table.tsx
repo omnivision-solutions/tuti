@@ -23,15 +23,23 @@ export function PricingTable({ plans, yearlyNote }: { plans: PricingPlan[]; year
             <div className="flex flex-col gap-3">
               <h2 className="font-heading text-xl font-bold">{plan.name}</h2>
               <p className="flex items-baseline gap-1.5">
-                <span className="text-5xl font-extrabold tracking-tight">${plan.price ? (plan.price[interval] ?? plan.price.month ?? plan.price.year) : 0}</span>
-                <span className="text-sm text-muted-foreground">{plan.price ? "a month per project" : "forever"}</span>
+                {plan.byQuote ? (
+                  <span className="text-5xl font-extrabold tracking-tight">By quote</span>
+                ) : (
+                  <>
+                    <span className="text-5xl font-extrabold tracking-tight">${plan.price ? (plan.price[interval] ?? plan.price.month ?? plan.price.year) : 0}</span>
+                    <span className="text-sm text-muted-foreground">{plan.price ? "a month per project" : "forever"}</span>
+                  </>
+                )}
               </p>
               <p className="h-5 text-sm text-muted-foreground">
                 {plan.price?.year != null && (interval === "year" || plan.price.month === null)
                   ? `$${(plan.price.year * 12).toLocaleString("en")} billed yearly`
                   : plan.price
                     ? "Billed monthly"
-                    : "No card needed"}
+                    : plan.byQuote
+                      ? "Priced for your team"
+                      : "No card needed"}
               </p>
             </div>
             {/* Outline in the brand's colour: a plain outline on a card reads as disabled. Into the app (sign-up). */}
