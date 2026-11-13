@@ -142,7 +142,7 @@ export function DocsSearchBox({
           type="button"
           variant="outline"
           onClick={() => assistant.open()}
-          className="absolute top-1/2 right-2.5 -translate-y-1/2 border-primary/30 bg-soft font-semibold text-soft-foreground hover:bg-soft/80"
+          className="absolute top-1/2 right-2.5 -translate-y-1/2 border-primary/30 bg-soft font-semibold text-soft-foreground hover:bg-soft/80 portal:border-primary/30 portal:bg-soft portal:hover:bg-soft/80"
         >
           <SparklesIcon />
           Ask AI

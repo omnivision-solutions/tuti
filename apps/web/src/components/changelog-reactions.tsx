@@ -46,7 +46,8 @@ export function ChangelogReactions({
               "rounded-full px-3 disabled:opacity-100",
               quiet && "h-7 gap-1.5 px-2 text-[0.8125rem] text-muted-foreground",
               quiet && !on && "[&>span:first-child]:opacity-70 [&>span:first-child]:grayscale",
-              on && "border-primary bg-soft hover:bg-soft/80",
+              // On the portal a reaction of yours is the accent's tint without an edge, like a vote cast (outline's portal look).
+              on && "border-primary bg-soft hover:bg-soft/80 portal:border-transparent portal:bg-soft portal:hover:bg-soft/80",
             )}
             disabled={!signedIn || pending}
             title={signedIn ? undefined : "Sign in to react"}

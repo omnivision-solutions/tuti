@@ -11,6 +11,7 @@ const variants = cva(
         default:
           "border-primary bg-primary text-primary-foreground shadow-xs hover:border-primary-hover hover:bg-primary-hover",
         // On the public portal a secondary action is a grey fill, no edge (docs/design.md → Portals): the secondary's look.
+        // Those classes outrank plain ones there: a caller's own fill or edge for the portal says `portal:` too.
         outline:
           "border-input bg-card shadow-xs hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 portal:border-transparent portal:bg-secondary portal:shadow-none portal:hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] portal:aria-expanded:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]",
         secondary:
