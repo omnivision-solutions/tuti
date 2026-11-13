@@ -13,7 +13,7 @@ cute at the expense of clarity.
   neutrals. Dark mode uses a brighter green with dark text on it (the public portal's dark is neutral, see Layout →
   Portals).
   Emails sent on a project's behalf (to its customers and readers) take its accent for the card's top edge, buttons
-  and links, as its portal does (too faint on white: the text colour, where the portal uses a darker shade of it); the small "tuti" wordmark above stays green.
+  and links, as its portal does (too faint: the same darker shade of it as the portal's light mode, or the text colour for a grey; links get that shade wherever the colour is too faint for text, 4.5:1); the small "tuti" wordmark above stays green.
 - **Type:** Figtree for text, Bricolage Grotesque for headings (`h1`–`h3` and
   `font-heading` pick it up automatically) in the app; Inter for both on the public portal, unless the project picks
   its own (Settings → Branding; see Layout → Portals). Every font is a file: these and the symbols font in
@@ -594,7 +594,7 @@ the list picks none to approve at once.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge; the first time, once its page has loaded, half a second at most, so it
   never grows in empty) and shrinks back as it closes; with reduced motion it just appears.
-  Light or dark as the portal's colour scheme says (Settings → Branding; by default the visitor's
+  Light or dark as the portal's default theme says (Settings → Branding; by default the visitor's
   device), unless the site picks one (`data-theme`, or `Tuti.setTheme` later), which every panel takes,
   from its first paint, and the button unless it has its own colour (Settings → Widget).
   On screens up to 640px wide the floating panel takes the whole screen, over the
