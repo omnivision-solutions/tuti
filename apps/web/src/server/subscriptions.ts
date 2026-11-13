@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Prisma, prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
-import { defaultPlanKey, isBadgePrice, listedPlans, log, planCredits, planDisplay, planOfPrice } from "@tuti/shared";
+import { isBadgePrice, log, planCredits, planDisplay, planOfPrice } from "@tuti/shared";
 
 import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 
@@ -59,11 +59,8 @@ export async function syncSubscription(id: string): Promise<string | null> {
       }
       const periodEnd = at(item.current_period_end);
       const { count } = await tx.project.updateMany({
-        // Its own, or it's on the default plan (none stored, a plan the file no longer lists, or the default's own key).
-        where: {
-          id: projectId,
-          OR: [{ stripeSubscriptionId: id }, { plan: null }, { plan: { notIn: listedPlans() } }, ...(defaultPlanKey() ? [{ plan: defaultPlanKey() }] : [])],
-        },
+        // Its own, or it has none live (none yet, or the last one ended: its status is cleared), whatever plan is stored.
+        where: { id: projectId, OR: [{ stripeSubscriptionId: id }, { planStatus: null }] },
         data: {
           plan: paid.plan,
           planEnum: enumOf(paid.plan),

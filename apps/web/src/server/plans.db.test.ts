@@ -267,7 +267,10 @@ test("a project deleted meanwhile: Stripe's events are answered, and nothing is 
 });
 
 test("the migration gives each project its plan's key: Pro and Business theirs, Free none (the default plan)", async () => {
-  const projects = await Promise.all((["FREE", "PRO", "BUSINESS"] as const).map(async (planEnum) => (await prisma.project.update({ where: { id: (await createProject(owner)).id }, data: { planEnum, plan: null } })).id));
+  const projects = await Promise.all((["FREE", "PRO", "BUSINESS"] as const).map(async (planEnum) => (await prisma.project.update({ where: { id: (await createProject(owner)).id }, data: { planEnum } })).id));
+  // As before the migration: no key (cleared without writing the enum, which the trigger would follow).
+  await prisma.$executeRaw`UPDATE project SET "planKey" = NULL WHERE id = ANY(${projects})`;
+  expect((await prisma.project.findMany({ where: { id: { in: projects } }, select: { plan: true } })).map(({ plan }) => plan)).toEqual([null, null, null]);
   const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261113180000_plan_keys/migration.sql", import.meta.url), "utf8");
   // The column is there already (every migration ran); its fill, again on these rows.
   await prisma.$executeRawUnsafe(sql.slice(sql.indexOf("UPDATE"), sql.indexOf(";", sql.indexOf("UPDATE")) + 1));
@@ -315,4 +318,12 @@ test("a project on a plan the file no longer lists is on the default plan: it ca
   const { events } = await subscribe("pro");
   await deliver(...events);
   expect(await plan()).toMatchObject({ plan: "pro" });
+});
+
+test("a project still paying for a plan the file no longer lists can't buy a second one", async () => {
+  const { events } = await subscribe("pro");
+  await deliver(...events);
+  // Pro taken out of the file (it should be kept, sold: false), its subscription still live.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.plans = config.plans.filter(({ key }) => key !== "pro"); }));
+  await expect(call(subscribePlan, as(), { plan: "business", interval: "month" })).rejects.toMatchObject({ status: 409, code: "has_plan" });
 });

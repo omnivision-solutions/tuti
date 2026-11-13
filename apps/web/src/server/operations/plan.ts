@@ -86,11 +86,12 @@ export const subscribePlan = defineOperation({
       throw new OperationError(503, "plans_unavailable", "That plan isn't sold on this server");
     }
     const [project, buyer, billing] = await Promise.all([
-      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, stripeCustomerId: true, name: true, slug: true } }),
+      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, planStatus: true, stripeCustomerId: true, name: true, slug: true } }),
       actor.kind === "user" ? prisma.user.findUnique({ where: { id: actor.userId }, select: { email: true } }) : null,
       billingUrl(projectId),
     ]);
-    if (!onDefaultPlan(project.plan)) {
+    // A live subscription (Stripe's status, cleared once it ends), or a plan the file sells set without one.
+    if (project.planStatus !== null || !onDefaultPlan(project.plan)) {
       throw new OperationError(409, "has_plan", "This project has a plan already. Change it from Manage plan.");
     }
     try {
@@ -159,7 +160,8 @@ export const setBadgeAddOn = defineOperation({
     if (on && !price) {
       throw new OperationError(503, "plans_unavailable", 'Hiding "Powered by tuti" isn\'t sold on this server');
     }
-    if (onDefaultPlan(project.plan) || !project.stripeSubscriptionId) {
+    // Only a live subscription has the add-on to add or remove (its plan may be one the file no longer lists).
+    if (project.planStatus === null || !project.stripeSubscriptionId) {
       if (on) {
         throw new OperationError(409, "free_plan", 'Hiding "Powered by tuti" needs a paid plan');
       }
