@@ -2365,6 +2365,9 @@ test("an article ends with the previous and next in reading order, related ones,
 
   await checkpoint(visitor, "portal-article-end");
   await visitor.emulateMedia({ colorScheme: "dark" });
+  // The page follows the system's scheme a moment later (next-themes' listener sets <html>'s class): read the dark
+  // tokens only once it has, or they're still the light ones.
+  await expect(visitor.locator("html")).toHaveClass(/\bdark\b/);
   // In dark too, hovering its buttons steps their fill toward the text (secondary-hover), not to a muted tint the fill hides.
   await expect(stuck).toHaveCSS("background-color", await token(visitor, "--secondary"));
   const stepped = await visitor.evaluate(() => {
