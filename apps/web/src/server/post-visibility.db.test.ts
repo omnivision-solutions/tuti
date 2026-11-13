@@ -195,8 +195,11 @@ test("the portal's board, post page and roadmap show each reader the posts they 
   // Nor a choice on the roadmap: with one board left, there's nothing to pick.
   const roadmapFilters = async () => {
     const tree = await RoadmapPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never);
-    const has = (node: ReactNode): boolean =>
-      Array.isArray(node) ? node.some(has) : isValidElement<{ children?: ReactNode; "aria-label"?: string }>(node) && (node.props["aria-label"] === "Board" || has(node.props.children));
+    // The boards' pills (FilterPills labelled Board), wherever they're passed: children or a slot like the header's `pills`.
+    const has = (node: unknown): boolean =>
+      Array.isArray(node)
+        ? node.some(has)
+        : isValidElement<Record<string, unknown>>(node) && (node.props["aria-label"] === "Board" || node.props.label === "Board" || Object.values(node.props).some(has));
     return has(tree);
   };
   expect(await roadmapFilters()).toBe(false);
