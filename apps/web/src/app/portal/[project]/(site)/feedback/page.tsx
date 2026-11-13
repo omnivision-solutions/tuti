@@ -163,7 +163,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
         </section>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {boards.map((board, i) => {
               const ideas = tops[i]!;
               return (
