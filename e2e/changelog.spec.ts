@@ -257,6 +257,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(pageTitle).toHaveCSS("font-size", "36px");
   const pageTitleBox = (await pageTitle.boundingBox())!;
   expect((await entry.getByText("New", { exact: true }).boundingBox())!.y).toBeGreaterThan(pageTitleBox.y + pageTitleBox.height);
+  // Get updates by email after it: a plain section on the paper, not a card.
+  await expect(ada.getByRole("region", { name: "Get updates by email" })).toHaveCSS("box-shadow", "none");
   const tada = entry.getByRole("button", { name: /^React with 🎉/ });
   // Reactions are grey fills until one is yours (the accent's tint).
   const unpicked = await tada.evaluate((button) => getComputedStyle(button).backgroundColor);
@@ -298,9 +300,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(ada.locator('link[rel="alternate"][type="application/rss+xml"]')).toHaveAttribute("href", `${portalUrl(slug)}/changelog/rss.xml`);
   const feed = await (await ada.request.get(`${portalUrl(slug)}/changelog/rss.xml`)).text();
   expect(feed).toContain("<title>Dark mode is here</title>");
-  // The idea it shipped, with how many asked for it: a grey pill, as the tag.
+  // The idea it shipped, with how many asked for it: a grey pill, as a reaction that isn't yours.
   const built = entry.getByRole("link", { name: /^Built from an idea · \d+ votes?\s*: Dark mode$/ });
-  await expect(built).toHaveCSS("background-color", await entry.getByText("New", { exact: true }).filter({ visible: true }).evaluate((tag) => getComputedStyle(tag).backgroundColor));
+  await expect(built).toHaveCSS("background-color", await entry.getByRole("button", { name: /^React with 👍/ }).evaluate((button) => getComputedStyle(button).backgroundColor));
   await built.click();
   await ada.waitForURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   await expect(ada.getByText("Completed").first()).toBeVisible();
