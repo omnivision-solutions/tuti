@@ -641,6 +641,12 @@ test("reports.get by plan: Free refused, Pro up to a month, Business every range
   }
   await plan("BUSINESS");
   expect((await report("year")).docs.days).toHaveLength(365);
+
+  // A plan with less than the default 30 days: unpicked, the longest range it has, never a locked one.
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free, pro }) => { free.limits.reportingDays = 7; pro.limits.reportingDays = 7; }));
+  await plan("PRO");
+  const unpicked = await call(getReports, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
+  expect(unpicked.docs.days).toHaveLength(7);
 });
 
 test("on Free, Reporting's pages are made-up numbers, blurred under a card saying which plan has them; a Pro range past a month shows the default", async () => {

@@ -62,3 +62,11 @@ test("a project on a plan sold by quote sees its plan, with no price", async () 
   expect(page).toContain("Business plan");
   expect(page).not.toContain("Not billed");
 });
+
+test("an add-on that's on keeps its card, with no amount (it may be billed at an older price), even once the file sells it no more", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { delete config.badge; }));
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "PRO", planInterval: "month", planStatus: "active", badgeAddOn: true, stripeSubscriptionId: `sub_${projectId}` } });
+  const page = await billing();
+  expect(page).toContain("Hidden on this project's plan. It ends with the plan.");
+  expect(page).toContain("Show the badge again");
+});

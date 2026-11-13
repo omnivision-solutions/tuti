@@ -22,6 +22,16 @@ export const lockedRanges = (plan: "FREE" | PaidPlan): RangeKey[] => {
   return max === null ? [] : RANGE_KEYS.filter((key) => reportRange(key).days.length > max);
 };
 
+/** The range a project on `plan` sees unless it picks one: the default, or where that's locked the longest it has. */
+export function defaultRange(plan: "FREE" | PaidPlan): RangeKey {
+  const locked = lockedRanges(plan);
+  if (!locked.includes(DEFAULT_RANGE)) {
+    return DEFAULT_RANGE;
+  }
+  const open = RANGE_KEYS.filter((key) => !locked.includes(key));
+  return open.reduce((longest, key) => (reportRange(key).days.length > reportRange(longest).days.length ? key : longest), open[0] ?? DEFAULT_RANGE);
+}
+
 /** `rows` (a day and counts) as one array per count, a value for each of `days` (0 where there's no row). */
 function daily<K extends string>(days: string[], rows: ({ day: Date } & Record<K, number>)[], keys: K[]) {
   const byDay = new Map(rows.map((row) => [row.day.toISOString().slice(0, 10), row]));
@@ -379,14 +389,16 @@ export const getReports = defineOperation({
   path: "/reports",
   scope: "read",
   access: "team",
-  input: z.object({ range: z.enum(RANGE_KEYS).default(DEFAULT_RANGE) }),
+  // Unpicked: the default range, or the longest the plan has where that's locked (defaultRange).
+  input: z.object({ range: z.enum(RANGE_KEYS).optional() }),
   example: { range: "7d" },
   run: async ({ projectId }, input) => {
     const plan = await requirePlan(projectId, "reporting");
-    if (lockedRanges(plan).includes(input.range)) {
+    const given = input.range ?? defaultRange(plan);
+    if (lockedRanges(plan).includes(given)) {
       throw new OperationError(402, "plan_required", `${reportingRangeNeeded(plan)} See Settings → Billing.`);
     }
-    const range = reportRange(input.range);
+    const range = reportRange(given);
     const [docs, ai, gaps, inbox] = await Promise.all([
       docsReport(projectId, range),
       aiReport(projectId, range),

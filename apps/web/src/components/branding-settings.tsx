@@ -525,7 +525,9 @@ function PoweredByField({
             </DialogDescription>
           </DialogHeader>
           {plan ? (
-            <p className="text-sm">To remove it from this project, add it to its plan in Billing{plan.perMonth === null ? "" : `: $${plan.perMonth} a month, on a paid plan`}.</p>
+            <p className="text-sm">{plan.perMonth === null
+                ? "Hiding it isn't sold for this project's plan here."
+                : `To remove it from this project, add it to its plan in Billing: $${plan.perMonth} a month, on a paid plan.`}</p>
           ) : (
             <p className="text-sm">To remove it from this project, get a licence: a flat monthly fee per project.</p>
           )}

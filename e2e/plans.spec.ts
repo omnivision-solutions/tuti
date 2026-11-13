@@ -69,7 +69,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(confirm).toContainText("$49 a month is added to this project's plan.");
   await confirm.getByRole("button", { name: "Hide the badge" }).click();
   await expect(owner.getByText('"Powered by tuti" is hidden')).toBeVisible();
-  await expect(owner.getByText("Hidden: $49 a month on this project's plan. It ends with the plan.")).toBeVisible();
+  await expect(owner.getByText("Hidden on this project's plan. It ends with the plan.")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Show the badge again" })).toBeVisible();
   await checkpoint(owner, "team-settings-billing-badge-add-on");
   const reader = await owner.context().newPage();

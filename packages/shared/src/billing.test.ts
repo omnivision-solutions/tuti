@@ -54,3 +54,8 @@ test("each plan has everything the one before it has, as its card says", () => {
   expect(() => billingConfig()).toThrow(/lacks emailDomain, which pro has[\s\S]*plans\[2\]\.features/);
   expect(() => billingConfig()).toThrow(/is lower than pro's\n {2}→ at plans\[2\]\.limits\.boards/);
 });
+
+test("prices are whole dollars", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.prices.month!.perMonth = 8.33; }));
+  expect(() => billingConfig()).toThrow(/plans\[1\]\.prices\.month\.perMonth/);
+});

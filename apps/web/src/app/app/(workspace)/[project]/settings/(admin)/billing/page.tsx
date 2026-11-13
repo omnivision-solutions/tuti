@@ -82,13 +82,14 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </SettingBlock>
         </SettingsCard>
       )}
-      {plansEnabled() && badge !== null && (
+      {plansEnabled() && (badge !== null || plan.badgeAddOn) && (
         <SettingsCard>
           <SettingRow
             label='Hide "Powered by tuti"'
             description={
               plan.badgeAddOn
-                ? `Hidden: $${badge} a month on this project's plan. It ends with the plan.`
+                ? // What it's billed at may be an older price than the file's: no amount.
+                  "Hidden on this project's plan. It ends with the plan."
                 : plan.plan === "FREE"
                   ? `Paid plans can hide the badge at the foot of the portal for $${badge} a month.`
                   : `The badge at the foot of the portal: hide it for $${badge} a month, added to this project's plan.`
@@ -101,7 +102,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   Choose a plan
                 </a>
               ) : (
-                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge} />
+                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge ?? 0} />
               ))}
           </SettingRow>
         </SettingsCard>

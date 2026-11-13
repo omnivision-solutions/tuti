@@ -30,8 +30,10 @@
                 "type": "object",
                 "properties": {
                   "perMonth": {
-                    "type": "number",
-                    "minimum": 0
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Whole dollars a month; a year's price shows its monthly share."
                   },
                   "stripe": {
                     "minItems": 1,
@@ -52,8 +54,10 @@
                 "type": "object",
                 "properties": {
                   "perMonth": {
-                    "type": "number",
-                    "minimum": 0
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Whole dollars a month; a year's price shows its monthly share."
                   },
                   "stripe": {
                     "minItems": 1,
@@ -212,8 +216,10 @@
           "type": "object",
           "properties": {
             "perMonth": {
-              "type": "number",
-              "minimum": 0
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Whole dollars a month; a year's price shows its monthly share."
             },
             "stripe": {
               "minItems": 1,
@@ -234,8 +240,10 @@
           "type": "object",
           "properties": {
             "perMonth": {
-              "type": "number",
-              "minimum": 0
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Whole dollars a month; a year's price shows its monthly share."
             },
             "stripe": {
               "minItems": 1,

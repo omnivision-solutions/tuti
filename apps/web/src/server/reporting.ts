@@ -5,7 +5,7 @@ import { type RangeKey, type ReportRange, reportRange } from "@/lib/report-range
 
 import { getMembership, isAdminRole } from "./membership";
 import type { docsGaps } from "./operations/docs-insights";
-import { type aiReport, type docsReport, type inboxReport, lockedRanges } from "./operations/reports";
+import { type aiReport, defaultRange, type docsReport, type inboxReport, lockedRanges } from "./operations/reports";
 
 /**
  * A Reporting page's project and range: `?range=` where the plan has it (the default otherwise), the ranges it doesn't (`locked`), and
@@ -19,7 +19,7 @@ export async function reportingPage(slug: string, given: unknown) {
   }
   const { plan } = membership.project;
   const ranges = lockedRanges(plan);
-  const key = typeof given === "string" && !ranges.includes(given as RangeKey) ? given : undefined;
+  const key = typeof given === "string" && !ranges.includes(given as RangeKey) ? given : defaultRange(plan);
   const sample = !planIncludes(plan, "reporting");
   return { membership, range: reportRange(key), locked: { ranges, hint: reportingRangeNeeded(plan) }, sample, upgrade: sample ? { slug, admin: isAdminRole(membership.role) } : null };
 }
