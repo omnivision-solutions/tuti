@@ -154,6 +154,10 @@ test("Get set up's cards wrap a long project name inside the card, on a phone an
   // Home's pane scrolls inside the window: scrolled past its end, the window doesn't bounce (macOS) to show what's under it.
   const windowBounce = () => owner.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY);
   expect(await windowBounce()).toBe("none");
+  expect(await owner.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorX)).toBe("auto");
+  // Narrower, the sidebar can leave the pane less than its window-height width: the window may scroll, and bounces.
+  await owner.setViewportSize({ width: 900, height: 800 });
+  expect(await windowBounce()).toBe("auto");
   await owner.setViewportSize({ width: 390, height: 844 });
   await fits();
   // On a phone the window scrolls the page, and bounces as usual.
