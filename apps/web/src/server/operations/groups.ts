@@ -48,12 +48,6 @@ export async function matchingUsers(projectId: string, rule: GroupRule, limit: n
   return { readers: Number(rows[0]?.count ?? 0), users: rows.map((row) => ({ id: row.id, name: row.name, email: row.email, avatar: pictureUrl(row.avatar) })) };
 }
 
-/** How many of the project's users a group with this rule has now, and the first 3's names. */
-export async function whoMatches(projectId: string, rule: GroupRule) {
-  const { readers, users } = await matchingUsers(projectId, rule, 3);
-  return { readers, sample: users.map((user) => user.name) };
-}
-
 /** Of `names`, in their order, those some user of the project has, however many other properties there are. */
 export async function propertiesInUse(projectId: string, names: string[]): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ name: string }[]>`
@@ -112,7 +106,9 @@ export async function groupsWithReaders(projectId: string, key?: string): Promis
   return Promise.all(
     groups.map(async (group) => {
       const rule = storedRule(group);
-      return { ...group, ...rule, ...(await whoMatches(projectId, rule)) };
+      // Who's in it now: how many, and the first 3's names.
+      const { readers, users } = await matchingUsers(projectId, rule, 3);
+      return { ...group, ...rule, readers, sample: users.map((user) => user.name) };
     }),
   );
 }

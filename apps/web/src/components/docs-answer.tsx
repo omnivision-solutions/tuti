@@ -6,7 +6,6 @@ import { type FormEvent, useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,20 +24,17 @@ import { usePortalHref } from "@/components/portal-base";
  * trigger one). Its answer is shown as plain text with its sources, or "I don't know" with
  * a way to post the question as feedback. When the team takes questions in its inbox (`askAPerson`,
  * with the address to start with), "I don't know" and a thumbs-down also offer "Ask a person".
- * In the widget (`widget`), sources open the portal in a new tab, so the answer stays in the panel.
  */
 export function DocsAnswer({
   projectSlug,
   question,
   feedbackHref,
   askAPerson,
-  widget = false,
 }: {
   projectSlug: string;
   question: string;
   feedbackHref: string | null;
   askAPerson: { email: string } | null;
-  widget?: boolean;
 }) {
   const assistant = useDocsAssistant();
   const [answer, setAnswer] = useState<Answer | null>(null);
@@ -47,7 +43,7 @@ export function DocsAnswer({
 
   const ask = () =>
     startTransition(async () => {
-      const result = await askDocs(projectSlug, question, widget ? "widget" : "portal");
+      const result = await askDocs(projectSlug, question, "portal");
       if ("error" in result) {
         toast.error(result.error);
         return;
@@ -66,11 +62,11 @@ export function DocsAnswer({
     });
 
   const person = askAPerson && answer && (
-    <AskAPerson projectSlug={projectSlug} questionId={answer.id} question={question} defaultEmail={askAPerson.email} widget={widget} />
+    <AskAPerson projectSlug={projectSlug} questionId={answer.id} question={question} defaultEmail={askAPerson.email} widget={false} />
   );
 
-  // On the portal, the conversation can go on in the widget's assistant, from this answer (in the widget there is no such answer).
-  const followUp = !widget && assistant && answer && (
+  // The conversation can go on in the widget's assistant, from this answer.
+  const followUp = assistant && answer && (
     <div>
       <Button variant="outline" size="sm" onClick={() => assistant.continueWith(question, answer)}>
         <MessageCircleIcon />
@@ -81,14 +77,14 @@ export function DocsAnswer({
 
   const askButton = (
     // The portal's search page's one filled primary.
-    <Button variant={widget ? "outline" : "default"} disabled={pending} onClick={ask}>
+    <Button disabled={pending} onClick={ask}>
       <SparklesIcon />
       {pending ? "Asking…" : "Ask AI"}
     </Button>
   );
 
   return (
-    <section aria-label="AI answer" aria-busy={pending} className={cn("flex flex-col gap-3 rounded-xl p-4", widget ? "border" : "bg-card shadow-card ring-1 ring-card-edge")}>
+    <section aria-label="AI answer" aria-busy={pending} className={"flex flex-col gap-3 rounded-xl bg-card p-4 shadow-card ring-1 ring-card-edge"}>
       {(!answer || answer.status === "failed") && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
@@ -100,7 +96,7 @@ export function DocsAnswer({
       {answer?.status === "answered" && (
         <>
           <AnswerText text={answer.answer ?? ""} />
-          <AnswerSources sources={answer.sources} newTab={widget} />
+          <AnswerSources sources={answer.sources} />
           <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm text-muted-foreground">
             {rated !== null ? (
               <p>Thanks for letting us know.</p>
@@ -132,7 +128,7 @@ export function DocsAnswer({
             <>
               <p className="font-semibold">AI answers aren&apos;t available right now.</p>
               <p className="text-sm text-muted-foreground">These articles may help. Or post it as feedback so the team sees it.</p>
-              {answer.sources.length > 0 && <AnswerSources sources={answer.sources} newTab={widget} />}
+              {answer.sources.length > 0 && <AnswerSources sources={answer.sources} />}
             </>
           ) : (
             // A topic the team put off-limits: a fixed reply, the AI wasn't asked.
@@ -183,16 +179,14 @@ export function AnswerText({ text }: { text: string }) {
 
 /**
  * The articles an answer cites, linked (an AI-only one, which has no page, by name): to their pages, or
- * `href` (the widget's own article view); `newTab` to open them there; `onOpen` when one is opened.
+ * `href` (the widget's own article view); `onOpen` when one is opened.
  */
 export function AnswerSources({
   sources,
-  newTab = false,
   href,
   onOpen,
 }: {
   sources: Answer["sources"];
-  newTab?: boolean;
   href?: (slug: string) => string;
   onOpen?: () => void;
 }) {
@@ -208,7 +202,6 @@ export function AnswerSources({
             ) : (
               <Link
                 href={href ? href(source.slug) : at(`/docs/${source.slug}`)}
-                target={newTab ? "_blank" : undefined}
                 onClick={onOpen}
                 className="break-words text-primary hover:underline"
               >

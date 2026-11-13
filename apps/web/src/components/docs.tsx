@@ -120,7 +120,7 @@ export function PlaceFields({ place, loaded }: { place: ArticlePlace; loaded?: A
 }
 
 /** A new article's collection, picked where it's shown (Settings has the same, and the rest of its place). */
-export function ArticlePlaceLine() {
+function ArticlePlaceLine() {
   const { place, setPlace, collections } = useArticleEditor();
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
   return (

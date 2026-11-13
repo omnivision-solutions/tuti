@@ -60,7 +60,7 @@ export function DocsMore({ children, className }: { children: ReactNode; classNa
 export const DocsBrowse = createContext<{ open: boolean; browse: () => void } | null>(null);
 
 /** Every Docs header's first action under 61rem of the shell, where the tree isn't beside the page: it opens as a sheet. */
-export function DocsBrowseButton() {
+function DocsBrowseButton() {
   const docs = useContext(DocsBrowse);
   if (!docs) return null;
   return (
