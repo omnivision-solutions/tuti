@@ -393,4 +393,7 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
     await expect(line).toHaveCSS("margin-bottom", "8px");
   }
   await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "visible");
+  // And each its tail: the corner by the avatar as small on both.
+  const tails = await messages.locator(".team .inbox-bubble").evaluateAll((all) => all.map((bubble) => getComputedStyle(bubble).borderBottomRightRadius));
+  expect(tails[0]).toBe(tails[1]);
 });
