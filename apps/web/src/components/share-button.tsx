@@ -6,12 +6,14 @@ import { useSyncExternalStore } from "react";
 import { copyText } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 
-/** A post's link to copy: in words in its rail, an icon (named "Copy link") in the phone's row of actions. */
+// A post's round icon buttons (docs/design.md → Portals → Buttons): the secondary's grey fill on the portal.
+const ROUND = "rounded-full text-muted-foreground";
+
+/** A post's link to copy: a round icon button named "Copy link". */
 export function CopyLinkButton({ url }: { url: string }) {
   return (
-    <Button type="button" variant="ghost" aria-label="Copy link" className="text-muted-foreground max-lg:size-10 max-lg:border max-lg:px-0 portal:max-lg:border-transparent portal:max-lg:bg-secondary portal:max-lg:hover:bg-secondary-hover" onClick={() => copyText(url)}>
+    <Button type="button" variant="outline" size="icon-lg" aria-label="Copy link" title="Copy link" className={ROUND} onClick={() => copyText(url)}>
       <LinkIcon />
-      <span className="max-lg:hidden">Copy link</span>
     </Button>
   );
 }
@@ -30,9 +32,8 @@ export function ShareButton({ url, title }: { url: string; title: string }) {
   }
   return (
     // Closing the sheet without sharing rejects: nothing to say.
-    <Button type="button" variant="ghost" className="text-muted-foreground" onClick={() => navigator.share({ url, title }).catch(() => undefined)}>
+    <Button type="button" variant="outline" size="icon-lg" aria-label="Share" title="Share" className={ROUND} onClick={() => navigator.share({ url, title }).catch(() => undefined)}>
       <ShareIcon />
-      Share
     </Button>
   );
 }

@@ -34,7 +34,7 @@ export type StatusChangeView = { id: string; from: PostStatus; to: PostStatus; b
 
 /**
  * A post's activity: its comments, and with `events`, its status changes between them, in `sort`'s order; each comment's
- * replies under it, indented, oldest first. Comments by the project's team stand out: tinted, with a "Team" badge.
+ * replies under it, indented, oldest first. Comments by the project's team stand out: tinted, with a "Team" badge (on the portal, the accent's soft tint and rule).
  * `mediaUrls`: their images' links (server/media-urls.ts), read by the page. `ability`: Reply and Like under each comment
  * (never a note: only the team sees those).
  */
@@ -70,13 +70,13 @@ export function CommentList({
       className={cn(
         // Every one inset by a line's room, so the team's and a note's line down the left (and light tint) keep the
         // avatars in one column: the team's green, a note the highlight's.
-        // The portal's: the faces on the page's edge; the team's on their tint, inset by its rule.
+        // The portal's: the faces on the page's edge; the team's on the accent's soft tint, inset by its 2px rule.
         portal ? "flex gap-3.5 py-2" : "flex gap-3 border-l-[3px] border-transparent pl-3",
         comment.internal
           ? "rounded-r-lg border-highlight-foreground/60 bg-highlight/35 py-2.5 pr-3"
           : byTeam(comment) &&
               (portal
-                ? "rounded-r-xl border-l-[3px] border-primary bg-linear-to-r from-soft to-soft/30 py-3.5 pr-4 pl-3"
+                ? "rounded-r-xl border-l-2 border-primary bg-soft py-3 pr-4 pl-3.5"
                 : "rounded-r-lg border-primary/70 bg-primary/8 py-2.5 pr-3"),
       )}
     >
@@ -92,7 +92,7 @@ export function CommentList({
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className={portal ? "font-semibold" : "font-medium"}>{comment.author.name}</span>
           {/* A note is always the team's: its own badge says enough. */}
-          {byTeam(comment) && !comment.internal && <Badge>Team</Badge>}
+          {byTeam(comment) && !comment.internal && <Badge className={cn(portal && "rounded-full bg-card")}>Team</Badge>}
           {comment.internal && <Badge variant="highlight">Internal note</Badge>}
           <time dateTime={comment.createdAt.toISOString()} className={cn("text-muted-foreground", portal ? "text-sm" : "text-xs")}>
             {timeAgo(comment.createdAt)}

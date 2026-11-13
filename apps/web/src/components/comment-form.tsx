@@ -193,7 +193,8 @@ export function CommentForm({
             Cancel
           </Button>
         )}
-        <Button type="submit" disabled={pending}>
+        {/* On the portal a secondary: the post's one primary is Upvote. */}
+        <Button type="submit" variant={portal ? "outline" : "default"} disabled={pending}>
           {pending ? "Posting…" : replyTo ? "Reply" : internal ? "Add note" : emailVoters ? "Comment and email" : "Comment"}
         </Button>
       </div>

@@ -455,10 +455,10 @@ test("a public post on a Team only board leads readers back to the portal's feed
     const find = (node: ReactNode): string | undefined =>
       Array.isArray(node)
         ? node.map(find).find(Boolean)
-        : isValidElement<{ children?: ReactNode; href?: string }>(node)
+        : isValidElement<{ back?: ReactNode; children?: ReactNode; href?: string }>(node)
           ? node.type === BackLink
             ? node.props.href
-            : find(node.props.children)
+            : find([node.props.back, node.props.children])
           : undefined;
     return find((await PostPage({ params: Promise.resolve({ project: project.slug, board: "feature-requests", post: "dark-mode-for-the-editor-1" }), searchParams: Promise.resolve({}) } as never)) as ReactNode);
   };
