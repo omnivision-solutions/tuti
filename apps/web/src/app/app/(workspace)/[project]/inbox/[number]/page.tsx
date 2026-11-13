@@ -125,6 +125,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           select: {
             id: true,
             author: true,
+            authorId: true,
             body: true,
             note: true,
             fromAddress: true,
@@ -302,6 +303,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                     !message.note &&
                     !next.note &&
                     next.author === message.author &&
+                    // Two teammates of one name are two senders.
+                    next.authorId === message.authorId &&
                     byName(next) === name &&
                     next.createdAt.getTime() - message.createdAt.getTime() < RUN_MS &&
                     emailed(next) === status;

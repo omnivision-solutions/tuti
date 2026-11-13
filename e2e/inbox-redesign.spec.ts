@@ -345,8 +345,24 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
      FROM conversation c JOIN project p ON p.id = c."projectId" WHERE c.id = m."conversationId" AND c.number = 2 AND p.slug = $1`,
     [slug, midnight],
   );
+  // And two teammates of one name, a minute apart, are two senders.
+  await api("/conversations", { user: { id: "demo-sam" }, subject: "Two Olives", body: "Hello?" });
+  await api("/conversations/3/messages", { body: "Hi from one Olive." });
+  await api("/conversations/3/messages", { body: "Hi from the other." });
+  const twin = `e2e-${randomUUID()}`;
+  await db.query(`INSERT INTO "user" (id, name, email, "updatedAt") VALUES ($1, 'Olive Owner', $2, now())`, [twin, `${twin}@example.com`]);
+  await db.query(
+    `UPDATE conversation_message m SET "authorId" = $2 FROM conversation c JOIN project p ON p.id = c."projectId"
+     WHERE c.id = m."conversationId" AND c.number = 3 AND p.slug = $1 AND m.body = 'Hi from the other.'`,
+    [slug, twin],
+  );
   await db.end();
   await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.goto(`/app/${slug}/inbox/3`);
+  await expect(messages.locator(".team .inbox-message-by")).toHaveCount(2);
+  for (const line of await messages.locator(".team .inbox-message-by").all()) {
+    await expect(line).toHaveCSS("position", "static");
+  }
   await owner.goto(`/app/${slug}/inbox/2`);
   await expect(messages.locator(".inbox-day")).toHaveCount(2);
   for (const line of await messages.locator(".team .inbox-message-by").all()) {
