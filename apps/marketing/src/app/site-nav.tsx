@@ -72,7 +72,7 @@ export function MobileNav() {
         <a href={DOCS} onClick={close} className={row}>
           Docs
         </a>
-        <a href={REPO_URL} className={row}>
+        <a href={REPO_URL} onClick={close} className={row}>
           GitHub
         </a>
         <div className="mt-6 flex flex-col gap-2">

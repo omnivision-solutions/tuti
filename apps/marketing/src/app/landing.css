@@ -32,7 +32,9 @@
     font-weight: 600; font-size: 16px; white-space: nowrap; transition: transform 0.15s, background-color 0.15s;
   }
   .btn:hover { transform: translateY(-1px); }
-  .btn:focus-visible, .tab:focus-visible, .tile:focus-visible, .os-pill:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  /* On the green and dark surfaces the brand-green ring would vanish: white there. */
+  .frame, .strip, .card.self { --ring: #fff; }
   .btn-p {
     background: var(--g); color: var(--primary-foreground);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 20px -8px color-mix(in oklch, var(--g) 60%, transparent);
@@ -71,7 +73,8 @@
     margin: 64px auto 0; max-width: 1240px; padding: 34px 34px 0; border-radius: 36px 36px 0 0;
     background: linear-gradient(135deg, #1f7a46, #3fae6f 45%, #b9e6a8);
   }
-  .tabs { display: flex; gap: 6px; justify-content: safe center; margin: 0 -34px 22px; padding: 2px 34px; }
+  /* Room for the focus ring: the row scrolls sideways, so it clips what overflows it. */
+  .tabs { display: flex; gap: 6px; justify-content: safe center; margin: -5px -34px 17px; padding: 5px 34px; }
   .tab {
     flex: none; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 12px; font-weight: 600; font-size: 15px;
     color: rgba(255, 255, 255, 0.88); border: 1px solid transparent; cursor: pointer;
@@ -188,6 +191,7 @@
   .term .tb i { width: 10px; height: 10px; border-radius: 50%; background: #2a4033; }
   .term .tb span { margin-left: 8px; }
   .term pre { font: inherit; line-height: 1.8; margin: 0; padding: 20px 22px; white-space: pre; overflow-x: auto; }
+  .term pre:focus-visible { outline-offset: -2px; }
   .term .p { color: #4cc27c; user-select: none; }
 
   /* Pricing: a green band */
@@ -253,7 +257,7 @@
     .lead { font-size: 18px; margin-top: 18px; }
     .ctas { flex-direction: column; align-items: stretch; }
     .frame { margin-top: 44px; padding: 20px 10px 0; border-radius: 24px 24px 0 0; }
-    .tabs { margin: 0 -10px 14px; padding: 2px 10px; }
+    .tabs { margin: -5px -10px 9px; padding: 5px 10px; }
     .tab { height: 38px; padding: 0 13px; font-size: 14px; }
     .win { border-radius: 12px 12px 0 0; }
     .bar { height: 30px; }

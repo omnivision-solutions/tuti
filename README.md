@@ -101,11 +101,20 @@ unset and sends nothing.
 Two Docker images, built from the repo root:
 
 ```bash
+git clone https://github.com/omnivision-solutions/tuti
+cd tuti
 docker build -f apps/web/Dockerfile -t tuti-web .        # dashboard, portals, API; applies migrations at start
 docker build -f apps/worker/Dockerfile -t tuti-worker .  # background jobs (skip with JOBS_DRIVER=inline)
 ```
 
-Run them with the variables below (the web container listens on port 3000). Without
+Run them with the variables below (the web container listens on port 3000), for example from a `.env` file
+in the repo root (one `NAME=value` per line, no quotes; Docker builds never read it):
+
+```bash
+docker run -p 3000:3000 --env-file .env tuti-web
+```
+
+Without
 Docker: `pnpm install --frozen-lockfile && pnpm build`, then `pnpm --filter @tuti/db db:deploy`,
 `pnpm --filter @tuti/web start` and `pnpm --filter @tuti/worker start`.
 

@@ -253,8 +253,8 @@ function Bento() {
   );
 }
 
-// The README's Self-hosting steps: its web image, run with its variables in .env.
-const SELF_HOST = [`git clone ${REPO_URL}`, "docker build -f apps/web/Dockerfile -t tuti-web .", "docker run -p 3000:3000 --env-file .env tuti-web"];
+// The README's Self-hosting steps, as it writes them: its web image, run with its variables in .env.
+const SELF_HOST = [`git clone ${REPO_URL}`, "cd tuti", "docker build -f apps/web/Dockerfile -t tuti-web .", "docker run -p 3000:3000 --env-file .env tuti-web"];
 
 function OpenSource() {
   return (
