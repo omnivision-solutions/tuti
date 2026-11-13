@@ -2,8 +2,6 @@ import { readFileSync } from "node:fs";
 
 import { z } from "zod";
 
-import { log } from "./log";
-
 /**
  * Billing (docs/plan.md, Plans): what a server sells, from one JSON file at BILLING_CONFIG (a path; on Tuti's cloud a
  * file mounted into the app's and the worker's containers). Without one, billing is off: nothing is sold and every
@@ -88,11 +86,11 @@ export const billingSchema = z
 export type BillingConfig = z.output<typeof billingSchema>;
 export type BillingPlan = BillingConfig["plans"][number];
 
-const loaded = new Map<string, BillingConfig | null>();
+const loaded = new Map<string, BillingConfig>();
 
 /**
- * This server's billing file (BILLING_CONFIG), or null without one: billing off. A path to a missing file is billing off
- * too, logged; an invalid file throws, naming what's wrong.
+ * This server's billing file (BILLING_CONFIG), or null without one: billing off. A file that can't be read or isn't
+ * valid throws, naming what's wrong.
  */
 export function billingConfig(): BillingConfig | null {
   const path = process.env.BILLING_CONFIG?.trim();
@@ -104,9 +102,8 @@ export function billingConfig(): BillingConfig | null {
     try {
       text = readFileSync(path, "utf8");
     } catch (error) {
-      log.error("BILLING_CONFIG names a file that can't be read: billing is off", { path, error });
-      loaded.set(path, null);
-      return null;
+      // Never billing off: on a server selling plans, a mount gone missing would give every project everything.
+      throw new Error(`BILLING_CONFIG (${path}) can't be read: ${(error as Error).message}`);
     }
     let json: unknown;
     try {

@@ -50,10 +50,13 @@ export function badgePrice(interval: PlanInterval): string | null {
   return billingConfig()?.badge?.[interval]?.stripe[0] ?? null;
 }
 
-/** What the "Powered by tuti" add-on shows a month (its monthly price, else its yearly one's monthly share), or null where it isn't sold. */
-export function badgePerMonth(): number | null {
+/**
+ * What the "Powered by tuti" add-on shows a month billed each `interval` (yearly: its monthly share), or null where it
+ * isn't sold that way. Without `interval`, monthly's, else yearly's: for saying what it costs before a plan is picked.
+ */
+export function badgePerMonth(interval?: PlanInterval): number | null {
   const badge = billingConfig()?.badge;
-  return badge?.month?.perMonth ?? badge?.year?.perMonth ?? null;
+  return interval ? (badge?.[interval]?.perMonth ?? null) : (badge?.month?.perMonth ?? badge?.year?.perMonth ?? null);
 }
 
 /** A plan's name and what it shows a month, billed monthly and yearly (null where it isn't sold that way). */

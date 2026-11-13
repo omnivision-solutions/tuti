@@ -79,11 +79,10 @@ const versions = (plan: PlanKey): PlanLine => {
   return { text: kept === 1 ? "1 version kept per help article" : `${kept} versions kept per help article` };
 };
 
-/** A plan's name and price as a card shows them; a plan sold one way only shows that price both ways. */
+/** A plan's name and price as a card shows them: null for a plan not sold either way. */
 function shown(plan: PlanKey): Pick<PricingPlan, "name" | "price"> {
   const { name, price } = planDisplay(plan);
-  const month = price.month ?? price.year;
-  return { name, price: month === null ? null : { month, year: price.year ?? month } };
+  return { name, price: price.month === null && price.year === null ? null : price };
 }
 
 const seats = (plan: PlanKey): PlanLine => {

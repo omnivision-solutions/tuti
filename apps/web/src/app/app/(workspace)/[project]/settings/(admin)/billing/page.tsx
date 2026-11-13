@@ -44,7 +44,8 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const paid = searchParams.paid === "1";
   const subscribed = searchParams.subscribed === "1";
   const shown = planDisplay(plan.plan);
-  const badge = badgePerMonth();
+  // A paid plan's own billing (the add-on bills alike); on the default plan, what it starts at.
+  const badge = plan.plan === "FREE" ? badgePerMonth() : badgePerMonth(plan.planInterval === "year" ? "year" : "month");
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (

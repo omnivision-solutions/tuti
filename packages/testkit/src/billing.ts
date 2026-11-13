@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -56,6 +56,9 @@ export function billingFile(change?: (config: TestBilling, plans: Record<"free" 
   change?.(config, Object.fromEntries(config.plans.map((plan) => [plan.key, plan])) as Record<"free" | "pro" | "business", Plan>);
   const text = JSON.stringify(config, null, 2);
   const path = join(tmpdir(), `tuti-billing-${createHash("sha256").update(text).digest("hex").slice(0, 16)}.json`);
-  writeFileSync(path, text);
+  // Written whole, then moved into place: a test reading it at the same moment never sees half of it.
+  const partial = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}`;
+  writeFileSync(partial, text);
+  renameSync(partial, path);
   return path;
 }

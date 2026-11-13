@@ -7,9 +7,9 @@ export function yearlyNote(prices: PlanPrice[]): string | null {
   return saved > 0 ? `Save up to ${saved}%` : null;
 }
 
-/** "$39 a month", or for yearly "$32 a month, billed yearly". */
+/** "$39 a month", or for yearly "$32 a month, billed yearly"; "Not billed yearly" where it isn't sold that way. */
 export const planPriceText = (price: PlanPrice, interval: "month" | "year") =>
-  `$${price[interval] ?? price.month ?? price.year} a month${interval === "year" ? ", billed yearly" : ""}`;
+  price[interval] === null ? `Not billed ${interval === "year" ? "yearly" : "monthly"}` : `$${price[interval]} a month${interval === "year" ? ", billed yearly" : ""}`;
 
 /**
  * How tuti.so/app/license describes a licence's price and billing (`perMonth`, the badge add-on's), from the intervals

@@ -107,7 +107,7 @@ test("names, prices and team sizes come from the billing file", () => {
   }));
   const [starter, growth, business] = pricingPlans();
   expect([starter!.name, starter!.price, starter!.features[1]?.text]).toEqual(["Starter", null, "1 team member"]);
-  // Sold yearly only: that price both ways.
-  expect([growth!.name, growth!.price, growth!.intro, growth!.cta.label]).toEqual(["Growth", { month: 60, year: 60 }, "Everything in Starter, plus:", "Start with Growth"]);
+  // Sold yearly only: no monthly price.
+  expect([growth!.name, growth!.price, growth!.intro, growth!.cta.label]).toEqual(["Growth", { month: null, year: 60 }, "Everything in Starter, plus:", "Start with Growth"]);
   expect(business!.intro).toBe("Everything in Growth, plus:");
 });

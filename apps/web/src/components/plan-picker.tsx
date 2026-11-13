@@ -38,7 +38,7 @@ export function PlanPicker({ projectSlug, plans }: { projectSlug: string; plans:
           <div key={plan} className={cn("flex flex-col gap-3 rounded-xl border p-4", plan === "PRO" && "ring-2 ring-primary")}>
             <div>
               <h3 className="font-semibold">{plans[plan].name}</h3>
-              <p className="text-sm text-muted-foreground">{plan === "FREE" || !plans[plan].price ? "$0, this project's plan" : planPriceText(plans[plan].price, interval)}</p>
+              <p className="text-sm text-muted-foreground">{plan === "FREE" || !plans[plan].price ? "$0, this project's plan" : planPriceText(plans[plan].price!, interval)}</p>
             </div>
             <ul className="flex flex-1 flex-col gap-1.5 text-sm">
               {plans[plan].highlights.map((line) => (
@@ -49,7 +49,7 @@ export function PlanPicker({ projectSlug, plans }: { projectSlug: string; plans:
                 <PlanLineItem key={line.text} line={line} />
               ))}
             </ul>
-            {plan !== "FREE" && (
+            {plan !== "FREE" && plans[plan].price?.[interval] != null && (
               <Button type="button" variant={plan === "PRO" ? "default" : "outline"} disabled={pending} onClick={() => upgrade(plan === "PRO" ? "pro" : "business", interval)}>
                 Upgrade to {plans[plan].name}
               </Button>

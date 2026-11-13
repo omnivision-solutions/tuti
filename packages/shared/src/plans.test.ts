@@ -1,7 +1,7 @@
 import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleLimit, articleVersionsKept, articleVersionsNote, articleVersionsStored, badgePrice, boardLimit, historyDays, historyKeptDays, isBadgePrice, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, upgradeFor } from "./plans";
+import { articleLimit, articleVersionsKept, badgePerMonth, articleVersionsNote, articleVersionsStored, badgePrice, boardLimit, historyDays, historyKeptDays, isBadgePrice, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, upgradeFor } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -15,9 +15,9 @@ test("without a billing file (self-hosted), every project has everything, and no
   expect([articleVersionsKept("FREE"), articleVersionsStored(), historyKeptDays()]).toEqual([50, 50, null]);
 });
 
-test("a path to a missing file is billing off too", () => {
+test("a path to a file that can't be read stops it, never billing off", () => {
   vi.stubEnv("BILLING_CONFIG", "/nonexistent/billing.json");
-  expect(planIncludes("FREE", "privatePortal")).toBe(true);
+  expect(() => planIncludes("FREE", "privatePortal")).toThrow(/BILLING_CONFIG \(\/nonexistent\/billing.json\) can't be read/);
 });
 
 test("each plan's features and limits are the file's", () => {
@@ -46,7 +46,7 @@ test("a plan the file doesn't list gets the default plan's terms, and isn't sold
 test("a plan's Stripe prices: the first is sold, older ones still recognised; the add-on's likewise", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro }) => {
     pro.prices.month!.stripe = ["price_new", "price_old"];
-    config.badge = { month: { perMonth: 49, stripe: ["price_badge"] } };
+    config.badge = { month: { perMonth: 49, stripe: ["price_badge"] }, year: { perMonth: 39, stripe: ["price_badge_yearly"] } };
   }));
   expect([planPrice("PRO", "month"), planPrice("FREE", "month")]).toEqual(["price_new", null]);
   expect([planOfPrice("price_new"), planOfPrice("price_old"), planOfPrice("price_other")]).toEqual([
@@ -54,7 +54,9 @@ test("a plan's Stripe prices: the first is sold, older ones still recognised; th
     { plan: "PRO", interval: "month" },
     null,
   ]);
-  expect([badgePrice("month"), badgePrice("year"), isBadgePrice("price_badge"), isBadgePrice("price_new")]).toEqual(["price_badge", null, true, false]);
+  expect([badgePrice("month"), badgePrice("year"), isBadgePrice("price_badge"), isBadgePrice("price_new")]).toEqual(["price_badge", "price_badge_yearly", true, false]);
+  // What it shows a month: each billing's own, or monthly's before a plan is picked.
+  expect([badgePerMonth("month"), badgePerMonth("year"), badgePerMonth()]).toEqual([49, 39, 49]);
 });
 
 test("upgrades name the first plan above with more room, and none where no plan has more", () => {

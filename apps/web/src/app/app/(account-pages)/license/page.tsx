@@ -52,8 +52,7 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
   });
   const monthly = licensePrice("month");
   const yearly = licensePrice("year");
-  const perMonth = badgePerMonth() ?? 0;
-  const billing = licenseBilling(perMonth, { month: Boolean(monthly), year: Boolean(yearly) });
+  const billing = licenseBilling(badgePerMonth(monthly ? "month" : "year") ?? 0, { month: Boolean(monthly), year: Boolean(yearly) });
   const portal = process.env.STRIPE_PORTAL_LOGIN_URL?.trim();
   const body = `Hi,\n\nI'd like a licence to remove "Powered by tuti".\n\nInstallation ID: ${installation}\nProject ID: ${project}\n`;
   const mailto = `mailto:${LICENSE_EMAIL}?${new URLSearchParams({ subject: "Tuti licence", body }).toString().replaceAll("+", "%20")}`;
@@ -114,12 +113,12 @@ export default async function LicensePage(props: PageProps<"/app/license">) {
           <div className="flex flex-wrap gap-2">
             {monthly && (
               <Button type="submit" name="interval" value="month">
-                Buy for ${perMonth} a month
+                Buy for ${badgePerMonth("month")} a month
               </Button>
             )}
             {yearly && (
               <Button type="submit" name="interval" value="year" variant={monthly ? "outline" : "default"}>
-                Buy for ${perMonth * 12} a year
+                Buy for ${(badgePerMonth("year") ?? 0) * 12} a year
               </Button>
             )}
           </div>
