@@ -249,6 +249,8 @@ test("a board's own words for posting: the team sees them in a preview as they t
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
   await expect(ada.getByText("What should we build next?")).toBeVisible();
+  // One board, nothing shipped: no rail, and the list takes the header's whole width (no empty column beside it).
+  await expect(ada.getByRole("complementary", { name: "About this board" })).toHaveCount(0);
   await expect(ada.getByRole("button", { name: "New post" })).toHaveCount(0);
   await ada.getByRole("main").locator("header").getByRole("button", { name: "Request a feature" }).click();
   const form = ada.getByRole("dialog", { name: "Share an idea" }).locator("form");
@@ -260,6 +262,8 @@ test("a board's own words for posting: the team sees them in a preview as they t
   // Posted (saving runs its jobs first, see postFeedback): the post is on the board, the dialog closed; it opens empty again.
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible({ timeout: 15_000 });
   await expect(ada.getByRole("dialog")).toHaveCount(0);
+  const [list, header] = [(await ada.getByRole("main").locator("ul.divide-y").boundingBox())!, (await ada.getByRole("main").locator("header").boundingBox())!];
+  expect(Math.abs(list.width - header.width)).toBeLessThanOrEqual(1);
   await ada.getByRole("main").locator("header").getByRole("button", { name: "Request a feature" }).click();
   await expect(form.getByLabel("Title")).toHaveValue("");
   await ada.keyboard.press("Escape");

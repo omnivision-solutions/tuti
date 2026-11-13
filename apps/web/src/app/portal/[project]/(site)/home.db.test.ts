@@ -37,7 +37,11 @@ test("the first board, then the roadmap, the changelog or the docs once picked",
 
 test("/feedback opens the only board, whatever the home page", async () => {
   await call(updatePortal, as(), { home: "docs" });
-  expect(await redirectTarget(FeedbackHome({ params: Promise.resolve({ project: project.slug }) } as never))).toBe("/feedback/feature-requests");
+  const feedback = (searchParams: Record<string, string> = {}) =>
+    redirectTarget(FeedbackHome({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve(searchParams) } as never));
+  expect(await feedback()).toBe("/feedback/feature-requests");
+  // A search goes with it (an old link, or the overview's once its other boards went).
+  expect(await feedback({ q: "dark mode" })).toBe("/feedback/feature-requests?q=dark+mode");
 });
 
 test("with two boards on the portal, the home opens Feedback's overview (a Team only board doesn't count)", async () => {

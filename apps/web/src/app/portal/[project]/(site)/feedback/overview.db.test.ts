@@ -64,3 +64,30 @@ test("the overview lists each board's top open ideas, what shipped, and searches
   expect(found).not.toContain("still to come");
   expect(text(await page({ q: "nothing like it" }))).toContain("No ideas match");
 });
+
+/** A post moved to a board the overview doesn't show, between its search's two reads (the ids, then the posts), isn't in it. */
+test("the overview's search leaves out a post moved off its boards while it reads", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bug reports" } });
+  const hidden = await prisma.board.create({ data: { projectId: project.id, slug: "team", name: "Team notes", postVisibility: "TEAM" } });
+  const actor = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  await call(createPost, actor, { board: "feature-requests", title: "Dark mode" });
+  const moving = await call(createPost, actor, { board: "bugs", title: "Dark icons" });
+
+  actAs(null);
+  // The ids are read; then, before the posts are, the team moves one to its Team only board (its post stays public).
+  const findMany = prisma.post.findMany.bind(prisma.post);
+  const spy = vi.spyOn(prisma.post, "findMany").mockImplementationOnce((async (args: Parameters<typeof findMany>[0]) => {
+    await prisma.post.updateMany({ where: { projectId: project.id, number: moving.number }, data: { boardId: hidden.id } });
+    return findMany(args);
+  }) as never);
+  try {
+    const html = renderToStaticMarkup(await FeedbackOverview({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ q: "dark" }) } as never));
+    expect(spy).toHaveBeenCalled();
+    expect(text(html)).toContain("Dark mode");
+    expect(text(html)).not.toContain("Dark icons");
+  } finally {
+    spy.mockRestore();
+  }
+});

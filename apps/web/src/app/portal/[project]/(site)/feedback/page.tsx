@@ -52,11 +52,12 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
   if (boards.length === 0) {
     notFound();
   }
-  if (boards.length === 1) {
-    redirect(at(boardPath(boards[0]!)));
-  }
   const searchParams = await props.searchParams;
   const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
+  if (boards.length === 1) {
+    // A search (an old link, or the overview's while its other boards went) is that board's.
+    redirect(`${at(boardPath(boards[0]!))}${q ? `?${new URLSearchParams({ q })}` : ""}`);
+  }
   const session = await getSession();
   // As voting checks it: someone signed in through another project's single sign-on can't vote here.
   const voter = session && (await canActIn(session.user.id, project.id)) ? session.user.id : null;
@@ -66,16 +67,13 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
   const [found, tops, shipped, getUpdates] = await Promise.all([
     // A search: every board's ideas they see, every status (as a board's search), Trending's order; only on the boards shown.
     q ? boardPosts({ projectId: project.id }, filters, viewer, { q, boardIds: boards.map((board) => board.id) }) : null,
-    // ponytail: a board's first page read for its top three; give boardPosts a limit if boards get many ideas.
-    q ? [] : Promise.all(boards.map(async (board) => (await boardPosts({ projectId: project.id, slug: board.slug }, { ...filters, page: 1 }, viewer, { statuses: ACTIVE_STATUSES })).posts.slice(0, TOP_IDEAS))),
-    q ? [] : Promise.all(boards.map(async (board) => (await recentlyShipped(board.id, viewer)).map((post) => ({ ...post, board })))),
+    q ? [] : Promise.all(boards.map(async (board) => (await boardPosts({ projectId: project.id, slug: board.slug }, filters, viewer, { statuses: ACTIVE_STATUSES, take: TOP_IDEAS })).posts)),
+    q ? [] : recentlyShipped(boards.map((board) => board.id), viewer, SHIPPED_SHOWN),
     boardGetUpdates({ project, session, voter, back: "/feedback" }),
   ]);
   const results = found;
-  const latest = shipped
-    .flat()
-    .sort((a, b) => b.shippedAt.getTime() - a.shippedAt.getTime())
-    .slice(0, SHIPPED_SHOWN);
+  const byId = new Map(boards.map((board) => [board.id, board]));
+  const latest = shipped.map((post) => ({ ...post, board: byId.get(post.boardId)! }));
   const total = boards.reduce((sum, board) => sum + board._count.posts, 0);
 
   const vote = (post: { id: string; status: string; voteCount: number; votes: unknown[] }, shape: "chip" | "box") =>
@@ -104,7 +102,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
         }
         actions={
           <>
-            <div className="w-60">{search("h-9 sm:h-9 rounded-[0.625rem]")}</div>
+            <div className="w-60">{search("h-9 sm:h-9 rounded-lg")}</div>
             {getUpdates(true)}
             {newPost(false)}
           </>
@@ -124,6 +122,10 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
         }
       />
 
+      {/* Phones without JavaScript: the search's popover can't open, so its form is in the page. */}
+      <noscript>
+        <div className="sm:hidden">{search()}</div>
+      </noscript>
       {results ? (
         <section aria-label="Ideas" className="flex flex-col gap-6">
           {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
@@ -168,7 +170,7 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
                 <section
                   key={board.id}
                   aria-labelledby={`board-${board.id}`}
-                  className="flex flex-col gap-4 rounded-[0.875rem] bg-card p-5 shadow-card ring-1 ring-card-edge sm:p-6"
+                  className="flex flex-col gap-4 rounded-xl bg-card p-5 shadow-card ring-1 ring-card-edge sm:p-6"
                 >
                   <div className="flex flex-col gap-0.5">
                     <h2 id={`board-${board.id}`} className="font-heading text-lg leading-snug font-[650] break-words">

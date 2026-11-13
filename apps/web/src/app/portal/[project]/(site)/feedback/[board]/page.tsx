@@ -212,7 +212,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         }
         actions={
           <>
-            <div className="w-60">{search("h-9 sm:h-9 rounded-[0.625rem]")}</div>
+            <div className="w-60">{search("h-9 sm:h-9 rounded-lg")}</div>
             {getUpdates(true)}
             <NewIdeaButton label={newIdeaLabel} />
           </>
@@ -237,6 +237,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             {/* Without JavaScript New idea can't open its dialog: the board's box in the page instead (signed out, it goes to sign in
               and back with the title; ShareIdeaBox). */}
             <noscript>
+              {/* Phones: the search's popover needs JavaScript, so its form is in the page. */}
+              <div className="mb-4 sm:hidden">{search()}</div>
               <div>
                 <ShareIdeaBox signedIn={!!session} projectSlug={projectSlug} boardSlug={boardSlug} mediaUrls={null} defaultTitle={title} {...texts} />
               </div>
