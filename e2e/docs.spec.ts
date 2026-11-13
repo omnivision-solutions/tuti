@@ -2316,6 +2316,8 @@ test("an article ends with the previous and next in reading order, related ones,
   await nextCard.evaluate((element) => (element.style.transition = "none"));
   const resting = await nextCard.evaluate((element) => getComputedStyle(element).boxShadow);
   const restingRing = ringOf(resting);
+  // The ring was found: an empty match on both sides would pass whatever the hover does.
+  expect(restingRing).not.toBe("");
   await nextCard.hover();
   // Hovered: it lifts (its shadow changes), and its ring stays as it was.
   await expect.poll(() => nextCard.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe(resting);
@@ -2402,13 +2404,14 @@ test("on the portal an article's asides are fills: inline code, callouts, detail
   const text = (value: string, marks?: object[]) => ({ type: "text", text: value, ...(marks && { marks }) });
   const p = (...content: object[]) => ({ type: "paragraph", content });
   const code = (value: string) => text(value, [{ type: "code" }]);
-  const steps = { type: "steps", content: [{ type: "step", content: [{ type: "stepTitle", content: [text("Open Settings")] }] }] };
+  const step = (title: string) => ({ type: "step", content: [{ type: "stepTitle", content: [text(title)] }] });
+  const steps = { type: "steps", content: [step("Open Settings"), step("Pick Sync")] };
   const content = {
     type: "doc",
     content: [
       p(text("Run "), code("acme login"), text(" first.")),
       steps,
-      { type: "blockquote", content: [p(text("Then run "), code("acme sync"), text("."))] },
+      { type: "blockquote", content: [p(text("Then run "), code("acme sync"), text(".")), { type: "steps", content: [step("Check the log")] }] },
       { type: "details", content: [{ type: "detailsSummary", content: [text("More")] }, { type: "detailsContent", content: [p(text("Or run "), code("acme sync --all"), text("."))] }] },
       { type: "codeBlock", attrs: { language: "bash", filename: "Terminal" }, content: [text("acme sync --all")] },
       {
@@ -2433,12 +2436,17 @@ test("on the portal an article's asides are fills: inline code, callouts, detail
   const inline = main.locator("p > code").filter({ hasText: "acme login" });
   expect(await background(inline)).toBe(grey);
   await expect(inline).toHaveCSS("border-top-width", "0px");
-  expect(await before(main.locator(".rich-steps > li").first())).toBe(grey);
+  const firstStep = main.locator(".rich-steps > li").first();
+  expect(await before(firstStep)).toBe(grey);
+  // No line from one step's number down to the next.
+  expect(await firstStep.evaluate((element) => getComputedStyle(element, "::after").content)).toBe("none");
   // A callout and a details block are grey fills without an edge; inline code in them on the card's colour.
   const callout = main.locator("blockquote");
   expect(await background(callout)).toBe(grey);
   await expect(callout).toHaveCSS("border-top-width", "0px");
   expect(await background(callout.locator("code"))).toBe(card);
+  // A step's number in the callout on the card's colour too.
+  expect(await before(callout.locator(".rich-steps > li"))).toBe(card);
   const details = main.locator(".rich-details");
   expect(await background(details)).toBe(grey);
   await expect(details).toHaveCSS("border-top-width", "0px");
