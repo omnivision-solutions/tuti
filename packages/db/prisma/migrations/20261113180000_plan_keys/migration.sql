@@ -4,12 +4,17 @@ ALTER TABLE "project" ADD COLUMN "planKey" TEXT;
 UPDATE "project" SET "planKey" = lower("plan"::text) WHERE "plan" <> 'FREE';
 
 -- While both releases run, the previous one writes only the enum (Stripe's webhook, in the old web container): its
--- change follows into the key, so a payment or a cancellation it handles holds. This release writes both, the key
--- first, so its own writes are left as they are.
+-- change follows into the key, so a payment or a cancellation it handles holds. Only its two writes: a plan ended (Free,
+-- its status cleared) or Pro or Business paid where the key says otherwise. This release writes both, and its enum
+-- (Free for any plan the enum has no name for) never clears a key that's paid for.
 CREATE FUNCTION "project_plan_key_from_enum"() RETURNS trigger AS $$
 BEGIN
   IF NEW."plan" IS DISTINCT FROM OLD."plan" AND NEW."planKey" IS NOT DISTINCT FROM OLD."planKey" THEN
-    NEW."planKey" := CASE WHEN NEW."plan" = 'FREE' THEN NULL ELSE lower(NEW."plan"::text) END;
+    IF NEW."plan" = 'FREE' AND NEW."planStatus" IS NULL THEN
+      NEW."planKey" := NULL;
+    ELSIF NEW."plan" <> 'FREE' AND NEW."planKey" IS DISTINCT FROM lower(NEW."plan"::text) THEN
+      NEW."planKey" := lower(NEW."plan"::text);
+    END IF;
   END IF;
   RETURN NEW;
 END;
