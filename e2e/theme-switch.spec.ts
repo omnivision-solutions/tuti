@@ -47,6 +47,9 @@ test("a reader picks dark mode in the portal's footer and keeps it; with the swi
   expect(await owner.frame({ name: "tuti-preview" })!.evaluate(() => localStorage.getItem("theme"))).toBeNull();
   const card = owner.locator("form").first();
   await card.getByRole("radiogroup", { name: "Colour scheme" }).getByText("Light", { exact: true }).click();
+  // Trying a default shows it on the page, and the switch says so (not the Dark tried before).
+  await expect(preview.locator("html")).toHaveClass(/\blight\b/);
+  await expect(switcher.getByRole("radio", { name: "Light" })).toBeChecked();
   await card.getByRole("switch", { name: "Let readers switch theme" }).uncheck();
   await expect(switcher).toBeHidden();
   await checkpoint(owner, "branding-theme-switch-off");

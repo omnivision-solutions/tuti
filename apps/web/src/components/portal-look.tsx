@@ -3,7 +3,7 @@
 import { LinkIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-import { createContext, useContext, useId, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useId, useState, useSyncExternalStore } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@tuti/ui/tuti-logo";
@@ -23,7 +23,11 @@ export function showTheme(scheme: ColorScheme) {
   html.classList.remove("light", "dark");
   html.classList.add(mode);
   html.style.colorScheme = mode;
+  // For the preview's footer switch, whichever showed it (the switch, the team trying a default, the app's own mode).
+  window.dispatchEvent(new CustomEvent<ColorScheme>(PREVIEW_THEME_EVENT, { detail: scheme }));
 }
+
+const PREVIEW_THEME_EVENT = "tuti:preview-theme";
 
 export const LookContext = createContext<PortalLook | null>(null);
 
@@ -203,6 +207,11 @@ function ThemeSwitch() {
   const [tried, setTried] = useState<ColorScheme | null>(null);
   const name = useId();
   const hydrated = useSyncExternalStore(noStore, () => true, () => false);
+  useEffect(() => {
+    const shown = (event: Event) => setTried((event as CustomEvent<ColorScheme>).detail);
+    window.addEventListener(PREVIEW_THEME_EVENT, shown);
+    return () => window.removeEventListener(PREVIEW_THEME_EVENT, shown);
+  }, []);
   return (
     <div role="radiogroup" aria-label="Theme" className="flex gap-0.5">
       {THEMES.map(([value, label, Icon]) => (
@@ -219,7 +228,6 @@ function ThemeSwitch() {
             checked={hydrated && (tried ?? theme ?? "system") === value}
             onChange={() => {
               if (inPreview()) {
-                setTried(value);
                 showTheme(value);
                 return;
               }
