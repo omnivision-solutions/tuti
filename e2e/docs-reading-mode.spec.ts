@@ -66,6 +66,9 @@ test("navigating between articles with and without sections keeps the docs align
     for (const part of ["/changelog", "/roadmap", "/feedback"]) {
       await reader.goto(part);
       expect(await logoX(), `the logo on ${part} at ${width}px`).toBe(onDocs);
+      if (width === 1440) {
+        await checkpoint(reader, `header-on${part.replace("/", "-")}-1440`, { fullPage: false });
+      }
     }
   }
   await reader.goto("/docs/import-events");
