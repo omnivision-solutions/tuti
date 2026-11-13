@@ -57,14 +57,15 @@ Use it instead of reading checks and comments with `gh api` by hand. A verdict i
 
 ## On each wake
 
-1. **Failed checks.** Read the log before guessing: `gh run view <run-id> --log-failed` (the run id is in the `FAIL` line's URL). Fix the cause; it goes out in the same push as step 2's fixes. Before calling a failure unrelated or flaky, restore the touched files to `main`, rerun that test, and say what happened in the PR.
+1. **Failed checks.** Read the log before guessing: `gh run view <run-id> --log-failed` (the run id is in the `FAIL` line's URL). Fix the cause (step 3 pushes it). Before calling a failure unrelated or flaky, restore the touched files to `main`, rerun that test, and say what happened in the PR.
 2. **Review comments.** Each `[…]` block is a comment with no reply from you after its latest edit, an unresolved thread, or a change request. Judge each on its merits; bots are confidently wrong often enough to check.
-   - Real issue: fix every open finding, and any failed check from step 1, in one push, not one per push, and check whether the same problem shows up elsewhere in the diff (other widths, other views, Back/Forward). Run the local review once on the fixes before you push, skipping what it raises that the PR's threads already answered: a fix that brings a new finding costs another round. Push, then reply in each thread saying what changed.
+   - Real issue: fix it (step 3 pushes it), and check whether the same problem shows up elsewhere in the diff (other widths, other views, Back/Forward). Reply in its thread saying what changed once the fix is pushed.
    - Wrong: reply with the evidence (code, test, docs).
    - A product decision: ask the user.
    Reply to an inline comment in its thread: `gh api repos/{owner}/{repo}/pulls/<n>/comments/<id>/replies -f body='…'`. A conversation comment or a review's own text (a person's review, or CodeRabbit's comments outside the diff and nitpicks) has no thread: answer with a new `gh pr comment` that quotes its full permalink (the digest prints it). A person's follow-up in a thread, or their edit after your reply, needs another reply; a bot's follow-ups and edits to its own comments don't.
    - Resolving: once a bot's finding is fixed or answered, resolve that thread (CodeRabbit often resolves its own after the fix lands). Resolve one thread at a time with the id the digest prints: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread-id>`. `@coderabbitai resolve` resolves *all* of CodeRabbit's threads, so use it only once every one of them is handled. A person's thread is theirs to resolve: reply, and ask the user if it blocks the merge.
-3. Repeat after every push. Each push restarts the wait: checks and bots run again on the new commit.
+3. **Push once.** If steps 1 or 2 changed anything, push it all together, not one fix per push. Run the local review once on the fixes first, skipping what it raises that the PR's threads already answered: a fix that brings a new finding costs another round. Then send the replies from step 2.
+4. Repeat after every push. Each push restarts the wait: checks and bots run again on the new commit.
 
 ## Merge when all of these hold
 
