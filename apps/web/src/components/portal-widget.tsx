@@ -33,7 +33,7 @@ export function PortalWidget({
   const { resolvedTheme } = useTheme();
   const theme: "light" | "dark" | null = resolvedTheme === "dark" || resolvedTheme === "light" ? resolvedTheme : null;
   useEffect(() => {
-    if (!theme) {
+    if (!theme || !shown) {
       return;
     }
     const follow = () => window.Tuti?.setTheme?.(theme);
@@ -45,7 +45,7 @@ export function PortalWidget({
     const tag = document.querySelector("script[data-on-portal]");
     tag?.addEventListener("load", follow, { once: true });
     return () => tag?.removeEventListener("load", follow);
-  }, [theme]);
+  }, [theme, shown]);
   const last = useRef({ shown, viewer });
   useEffect(() => {
     if (shown === last.current.shown && viewer === last.current.viewer) {
