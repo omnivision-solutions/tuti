@@ -150,21 +150,6 @@ test("an open feedback pane stays in view while the list scrolls", async ({ brow
   await checkpoint(owner, "feedback-pane-below-toolbar", { fullPage: false });
 });
 
-// Give a section at the end of a short fixture page room to align as it does above a longer list.
-async function expectAnchorGap(page: Page, selector: string, gap: number, stickyToolbar = true) {
-  await page.evaluate(() => {
-    const room = document.createElement("div");
-    room.style.height = "200vh";
-    document.body.append(room);
-  });
-  const target = page.locator(selector);
-  await target.evaluate((element) => element.scrollIntoView({ block: "start" }));
-  await expect.soft.poll(async () => {
-    const header = stickyToolbar ? await page.locator('[data-slot="page-header"]:visible').last().boundingBox() : null;
-    return Math.round((await target.boundingBox())!.y - (header ? header.y + header.height : 0));
-  }).toBe(gap);
-}
-
 // A page of panes scrolls inside its pane: a section there lands its gap below the pane's header.
 async function expectPaneAnchorGap(page: Page, selector: string, gap: number) {
   const target = page.locator(selector);

@@ -1,13 +1,6 @@
 import { expect, test } from "vitest";
 
-import { customizeTitle, sectionOf } from "./app-header";
-
-test("Customize's pages name their section in the top bar", () => {
-  expect(customizeTitle("/app/acme/customize/branding")).toBe("Customize · Branding");
-  expect(customizeTitle("/app/acme/customize/seo")).toBe("Customize · SEO");
-  expect(customizeTitle("/app/acme/customize")).toBe("Customize");
-  expect(customizeTitle("/app/acme/feedback")).toBeNull();
-});
+import { sectionOf } from "./app-header";
 
 test("the top bar's path names the part of the project a page is in, a post's as Feedback; none on Home", () => {
   expect(sectionOf("/app/acme/feedback")).toBe("Feedback");

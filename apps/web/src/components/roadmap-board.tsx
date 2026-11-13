@@ -159,8 +159,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
           ))}
         </TabsList>
       </Tabs>
-      {/* data-wide: the whole width, for the columns (AppShell). */}
-      <div ref={board} data-wide className="grid gap-4 md:grid-cols-3 md:items-start" data-pending={pending || undefined}>
+      <div ref={board} className="grid gap-4 md:grid-cols-3 md:items-start" data-pending={pending || undefined}>
         {columns.map(({ status, posts }) => (
           <section
             key={status}

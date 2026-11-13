@@ -82,10 +82,6 @@ test.each(themes)("Reporting's two series are a lightness step apart (%s), so re
   expect(contrast(srgb(one), srgb(two))).toBeGreaterThanOrEqual(1.5);
 });
 
-test.each(themes)("the page open in a menu reads at 4.5:1 on its green pill (%s)", (theme) => {
-  expect(contrast(srgb(token(theme, "sidebar-active-foreground")), srgb(token(theme, "sidebar-active")))).toBeGreaterThanOrEqual(4.5);
-});
-
 test.each(themes)("secondary text reads at 4.5:1 (%s): muted-foreground on the page, a card, the sidebar and a muted fill", (theme) => {
   for (const under of ["background", "card", "sidebar", "muted", "sidebar-accent"]) {
     expect(contrast(srgb(token(theme, "muted-foreground")), srgb(token(theme, under))), under).toBeGreaterThanOrEqual(4.5);

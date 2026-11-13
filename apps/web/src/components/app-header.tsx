@@ -4,22 +4,9 @@ import { cn } from "cn";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { CUSTOMIZE_GROUPS } from "@/app/app/(workspace)/[project]/customize/sections";
 import { type ProjectSummary, useCurrentProject } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-
-const CUSTOMIZE_PATH = /^\/app\/[^/]+\/customize(?:\/([^/]+))?/;
-
-/** "Customize · Branding" on Customize's pages, which have no page header of their own. */
-export function customizeTitle(pathname: string): string | null {
-  const match = CUSTOMIZE_PATH.exec(pathname);
-  if (!match) {
-    return null;
-  }
-  const section = CUSTOMIZE_GROUPS.flatMap((group) => group.sections).find((s) => s.slug === match[1]);
-  return section ? `Customize · ${section.title}` : "Customize";
-}
 
 const SECTIONS: [RegExp, string][] = [
   [/^inbox/, "Inbox"],
@@ -53,7 +40,7 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     // The page's heading that shows at this width: a page with one for phones and one for wider screens (Settings'
     // layout) has the other hidden, which takes no room and so never goes up under the bar.
     const pick = () => {
-      const headings = [...document.querySelectorAll<HTMLElement>('main :is([data-slot="page-header"], [data-slot="pane-header"]) h1')];
+      const headings = [...document.querySelectorAll<HTMLElement>('main [data-slot="pane-header"] h1')];
       // Shown (laid out at all): getClientRects where checkVisibility is missing (Safari before 17.4).
       return headings.find((h) => h.checkVisibility?.() ?? h.getClientRects().length > 0) ?? headings[0];
     };
@@ -63,7 +50,7 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     }
     const phone = window.matchMedia("(width < 48rem)");
     const tall = window.matchMedia("(height >= 40rem)");
-    let toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"], [data-slot="pane-header"]')!;
+    let toolbar = heading.closest<HTMLElement>('[data-slot="pane-header"]')!;
     // Focused fields and anchor targets must clear the actual toolbar, including wrapped titles and editor actions.
     const measure = () => {
       // A query-only navigation can remount the page's header without rerunning this effect.
@@ -124,7 +111,7 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
       renamed.disconnect();
       sizes.unobserve(toolbar);
       heading = next;
-      toolbar = heading.closest<HTMLElement>('[data-slot="post-header"]') ?? heading.closest<HTMLElement>('[data-slot="page-header"], [data-slot="pane-header"]')!;
+      toolbar = heading.closest<HTMLElement>('[data-slot="pane-header"]')!;
       sizes.observe(toolbar);
       measure();
       watch();
@@ -151,12 +138,12 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
     <header ref={ref} className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background pr-12 pl-4 topbar:hidden">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-center" />
-      {/* Where the page is: the project, then its part ("Acme / Feedback"; Customize's section there), till the page's
+      {/* Where the page is: the project, then its part ("Acme / Feedback"), till the page's
           title scrolls up under the bar. */}
       <span data-slot="bar-path" className={cn("flex min-w-0 items-center gap-1.5 text-sm font-medium text-muted-foreground", title && "sr-only")}>
         {/* Not on Account settings or New project, which aren't the project's. */}
-        <span className="truncate">{customizeTitle(pathname) ?? (/^\/app\/(account|new)(\/|$)/.test(pathname) ? "Tuti" : (current?.name ?? "Tuti"))}</span>
-        {!customizeTitle(pathname) && sectionOf(pathname) && (
+        <span className="truncate">{/^\/app\/(account|new)(\/|$)/.test(pathname) ? "Tuti" : (current?.name ?? "Tuti")}</span>
+        {sectionOf(pathname) && (
           <>
             <span aria-hidden>/</span>
             <span className="truncate text-foreground">{sectionOf(pathname)}</span>

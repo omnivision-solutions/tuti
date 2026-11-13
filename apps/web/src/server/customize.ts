@@ -8,7 +8,7 @@ import { portalHomePath } from "./portal-home";
 import { sessionIn } from "./session";
 
 /**
- * Customize's preview of page `path` of a portal (CustomizeShell's `preview`): the portal's Tuti
+ * Customize's preview of page `path` of a portal (PortalSettingsPane's `preview`): the portal's Tuti
  * address (which the app may frame, and which doesn't send the preview on to the portal's own address
  * there), where readers find it, for the preview's address bar, and a token that reads the portal as
  * the team member looking (lib/preview-session.ts), so a private one shows too.

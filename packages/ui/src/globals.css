@@ -3,7 +3,7 @@
 @source "./";
 
 @custom-variant dark (&:is(.dark *));
-/* In the app from tablet width up, where a page's title and actions sit in the top bar (PageHeader). */
+/* In the app from tablet width up, where the phone's top bar is gone. */
 @custom-variant topbar {
   @media (width >= 48rem) {
     [data-slot="sidebar-inset"] & {
@@ -37,14 +37,11 @@
 
 @theme inline {
   --color-docs-surface: var(--docs-surface);
-  --color-docs-canvas: var(--docs-canvas);
   --color-docs-edge: var(--docs-edge);
   --color-docs-selection: var(--docs-selection);
-  --color-inbox-canvas: var(--inbox-canvas);
   --color-inbox-customer: var(--inbox-customer);
   --color-inbox-team: var(--inbox-team);
   --color-inbox-note: var(--inbox-note);
-  --shadow-inbox: var(--inbox-shadow);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   /* After each font, the symbols none of them has (--font-symbols, app/layout.tsx), so they never show as an empty box. */
@@ -85,8 +82,6 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
-  --color-sidebar-active: var(--sidebar-active);
-  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -129,20 +124,13 @@
 :root,
 .light {
   --docs-surface: var(--card);
-  --docs-canvas: color-mix(in srgb, var(--secondary) 68%, var(--background));
   --docs-edge: color-mix(in oklch, var(--border) 35%, transparent);
   --docs-selection: color-mix(in srgb, var(--primary) 9%, var(--card));
   --docs-overlay: color-mix(in srgb, var(--foreground) 42%, transparent);
   /* Inbox cards keep the approved warm canvas and chat fills. */
-  --inbox-canvas: #f7f4ee;
   --inbox-customer: #f8f4f1;
   --inbox-team: color-mix(in srgb, var(--soft) 70%, var(--card));
-  --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--inbox-surface));
-  --inbox-surface: var(--card);
-  --inbox-muted: var(--muted-foreground);
-  --inbox-secondary: var(--secondary);
-  --inbox-shadow: 0 1px 3px oklch(0 0 0 / 0.035), 0 0 0 1px color-mix(in oklch, var(--border) 35%, transparent);
-  --inbox-overlay: oklch(0.08 0.01 160 / 0.44);
+  --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--card));
   --background: oklch(0.982 0.008 88.6);
   --foreground: oklch(0.216 0.006 56);
   --card: oklch(1 0 0);
@@ -209,26 +197,17 @@
   --sidebar-border: oklch(0.885 0.015 84.6);
   /* The page open in a page's own menu (Settings', Reporting's): a pale green pill, its label and icon green. The sidebar's
      open page is a raised neutral pill (the card's colour), so a page with both shows one green. */
-  --sidebar-active: oklch(0.915 0.045 155);
-  --sidebar-active-foreground: oklch(0.4 0.1 155);
   --sidebar-ring: oklch(0.529 0.125 155);
 }
 
 .dark {
   --docs-surface: color-mix(in srgb, var(--card) 50%, var(--background));
-  --docs-canvas: var(--background);
   --docs-edge: color-mix(in oklch, var(--border) 32%, transparent);
   --docs-selection: color-mix(in srgb, var(--primary) 12%, var(--card));
   --docs-overlay: color-mix(in srgb, var(--background) 65%, transparent);
-  --inbox-canvas: var(--background);
   --inbox-customer: oklch(0.292 0.016 160);
   --inbox-team: oklch(0.325 0.052 157);
-  --inbox-note: color-mix(in srgb, var(--highlight) 70%, var(--inbox-surface));
-  --inbox-surface: oklch(0.218 0.013 160.1);
-  --inbox-muted: oklch(0.76 0.016 160);
-  --inbox-secondary: oklch(0.257 0.017 163.3);
-  --inbox-shadow: 0 0 0 1px color-mix(in oklch, var(--border) 32%, transparent);
-  --inbox-overlay: oklch(0.08 0.01 160 / 0.44);
+  --inbox-note: color-mix(in srgb, var(--highlight) 70%, oklch(0.218 0.013 160.1));
   --background: oklch(0.185 0.01 158.9);
   --foreground: oklch(0.966 0.006 153.8);
   --card: oklch(0.248 0.014 160.1);
@@ -276,8 +255,6 @@
   --sidebar-accent: oklch(0.265 0.017 163.3);
   --sidebar-accent-foreground: oklch(0.966 0.006 153.8);
   --sidebar-border: oklch(0.375 0.02 163.3);
-  --sidebar-active: oklch(0.31 0.055 157);
-  --sidebar-active-foreground: oklch(0.86 0.11 157);
   --sidebar-ring: oklch(0.759 0.168 154.6);
 }
 
@@ -654,34 +631,6 @@
     @apply my-0 min-h-7 font-semibold text-foreground;
   }
 }
-/* The app uses the page's own heading and actions as its toolbar. Portals keep their own header. The padding
-   covers text passing underneath without changing the header's initial spacing. Short or zoomed windows let ordinary
-   toolbars scroll away to preserve reading room; editors keep their pinned actions. Phones keep the compact menu row. */
-@media (width >= 48rem) {
-  main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-inbox-header]) {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: var(--background);
-    padding-block: 0.75rem;
-    margin-block: -0.75rem;
-  }
-  main[data-slot="sidebar-inset"] [data-slot="post-header"] [data-slot="page-header"] {
-    position: static;
-  }
-  @media (width < 64rem) {
-    /* Above the stacked Autopilot list, the title's column is only as tall as the title itself. */
-    main[data-slot="sidebar-inset"] [data-autopilot-listed] > [data-slot="page-header"] {
-      position: static;
-    }
-  }
-  @media (height < 40rem) {
-    main[data-slot="sidebar-inset"] [data-slot="page-header"]:not([data-pins-actions]) {
-      position: static;
-    }
-  }
-}
-
 /*
  * Pinned actions on phones (PageActions) hide while text is being typed: the keyboard is up, and the caret could sit
  * under the bar. Back once focus leaves. Outside the layers, so it wins over the bar's own display utility.
