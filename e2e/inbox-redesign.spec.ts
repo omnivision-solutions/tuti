@@ -87,6 +87,12 @@ test("inbox cards keep triage in details, context folded, and phone details in a
   await api("/posts", { board: "feature-requests", author: { id: "demo-sam" }, title: "Export reports to CSV", body: "Export reports for weekly planning." });
   await api("/conversations/1/messages", { body: "The whole team. The CSV option would be perfect.", author: { id: "demo-sam" } });
   await owner.goto(`/app/${slug}/inbox/1`);
+  // Beside the list, no way back to it: it would open an empty pane.
+  const header = owner.locator('[data-inbox-conversation] [data-slot="pane-header"]');
+  await expect(header.getByRole("heading", { name: "Can I export my reports?" })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Inbox" })).toBeHidden();
+  // A pane title again, as it is with nothing before it.
+  await expect(header.getByRole("heading", { name: "Can I export my reports?" }).locator("span")).toHaveCSS("font-size", "20px");
   const details = owner.getByRole("complementary", { name: "Conversation details", exact: true });
   const assertTeamAtRight = async () => {
     const messages = owner.getByRole("list", { name: "Messages" });
