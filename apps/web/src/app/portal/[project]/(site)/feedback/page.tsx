@@ -65,13 +65,13 @@ export default async function FeedbackOverview(props: PageProps<"/portal/[projec
 
   const [found, tops, shipped, getUpdates] = await Promise.all([
     // A search: every board's ideas they see, every status (as a board's search), Trending's order; only on the boards shown.
-    q ? boardPosts({ projectId: project.id }, filters, viewer, { q }) : null,
+    q ? boardPosts({ projectId: project.id }, filters, viewer, { q, boardIds: boards.map((board) => board.id) }) : null,
     // ponytail: a board's first page read for its top three; give boardPosts a limit if boards get many ideas.
     q ? [] : Promise.all(boards.map(async (board) => (await boardPosts({ projectId: project.id, slug: board.slug }, { ...filters, page: 1 }, viewer, { statuses: ACTIVE_STATUSES })).posts.slice(0, TOP_IDEAS))),
     q ? [] : Promise.all(boards.map(async (board) => (await recentlyShipped(board.id, viewer)).map((post) => ({ ...post, board })))),
     boardGetUpdates({ project, session, voter, back: "/feedback" }),
   ]);
-  const results = found && { ...found, posts: found.posts.filter((post) => bySlug.has(post.board.slug)) };
+  const results = found;
   const latest = shipped
     .flat()
     .sort((a, b) => b.shippedAt.getTime() - a.shippedAt.getTime())

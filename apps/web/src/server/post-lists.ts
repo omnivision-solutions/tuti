@@ -256,18 +256,19 @@ export async function howShipped(postId: string) {
 /**
  * A portal board's posts (without its `slug`, every board's: the widget's) that `viewer` may see, in `statuses` (every
  * status without them) with `q`'s words in the title or description, with whether they voted for each;
- * `mine`: only those they posted or voted for.
+ * `mine`: only those they posted or voted for; `boardIds`: only those on these boards (Feedback's overview: the boards it shows).
  */
 export function boardPosts(
   board: { projectId: string; slug?: string },
   filters: PostFilters,
   viewer: PostViewer,
-  { statuses, q, mine = false }: { statuses?: PostStatus[]; q?: string; mine?: boolean } = {},
+  { statuses, q, mine = false, boardIds }: { statuses?: PostStatus[]; q?: string; mine?: boolean; boardIds?: string[] } = {},
 ) {
   const userId = viewer.userId ?? undefined;
   return upToPage(filters, async (page) => {
     const where = Prisma.sql`${teamPostFilter(board.projectId, { board: board.slug, q })} AND ${visiblePostsSql(viewer)}
       ${statuses ? Prisma.sql`AND p.status = ANY(${statuses}::"PostStatus"[])` : Prisma.empty}
+      ${boardIds ? Prisma.sql`AND p."boardId" = ANY(${boardIds})` : Prisma.empty}
       ${mine ? Prisma.sql`AND (p."authorId" = ${userId ?? ""} OR EXISTS (SELECT 1 FROM vote v WHERE v."postId" = p.id AND v."userId" = ${userId ?? ""}))` : Prisma.empty}`;
     const ids = await pageIds(board.projectId, filters.sort, where, page);
     const posts = await prisma.post.findMany({

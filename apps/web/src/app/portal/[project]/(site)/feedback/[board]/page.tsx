@@ -231,7 +231,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           </>
         }
       />
-      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_15.5rem] lg:items-start lg:gap-14">
+      <div className={cn("flex flex-col gap-6", (boards.length > 1 || shippedLine) && "lg:grid lg:grid-cols-[minmax(0,1fr)_15.5rem] lg:items-start lg:gap-14")}>
         <div className="flex min-w-0 flex-col gap-6">
           <section aria-label="Ideas" className="flex flex-col gap-2">
             {/* Without JavaScript New idea can't open its dialog: the board's box in the page instead (signed out, it goes to sign in

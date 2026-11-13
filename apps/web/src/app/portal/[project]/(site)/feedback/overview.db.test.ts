@@ -31,6 +31,10 @@ test("the overview lists each board's top open ideas, what shipped, and searches
   await prisma.post.updateMany({ where: { projectId: project.id, number: shipped.number }, data: { status: "COMPLETED" } });
   await call(createPost, actor, { board: "bugs", title: "Slow search" });
   await call(createPost, actor, { board: "team", title: "Secret plan" });
+  // A board made Team only since: its posts stay public, yet the portal doesn't show the board, nor finds them.
+  await prisma.board.create({ data: { projectId: project.id, slug: "old", name: "Old board" } });
+  await call(createPost, actor, { board: "old", title: "Search history" });
+  await prisma.board.update({ where: { projectId_slug: { projectId: project.id, slug: "old" } }, data: { postVisibility: "TEAM" } });
 
   actAs(null);
   const page = async (searchParams: Record<string, string> = {}) =>
@@ -56,6 +60,7 @@ test("the overview lists each board's top open ideas, what shipped, and searches
   expect(found).toContain("Crash on start");
   expect(found).toContain("Slow search");
   expect(found).not.toContain("Secret plan");
+  expect(found).not.toContain("Search history");
   expect(found).not.toContain("still to come");
   expect(text(await page({ q: "nothing like it" }))).toContain("No ideas match");
 });

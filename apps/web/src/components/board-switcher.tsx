@@ -1,6 +1,6 @@
 "use client";
 
-import { SCROLLING_ROW, showMore } from "@tuti/ui/scrolling-row";
+import { focusClearOfFade, SCROLLING_ROW, showMore, wheelSideways } from "@tuti/ui/scrolling-row";
 import { cn } from "cn";
 import { ChevronDownIcon, LayoutListIcon } from "lucide-react";
 import Link from "next/link";
@@ -53,12 +53,18 @@ export function BoardPillRow({ children }: { children: ReactNode }) {
   useEffect(() => {
     const row = ref.current!;
     const update = () => showMore(row);
+    const wheel = wheelSideways(row);
     const observer = new ResizeObserver(update);
     observer.observe(row);
     row.addEventListener("scroll", update, { passive: true });
+    // A mouse's wheel scrolls it sideways; a pill reached with Tab comes clear of the fade.
+    row.addEventListener("wheel", wheel, { passive: false });
+    row.addEventListener("focusin", focusClearOfFade);
     return () => {
       observer.disconnect();
       row.removeEventListener("scroll", update);
+      row.removeEventListener("wheel", wheel);
+      row.removeEventListener("focusin", focusClearOfFade);
     };
   }, []);
   return (
