@@ -218,6 +218,9 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
     await reader.emulateMedia({ colorScheme: scheme });
     await reader.goto("/widget");
     await expect(reader.getByText("Acme", { exact: true })).toHaveCSS("font-family", /playfairDisplay/);
+    // <body> too, for what opens over the panel at its end (toasts).
+    const panelFont = await reader.getByRole("main").evaluate((main) => getComputedStyle(main).fontFamily);
+    await expect.poll(() => reader.evaluate(() => getComputedStyle(document.body).fontFamily)).toBe(panelFont);
     const surface = await token(reader, "--card");
     await expect(reader.getByRole("main")).toHaveCSS("background-color", surface);
     const send = reader.getByRole("link", { name: /^Send us a message/ });

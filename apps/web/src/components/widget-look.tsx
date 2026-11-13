@@ -3,6 +3,7 @@
 import { ExternalLinkIcon } from "lucide-react";
 import { createContext, type ReactNode, use, useEffect, useState } from "react";
 
+import { PORTAL_FONT_CLASSES } from "@/components/portal-fonts";
 import { inPreview } from "@/components/portal-look";
 import { type FromPortal, isToPortal, WIDGET_ROW, WIDGET_TILE, type WidgetLook, widgetOnly, type WidgetPart } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,30 @@ export function WidgetLookProvider({ saved, appOrigin, children }: { saved: Widg
     return () => window.removeEventListener("message", onMessage);
   }, [appOrigin]);
   return <WidgetLookContext value={{ ...saved, ...draft }}>{children}</WidgetLookContext>;
+}
+
+/**
+ * The panel's fonts (`style`, portalFontStyle's) on <body> too, for what opens over the panel at its end (toasts, dialogs),
+ * as PortalLookProvider does on the portal.
+ */
+export function WidgetBodyFonts({ style }: { style: Record<string, string> }) {
+  const json = JSON.stringify(style);
+  useEffect(() => {
+    const body = document.body;
+    const classes = PORTAL_FONT_CLASSES.split(" ");
+    const properties = Object.entries(JSON.parse(json) as Record<string, string>).map(([key, value]) => [key === "fontFamily" ? "font-family" : key, value]);
+    body.classList.add(...classes);
+    for (const [key, value] of properties) {
+      body.style.setProperty(key!, value!);
+    }
+    return () => {
+      body.classList.remove(...classes);
+      for (const [key] of properties) {
+        body.style.removeProperty(key!);
+      }
+    };
+  }, [json]);
+  return null;
 }
 
 /** `children` (Home's card for a part, or its tab) unless the team turned the part off. */

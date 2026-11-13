@@ -21,7 +21,7 @@ import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetGreeting, WidgetHomeVisitor, WidgetIdeaNews } from "@/components/widget-home";
 import { WidgetDocs } from "@/components/widget-docs";
 import { WidgetLocked } from "@/components/widget-locked";
-import { WidgetLookProvider, WidgetPart, WidgetQuickLinks, WidgetTitle } from "@/components/widget-look";
+import { WidgetBodyFonts, WidgetLookProvider, WidgetPart, WidgetQuickLinks, WidgetTitle } from "@/components/widget-look";
 import { WidgetMessages } from "@/components/widget-messages";
 import { UnreadCount, UnreadDot, WidgetUnread } from "@/components/widget-whats-new";
 import { widgetHeaderStyle } from "@/lib/colors";
@@ -99,13 +99,15 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   // The portal's accent colour; the logo and links are the portal header's, which the panel doesn't have.
   const css = brandCss(brand.color);
   // The portal's tokens (globals.css: lines, greys, cards, controls' `portal:` look) and its fonts (else Inter), on the panel.
-  const look = { "data-portal-look": true, style: portalFontStyle(brand.fonts) as React.CSSProperties };
+  const fonts = portalFontStyle(brand.fonts);
+  const look = { "data-portal-look": true, style: fonts as React.CSSProperties };
   // A private portal shows nothing until whoever's here may read it (see portal-access.ts).
   if (!(await mayRead(project.id))) {
     return (
       <PortalBaseProvider base={base} slug={slug}>
         <main {...look} className={cn("flex min-h-dvh flex-col gap-4 bg-card p-4", PORTAL_FONT_CLASSES)}>
           <WidgetThemeScript scheme={brand.colorScheme} />
+          <WidgetBodyFonts style={fonts} />
           {css && <style>{css}</style>}
           <div className="flex justify-end">
             <WidgetClose inline={display === "inline"} />
@@ -146,6 +148,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
     <main {...look} className={cn("flex h-dvh flex-col bg-card", PORTAL_FONT_CLASSES)}>
       {/* First, before anything shows. */}
       <WidgetThemeScript scheme={brand.colorScheme} />
+      <WidgetBodyFonts style={fonts} />
       {css && <style>{css}</style>}
       <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && !whatsNew && "pb-6")}>
         <div className="flex items-center justify-between gap-2">
