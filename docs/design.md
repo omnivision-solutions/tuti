@@ -404,7 +404,7 @@ the list picks none to approve at once.
     out on a light page and a dark one: the launcher is one colour on any site, so it's the brand green then). Every
     other selected state is neutral (`bg-accent text-foreground`): the open board in a rail, the picked pill, the open
     item in a nav list, the docs tree's article, the phone menu's part. What keeps a colour of its own, whatever the
-    accent: statuses (Completed stays green: it says what happened), the changelog's tags, destructive red, the info
+    accent: statuses (Completed stays green: it says what happened), destructive red (a Breaking changelog tag too), the info
     blue, the unread orange, people's initials, and "Powered by tuti" (Tuti's own mark, always in the `tuti` green: the
     only Tuti green on a portal). The portal never uses the app's own green tokens (`series-*`, `chart-*`, `kind-*`), and
     `e2e/accent-colour.spec.ts` checks every page type and the widget in light and dark for any green but those.

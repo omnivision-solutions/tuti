@@ -263,6 +263,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // Reactions are grey fills until one is yours (the accent's tint).
   const unpicked = await tada.evaluate((button) => getComputedStyle(button).backgroundColor);
   expect(unpicked).not.toBe("rgba(0, 0, 0, 0)");
+  // Its emoji is grey too until it's yours.
+  const emoji = (button: typeof tada) => button.locator("span").first().evaluate((span) => getComputedStyle(span).filter);
+  expect(await emoji(tada)).toContain("grayscale");
   // No count until there is one.
   await expect(tada).toHaveAccessibleName("React with 🎉");
   await expect(tada).toHaveText("🎉");
@@ -271,6 +274,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(tada).toHaveAttribute("aria-pressed", "true");
   await expect(tada).toBeEnabled();
   await expect.poll(() => tada.evaluate((button) => getComputedStyle(button).backgroundColor)).not.toBe(unpicked);
+  await expect.poll(() => emoji(tada)).not.toContain("grayscale");
   await checkpoint(ada, "portal-changelog-reacted");
   await team.goto(`/app/${slug}/changelog`);
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).filter({ hasText: "Published" })).toContainText("🎉 1");
