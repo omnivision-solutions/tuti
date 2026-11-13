@@ -2312,10 +2312,13 @@ test("an article ends with the previous and next in reading order, related ones,
   // Cards that only lift on hover: their ring (the card's edge) doesn't turn to the accent.
   const ringOf = (shadow: string) => /[a-z]+\([^)]*\) 0px 0px 0px 1px/.exec(shadow)?.[0] ?? "";
   const nextCard = steps.getByRole("link", { name: /Next/ });
-  const restingRing = ringOf(await nextCard.evaluate((element) => getComputedStyle(element).boxShadow));
+  // Without its transition, the hovered shadow is the final one at once (no clock to wait on).
+  await nextCard.evaluate((element) => (element.style.transition = "none"));
+  const resting = await nextCard.evaluate((element) => getComputedStyle(element).boxShadow);
+  const restingRing = ringOf(resting);
   await nextCard.hover();
-  await expect.poll(() => nextCard.evaluate((element) => getComputedStyle(element).boxShadow)).toMatch(/0px 0px 0px 1px/);
-  await visitor.waitForTimeout(400); // the shadow's transition
+  // Hovered: it lifts (its shadow changes), and its ring stays as it was.
+  await expect.poll(() => nextCard.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe(resting);
   expect(ringOf(await nextCard.evaluate((element) => getComputedStyle(element).boxShadow))).toBe(restingRing);
   await visitor.mouse.move(0, 0);
   await expect(steps.getByRole("link")).toHaveText([/Previous\s*Welcome/, /Next\s*Plans/]);
