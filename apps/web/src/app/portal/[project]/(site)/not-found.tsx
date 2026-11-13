@@ -30,7 +30,7 @@ export default async function PortalNotFound() {
           Changelog
         </Link>
         <Link href={at("/docs")} className="text-muted-foreground hover:text-foreground hover:underline">
-          Docs
+          Documentation
         </Link>
       </nav>
     </PortalMessage>

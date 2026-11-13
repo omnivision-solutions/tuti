@@ -43,6 +43,8 @@ test("navigating between articles with and without sections keeps the docs align
   for (const width of [1440, 1280]) {
     await reader.setViewportSize({ width, height: 900 });
     await expect(outline).toBeVisible();
+    // The way back to the docs' home names it as the header does.
+    await expect(reader.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Documentation", exact: true })).toBeVisible();
     const withSections = await positions();
     await checkpoint(reader, `docs-with-sections-${width}`, { fullPage: false });
     await tree.getByRole("link", { name: "Calendar basics", exact: true }).click();

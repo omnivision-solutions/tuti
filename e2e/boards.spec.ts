@@ -201,6 +201,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   // The portal's own page not found, in its header and footer: the way home, and no part marked as this page's.
   await expect(visitor.getByRole("heading", { name: "Page not found" })).toBeVisible();
   await expect(visitor.getByRole("main").getByRole("link", { name: "Go to the home page" })).toHaveAttribute("href", "/");
+  // Its other ways out name the parts as the header does.
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Documentation", exact: true })).toHaveAttribute("href", "/docs");
   await expect(visitor.locator('[aria-current="page"]')).toHaveCount(0);
   await expect(visitor.getByRole("navigation", { name: "Boards" })).toHaveCount(0);
   await checkpoint(visitor, "portal-not-found");

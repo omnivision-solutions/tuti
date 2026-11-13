@@ -362,7 +362,7 @@ export async function DocsArticle({
               {up.href !== "/docs" && (
                 <>
                   <Link href={at("/docs")} className="hover:text-foreground">
-                    Docs
+                    Documentation
                   </Link>
                   <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </>
