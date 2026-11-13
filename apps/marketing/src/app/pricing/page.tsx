@@ -10,7 +10,7 @@ import { PricingTable } from "./pricing-table";
 
 export const metadata: Metadata = {
   title: "Pricing · Tuti",
-  description: "Plans per project, never per seat or per end user. 7-day free trial on every plan, no card needed.",
+  description: "Plans per project, never per seat or per end user. Start with a 7-day free trial, no card needed.",
 };
 
 // Plans and prices are the app's settings (links.ts), asked when the page is, not when it's built.
@@ -30,7 +30,7 @@ export default async function PricingPage() {
       <section className="flex flex-col items-center gap-4 pt-6 text-center">
         <h1 className="text-5xl font-extrabold tracking-tight text-balance sm:text-6xl">Simple pricing, per project</h1>
         <p className="max-w-2xl text-lg text-muted-foreground text-pretty">
-          Never per seat or per end user. 7-day free trial on every plan, no card needed.
+          Never per seat or per end user. Start with a 7-day free trial, no card needed.
         </p>
       </section>
 

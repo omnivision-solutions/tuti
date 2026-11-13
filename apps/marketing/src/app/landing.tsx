@@ -1019,9 +1019,10 @@ function Faq() {
       "Connect GitHub and pick your repositories. When a pull request merges, Tuti updates the help articles it changes, closes the feature requests it ships and adds it to your changelog draft.",
     ],
     ["Where do AI answers come from?", "From your help center. Every answer links the articles it used."],
-    ["Can I move from another tool?", "Yes. Import from Intercom, Featurebase, Ferndesk, Canny, Frill, Nolt or any help center by URL. Your old links redirect."],
+    ["Can I move from another tool?", "Yes. Import from Intercom, Featurebase, Ferndesk, Canny, Frill, Nolt or any help center by URL. Old links can point to the new pages."],
     ["Can the help center use my domain?", "Yes, with your logo, colours and fonts."],
-    ["How does the free trial work?", "Every plan starts with 7 days free. No card needed."],
+    ["How does the free trial work?", "Your first project gets 7 days free, no card needed. Pick a plan whenever you're ready."],
+    ["Is Tuti open source?", "Yes. Self-host it free with every feature, or let us run it for you."],
   ];
   return (
     <section className="flush">
