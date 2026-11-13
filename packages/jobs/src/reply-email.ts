@@ -3,7 +3,7 @@ import { type PostVisibility, prisma } from "@tuti/db";
 import { replyEmail, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
 
-import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
 import { portalPostUrl } from "./events";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { lastingMediaUrls } from "./lasting-media";
@@ -214,7 +214,8 @@ export async function resubmitReplyEmails(_input: JobInput<"resubmitReplyEmails"
   const full = await monthCappedProjects();
   if (full.length > 0) {
     // Not a paused one's: what the pause holds, its resume lets go (or drops).
-    const moving = { projectId: { in: full }, project: { emailPausedAt: null }, votersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } };
+    // Nor sample content, which never has effects outside (the team's notice included).
+    const moving = { projectId: { in: full }, project: { emailPausedAt: null }, post: { sample: false }, votersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } };
     const projects = await prisma.comment.findMany({ where: moving, distinct: ["projectId"], select: { projectId: true } });
     await prisma.comment.updateMany({ where: moving, data: { votersEmailDueAt: nextMonth(new Date()) } });
     // Their teams hear (once a month), as when a claim is refused.
@@ -223,6 +224,15 @@ export async function resubmitReplyEmails(_input: JobInput<"resubmitReplyEmails"
     }
   }
   const capped = await cappedProjects();
+  // A new project past its daily cap: what's due now (its job never ran) is due when the cap resets, as what a run held
+  // is (dueAgain), so it's still within the look-back then.
+  const daily = capped.filter((id) => !full.includes(id));
+  if (daily.length > 0) {
+    await prisma.comment.updateMany({
+      where: { projectId: { in: daily }, project: { emailPausedAt: null }, votersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+      data: { votersEmailDueAt: tomorrow(new Date()) },
+    });
+  }
   const due = await prisma.comment.findMany({
     where: {
       // Due a while ago, or held by the monthly limit (dueAgain): once its month has reset, or now where the project has room again (an upgrade).

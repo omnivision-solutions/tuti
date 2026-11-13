@@ -14,6 +14,8 @@ const capping = () => plansEnabled() && !!process.env.SUPPORT_EMAIL_DOMAIN?.trim
 
 /** The calendar month (UTC) `now` is in, as `project_email_month` keeps it (its first day), and the next one's. */
 const monthOf = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+/** When a new project's daily cap resets: tomorrow's start (UTC). */
+export const tomorrow = (now: Date) => new Date(today(now).getTime() + 24 * 60 * 60_000);
 export const nextMonth = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
 
 /**
@@ -109,7 +111,7 @@ export async function dueAgain(projectId: string, now = new Date()): Promise<Dat
   if (await monthlyLimitReached(projectId, now)) {
     return nextMonth(now);
   }
-  return (await cappedProjects(now)).includes(projectId) ? new Date(today(now).getTime() + 24 * 60 * 60_000) : now;
+  return (await cappedProjects(now)).includes(projectId) ? tomorrow(now) : now;
 }
 
 /**

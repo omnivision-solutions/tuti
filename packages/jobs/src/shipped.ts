@@ -5,7 +5,7 @@ import { type JobInput, plansEnabled } from "@tuti/shared";
 import { portalPostUrl } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
-import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, heldDueDates, monthCappedProjects, nextMonth, releaseProjectEmail, tellEmailLimit, tomorrow } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -250,7 +250,8 @@ export async function resubmitShippedEmails(_input: JobInput<"resubmitShippedEma
   const full = await monthCappedProjects();
   if (full.length > 0) {
     // Not a paused one's: what the pause holds, its resume lets go (or drops).
-    const moving = { projectId: { in: full }, project: { emailPausedAt: null }, shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } };
+    // Nor sample content, which never has effects outside (the team's notice included).
+    const moving = { projectId: { in: full }, project: { emailPausedAt: null }, sample: false, shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } };
     const projects = await prisma.post.findMany({ where: moving, distinct: ["projectId"], select: { projectId: true } });
     await prisma.post.updateMany({ where: moving, data: { shippedEmailsDueAt: nextMonth(new Date()) } });
     // Their teams hear (once a month), as when a claim is refused.
@@ -259,6 +260,15 @@ export async function resubmitShippedEmails(_input: JobInput<"resubmitShippedEma
     }
   }
   const capped = await cappedProjects();
+  // A new project past its daily cap: what's due now (its job never ran) is due when the cap resets, as what a run held
+  // is (dueAgain), so it's still within the look-back then.
+  const daily = capped.filter((id) => !full.includes(id));
+  if (daily.length > 0) {
+    await prisma.post.updateMany({
+      where: { projectId: { in: daily }, project: { emailPausedAt: null }, shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+      data: { shippedEmailsDueAt: tomorrow(new Date()) },
+    });
+  }
   const due = await prisma.post.findMany({
     where: {
       // Due a while ago, or held by the monthly limit (dueAgain): once its month has reset, or now where the project has room again (an upgrade).

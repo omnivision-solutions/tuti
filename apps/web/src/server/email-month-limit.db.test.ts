@@ -324,6 +324,45 @@ test("a shipped email whose send fails gives its slot back: the month counts wha
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 5 });
 });
 
+const tomorrow = () => new Date(Date.UTC(MID_MONTH.getUTCFullYear(), MID_MONTH.getUTCMonth(), 16));
+
+test("a new project past its daily cap: email due now whose job never ran is moved to the cap's reset, within the look-back then", async () => {
+  const { project, team } = await setup();
+  await prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date() } });
+  await prisma.projectEmailDay.create({ data: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 200 } });
+  await votedPost(project);
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+  const late = new Date(Date.now() - 15 * 60_000);
+  const comment = await prisma.comment.create({ data: { projectId: project.id, postId, authorId: team.actor.userId, body: "It's out.", votersEmailDueAt: late } });
+  await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: late } });
+  await handlers.resubmitShippedEmails({}, log);
+  await handlers.resubmitReplyEmails({}, log);
+  expect((await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt).toEqual(tomorrow());
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).votersEmailDueAt).toEqual(tomorrow());
+});
+
+test("resuming a paused project drops what the daily cap held for tomorrow, as what the pause held: it went to the same list", async () => {
+  const { project, team } = await setup();
+  const { post } = await votedPost(project);
+  await call(updatePost, team, { number: post.number, status: "completed" });
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { shippedEmailsDueAt: tomorrow() } });
+  const pausedAt = new Date(Date.now() - 60_000);
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
+  expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
+  expect((await prisma.post.findFirstOrThrow({ where: { projectId: project.id } })).shippedEmailsDueAt).toBeNull();
+});
+
+test("a full month's sample post isn't moved, and tells nobody", async () => {
+  const { owner, project } = await setup();
+  await votedPost(project);
+  await prisma.projectEmailMonth.create({ data: { projectId: project.id, month: month(), emails: 1 } });
+  const late = new Date(Date.now() - 15 * 60_000);
+  await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "COMPLETED", sample: true, shippedEmailsDueAt: late } });
+  await handlers.resubmitShippedEmails({}, log);
+  expect((await prisma.post.findFirstOrThrow({ where: { projectId: project.id } })).shippedEmailsDueAt).toEqual(late);
+  expect(limitEmails(owner.email)).toHaveLength(0);
+});
+
 test("a plan with no limit counts but never holds; an upgrade lets the waiting email go", async () => {
   const { project, team } = await setup();
   const emailed = await twoReplies(project, team);
