@@ -91,12 +91,12 @@ test("Pro and Business publish without a limit, unless the operator sets one", a
   await call(publishArticle, team(), { slug: (await draft("On Business")).slug });
   expect(await published()).toBe(52);
 
-  vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.limits.articles = 52; }));
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro, business }) => { pro.limits.articles = 52; business.limits.articles = 52; }));
   await expect(call(publishArticle, team(), { slug: (await draft("Over")).slug })).rejects.toMatchObject({
     status: 402,
     message: "Your plan publishes up to 52 articles. Unpublish some.",
   });
-  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.limits.articles = 10; }));
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free, pro }) => { free.limits.articles = 10; pro.limits.articles = 10; }));
   await setPlan("PRO");
   await expect(call(publishArticle, team(), { slug: "over" })).rejects.toMatchObject({ message: "Your plan publishes up to 10 articles. Unpublish some, or upgrade to Business." });
 });

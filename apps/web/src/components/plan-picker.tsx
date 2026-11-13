@@ -15,7 +15,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { BilledToggle, PlanLineItem } from "@tuti/ui/plan-line";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { planPriceText, yearlyNote } from "@/lib/plans";
 import type { PricingPlan } from "@/lib/pricing-plans";
@@ -39,7 +39,9 @@ export function PlanPicker({ projectSlug, plans, current }: { projectSlug: strin
             <div>
               <h3 className="font-semibold">{plan.name}</h3>
               <p className="text-sm text-muted-foreground">
-                {[plan.price ? planPriceText(plan.price, interval) : plan.key === current ? "$0" : "Not sold here", plan.key === current && "this project's plan"].filter(Boolean).join(", ")}
+                {[plan.price ? planPriceText(plan.price, interval) : plan.key === current ? "$0" : plan.byQuote ? "By quote" : "Not sold here", plan.key === current && "this project's plan"]
+                  .filter(Boolean)
+                  .join(", ")}
               </p>
             </div>
             <ul className="flex flex-1 flex-col gap-1.5 text-sm">
@@ -51,6 +53,11 @@ export function PlanPicker({ projectSlug, plans, current }: { projectSlug: strin
                 <PlanLineItem key={line.text} line={line} />
               ))}
             </ul>
+            {plan.key !== current && plan.byQuote && (
+              <a href={plan.cta.href} className={buttonVariants({ variant: plan.featured ? "default" : "outline" })}>
+                {plan.cta.label}
+              </a>
+            )}
             {plan.key !== current && plan.price?.[interval] != null && (
               <Button type="button" variant={plan.featured ? "default" : "outline"} disabled={pending} focusableWhenDisabled onClick={() => upgrade(plan.key as "pro" | "business", interval)}>
                 Upgrade to {plan.name}

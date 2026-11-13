@@ -125,7 +125,8 @@ export function pricingPlans(): PricingPlan[] {
       key: plan.toLowerCase(),
       name,
       price,
-      highlights: [...autopilot(plan), ...(isDefault ? credits(plan, freeCredits(), "to start") : credits(plan, planCredits(plan), "a month"))],
+      // A plan's credits come with its paid invoices: none on one sold by quote.
+      highlights: [...autopilot(plan), ...(isDefault ? credits(plan, freeCredits(), "to start") : price ? credits(plan, planCredits(plan), "a month") : [])],
       ...(previous && { intro: `Everything in ${planDisplay(previous).name}, plus:` }),
       features: [
         ...(previous ? [] : [{ text: "Unlimited end users" }]),

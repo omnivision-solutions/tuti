@@ -80,6 +80,28 @@ export const billingSchema = z
       // ponytail: a project without a paid plan is stored as FREE; any default once projects store a plan's key.
       context.addIssue({ code: "custom", path: ["defaultPlan"], message: "must be free for now" });
     }
+    // Each plan has everything the one before it has ("Everything in Pro, plus:"): its features, and limits no lower (null: none;
+    // a Reporting range only where the plan has Reporting).
+    const room = (value: number | null) => value ?? Infinity;
+    const reporting = (plan: BillingPlan) => (plan.features.includes("reporting") ? room(plan.limits.reportingDays) : 0);
+    config.plans.forEach((plan, index) => {
+      const before = config.plans[index - 1];
+      if (!before) {
+        return;
+      }
+      const missing = before.features.filter((feature) => !plan.features.includes(feature));
+      if (missing.length > 0) {
+        context.addIssue({ code: "custom", path: ["plans", index, "features"], message: `lacks ${missing.join(", ")}, which ${before.key} has: each plan has everything the one before it has` });
+      }
+      for (const name of ["seats", "boards", "articles", "historyDays", "articleVersions"] as const) {
+        if (room(plan.limits[name]) < room(before.limits[name])) {
+          context.addIssue({ code: "custom", path: ["plans", index, "limits", name], message: `is lower than ${before.key}'s` });
+        }
+      }
+      if (reporting(plan) < reporting(before)) {
+        context.addIssue({ code: "custom", path: ["plans", index, "limits", "reportingDays"], message: `is lower than ${before.key}'s` });
+      }
+    });
     const stripe = [...config.plans.flatMap(({ prices }) => Object.values(prices)), ...Object.values(config.badge ?? {})].flatMap((price) => price.stripe);
     stripe.forEach((id, index) => {
       if (stripe.indexOf(id) !== index) {
@@ -89,7 +111,7 @@ export const billingSchema = z
   });
 
 export type BillingConfig = z.output<typeof billingSchema>;
-export type BillingPlan = BillingConfig["plans"][number];
+export type BillingPlan = z.output<typeof plan>;
 
 const loaded = new Map<string, BillingConfig>();
 

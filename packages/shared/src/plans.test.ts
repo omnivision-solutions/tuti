@@ -82,8 +82,8 @@ test("history: by plan, kept for historyKeptDays, never less than the longest pl
 });
 
 test("versions kept per article: by plan, and stored up to the largest plan's", () => {
-  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.limits.articleVersions = 80; }));
-  expect([articleVersionsKept("FREE"), articleVersionsKept("PRO"), articleVersionsKept("BUSINESS"), articleVersionsStored()]).toEqual([2, 80, 50, 80]);
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro, business }) => { pro.limits.articleVersions = 80; business.limits.articleVersions = 80; }));
+  expect([articleVersionsKept("FREE"), articleVersionsKept("PRO"), articleVersionsKept("BUSINESS"), articleVersionsStored()]).toEqual([2, 80, 80, 80]);
   expect(articleVersionsNote("FREE")).toBe("The latest 2 are kept.");
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articleVersions = 1; }));
   expect(articleVersionsNote("FREE")).toBe("Only the latest is kept.");

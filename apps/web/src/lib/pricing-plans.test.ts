@@ -46,7 +46,7 @@ test("each plan lists its boards, and Autopilot where the plan includes it", () 
   expect(["Free", "Pro"].map((plan) => line(plan, "Up to 50")?.text ?? line(plan, "Unlimited articles")?.text)).toEqual(["Up to 50 published articles", "Unlimited articles"]);
   // Business has everything in Pro: its own line only where the operator sets it a limit.
   expect(lines("Business").some(({ text }) => text.endsWith("articles"))).toBe(false);
-  vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.limits.articles = 200; }));
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro, business }) => { pro.limits.articles = 100; business.limits.articles = 200; }));
   expect(line("Business", "Up to 200")?.text).toBe("Up to 200 published articles");
   expect(["Free", "Pro", "Business"].map((plan) => Boolean(line(plan, "Autopilot")?.more))).toEqual([true, true, true]);
   // Listed first on each plan, not under "Everything in Free, plus:", as every plan has it.
@@ -131,9 +131,12 @@ test("the cards are the file's plans, each listing what the file gives it", () =
 });
 
 test("a plan without prices is free where it's the default, and otherwise by quote, asking to get in touch", () => {
+  vi.stubEnv("AI_CREDITS", "on");
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
   const [free, , business] = pricingPlans();
   expect([free!.price, free!.byQuote, free!.cta.label]).toEqual([null, undefined, "Start free"]);
   expect([business!.price, business!.byQuote, business!.cta.label]).toEqual([null, true, "Contact us"]);
   expect(business!.cta.href).toMatch(/^mailto:/);
+  // Its credits would come with paid invoices, which it has none of.
+  expect(business!.highlights.some(({ text }) => text.includes("AI credits"))).toBe(false);
 });

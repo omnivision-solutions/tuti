@@ -45,3 +45,12 @@ test("the settings the file replaced, left without one, stop the server rather t
   vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", "");
   expect(billingConfig()).toBeNull();
 });
+
+test("each plan has everything the one before it has, as its card says", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => {
+    business.features = business.features.filter((feature) => feature !== "emailDomain");
+    business.limits.boards = 3;
+  }));
+  expect(() => billingConfig()).toThrow(/lacks emailDomain, which pro has[\s\S]*plans\[2\]\.features/);
+  expect(() => billingConfig()).toThrow(/is lower than pro's\n {2}→ at plans\[2\]\.limits\.boards/);
+});

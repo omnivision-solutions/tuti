@@ -41,7 +41,9 @@ test("on the default plan, its own card says so; the plans for sale have Upgrade
 
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
   page = await billing();
-  expect(page).toContain("Not sold here");
+  // By quote: a way to ask, as on the pricing page.
+  expect(page).toContain("By quote");
+  expect(page).toMatch(/href="mailto:[^"]*"[^>]*>Contact us</);
   expect(page).not.toContain("Upgrade to Business");
   expect(page.match(/this project's plan/g)).toHaveLength(1);
 });
