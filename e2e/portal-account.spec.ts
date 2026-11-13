@@ -96,6 +96,10 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
       bo.getByRole("region", { name: "Emails" }).evaluate((section) => section.getBoundingClientRect().top - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--portal-header-height")) || 64)),
     )
     .toBeLessThanOrEqual(32);
+  // ...and not behind it.
+  expect(
+    await bo.getByRole("region", { name: "Emails" }).evaluate((section) => section.getBoundingClientRect().top - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--portal-header-height")) || 64)),
+  ).toBeGreaterThanOrEqual(0);
   await expect(sections.getByRole("link", { name: "Emails" })).toHaveAttribute("aria-current", "location");
   await bo.goto("/roadmap");
   await bo.goto("/account#emails");
