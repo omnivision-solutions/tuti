@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { FAKE_STRIPE_PRICES } from "./stripe-fake";
 
-type Price = { perMonth: number; stripe: string[] };
+type Price = { perMonth: number; stripe: string[]; sold?: boolean };
 type Limits = { seats: number | null; boards: number | null; articles: number | null; historyDays: number; articleVersions: number; reportingDays: number | null };
 type Plan = { key: string; name: string; prices: { month?: Price; year?: Price }; features: string[]; limits: Limits; monthlyCredits: number; extras?: string[]; featured?: boolean };
 export type TestBilling = { plans: Plan[]; defaultPlan: string; badge?: { month?: Price; year?: Price }; historyKeptDays: number };

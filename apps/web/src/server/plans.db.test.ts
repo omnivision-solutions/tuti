@@ -214,6 +214,16 @@ test("a plan's price replaced in Stripe: those on the older price keep their pla
   expect(stripe.sessions.at(-1)!.price).toBe("price_new_pro");
 });
 
+test("a price no longer sold (sold: false) keeps those who pay it on their plan, and isn't sold again", async () => {
+  const { subscription, events } = await subscribe("pro");
+  await deliver(...events);
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.prices.month!.sold = false; }));
+  await deliver(stripe.update(subscription, {}));
+  expect(await plan()).toMatchObject({ plan: "pro" });
+  await deliver(stripe.update(subscription, { status: "canceled" }));
+  await expect(call(subscribePlan, as(), { plan: "pro", interval: "month" })).rejects.toMatchObject({ status: 503 });
+});
+
 test("not sold: plans off, Stripe not set up, or a plan without its price; plan.get says plans are off", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { delete pro.prices.year; }));
   await expect(call(subscribePlan, as(), { plan: "pro", interval: "year" })).rejects.toMatchObject({ status: 503, code: "plans_unavailable" });

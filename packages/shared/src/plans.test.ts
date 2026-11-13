@@ -117,3 +117,16 @@ test("upgrades never name a plan that isn't sold (no prices: by quote)", () => {
   expect(reportingRangeNeeded("PRO")).toBe("Your plan doesn't include longer ranges.");
   expect(planNeeded("sitePath")).toBe("A portal under a path of your site needs a plan this server doesn't sell.");
 });
+
+test("a price no longer sold is recognised but neither sold nor shown, and a plan with none sold is by quote", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { pro, business }) => {
+    pro.prices.year!.sold = false;
+    business.prices.month!.sold = false;
+    business.prices.year!.sold = false;
+    config.badge!.year!.sold = false;
+  }));
+  expect([planPrice("PRO", "year"), planOfPrice("price_fake_pro_yearly")]).toEqual([null, { plan: "PRO", interval: "year" }]);
+  expect(planDisplay("PRO").price).toEqual({ month: 39, year: null });
+  expect([badgePrice("year"), isBadgePrice("price_fake_badge_yearly"), badgePerMonth("year")]).toEqual([null, true, null]);
+  expect([planFor("privatePortal"), roomierPlan("PRO", boardLimit)]).toEqual([null, null]);
+});

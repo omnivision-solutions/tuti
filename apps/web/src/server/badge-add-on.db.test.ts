@@ -64,6 +64,18 @@ test("a yearly plan gets the yearly add-on (a subscription's prices bill alike)"
   expect(items(subscription)).toEqual([FAKE_STRIPE_PRICES.STRIPE_PRICE_PRO_YEARLY.id, FAKE_STRIPE_PRICES.STRIPE_PRICE_BADGE_YEARLY.id]);
 });
 
+test("an add-on no longer sold yearly (sold: false) is still recognised on a yearly plan: it holds, and is removed from Stripe", async () => {
+  const subscription = await subscribe("year");
+  await badge(true);
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { badge!.year!.sold = false; }));
+  await deliver(stripe.update(subscription, {}));
+  expect(await call(getPlan, as(), {})).toMatchObject({ plan: "pro", badge: true });
+  expect(await badge(false)).toEqual({ on: false });
+  expect(items(subscription)).toEqual([FAKE_STRIPE_PRICES.STRIPE_PRICE_PRO_YEARLY.id]);
+  // And not added again that way.
+  await expect(badge(true)).rejects.toMatchObject({ status: 503 });
+});
+
 test("refused on the free plan, while a payment is failing, and when the card is declined; nothing changes", async () => {
   await expect(badge(true)).rejects.toMatchObject({ status: 409, code: "free_plan" });
   const subscription = await subscribe();

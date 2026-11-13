@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { badgeOffered, badgePerMonth, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
+import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
@@ -38,10 +38,9 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const paid = searchParams.paid === "1";
   const subscribed = searchParams.subscribed === "1";
   const shown = planDisplay(plan.plan);
-  // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One already on
-  // a plan billed a way it's no longer sold shows its other price, so it can still be seen and removed.
-  const sold = badgeOffered(plan.plan, plan.planInterval);
-  const badge = sold ?? (plan.badgeAddOn ? badgePerMonth() : null);
+  // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One that's on keeps
+  // its card where it's no longer sold (its price stays listed, `sold: false`), so it can still be removed.
+  const badge = badgeOffered(plan.plan, plan.planInterval);
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (
@@ -82,7 +81,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </SettingBlock>
         </SettingsCard>
       )}
-      {plansEnabled() && badge !== null && (
+      {plansEnabled() && (badge !== null || plan.badgeAddOn) && (
         <SettingsCard>
           <SettingRow
             label='Hide "Powered by tuti"'
@@ -95,14 +94,14 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   : `The badge at the foot of the portal: hide it for $${badge} a month, added to this project's plan.`
             }
           >
-            {(plan.badgeAddOn || (planSalesEnabled() && sold !== null)) &&
+            {(plan.badgeAddOn || (planSalesEnabled() && badge !== null)) &&
               (plan.plan === "FREE" ? (
                 // To the plans above, monthly or yearly as picked there.
                 <a href="#plans" className={buttonVariants({ variant: "outline" })}>
                   Choose a plan
                 </a>
               ) : (
-                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge} />
+                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge ?? 0} />
               ))}
           </SettingRow>
         </SettingsCard>

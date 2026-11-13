@@ -26,7 +26,10 @@ function terms(plan: PlanKey): BillingPlan {
 const keyOf = (plan: BillingPlan) => plan.key.toUpperCase() as PlanKey;
 
 /** Whether a plan can be bought (it has a price): the only ones an upgrade names. */
-const sold = (plan: BillingPlan) => Object.keys(plan.prices).length > 0;
+const sold = (plan: BillingPlan) => Object.values(plan.prices).some((price) => price.sold);
+
+/** A price as sold now: none where it's only recognised for those already paying it (`sold: false`). */
+const forSale = <P extends { sold: boolean }>(price: P | undefined): P | null => (price?.sold ? price : null);
 
 /** The plans the billing file lists, cheapest first, as projects store them; none without plans. */
 export const listedPlans = (): PlanKey[] => billingConfig()?.plans.map(keyOf) ?? [];
@@ -36,7 +39,7 @@ export const defaultPlanKey = (): PlanKey => (billingConfig()?.defaultPlan.toUpp
 
 /** The Stripe price a plan is sold at (the first of its prices for `interval`), or null where it isn't for sale. */
 export function planPrice(plan: PlanKey, interval: PlanInterval): string | null {
-  return listed(plan)?.prices[interval]?.stripe[0] ?? null;
+  return forSale(listed(plan)?.prices[interval])?.stripe[0] ?? null;
 }
 
 /** Which plan a Stripe price is (sold now, or before), or null for any other price. */
@@ -56,7 +59,7 @@ export function planOfPrice(price: string | null | undefined): { plan: PaidPlan;
  * null where it isn't sold.
  */
 export function badgePrice(interval: PlanInterval): string | null {
-  return billingConfig()?.badge?.[interval]?.stripe[0] ?? null;
+  return forSale(billingConfig()?.badge?.[interval])?.stripe[0] ?? null;
 }
 
 /**
@@ -65,7 +68,7 @@ export function badgePrice(interval: PlanInterval): string | null {
  */
 export function badgePerMonth(interval?: PlanInterval): number | null {
   const badge = billingConfig()?.badge;
-  return interval ? (badge?.[interval]?.perMonth ?? null) : (badge?.month?.perMonth ?? badge?.year?.perMonth ?? null);
+  return interval ? (forSale(badge?.[interval])?.perMonth ?? null) : (forSale(badge?.month)?.perMonth ?? forSale(badge?.year)?.perMonth ?? null);
 }
 
 /** What a project on `plan` gets, as the billing file has it (the default plan's where the file doesn't list it). Billing on only. */
@@ -81,7 +84,7 @@ export const badgeOffered = (plan: PlanKey, interval: string | null): number | n
 /** A plan's name and what it shows a month, billed monthly and yearly (null where it isn't sold that way). */
 export function planDisplay(plan: PlanKey): { name: string; price: { month: number | null; year: number | null } } {
   const terms = listed(plan);
-  return { name: terms?.name ?? plan.charAt(0) + plan.slice(1).toLowerCase(), price: { month: terms?.prices.month?.perMonth ?? null, year: terms?.prices.year?.perMonth ?? null } };
+  return { name: terms?.name ?? plan.charAt(0) + plan.slice(1).toLowerCase(), price: { month: forSale(terms?.prices.month)?.perMonth ?? null, year: forSale(terms?.prices.year)?.perMonth ?? null } };
 }
 
 /** Whether a Stripe price is the "Powered by tuti" add-on's (sold now, or before). */

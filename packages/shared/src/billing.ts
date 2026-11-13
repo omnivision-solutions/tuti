@@ -20,7 +20,16 @@ const days = z.number().int().min(1);
 const stripePrices = z.array(z.string().min(1)).min(1);
 
 /** A price billed each month or each year: what it shows a month (a year's price shows its monthly share) and its Stripe prices. */
-const price = z.object({ perMonth: z.number().int().min(0).describe("Whole dollars a month; a year's price shows its monthly share."), stripe: stripePrices }).strict();
+const price = z
+  .object({
+    perMonth: z.number().int().min(0).describe("Whole dollars a month; a year's price shows its monthly share."),
+    stripe: stripePrices,
+    sold: z
+      .boolean()
+      .default(true)
+      .describe("false: no longer sold this way, but still recognised for those who pay it (their plan or add-on holds, and can be removed). Keep a price listed while anyone pays it."),
+  })
+  .strict();
 
 const plan = z
   .object({
