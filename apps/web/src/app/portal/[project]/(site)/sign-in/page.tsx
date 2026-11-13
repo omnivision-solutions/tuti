@@ -101,9 +101,9 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
 function Or() {
   return (
     <div className="flex items-center gap-3 text-xs text-muted-foreground">
-      <span className="h-px flex-1 bg-border" />
+      <span className="h-px flex-1 bg-divider" />
       or
-      <span className="h-px flex-1 bg-border" />
+      <span className="h-px flex-1 bg-divider" />
     </div>
   );
 }

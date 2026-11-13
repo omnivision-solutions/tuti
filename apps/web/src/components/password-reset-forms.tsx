@@ -69,7 +69,7 @@ export function ForgotPasswordForm({ failed, portal, next, pages = "" }: { faile
               {error && <FieldError>{error}</FieldError>}
             </Field>
           </CardContent>
-          <CardFooter className="mt-6 flex flex-col gap-3">
+          <CardFooter className="mt-6 flex flex-col gap-3 portal:border-t-0 portal:pt-0">
             <Button type="submit" disabled={pending} className="w-full">
               {pending ? "…" : "Email me a link"}
             </Button>

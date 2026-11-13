@@ -28,7 +28,8 @@ export default async function SignInLinkPage(props: PageProps<"/portal/[project]
         <CardTitle className="font-heading text-xl font-bold">Sign in to {link.projectName}</CardTitle>
         <CardDescription className="break-all">as {link.email}</CardDescription>
       </CardHeader>
-      <CardFooter>
+      {/* No line inside the card on the portal (docs/design.md → Surfaces). */}
+      <CardFooter className="border-t-0 pt-0">
         <SignInLinkConfirm token={token as string} next={nextPath} />
       </CardFooter>
     </Card>

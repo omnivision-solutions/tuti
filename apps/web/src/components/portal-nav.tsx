@@ -142,6 +142,8 @@ export function PortalMain({ children }: { children: React.ReactNode }) {
         "mx-auto flex w-full flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10",
         within(path, "/roadmap") ? "max-w-6xl" : !within(path, "/docs") && "max-w-3xl",
         (onBoard(path) || onPost(path) || onChangelogList(path)) && "lg:max-w-6xl",
+        // Account: its section list beside the sections, the pages' full width (from where the list is a rail).
+        within(path, "/account") && "md:max-w-6xl",
       )}
     >
       {children}

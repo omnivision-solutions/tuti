@@ -41,9 +41,113 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(profile.getByRole("textbox")).toHaveCount(0);
   await expect(profile.getByRole("link", { name: "Change your name in your Tuti account" })).toHaveAttribute("href", `${APP_URL}/app/account`);
   await checkpoint(bo, "portal-account-profile");
-  await expect(bo.getByRole("region", { name: "My posts" }).getByRole("link")).toHaveText(["Export invoices"]);
-  await expect(bo.getByRole("region", { name: "My votes" }).getByRole("link")).toHaveText(["Offline mode", "Dark mode"]);
-  await bo.getByRole("region", { name: "My votes" }).getByRole("link", { name: "Dark mode" }).click();
+  await expect(bo.getByRole("heading", { level: 1 })).toHaveText("Account");
+  await expect(bo.getByRole("region", { name: "Your posts" }).getByRole("link")).toHaveText(["Export invoices"]);
+  await expect(bo.getByRole("region", { name: "Your votes" }).getByRole("link")).toHaveText(["Offline mode", "Dark mode"]);
+  // The section list jumps within the page, the one picked marked; scrolling back up marks the one there.
+  const sections = bo.getByRole("navigation", { name: "Account sections" });
+  await expect(sections.getByRole("link")).toHaveText(["Profile", "Emails", "Your posts 1", "Your votes 2"]);
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  // Opened in a new tab (Ctrl/Cmd-click): this page stays where it is, Profile still marked.
+  const tab = bo.context().waitForEvent("page");
+  await sections.getByRole("link", { name: /Your votes/ }).click({ modifiers: ["ControlOrMeta"] });
+  await (await tab).close();
+  expect(await bo.evaluate(() => window.scrollY)).toBe(0);
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  // From the keyboard, as a hash link: the next Tab goes on inside the section jumped to (a screen reader is taken there too).
+  await sections.getByRole("link", { name: /Your votes/ }).focus();
+  await bo.keyboard.press("Enter");
+  await expect(bo.getByRole("heading", { name: "Your votes" })).toBeInViewport();
+  await bo.keyboard.press("Tab");
+  await expect(bo.getByRole("region", { name: "Your votes" }).getByRole("link", { name: "Offline mode" })).toBeFocused();
+  await bo.mouse.wheel(0, -5000);
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  // Clicked, even when the address already has its hash (as a hash link, it jumps again).
+  await sections.getByRole("link", { name: /Your votes/ }).click();
+  await expect(bo).toHaveURL(/\/account#votes$/);
+  await expect(sections.getByRole("link", { name: /Your votes/ })).toHaveAttribute("aria-current", "location");
+  await expect(sections.getByRole("link", { name: "Profile" })).not.toHaveAttribute("aria-current");
+  await expect(bo.getByRole("heading", { name: "Your votes" })).toBeInViewport();
+  // Hairlines between a list's rows only, none under the last.
+  const voteRows = bo.getByRole("region", { name: "Your votes" }).getByRole("listitem");
+  await expect(voteRows.first()).toHaveCSS("border-bottom-width", "1px");
+  await expect(voteRows.last()).toHaveCSS("border-bottom-width", "0px");
+  await bo.mouse.wheel(0, -5000);
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  // Scrolled back by the page itself (no wheel, touch or key): the scroll's end marks what it shows.
+  const votesLink = sections.getByRole("link", { name: /Your votes/ });
+  await votesLink.click();
+  await expect(votesLink).toHaveAttribute("aria-current", "location");
+  await bo.evaluate(() => window.scrollTo(0, 0));
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  // Dragging the scrollbar back up: marked as it goes, before the drag ends (no scroll end comes while it's held).
+  await votesLink.click();
+  await expect(votesLink).toHaveAttribute("aria-current", "location");
+  const { width, height } = bo.viewportSize()!;
+  await bo.mouse.move(width - 4, height - 30);
+  await bo.mouse.down();
+  await bo.mouse.move(width - 4, 5, { steps: 10 });
+  await expect.poll(() => bo.evaluate(() => window.scrollY)).toBe(0);
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await bo.mouse.up();
+  // Back to a section after leaving the page: the Account again (the section links are the router's), at that section.
+  await sections.getByRole("link", { name: /Your votes/ }).click();
+  await bo.getByRole("banner").getByRole("link", { name: "Roadmap" }).click();
+  await bo.waitForURL("**/roadmap");
+  await bo.goBack();
+  await expect(bo).toHaveURL(/\/account#votes$/);
+  await expect(bo.getByRole("heading", { name: "Your votes" })).toBeInViewport();
+  await expect(sections.getByRole("link", { name: /Your votes/ })).toHaveAttribute("aria-current", "location");
+  // A section mid-page (Emails, which the page can bring to its top): the jump stops it at the line under the header, so
+  // it stays marked as the reader scrolls on a little, and when the page is opened at its hash.
+  const wide = bo.viewportSize()!;
+  await bo.setViewportSize({ width: 1280, height: 480 });
+  const emailsTop = () => bo.getByRole("region", { name: "Emails" }).evaluate((section) => section.getBoundingClientRect().top + window.scrollY);
+  expect(await bo.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeGreaterThan((await emailsTop()) + 100);
+  await sections.getByRole("link", { name: "Emails" }).click();
+  await expect(bo).toHaveURL(/\/account#emails$/);
+  // It stops just under the header, at the list's line (header + 32px), not a header's height further down.
+  await expect
+    .poll(() =>
+      bo.getByRole("region", { name: "Emails" }).evaluate((section) => section.getBoundingClientRect().top - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--portal-header-height")) || 64)),
+    )
+    .toBeLessThanOrEqual(32);
+  // ...and not behind it.
+  expect(
+    await bo.getByRole("region", { name: "Emails" }).evaluate((section) => section.getBoundingClientRect().top - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--portal-header-height")) || 64)),
+  ).toBeGreaterThanOrEqual(0);
+  await expect(sections.getByRole("link", { name: "Emails" })).toHaveAttribute("aria-current", "location");
+  await bo.goto("/roadmap");
+  await bo.goto("/account#emails");
+  await expect(bo.getByRole("heading", { name: "Emails" })).toBeInViewport();
+  await expect(sections.getByRole("link", { name: "Emails" })).toHaveAttribute("aria-current", "location");
+  await bo.setViewportSize(wide);
+  // Opened at a short section near the end (#posts, which can't reach the line): the browser's jump there ends the page at
+  // its end, and its scroll end keeps the section the hash names rather than marking the last.
+  await bo.goto("/roadmap");
+  await bo.goto("/account#posts");
+  await expect(sections).toHaveAttribute("data-settled");
+  const postsTop = await bo.getByRole("region", { name: "Your posts" }).evaluate((section) => section.getBoundingClientRect().top);
+  expect(postsTop).toBeGreaterThan(200);
+  // (A guard for the load: the browser's own jump there ends before the list listens, so it can't show the bug below.)
+  await expect(sections.getByRole("link", { name: /Your posts/ })).toHaveAttribute("aria-current", "location");
+  // A hash change on the page (typed, or a plain link to it): the browser's jump ends after the change, and its scroll end
+  // keeps the section the hash names. Each change waits for that jump's own scroll end (the list's listener runs first).
+  const jumpTo = (hash: string) =>
+    bo.evaluate(
+      (to) =>
+        new Promise<void>((resolve) => {
+          window.addEventListener("scrollend", () => resolve(), { once: true });
+          window.location.hash = to;
+        }),
+      hash,
+    );
+  await jumpTo("#profile");
+  await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await jumpTo("#posts");
+  await expect(sections.getByRole("link", { name: /Your posts/ })).toHaveAttribute("aria-current", "location");
+  await expect(sections.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
+  await bo.getByRole("region", { name: "Your votes" }).getByRole("link", { name: "Dark mode" }).click();
   await expect(bo.getByRole("heading", { level: 1 })).toHaveText("Dark mode");
 
   // Bo stops emails about posts he voted on; it's kept.
@@ -204,10 +308,22 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
       const page = await (await browser.newContext({ baseURL: portalUrl(slug), viewport, colorScheme, storageState: signedIn })).newPage();
       await page.goto("/account");
       await expect(page.getByRole("switch", { name: "Posts I voted on or follow" })).not.toBeChecked();
-      // Who's signed in, and Sign out, on the page.
+      // Who's signed in, and Sign out in the Profile card (the page's only one).
       await expect(page.getByText(`Signed in as ${bo.email}`)).toBeVisible();
-      await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Profile" }).getByRole("button", { name: "Sign out" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(1);
+      // The sections' list, one of its two shapes for the width: a rail beside them, or pills above them on phones.
+      const list = page.getByRole("navigation", { name: "Account sections" });
+      await expect(list).toBeVisible();
+      await expect(list.getByRole("link", { name: "Emails" })).toHaveClass(name === "phone" ? /rounded-full/ : /rounded-lg/);
+      if (name === "phone") {
+        await list.getByRole("link", { name: /Your posts/ }).click();
+        await expect(page.getByRole("heading", { name: "Your posts" })).toBeInViewport();
+        await expect(list.getByRole("link", { name: /Your posts/ })).toHaveAttribute("aria-current", "location");
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      // The sections fill the pages' width beside the list, not a narrow column.
+      if (name === "desktop") expect((await page.getByRole("region", { name: "Profile" }).boundingBox())!.width).toBeGreaterThan(800);
       await checkpoint(page, `portal-account-${name}-${colorScheme}`);
       await page.context().close();
     }
@@ -254,7 +370,40 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(cy.getByRole("switch", { name: "The changelog" })).toBeDisabled();
   await cy.getByRole("button", { name: "Resend email" }).click();
   await expect(cy.getByRole("button", { name: "Sent" })).toBeVisible();
+  // No posts or votes: each says so on a soft fill, with the way to the boards.
+  const noVotes = cy.getByRole("region", { name: "Your votes" });
+  await expect(noVotes).toContainText("You haven't voted on others' posts here yet.");
+  await expect(noVotes.getByRole("link", { name: "Browse ideas" })).toHaveAttribute("href", /\/feedback$/);
+  await expect(cy.getByRole("region", { name: "Your posts" })).toContainText("You haven't posted here yet.");
   await checkpoint(cy, "portal-account-unconfirmed");
+  // A page short enough to fit a tall window, which can't scroll: its first section is the current one, not the last.
+  const tall = await (await browser.newContext({ baseURL: portalUrl(slug), viewport: { width: 1280, height: 3000 }, storageState: await cy.context().storageState() })).newPage();
+  await tall.goto("/account");
+  expect(await tall.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
+  const tallList = tall.getByRole("navigation", { name: "Account sections" });
+  // Once the list has read the page: the server's HTML marks Profile whatever the page shows.
+  await expect(tallList).toHaveAttribute("data-settled");
+  await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await expect(tallList.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
+  // Opened with a section's hash the browser didn't scroll to (it can't scroll here; a reload or Back that restores the
+  // page elsewhere is the same): the section the page shows, not the hash's.
+  await tall.goto("/roadmap");
+  await tall.goto("/account#votes");
+  await expect(tallList).toHaveAttribute("data-settled");
+  await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await expect(tallList.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
+  // A hash change on the page that doesn't move it (typed, or Back within the page restoring it elsewhere): the same. From
+  // a section picked (and so pinned) first, so the mark has to move for this to pass.
+  await tallList.getByRole("link", { name: /Your votes/ }).click();
+  await expect(tallList.getByRole("link", { name: /Your votes/ })).toHaveAttribute("aria-current", "location");
+  // (The address changed without the router's popstate, then the browser's hashchange: only the list reacts.)
+  await tall.evaluate(() => {
+    history.replaceState(history.state, "", "#emails");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await expect(tallList.getByRole("link", { name: "Emails" })).not.toHaveAttribute("aria-current");
+  await tall.context().close();
   // Sign out on the page: a failed one, refused or never sent (offline), says so and stays, the button ready again; then
   // back on the portal's home, signed out.
   const signOut = cy.getByRole("button", { name: "Sign out" });
