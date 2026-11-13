@@ -43,7 +43,7 @@ const offered = async () => {
 test("Powered by tuti quotes the add-on as billed on the project's plan, or what it starts at on the default plan", async () => {
   vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { badge!.year!.perMonth = 39; }));
   expect(await offered()).toBe(49);
-  await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "year" } });
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "year", planStatus: "active" } });
   expect(await offered()).toBe(39);
   // Not sold for a yearly plan: no price.
   vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { delete badge!.year; }));

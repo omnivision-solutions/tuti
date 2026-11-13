@@ -42,7 +42,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const onPaidPlan = plan.planStatus !== null || !onDefaultPlan(plan.plan);
   // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One that's on keeps
   // its card where it's no longer sold (its price stays listed, `sold: false`), so it can still be removed.
-  const badge = badgeOffered(plan.plan, plan.planInterval);
+  const badge = badgeOffered(plan);
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (

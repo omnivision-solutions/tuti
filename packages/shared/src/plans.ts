@@ -73,11 +73,11 @@ export function badgePerMonth(interval?: PlanInterval): number | null {
 export const planTerms = (plan: PlanKey): BillingPlan => terms(plan);
 
 /**
- * What the add-on costs a month for a project on `plan`, billed each `interval` (its own billing: the add-on bills alike), or
- * what it starts at on the default plan; null where it isn't sold so.
+ * What the add-on costs a month for a project: with a live subscription (Stripe's status), billed as it is (the add-on
+ * bills alike), whatever plan is stored; without one, what it starts at. Null where it isn't sold so.
  */
-export const badgeOffered = (plan: PlanKey, interval: string | null): number | null =>
-  onDefaultPlan(plan) ? badgePerMonth() : badgePerMonth(interval === "year" ? "year" : "month");
+export const badgeOffered = (project: { planStatus: string | null; planInterval: string | null }): number | null =>
+  project.planStatus !== null ? badgePerMonth(project.planInterval === "year" ? "year" : "month") : badgePerMonth();
 
 /** A plan's name and what it shows a month, billed monthly and yearly (null where it isn't sold that way). */
 export function planDisplay(plan: PlanKey): { name: string; price: { month: number | null; year: number | null } } {

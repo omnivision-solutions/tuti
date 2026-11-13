@@ -61,7 +61,7 @@ test("a plan's Stripe prices: the first is sold, older ones still recognised; th
   // What it shows a month: each billing's own, or monthly's before a plan is picked.
   expect([badgePerMonth("month"), badgePerMonth("year"), badgePerMonth()]).toEqual([49, 39, 49]);
   // For a project: its plan's billing, or on the default plan what it starts at.
-  expect([badgeOffered("pro", "year"), badgeOffered("pro", "month"), badgeOffered("free", null)]).toEqual([39, 49, 49]);
+  expect([badgeOffered({ planStatus: "active", planInterval: "year" }), badgeOffered({ planStatus: "active", planInterval: "month" }), badgeOffered({ planStatus: null, planInterval: null })]).toEqual([39, 49, 49]);
 });
 
 test("upgrades name the first plan above with more room, and none where no plan has more", () => {

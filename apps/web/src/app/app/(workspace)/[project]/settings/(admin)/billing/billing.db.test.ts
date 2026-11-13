@@ -87,3 +87,12 @@ test("a project on a plan the file no longer lists sees the plans to buy, as on 
   expect(page).toContain("Upgrade to Pro");
   expect(page).not.toContain("Manage plan");
 });
+
+test("a project still paying for a plan the file no longer lists is offered the add-on at its own billing's price", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
+    config.plans = config.plans.filter(({ key }) => key !== "pro");
+    config.badge!.year!.perMonth = 39;
+  }));
+  await prisma.project.update({ where: { id: projectId }, data: { plan: "pro", planInterval: "year", planStatus: "active", stripeSubscriptionId: `sub_${projectId}` } });
+  expect(await billing()).toContain("hide it for $39 a month");
+});
