@@ -43,6 +43,19 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   await api("/changelog/1/publish", {});
   await api("/posts/4", { status: "completed" }, "PATCH");
   await api("/changelog", { title: "Webhooks (draft)", posts: [4] });
+  // A public idea on a board then made Team only: still a card under All boards, the board without a pill.
+  await team.goto(`/app/${slug}/feedback/boards`);
+  await team.getByRole("button", { name: "New board" }).click();
+  await newBoard.getByLabel("Name").fill("Internal");
+  await newBoard.getByRole("button", { name: "Create board" }).click();
+  await expect(team.getByRole("listitem").filter({ hasText: "Internal" })).toBeVisible();
+  await api("/posts", { board: "internal", title: "Offline mode" }); // 6
+  await api("/posts/6", { status: "planned" }, "PATCH");
+  await team.getByRole("listitem").filter({ hasText: "Internal" }).getByRole("button", { name: "Edit" }).click();
+  await editBoard.getByRole("combobox", { name: "Who sees new posts" }).click();
+  await team.getByRole("option", { name: "Team only" }).click();
+  await editBoard.getByRole("button", { name: "Save" }).click();
+  await expect(editBoard).toBeHidden();
 
   // Signed out, on a laptop: the columns side by side, about 1100px across.
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -85,7 +98,7 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
   // On a phone, one column at a time: Planned first, the others from the tabs over it.
   await visitor.setViewportSize({ width: 390, height: 844 });
   const columns = visitor.getByRole("navigation", { name: "Columns" });
-  await expect(columns.getByRole("link")).toHaveText(["Planned 2", "In progress 1", "Completed 2"]);
+  await expect(columns.getByRole("link")).toHaveText(["Planned 3", "In progress 1", "Completed 2"]);
   await expect(column("Planned")).toBeVisible();
   await expect(column("Completed")).toBeHidden();
   await columns.getByRole("link", { name: "Completed 2" }).click();
@@ -116,7 +129,8 @@ test("the portal's roadmap: votes from the cards, what each column means, a boar
 
   // The boards' pills, with their ideas on the roadmap, narrow the cards and stay in the address.
   const boards = visitor.getByRole("navigation", { name: "Board" });
-  await expect(boards.getByRole("link")).toHaveText(["All boards 5", "Feature requests 4", "Bug reports 1"]);
+  await expect(boards.getByRole("link")).toHaveText(["All boards 6", "Feature requests 4", "Bug reports 1"]);
+  await expect(visitor.getByRole("link", { name: "Offline mode" })).toBeVisible();
   await expect(boards.getByRole("link", { name: "All boards" })).toHaveAttribute("aria-current", "page");
   // Pills without an outline: the open one a neutral fill (not the accent), the others on the paper.
   const accent = await visitor.evaluate(() => {
