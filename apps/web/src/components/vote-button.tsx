@@ -22,12 +22,13 @@ const SHAPES = {
 } as const;
 export type VoteShape = keyof typeof SHAPES;
 /**
- * A portal shape's look: a grey fill without an edge, or once voted, the accent's soft tint (the primary is the post's
- * Upvote, before voting).
+ * A portal shape's look: a grey fill without an edge, or once voted, the accent's soft tint with a thin inset ring in the
+ * accent and the chevron in it (the primary is the post's Upvote, before voting). The ring is the cue that isn't only a
+ * fill: with a grey or black accent, or Tuti's green, the tint is close to the grey.
  */
 const portalLook = (shape: VoteShape, voted: boolean) =>
   voted
-    ? "border-transparent bg-soft text-soft-foreground shadow-none hover:bg-soft"
+    ? cn("border-transparent bg-soft text-soft-foreground shadow-none ring-1 ring-primary/45 ring-inset hover:bg-soft", shape !== "upvote" && "[&_svg]:text-primary")
     : shape === "upvote"
       ? ""
       : "border-transparent bg-secondary [&_svg]:text-muted-foreground";

@@ -398,7 +398,8 @@ the list picks none to approve at once.
     none: `brandCss` (`lib/colors.ts`) sets `primary`, its text, the focus `ring` and the `soft` tint and its text (at
     Tuti's own tints' lightness in each mode, in the accent's hue) on the portal's pages and the widget's panel. Used
     sparingly: the accent is only the letter mark, the page's one filled primary, links, focus rings, toggles that are
-    on, a vote cast (its soft tint, no edge), the open part's underline in the header, the team's replies (a soft tint),
+    on, a vote cast (its soft tint and a thin inset ring in it, the chevron in the accent: never a fill alone, as a grey or
+    black accent's tint is near the grey; your own changelog reaction the same), the open part's underline in the header, the team's replies (a soft tint),
     the widget's header and launcher (unless Settings → Widget gives it a colour of its own, or the accent wouldn't stand
     out on a light page and a dark one: the launcher is one colour on any site, so it's the brand green then). Every
     other selected state is neutral (`bg-accent text-foreground`): the open board in a rail, the picked pill, the open
@@ -416,7 +417,7 @@ the list picks none to approve at once.
     focus rings. Secondary buttons are grey fills without an edge (the `outline` Button variant takes the `secondary`
     look there, by the `portal:` variant), round icon buttons too; filter pills (`FilterPills`) have no outline, the
     others muted text on the paper and the picked one the neutral fill; vote boxes and counts are grey fills (voted the
-    `soft` tint, a completed idea's the Completed tint). The page keeps the scrollbar's room (`scrollbar-gutter:
+    `soft` tint with a 1px inset ring in the accent, a completed idea's the Completed tint). The page keeps the scrollbar's room (`scrollbar-gutter:
     stable`), so the header never shifts between short and long pages.
   - **Page header** (`PortalPageHeader`): every list and detail page the same shape, on the paper (no header card):
     the back link, a 36px title (28px on phones) and its one muted line, then one row with the pills on the left
@@ -441,7 +442,7 @@ the list picks none to approve at once.
     with counts, Not done yet (the default), each status with ideas on the board, then Every idea. Then the rows, open on
     the page and inset to the card's text: the status label above the title (none for Open), a 17px title, two lines of
     excerpt, a byline (initial, name, when, comments), a boxed vote on the right (`VoteButton shape="box"`: chevron over
-    the count, 52×58, a grey fill; voted, the accent's soft tint; a completed idea's a green-tinted box with a check). Under the
+    the count, 52×58, a grey fill; voted, the accent's soft tint with a thin inset ring and the chevron in the accent; a completed idea's a green-tinted box with a check). Under the
     default list "That's all N ideas still to come in <board>. Share yours"; under a search's results "Not here? Post it".
     The rail, nothing else competing with the list: **New idea** (the page's one filled button; it opens the board's form
     in a dialog, `NewIdea`, open as the page loads with `?title=` or `?new`; signed out its title and "Sign in to post",
@@ -511,7 +512,7 @@ the list picks none to approve at once.
     didn't come for sits one click away (a menu, a disclosure) rather than in another column.
   - **An article**: the tab's tree on the left (`DocsLayout`, 16rem, a line beside it the page's height): each
     collection a row with its icon that opens (`<details>`), the page's own open with a line down its articles and the
-    current one soft green; the articles in no collection under a line. Then "Docs › <collection>" with Reading mode (a ghost book icon, named in its tooltip; from tablet
+    current one a neutral fill; the articles in no collection under a line. Then "Docs › <collection>" with Reading mode (a ghost book icon, named in its tooltip; from tablet
     width, on an article with sections) and Copy page at
     the row's end, a 42px title, "Updated <date> · N min read" (about 200 words a minute), and the text at 17px (`article-text` on top of `rich-text`): 26px section headings, steps numbered in soft green circles, inline code on
     a sunken chip, code blocks as cards (a labelled one with its label in a strip, and Copy: `CodeCopyButtons`), quotes

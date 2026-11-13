@@ -266,3 +266,50 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
   await expect(hex).toHaveValue("#7c3aed");
   await expect(useAccent).toHaveCount(0);
 });
+
+test("a vote cast and a reaction of yours show more than a tint, with Tuti's green or a near-black accent", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/posts", { board: "feature-requests", title: "Calendar sync" });
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  const entry = (await api("/changelog", { title: "CSV export is here", body: "Download any report as a CSV file.", tags: ["new"] })) as unknown as { number: number };
+  await api(`/changelog/${entry.number}/publish`, {});
+
+  const reader = await signUp(browser, portalUrl(slug), "Ada Reader");
+  await reader.setViewportSize({ width: 1280, height: 900 });
+  const main = reader.getByRole("main");
+  const rowOf = (title: string) => main.getByRole("listitem").filter({ has: reader.getByRole("link", { name: title, exact: true }) });
+  // A 1px ring in a colour that shows (the tint alone can be the grey's twin): the box-shadow's, if any.
+  const ring = (locator: ReturnType<typeof reader.locator>) =>
+    locator.evaluate((element) => {
+      const shadow = getComputedStyle(element).boxShadow;
+      const found = /([a-z]+\([^)]*\)) 0px 0px 0px 1px/.exec(shadow)?.[1] ?? "";
+      return found && !/^rgba\([^)]*, 0\)$/.test(found) && !/\/ 0\)$/.test(found) ? found : "";
+    });
+  await reader.goto("/feedback/feature-requests");
+  await rowOf("Calendar sync").getByRole("button", { name: /^Upvote \(/ }).click();
+  await expect(rowOf("Calendar sync").getByRole("button", { name: /^Remove vote \(/ })).toBeEnabled();
+  await reader.goto(`/changelog/${entry.number}`);
+  const thumbs = main.getByRole("button", { name: /^React with 👍/ });
+  await thumbs.click();
+  await expect(thumbs).toHaveAttribute("aria-pressed", "true");
+  await expect(thumbs).toBeEnabled();
+
+  for (const color of [null, "#222222"]) {
+    if (color) {
+      await api("/branding", { color }, "PATCH");
+    }
+    await reader.goto("/feedback/feature-requests");
+    await expect.soft.poll(() => ring(rowOf("Calendar sync").getByRole("button", { name: /^Remove vote \(/ })), `${color} vote cast`).not.toBe("");
+    expect.soft(await ring(rowOf("Dark mode").getByRole("button", { name: /^Upvote \(/ })), `${color} no vote`).toBe("");
+    await checkpoint(reader, `board ${color ?? "default"}`, { fullPage: false });
+    await reader.goto(`/changelog/${entry.number}`);
+    await expect(thumbs).toHaveAttribute("aria-pressed", "true");
+    expect.soft(await ring(thumbs), `${color} reaction of yours`).not.toBe("");
+    expect.soft(await ring(main.getByRole("button", { name: /^React with 🎉/ })), `${color} no reaction`).toBe("");
+    await checkpoint(reader, `changelog ${color ?? "default"}`, { fullPage: false });
+  }
+});
