@@ -126,6 +126,17 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(overview.getByRole("button", { name: "New post" })).toBeVisible();
   expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(visitor, "portal-feedback-overview-phone");
+  // Without JavaScript the round search's box can't open: on a phone the overview's search form is in the page, and searches every board.
+  const noScript = await browser.newContext({ baseURL: portalUrl(slug), javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+  const early = await noScript.newPage();
+  await early.goto("/feedback");
+  await early.getByRole("searchbox", { name: "Search ideas" }).fill("csv");
+  await early.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
+  await early.waitForURL(/\/feedback\?q=csv$/);
+  const found = early.getByRole("main").getByRole("listitem").filter({ hasText: "CSV export" });
+  await expect(found.getByRole("link", { name: "CSV export" })).toBeVisible();
+  await expect(found).toContainText("Feature requests");
+  await noScript.close();
   await visitor.setViewportSize({ width: 1280, height: 720 });
   await visitor.goto("/feedback/bugs");
   // Roadmap has no row of its own.

@@ -91,3 +91,33 @@ test("the overview's search leaves out a post moved off its boards while it read
     spy.mockRestore();
   }
 });
+
+/** A post moved to another board between a card's two reads (its top ideas' ids, then the posts) isn't on the old board's card. */
+test("a board's card leaves out an idea moved off the board while it reads", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const bugs = await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bug reports" } });
+  const actor = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  const moving = await call(createPost, actor, { board: "feature-requests", title: "Dark mode" });
+  const { id } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: moving.number }, select: { id: true } });
+
+  actAs(null);
+  // Its id is read for Feature requests' card; then, before the card reads the posts, the team moves it to Bug reports.
+  const findMany = prisma.post.findMany.bind(prisma.post);
+  let moved = false;
+  const spy = vi.spyOn(prisma.post, "findMany").mockImplementation((async (args: Parameters<typeof findMany>[0]) => {
+    const ids = (args?.where?.id as { in?: string[] } | undefined)?.in;
+    if (!moved && ids?.includes(id)) {
+      moved = true;
+      await prisma.post.update({ where: { id }, data: { boardId: bugs.id } });
+    }
+    return findMany(args);
+  }) as never);
+  try {
+    const html = renderToStaticMarkup(await FeedbackOverview({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never));
+    expect(moved).toBe(true);
+    expect(html).not.toMatch(/href="\/feedback\/feature-requests\/dark-mode[^"]*"/);
+  } finally {
+    spy.mockRestore();
+  }
+});
