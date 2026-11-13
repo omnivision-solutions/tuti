@@ -1,5 +1,6 @@
 "use client";
 
+import { useTheme } from "next-themes";
 import { useEffect, useRef } from "react";
 
 /**
@@ -28,6 +29,23 @@ export function PortalWidget({
   shown: boolean;
   viewer: string | null;
 }) {
+  // Its panel in the page's light or dark mode (a reader's pick on the portal's footer switch), not only the default's.
+  const { resolvedTheme } = useTheme();
+  const theme: "light" | "dark" | null = resolvedTheme === "dark" || resolvedTheme === "light" ? resolvedTheme : null;
+  useEffect(() => {
+    if (!theme) {
+      return;
+    }
+    const follow = () => window.Tuti?.setTheme?.(theme);
+    if (window.Tuti) {
+      follow();
+      return;
+    }
+    // The loader still loading (an async tag; React's onLoad on it would keep it from running): once it has.
+    const tag = document.querySelector("script[data-on-portal]");
+    tag?.addEventListener("load", follow, { once: true });
+    return () => tag?.removeEventListener("load", follow);
+  }, [theme]);
   const last = useRef({ shown, viewer });
   useEffect(() => {
     if (shown === last.current.shown && viewer === last.current.viewer) {

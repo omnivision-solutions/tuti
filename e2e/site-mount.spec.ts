@@ -15,7 +15,7 @@ import { forwardToPortal, siteUrl } from "./site";
 test.describe.configure({ mode: "default" });
 
 test("the team puts the portal under a path of its own site: its site forwards it, Tuti checks it, and people read it there", async ({ browser }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -76,6 +76,16 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/docs`);
   await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/portal/sign-in?next=%2Fdocs");
   await checkpoint(visitor, "portal-on-site");
+
+  // With the readers' theme switch off, the team's default doesn't replace a theme the site itself keeps (the portal shares
+  // its storage there).
+  const api = await apiFor(owner, slug);
+  await api("/branding", { themeSwitch: false, colorScheme: "light" }, "PATCH");
+  await visitor.evaluate(() => localStorage.setItem("theme", "dark"));
+  await visitor.reload();
+  await expect(visitor.locator("html")).toHaveClass(/\bdark\b/);
+  expect(await visitor.evaluate(() => localStorage.getItem("theme"))).toBe("dark");
+  await visitor.evaluate(() => localStorage.removeItem("theme"));
 
   // The team's own HTML (Customize → Custom code) runs on their site, and not when the same path is
   // opened on the portal's Tuti host (which answers it too: the site forwards there).

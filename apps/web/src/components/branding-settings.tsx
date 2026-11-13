@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { ColorField } from "@/components/color-field";
 import { CustomizeSection, type Draft, useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
+import { SwitchRow } from "@/components/docs-look-settings";
 import { LinkRows } from "@/components/widget-settings";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -71,6 +72,7 @@ export function BrandingSettings({
   color,
   defaultColor,
   colorScheme,
+  themeSwitch,
   logoText,
   logoLink,
   fonts,
@@ -83,6 +85,7 @@ export function BrandingSettings({
   color: string;
   defaultColor: string;
   colorScheme: ColorScheme;
+  themeSwitch: boolean;
   logoText: string;
   logoLink: string | null;
   fonts: { heading: PortalFont | null; body: PortalFont | null };
@@ -96,6 +99,7 @@ export function BrandingSettings({
       logo: image(data, "logo"),
       logoDark: image(data, "logoDark"),
       colorScheme: (COLOR_SCHEMES as readonly string[]).includes(text(data, "colorScheme")) ? (text(data, "colorScheme") as ColorScheme) : "system",
+      themeSwitch: data.getAll("themeSwitch").includes("on"),
       logoText: text(data, "logoText").trim(),
       // A link only once it's a whole address, as saving needs.
       logoLink: /^https:\/\/[^/\s]+\.[^/\s]+/.test(text(data, "logoLink").trim()) ? text(data, "logoLink").trim() : null,
@@ -121,6 +125,9 @@ export function BrandingSettings({
             </label>
           ))}
         </div>
+        {/* Sent off or on (see saveBranding). */}
+        <input type="hidden" name="themeSwitch" value="" />
+        <SwitchRow name="themeSwitch" label="Let readers switch theme" description="A light/dark switch in the portal's footer." defaultChecked={themeSwitch} />
         <Field>
           <FieldLabel htmlFor="brand-color">Accent colour</FieldLabel>
           <ColorField id="brand-color" name="color" label="Accent colour" color={color} defaultColor={defaultColor} />

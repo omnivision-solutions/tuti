@@ -1,16 +1,41 @@
 "use client";
 
-import { LinkIcon } from "lucide-react";
+import { LinkIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
-import { createContext, useContext } from "react";
+import { useTheme } from "next-themes";
+import { createContext, useContext, useId, useSyncExternalStore } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@tuti/ui/tuti-logo";
-import { DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME } from "@/lib/portal-look";
+import { type ColorScheme, DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME, THEME_DEFAULT_KEY } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
 /** In Customize's preview: a frame named PREVIEW_FRAME (its own page, or the widget's panel in it). */
 export const inPreview = () => window.name === PREVIEW_FRAME && window.parent !== window;
+
+/**
+ * Light or dark mode in the preview only: on the page, not where next-themes keeps a reader's pick
+ * (the frame shares the portal's storage with the team member's own visits to it).
+ */
+export function showTheme(scheme: ColorScheme) {
+  const mode = scheme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : scheme;
+  const html = document.documentElement;
+  html.classList.remove("light", "dark");
+  html.classList.add(mode);
+  html.style.colorScheme = mode;
+  // For the preview's footer switch, whichever showed it (the switch, the team trying a default, the app's own mode),
+  // and a switch that mounts later (another page's footer).
+  shownScheme = scheme;
+  window.dispatchEvent(new Event(PREVIEW_THEME_EVENT));
+}
+
+const PREVIEW_THEME_EVENT = "tuti:preview-theme";
+/** What showTheme last showed in the preview; null until it has. */
+let shownScheme: ColorScheme | null = null;
+const onShown = (changed: () => void) => {
+  window.addEventListener(PREVIEW_THEME_EVENT, changed);
+  return () => window.removeEventListener(PREVIEW_THEME_EVENT, changed);
+};
 
 export const LookContext = createContext<PortalLook | null>(null);
 
@@ -147,11 +172,11 @@ export function PortalLinksRow() {
  * ADDITIONAL-TERMS.md at the root of the repository.
  */
 export function PortalFooter({ docs = false }: { docs?: boolean }) {
-  const { footerLinks, poweredBy } = usePortalLook();
+  const { footerLinks, poweredBy, themeSwitch } = usePortalLook();
   const path = usePortalPath();
   // Docs pages have it under the page, beside the tree (DocsLayout): under the tree's column it would push the tree up as it scrolls into view.
   const onDocs = path === "/docs" || path.startsWith("/docs/");
-  if ((footerLinks.length === 0 && !poweredBy) || onDocs !== docs) {
+  if ((footerLinks.length === 0 && !poweredBy && !themeSwitch) || onDocs !== docs) {
     return null;
   }
   return (
@@ -167,7 +192,61 @@ export function PortalFooter({ docs = false }: { docs?: boolean }) {
         </nav>
       )}
       {poweredBy && <PoweredByTuti />}
+      {themeSwitch && <ThemeSwitch />}
     </footer>
+  );
+}
+
+const THEMES = [
+  ["system", "System", MonitorIcon],
+  ["light", "Light", SunIcon],
+  ["dark", "Dark", MoonIcon],
+] as const;
+const noStore = () => () => {};
+
+/**
+ * The reader's light or dark mode (Customize → Branding lets the team hide it): three quiet icons, native radios, so arrow
+ * keys move between them. Kept where next-themes keeps it, as the reader's own pick (not the portal's default; see
+ * ColorSchemeScript). None shows as picked until the page has run: the server doesn't know the pick. In Customize's
+ * preview, only on the page (showTheme).
+ */
+function ThemeSwitch() {
+  const { theme, setTheme } = useTheme();
+  const tried = useSyncExternalStore(onShown, () => shownScheme, () => null);
+  const name = useId();
+  const hydrated = useSyncExternalStore(noStore, () => true, () => false);
+  return (
+    <div role="radiogroup" aria-label="Theme" className="flex gap-0.5">
+      {THEMES.map(([value, label, Icon]) => (
+        <label
+          key={value}
+          title={label}
+          className="grid size-7 cursor-pointer place-items-center rounded-full text-muted-foreground transition-colors hover:text-foreground has-checked:bg-muted has-checked:text-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/50"
+        >
+          <input
+            type="radio"
+            name={name}
+            value={value}
+            aria-label={label}
+            checked={hydrated && (tried ?? theme ?? "system") === value}
+            onChange={() => {
+              if (inPreview()) {
+                showTheme(value);
+                return;
+              }
+              try {
+                localStorage.removeItem(THEME_DEFAULT_KEY);
+              } catch {
+                // Storage blocked (privacy settings): the pick still applies to this page.
+              }
+              setTheme(value);
+            }}
+            className="sr-only"
+          />
+          <Icon aria-hidden className="size-3.5" />
+        </label>
+      ))}
+    </div>
   );
 }
 

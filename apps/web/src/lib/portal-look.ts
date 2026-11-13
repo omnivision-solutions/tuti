@@ -43,6 +43,8 @@ export type PortalLook = {
   contentActions: ContentActions;
   docsHome: DocsHome;
   colorScheme: ColorScheme;
+  /** The readers' light/dark switch in the footer (never on the app's own domain, where the theme is the app user's). */
+  themeSwitch: boolean;
   /** Beside the logo (empty: none; without a logo, the project's name). */
   logoText: string;
   /** Where the logo goes; null for the portal's home. */
@@ -72,6 +74,7 @@ export const DEFAULT_LOOK: PortalLook = {
   contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: true, updatedDate: true },
   docsHome: { title: "", subtitle: "", popular: true },
   colorScheme: "system",
+  themeSwitch: false,
   logoText: "",
   logoLink: null,
   sidebarLinks: [],
@@ -154,8 +157,10 @@ export function webOnly(look: Partial<PortalLook>): Partial<PortalLook> {
       checked[key] = look[key].filter((link) => web(link.url));
     }
   }
-  if (typeof look.poweredBy === "boolean") {
-    checked.poweredBy = look.poweredBy;
+  for (const key of ["poweredBy", "themeSwitch"] as const) {
+    if (typeof look[key] === "boolean") {
+      checked[key] = look[key];
+    }
   }
   if (booleans(look.contentActions, ["menu", "copyMarkdown", "chatGpt", "claude", "updatedDate"] as const)) {
     checked.contentActions = look.contentActions;

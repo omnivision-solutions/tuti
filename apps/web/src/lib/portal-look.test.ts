@@ -55,6 +55,8 @@ test("the rest of a change: a known colour scheme, web links for the logo", () =
   });
   expect(webOnly({ colorScheme: "sepia" as never, logoLink: "javascript:alert(1)" })).toEqual({});
   expect(webOnly({ logoLink: null })).toEqual({ logoLink: null });
+  expect(webOnly({ themeSwitch: false })).toEqual({ themeSwitch: false });
+  expect(webOnly({ themeSwitch: "no" as never })).toEqual({});
   expect(webOnly({ sidebarLinks: [{ label: "Status", url: "https://status.example.com" }, { label: "Bad", url: "javascript:x" }] })).toEqual({
     sidebarLinks: [{ label: "Status", url: "https://status.example.com" }],
   });

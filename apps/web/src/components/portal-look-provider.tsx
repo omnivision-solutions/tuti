@@ -5,7 +5,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 
 import { usePortalPath } from "@/components/portal-base";
 import { PORTAL_FONT_CLASSES } from "@/components/portal-fonts";
-import { inPreview, LookContext } from "@/components/portal-look";
+import { inPreview, LookContext, showTheme } from "@/components/portal-look";
 import { brandCss } from "@/lib/colors";
 import { CUSTOMIZE } from "@/lib/portal-base";
 import { portalFontStyle } from "@/lib/portal-fonts";
@@ -17,18 +17,6 @@ import { cn } from "@/lib/utils";
  * it, and with it the portal's fonts (components/portal-fonts.ts, Inter preloaded as the default), so the widget's page,
  * which uses portal-look's parts, doesn't fetch them.
  */
-
-/**
- * Light or dark mode in the preview only: on the page, not where next-themes keeps a reader's pick
- * (the frame shares the portal's storage with the team member's own visits to it).
- */
-function showTheme(scheme: PortalLook["colorScheme"]) {
-  const mode = scheme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : scheme;
-  const html = document.documentElement;
-  html.classList.remove("light", "dark");
-  html.classList.add(mode);
-  html.style.colorScheme = mode;
-}
 
 /**
  * The portal's look (its accent colour as CSS, and for the parts that show it). In Customize's

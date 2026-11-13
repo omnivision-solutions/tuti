@@ -18,6 +18,9 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   await expect(owner.getByRole("heading", { name: "Feature requests" })).toBeVisible();
   // Light or dark mode here is the app's, its user's pick: no portal default touches it.
   expect(await owner.content()).not.toContain("tuti-theme-default");
+  // Nor the readers' theme switch: here the theme is the app's, its user's own.
+  await expect(owner.getByRole("contentinfo")).toBeVisible();
+  await expect(owner.getByRole("radiogroup", { name: "Theme" })).toHaveCount(0);
   await owner.getByRole("button", { name: "New post" }).click();
   await owner.getByLabel("Title").fill("Dark mode for the dashboard");
   await owner.getByRole("button", { name: "Submit post" }).click();
