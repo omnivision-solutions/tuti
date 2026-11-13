@@ -17,6 +17,10 @@ export const portalUrl = (slug: string) => `http://${slug}.localhost:${PORT}`;
 const CLOUD_PORT = PORT + 1;
 export const CLOUD_URL = `http://localhost:${CLOUD_PORT}`;
 export const cloudPortalUrl = (slug: string) => `http://${slug}.localhost:${CLOUD_PORT}`;
+/** Tuti's cloud with a free trial in its billing file (trialEnv), on the port after: an account's first project there starts one. */
+const TRIAL_PORT = PORT + 2;
+export const TRIAL_URL = `http://localhost:${TRIAL_PORT}`;
+export const trialPortalUrl = (slug: string) => `http://${slug}.localhost:${TRIAL_PORT}`;
 
 /** The project whose portal is on the app's own domain (APP_PORTAL_PROJECT). */
 export const APP_PORTAL_SLUG = "e2e-app-portal";
@@ -101,4 +105,14 @@ export const cloudEnv = {
   BILLING_CONFIG: billingFile(),
   // Tuti's own widget in its team app: the project app-widget.spec.ts makes.
   APP_WIDGET_PROJECT: APP_WIDGET_SLUG,
+};
+
+/** The cloud's server with a free trial: 7 days of Pro, with 500 AI credits. */
+export const trialEnv = {
+  PORT: String(TRIAL_PORT),
+  APP_URL: TRIAL_URL,
+  PORTAL_URL_TEMPLATE: `http://{project}.localhost:${TRIAL_PORT}`,
+  BILLING_CONFIG: billingFile((config) => {
+    config.trial = { plan: "pro", days: 7, credits: 500, emails: 1000 };
+  }),
 };

@@ -258,3 +258,28 @@ export function articleVersionsNote(plan: PlanKey): string {
 
 /** Saved versions stored per docs article: the largest plan's articleVersionsKept, whatever the project's plan; older ones are deleted. */
 export const articleVersionsStored = () => Math.max(...(billingConfig()?.plans.map(({ limits }) => limits.articleVersions) ?? [ARTICLE_REVISIONS_KEPT]));
+
+/** The billing file's free trial (plan, days, AI credits, emails), or null where it has none or billing is off. */
+export const trialTerms = () => billingConfig()?.trial ?? null;
+
+/**
+ * The plan a project is on, from its stored plan and when its trial ends (Project.trialEndsAt): the trial's plan while
+ * the trial runs and the project has no plan of its own (the default plan), else the stored one. Read at the moment
+ * it's asked, so a trial that ended never gives its plan, whatever ran since. @tuti/db reads every project's plan
+ * through it.
+ */
+export function effectivePlan(plan: PlanKey, trialEndsAt: Date | null, now = new Date()): PlanKey {
+  const trial = trialTerms();
+  return trial && trialEndsAt && trialEndsAt > now && onDefaultPlan(plan) ? trial.plan : plan;
+}
+
+/**
+ * A project's trial as its team is told: when it ends and whether it has (`ended`); null without one, or once the
+ * project has a plan of its own. `plan` as stored (select trialEndsAt with it: see @tuti/db).
+ */
+export function trialState(project: { plan: PlanKey; planStatus: string | null; trialEndsAt: Date | null }, now = new Date()): { endsAt: Date; ended: boolean } | null {
+  if (!plansEnabled() || !project.trialEndsAt || project.planStatus !== null || !onDefaultPlan(project.plan)) {
+    return null;
+  }
+  return { endsAt: project.trialEndsAt, ended: effectivePlan(project.plan, project.trialEndsAt, now) === project.plan };
+}

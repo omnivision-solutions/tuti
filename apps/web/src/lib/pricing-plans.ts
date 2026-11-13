@@ -1,4 +1,4 @@
-import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, defaultPlanKey, freeCredits, historyDays, listedPlans, planCredits, planDisplay, type PlanFeature, planIncludes, type PlanKey, planTerms, reportingDays, teamLimit, topupsEnabled } from "@tuti/shared";
+import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, defaultPlanKey, freeCredits, historyDays, listedPlans, planCredits, planDisplay, type PlanFeature, planIncludes, type PlanKey, planTerms, reportingDays, teamLimit, topupsEnabled, trialTerms } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
 
@@ -147,7 +147,8 @@ export function pricingPlans(): PricingPlan[] {
       // A plan without prices is free where it's the default, and otherwise sold by quote.
       ...(price === null && !isDefault
         ? { byQuote: true, cta: { label: "Contact us", href: `mailto:${SALES_EMAIL}?subject=${encodeURIComponent(`Tuti ${name}`)}` } }
-        : { cta: { label: price === null ? "Start free" : `Start with ${name}`, href: "/app/auth/sign-up" } }),
+        : // With a free trial, signing up starts one: every plan sold starts with it.
+          { cta: { label: price === null ? "Start free" : trialTerms() ? "Start free trial" : `Start with ${name}`, href: "/app/auth/sign-up" } }),
       ...(featured && { featured }),
     };
   });

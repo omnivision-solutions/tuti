@@ -3,7 +3,7 @@ import { deflateSync } from "node:zlib";
 
 import { type Browser, expect, type Locator, type Page } from "@playwright/test";
 
-import { APP_URL, CLOUD_URL, portalUrl } from "./env";
+import { APP_URL, CLOUD_URL, portalUrl, TRIAL_URL } from "./env";
 
 export type TestPage = Page & { email: string; ip: string };
 
@@ -33,7 +33,7 @@ export async function signUp(
 ): Promise<TestPage> {
   const page = await newPerson(browser, baseUrl);
   // The app's sign-up, or the portal's, which sends on to the app's.
-  await page.goto(baseUrl === APP_URL || baseUrl === CLOUD_URL ? "/app/auth/sign-up" : "/sign-up");
+  await page.goto([APP_URL, CLOUD_URL, TRIAL_URL].includes(baseUrl) ? "/app/auth/sign-up" : "/sign-up");
   await fillSignUp(page, name, email);
   await page.waitForURL((url) => url.pathname !== "/app/auth/sign-up");
   if (new URL(page.url()).pathname === "/app/auth/continue") {

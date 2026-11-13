@@ -30,6 +30,18 @@ test("an invalid file stops the server, naming what's wrong", () => {
   expect(() => billingConfig()).toThrow(/is listed twice/);
 });
 
+test("a trial is of one of the plans, with its credits and emails", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
+    config.trial = { plan: "pro", days: 7 };
+  }));
+  expect(billingConfig()?.trial).toEqual({ plan: "pro", days: 7, credits: 0, emails: null });
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => {
+    config.trial = { plan: "growth", days: 0 };
+  }));
+  expect(() => billingConfig()).toThrow(/"growth" isn't one of the plans\n {2}→ at trial\.plan/);
+  expect(() => billingConfig()).toThrow(/trial\.days/);
+});
+
 test("any plans: keys and the default are the file's own", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((config, { free, pro, business }) => {
     free.key = "lapsed";

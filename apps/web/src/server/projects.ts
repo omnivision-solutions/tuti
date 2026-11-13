@@ -16,6 +16,7 @@ import { updateProject } from "./operations/more";
 import { asAdmin, call } from "./operations/run";
 import { addSampleContent as addSample, removeSampleContent as removeSample } from "./sample-content";
 import { getAccountSession, getSession } from "./session";
+import { startTrial } from "./trials";
 
 const createProjectSchema = z.object({
   name: z.string().trim().min(2).max(60),
@@ -50,13 +51,17 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
   }
 
   try {
-    await prisma.project.create({
-      data: {
-        name: parsed.data.name,
-        slug: parsed.data.slug,
-        team: { create: { userId: session.user.id, role: "OWNER" } },
-        boards: { create: { slug: "feature-requests", name: "Feature requests" } },
-      },
+    await prisma.$transaction(async (tx) => {
+      const { id } = await tx.project.create({
+        data: {
+          name: parsed.data.name,
+          slug: parsed.data.slug,
+          team: { create: { userId: session.user.id, role: "OWNER" } },
+          boards: { create: { slug: "feature-requests", name: "Feature requests" } },
+        },
+        select: { id: true },
+      });
+      await startTrial(tx, id, session.user.id);
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

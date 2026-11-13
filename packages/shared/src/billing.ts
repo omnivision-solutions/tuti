@@ -73,6 +73,16 @@ export const billingSchema = z
       .strict()
       .optional()
       .describe('The add-on hiding "Powered by tuti", priced for plans billed each month and each year (and self-hosted licences, on Tuti\'s licence server). Absent: not sold. Keep a retired price listed after the new one while anyone pays it: only listed prices are recognised as the add-on, to show it and to remove it.'),
+    trial: z
+      .object({
+        plan: z.string().describe("The plan the trial gives: one of the plans."),
+        days: days.describe("How long it lasts."),
+        credits: count.default(0).describe("AI credits it gives, expiring when it ends (with AI credits on)."),
+        emails: count.nullable().default(null).describe("Emails the project may send during the trial; null: its plan's."),
+      })
+      .strict()
+      .optional()
+      .describe("A free trial, no card: an account's first project starts on `plan` for `days` days, then is on the default plan unless it bought one. Absent: no trials."),
     historyKeptDays: days.default(365).describe("Days closed conversations and AI conversations are kept before they're deleted, never fewer than the longest plan's history."),
   })
   .strict()
@@ -85,6 +95,9 @@ export const billingSchema = z
     });
     if (!keys.includes(config.defaultPlan)) {
       context.addIssue({ code: "custom", path: ["defaultPlan"], message: `"${config.defaultPlan}" isn't one of the plans` });
+    }
+    if (config.trial && !keys.includes(config.trial.plan)) {
+      context.addIssue({ code: "custom", path: ["trial", "plan"], message: `"${config.trial.plan}" isn't one of the plans` });
     }
     // Each plan has everything the one before it has ("Everything in Pro, plus:"): its features, and limits no lower (null: none;
     // a Reporting range only where the plan has Reporting).
