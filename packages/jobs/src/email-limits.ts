@@ -22,7 +22,8 @@ export const nextMonth = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), 
  * and changelog emails; sign-in links, invitations and the team's own email never wait), on a server selling plans:
  * its plan's emailsPerMonth each calendar month (UTC), and in its first week NEW_PROJECT_EMAILS_PER_DAY a day, so a
  * new project's spam reaches only so many before its bounces and complaints show. Each claimed in one statement, so
- * sends at once can't pass it together. The first email held by the month's limit tells the project's owners and admins.
+ * sends at once can't pass it together. The month's last email (or the first held, after a downgrade) tells the project's
+ * owners and admins.
  */
 export async function claimProjectEmail(projectId: string, now = new Date()): Promise<boolean> {
   if (!plansEnabled()) {
@@ -39,14 +40,17 @@ export async function claimProjectEmail(projectId: string, now = new Date()): Pr
   // Counted on every plan (Billing shows it), limited where the plan has a limit.
   const limit = emailsPerMonth(plan);
   const month = monthOf(now);
-  const counted = await prisma.$queryRaw<unknown[]>`
+  const counted = await prisma.$queryRaw<{ emails: number }[]>`
     INSERT INTO "project_email_month" ("projectId", "month", "emails")
     SELECT ${projectId}, ${month}, 1 WHERE ${limit}::int IS NULL OR ${limit}::int > 0
     ON CONFLICT ("projectId", "month") DO UPDATE SET "emails" = "project_email_month"."emails" + 1
     WHERE ${limit}::int IS NULL OR "project_email_month"."emails" < ${limit}::int
-    RETURNING 1`;
-  if (counted.length === 0) {
+    RETURNING "emails"`;
+  // The last one this month, or none left: the team hears (once a month), even if the rest wait in a later run.
+  if (counted.length === 0 || (limit !== null && counted[0]!.emails >= limit)) {
     await tellEmailLimit(projectId, now);
+  }
+  if (counted.length === 0) {
     return false;
   }
   if (!capping() || now.getTime() - createdAt.getTime() >= NEW_FOR_MS) {
@@ -102,6 +106,24 @@ export async function dueAgain(projectId: string, now = new Date()): Promise<Dat
   return (await monthlyLimitReached(projectId, now)) ? nextMonth(now) : now;
 }
 
+/** The projects whose plan's emails for this month are used up: their email to their users waits for next month. */
+export async function monthCappedProjects(now = new Date()): Promise<string[]> {
+  const limits = listedPlans().map(emailsPerMonth).filter((limit) => limit !== null);
+  const months =
+    limits.length > 0
+      ? await prisma.projectEmailMonth.findMany({
+          where: { month: monthOf(now), emails: { gte: Math.min(...limits) } },
+          select: { projectId: true, emails: true, project: { select: { plan: true } } },
+        })
+      : [];
+  return months
+    .filter(({ emails, project }) => {
+      const limit = emailsPerMonth(project.plan);
+      return limit !== null && emails >= limit;
+    })
+    .map(({ projectId }) => projectId);
+}
+
 /** The projects whose email waits: new ones whose daily cap is used up today, and any whose month's limit is. */
 export async function cappedProjects(now = new Date()): Promise<string[]> {
   if (!plansEnabled()) {
@@ -113,19 +135,7 @@ export async function cappedProjects(now = new Date()): Promise<string[]> {
         select: { projectId: true },
       })
     : [];
-  const limits = listedPlans().map(emailsPerMonth).filter((limit) => limit !== null);
-  const months =
-    limits.length > 0
-      ? await prisma.projectEmailMonth.findMany({
-          where: { month: monthOf(now), emails: { gte: Math.min(...limits) } },
-          select: { projectId: true, emails: true, project: { select: { plan: true } } },
-        })
-      : [];
-  const full = months.filter(({ emails, project }) => {
-    const limit = emailsPerMonth(project.plan);
-    return limit !== null && emails >= limit;
-  });
-  return [...new Set([...days, ...full].map((d) => d.projectId))];
+  return [...new Set([...days.map((d) => d.projectId), ...(await monthCappedProjects(now))])];
 }
 
 /**

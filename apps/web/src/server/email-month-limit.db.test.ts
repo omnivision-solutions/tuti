@@ -1,6 +1,6 @@
 import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
-import { emailsThisMonth, handlers } from "@tuti/jobs";
+import { emailsThisMonth, handlers, resumeToken } from "@tuti/jobs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
@@ -13,6 +13,7 @@ import { createComment, createPost } from "./operations/create";
 import { updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
 import { call } from "./operations/run";
+import { resumeEmailSending } from "./email-pause";
 import { emailSignInLink } from "./sign-in-link";
 
 /**
@@ -150,6 +151,56 @@ test("a reply that isn't emailed after all (nobody to email) doesn't count", asy
   await prisma.emailBlock.createMany({ data: [`e2e-kim-${project.slug}@example.com`, `e2e-lee-${project.slug}@example.com`].map((email) => ({ projectId: project.id, email })) });
   await handlers.sendConversationReplies({}, log);
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 0, limit: 1 });
+});
+
+test("the owner hears when the month's last email goes, though what waits comes in a later run", async () => {
+  const { owner, project, team } = await setup();
+  const address = supportAddress(await mailSubdomain(project.id), DOMAIN);
+  const reply = async (n: number, from: string) => {
+    await postEmail(rawEmail({ from, to: address, subject: "Invoice missing" }), { recipient: address });
+    await call(replyToConversation, team, { number: n, body: "It's under Billing." });
+    await prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "projectId" = ${project.id}`;
+    await handlers.sendConversationReplies({}, log);
+  };
+  await reply(1, `e2e-kim-${project.slug}@example.com`);
+  expect(limitEmails(owner.email)).toHaveLength(1);
+  await reply(2, `e2e-lee-${project.slug}@example.com`);
+  expect(emailsTo(`e2e-lee-${project.slug}@example.com`)).toHaveLength(0);
+  expect(limitEmails(owner.email)).toHaveLength(1);
+});
+
+test("a send that fails gives its slot back: the month counts what was sent", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.emailsPerMonth = 5; }));
+  const { project, team } = await setup();
+  const emailed = await twoReplies(project, team);
+  mailbox.refuseNext(`e2e-kim-${project.slug}@example.com`);
+  await handlers.sendConversationReplies({}, log);
+  expect(emailed()).toBe(1);
+  expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 5 });
+});
+
+test("a full project's email due now (its job never ran) is moved to next month by the safety net, never left behind", async () => {
+  const { project, team } = await setup();
+  await votedPost(project);
+  await prisma.projectEmailMonth.create({ data: { projectId: project.id, month: month(), emails: 1 } });
+  const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+  const comment = await prisma.comment.create({
+    data: { projectId: project.id, postId, authorId: team.actor.userId, body: "It's out.", votersEmailDueAt: new Date(Date.now() - 15 * 60_000) },
+  });
+  await handlers.resubmitReplyEmails({}, log);
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).votersEmailDueAt).toEqual(nextMonth());
+});
+
+test("resuming a paused project keeps the email the monthly limit holds for next month", async () => {
+  const { project, team } = await setup();
+  const { post } = await votedPost(project);
+  await call(updatePost, team, { number: post.number, status: "completed" });
+  const due = () => prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { shippedEmailsDueAt: true } });
+  expect((await due()).shippedEmailsDueAt).toEqual(nextMonth());
+  const pausedAt = new Date(Date.now() - 60_000);
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
+  expect(await resumeEmailSending(resumeToken(project.id, pausedAt))).toEqual({});
+  expect((await due()).shippedEmailsDueAt).toEqual(nextMonth());
 });
 
 test("a plan with no limit counts but never holds; an upgrade lets the waiting email go", async () => {

@@ -5,7 +5,7 @@ import type { JobInput } from "@tuti/shared";
 import { portalPostUrl } from "./events";
 import { postAudience, SEEN_AS_SQL, seenAs, visibilityChanged } from "./post-audience";
 import { portalAddress } from "./portal-address";
-import { cappedProjects, claimProjectEmail, dueAgain, nextMonth, releaseProjectEmail } from "./email-limits";
+import { cappedProjects, claimProjectEmail, dueAgain, monthCappedProjects, nextMonth, releaseProjectEmail } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -190,7 +190,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     }
     // A new project's daily cap and the month's limit, taken once they're ours to email (and a pause since the run began):
     // past it, they're let go and wait.
-    if (!(await claimProjectEmail(projectId))) {
+    const now = new Date();
+    if (!(await claimProjectEmail(projectId, now))) {
       await prisma.shippedEmail.deleteMany({ where: { postId, userId: id, claimedAt } });
       held = true;
       break;
@@ -212,7 +213,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     );
     if (error) {
       failed++;
-      await releaseProjectEmail(projectId);
+      await releaseProjectEmail(projectId, now);
       log.warn(`couldn't email that post ${postId} shipped: ${error.message}`);
       continue;
     }
@@ -242,6 +243,15 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
  */
 export async function resubmitShippedEmails(_input: JobInput<"resubmitShippedEmails">, log: JobLogger): Promise<JobResult> {
   // Not a capped project's (its daily cap or monthly limit): they'd wait again.
+  // A project whose month is full: what's due now waits for next month, where these find it (a job that never ran
+  // would otherwise leave it here, past the look-back, for good).
+  const full = await monthCappedProjects();
+  if (full.length > 0) {
+    await prisma.post.updateMany({
+      where: { projectId: { in: full }, shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+      data: { shippedEmailsDueAt: nextMonth(new Date()) },
+    });
+  }
   const capped = await cappedProjects();
   const due = await prisma.post.findMany({
     where: {
