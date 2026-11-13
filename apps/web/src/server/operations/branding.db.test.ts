@@ -437,7 +437,7 @@ test("links stored some other way never reach the portal unless they're valid", 
   expect(await get()).toMatchObject({ headerLinks: [], footerLinks: [] });
 });
 
-test("the colour becomes the accent and its tint, with readable text on it; where it's too faint, the accent is the text colour", () => {
+test("the colour becomes the accent and its tint, with readable text on it; where it's too faint, a shade of it that reads", () => {
   expect(brandCss(null)).toBeNull();
   const theme = "--primary:var(--foreground);--primary-foreground:var(--background);--ring:var(--foreground)";
   // The tint (a voted idea, the open board, the team's replies) is the colour's own in both modes, never Tuti's green.
@@ -449,8 +449,13 @@ test("the colour becomes the accent and its tint, with readable text on it; wher
   expect(brandCss("#2563eb")).toBe(
     `html:not(.dark){--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}html.dark{--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}${tints("#2563eb")}`,
   );
-  // A pale yellow is lost on the light page, fine on the dark one (with black text).
-  expect(brandCss("#fde047")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#fde047;--primary-foreground:#000000;--ring:#fde047}${tints("#fde047")}`);
-  // A navy is the other way round.
-  expect(brandCss("#172554")).toBe(`html:not(.dark){--primary:#172554;--primary-foreground:#ffffff;--ring:#172554}html.dark{${theme}}${tints("#172554")}`);
+  // A pale yellow is lost on the light page: a darker yellow there (never the text colour), itself on the dark one.
+  expect(brandCss("#fde047")).toBe(`html:not(.dark){--primary:#a7932f;--primary-foreground:#000000;--ring:#a7932f}html.dark{--primary:#fde047;--primary-foreground:#000000;--ring:#fde047}${tints("#fde047")}`);
+  // A light blue the same: still blue on the light page.
+  expect(brandCss("#45b5f0")).toBe(`html:not(.dark){--primary:#3c9cd0;--primary-foreground:#000000;--ring:#3c9cd0}html.dark{--primary:#45b5f0;--primary-foreground:#000000;--ring:#45b5f0}${tints("#45b5f0")}`);
+  // A navy is the other way round: lighter on the dark page.
+  expect(brandCss("#172554")).toBe(`html:not(.dark){--primary:#172554;--primary-foreground:#ffffff;--ring:#172554}html.dark{--primary:#5b6586;--primary-foreground:#ffffff;--ring:#5b6586}${tints("#172554")}`);
+  // A grey has no hue to keep: where it doesn't read (white on the light page, black on the dark one), the text colour.
+  expect(brandCss("#ffffff")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#ffffff;--primary-foreground:#000000;--ring:#ffffff}${tints("#ffffff")}`);
+  expect(brandCss("#000000")).toBe(`html:not(.dark){--primary:#000000;--primary-foreground:#ffffff;--ring:#000000}html.dark{${theme}}${tints("#000000")}`);
 });

@@ -35,18 +35,43 @@ const softCss = (color: string, dark: boolean) =>
     : `--soft:oklch(from ${color} 0.955 min(c, 0.035) h);--soft-foreground:oklch(from ${color} 0.43 min(c, 0.13) h)`;
 
 /**
+ * `color`, or where it's too faint on `surface` the nearest shade of it that reads: mixed toward black on the light page,
+ * toward white on the dark one (the same hue), by as little as reaches the contrast. Null for a grey that doesn't read
+ * (white on the light page): a mid grey would look disabled, so the text colour is the accent there.
+ */
+const readableOn = (color: string, surface: number): string | null => {
+  if (readsOn(color, surface)) {
+    return color;
+  }
+  const target = surface > 0.5 ? 0 : 255;
+  const channels = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+  if (Math.max(...channels) - Math.min(...channels) < 24) {
+    return null;
+  }
+  const mix = (t: number) => `#${channels.map((c) => Math.round(c + (target - c) * t).toString(16).padStart(2, "0")).join("")}`;
+  let [low, high] = [0, 1];
+  for (let step = 0; step < 16; step++) {
+    const middle = (low + high) / 2;
+    [low, high] = readsOn(mix(middle), surface) ? [low, middle] : [middle, high];
+  }
+  return mix(high);
+};
+
+/**
  * CSS that makes `color` the accent (`--primary`, with black or white text on it, and the
  * focus ring) and its tint (`--soft`). In a mode where it would be too faint against the page (a pale yellow in light
- * mode, a navy in dark mode), the accent there is the text colour instead. Null without a colour.
+ * mode, a navy in dark mode), the accent there is the nearest shade of it that reads (readableOn): a grey's, the text colour. Null without a colour.
  */
 export function brandCss(color: string | null): string | null {
   if (!color) {
     return null;
   }
-  const accent = (surface: number) =>
-    readsOn(color, surface)
-      ? `--primary:${color};--primary-foreground:${textColorOn(color)};--ring:${color}`
+  const accent = (surface: number) => {
+    const shade = readableOn(color, surface);
+    return shade
+      ? `--primary:${shade};--primary-foreground:${textColorOn(shade)};--ring:${shade}`
       : "--primary:var(--foreground);--primary-foreground:var(--background);--ring:var(--foreground)";
+  };
   // html:not(.dark) and html.dark outrank globals.css's :root and .dark wherever this lands.
   // The tints need relative colours with maths on a channel (Safari 16.4–17 has relative colours without it): a browser
   // without them keeps the default tint rather than none.
