@@ -176,8 +176,9 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         />
         <PaneBody className="@container/post p-4 @min-[48rem]/app:px-8 @min-[48rem]/app:py-7">
       {/* The post (its title, then it) beside its properties, both from the top. In a narrow pane one column: the
-          title, the properties, the post, the rest of the sidebar (each placed by its order, the columns' boxes dropped). */}
-      <div className="grid gap-6 @min-[48rem]/post:grid-cols-[minmax(0,48rem)_18rem] @min-[48rem]/post:grid-rows-[auto_1fr] @min-[48rem]/post:items-start @min-[48rem]/post:justify-center @min-[48rem]/post:gap-10">
+          title, the properties, the post, the rest of the sidebar (each placed by its order, the columns' boxes dropped),
+          never wider than the pane: a line that doesn't wrap (the properties' summary) is cut, not widening it. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 @min-[48rem]/post:grid-cols-[minmax(0,48rem)_18rem] @min-[48rem]/post:grid-rows-[auto_1fr] @min-[48rem]/post:items-start @min-[48rem]/post:justify-center @min-[48rem]/post:gap-10">
         <div data-slot="post-header" className="flex min-w-0 flex-col gap-4 @min-[48rem]/post:col-start-1 @min-[48rem]/post:row-start-1">
           <div className="flex min-w-0 flex-col gap-1.5">
             {/* The title large, over the post: the pane header's heading says it to screen readers. */}
