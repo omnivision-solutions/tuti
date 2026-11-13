@@ -652,7 +652,7 @@ test("someone a customer's site signs in sees what's new on one device, and it i
 });
 
 test("the portal shows the project's own widget, until the team turns it off in Settings → Widget", async ({ browser }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -847,16 +847,20 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(outsider.getByRole("banner")).toBeVisible();
   await expect(outsider.locator("script[data-on-portal]")).toHaveCount(0);
   // A reader signed in there gets it; signing out lands on that sign-in page without it.
-  const email = `e2e-${randomUUID()}@example.com`;
-  await api("/portal/readers", { emails: [email], notify: false });
-  const reader = await newPerson(browser, portalUrl(slug));
-  await reader.goto("/sign-in");
-  await reader.getByLabel("Email").fill(email);
-  await reader.getByRole("button", { name: "Email me a sign-in link" }).click();
-  await expect(reader.getByText("Check your email")).toBeVisible();
-  await reader.goto(linkIn(await latestEmailTo(email), `${portalUrl(slug)}/sign-in/link?`));
-  await reader.getByRole("main").getByRole("button", { name: "Sign in" }).click();
-  await expect(reader.getByRole("button", { name: "Account" })).toBeVisible();
+  const signInReader = async () => {
+    const email = `e2e-${randomUUID()}@example.com`;
+    await api("/portal/readers", { emails: [email], notify: false });
+    const page = await newPerson(browser, portalUrl(slug));
+    await page.goto("/sign-in");
+    await page.getByLabel("Email").fill(email);
+    await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+    await expect(page.getByText("Check your email")).toBeVisible();
+    await page.goto(linkIn(await latestEmailTo(email), `${portalUrl(slug)}/sign-in/link?`));
+    await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("button", { name: "Account" })).toBeVisible();
+    return page;
+  };
+  const reader = await signInReader();
   const readerLauncher = reader.locator('body > button[aria-controls="tuti-widget"]');
   await expect(readerLauncher).toBeVisible();
   await reader.getByRole("button", { name: "Account" }).click();
@@ -864,6 +868,23 @@ test("the portal shows the project's own widget, until the team turns it off in 
   await expect(reader.getByText("Acme is private. Sign in to see it.")).toBeVisible();
   await expect(reader.locator("script[data-on-portal]")).toHaveCount(0);
   await expect(readerLauncher).toHaveCount(0);
+  // Off on the portal, the widget is there for Ask AI alone: a reader who asked, signing out, leaves nothing of it either.
+  await api("/widget", { onPortal: false }, "PATCH");
+  const asker = await signInReader();
+  await asker.goto(`/docs/${article.slug}`);
+  await asker.getByRole("banner").getByRole("button", { name: /^Search or ask AI/ }).click();
+  await asker.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
+  const askerAssistant = asker.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
+  await expect(askerAssistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
+  await expect(askerAssistant).not.toHaveAttribute("data-starting-style");
+  await askerAssistant.getByRole("button", { name: "Close the assistant" }).click();
+  await asker.keyboard.press("Escape");
+  await expect(asker.locator("#tuti-widget")).toBeHidden();
+  await asker.getByRole("button", { name: "Account" }).click();
+  await asker.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(asker.getByText("Acme is private. Sign in to see it.")).toBeVisible();
+  await expect(asker.locator("script[data-on-portal]")).toHaveCount(0);
+  await expect(asker.locator("#tuti-widget")).toHaveCount(0);
 });
 
 test("a new message in the widget's Messages gets the AI's answer first, with Ask a person; turned off, it goes to the team", async ({ browser }, testInfo) => {

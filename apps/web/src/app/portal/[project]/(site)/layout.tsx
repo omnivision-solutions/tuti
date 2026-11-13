@@ -105,7 +105,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   // own origin, with the reader's sign-in. A copy the team's Custom code adds gives way to it (the loader sees this tag),
   // and brings its launcher back if the setting is off (they added it to have one; not if they hid it, data-hide-launcher).
   const teamAddsWidget = !!ownOrigin && brand.customHtml.includes(`${appUrl().origin}/api/widget.js`);
-  const widgetHere = project.widgetOnPortal || assistant || teamAddsWidget;
+  // Not gated on who may read: once they may not (signing out of a private portal), it's still mounted to see that and start afresh.
+  const widgetHere = project.widgetOnPortal || answersEnabled() || teamAddsWidget;
 
   return (
     <PortalBaseProvider base={base} slug={slug}>
