@@ -187,8 +187,8 @@ the list picks none to approve at once.
   Unassigned, Waiting on user, Snoozed, Closed, Spam, each with its count; on phones the list header's menu), the
   list and the open conversation side by side when the room beside the section pane has 52.5rem, each scrolling on
   its own (the page itself doesn't; `InboxPanes`). The list's pane header is its view and count; the conversation's
-  is "Inbox ›" and its subject, with Close, More actions and the details toggle. With less room, the list or the
-  conversation ("‹ Inbox" on phones, its subject on a line of its own under the header).
+  is its subject (no way back: the list is beside it), with Close, More actions and the details toggle. With less room, the list or the
+  conversation ("Inbox ›" before its subject; "‹ Inbox" on phones, its subject on a line of its own under the header).
   Opening the app sidebar can switch to this single-pane layout without changing the sidebar preference. A row reads in three
   lines: who and their company on one (cut short, in full on hover) with,
   at the right, the assignee's face (their name on hover, and in the row's name to the ear) and its age, short ("4m": how long they've waited, or since

@@ -61,7 +61,7 @@ const EMAIL_STATUS: Record<EmailStatus, (error: string | null) => string> = {
   FAILED: (error) => `Couldn't email it${error ? `: ${error}` : ""}`,
 };
 
-/** The way back to the inbox, hidden where its list is beside the conversation (the link would open an empty pane). */
+/** The way back to the inbox, hidden where its list is beside the conversation (it would only close the conversation's pane). */
 const INBOX_BACK = "@min-[52.5rem]/inbox:hidden";
 
 /** A conversation shows its latest this many messages, and this many earlier ones with each "Show earlier messages" (`?messages=`). */

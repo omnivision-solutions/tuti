@@ -1464,9 +1464,12 @@ test("a view lists a hundred conversations, and a hundred more with each Load mo
   await expect(reply).toBeFocused();
   await expect(rows.last()).toHaveAttribute("aria-current", "page");
 
-  // Back to the list from a conversation, it's as long as it was.
+  // Back to the list from a conversation, it's as long as it was (the way back shows where the list isn't beside it).
+  const size = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: size.height });
   await owner.locator('[data-inbox-conversation] [data-slot="pane-header"]').getByRole("link", { name: "Inbox" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox\\?page=2$`));
+  await owner.setViewportSize(size);
   await expect(rows).toHaveCount(102);
 
   // The last one leaving its view opens none there, the list still as long.
