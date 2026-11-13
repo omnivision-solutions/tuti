@@ -1,12 +1,13 @@
 "use client";
 
-import { LinkIcon } from "lucide-react";
+import { LinkIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
-import { createContext, useContext } from "react";
+import { useTheme } from "next-themes";
+import { createContext, useContext, useId, useSyncExternalStore } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@tuti/ui/tuti-logo";
-import { DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME } from "@/lib/portal-look";
+import { DEFAULT_LOOK, type LookImage, type PortalLook, PREVIEW_FRAME, THEME_DEFAULT_KEY } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
 /** In Customize's preview: a frame named PREVIEW_FRAME (its own page, or the widget's panel in it). */
@@ -147,11 +148,11 @@ export function PortalLinksRow() {
  * ADDITIONAL-TERMS.md at the root of the repository.
  */
 export function PortalFooter({ docs = false }: { docs?: boolean }) {
-  const { footerLinks, poweredBy } = usePortalLook();
+  const { footerLinks, poweredBy, themeSwitch } = usePortalLook();
   const path = usePortalPath();
   // Docs pages have it under the page, beside the tree (DocsLayout): under the tree's column it would push the tree up as it scrolls into view.
   const onDocs = path === "/docs" || path.startsWith("/docs/");
-  if ((footerLinks.length === 0 && !poweredBy) || onDocs !== docs) {
+  if ((footerLinks.length === 0 && !poweredBy && !themeSwitch) || onDocs !== docs) {
     return null;
   }
   return (
@@ -167,7 +168,51 @@ export function PortalFooter({ docs = false }: { docs?: boolean }) {
         </nav>
       )}
       {poweredBy && <PoweredByTuti />}
+      {themeSwitch && <ThemeSwitch />}
     </footer>
+  );
+}
+
+const THEMES = [
+  ["system", "System", MonitorIcon],
+  ["light", "Light", SunIcon],
+  ["dark", "Dark", MoonIcon],
+] as const;
+const noStore = () => () => {};
+
+/**
+ * The reader's light or dark mode (Customize → Branding lets the team hide it): three quiet icons, native radios, so arrow
+ * keys move between them. Kept where next-themes keeps it, as the reader's own pick (not the portal's default; see
+ * ColorSchemeScript). None shows as picked until the page has run: the server doesn't know the pick.
+ */
+function ThemeSwitch() {
+  const { theme, setTheme } = useTheme();
+  const name = useId();
+  const hydrated = useSyncExternalStore(noStore, () => true, () => false);
+  return (
+    <div role="radiogroup" aria-label="Theme" className="flex gap-0.5">
+      {THEMES.map(([value, label, Icon]) => (
+        <label
+          key={value}
+          title={label}
+          className="grid size-7 cursor-pointer place-items-center rounded-full text-muted-foreground transition-colors hover:text-foreground has-checked:bg-muted has-checked:text-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/50"
+        >
+          <input
+            type="radio"
+            name={name}
+            value={value}
+            aria-label={label}
+            checked={hydrated && (theme ?? "system") === value}
+            onChange={() => {
+              localStorage.removeItem(THEME_DEFAULT_KEY);
+              setTheme(value);
+            }}
+            className="sr-only"
+          />
+          <Icon aria-hidden className="size-3.5" />
+        </label>
+      ))}
+    </div>
   );
 }
 

@@ -54,6 +54,8 @@ export type Branding = {
   contentActions: ContentActions;
   docsHome: DocsHome;
   colorScheme: ColorScheme;
+  /** Whether readers get a light/dark switch in the portal's footer; off, every reader gets `colorScheme`. */
+  themeSwitch: boolean;
   /** Beside the logo (empty: none; without a logo, the project's name shows). */
   logoText: string;
   /** Where the logo goes; null for the portal's home. */
@@ -100,6 +102,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
         docsSubtitle: true,
         docsPopular: true,
         colorScheme: true,
+        themeSwitch: true,
         logoText: true,
         logoLink: true,
         sidebarLinks: true,
@@ -150,6 +153,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     },
     docsHome: { title: project.docsTitle, subtitle: project.docsSubtitle, popular: project.docsPopular },
     colorScheme: (COLOR_SCHEMES as readonly string[]).includes(project.colorScheme) ? (project.colorScheme as ColorScheme) : "system",
+    themeSwitch: project.themeSwitch,
     logoText: project.logoText,
     logoLink: project.logoLink,
     sidebarLinks: links(project.sidebarLinks),
@@ -197,7 +201,7 @@ export const getBranding = defineOperation({
 
 export const updateBranding = defineOperation({
   name: "branding.update",
-  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project; where plans are sold, as on tuti.so, the "Powered by tuti" add-on on its paid plan instead), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} at its top, empty for the defaults, and popular to list each tab's most-read articles on its overview, once there are three, on for new projects), colorScheme (system, light or dark: for readers who haven't picked one), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}), seoImage (an uploaded image for links to the portal, null to remove) and fonts (heading and body: one of ${PORTAL_FONTS.map((font) => font.id).join(", ")}, or null for the page's own), customCss (CSS on every portal page) and customHtml (HTML, scripts too, at the end of each page only where the portal is on your own domain or a path of your site: never on its Tuti address, in the widget or on the app's own domain); each up to ${CUSTOM_CODE_MAX} characters. Fields left out stay as they are`,
+  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project; where plans are sold, as on tuti.so, the "Powered by tuti" add-on on its paid plan instead), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} at its top, empty for the defaults, and popular to list each tab's most-read articles on its overview, once there are three, on for new projects), colorScheme (system, light or dark: for readers who haven't picked one), themeSwitch (true or false: whether readers get a light/dark switch in the portal's footer; off, every reader gets colorScheme), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}), seoImage (an uploaded image for links to the portal, null to remove) and fonts (heading and body: one of ${PORTAL_FONTS.map((font) => font.id).join(", ")}, or null for the page's own), customCss (CSS on every portal page) and customHtml (HTML, scripts too, at the end of each page only where the portal is on your own domain or a path of your site: never on its Tuti address, in the widget or on the app's own domain); each up to ${CUSTOM_CODE_MAX} characters. Fields left out stay as they are`,
   method: "PATCH",
   path: "/branding",
   scope: "write",
@@ -213,6 +217,7 @@ export const updateBranding = defineOperation({
     contentActions: contentActions.optional(),
     docsHome: docsHome.optional(),
     colorScheme: z.enum(COLOR_SCHEMES).optional(),
+    themeSwitch: z.boolean().optional(),
     logoText: z.string().trim().max(LOGO_TEXT_MAX, `The logo text is up to ${LOGO_TEXT_MAX} characters`).optional(),
     logoLink: httpsUrl.nullable().optional(),
     sidebarLinks: links("sidebar"),
@@ -278,6 +283,7 @@ export const updateBranding = defineOperation({
             ...(input.docsHome?.subtitle !== undefined && { docsSubtitle: input.docsHome.subtitle }),
             ...(input.docsHome?.popular !== undefined && { docsPopular: input.docsHome.popular }),
             ...(input.colorScheme !== undefined && { colorScheme: input.colorScheme }),
+            ...(input.themeSwitch !== undefined && { themeSwitch: input.themeSwitch }),
             ...(input.logoText !== undefined && { logoText: input.logoText }),
             ...(input.logoLink !== undefined && { logoLink: input.logoLink }),
             ...(input.sidebarLinks !== undefined && { sidebarLinks: input.sidebarLinks }),

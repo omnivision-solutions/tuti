@@ -33,6 +33,7 @@ export default async function BrandingPage(props: PageProps<"/app/[project]/sett
         color={brand.color ?? DEFAULT_WIDGET_COLOR}
         defaultColor={DEFAULT_WIDGET_COLOR}
         colorScheme={brand.colorScheme}
+        themeSwitch={brand.themeSwitch}
         logoText={brand.logoText}
         logoLink={brand.logoLink}
         fonts={brand.fonts}

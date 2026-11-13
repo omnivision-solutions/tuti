@@ -29,7 +29,8 @@ export async function saveBranding(projectSlug: string, _state: FormState, formD
       favicon: text("favicon") || null,
       color: text("color"),
       // Fields an older form doesn't have stay as they are.
-      ...(formData.has("colorScheme") && { colorScheme: text("colorScheme") as ColorScheme }),
+      // The theme switch is in the colour scheme's section (a switch that's off isn't sent).
+      ...(formData.has("colorScheme") && { colorScheme: text("colorScheme") as ColorScheme, themeSwitch: on("themeSwitch") }),
       ...(formData.has("logoText") && { logoText: text("logoText") }),
       ...(formData.has("logoLink") && { logoLink: text("logoLink").trim() || null }),
       ...((formData.has("headingFont") || formData.has("bodyFont")) && {

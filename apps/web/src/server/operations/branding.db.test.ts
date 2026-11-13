@@ -84,6 +84,7 @@ test("a project starts with no logos or favicon, the brand green, no links, and 
     contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: true, updatedDate: true },
     docsHome: { title: "", subtitle: "", popular: true },
     colorScheme: "system",
+    themeSwitch: true,
     logoText: "",
     logoLink: null,
     sidebarLinks: [],
@@ -140,6 +141,19 @@ test("the colour scheme, the logo's text and link, sidebar links and the search 
   });
   await expect(update({ logoLink: "javascript:alert(1)" })).rejects.toMatchObject({ status: 400 });
   await expect(update({ colorScheme: "sepia" as never })).rejects.toMatchObject({ status: 400 });
+  // The readers' light/dark switch: on until the team turns it off, and Customize's form turns it off by leaving it out.
+  expect((await update({ themeSwitch: false })).themeSwitch).toBe(false);
+  expect((await update({ themeSwitch: true })).themeSwitch).toBe(true);
+  actAs(owner);
+  const look = new FormData();
+  look.set("part", "look");
+  look.set("color", "#12804a");
+  look.set("colorScheme", "dark");
+  await saveBranding(project.slug, {}, look);
+  expect((await get()).themeSwitch).toBe(false);
+  look.set("themeSwitch", "on");
+  await saveBranding(project.slug, {}, look);
+  expect((await get()).themeSwitch).toBe(true);
   await expect(update({ seo: { description: "x".repeat(161) } })).rejects.toMatchObject({ message: expect.stringContaining("up to 160 characters") });
   await update({ logoLink: null, seo: { title: "" } });
   expect(await get()).toMatchObject({ logoLink: null, seo: { title: "", description: "Answers about Acme." } });

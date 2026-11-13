@@ -435,7 +435,9 @@ the list picks none to approve at once.
     the whole width, scrolling sideways on phones, the open tab underlined in the foreground (the accent's underline is
     the site bar's); the site bar's line moves under it. It's on the docs home, a tab's, collection's and article's page
     and the search results, and nowhere else on those pages (Feedback's boards are in its pages: pills, a board's rail and
-    switcher). Feedback opens the boards' overview (one board: that board). A "Powered by tuti" footer under a line.
+    switcher). Feedback opens the boards' overview (one board: that board). A "Powered by tuti" footer under a line; under it, unless the team turns it off (Customize → Branding),
+    the reader's light/dark switch: three small muted icons (System, Light, Dark), no edge, the picked one on a muted
+    fill (none on the app's own domain, where the theme is the app user's).
   - **Feedback's overview** (`/feedback`, with two or more boards; one board opens it): the shared header, "Feedback"
     and "Vote for the ideas you want most, or share your own.", the board pills on the left (All boards and each board,
     with their ideas not done yet), on the right the search (it looks through every board shown, every status), Get
