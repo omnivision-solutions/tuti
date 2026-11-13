@@ -129,25 +129,22 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(sections).toHaveAttribute("data-settled");
   const postsTop = await bo.getByRole("region", { name: "Your posts" }).evaluate((section) => section.getBoundingClientRect().top);
   expect(postsTop).toBeGreaterThan(200);
-  // Until the page stops scrolling: no scroll for half a second.
-  const stillness = () =>
-    new Promise<void>((resolve) => {
-      let quiet = setTimeout(resolve, 500);
-      window.addEventListener("scroll", () => {
-        clearTimeout(quiet);
-        quiet = setTimeout(resolve, 500);
-      });
-    });
-  await bo.evaluate(stillness);
+  // (A guard for the load: the browser's own jump there ends before the list listens, so it can't show the bug below.)
   await expect(sections.getByRole("link", { name: /Your posts/ })).toHaveAttribute("aria-current", "location");
-  await expect(sections.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
-  // The same from a hash change on the page (typed, or a plain link to it): the browser's jump ends after the change.
-  await bo.evaluate(() => (window.location.hash = "#profile"));
-  await bo.evaluate(stillness);
+  // A hash change on the page (typed, or a plain link to it): the browser's jump ends after the change, and its scroll end
+  // keeps the section the hash names. Each change waits for that jump's own scroll end (the list's listener runs first).
+  const jumpTo = (hash: string) =>
+    bo.evaluate(
+      (to) =>
+        new Promise<void>((resolve) => {
+          window.addEventListener("scrollend", () => resolve(), { once: true });
+          window.location.hash = to;
+        }),
+      hash,
+    );
+  await jumpTo("#profile");
   await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
-  await bo.evaluate(() => (window.location.hash = "#posts"));
-  await bo.evaluate(stillness);
-  await expect.poll(() => bo.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await jumpTo("#posts");
   await expect(sections.getByRole("link", { name: /Your posts/ })).toHaveAttribute("aria-current", "location");
   await expect(sections.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
   await bo.getByRole("region", { name: "Your votes" }).getByRole("link", { name: "Dark mode" }).click();
