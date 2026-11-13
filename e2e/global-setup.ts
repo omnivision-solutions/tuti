@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
@@ -9,7 +9,7 @@ import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
 import { SCREENSHOTS_DIR } from "./checkpoint";
-import { APP_URL, CLOUD_URL, cloudEnv, serverEnv } from "./env";
+import { APP_URL, CLOUD_URL, cloudEnv, SERVER_LOG, serverEnv } from "./env";
 import { MAIL_DIR } from "./mail";
 
 /**
@@ -31,6 +31,7 @@ export default async function globalSetup() {
   }
   rmSync(SCREENSHOTS_DIR, { recursive: true, force: true });
   rmSync(MAIL_DIR, { recursive: true, force: true });
+  writeFileSync(SERVER_LOG, "");
   mkdirSync(MAIL_DIR);
   let sent = 0;
   const smtp = await startSmtpFake({
@@ -131,7 +132,12 @@ export default async function globalSetup() {
 
 /** Starts the production build at `url` with `env`, once it's listening. */
 async function startServer(url: string, env: NodeJS.ProcessEnv) {
-  const server = spawn("node_modules/.bin/next", ["start"], { cwd: "apps/web", env, stdio: ["ignore", "pipe", "inherit"] });
+  const server = spawn("node_modules/.bin/next", ["start"], { cwd: "apps/web", env, stdio: ["ignore", "pipe", "pipe"] });
+  // Its errors, shown as before and kept in SERVER_LOG for journeys to check.
+  server.stderr.on("data", (chunk: Buffer) => {
+    process.stderr.write(chunk);
+    appendFileSync(SERVER_LOG, chunk);
+  });
   // Next.js logs "Ready in" once *this* server listens; a server that couldn't take the port exits
   // instead, so another run's server answering on it can't pass for ours.
   let output = "";
