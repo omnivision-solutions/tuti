@@ -734,7 +734,19 @@ test("the changelog's tags filter it, a page further are older entries, and mont
   await expect(main.getByRole("article", { name: "Release 21" }).getByRole("link")).toHaveCount(1);
   await expect(main.getByRole("article", { name: "Release 20" }).getByRole("link")).toHaveCount(1);
   await expect(main.getByRole("article", { name: "Release 20" }).getByRole("link")).toHaveAccessibleName("Release 20");
+  // What a pointer hits: on the excerpt, faded or not, the title's link; on a tag, the tag (above the link).
+  const hit = (locator: Locator) =>
+    locator.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const at = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return { inside: el.contains(at), link: at?.closest("a")?.getAttribute("href") ?? null };
+    });
+  expect(await hit(excerptOf("Release 21"))).toEqual({ inside: false, link: "/changelog/21" });
+  expect(await hit(tagOf("Release 21", "New"))).toEqual({ inside: true, link: null });
   // (forced: the title's link over the text is what takes the click, which Playwright otherwise reads as blocked)
+  await excerptOf("Release 21").click({ force: true });
+  await expect(reader).toHaveURL(/\/changelog\/21$/);
+  await reader.goBack();
   await excerptOf("Release 20").click({ force: true });
   await expect(reader).toHaveURL(/\/changelog\/20$/);
   await expect(main.getByText("And last, exports in CSV.")).toBeVisible();

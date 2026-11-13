@@ -74,13 +74,14 @@ export function ChangelogEntryView({
   const onPage = dateMargin || !!react;
   const at = (path: string) => withBase(base, path);
   // In the list the title's link stretches over the entry (its text, its cover), so they open its page too, while one link
-  // per entry is all keyboards and screen readers meet; what's clickable on its own sits above it.
+  // per entry is all keyboards and screen readers meet; what's clickable or hoverable on its own (the tags, the ideas, the
+  // reactions) sits above it. Its own z keeps it over the faded excerpt, whose mask paints it in a layer of its own.
   const above = excerpt ? "relative z-10 max-w-full self-start" : undefined;
   // In the list, short ("7 Nov 2026"), as in its margin.
   const date = <time dateTime={entry.publishedAt.toISOString()}>{dateMargin ? shortDate(entry.publishedAt) : formatDate(entry.publishedAt)}</time>;
   // Its tags (grey; Breaking red) and, on phones or its own page, its date: above the title, or under it on its page.
   const meta = (
-    <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+    <span className={cn("flex flex-wrap items-center gap-2 text-sm text-muted-foreground", above)}>
       {entry.tags.map((tag) => (
         <TagBadge key={tag} tag={tag} className={cn(onPage && "h-6 rounded-md px-2 text-[0.8125rem] font-semibold")} />
       ))}
@@ -114,7 +115,7 @@ export function ChangelogEntryView({
                 <Link
                   href={at(`/changelog/${entry.number}`)}
                   target={linkTarget}
-                  className={cn("hover:underline", excerpt && "after:absolute after:inset-0")}
+                  className={cn("hover:underline", excerpt && "after:absolute after:inset-0 after:z-[1]")}
                 >
                   {entry.title}
                 </Link>
