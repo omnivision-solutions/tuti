@@ -29,6 +29,14 @@ const SURFACES = { light: 0.9823, dark: 0.0106 };
 /** WCAG's minimum for buttons, focus rings and large text. */
 const MIN_CONTRAST = 3;
 
+const readsOn = (color: string, surface: number) => {
+  const l = luminance(color);
+  return (Math.max(l, surface) + 0.05) / (Math.min(l, surface) + 0.05) >= MIN_CONTRAST;
+};
+
+/** Whether `color` stands out from the page in light mode and in dark (a button on any site: the widget's launcher). */
+export const readsEverywhere = (color: string) => readsOn(color, SURFACES.light) && readsOn(color, SURFACES.dark);
+
 /**
  * The quiet tint of `color` and the text on it (`--soft`, `--soft-foreground`: a voted idea, the open board, the team's
  * replies), at the lightness of Tuti's own green tints in each mode (globals.css), so they read the same whatever the hue.
@@ -47,9 +55,8 @@ export function brandCss(color: string | null): string | null {
   if (!color) {
     return null;
   }
-  const l = luminance(color);
   const accent = (surface: number) =>
-    (Math.max(l, surface) + 0.05) / (Math.min(l, surface) + 0.05) >= MIN_CONTRAST
+    readsOn(color, surface)
       ? `--primary:${color};--primary-foreground:${textColorOn(color)};--ring:${color}`
       : "--primary:var(--foreground);--primary-foreground:var(--background);--ring:var(--foreground)";
   // html:not(.dark) and html.dark outrank globals.css's :root and .dark wherever this lands.

@@ -117,6 +117,7 @@ export function WidgetSettings({
             <Field>
               <FieldLabel htmlFor="widget-color">Colour</FieldLabel>
               <ColorField id="widget-color" name="color" label="Colour" color={color} defaultColor={defaultColor} defaultLabel={defaultColorLabel} />
+              <input type="hidden" name="defaultColor" value={defaultColor} />
             </Field>
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-2 text-sm font-medium">Position</legend>

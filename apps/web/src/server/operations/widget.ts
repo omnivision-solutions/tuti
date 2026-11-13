@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
+import { readsEverywhere } from "@/lib/colors";
 import { MAX_WIDGET_HOME_TEXT, WIDGET_PARTS, type WidgetPart } from "@/lib/portal-look";
 import { WIDGET_ICON_CHOICES, type WidgetIcon } from "@/lib/widget-icons";
 
@@ -15,6 +16,12 @@ import { requirePlan } from "./plan";
 
 /** The brand green (`--primary` in light mode). Picking it means "the default", which also has a dark-mode shade. */
 export const DEFAULT_WIDGET_COLOR = "#12804a";
+
+/**
+ * The launcher's colour while it has none of its own: the portal's accent (Settings → Branding) where that stands out
+ * in light and dark mode alike (it's one colour on every site), else the brand green.
+ */
+export const defaultLauncherColor = (brandColor: string | null) => (brandColor && readsEverywhere(brandColor) ? brandColor : DEFAULT_WIDGET_COLOR);
 export const MAX_WIDGET_LINKS = 5;
 export const MAX_WIDGET_LABEL_LENGTH = 30;
 export const MAX_WIDGET_LINK_LABEL_LENGTH = 40;
@@ -186,8 +193,8 @@ export const updateWidgetSettings = defineOperation({
           where: { id: projectId },
           data: {
             ...(input.label !== undefined && { widgetLabel: input.label }),
-            // The portal's accent (or without one the brand green) is the default: kept as none, so the launcher follows it.
-            ...(input.color !== undefined && { widgetColor: input.color === (current.brandColor ?? DEFAULT_WIDGET_COLOR) ? null : input.color }),
+            // The launcher's default (the portal's accent, or the brand green): kept as none, so the launcher follows it.
+            ...(input.color !== undefined && { widgetColor: input.color === defaultLauncherColor(current.brandColor) ? null : input.color }),
             ...(input.position !== undefined && { widgetPosition: input.position }),
             ...(input.links !== undefined && { widgetLinks: input.links }),
             ...(input.title !== undefined && { widgetTitle: input.title }),

@@ -4,7 +4,7 @@ import { liveDomain, projectWith } from "@tuti/jobs";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
-import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
+import { defaultLauncherColor, servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
 
 /**
  * For the widget script on customers' sites, read once per page view: when the
@@ -30,9 +30,10 @@ export async function GET(request: Request) {
     widgetSettings({ slug }),
     prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true, brandColor: true } }),
   ]);
-  // The launcher's own colour, else the portal's accent (Settings → Branding); null with neither: the loader's brand green,
-  // which has a dark-mode shade.
-  const color = settings?.color ?? project?.brandColor ?? null;
+  // The launcher's own colour, else the portal's accent (Settings → Branding) where it stands out in light and dark; null
+  // otherwise: the loader's brand green, which has a dark-mode shade.
+  const accent = project?.brandColor ?? null;
+  const color = settings?.color ?? (accent && defaultLauncherColor(accent) === accent ? accent : null);
   const launcher = settings && {
     label: settings.label,
     color,

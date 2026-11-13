@@ -12,7 +12,7 @@ import { WidgetSettings } from "@/components/widget-settings";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
-import { DEFAULT_WIDGET_COLOR, servedIcon, widgetSettings } from "@/server/operations/widget";
+import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, widgetSettings } from "@/server/operations/widget";
 
 /** Settings → Portal → Widget: the launcher on the team's site and the panel's Home, beside the widget open on a stand-in for it. */
 export default async function WidgetPage(props: PageProps<"/app/[project]/settings/widget">) {
@@ -27,7 +27,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
   ]);
   const widget = settings!;
   // Without a colour of its own, the launcher is the portal's accent (Settings → Branding), else the brand green.
-  const defaultColor = brandColor ?? DEFAULT_WIDGET_COLOR;
+  const defaultColor = defaultLauncherColor(brandColor);
   const color = widget.color ?? defaultColor;
   // Set before the plan dropped: kept, but the launcher shows the chat bubble.
   const kept = widget.icon !== "chat";
@@ -60,7 +60,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
         label={widget.label}
         color={color}
         defaultColor={defaultColor}
-        defaultColorLabel={brandColor ? "Use the accent colour" : undefined}
+        defaultColorLabel={defaultColor !== DEFAULT_WIDGET_COLOR ? "Use the accent colour" : undefined}
         position={widget.position}
         links={widget.links}
         icon={widget.icon}

@@ -392,7 +392,8 @@ the list picks none to approve at once.
     Tuti's own tints' lightness in each mode, in the accent's hue) on the portal's pages and the widget's panel. So the
     accent is the letter mark, the one filled button, links, focus rings, selection, a vote cast, the open board, part or
     article, the team's replies, the New tag, numbered steps, the widget's header and launcher (unless Settings → Widget
-    gives it a colour of its own), and the buttons and links of emails sent on the project's behalf. What keeps a
+    gives it a colour of its own, or the accent wouldn't stand out on a light page and a dark one: the launcher is one
+    colour on any site, so it's the brand green then). What keeps a
     colour of its own, whatever the accent: statuses (Completed stays green: it says what happened), the changelog's
     other tags, destructive red, the info blue, the unread orange, people's initials, and "Powered by tuti" (Tuti's own
     mark). The portal never uses the app's own green tokens (`sidebar-active`, `series-*`, `chart-*`, `kind-*`), and

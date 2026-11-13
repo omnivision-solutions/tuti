@@ -77,6 +77,9 @@ test("the widget learns how its launcher looks (name, colour with readable text,
   // Without a colour of its own, the launcher is the portal's accent (Settings → Branding), not Tuti's green.
   await prisma.project.update({ where: { id: project.id }, data: { widgetColor: null, brandColor: "#7c3aed" } });
   expect(await ask()).toMatchObject({ launcher: { color: "#7c3aed", textColor: "#ffffff" } });
+  // An accent that wouldn't stand out on a light page (or a dark one) leaves it the brand green, which has a shade for each.
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#fde047" } });
+  expect(await ask()).toMatchObject({ launcher: { color: null, textColor: null } });
   // With Messages turned off, the inbox is still on for the page; the script keeps the launcher's dot for the other parts.
   await prisma.project.update({ where: { id: project.id }, data: { widgetHidden: ["messages"] } });
   expect(await ask()).toMatchObject({ inbox: true, hidden: ["messages"] });

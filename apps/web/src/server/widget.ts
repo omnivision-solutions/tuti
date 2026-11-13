@@ -162,7 +162,9 @@ export async function saveWidgetSettings(projectSlug: string, _state: FormState,
   const text = (field: FormDataEntryValue | null | undefined) => (typeof field === "string" ? field : "");
   const input = {
     label: text(formData.get("label")),
-    color: text(formData.get("color")),
+    // The colour the form showed as the default (the accent, as the page was loaded) is no colour of its own: the launcher
+    // keeps following the accent, even one changed since.
+    color: text(formData.get("color")) === text(formData.get("defaultColor")) ? null : text(formData.get("color")),
     position: text(formData.get("position")) as "bottom-right" | "bottom-left",
     links: linksFrom(formData, "link"),
     onPortal: formData.get("onPortal") === "on",
