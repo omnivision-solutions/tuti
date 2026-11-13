@@ -203,13 +203,13 @@ test("an edit that can't go live because the project publishes more articles tha
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
   });
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
   const edit = await articleEdit();
   const other = await call(createArticle, team(), { title: "Another article", body: "Hello." });
   await call(publishArticle, team(), { slug: other.slug });
   await scheduleByItself(project.id, edit.codeChangeId!);
   // Scheduled before the downgrade; due after it.
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: null } });
   await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
 
   const why = "Your plan publishes up to 1 article. Unpublish some, or upgrade to Pro.";
@@ -233,12 +233,12 @@ test("an edit waiting for the plan's published articles, once there's room, says
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
   });
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO", autopilotMinSure: 80 } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro", autopilotMinSure: 80 } });
   const first = await articleEdit();
   const other = await call(createArticle, team(), { title: "Another article", body: "Hello." });
   await call(publishArticle, team(), { slug: other.slug });
   await scheduleByItself(project.id, first.codeChangeId!);
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: null } });
   await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
   expect((await statusOf(first.action.id)).waitReason).toBe("Its project published more articles than its plan allowed");
@@ -256,7 +256,7 @@ test("Publish now past the plan's published articles: the edit waits, saying so;
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
   });
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
   const edit = await articleEdit();
   await call(publishArticle, team(), { slug: (await call(createArticle, team(), { title: "Another article", body: "Hello." })).slug });
   const progress = await update("MOVES_FORWARD");
@@ -264,7 +264,7 @@ test("Publish now past the plan's published articles: the edit waits, saying so;
     await scheduleByItself(project.id, codeChangeId!);
   }
   // Scheduled before the downgrade.
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: null } });
   const why = "Your plan publishes up to 1 article. Unpublish some, or upgrade to Pro.";
   const waits = { status: "PENDING", dueAt: null, decidedById: null, waitReason: "Its project published more articles than its plan allowed" };
 
@@ -299,14 +299,14 @@ test("Publish now on an article's two scheduled edits past the plan's published 
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
   });
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
   const first = await articleEdit();
   const second = await landArticleEdit(project.id, first.article.id, ++number, (doc) => doc, { probability: 0.97 });
   await call(publishArticle, team(), { slug: (await call(createArticle, team(), { title: "Another article", body: "Hello." })).slug });
   for (const codeChangeId of [first.codeChangeId, second.codeChangeId]) {
     await scheduleByItself(project.id, codeChangeId!);
   }
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: null } });
   expect((await statusOf(second.id)).status).toBe("SCHEDULED");
 
   // The article's review page sends both.
@@ -321,7 +321,7 @@ test("Publish now from Home with an article edit held by one refused earlier pas
   onTestFinished(() => {
     vi.stubEnv("BILLING_CONFIG", "");
   });
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
   const first = await articleEdit();
   const second = await landArticleEdit(project.id, first.article.id, ++number, (doc) => doc, { probability: 0.97 });
   const progress = await update("MOVES_FORWARD");
@@ -329,7 +329,7 @@ test("Publish now from Home with an article edit held by one refused earlier pas
   for (const codeChangeId of [first.codeChangeId, second.codeChangeId, progress.codeChangeId]) {
     await scheduleByItself(project.id, codeChangeId!);
   }
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: null } });
   // The first edit comes due first: refused for the limit, it waits saying so.
   await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });

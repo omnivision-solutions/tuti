@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
-const onPlan = async (plan: "FREE" | "PRO" | "BUSINESS") => {
+const onPlan = async (plan: null | "pro" | "business") => {
   await prisma.project.update({ where: { id: project.id }, data: { plan } });
   // What this server remembers about addresses (for 10 seconds) is read again.
   forgetCustomDomain(hostname);
@@ -48,36 +48,36 @@ test("a custom domain needs Pro, a path of the site Business", async () => {
     status: 402,
     message: "A portal under a path of your site needs the Business plan. See Settings → Billing.",
   });
-  await onPlan("PRO");
+  await onPlan("pro");
   expect((await call(setDomain, as(), { hostname })).domain.hostname).toBe(hostname);
   await expect(call(setSite, as(), { url: "https://example.com/portal" })).rejects.toMatchObject({ status: 402 });
   expect(await prisma.siteMount.count({ where: { projectId: project.id } })).toBe(0);
 });
 
 test("a live domain on a project that drops to Free isn't served, and links go to the Tuti address, until the plan is back", async () => {
-  await onPlan("PRO");
+  await onPlan("pro");
   await prisma.customDomain.create({ data: { projectId: project.id, hostname, verificationToken: "t", verifiedAt: new Date() } });
   expect(await requestTarget(hostname)).toMatchObject({ kind: "portal", slug: project.slug, customDomain: hostname });
   const { protocol, port } = new URL(portalUrl(project.slug));
   expect(await portalAddress(project.slug)).toBe(`${protocol}//${hostname}${port ? `:${port}` : ""}`);
 
-  await onPlan("FREE");
+  await onPlan(null);
   expect(await requestTarget(hostname)).toMatchObject({ kind: "unknown" });
   expect(await portalAddress(project.slug)).toBe(new URL(portalUrl(project.slug)).origin);
   // Kept, for when the plan is back.
   expect(await prisma.customDomain.count({ where: { projectId: project.id } })).toBe(1);
 
-  await onPlan("PRO");
+  await onPlan("pro");
   expect(await requestTarget(hostname)).toMatchObject({ kind: "portal", slug: project.slug });
 });
 
 test("a path of the site on a project that drops to Pro isn't served either", async () => {
-  await onPlan("BUSINESS");
+  await onPlan("business");
   await prisma.siteMount.create({ data: { projectId: project.id, origin: "https://example.com", path: "/portal", verificationToken: "t", verifiedAt: new Date() } });
   expect(await siteMount(project.slug)).toEqual({ origin: "https://example.com", path: "/portal" });
   expect(await portalAddress(project.slug)).toBe("https://example.com/portal");
 
-  await onPlan("PRO");
+  await onPlan("pro");
   expect(await siteMount(project.slug)).toBeNull();
   expect(await portalAddress(project.slug)).toBe(new URL(portalUrl(project.slug)).origin);
   expect(await prisma.siteMount.count({ where: { projectId: project.id } })).toBe(1);

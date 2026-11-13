@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { articleLimit, badgePrice, isBadgePrice, log, planDisplay, planIncludes, type PlanKey, planNeeded, type PlanFeature, planPrice, planSalesEnabled, plansEnabled, upgradeFor } from "@tuti/shared";
+import { articleLimit, badgePrice, defaultPlanKey, isBadgePrice, log, planDisplay, type PlanFeature, planIncludes, type PlanKey, planNeeded, planPrice, planSalesEnabled, plansEnabled, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
 import { appUrl, portalUrl } from "@/lib/hosts";
@@ -46,7 +46,7 @@ const billingUrl = async (projectId: string) => new URL(`/app/${await projectSlu
 export const getPlan = defineOperation({
   name: "plan.get",
   summary:
-    "The project's plan, on a server that sells plans (`enabled`): `free`, `pro` or `business`, and for a paid plan how it's billed (`interval`: month or year), Stripe's `status` (`past_due` while a failed payment is retried), when its period ends (`periodEnd`: it renews then), if it's cancelled, when it ends (`endsAt`), and whether it has the add-on hiding \"Powered by tuti\" (`badge`; see plan.badge)",
+    "The project's plan, on a server that sells plans (`enabled`): its key (`plan`; the server's default plan without a paid one), and for a paid plan how it's billed (`interval`: month or year), Stripe's `status` (`past_due` while a failed payment is retried), when its period ends (`periodEnd`: it renews then), if it's cancelled, when it ends (`endsAt`), and whether it has the add-on hiding \"Powered by tuti\" (`badge`; see plan.badge)",
   method: "GET",
   path: "/plan",
   scope: "read",
@@ -59,7 +59,8 @@ export const getPlan = defineOperation({
     });
     return {
       enabled: plansEnabled(),
-      plan: project.plan.toLowerCase() as "free" | "pro" | "business",
+      // Its plan's key in the billing file; the default plan's without a paid one ("free" where nothing is sold).
+      plan: project.plan ?? defaultPlanKey() ?? "free",
       interval: project.planInterval as "month" | "year" | null,
       status: project.planStatus,
       periodEnd: project.planPeriodEnd,
@@ -72,15 +73,15 @@ export const getPlan = defineOperation({
 export const subscribePlan = defineOperation({
   name: "plan.subscribe",
   summary:
-    "Start a paid plan (`pro` or `business`, billed each `month` or `year`): a Stripe Checkout page (`url`) to pay on; the plan starts once Stripe says it's paid. Refused (409) while the project has a plan (change it with plan.manage), and off (503) where plans aren't sold",
+    "Start a paid plan (`plan`: its key, one the server sells; billed each `month` or `year`): a Stripe Checkout page (`url`) to pay on; the plan starts once Stripe says it's paid. Refused (409) while the project has a plan (change it with plan.manage), and off (503) where plans aren't sold",
   method: "POST",
   path: "/plan/subscribe",
   scope: "write",
   access: "admin",
-  input: z.object({ plan: z.enum(["pro", "business"]), interval: z.enum(["month", "year"]).default("month") }),
+  input: z.object({ plan: z.string().min(1), interval: z.enum(["month", "year"]).default("month") }),
   example: { plan: "pro", interval: "month" },
   run: async ({ actor, projectId }, input) => {
-    const price = planSalesEnabled() ? planPrice(input.plan === "pro" ? "PRO" : "BUSINESS", input.interval) : null;
+    const price = planSalesEnabled() ? planPrice(input.plan, input.interval) : null;
     if (!price) {
       throw new OperationError(503, "plans_unavailable", "That plan isn't sold on this server");
     }
@@ -89,7 +90,7 @@ export const subscribePlan = defineOperation({
       actor.kind === "user" ? prisma.user.findUnique({ where: { id: actor.userId }, select: { email: true } }) : null,
       billingUrl(projectId),
     ]);
-    if (project.plan !== "FREE") {
+    if (project.plan !== null) {
       throw new OperationError(409, "has_plan", "This project has a plan already. Change it from Manage plan.");
     }
     try {
@@ -97,7 +98,7 @@ export const subscribePlan = defineOperation({
         price,
         metadata: { projectId },
         // "Tuti Pro for Acme (acme.tuti.so)": the portal address that stays, whatever domain it's on.
-        description: `Tuti ${planDisplay(input.plan === "pro" ? "PRO" : "BUSINESS").name} for ${project.name} (${new URL(portalUrl(project.slug)).host})`,
+        description: `Tuti ${planDisplay(input.plan).name} for ${project.name} (${new URL(portalUrl(project.slug)).host})`,
         reference: projectId,
         customer: project.stripeCustomerId,
         email: buyer?.email ?? null,
@@ -158,7 +159,7 @@ export const setBadgeAddOn = defineOperation({
     if (on && !price) {
       throw new OperationError(503, "plans_unavailable", 'Hiding "Powered by tuti" isn\'t sold on this server');
     }
-    if (project.plan === "FREE" || !project.stripeSubscriptionId) {
+    if (project.plan === null || !project.stripeSubscriptionId) {
       if (on) {
         throw new OperationError(409, "free_plan", 'Hiding "Powered by tuti" needs a paid plan');
       }

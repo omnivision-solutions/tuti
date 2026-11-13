@@ -648,7 +648,7 @@ test("a key that can't read the boards or the posts isn't accepted for Feedback"
 
 test("the import's note promises an upgrade only where a plan for sale has more boards", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  expect(boardsNotes("PRO")!.canny).toMatch(/until an upgrade lets you turn them on\. Business has any number\.$/);
+  expect(boardsNotes("pro")!.canny).toMatch(/until an upgrade lets you turn them on\. Business has any number\.$/);
   vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
-  expect(boardsNotes("PRO")!.canny).toMatch(/boards past that come across turned off, seen only by your team in the app\.$/);
+  expect(boardsNotes("pro")!.canny).toMatch(/boards past that come across turned off, seen only by your team in the app\.$/);
 });

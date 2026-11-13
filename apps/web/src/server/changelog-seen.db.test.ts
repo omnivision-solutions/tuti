@@ -189,10 +189,10 @@ test("on a private portal, it also says when the latest announcement was, to som
   // Public: /api/widget/latest says it to anyone, so it isn't said here.
   expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0 });
   // Private on a plan with private portals: people signed in by its SSO may read it.
-  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "BUSINESS" } });
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "business" } });
   expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0, latest: publishedAt.toISOString() });
   // Without one, only the team may: someone signed in by SSO hears nothing of it.
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "pro" } });
   expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0, latest: null });
   // And nobody without a token is told anything.
   expect((await ask(null)).status).toBe(401);

@@ -39,7 +39,7 @@ afterEach(() => vi.unstubAllEnvs());
 const DAY = 24 * 60 * 60 * 1000;
 const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 const update = (input: z.input<typeof updateWidgetSettings.input>) => call(updateWidgetSettings, team(), input);
-const onPlan = (plan: "FREE" | "PRO") => prisma.project.update({ where: { id: project.id }, data: { plan } });
+const onPlan = (plan: null | "pro") => prisma.project.update({ where: { id: project.id }, data: { plan } });
 /** What the script on customers' sites is told about the launcher's icon. */
 const served = async () => {
   const response = await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`));
@@ -69,19 +69,19 @@ test("on Free, picking an icon or an image is refused; the chat bubble always wo
   }
   expect(await update({ icon: "chat", label: "Help" })).toMatchObject({ icon: "chat", label: "Help" });
 
-  await onPlan("PRO");
+  await onPlan("pro");
   expect(await update({ icon: "megaphone" })).toMatchObject({ icon: "megaphone", iconImage: null });
   expect(await served()).toEqual({ icon: "megaphone", iconUrl: null });
 });
 
 test("a project that drops to Free keeps its icon, but the launcher shows the chat bubble until the plan is back", async () => {
-  await onPlan("PRO");
+  await onPlan("pro");
   const image = await uploaded();
   await update({ icon: "image", iconImage: image.id });
   const url = lastingImage(image)!.url;
   expect(await served()).toEqual({ icon: "image", iconUrl: url });
 
-  await onPlan("FREE");
+  await onPlan(null);
   expect(await call(getWidgetSettings, team(), {})).toMatchObject({ icon: "image", iconImage: { id: image.id, url } });
   expect(await served()).toEqual({ icon: "chat", iconUrl: null });
   // Other settings still save, and the icon stays as it was.
@@ -89,17 +89,17 @@ test("a project that drops to Free keeps its icon, but the launcher shows the ch
   // So does sending the icon it has: only a new one needs the plan.
   expect(await update({ icon: "image", iconImage: image.id, label: "Help" })).toMatchObject({ label: "Help", icon: "image" });
 
-  await onPlan("PRO");
+  await onPlan("pro");
   expect(await served()).toEqual({ icon: "image", iconUrl: url });
 
   // On Free again, back to the chat bubble, with the form's image field still holding the old upload: the image goes.
-  await onPlan("FREE");
+  await onPlan(null);
   // Back to the chat bubble, with the form's image field still holding the old upload: the image goes.
   expect(await update({ icon: "chat", iconImage: image.id })).toMatchObject({ icon: "chat", iconImage: null });
 });
 
 test("removing an image icon's image goes back to the chat bubble", async () => {
-  await onPlan("PRO");
+  await onPlan("pro");
   const image = await uploaded();
   await update({ icon: "image", iconImage: image.id });
   expect(await update({ iconImage: null })).toMatchObject({ icon: "chat", iconImage: null });
@@ -117,7 +117,7 @@ test("without plans (self-hosted), every project picks its icon", async () => {
 });
 
 test("an uploaded icon is attached while it's used; another project's upload is refused; a replaced one is released", async () => {
-  await onPlan("PRO");
+  await onPlan("pro");
   const other = await createProject(owner);
   await expect(update({ icon: "image", iconImage: (await uploaded(other.id)).id })).rejects.toMatchObject({ status: 409, code: "media_gone" });
   // An article's file attachment is no image.

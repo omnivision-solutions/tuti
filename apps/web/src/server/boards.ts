@@ -75,7 +75,7 @@ export async function createBoard(projectSlug: string, _prev: FormState, formDat
       // Room on the plan, counted under the project's lock so two boards made at once can't both take the
       // last place. A project already past its limit (after a downgrade, or an import's boards turned off) keeps its
       // boards; it can't add more. Boards turned off count too, so turning one off never makes room for another.
-      const [locked] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR UPDATE`;
+      const [locked] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT "planKey" AS plan FROM project WHERE id = ${project.id} FOR UPDATE`;
       const limit = locked ? boardLimit(locked.plan) : null;
       if (locked && limit !== null && (await tx.board.count({ where: { projectId: project.id } })) >= limit) {
         return boardsFull(locked.plan, limit);
@@ -152,7 +152,7 @@ export async function setBoardOff(projectSlug: string, boardId: string, off: boo
   }
   const error = await prisma.$transaction(async (tx) => {
     // The project's row locked as deleteBoard's (createBoard's lock waits on it too), so two can't both take the last place.
-    const [locked] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT plan FROM project WHERE id = ${project.id} FOR NO KEY UPDATE`;
+    const [locked] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT "planKey" AS plan FROM project WHERE id = ${project.id} FOR NO KEY UPDATE`;
     const board = await tx.board.findFirst({ where: { id: boardId, projectId: project.id }, select: { off: true } });
     if (!locked || !board) {
       return "Board not found";

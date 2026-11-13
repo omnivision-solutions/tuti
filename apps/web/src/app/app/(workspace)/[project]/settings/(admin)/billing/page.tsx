@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
+import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, defaultPlanKey, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
@@ -38,6 +38,8 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const paid = searchParams.paid === "1";
   const subscribed = searchParams.subscribed === "1";
   const shown = planDisplay(plan.plan);
+  // On a paid plan (a live subscription's), or the default plan without one.
+  const onPaidPlan = plan.plan !== null;
   // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One that's on keeps
   // its card where it's no longer sold (its price stays listed, `sold: false`), so it can still be removed.
   const badge = badgeOffered(plan.plan, plan.planInterval);
@@ -54,7 +56,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
         <SettingsCard
           title={`${shown.name} plan`}
           description={
-            plan.plan === "FREE"
+            !onPaidPlan
                 ? "Upgrade this project for more. Plans are per project: readers are always unlimited."
                 : [
                     // None for a plan the file sells no way (by quote): it's billed as agreed.
@@ -71,10 +73,10 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                 <AlertDescription>The last payment didn&apos;t go through. Stripe tries again; update the card in Manage plan.</AlertDescription>
               </Alert>
             )}
-            {plan.plan !== "FREE" ? (
+            {onPaidPlan ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
-              <PlanPicker projectSlug={slug} plans={pricingPlans()} current={plan.plan.toLowerCase()} />
+              <PlanPicker projectSlug={slug} plans={pricingPlans()} current={defaultPlanKey()!} />
             ) : (
               <p className="text-sm text-muted-foreground">Plans can&apos;t be bought here right now.</p>
             )}
@@ -89,13 +91,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               plan.badgeAddOn
                 ? // What it's billed at may be an older price than the file's: no amount.
                   "Hidden on this project's plan. It ends with the plan."
-                : plan.plan === "FREE"
+                : !onPaidPlan
                   ? `Paid plans can hide the badge at the foot of the portal for $${badge} a month.`
                   : `The badge at the foot of the portal: hide it for $${badge} a month, added to this project's plan.`
             }
           >
             {(plan.badgeAddOn || (planSalesEnabled() && badge !== null)) &&
-              (plan.plan === "FREE" ? (
+              (!onPaidPlan ? (
                 // To the plans above, monthly or yearly as picked there.
                 <a href="#plans" className={buttonVariants({ variant: "outline" })}>
                   Choose a plan

@@ -1,5 +1,5 @@
 import { type CodeChangesSettings, serverCodeChangesSettings, settingLeaf } from "./code-changes-settings";
-import { planIncludes } from "./plans";
+import { planIncludes, type PlanKey } from "./plans";
 
 /**
  * Advanced tuning (docs/plan.md, Autopilot's docs agent, D6): the few of Autopilot's settings a project's owners may change
@@ -92,7 +92,7 @@ export function savedTuning(value: unknown): Partial<Record<TuningKey, unknown>>
  */
 export function tunedSettings(
   saved: unknown,
-  plan: "FREE" | "PRO" | "BUSINESS",
+  plan: PlanKey,
   settings: CodeChangesSettings = serverCodeChangesSettings(),
 ): { settings: CodeChangesSettings; values: Record<TuningKey, TuningValue>; tuned: TuningKey[] } {
   const own = planIncludes(plan, "aiTuning") ? savedTuning(saved) : {};

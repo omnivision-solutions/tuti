@@ -11,12 +11,12 @@ const server = (env: Record<string, string> = {}) => readCodeChangesSettings(env
 test("a project's value wins, else the server's variable, else the default in code", () => {
   const settings = server({ CODE_CHANGES_DECIDE_ROUNDS: "20" });
   // Nothing saved: the server's (20), and the code's default where the server set nothing (diffChars).
-  const none = tunedSettings({}, "BUSINESS", settings);
+  const none = tunedSettings({}, "business", settings);
   expect(none.settings.decide.rounds).toBe(20);
   expect(none.values["context.diffChars"]).toBe(60_000);
   expect(none.tuned).toEqual([]);
 
-  const own = tunedSettings({ "decide.rounds": 5, "decide.reasoning": "high", "propose.edit.maybe": 0.3, other: 1 }, "BUSINESS", settings);
+  const own = tunedSettings({ "decide.rounds": 5, "decide.reasoning": "high", "propose.edit.maybe": 0.3, other: 1 }, "business", settings);
   expect(own.settings.decide).toMatchObject({ rounds: 5, reasoning: "high", model: settings.decide.model });
   expect(own.settings.propose.edit).toEqual({ maybe: 0.3, likely: 0.75 });
   expect(own.tuned).toEqual(["propose.edit.maybe", "decide.rounds", "decide.reasoning"]);
@@ -24,7 +24,7 @@ test("a project's value wins, else the server's variable, else the default in co
   expect(settings.decide.rounds).toBe(20);
 
   // A saved value that's the server's own isn't a change.
-  expect(tunedSettings({ "decide.rounds": 20 }, "BUSINESS", settings).tuned).toEqual([]);
+  expect(tunedSettings({ "decide.rounds": 20 }, "business", settings).tuned).toEqual([]);
 });
 
 test("values outside the server's range are clamped when used; ones that aren't values are ignored", () => {
@@ -39,7 +39,7 @@ test("values outside the server's range are clamped when used; ones that aren't 
   expect(clampTuning("decide.rounds", "3", settings)).toBeUndefined();
   expect(clampTuning("decide.reasoning", "lots", settings)).toBeUndefined();
 
-  const { settings: used, tuned } = tunedSettings({ "propose.edit.maybe": 0.7, "decide.reasoning": "lots" }, "BUSINESS", settings);
+  const { settings: used, tuned } = tunedSettings({ "propose.edit.maybe": 0.7, "decide.reasoning": "lots" }, "business", settings);
   expect(used.propose.edit.maybe).toBe(0.6);
   expect(used.decide.reasoning).toBe("off");
   expect(tuned).toEqual(["propose.edit.maybe"]);
@@ -48,15 +48,15 @@ test("values outside the server's range are clamped when used; ones that aren't 
 test("off Business the saved values are kept but not used; without plans every project tunes", () => {
   const saved = { "decide.rounds": 5 };
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  expect(tunedSettings(saved, "PRO", server()).settings.decide.rounds).toBe(12);
-  expect(tunedSettings(saved, "FREE", server()).tuned).toEqual([]);
-  expect(tunedSettings(saved, "BUSINESS", server()).settings.decide.rounds).toBe(5);
+  expect(tunedSettings(saved, "pro", server()).settings.decide.rounds).toBe(12);
+  expect(tunedSettings(saved, "free", server()).tuned).toEqual([]);
+  expect(tunedSettings(saved, "business", server()).settings.decide.rounds).toBe(5);
   vi.stubEnv("BILLING_CONFIG", "");
-  expect(tunedSettings(saved, "FREE", server()).settings.decide.rounds).toBe(5);
+  expect(tunedSettings(saved, "free", server()).settings.decide.rounds).toBe(5);
 });
 
 test("inside withCodeChangesSettings, codeChangesSettings() is the project's, also after an await", async () => {
-  const { settings } = tunedSettings({ "decide.rounds": 3 }, "BUSINESS", server());
+  const { settings } = tunedSettings({ "decide.rounds": 3 }, "business", server());
   await withCodeChangesSettings(settings, async () => {
     await Promise.resolve();
     expect(codeChangesSettings().decide.rounds).toBe(3);

@@ -262,7 +262,7 @@ test("Similar ideas, typing suggestions, the widget's ideas and news, Account an
 
 test("emails about a post reach only people who may see it: a private post's author, nobody about a Team only one", async () => {
   const { ada, bob, project, mine, plan } = await fixture();
-  const settings = { portalAccess: "PUBLIC", plan: "FREE" as const };
+  const settings = { portalAccess: "PUBLIC", plan: null as string | null };
   const told = async (post: { authorId: string; visibility: PostVisibility }, off = false) =>
     (await postAudience(project.id, settings, { ...post, board: { off } }, [ada.id, bob.id])).map((person) => person.id).sort();
   expect(await told({ ...mine, visibility: "PUBLIC" })).toEqual([ada.id, bob.id].sort());

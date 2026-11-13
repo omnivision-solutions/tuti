@@ -249,7 +249,7 @@ describe("how many boards a plan has (where plans are sold)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
-  const setPlan = (plan: "FREE" | "PRO" | "BUSINESS") => prisma.project.update({ where: { id: project.id }, data: { plan } });
+  const setPlan = (plan: null | "pro" | "business") => prisma.project.update({ where: { id: project.id }, data: { plan } });
   const boards = () => prisma.board.count({ where: { projectId: project.id } });
 
   test("Free: 2 boards, then Upgrade to Pro", async () => {
@@ -261,7 +261,7 @@ describe("how many boards a plan has (where plans are sold)", () => {
   });
 
   test("Pro: 5 boards, then Upgrade to Business", async () => {
-    await setPlan("PRO");
+    await setPlan("pro");
     for (const slug of ["b2", "b3", "b4", "b5"]) {
       expect(await createBoard(project.slug, {}, board({ slug }))).toEqual({});
     }
@@ -272,7 +272,7 @@ describe("how many boards a plan has (where plans are sold)", () => {
   });
 
   test("Business: no limit", async () => {
-    await setPlan("BUSINESS");
+    await setPlan("business");
     for (const slug of ["b2", "b3", "b4", "b5", "b6"]) {
       expect(await createBoard(project.slug, {}, board({ slug }))).toEqual({});
     }
@@ -280,10 +280,10 @@ describe("how many boards a plan has (where plans are sold)", () => {
   });
 
   test("a project that dropped to Free keeps its boards, but can't add more", async () => {
-    await setPlan("PRO");
+    await setPlan("pro");
     await createBoard(project.slug, {}, board({ slug: "bugs" }));
     await createBoard(project.slug, {}, board({ slug: "ideas" }));
-    await setPlan("FREE");
+    await setPlan(null);
     expect((await createBoard(project.slug, {}, board({ slug: "more" }))).error).toMatch(/up to 2 feedback boards/);
     expect(await boards()).toBe(3);
     expect(await updateBoard(project.slug, boardId, {}, board({ name: "Renamed", slug: "feature-requests" }))).toEqual({});
@@ -298,12 +298,12 @@ describe("how many boards a plan has (where plans are sold)", () => {
     expect(await setBoardOff(project.slug, bugs!.id, false)).toEqual({
       error: "Projects on the Free plan have up to 2 feedback boards. Upgrade to Pro in Settings → Billing to turn it on.",
     });
-    await setPlan("PRO");
+    await setPlan("pro");
     expect(await setBoardOff(project.slug, bugs!.id, false)).toEqual({});
     expect(await prisma.board.count({ where: { projectId: project.id, off: false } })).toBe(3);
     // Turning one off makes room to turn another on, never to make another: else boards turned off would be a way
     // past the limit.
-    await setPlan("FREE");
+    await setPlan(null);
     expect(await setBoardOff(project.slug, ideas!.id, true)).toEqual({});
     expect(await setBoardOff(project.slug, bugs!.id, true)).toEqual({});
     expect((await createBoard(project.slug, {}, board({ slug: "more" }))).error).toMatch(/up to 2 feedback boards/);

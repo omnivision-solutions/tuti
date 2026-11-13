@@ -688,7 +688,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     await prisma.project.update({
       where: { id: project.id },
       data: {
-        plan: "BUSINESS",
+        plan: "business",
         aiModels: { code_changes_decide: "acme/tiny", code_changes_redecide: "off" },
         codeChangesTuning: { "decide.rounds": 1, "decide.reasoning": "high", "propose.edit.maybe": 0.3 },
       },
@@ -742,7 +742,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     vi.stubEnv("BILLING_CONFIG", billingFile());
     await prisma.project.update({
       where: { id: project.id },
-      data: { plan: "PRO", aiModels: { code_changes_decide: "acme/tiny" }, codeChangesTuning: { "propose.edit.maybe": 0.3 } },
+      data: { plan: "pro", aiModels: { code_changes_decide: "acme/tiny" }, codeChangesTuning: { "propose.edit.maybe": 0.3 } },
     });
     pullRequest(61);
     model.decide(USERS);
@@ -755,7 +755,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 61 }, select: { id: true } });
     expect((await call(getCodeChange, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { id })).tuned).toEqual([]);
 
-    await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "business" } });
     pullRequest(62);
     model.decide(USERS);
     model.reply(EDIT_AT(0.35), undefined, '"merge-62"');
@@ -787,7 +787,7 @@ describe("a project's own models and Advanced tuning (D6)", () => {
   // Each value is read by the step that uses it, inside the project's settings: these fail if a step reads the server's.
   const business = (codeChangesTuning: Record<string, number>, aiModels: Record<string, string> = {}) => {
     vi.stubEnv("BILLING_CONFIG", billingFile());
-    return prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS", codeChangesTuning, aiModels } });
+    return prisma.project.update({ where: { id: project.id }, data: { plan: "business", codeChangesTuning, aiModels } });
   };
   const NEW_AT = (probability: number) =>
     answer([], [{ title: "Use the dark theme", probability, collection: "settings", after: null, reason: "Nothing covers themes." }]);

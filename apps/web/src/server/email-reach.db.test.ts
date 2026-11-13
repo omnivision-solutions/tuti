@@ -51,7 +51,7 @@ test("a post's email reaches a confirmed or SSO address, not the team, the unsub
   };
 
   expect(await statuses()).toEqual(["emailed", "unconfirmed", "team", "optedOut", "turnedOff", "emailed", "noAddress", "unconfirmed"]);
-  const settings = { portalAccess: "PUBLIC", plan: "FREE" as const };
+  const settings = { portalAccess: "PUBLIC", plan: null as string | null };
   expect((await audienceReach(project.id, settings, null, [fromSso.id])).get(fromSso.id)).toMatchObject({ address: "e2e-sso@example.com" });
 
   // A private portal: only its SSO users and the readers the team added (verified) still hear.

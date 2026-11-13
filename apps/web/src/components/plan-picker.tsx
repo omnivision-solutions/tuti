@@ -59,7 +59,7 @@ export function PlanPicker({ projectSlug, plans, current }: { projectSlug: strin
               </a>
             )}
             {plan.key !== current && plan.price?.[interval] != null && (
-              <Button type="button" variant={plan.featured ? "default" : "outline"} disabled={pending} focusableWhenDisabled onClick={() => upgrade(plan.key as "pro" | "business", interval)}>
+              <Button type="button" variant={plan.featured ? "default" : "outline"} disabled={pending} focusableWhenDisabled onClick={() => upgrade(plan.key!, interval)}>
                 Upgrade to {plan.name}
               </Button>
             )}
@@ -75,7 +75,7 @@ export function PlanPicker({ projectSlug, plans, current }: { projectSlug: strin
 function useUpgrade(projectSlug: string) {
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
-  const upgrade = (plan: "pro" | "business", interval: "month" | "year") =>
+  const upgrade = (plan: string, interval: "month" | "year") =>
     startTransition(async () => {
       const result = await subscribe(projectSlug, plan, interval);
       setError(result.error);

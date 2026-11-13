@@ -67,7 +67,7 @@ export async function createInvitation(
   const full = await prisma.$transaction(async (tx) => {
     // Room on the plan for members and invites still pending (a new invite to the same address replaces
     // its own), counted under the project's lock, so two invites at once can't both take the last place.
-    const [project] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
+    const [project] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT "planKey" AS plan FROM project WHERE id = ${projectId} FOR UPDATE`;
     // Their role again, under that lock: taking someone off the team or changing their role takes it too, then revokes their invites.
     const me = await teamRoleIn(tx, projectId, session.user.id);
     if (!me || !canAssignRole(me, parsed.data.role)) {
@@ -358,7 +358,7 @@ async function join(invitation: InvitationForJoining, userId: string) {
       await prisma.$transaction(async (tx) => {
         // The project's lock first, as inviting takes it before the invites, so the two can't deadlock:
         // room on the plan is counted under it, and two people joining at once can't both take the last place.
-        const [project] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT plan FROM project WHERE id = ${invitation.projectId} FOR UPDATE`;
+        const [project] = await tx.$queryRaw<{ plan: PlanKey }[]>`SELECT "planKey" AS plan FROM project WHERE id = ${invitation.projectId} FOR UPDATE`;
         // Claim the invite atomically so it can only be used once.
         const claimed = await tx.invitation.updateMany({
           where: { id: invitation.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, sentAt: { not: null } },

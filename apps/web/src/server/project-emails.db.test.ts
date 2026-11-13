@@ -137,7 +137,7 @@ test("on a server selling plans, while the project's email is paused, shipped em
   // A plan with private portals, so readers can be added; a week old, past the new-project cap.
   await prisma.project.update({
     where: { id: project.id },
-    data: { plan: "BUSINESS", createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000), emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" },
+    data: { plan: "business", createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000), emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" },
   });
   const sent = await sendAll(owner, project, team);
   expect(sent.signIn).toBeDefined();

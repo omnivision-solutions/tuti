@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
 import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
@@ -41,7 +43,7 @@ const planGrants = () =>
   prisma.aiCreditGrant.findMany({ where: { projectId: project.id, source: "PLAN" }, orderBy: { createdAt: "asc" }, select: { credits: true, expiresAt: true, stripeInvoiceId: true } });
 
 /** Starts `which` for the project and pays for it; returns its subscription's id and the events Stripe sends. */
-async function subscribe(which: "pro" | "business" = "pro", interval: "month" | "year" = "month") {
+async function subscribe(which = "pro", interval: "month" | "year" = "month") {
   await call(subscribePlan, as(), { plan: which, interval });
   const events = stripe.pay(stripe.sessions.at(-1)!.id);
   return { subscription: stripe.sessions.at(-1)!.subscription!, events };
@@ -262,4 +264,29 @@ test("a project deleted meanwhile: Stripe's events are answered, and nothing is 
   await prisma.project.delete({ where: { id: project.id } });
   await deliver(...events);
   expect(await prisma.aiCreditGrant.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("the migration gives each project its plan's key: Pro and Business theirs, Free none (the default plan)", async () => {
+  const projects = await Promise.all((["FREE", "PRO", "BUSINESS"] as const).map(async (planEnum) => (await prisma.project.update({ where: { id: (await createProject(owner)).id }, data: { planEnum, plan: null } })).id));
+  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261113180000_plan_keys/migration.sql", import.meta.url), "utf8");
+  // The column is there already (every migration ran); its fill, again on these rows.
+  await prisma.$executeRawUnsafe(sql.slice(sql.indexOf("UPDATE")));
+  const plans = await prisma.project.findMany({ where: { id: { in: projects } }, select: { id: true, plan: true } });
+  expect(projects.map((id) => plans.find((project) => project.id === id)!.plan)).toEqual([null, "pro", "business"]);
+});
+
+test("any plan the file sells is bought by its key, and Stripe's webhook stores that key", async () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { free, pro, business }) => {
+    free.key = "lapsed";
+    pro.key = "starter";
+    business.key = "scale";
+    config.defaultPlan = "lapsed";
+  }));
+  const { subscription, events } = await subscribe("scale");
+  await deliver(...events);
+  expect(await plan()).toMatchObject({ plan: "scale" });
+  await deliver(stripe.update(subscription, { status: "canceled" }));
+  expect(await plan()).toMatchObject({ plan: "lapsed" });
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } })).plan).toBeNull();
+  await expect(call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { plan: "pro", interval: "month" })).rejects.toMatchObject({ status: 503 });
 });
