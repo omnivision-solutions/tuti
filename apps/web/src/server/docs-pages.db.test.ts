@@ -256,11 +256,11 @@ describe("for search engines", () => {
 
   test("tab and collection pages have a title and their own canonical address; /docs searches aren't indexed", async () => {
     const portal = `http://${project.slug}.localhost:3100`;
-    expect(await meta("api")).toEqual({ title: "API · Docs", canonical: `${portal}/docs/api` });
-    expect(await meta("basics")).toEqual({ title: "Basics · Docs", description: "Start here.", canonical: `${portal}/docs/basics` });
+    expect(await meta("api")).toEqual({ title: "API · Documentation", canonical: `${portal}/docs/api` });
+    expect(await meta("basics")).toEqual({ title: "Basics · Documentation", description: "Start here.", canonical: `${portal}/docs/basics` });
     const docs = (q?: string) => docsMetadata({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({ q }) } as never);
-    expect(await docs()).toEqual({ title: "Docs", alternates: { canonical: `${portal}/docs` } });
-    expect(await docs("invoices")).toEqual({ title: "Results for “invoices” · Docs", alternates: { canonical: `${portal}/docs` }, robots: { index: false } });
+    expect(await docs()).toEqual({ title: "Documentation", alternates: { canonical: `${portal}/docs` } });
+    expect(await docs("invoices")).toEqual({ title: "Results for “invoices” · Documentation", alternates: { canonical: `${portal}/docs` }, robots: { index: false } });
   });
 
   test("a tab showing an article or collection has its title and description, with the tab's address as canonical; the article keeps its own", async () => {
@@ -276,8 +276,8 @@ describe("for search engines", () => {
       alternates: { canonical: `${portal}/docs` },
     });
     expect(await meta("start-here")).toEqual({ ...article, canonical: `${portal}/docs/start-here` });
-    expect(await meta("api")).toEqual({ title: "Endpoints · Docs", description: "Every endpoint.", canonical: `${portal}/docs/api` });
-    expect(await meta("endpoints")).toEqual({ title: "Endpoints · Docs", description: "Every endpoint.", canonical: `${portal}/docs/endpoints` });
+    expect(await meta("api")).toEqual({ title: "Endpoints · Documentation", description: "Every endpoint.", canonical: `${portal}/docs/api` });
+    expect(await meta("endpoints")).toEqual({ title: "Endpoints · Documentation", description: "Every endpoint.", canonical: `${portal}/docs/endpoints` });
     // Unlisted stays out of search engines, wherever it's shown.
     await call(updateTab, as(), { slug: "guides", landing: "page", landingPage: "secret-handshake" });
     expect(await docs()).toMatchObject({ title: `Secret handshake · ${project.name}`, robots: { index: false }, alternates: { canonical: `${portal}/docs` } });

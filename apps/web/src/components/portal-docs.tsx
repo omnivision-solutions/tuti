@@ -229,7 +229,7 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
   if (tab?.locked) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-        <PortalPageHeader title={tab.slug !== docs.home ? tab.name : "Docs"} />
+        <PortalPageHeader title={tab.slug !== docs.home ? tab.name : "Documentation"} />
         <LockedMessage signedIn={docs.signedIn} />
         <PortalFooter docs />
       </div>
@@ -256,11 +256,11 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
  */
 export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "locked" | "collection" }>): Metadata {
   if (page.kind === "locked") {
-    return { title: `${page.article.title} · Docs`, robots: { index: false } };
+    return { title: `${page.article.title} · Documentation`, robots: { index: false } };
   }
   if (page.kind === "collection") {
     const { name, description, locked, sample } = page.collection;
-    return { title: `${name} · Docs`, ...(description && { description }), ...((locked || sample) && { robots: { index: false } }) };
+    return { title: `${name} · Documentation`, ...(description && { description }), ...((locked || sample) && { robots: { index: false } }) };
   }
   const { article } = page;
   const description = articleDescription(article);
@@ -362,7 +362,7 @@ export async function DocsArticle({
               {up.href !== "/docs" && (
                 <>
                   <Link href={at("/docs")} className="hover:text-foreground">
-                    Docs
+                    Documentation
                   </Link>
                   <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
                 </>

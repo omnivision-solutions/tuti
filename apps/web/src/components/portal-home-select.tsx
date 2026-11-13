@@ -12,7 +12,7 @@ const HOMES: Record<PortalHomePage, string> = {
   feedback: "Feedback",
   roadmap: "Roadmap",
   changelog: "Changelog",
-  docs: "Docs",
+  docs: "Documentation",
 };
 
 const DESCRIPTIONS: Record<PortalHomePage, string> = {

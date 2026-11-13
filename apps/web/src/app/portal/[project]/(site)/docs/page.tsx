@@ -15,13 +15,13 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs"
   const canonical = { alternates: { canonical: `${await portalAddress(project)}/docs` } };
   const query = searchQuery(q);
   if (query) {
-    return { title: `Results for “${query}” · Docs`, ...canonical, robots: { index: false } };
+    return { title: `Results for “${query}” · Documentation`, ...canonical, robots: { index: false } };
   }
   const { tab, landing } = await docsHome(project);
   if (tab?.locked) {
-    return { title: "Docs", ...canonical, robots: { index: false } };
+    return { title: "Documentation", ...canonical, robots: { index: false } };
   }
-  return withPortalOpenGraph({ ...(landing.kind === "overview" ? { title: "Docs" } : docsPageMetadata(landing)), ...canonical }, parent);
+  return withPortalOpenGraph({ ...(landing.kind === "overview" ? { title: "Documentation" } : docsPageMetadata(landing)), ...canonical }, parent);
 }
 
 /**

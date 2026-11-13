@@ -17,7 +17,7 @@ export const PORTAL_PARTS = [
   { key: "feedback", label: "Feedback", href: "/feedback" },
   { key: "roadmap", label: "Roadmap", href: "/roadmap" },
   { key: "changelog", label: "Changelog", href: "/changelog" },
-  { key: "docs", label: "Docs", href: "/docs" },
+  { key: "docs", label: "Documentation", href: "/docs" },
 ] as const;
 
 /** `path` is `href` or a page under it. */

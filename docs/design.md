@@ -427,7 +427,7 @@ the list picks none to approve at once.
     (`pills`) and the actions on the right (`actions`, the page's one filled primary last); on phones the actions
     beside the title (`phoneActions`: round icon buttons, a round + primary). No rule under it.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
-    the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
+    the four parts (Feedback, Roadmap, Changelog, Documentation (at `/docs`); `components/portal-nav.tsx`) in medium weight, the open one
     underlined on the header's bottom edge; Sign in a secondary (grey fill) at the end; 64px tall (56px on phones). Its contents in
     one 82rem container on every page (the docs' columns), so the logo never moves between parts; outside Docs the
     pages' own narrower containers sit centred under it.
@@ -525,7 +525,7 @@ the list picks none to approve at once.
   - **One-message pages** (the changelog's email links, unsubscribe, the SSO error, a page not found):
     one card (`PortalMessage`, max-w-sm) with a tinted icon, a 20px heading-font title, 15px text and
     full-width buttons, centred in the page. The 404 is the portal's (`not-found.tsx`), in its header
-    and footer, no part marked, with links to Roadmap, Changelog and Docs. Sign-in pages (sign-in,
+    and footer, no part marked, with links to Roadmap, Changelog and Documentation. Sign-in pages (sign-in,
     forgot password, the link's page, the SSO error) are the same width at one fixed offset under the
     header, cards without a line inside them, which has no Sign in there; the SSO error says it in plain words first, the technical
     detail as a small footnote, "Try again" its primary.
@@ -553,7 +553,7 @@ the list picks none to approve at once.
     didn't come for sits one click away (a menu, a disclosure) rather than in another column.
   - **An article**: the tab's tree on the left (`DocsLayout`, 16rem, a plain column the page's height): each
     collection a row with its icon that opens (`<details>`), the page's own open (no line down its articles) and the
-    current one a neutral fill; the articles in no collection under a line. Then "Docs › <collection>" with Reading mode (a ghost book icon, named in its tooltip; from tablet
+    current one a neutral fill; the articles in no collection under a line. Then "Documentation › <collection>" with Reading mode (a ghost book icon, named in its tooltip; from tablet
     width, on an article with sections) and Copy page at
     the row's end, a 36px title (28px on phones), "Updated <date> · N min read" (about 200 words a minute), and the text at 17px (`article-text` on top of `rich-text`): 26px section headings, steps numbered in grey circles, inline code,
     details blocks and callouts as grey fills (a callout: quotes, with an info-blue rule and icon), code blocks as cards (a

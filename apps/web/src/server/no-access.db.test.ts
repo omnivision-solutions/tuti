@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import DocsSlugPage, { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import DocsHomePage, { generateMetadata as docsHomeMetadata } from "@/app/portal/[project]/(site)/docs/page";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { WidgetDocs } from "@/components/widget-docs";
@@ -185,7 +186,7 @@ describe("an article shown with a lock", () => {
       expect(page).not.toContain(text);
     }
     expect(await generateMetadata(params("endpoints") as never)).toEqual({
-      title: "Endpoints · Docs",
+      title: "Endpoints · Documentation",
       robots: { index: false },
       alternates: { canonical: expect.stringMatching(/\/docs\/endpoints$/) },
     });
@@ -298,7 +299,7 @@ test("a collection shown with a lock: its name with a lock and nothing in it, an
   for (const text of [SECRET, "Endpoints"]) {
     expect(page).not.toContain(text);
   }
-  expect(await generateMetadata(params("reference") as never)).toMatchObject({ title: "Reference · Docs", robots: { index: false } });
+  expect(await generateMetadata(params("reference") as never)).toMatchObject({ title: "Reference · Documentation", robots: { index: false } });
   // What's in it inherits the lock.
   expect(await docsPage(project.slug, "endpoints")).toMatchObject({ kind: "locked" });
 });
@@ -316,10 +317,13 @@ test("a tab shown with a lock: listed with a lock, and its page the message", as
   for (const text of [SECRET, "Endpoints"]) {
     expect(page).not.toContain(text);
   }
-  expect(await generateMetadata(params("api") as never)).toMatchObject({ robots: { index: false } });
-  // The first tab locked: /docs is its message.
+  expect(await generateMetadata(params("api") as never)).toMatchObject({ title: "API · Documentation", robots: { index: false } });
+  // The first tab locked: /docs is its message, under the docs' own name.
   await set("tab", "guides", "SIGNED_IN", "LOCK");
   expect((await docsHome(project.slug)).tab).toMatchObject({ slug: "guides", locked: true });
+  const home = { ...params(), searchParams: Promise.resolve({}) };
+  expect(await docsHomeMetadata(home as never)).toMatchObject({ title: "Documentation", robots: { index: false } });
+  expect(json(await rendered(await DocsHomePage(home as never)))).toContain("Documentation");
   // Search engines get none of it.
   const map = await (await sitemap(new Request("http://x"), params() as never)).text();
   for (const path of ["/docs/api", "/docs/reference", "/docs/endpoints"]) {

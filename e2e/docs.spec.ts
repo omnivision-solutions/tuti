@@ -194,7 +194,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   };
   visitor.on("response", recordScript);
   await visitor.goto("/");
-  await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" }).click();
+  await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Documentation" }).click();
   const card = visitor.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Getting started/ });
   await expect(card).toContainText("The basics, in five minutes.");
   // With its icon, drawn on the server: no script the portal sends has Lucide's names (the app's picker loads them).
@@ -1183,8 +1183,8 @@ test("the team splits the docs into tabs: the first takes the collections, other
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs");
   const main = visitor.getByRole("main");
-  // They're the row under the header's Docs.
-  await expect(visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" })).toHaveAttribute("aria-current", "page");
+  // They're the row under the header's Documentation.
+  await expect(visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Documentation" })).toHaveAttribute("aria-current", "page");
   const docsTabs = visitor.getByRole("navigation", { name: "Docs tabs" });
   await expect(docsTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
@@ -1377,7 +1377,7 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   // Its results page says what it's for, and marks the first tab, whose tree is beside it.
   await visitor.goto("/docs?q=listing");
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Results for “listing”");
-  await expect(visitor).toHaveTitle(/^Results for “listing” · Docs/);
+  await expect(visitor).toHaveTitle(/^Results for “listing” · Documentation/);
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Listing posts"]);
   // Results are rows on the paper: titles in the text colour, a hairline under each.
   const result = main.getByRole("list", { name: "Search results" }).getByRole("listitem").first();
@@ -1962,8 +1962,8 @@ test("a docs-first team makes the docs the portal's home page", async ({ browser
 
   await team.goto(`/app/${slug}/customize/home-page`);
   await team.getByRole("combobox", { name: "Home page" }).click();
-  await team.getByRole("option", { name: "Docs" }).click();
-  await expect(team.getByText("Your portal opens with docs now")).toBeVisible();
+  await team.getByRole("option", { name: "Documentation" }).click();
+  await expect(team.getByText("Your portal opens with documentation now")).toBeVisible();
   await checkpoint(team, "settings-home-page");
   await visitor.goto("/");
   await expect(visitor).toHaveURL(`${portalUrl(slug)}/docs`);

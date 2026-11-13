@@ -73,7 +73,7 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(visitor).toHaveURL(/\/feedback\/bugs$/);
   // With two boards the header's Feedback opens their overview; a board's rail lists them.
   const parts = visitor.getByRole("navigation", { name: "Portal" });
-  await expect(parts.getByRole("link")).toHaveText(["Feedback", "Roadmap", "Changelog", "Docs"]);
+  await expect(parts.getByRole("link")).toHaveText(["Feedback", "Roadmap", "Changelog", "Documentation"]);
   await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
   await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("href", "/feedback");
   const boards = visitor.getByRole("navigation", { name: "Boards" });
@@ -155,7 +155,7 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await checkpoint(visitor, "portal-header-phone");
   await visitor.getByRole("banner").getByRole("button", { name: "Menu" }).click();
   const menu = visitor.getByRole("dialog", { name: "Menu" });
-  await expect(menu.getByRole("navigation", { name: "Portal" }).getByRole("link")).toHaveText(["Feedback", "Roadmap", "Changelog", "Docs"]);
+  await expect(menu.getByRole("navigation", { name: "Portal" }).getByRole("link")).toHaveText(["Feedback", "Roadmap", "Changelog", "Documentation"]);
   await expect(menu.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
   await expect(menu.getByRole("navigation", { name: "Boards" }).getByRole("link", { name: "Bug reports" })).toHaveAttribute("aria-current", "page");
   await checkpoint(visitor, "portal-header-phone-menu", { fullPage: false });
@@ -201,6 +201,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   // The portal's own page not found, in its header and footer: the way home, and no part marked as this page's.
   await expect(visitor.getByRole("heading", { name: "Page not found" })).toBeVisible();
   await expect(visitor.getByRole("main").getByRole("link", { name: "Go to the home page" })).toHaveAttribute("href", "/");
+  // Its other ways out name the parts as the header does.
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Documentation", exact: true })).toHaveAttribute("href", "/docs");
   await expect(visitor.locator('[aria-current="page"]')).toHaveCount(0);
   await expect(visitor.getByRole("navigation", { name: "Boards" })).toHaveCount(0);
   await checkpoint(visitor, "portal-not-found");
