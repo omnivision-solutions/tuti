@@ -2687,3 +2687,40 @@ test("a board on a phone: its pill row fades at the screen's edge while more is 
   expect(vote.y + vote.height <= button.y || vote.x + vote.width <= button.x).toBe(true);
   await checkpoint(visitor, "portal-board-phone-end", { fullPage: false });
 });
+
+test("a post's page on a phone keeps 16px on both sides: a long properties line doesn't widen it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  // A long name and an ETA make the properties' folded line (status · owner · ETA) wider than a phone.
+  const team = await signUp(browser, APP_URL, "Samantha Riverbank-Okonkwo");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Google Calendar sync", body: "" });
+  await api("/posts/1", { status: "in_progress", owner: team.email, eta: "2026-12" }, "PATCH");
+  await api("/posts/1/comments", { body: "Thanks all! Two-way sync is in progress: we're testing with a few teams now." });
+  for (const width of [390, 1280]) {
+    await team.setViewportSize({ width, height: 844 });
+    await team.goto(`/app/${slug}/p/1`);
+    const comment = team.getByRole("button", { name: "Comment", exact: true });
+    await expect(comment).toBeVisible();
+    expect(await team.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    // The pane's body scrolls up and down only.
+    const body = team.locator('[data-slot="pane-body"]', { has: comment });
+    expect(await body.evaluate((pane) => pane.scrollWidth <= pane.clientWidth)).toBe(true);
+    if (width === 390) {
+      const pane = (await body.boundingBox())!;
+      const boxes = {
+        properties: team.getByRole("complementary", { name: "Properties" }),
+        reply: team.getByRole("region", { name: "Comments" }).getByRole("listitem").filter({ hasText: "Thanks all!" }),
+        "reply box": team.getByRole("textbox", { name: "Comment" }),
+        Comment: comment,
+      };
+      for (const [name, locator] of Object.entries(boxes)) {
+        const box = (await locator.boundingBox())!;
+        expect(box.x - pane.x, `${name} from the left`).toBeGreaterThanOrEqual(16);
+        expect(pane.x + pane.width - (box.x + box.width), `${name} from the right`).toBeGreaterThanOrEqual(16);
+      }
+      await checkpoint(team, "post-phone-margins", { fullPage: false });
+    }
+  }
+});
