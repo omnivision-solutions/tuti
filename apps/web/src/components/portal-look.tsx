@@ -3,7 +3,7 @@
 import { LinkIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-import { createContext, useContext, useEffect, useId, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useId, useSyncExternalStore } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@tuti/ui/tuti-logo";
@@ -23,11 +23,19 @@ export function showTheme(scheme: ColorScheme) {
   html.classList.remove("light", "dark");
   html.classList.add(mode);
   html.style.colorScheme = mode;
-  // For the preview's footer switch, whichever showed it (the switch, the team trying a default, the app's own mode).
-  window.dispatchEvent(new CustomEvent<ColorScheme>(PREVIEW_THEME_EVENT, { detail: scheme }));
+  // For the preview's footer switch, whichever showed it (the switch, the team trying a default, the app's own mode),
+  // and a switch that mounts later (another page's footer).
+  shownScheme = scheme;
+  window.dispatchEvent(new Event(PREVIEW_THEME_EVENT));
 }
 
 const PREVIEW_THEME_EVENT = "tuti:preview-theme";
+/** What showTheme last showed in the preview; null until it has. */
+let shownScheme: ColorScheme | null = null;
+const onShown = (changed: () => void) => {
+  window.addEventListener(PREVIEW_THEME_EVENT, changed);
+  return () => window.removeEventListener(PREVIEW_THEME_EVENT, changed);
+};
 
 export const LookContext = createContext<PortalLook | null>(null);
 
@@ -204,14 +212,9 @@ const noStore = () => () => {};
  */
 function ThemeSwitch() {
   const { theme, setTheme } = useTheme();
-  const [tried, setTried] = useState<ColorScheme | null>(null);
+  const tried = useSyncExternalStore(onShown, () => shownScheme, () => null);
   const name = useId();
   const hydrated = useSyncExternalStore(noStore, () => true, () => false);
-  useEffect(() => {
-    const shown = (event: Event) => setTried((event as CustomEvent<ColorScheme>).detail);
-    window.addEventListener(PREVIEW_THEME_EVENT, shown);
-    return () => window.removeEventListener(PREVIEW_THEME_EVENT, shown);
-  }, []);
   return (
     <div role="radiogroup" aria-label="Theme" className="flex gap-0.5">
       {THEMES.map(([value, label, Icon]) => (

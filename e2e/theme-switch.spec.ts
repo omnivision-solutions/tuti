@@ -45,6 +45,12 @@ test("a reader picks dark mode in the portal's footer and keeps it; with the swi
   await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
   await expect(switcher.getByRole("radio", { name: "Dark" })).toBeChecked();
   expect(await owner.frame({ name: "tuti-preview" })!.evaluate(() => localStorage.getItem("theme"))).toBeNull();
+  // Another page's footer, mounted since, says the same.
+  const docsLink = preview.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Doc/ });
+  await docsLink.click();
+  await expect(docsLink).toHaveAttribute("aria-current", "page");
+  await expect(preview.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: "Dark" })).toBeChecked();
+  await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
   const card = owner.locator("form").first();
   await card.getByRole("radiogroup", { name: "Colour scheme" }).getByText("Light", { exact: true }).click();
   // Trying a default shows it on the page, and the switch says so (not the Dark tried before).
