@@ -298,8 +298,6 @@
   --avatar-6: var(--secondary);
   --avatar-foreground: oklch(0.42 0.01 60);
   --info: oklch(0.55 0.13 240);
-  --tag-improved: oklch(0.47 0.14 255);
-  --tag-improved-bg: oklch(0.95 0.03 250);
   --sunken: oklch(0.972 0.01 84.6);
   --divider: oklch(0.925 0.01 84.6);
   --card-edge: transparent;
@@ -325,8 +323,6 @@
   --status-completed: oklch(0.78 0.15 152);
   --avatar-foreground: oklch(0.88 0.004 160);
   --info: oklch(0.78 0.1 240);
-  --tag-improved: oklch(0.82 0.1 255);
-  --tag-improved-bg: oklch(0.3 0.06 255);
   --sunken: oklch(0.185 0.004 160);
   --divider: oklch(0.255 0.005 160);
   --card-edge: var(--divider);
@@ -334,8 +330,6 @@
 }
 @theme inline {
   --color-info: var(--info);
-  --color-tag-improved: var(--tag-improved);
-  --color-tag-improved-bg: var(--tag-improved-bg);
   --color-sunken: var(--sunken);
   --shadow-card: var(--portal-shadow);
 }

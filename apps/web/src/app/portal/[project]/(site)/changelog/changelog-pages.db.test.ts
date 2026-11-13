@@ -77,8 +77,9 @@ async function changelog(page?: string, tag?: string) {
         }
       }
       walk(node.props.children);
-      // An empty state's button.
+      // An empty state's button; the page header's tag pills.
       walk(node.props.action);
+      walk((node.props as { pills?: ReactNode }).pills);
     }
   };
   walk(rendered);

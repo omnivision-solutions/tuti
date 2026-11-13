@@ -34,9 +34,9 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   return (
     <div className="flex flex-col gap-6">
       <ChangelogMenu slug={slug} current={entry.number} />
-      <BackLink href={(await portalLinks())("/changelog")}>Changelog</BackLink>
       <ChangelogEntryView
         entry={entry}
+        back={<BackLink href={(await portalLinks())("/changelog")}>Changelog</BackLink>}
         mediaUrls={await mediaUrls(entry.doc, entry.cover)}
         heading="h1"
         react={{ projectSlug: slug, signedIn: !!session }}

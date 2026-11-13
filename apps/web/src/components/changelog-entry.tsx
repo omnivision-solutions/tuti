@@ -3,9 +3,11 @@ import { RichText } from "@tuti/content/react";
 import type { Doc, MediaUrls } from "@tuti/content";
 import { ArrowRightIcon, LightbulbIcon } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { ChangelogReactions } from "@/components/changelog-reactions";
 import { TagBadge } from "@/components/changelog-tag";
+import { PortalPageHeader } from "@/components/portal-page-header";
 import { SampleBadge } from "@/components/sample-badge";
 import { formatDate } from "@/lib/format";
 import { withBase } from "@/lib/portal-base";
@@ -16,14 +18,6 @@ import { cn } from "@/lib/utils";
 /** "7 Nov 2026": the timeline's margin (every month three letters, as "Sep", not "Sept"). */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
-
-/** Each tag tinted on the portal, so a list can be scanned for what's new: New green, Improved blue, Fixed the orange highlight (Breaking keeps its destructive look). */
-const TAG_TINTS: Record<ChangelogTag, string | undefined> = {
-  NEW: "border-primary/20 bg-soft text-soft-foreground",
-  IMPROVED: "border-tag-improved/25 bg-tag-improved-bg text-tag-improved",
-  FIXED: "border-highlight-foreground/25 bg-highlight text-highlight-foreground",
-  BREAKING: undefined,
-};
 
 export type PublishedEntry = {
   id: string;
@@ -51,6 +45,7 @@ export function ChangelogEntryView({
   react,
   base = "",
   dateMargin = false,
+  back,
 }: {
   entry: PublishedEntry;
   mediaUrls: MediaUrls | null;
@@ -63,47 +58,58 @@ export function ChangelogEntryView({
   base?: string;
   /** On wide screens the date sits in a margin left of the entry (the changelog's list); on phones it stays above the title. */
   dateMargin?: boolean;
+  /** Its own page on the portal: the shared page header (this way back, the 36px title, its tags and date under it). */
+  back?: ReactNode;
 }) {
   const Title = heading;
-  // The portal's own pages (its list, or an entry's page, which has the reactions): a reading size and tinted tags; the
-  // widget's panel (an h1 too) keeps the base.
+  // The portal's own pages (its list, or an entry's page, which has the reactions): a reading size and bigger (still grey)
+  // tags; the widget's panel (an h1 too) keeps the base.
   const onPage = dateMargin || !!react;
   const at = (path: string) => withBase(base, path);
   // In the list, short ("7 Nov 2026"), as in its margin.
   const date = <time dateTime={entry.publishedAt.toISOString()}>{dateMargin ? shortDate(entry.publishedAt) : formatDate(entry.publishedAt)}</time>;
+  // Its tags (grey; Breaking red) and, on phones or its own page, its date: above the title, or under it on its page.
+  const meta = (
+    <span className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      {entry.tags.map((tag) => (
+        <TagBadge key={tag} tag={tag} className={cn(onPage && "h-6 rounded-md px-2 text-[0.8125rem] font-semibold")} />
+      ))}
+      <span className={cn("font-medium", dateMargin && "lg:hidden")}>{date}</span>
+      {entry.sample && <SampleBadge />}
+    </span>
+  );
   return (
     <article className="flex gap-6" aria-labelledby={`entry-${entry.number}`}>
       {/* On the list's timeline (wide screens): the date in a margin, a dot by it on the line down the list. */}
       {dateMargin && (
-        <p className="relative hidden w-[6.875rem] shrink-0 pt-[2.375rem] pl-4 text-sm font-medium text-muted-foreground tabular-nums lg:block">
+        <p className="relative hidden w-[6.875rem] shrink-0 pt-[2.375rem] pl-4 text-sm font-medium whitespace-nowrap text-muted-foreground tabular-nums lg:block">
           <time dateTime={entry.publishedAt.toISOString()}>{shortDate(entry.publishedAt)}</time>
-          <span aria-hidden className="absolute top-[2.875rem] left-0 size-[0.4375rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-4 ring-background" />
+          <span aria-hidden className="absolute top-[2.875rem] left-0 size-[0.5625rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-background shadow-[0_0_0_1.5px_var(--color-muted-foreground),0_0_0_5px_var(--color-background)]" />
         </p>
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {/* Its tags (and on phones, or an entry's page, its date) above the title. */}
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          {entry.tags.map((tag) => (
-            <TagBadge key={tag} tag={tag} className={cn(onPage && TAG_TINTS[tag], onPage && "h-6 rounded-md px-2 text-[0.8125rem] font-semibold")} />
-          ))}
-          <span className={cn("font-medium", dateMargin && "lg:hidden")}>{date}</span>
-          {entry.sample && <SampleBadge />}
-        </div>
-        <Title
-          id={`entry-${entry.number}`}
-          className={cn(
-            "font-heading font-semibold tracking-tight break-words",
-            !onPage ? "text-xl" : heading === "h1" ? "text-[2rem] leading-tight font-[650] tracking-[-0.022em] sm:text-[2.5rem]" : "-mt-1 text-2xl leading-tight font-[650] tracking-[-0.022em] sm:text-[1.75rem]",
-          )}
-        >
-          {heading === "h2" ? (
-            <Link href={at(`/changelog/${entry.number}`)} target={linkTarget} className="hover:underline">
-              {entry.title}
-            </Link>
-          ) : (
-            entry.title
-          )}
-        </Title>
+        {back ? (
+          <PortalPageHeader back={back} title={entry.title} titleId={`entry-${entry.number}`} description={meta} className="mb-4" />
+        ) : (
+          <>
+            {meta}
+            <Title
+              id={`entry-${entry.number}`}
+              className={cn(
+                "font-heading font-semibold tracking-tight break-words",
+                onPage ? "-mt-1 text-2xl leading-tight font-[650] tracking-[-0.022em] sm:text-[1.75rem]" : "text-xl",
+              )}
+            >
+              {heading === "h2" ? (
+                <Link href={at(`/changelog/${entry.number}`)} target={linkTarget} className="hover:underline">
+                  {entry.title}
+                </Link>
+              ) : (
+                entry.title
+              )}
+            </Title>
+          </>
+        )}
         {entry.cover && (
           <RichText
             doc={entry.cover}
@@ -121,7 +127,7 @@ export function ChangelogEntryView({
                 <Link
                   href={at(postPath(post))}
                   target={linkTarget}
-                  className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-soft px-3 text-[0.8125rem] font-semibold text-soft-foreground hover:underline"
+                  className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-secondary px-3 text-[0.8125rem] font-semibold text-secondary-foreground transition-colors hover:bg-secondary-hover [&>svg]:text-muted-foreground"
                 >
                   <LightbulbIcon aria-hidden className="size-3.5 shrink-0" />
                   <span className="min-w-0 truncate">
