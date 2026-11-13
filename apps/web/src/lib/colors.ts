@@ -17,22 +17,40 @@ const SURFACES = { light: 0.9823, dark: 0.0106 };
 /** WCAG's minimum for buttons, focus rings and large text. */
 const MIN_CONTRAST = 3;
 
+const readsOn = (color: string, surface: number) => {
+  const l = luminance(color);
+  return (Math.max(l, surface) + 0.05) / (Math.min(l, surface) + 0.05) >= MIN_CONTRAST;
+};
+
+/** Whether `color` stands out from the page in light mode and in dark (a button on any site: the widget's launcher). */
+export const readsEverywhere = (color: string) => readsOn(color, SURFACES.light) && readsOn(color, SURFACES.dark);
+
+/**
+ * The quiet tint of `color` and the text on it (`--soft`, `--soft-foreground`: a voted idea, the open board, the team's
+ * replies), at the lightness of Tuti's own green tints in each mode (globals.css), so they read the same whatever the hue.
+ */
+const softCss = (color: string, dark: boolean) =>
+  dark
+    ? `--soft:oklch(from ${color} 0.3 min(c, 0.05) h);--soft-foreground:oklch(from ${color} 0.86 min(c, 0.11) h)`
+    : `--soft:oklch(from ${color} 0.955 min(c, 0.035) h);--soft-foreground:oklch(from ${color} 0.43 min(c, 0.13) h)`;
+
 /**
  * CSS that makes `color` the accent (`--primary`, with black or white text on it, and the
- * focus ring). In a mode where it would be too faint against the page (a pale yellow in light
+ * focus ring) and its tint (`--soft`). In a mode where it would be too faint against the page (a pale yellow in light
  * mode, a navy in dark mode), the accent there is the text colour instead. Null without a colour.
  */
 export function brandCss(color: string | null): string | null {
   if (!color) {
     return null;
   }
-  const l = luminance(color);
   const accent = (surface: number) =>
-    (Math.max(l, surface) + 0.05) / (Math.min(l, surface) + 0.05) >= MIN_CONTRAST
+    readsOn(color, surface)
       ? `--primary:${color};--primary-foreground:${textColorOn(color)};--ring:${color}`
       : "--primary:var(--foreground);--primary-foreground:var(--background);--ring:var(--foreground)";
   // html:not(.dark) and html.dark outrank globals.css's :root and .dark wherever this lands.
-  return `html:not(.dark){${accent(SURFACES.light)}}html.dark{${accent(SURFACES.dark)}}`;
+  // The tints need relative colours with maths on a channel (Safari 16.4–17 has relative colours without it): a browser
+  // without them keeps the default tint rather than none.
+  return `html:not(.dark){${accent(SURFACES.light)}}html.dark{${accent(SURFACES.dark)}}@supports (color:oklch(from red 0.5 min(c, 0.1) h)){html:not(.dark){${softCss(color, false)}}html.dark{${softCss(color, true)}}}`;
 }
 
 /**

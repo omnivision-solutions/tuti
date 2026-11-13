@@ -12,7 +12,7 @@ import { WidgetSettings } from "@/components/widget-settings";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 import { answersEnabled } from "@/server/operations/docs-ask";
-import { DEFAULT_WIDGET_COLOR, servedIcon, widgetSettings } from "@/server/operations/widget";
+import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, widgetSettings } from "@/server/operations/widget";
 
 /** Settings → Portal → Widget: the launcher on the team's site and the panel's Home, beside the widget open on a stand-in for it. */
 export default async function WidgetPage(props: PageProps<"/app/[project]/settings/widget">) {
@@ -21,12 +21,14 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
   if (!project) {
     notFound();
   }
-  const [settings, { plan, supportInbox }] = await Promise.all([
+  const [settings, { plan, supportInbox, brandColor }] = await Promise.all([
     widgetSettings({ id: project.id }),
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, supportInbox: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, supportInbox: true, brandColor: true } }),
   ]);
   const widget = settings!;
-  const color = widget.color ?? DEFAULT_WIDGET_COLOR;
+  // Without a colour of its own, the launcher is the portal's accent (Settings → Branding), else the brand green.
+  const defaultColor = defaultLauncherColor(brandColor);
+  const color = widget.color ?? defaultColor;
   // Set before the plan dropped: kept, but the launcher shows the chat bubble.
   const kept = widget.icon !== "chat";
   const iconLocked = !planIncludes(plan, "launcherIcon") && (
@@ -57,7 +59,10 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/settin
         projectSlug={slug}
         label={widget.label}
         color={color}
-        defaultColor={DEFAULT_WIDGET_COLOR}
+        defaultColor={defaultColor}
+        // The brand green kept as its own while it's the default anyway (picked while the accent was another colour) follows it.
+        colorFollows={!widget.color || (widget.color === DEFAULT_WIDGET_COLOR && defaultColor === DEFAULT_WIDGET_COLOR)}
+        defaultColorLabel={defaultColor !== DEFAULT_WIDGET_COLOR ? "Use the accent colour" : undefined}
         position={widget.position}
         links={widget.links}
         icon={widget.icon}

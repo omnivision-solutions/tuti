@@ -14,15 +14,43 @@ import { parseHex } from "@/lib/colors";
  * colour says so once the field is left and keeps the form from saving; the swatch keeps the last colour
  * that was one.
  */
-export function ColorField({ id, name, label, color, defaultColor }: { id: string; name: string; label: string; color: string; defaultColor: string }) {
+export function ColorField({
+  id,
+  name,
+  label,
+  color,
+  defaultColor,
+  defaultLabel = "Use the default green",
+  follows,
+}: {
+  id: string;
+  name: string;
+  label: string;
+  color: string;
+  defaultColor: string;
+  /** The button that picks `defaultColor` again. */
+  defaultLabel?: string;
+  /**
+   * For a default that can change (the accent, for the widget's launcher): whether the colour follows it, sent as
+   * `<name>Follows` ("on"), since a colour of its own may be the same as the default. Picking the default follows it.
+   */
+  follows?: boolean;
+}) {
   const [picked, setPicked] = useState(color);
   const [typed, setTyped] = useState(color);
   const [wrong, setWrong] = useState(false);
+  const [following, setFollowing] = useState(follows);
   const swatch = useRef<HTMLInputElement>(null);
   const hex = useRef<HTMLInputElement>(null);
-  useFieldChanged(swatch, picked);
-  const pick = (value: string) => {
+  useFieldChanged(swatch, `${picked} ${following}`);
+  const choose = (value: string) => {
     setPicked(value);
+    if (follows !== undefined) {
+      setFollowing(value === defaultColor);
+    }
+  };
+  const pick = (value: string) => {
+    choose(value);
     setTyped(value);
     setWrong(false);
   };
@@ -46,7 +74,7 @@ export function ColorField({ id, name, label, color, defaultColor }: { id: strin
             setTyped(event.target.value);
             const hex = parseHex(event.target.value);
             if (hex) {
-              setPicked(hex);
+              choose(hex);
               setWrong(false);
             }
           }}
@@ -62,7 +90,8 @@ export function ColorField({ id, name, label, color, defaultColor }: { id: strin
           spellCheck={false}
           className="w-28 font-mono"
         />
-        {picked !== defaultColor && (
+        {follows !== undefined && <input type="hidden" name={`${name}Follows`} value={following ? "on" : ""} />}
+        {(follows !== undefined ? !following : picked !== defaultColor) && (
           <Button
             type="button"
             variant="ghost"
@@ -73,7 +102,7 @@ export function ColorField({ id, name, label, color, defaultColor }: { id: strin
               pick(defaultColor);
             }}
           >
-            Use the default green
+            {defaultLabel}
           </Button>
         )}
       </div>

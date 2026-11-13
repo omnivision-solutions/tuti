@@ -29,7 +29,8 @@ The launcher is a round button with an icon. In the Tuti app, your project's
 
 - **Button name** (default "Feedback", up to 30 characters): what screen readers say, and
   the button's tooltip; the panel it opens has the same name. It isn't shown on the button.
-- **Colour** (default the Tuti green; the icon on it is black or white, whichever reads better).
+- **Colour** (default the portal's accent colour, Settings → Branding, or the Tuti green where the accent wouldn't
+  stand out on both light and dark pages; the icon on it is black or white, whichever reads better).
 - **Position**: bottom right or bottom left.
 - **Icon**: a chat bubble (the default), a question mark, a megaphone, a light bulb, or an
   image you upload (a square one with a transparent background works best; it shows at 28
@@ -126,19 +127,19 @@ Elements added to the page later (single-page apps) get their panel when they ap
 ## Light or dark
 
 The widget takes your portal's colour scheme (Settings → Branding): light, dark, or, by default,
-each visitor's own setting. The panel's accent colour is the portal's too; the button has its own
-(Settings → Widget). If your site has one look, pick the widget's with `data-theme` on the script tag
+each visitor's own setting. The panel's accent colour is the portal's too, and so is the button's, unless you give it one of its
+own (Settings → Widget) or the accent wouldn't stand out on both light and dark pages (then it's Tuti's
+green). If your site has one look, pick the widget's with `data-theme` on the script tag
 (or `theme` in `TutiSettings`): `light`, `dark`, or `auto` (the default, the portal's colour scheme).
-The panel and inline panels take it, on every page the panel opens, and so does the button unless
-you gave it a colour in Settings → Widget (it's the same in both).
+The panel and inline panels take it, on every page the panel opens, and so does a Tuti green button
+(a button in your colour or the accent is the same in both).
 
 ```html
 <script src="https://tuti.so/api/widget.js" data-project="acme" data-theme="dark" async></script>
 ```
 
 If your site switches between light and dark without reloading, tell the widget with
-`Tuti.setTheme("light")`, `"dark"` or `"auto"`: open panels change at once, and so does the button
-unless it has its own colour.
+`Tuti.setTheme("light")`, `"dark"` or `"auto"`: open panels change at once, and so does a Tuti green button.
 
 ## Your own button
 

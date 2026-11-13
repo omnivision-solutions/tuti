@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
+import { readsEverywhere } from "@/lib/colors";
 import { MAX_WIDGET_HOME_TEXT, WIDGET_PARTS, type WidgetPart } from "@/lib/portal-look";
 import { WIDGET_ICON_CHOICES, type WidgetIcon } from "@/lib/widget-icons";
 
@@ -15,6 +16,12 @@ import { requirePlan } from "./plan";
 
 /** The brand green (`--primary` in light mode). Picking it means "the default", which also has a dark-mode shade. */
 export const DEFAULT_WIDGET_COLOR = "#12804a";
+
+/**
+ * The launcher's colour while it has none of its own: the portal's accent (Settings → Branding) where that stands out
+ * in light and dark mode alike (it's one colour on every site), else the brand green.
+ */
+export const defaultLauncherColor = (brandColor: string | null) => (brandColor && readsEverywhere(brandColor) ? brandColor : DEFAULT_WIDGET_COLOR);
 export const MAX_WIDGET_LINKS = 5;
 export const MAX_WIDGET_LABEL_LENGTH = 30;
 export const MAX_WIDGET_LINK_LABEL_LENGTH = 40;
@@ -127,7 +134,7 @@ export const getWidgetSettings = defineOperation({
 
 export const updateWidgetSettings = defineOperation({
   name: "widget.update",
-  summary: `Set the widget's launcher, a round button: its name (label: read out by screen readers and its tooltip), colour (#rrggbb, null for the brand green), corner, up to ${MAX_WIDGET_LINKS} quick links (replaces the list), and its icon (${WIDGET_ICON_CHOICES.join(", ")}; "image" with iconImage, the id of an image uploaded in the app). Where plans are sold, an icon other than chat needs Pro (402 otherwise); on a lower plan the one set is kept and the launcher shows chat. The panel's Home: its heading (title) and the greeting above it (empty for "How can we help?" and "Hi there 👋", with the visitor's first name once their site signs them in), and the parts turned off (hidden, replaces the list: ${WIDGET_PARTS.join(", ")}), gone from Home and the tabs. onPortal: the launcher on every page of the project's own portal too (true for new projects). aiFirst: a new message in Messages goes to the docs' AI first, where the server has AI answers and the project has docs, with "Ask a person" to pass it to the team; one with files goes to the team (true for new projects)`,
+  summary: `Set the widget's launcher, a round button: its name (label: read out by screen readers and its tooltip), colour (#rrggbb; null follows the portal's accent colour where it stands out on light and dark pages, else the brand green; sending the launcher's own stored colour keeps it, and sending that default otherwise is null), corner, up to ${MAX_WIDGET_LINKS} quick links (replaces the list), and its icon (${WIDGET_ICON_CHOICES.join(", ")}; "image" with iconImage, the id of an image uploaded in the app). Where plans are sold, an icon other than chat needs Pro (402 otherwise); on a lower plan the one set is kept and the launcher shows chat. The panel's Home: its heading (title) and the greeting above it (empty for "How can we help?" and "Hi there 👋", with the visitor's first name once their site signs them in), and the parts turned off (hidden, replaces the list: ${WIDGET_PARTS.join(", ")}), gone from Home and the tabs. onPortal: the launcher on every page of the project's own portal too (true for new projects). aiFirst: a new message in Messages goes to the docs' AI first, where the server has AI answers and the project has docs, with "Ask a person" to pass it to the team; one with files goes to the team (true for new projects)`,
   method: "PATCH",
   path: "/widget",
   scope: "write",
@@ -164,7 +171,7 @@ export const updateWidgetSettings = defineOperation({
       prisma.$transaction(async (tx) => {
         // One save at a time per project, so two saves can't each keep an image the other replaced.
         await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
-        const current = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { widgetIcon: true, widgetIconImageId: true } });
+        const current = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { widgetIcon: true, widgetIconImageId: true, widgetColor: true, brandColor: true } });
         // Removing the image of an image icon (the form still says "image") goes back to the chat bubble.
         const removed = input.iconImage === null && current.widgetIcon === "image" && (input.icon ?? "image") === "image";
         const icon = removed ? "chat" : (input.icon ?? current.widgetIcon);
@@ -186,7 +193,11 @@ export const updateWidgetSettings = defineOperation({
           where: { id: projectId },
           data: {
             ...(input.label !== undefined && { widgetLabel: input.label }),
-            ...(input.color !== undefined && { widgetColor: input.color === DEFAULT_WIDGET_COLOR ? null : input.color }),
+            // Picking the launcher's default (the portal's accent, or the brand green) keeps no colour of its own, so the
+            // launcher follows it; a colour it already has stays its own, even once the accent is the same.
+            ...(input.color !== undefined && {
+              widgetColor: input.color !== null && input.color === current.widgetColor ? input.color : input.color === defaultLauncherColor(current.brandColor) ? null : input.color,
+            }),
             ...(input.position !== undefined && { widgetPosition: input.position }),
             ...(input.links !== undefined && { widgetLinks: input.links }),
             ...(input.title !== undefined && { widgetTitle: input.title }),

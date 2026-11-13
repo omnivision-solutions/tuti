@@ -437,15 +437,20 @@ test("links stored some other way never reach the portal unless they're valid", 
   expect(await get()).toMatchObject({ headerLinks: [], footerLinks: [] });
 });
 
-test("the colour becomes the accent, with readable text on it; where it's too faint, the accent is the text colour", () => {
+test("the colour becomes the accent and its tint, with readable text on it; where it's too faint, the accent is the text colour", () => {
   expect(brandCss(null)).toBeNull();
   const theme = "--primary:var(--foreground);--primary-foreground:var(--background);--ring:var(--foreground)";
+  // The tint (a voted idea, the open board, the team's replies) is the colour's own in both modes, never Tuti's green.
+  const soft = (c: string) => `--soft:oklch(from ${c} 0.955 min(c, 0.035) h);--soft-foreground:oklch(from ${c} 0.43 min(c, 0.13) h)`;
+  const softDark = (c: string) => `--soft:oklch(from ${c} 0.3 min(c, 0.05) h);--soft-foreground:oklch(from ${c} 0.86 min(c, 0.11) h)`;
+  // Tints only where the browser has relative colours (elsewhere the default tint stays, rather than none).
+  const tints = (c: string) => `@supports (color:oklch(from red 0.5 min(c, 0.1) h)){html:not(.dark){${soft(c)}}html.dark{${softDark(c)}}}`;
   // A blue reads on both backgrounds, with white text on it.
   expect(brandCss("#2563eb")).toBe(
-    "html:not(.dark){--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}html.dark{--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}",
+    `html:not(.dark){--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}html.dark{--primary:#2563eb;--primary-foreground:#ffffff;--ring:#2563eb}${tints("#2563eb")}`,
   );
   // A pale yellow is lost on the light page, fine on the dark one (with black text).
-  expect(brandCss("#fde047")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#fde047;--primary-foreground:#000000;--ring:#fde047}`);
+  expect(brandCss("#fde047")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#fde047;--primary-foreground:#000000;--ring:#fde047}${tints("#fde047")}`);
   // A navy is the other way round.
-  expect(brandCss("#172554")).toBe(`html:not(.dark){--primary:#172554;--primary-foreground:#ffffff;--ring:#172554}html.dark{${theme}}`);
+  expect(brandCss("#172554")).toBe(`html:not(.dark){--primary:#172554;--primary-foreground:#ffffff;--ring:#172554}html.dark{${theme}}${tints("#172554")}`);
 });

@@ -55,6 +55,57 @@ test("the team sets the label, colour, corner and up to 5 https links; each chan
   expect((await update({ links: [] })).links).toEqual([]);
 });
 
+test("with the portal's accent colour set, that's the launcher's default: picking it keeps none of its own, so the launcher follows the accent", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
+  expect((await update({ color: "#7c3aed" })).color).toBeNull();
+  // The brand green is then a colour of its own.
+  expect((await update({ color: "#12804a" })).color).toBe("#12804a");
+  // An accent too pale to stand out on a light page isn't the launcher's default: the brand green is.
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#fde047" } });
+  await update({ color: "#5b21b6" });
+  expect((await update({ color: "#12804a" })).color).toBeNull();
+});
+
+test("a colour the launcher has of its own stays its own once the accent becomes the same, saved from the form or the API", async () => {
+  actAs(owner);
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed", widgetColor: "#ea580c" } });
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#ea580c" } });
+  expect((await update({ color: "#ea580c" })).color).toBe("#ea580c");
+  const data = new FormData();
+  data.set("label", "Feedback");
+  data.set("position", "bottom-right");
+  data.set("color", "#ea580c");
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect((await call(getWidgetSettings, team(), {})).color).toBe("#ea580c");
+  // "Use the accent colour" says it follows the accent, though the colour is the same.
+  data.set("colorFollows", "on");
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect((await call(getWidgetSettings, team(), {})).color).toBeNull();
+});
+
+test("the brand green kept as the launcher's own colour while there was an accent is the default again once the accent goes", async () => {
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed", widgetColor: "#12804a" } });
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: null } });
+  const { GET } = await import("@/app/api/widget/latest/route");
+  const latest = (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as { launcher: object };
+  // Served as no colour: the loader's green, with its dark-mode shade.
+  expect(latest.launcher).toMatchObject({ color: null, textColor: null });
+});
+
+test("the form's colour, left at the default it showed, keeps following the accent, even one changed since it was opened", async () => {
+  actAs(owner);
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
+  const data = new FormData();
+  data.set("label", "Feedback");
+  data.set("position", "bottom-right");
+  // Opened while the accent was purple; a teammate made it orange before this was saved.
+  data.set("color", "#7c3aed");
+  data.set("colorFollows", "on");
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#ea580c" } });
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect((await call(getWidgetSettings, team(), {})).color).toBeNull();
+});
+
 test("settings are checked: https links only, lengths, at most 5 links, a real colour and corner", async () => {
   const refused = async (input: Parameters<typeof update>[0], message: string) =>
     expect(update(input)).rejects.toMatchObject({ status: 400, message });

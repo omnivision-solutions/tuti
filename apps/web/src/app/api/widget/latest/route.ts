@@ -4,7 +4,7 @@ import { liveDomain, projectWith } from "@tuti/jobs";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
-import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
+import { DEFAULT_WIDGET_COLOR, defaultLauncherColor, servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
 
 /**
  * For the widget script on customers' sites, read once per page view: when the
@@ -28,13 +28,18 @@ export async function GET(request: Request) {
   const [latest, settings, project] = await Promise.all([
     latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
-    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true } }),
+    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true, portalAccess: true, colorScheme: true, brandColor: true } }),
   ]);
+  // The launcher's own colour, else the portal's accent (Settings → Branding) where it stands out in light and dark; null
+  // otherwise: the loader's brand green, which has a dark-mode shade.
+  // The brand green kept as its own (picked while the accent was another colour) is the green's default again, with its shade.
+  const fallback = defaultLauncherColor(project?.brandColor ?? null);
+  const own = settings?.color === DEFAULT_WIDGET_COLOR && fallback === DEFAULT_WIDGET_COLOR ? null : settings?.color;
+  const color = own ?? (fallback === DEFAULT_WIDGET_COLOR ? null : fallback);
   const launcher = settings && {
     label: settings.label,
-    // Null: the loader's brand green, which has a dark-mode shade.
-    color: settings.color,
-    textColor: settings.color && textColorOn(settings.color),
+    color,
+    textColor: color && textColorOn(color),
     position: settings.position,
     // Built-in icons by name; an image by its lasting link.
     ...(project && servedIcon(settings, project.plan)),
