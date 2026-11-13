@@ -271,7 +271,9 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   const avatar = (await messages.locator(".team .inbox-chat-avatar").last().boundingBox())!;
   const bubble = (await bubbles.nth(2).boundingBox())!;
   expect(Math.abs(avatar.y + avatar.height - (bubble.y + bubble.height))).toBeLessThanOrEqual(2);
-  await expect(messages.getByRole("listitem").nth(1)).toContainText("Olive Owner · ");
+  // Said to screen readers from a copy: the folded line itself is hidden from them.
+  await expect(lines.first()).toHaveAttribute("aria-hidden", "true");
+  await expect(messages.getByRole("listitem").nth(1).locator("p.sr-only")).toContainText("Olive Owner · ");
   await expect(messages.locator(".team .inbox-chat-avatar").first()).toHaveCSS("visibility", "hidden");
   await expect(messages.locator(".team .inbox-chat-avatar").last()).toHaveCSS("visibility", "visible");
   // The team's in the primary colour; the customer's long message stays well short of the pane's width.

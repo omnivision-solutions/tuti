@@ -295,7 +295,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                   const name = byName(message);
                   const status = emailed(message);
                   // A run from one sender, as in a messaging app: the next message from them within minutes, by the same name with the
-                  // same email status, carries the avatar and that line for both (this one's line folded to no height, still read by screen readers). A run ends where the
+                  // same email status, carries the avatar and that line for both (this one's line folded to no height, said to screen readers from a copy). A run ends where the
                   // next message starts a new day in the viewer's time zone: its divider, shown in the browser, brings them back.
                   const next = conversation.messages[index + 1];
                   const runs =
@@ -341,11 +341,19 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                               </details>
                             )}
                           </div>
-                          <p className={cn("inbox-message-by m-0 mb-2 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center", runs && "h-0 overflow-hidden pt-0 mb-0 in-[li:has(+li_.inbox-day)]:h-auto in-[li:has(+li_.inbox-day)]:pt-0.75 in-[li:has(+li_.inbox-day)]:mb-2")}>
+                          <p className={cn("inbox-message-by m-0 mb-2 flex items-center gap-1.25 px-0.5 pt-0.75 text-xs leading-4.5 text-muted-foreground [&>svg]:size-3.25 [&>svg]:flex-none", fromTeam && "justify-end text-right", message.note && "justify-center text-center", runs && "h-0 overflow-hidden pt-0 mb-0 in-[li:has(+li_.inbox-day)]:h-auto in-[li:has(+li_.inbox-day)]:pt-0.75 in-[li:has(+li_.inbox-day)]:mb-2")}
+                            // Folded, it's said from the copy below instead (a line of no height can be skipped).
+                            aria-hidden={runs || undefined}
+                          >
                             {message.note ? <LockKeyholeIcon aria-hidden /> : <MailIcon aria-hidden />}
                             {!message.note && `${name} · `}
                             {timeAgo(message.createdAt)} {status && <span>{status}</span>}
                           </p>
+                          {runs && (
+                            <p className="sr-only">
+                              {name} · {timeAgo(message.createdAt)} {status}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </li>
