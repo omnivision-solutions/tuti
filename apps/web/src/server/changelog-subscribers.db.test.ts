@@ -174,11 +174,14 @@ async function publishEntry(title: string, input: { emailSubscribers?: boolean }
 describe("subscribing", () => {
   test("nothing is sent until the address confirms; confirmed, a published entry arrives with its link and an unsubscribe link", async () => {
     const [kim, lee] = [newAddress(), newAddress()];
+    // Both emails in the project's accent colour.
+    await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
     expect(await subscribe(kim.toUpperCase())).toEqual({ sentTo: kim });
     expect(await subscribe(lee)).toEqual({ sentTo: lee });
     const link = await confirmationTo(kim);
     // It promises only the entries the team emails (publishing asks each time).
     expect((await mailbox.latestTo(kim)).text).toContain(`Confirm to get the changelog entries ${project.name} emails to subscribers`);
+    expect((await mailbox.latestTo(kim)).html).toContain("border-top:4px solid #7c3aed");
     expect(await page({ confirm: link })).toContain(
       `Get ${project.name}'s updates by email? Once you confirm, the changelog entries ${project.name} emails to subscribers will go to ${kim}.`,
     );
@@ -200,6 +203,7 @@ describe("subscribing", () => {
     expect(entryEmailsTo(lee)).toEqual([]);
     const [email] = entryEmailsTo(kim);
     expect(email!.subject).toBe(`${project.name}: Dark mode`);
+    expect(email!.html).toContain("border-top:4px solid #7c3aed");
     expect(email!.text).toContain("Dark mode, for everyone.");
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/changelog/1`);
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/changelog/subscription?token=${token}`);

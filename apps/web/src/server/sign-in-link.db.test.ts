@@ -80,9 +80,12 @@ async function confirm(link: URL, host = link.host) {
 
 test("the email has a link to a page that asks to confirm, then signs a new address up, named after it", async () => {
   const email = newAddress();
+  // In the portal's accent colour.
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
   expect(await ask(email)).toEqual({ sentTo: email });
 
   const message = await mailbox.latestTo(email);
+  expect(message.html).toContain("border-top:4px solid #7c3aed");
   expect(message.text).toContain(project.name);
   expect(message.text).toContain(`expires in ${SIGN_IN_LINK_MINUTES} minutes`);
   expect(message.text).toContain("If you didn't ask for this, ignore it.");

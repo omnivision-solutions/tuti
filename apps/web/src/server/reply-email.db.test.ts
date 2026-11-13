@@ -53,11 +53,14 @@ test("the team's reply with Email voters goes to the post's voters, each once; n
   await call(createComment, as(owner.id), { number: post.number, body: "Looking into it." });
   expect(emailsTo(voter.email)).toEqual([]);
 
+  // In the project's accent colour.
+  await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#7c3aed" } });
   await call(createComment, as(owner.id), { number: post.number, body: "Dark mode ships next week.", emailVoters: true });
   for (const address of [voter.email, other.email, author.email]) {
     const [email, ...more] = emailsTo(address);
     expect(more).toEqual([]);
     expect(email!.subject).toBe("Re: Dark mode");
+    expect(email!.html).toContain("border-top:4px solid #7c3aed");
     expect(email!.text).toContain("Owner from");
     expect(email!.text).toContain("Dark mode ships next week.");
     expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
