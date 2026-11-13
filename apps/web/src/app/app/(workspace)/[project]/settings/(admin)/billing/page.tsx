@@ -82,7 +82,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </SettingBlock>
         </SettingsCard>
       )}
-      {plansEnabled() && (badge !== null || plan.badgeAddOn) && (
+      {plansEnabled() && badge !== null && (
         <SettingsCard>
           <SettingRow
             label='Hide "Powered by tuti"'
@@ -102,7 +102,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   Choose a plan
                 </a>
               ) : (
-                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge ?? 0} />
+                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge} />
               ))}
           </SettingRow>
         </SettingsCard>

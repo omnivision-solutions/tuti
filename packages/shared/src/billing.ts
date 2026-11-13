@@ -59,7 +59,7 @@ export const billingSchema = z
       .partial()
       .strict()
       .optional()
-      .describe('The add-on hiding "Powered by tuti", priced for plans billed each month and each year (and self-hosted licences, on Tuti\'s licence server). Absent: not sold.'),
+      .describe('The add-on hiding "Powered by tuti", priced for plans billed each month and each year (and self-hosted licences, on Tuti\'s licence server). Absent: not sold. Keep a retired price listed after the new one while anyone pays it: only listed prices are recognised as the add-on, to show it and to remove it.'),
     historyKeptDays: days.default(365).describe("Days closed conversations and AI conversations are kept before they're deleted, never fewer than the longest plan's history."),
   })
   .strict()

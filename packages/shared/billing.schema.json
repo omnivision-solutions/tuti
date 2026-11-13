@@ -209,7 +209,7 @@
       "description": "The plan of a project without a live paid plan (none yet, or it ended), and of one whose plan this file doesn't list."
     },
     "badge": {
-      "description": "The add-on hiding \"Powered by tuti\", priced for plans billed each month and each year (and self-hosted licences, on Tuti's licence server). Absent: not sold.",
+      "description": "The add-on hiding \"Powered by tuti\", priced for plans billed each month and each year (and self-hosted licences, on Tuti's licence server). Absent: not sold. Keep a retired price listed after the new one while anyone pays it: only listed prices are recognised as the add-on, to show it and to remove it.",
       "type": "object",
       "properties": {
         "month": {
