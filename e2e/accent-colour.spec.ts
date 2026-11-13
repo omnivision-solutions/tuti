@@ -175,4 +175,15 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
   await expect(panel.getByRole("navigation", { name: "Widget" })).toBeVisible();
   expect(await greens(reader)).toEqual([]);
   await checkpoint(reader, "widget-open-dark");
+
+  // Settings → Widget: the launcher's colour is the accent until the team gives it one of its own, and back.
+  await owner.goto(`/app/${slug}/settings/widget`);
+  const hex = owner.getByLabel("Colour", { exact: true });
+  await expect(hex).toHaveValue("#7c3aed");
+  const useAccent = owner.getByRole("button", { name: "Use the accent colour" });
+  await expect(useAccent).toHaveCount(0);
+  await hex.fill("#0f766e");
+  await useAccent.click();
+  await expect(hex).toHaveValue("#7c3aed");
+  await expect(useAccent).toHaveCount(0);
 });

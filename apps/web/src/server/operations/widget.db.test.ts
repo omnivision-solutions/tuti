@@ -75,10 +75,12 @@ test("a colour the launcher has of its own stays its own once the accent becomes
   data.set("label", "Feedback");
   data.set("position", "bottom-right");
   data.set("color", "#ea580c");
-  data.set("defaultColor", "#ea580c");
-  data.set("ownColor", "#ea580c");
   expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
   expect((await call(getWidgetSettings, team(), {})).color).toBe("#ea580c");
+  // "Use the accent colour" says it follows the accent, though the colour is the same.
+  data.set("colorFollows", "on");
+  expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
+  expect((await call(getWidgetSettings, team(), {})).color).toBeNull();
 });
 
 test("the form's colour, left at the default it showed, keeps following the accent, even one changed since it was opened", async () => {
@@ -89,7 +91,7 @@ test("the form's colour, left at the default it showed, keeps following the acce
   data.set("position", "bottom-right");
   // Opened while the accent was purple; a teammate made it orange before this was saved.
   data.set("color", "#7c3aed");
-  data.set("defaultColor", "#7c3aed");
+  data.set("colorFollows", "on");
   await prisma.project.update({ where: { id: project.id }, data: { brandColor: "#ea580c" } });
   expect(await saveWidgetSettings(project.slug, {}, data)).toEqual({});
   expect((await call(getWidgetSettings, team(), {})).color).toBeNull();
