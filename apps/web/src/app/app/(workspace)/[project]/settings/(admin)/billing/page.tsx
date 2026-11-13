@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { badgePerMonth, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
+import { badgeOffered, badgePerMonth, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
@@ -40,7 +40,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const shown = planDisplay(plan.plan);
   // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One already on
   // a plan billed a way it's no longer sold shows its other price, so it can still be seen and removed.
-  const sold = plan.plan === "FREE" ? badgePerMonth() : badgePerMonth(plan.planInterval === "year" ? "year" : "month");
+  const sold = badgeOffered(plan.plan, plan.planInterval);
   const badge = sold ?? (plan.badgeAddOn ? badgePerMonth() : null);
   return (
     <SettingsPane title="Billing">
@@ -58,7 +58,8 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             plan.plan === "FREE"
                 ? "Upgrade this project for more. Plans are per project: readers are always unlimited."
                 : [
-                    planPriceText(shown.price, plan.planInterval === "year" ? "year" : "month"),
+                    // None for a plan the file sells no way (by quote): it's billed as agreed.
+                    shown.price[plan.planInterval === "year" ? "year" : "month"] !== null && planPriceText(shown.price, plan.planInterval === "year" ? "year" : "month"),
                     plan.planEndsAt ? `Ends on ${day(plan.planEndsAt)}` : plan.planPeriodEnd && `Renews on ${day(plan.planPeriodEnd)}`,
                   ]
                     .filter(Boolean)

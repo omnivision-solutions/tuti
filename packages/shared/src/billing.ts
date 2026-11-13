@@ -100,6 +100,12 @@ const loaded = new Map<string, BillingConfig>();
 export function billingConfig(): BillingConfig | null {
   const path = process.env.BILLING_CONFIG?.trim();
   if (!path) {
+    // The settings the file replaced, still here: a server meant to sell plans whose file was forgotten. Billing off would
+    // give every project everything, and Stripe's renewals would find no plan and take theirs away.
+    const replaced = Object.keys(process.env).filter((name) => (name === "PLANS" || name.startsWith("STRIPE_PRICE_")) && process.env[name]?.trim());
+    if (replaced.length > 0) {
+      throw new Error(`${replaced.join(", ")} ${replaced.length === 1 ? "is" : "are"} set, but plans are now sold from the file at BILLING_CONFIG: set it (see billing.example.json), or remove them`);
+    }
     return null;
   }
   if (!loaded.has(path)) {

@@ -34,3 +34,13 @@ test("the default plan is free while projects store the database's plans", () =>
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.defaultPlan = "pro"; }));
   expect(() => billingConfig()).toThrow(/must be free for now\n {2}→ at defaultPlan/);
 });
+
+test("the settings the file replaced, left without one, stop the server rather than turn billing off", () => {
+  vi.stubEnv("BILLING_CONFIG", "");
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", "price_pro");
+  expect(() => billingConfig()).toThrow("PLANS, STRIPE_PRICE_PRO_MONTHLY are set, but plans are now sold from the file at BILLING_CONFIG");
+  vi.stubEnv("PLANS", "");
+  vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", "");
+  expect(billingConfig()).toBeNull();
+});

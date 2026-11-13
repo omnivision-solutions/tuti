@@ -64,6 +64,8 @@ export const serverEnv = {
   AI_CREDITS_TOPUP_EXPIRY_DAYS: "",
   // A self-hosted server: no plans (the cloud's server sells them, below), so every feature is on.
   BILLING_CONFIG: "",
+  // What the billing file replaced, whatever a local .env still holds (left set without the file, it stops the server).
+  PLANS: "",
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",

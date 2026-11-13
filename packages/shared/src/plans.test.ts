@@ -1,7 +1,7 @@
 import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { articleLimit, articleVersionsKept, badgePerMonth, articleVersionsNote, articleVersionsStored, badgePrice, boardLimit, historyDays, historyKeptDays, isBadgePrice, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, upgradeFor } from "./plans";
+import { articleLimit, articleVersionsKept, badgeOffered, badgePerMonth, articleVersionsNote, articleVersionsStored, badgePrice, boardLimit, historyDays, historyKeptDays, isBadgePrice, longestHistoryDays, planCredits, planDisplay, planFor, planIncludes, planNeeded, planOfPrice, planPrice, plansWith, reportingDays, reportingRangeNeeded, roomierPlan, teamLimit, upgradeFor } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -57,6 +57,8 @@ test("a plan's Stripe prices: the first is sold, older ones still recognised; th
   expect([badgePrice("month"), badgePrice("year"), isBadgePrice("price_badge"), isBadgePrice("price_new")]).toEqual(["price_badge", "price_badge_yearly", true, false]);
   // What it shows a month: each billing's own, or monthly's before a plan is picked.
   expect([badgePerMonth("month"), badgePerMonth("year"), badgePerMonth()]).toEqual([49, 39, 49]);
+  // For a project: its plan's billing, or on the default plan what it starts at.
+  expect([badgeOffered("PRO", "year"), badgeOffered("PRO", "month"), badgeOffered("FREE", null)]).toEqual([39, 49, 49]);
 });
 
 test("upgrades name the first plan above with more room, and none where no plan has more", () => {

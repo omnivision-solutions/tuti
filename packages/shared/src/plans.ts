@@ -71,6 +71,13 @@ export function badgePerMonth(interval?: PlanInterval): number | null {
 /** What a project on `plan` gets, as the billing file has it (the default plan's where the file doesn't list it). Billing on only. */
 export const planTerms = (plan: PlanKey): BillingPlan => terms(plan);
 
+/**
+ * What the add-on costs a month for a project on `plan`, billed each `interval` (its own billing: the add-on bills alike), or
+ * what it starts at on the default plan; null where it isn't sold so.
+ */
+export const badgeOffered = (plan: PlanKey, interval: string | null): number | null =>
+  plan === defaultPlanKey() ? badgePerMonth() : badgePerMonth(interval === "year" ? "year" : "month");
+
 /** A plan's name and what it shows a month, billed monthly and yearly (null where it isn't sold that way). */
 export function planDisplay(plan: PlanKey): { name: string; price: { month: number | null; year: number | null } } {
   const terms = listed(plan);
