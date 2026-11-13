@@ -38,6 +38,14 @@ async function closeWithEscape(page: Page, panel: Locator) {
 }
 
 /**
+ * Waits for a sheet to finish opening: it slides in for a moment after `data-starting-style` goes, and a click on its
+ * Close meanwhile can land where the button was, not where it is.
+ */
+async function finishedOpening(sheet: Locator) {
+  await expect.poll(() => sheet.evaluate((element) => element.getAnimations().length)).toBe(0);
+}
+
+/**
  * Counts, from now, the widget script's answers to the panel's "what had they seen?" that arrive while the panel
  * shows `view` (Home's "2 new", What's new's unread marks), so a journey can wait for that view's own answer before
  * saying something isn't marked: not another view's, nor text the server rendered before any answer came. In the
@@ -679,7 +687,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
     const assistant = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
     await expect(assistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
     // Once it has finished opening (a close mid-animation can be lost).
-    await expect(assistant).not.toHaveAttribute("data-starting-style");
+    await finishedOpening(assistant);
     await assistant.getByRole("button", { name: "Close the assistant" }).click();
     await expect(assistant).toBeHidden();
     // Closed, the panel gives focus back (from the search dialog, gone by then, to the header's search).
@@ -702,7 +710,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
   const injected = visitor.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
   await expect(injected.getByRole("textbox", { name: "Ask a question" })).toBeVisible();
   await expect(injected.getByRole("log", { name: "Conversation" })).not.toContainText("Not an answer");
-  await expect(injected).not.toHaveAttribute("data-starting-style");
+  await finishedOpening(injected);
   await injected.getByRole("button", { name: "Close the assistant" }).click();
   await visitor.keyboard.press("Escape");
   await expect(visitor.locator("#tuti-widget")).toBeHidden();
@@ -876,7 +884,7 @@ test("the portal shows the project's own widget, until the team turns it off in 
     await page.getByRole("dialog", { name: "Search or ask AI" }).getByRole("button", { name: "Open the assistant" }).click();
     const assistant = page.frameLocator('iframe[title="Feedback"]').getByRole("dialog", { name: "Assistant" });
     await expect(assistant.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
-    await expect(assistant).not.toHaveAttribute("data-starting-style");
+    await finishedOpening(assistant);
     await assistant.getByRole("button", { name: "Close the assistant" }).click();
     await page.keyboard.press("Escape");
     await expect(page.locator("#tuti-widget")).toBeHidden();
