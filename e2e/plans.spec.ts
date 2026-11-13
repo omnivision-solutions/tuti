@@ -39,7 +39,21 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   // The badge's card has a way to it on the free plan too: to the plans, billed as picked there.
   await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
   await checkpoint(owner, "team-settings-billing-free-plan");
-  await owner.getByRole("button", { name: "Upgrade to Pro" }).click();
+  // From the keyboard: while Stripe's page is being opened (its request held here), Upgrade is off but keeps the focus.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await owner.route("**/settings/billing", async (route) => {
+    if (route.request().method() === "POST") {
+      await held;
+    }
+    await route.fallback();
+  });
+  const upgrade = owner.getByRole("button", { name: "Upgrade to Pro" });
+  await upgrade.focus();
+  await owner.keyboard.press("Enter");
+  await expect(upgrade).toBeDisabled();
+  await expect(upgrade).toBeFocused();
+  release();
 
   // Stripe's page (the fake), then back to Billing on Pro, with its credits for the month.
   await owner.getByRole("button", { name: "Subscribe" }).click();
@@ -55,7 +69,7 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await expect(confirm).toContainText("$49 a month is added to this project's plan.");
   await confirm.getByRole("button", { name: "Hide the badge" }).click();
   await expect(owner.getByText('"Powered by tuti" is hidden')).toBeVisible();
-  await expect(owner.getByText("Hidden: $49 a month on this project's plan. It ends with the plan.")).toBeVisible();
+  await expect(owner.getByText("Hidden on this project's plan. It ends with the plan.")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Show the badge again" })).toBeVisible();
   await checkpoint(owner, "team-settings-billing-badge-add-on");
   const reader = await owner.context().newPage();
@@ -94,7 +108,7 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByText("Hiding it is an add-on to a paid plan.")).toBeVisible();
   await owner.getByLabel('Show "Powered by tuti" in the footer').click();
   const dialog = owner.getByRole("dialog", { name: 'Keep "Powered by tuti"?' });
-  await expect(dialog).toContainText("add it to its plan in Billing: $49 a month, on Pro or Business.");
+  await expect(dialog).toContainText("add it to its plan in Billing: $49 a month, on a paid plan.");
   await expect(dialog.getByRole("link", { name: "Get a licence" })).toHaveCount(0);
   await dialog.getByRole("link", { name: "See Billing" }).click();
   await expect(owner).toHaveURL(`${CLOUD_URL}/app/${slug}/settings/billing`);
@@ -233,7 +247,7 @@ test("on Tuti's cloud, Reporting on the free plan is blurred under a card pointi
   await expect(owner.getByRole("menuitem", { name: "Past quarter" })).toHaveAttribute("aria-disabled", "true");
   // Not faded, so they read in dark mode too: their lock says they can't be picked.
   await expect(owner.getByRole("menuitem", { name: "Past year" })).toHaveCSS("opacity", "1");
-  await expect(owner.getByText("Ranges longer than a month need the Business plan.")).toBeVisible();
+  await expect(owner.getByText("Longer ranges need the Business plan.")).toBeVisible();
   await checkpoint(owner, "team-reporting-pro-ranges", { fullPage: false });
   await owner.getByRole("menuitem", { name: "Last month" }).click();
   await owner.waitForURL(`**/app/${slug}/reporting?range=last-month`);

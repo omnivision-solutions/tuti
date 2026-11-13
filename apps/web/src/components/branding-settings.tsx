@@ -15,7 +15,6 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { linksFrom } from "@/lib/forms";
 import { LICENSE_UNREACHABLE, licenseCheckOutcome } from "@/lib/license-check";
-import { BADGE_PRICE } from "@/lib/plans";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import { COLOR_SCHEMES, type ColorScheme, LOGO_TEXT_MAX } from "@/lib/portal-look";
 import { uploadImage } from "@/lib/upload-image";
@@ -234,7 +233,7 @@ export function NavigationSettings({
 }
 
 /** What hiding the badge takes where plans are sold (tuti.so): the add-on on the project's plan, bought on Billing. */
-type BadgePlan = { addOn: boolean; billingUrl: string };
+type BadgePlan = { addOn: boolean; billingUrl: string; perMonth: number | null };
 
 /** Customize → Branding → Powered by tuti: "Powered by tuti" in the footer, which needs a licence (or on tuti.so the add-on) to hide (see branding.update). */
 export function PoweredBySettings({
@@ -526,7 +525,9 @@ function PoweredByField({
             </DialogDescription>
           </DialogHeader>
           {plan ? (
-            <p className="text-sm">To remove it from this project, add it to its plan in Billing: ${BADGE_PRICE} a month, on Pro or Business.</p>
+            <p className="text-sm">{plan.perMonth === null
+                ? "Hiding it isn't sold for this project's plan here."
+                : `To remove it from this project, add it to its plan in Billing: $${plan.perMonth} a month, on a paid plan.`}</p>
           ) : (
             <p className="text-sm">To remove it from this project, get a licence: a flat monthly fee per project.</p>
           )}

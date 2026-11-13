@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
@@ -131,7 +132,7 @@ test("without SUPPORT_EMAIL_DOMAIN, all of it comes from EMAIL_FROM as before", 
 });
 
 test("on a server selling plans, while the project's email is paused, shipped emails wait; sign-in links don't", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { owner, project, team } = await setup();
   // A plan with private portals, so readers can be added; a week old, past the new-project cap.
   await prisma.project.update({

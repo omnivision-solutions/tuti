@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 
 import { type ConversationStatus, prisma } from "@tuti/db";
 import { handlers, pastConversations } from "@tuti/jobs";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { billingFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { reportRange } from "@/lib/report-range";
 import { widgetToken } from "@/lib/widget-session";
@@ -39,12 +39,6 @@ beforeAll(async () => {
   s3 = await startS3Fake();
 });
 afterAll(() => s3.close());
-// Each plan's default history, whatever the environment sets.
-beforeEach(() => {
-  for (const name of ["HISTORY_DAYS_FREE", "HISTORY_DAYS_PRO", "HISTORY_DAYS_BUSINESS", "HISTORY_KEPT_DAYS"]) {
-    vi.stubEnv(name, "");
-  }
-});
 afterEach(() => vi.unstubAllEnvs());
 
 const quiet = { info: () => {}, warn: () => {} };
@@ -79,7 +73,7 @@ async function setup() {
 }
 
 test("with plans, closed conversations past the plan's history are hidden; open, snoozed and waiting ones never; a message or an upgrade shows them again", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { project, team, conversation, plan, listed } = await setup();
   const closed10 = await conversation(10, "CLOSED"); // #1
   await conversation(100, "OPEN"); // #2
@@ -103,9 +97,9 @@ test("with plans, closed conversations past the plan's history are hidden; open,
 
   // Back on Free with a longer history set for it.
   await plan("FREE");
-  vi.stubEnv("HISTORY_DAYS_FREE", "14");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.historyDays = 14; }));
   expect(await listed()).toEqual([1, 2, 3, 4, 5]);
-  vi.stubEnv("HISTORY_DAYS_FREE", "");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
 
   // An email reply joins the hidden one: it's open, and shows again.
   expect(await listed()).toEqual([2, 3, 4, 5]);
@@ -123,12 +117,12 @@ test("with plans, closed conversations past the plan's history are hidden; open,
   expect((await call(listConversations, team, { spam: "true" })).conversations).toEqual([]);
 
   // Without plans, all of them.
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   expect(await listed()).toEqual([1, 3, 4, 5, 6]);
 });
 
 test("the team's Send and close on a conversation waiting 100 days keeps it: the reply is activity", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { owner, project, conversation, listed } = await setup();
   const waiting = await conversation(100, "OPEN");
   await addMessage(waiting.id, project.id, { author: "TEAM", authorId: owner.id, channel: "APP", body: "Fixed" }, undefined, { close: true });
@@ -139,7 +133,7 @@ test("the team's Send and close on a conversation waiting 100 days keeps it: the
 });
 
 test("search, a person's conversations and a post's linked ones leave out what's past the plan's history", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { owner, project, userId, conversation, plan } = await setup();
   const old = await conversation(10, "CLOSED");
   const post = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "Dark mode" } });
@@ -163,7 +157,7 @@ test("search, a person's conversations and a post's linked ones leave out what's
 });
 
 test("a signed-out visitor's Messages leave out what's past the plan's history", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { project } = await setup();
   actAs(null);
   const started = await widgetStartConversation(project.slug, {}, "Where's my invoice?", "e2e-visitor@example.com");
@@ -173,12 +167,12 @@ test("a signed-out visitor's Messages leave out what's past the plan's history",
   const auth = { visitor: started.visitor };
   await prisma.conversation.updateMany({ where: { projectId: project.id }, data: { status: "CLOSED", activeAt: daysAgo(10), updatedAt: daysAgo(10), lastMessageAt: daysAgo(10) } });
   expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [] });
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: started.number }] });
 });
 
 test("the widget's Messages and Users' counts leave out what's past the plan's history", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { project, team, conversation, plan, auth } = await setup();
   await conversation(10, "CLOSED");
   await conversation(1, "CLOSED");
@@ -199,7 +193,7 @@ test("the widget's Messages and Users' counts leave out what's past the plan's h
 });
 
 test("Reporting's AI conversations lists those asked in within the plan's history; its totals stay as they are", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { project, plan } = await setup();
   const asked = (question: string, days: number) =>
     prisma.docsQuestion.create({ data: { projectId: project.id, askerId: "x", source: "WIDGET", status: "ANSWERED", question, createdAt: daysAgo(days) } });
@@ -214,13 +208,13 @@ test("Reporting's AI conversations lists those asked in within the plan's histor
   await plan("PRO");
   expect(await questions()).toEqual(["Recent", "Older"]);
   expect((await aiReport(project.id, reportRange(undefined))).pastHistory).toBe(0);
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   await plan("FREE");
   expect(await questions()).toEqual(["Recent", "Older"]);
 });
 
 test("Reporting's Past year still counts AI conversations past every plan's history after the daily job: they're kept a year", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { project } = await setup();
   await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
   for (const days of [10, 200]) {
@@ -230,7 +224,7 @@ test("Reporting's Past year still counts AI conversations past every plan's hist
   expect((await aiReport(project.id, reportRange("year"))).totals.conversations).toBe(2);
 });
 
-test("the daily job deletes closed conversations and AI questions after a year (HISTORY_KEPT_DAYS), with their attachments' files; nothing without plans", async () => {
+test("the daily job deletes closed conversations and AI questions after a year (historyKeptDays), with their attachments' files; nothing without plans", async () => {
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
   }
@@ -255,23 +249,23 @@ test("the daily job deletes closed conversations and AI questions after a year (
   });
 
   // Self-hosted: kept forever.
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   expect(await handlers.deleteOldHistory({}, quiet)).toEqual({ skipped: true });
   expect(await left()).toEqual({ conversations: [1, 2, 3, 4, 5], questions: ["Kept", "Old"], file: true });
 
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   // Its totals count every project's (other tests leave theirs): what's left of this one's says what it deleted.
   expect(await handlers.deleteOldHistory({}, quiet)).toMatchObject({ failedFiles: 0 });
   expect(await left()).toEqual({ conversations: [2, 3, 5], questions: ["Kept"], file: false });
-  // Kept less long: never under Business's 90 days, so #3 (100 days) goes.
-  vi.stubEnv("HISTORY_KEPT_DAYS", "30");
+  // Kept less long: as long as Business's 90 days, the least the file allows, so #3 (100 days) goes.
+  vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.historyKeptDays = 90; }));
   await handlers.deleteOldHistory({}, quiet);
   expect((await left()).conversations).toEqual([2, 5]);
   expect(await prisma.conversationMessage.count({ where: { conversationId: old.id } })).toBe(0);
 });
 
 test("a teammate leaving doesn't show their old closed conversations again: being unassigned isn't something done in it", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { owner, project, conversation, listed } = await setup();
   const member = await addMember(project.id, "MEMBER");
   actAs(owner);
@@ -283,7 +277,7 @@ test("a teammate leaving doesn't show their old closed conversations again: bein
 });
 
 test("the migration dates conversations from before activeAt by their updatedAt, so a teammate leaving no longer shows them again", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { owner, project, conversation, listed } = await setup();
   const member = await addMember(project.id, "MEMBER");
   actAs(owner);
@@ -304,7 +298,7 @@ test("the migration dates conversations from before activeAt by their updatedAt,
 });
 
 test("a message written as its user through the API joins a conversation past the plan's history, as their email would, and shows it again", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { owner, project, team, conversation, listed } = await setup();
   await conversation(10, "CLOSED");
   const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
@@ -316,7 +310,7 @@ test("a message written as its user through the API joins a conversation past th
 });
 
 test("past the plan's history, an upgrade is offered only while some plan would show it: an owner sees See plans, a member who to ask", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { owner, project, team, conversation, plan } = await setup();
   await conversation(10, "CLOSED"); // #1: Pro shows it.
   await conversation(100, "CLOSED"); // #2: past every plan's (the job deletes it tonight).
@@ -354,7 +348,7 @@ test("past the plan's history, an upgrade is offered only while some plan would 
 });
 
 test("conversations from before activeAt are dated by their updatedAt, in the Inbox's lists and in Users' counts", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const { team, conversation, listed } = await setup();
   const recent = await conversation(10, "CLOSED");
   const old = await conversation(10, "CLOSED");

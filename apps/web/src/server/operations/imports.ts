@@ -1,6 +1,6 @@
 import { type ImportSource, prisma, type Prisma } from "@tuti/db";
 import { continueImport, failStaleImports, type ImportCounts, IMPORT_KEY, IMPORT_SOURCES as SOURCES, type ImportSourceDefinition, importStale, importStuck, lockProject, nextStep, resumeImport } from "@tuti/jobs";
-import { boardLimit, log } from "@tuti/shared";
+import { boardLimit, log, planDisplay, type PlanKey, plansAbove } from "@tuti/shared";
 import { sealValue } from "@tuti/shared/signed";
 import { z } from "zod";
 
@@ -78,14 +78,18 @@ export async function latestImport(projectId: string): Promise<ImportView | null
  * What an import does past the plan's board limit (the source's boards come turned off), and the plan that has room,
  * by source (null: no limit).
  */
-export function boardsNotes(plan: "FREE" | "PRO" | "BUSINESS"): Record<ImportSourceKey, string> | null {
+export function boardsNotes(plan: PlanKey): Record<ImportSourceKey, string> | null {
   const limit = boardLimit(plan);
   if (limit === null) {
     return null;
   }
-  const more = plan === "FREE" ? `Pro has up to ${boardLimit("PRO")}, and Business any number.` : "Business has any number.";
+  // The plans above it with more: " Pro has up to 5, and Business any number."
+  const more = plansAbove(plan)
+    .filter(({ limits }) => limits.boards === null || limits.boards > limit)
+    .map(({ name, limits }, index) => `${name}${index === 0 ? " has" : ""} ${limits.boards === null ? "any number" : `up to ${limits.boards}`}`)
+    .join(", and ");
   const note = (name: string) =>
-    `Projects on the ${plan === "FREE" ? "free" : "Pro"} plan have up to ${limit} feedback boards: ${name}'s boards past that come across turned off, seen only by your team in the app until an upgrade lets you turn them on. ${more}`;
+    `Projects on the ${planDisplay(plan).name} plan have up to ${limit} feedback boards: ${name}'s boards past that come across turned off, seen only by your team in the app${more ? ` until an upgrade lets you turn them on. ${more}.` : "."}`;
   return Object.fromEntries(Object.entries(IMPORT_SOURCES).map(([key, { name }]) => [key, note(name)])) as Record<ImportSourceKey, string>;
 }
 

@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
@@ -147,7 +148,7 @@ test("an event that comes before the send saved SES's id is tried again by SNS; 
 });
 
 test("on a server selling plans, each project's email is counted by day: sent, bounced for good, complaints; each event once", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   const tags = { project: [project.id], "ses:configuration-set": ["tuti-test"] };
@@ -177,7 +178,7 @@ test("on a server selling plans, each project's email is counted by day: sent, b
   expect(await prisma.projectEmailDay.count({ where: { projectId: { not: project.id } } })).toBe(0);
 
   // Self-hosted (no plans sold): not counted.
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   expect(await post(ses.sns("Notification", event("Send", id(14), {}, at, tags)))).toBe(200);
   expect(await days()).toEqual([{ sent: 2, bounced: 1, complained: 1 }]);
 });

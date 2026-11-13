@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { resetCodeChangesSettings } from "@tuti/shared";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -108,7 +109,7 @@ test("owners only: an admin sees the values and can't change them, a member neit
 });
 
 test("on Business only: Free and Pro are told so (402); after a downgrade the values are kept and not used, and Business uses them again", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   for (const plan of ["FREE", "PRO"] as const) {
     await prisma.project.update({ where: { id: project.id }, data: { plan } });
     await expect(call(updateCodeChangesTuning, as(owner), { "decide.rounds": 6 })).rejects.toMatchObject({

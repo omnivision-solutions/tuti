@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { log } from "@tuti/shared";
-import { startS3Fake } from "@tuti/testkit";
+import { billingFile, startS3Fake } from "@tuti/testkit";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createComment, createPost } from "@/server/operations/create";
@@ -205,7 +205,7 @@ test("the safety net leaves a paused project's replies out, so they don't fill i
   mailbox.refuseNext(voter.email, { code: 421 });
   const reply = await call(createComment, as(owner.id), { number: post.number, body: "Shipping soon.", emailVoters: true });
   await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date(Date.now() - 11 * 60_000) } });
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
   try {
     expect(await handlers.resubmitReplyEmails({}, { info: () => {}, warn: () => {} })).toEqual({ found: 0, queued: 0 });
@@ -220,7 +220,7 @@ test("the safety net leaves a new project's replies out once it's past its daily
   vi.spyOn(log, "warn").mockImplementation(() => {});
   mailbox.refuseNext(voter.email, { code: 421 });
   const reply = await call(createComment, as(owner.id), { number: post.number, body: "Shipping soon.", emailVoters: true });
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "support.example.com");
   // Midday, so the cap's day is the same day for the row and the safety net (not across midnight UTC).
   const noon = new Date(`${new Date().toISOString().slice(0, 10)}T12:00:00Z`);

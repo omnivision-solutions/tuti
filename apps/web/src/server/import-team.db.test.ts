@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@tuti/db";
 import { DAILY_INVITE_LIMIT, generateInvitationToken, handlers, hashInvitationToken, IMPORT_KEY, importsSettled, lockProject, UNSENT_EXPIRY } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
-import { FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
+import { billingFile, FAKE_FEATUREBASE_KEY, type FeaturebaseFake, featurebaseFixtures, startFeaturebaseFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
@@ -118,7 +118,7 @@ test("left out, and said so: the importer, people on the team (verified), people
 });
 
 test("on the free plan, only the room left is invited (members and pending invites, sent or not); the rest are counted", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
   const sentAlready = newAddress();
   await prisma.invitation.create({ data: { projectId: project.id, email: sentAlready, tokenHash: hashInvitationToken(generateInvitationToken()), createdById: owner.id, expiresAt: new Date(Date.now() + 60_000) } });

@@ -1,7 +1,7 @@
 import { Prisma, prisma } from "@tuti/db";
 import { contentBudget, handlers, importJob, IMPORT_KEY, IMPORT_PARTS as STEPS, importsSettled, portalAddress } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
-import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
+import { billingFile, FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
@@ -514,8 +514,7 @@ test("addresses: Featurebase's (without its id) where they're free, the next fre
 });
 
 test("past the plan's article limit, articles come in as drafts, counted", async () => {
-  vi.stubEnv("PLANS", "on");
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
 
   const done = await importDocs();
   expect(done.counts).toMatchObject({ articles: { imported: 2 }, limitDrafts: { imported: 1 }, privateDrafts: { imported: 1 } });

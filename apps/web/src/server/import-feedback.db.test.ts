@@ -4,11 +4,11 @@ import { prisma } from "@tuti/db";
 import { savedPicture } from "@tuti/shared/media-links";
 import { FEEDBACK_PAGE, handlers, IMPORT_KEY, importsSettled, upsertProjectUser } from "@tuti/jobs";
 import { sealValue } from "@tuti/shared/signed";
-import { FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
+import { billingFile, FAKE_FEATUREBASE_KEY, FAKE_OPENAI_KEY, type FeaturebaseFake, featurebaseFixtures, type OpenAIFake, type S3Fake, startFeaturebaseFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { importSummary } from "@/lib/import-parts";
-import { getImport, startImport } from "@/server/operations/imports";
+import { boardsNotes, getImport, startImport } from "@/server/operations/imports";
 import { listBoards } from "@/server/operations/read";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -247,7 +247,7 @@ test("a board matched by name whose Featurebase posts were only their author's b
 });
 
 test("past the plan's board limit, a board comes as its own, turned off, its posts keeping who saw them in Featurebase", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   fake.fixtures.boards.find((board) => board.name === "Bugs")!.postDefaults = { visibility: "authorOnly" };
   // A third board everyone sees: the free plan has room for two, so it comes turned off.
   const ideas = structuredClone(fake.fixtures.boards.find((board) => board.name === "Bugs")!);
@@ -270,7 +270,7 @@ test("past the plan's board limit, a board comes as its own, turned off, its pos
 });
 
 test("a board the team made Private or Team only keeps its choice: posts on it stay Private, an author-only post on a Team only board stays the team's", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   // The team's own Bugs board, Private before the import: Featurebase's Bugs (everyone's) matches it by name.
   await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs", postVisibility: "PRIVATE" } });
   await importFeedback();
@@ -356,7 +356,7 @@ test("a repeat import after a post was deleted in Featurebase goes on: the post 
 });
 
 test("past the plan's board limit, a board comes turned off, its posts on it; without media storage images are left out, counted, and avatars stay links", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   for (const name of Object.keys(s3.env)) {
     vi.stubEnv(name, "");
   }
@@ -385,7 +385,7 @@ test("past the plan's board limit, a board comes turned off, its posts on it; wi
 
 test("what didn't happen isn't counted: no boards left out, no images, and two boards of one name are one board, not past a limit, imported again too", async () => {
   // With a limit the two fit in: the new project's board and Bugs.
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   fake.fixtures.boards = fake.fixtures.boards.slice(0, 2);
   fake.fixtures.boards.push({ ...structuredClone(fake.fixtures.boards[1]!), id: "65f0000000000000000000b7", name: "bugs" });
   for (const row of [...fake.fixtures.posts, ...fake.fixtures.comments]) {
@@ -582,7 +582,7 @@ test("profile pictures come last, after the duplicate check; an import from befo
 });
 
 test("a new project's untouched board becomes the first of Featurebase's, costing the plan no slot", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   // No board named as the new project's: on the free plan (2) both of these come across, neither folded.
   const ideas = fake.fixtures.boards[0]!;
   Object.assign(ideas, { name: "Ideas", localization: { ...(ideas.localization as object), name: { en: "Ideas" } } });
@@ -598,7 +598,7 @@ test("a new project's untouched board becomes the first of Featurebase's, costin
 });
 
 test("sample content added during setup (on the new project's board) doesn't stop that board being reused: both of Featurebase's boards come across on the free plan", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   await addSampleContent(project.id, owner.id);
   expect(await prisma.post.count({ where: { boardId: project.boards[0]!.id, sample: true } })).toBeGreaterThan(0);
   const ideas = fake.fixtures.boards[0]!;
@@ -612,7 +612,7 @@ test("sample content added during setup (on the new project's board) doesn't sto
 });
 
 test("on the free plan, a board matching the new project's by name keeps it wherever it comes; the plan's other slot goes to the first of the rest", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   // Three distinct boards for two slots: one comes off whichever order they're resolved in. The new project's board is
   // one of the two, matched by name ("Feature requests", last here), so the first of the others comes on and the second off.
   const [requests, bugs] = fake.fixtures.boards;
@@ -644,4 +644,11 @@ test("a key that can't read the boards or the posts isn't accepted for Feedback"
     message: "This key can't read Feedback in Featurebase. Use a key that can, or leave Feedback out.",
   });
   expect(await prisma.dataImport.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+test("the import's note promises an upgrade only where a plan for sale has more boards", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile());
+  expect(boardsNotes("PRO")!.canny).toMatch(/until an upgrade lets you turn them on\. Business has any number\.$/);
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { business }) => { business.prices = {}; }));
+  expect(boardsNotes("PRO")!.canny).toMatch(/boards past that come across turned off, seen only by your team in the app\.$/);
 });

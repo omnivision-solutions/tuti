@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -243,7 +244,7 @@ test("a board keeps its own words for posting; emptied, they're the defaults aga
 
 describe("how many boards a plan has (where plans are sold)", () => {
   beforeEach(() => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -316,7 +317,7 @@ describe("how many boards a plan has (where plans are sold)", () => {
   });
 
   test("self-hosted (no plans), no limit", async () => {
-    vi.stubEnv("PLANS", "");
+    vi.stubEnv("BILLING_CONFIG", "");
     for (const slug of ["b2", "b3", "b4", "b5", "b6"]) {
       expect(await createBoard(project.slug, {}, board({ slug }))).toEqual({});
     }

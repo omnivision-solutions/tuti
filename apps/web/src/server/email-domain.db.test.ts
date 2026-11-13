@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
@@ -120,11 +121,11 @@ test("removing it has SES forget the domain, and replies come from the support a
 
 test("on a server selling plans, it needs Pro; without SES it isn't offered", async () => {
   const { team } = await setup();
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   expect((await call(getSupportSettings, team, {})).email!.ownDomain).toMatchObject({ included: false });
   await expect(call(setEmailDomain, team, { address: "support@pro-only.example.com" })).rejects.toMatchObject({ status: 402 });
 
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   vi.stubEnv("SES_REGION", "");
   expect((await call(getSupportSettings, team, {})).email!.ownDomain).toBeNull();
   await expect(call(setEmailDomain, team, { address: "support@no-ses.example.com" })).rejects.toMatchObject({ status: 409 });
@@ -241,7 +242,7 @@ test("Send a test email only when replies do come from it: not on a plan without
     vi.stubEnv(name, value);
   }
 
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   expect(await sendEmailDomainTest(project.slug)).toEqual({ error: expect.stringContaining("Pro plan") });
 });
 

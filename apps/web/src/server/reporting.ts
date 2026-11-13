@@ -1,11 +1,11 @@
-import { planIncludes } from "@tuti/shared";
+import { planIncludes, reportingRangeNeeded } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
-import { type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
+import { RANGE_KEYS, type RangeKey, type ReportRange, reportRange } from "@/lib/report-range";
 
 import { getMembership, isAdminRole } from "./membership";
 import type { docsGaps } from "./operations/docs-insights";
-import { type aiReport, type docsReport, type inboxReport, lockedRanges } from "./operations/reports";
+import { type aiReport, defaultRange, type docsReport, type inboxReport, lockedRanges } from "./operations/reports";
 
 /**
  * A Reporting page's project and range: `?range=` where the plan has it (the default otherwise), the ranges it doesn't (`locked`), and
@@ -18,10 +18,11 @@ export async function reportingPage(slug: string, given: unknown) {
     notFound();
   }
   const { plan } = membership.project;
-  const locked = lockedRanges(plan);
-  const key = typeof given === "string" && !locked.includes(given as RangeKey) ? given : undefined;
+  const ranges = lockedRanges(plan);
+  // A range the plan has; anything else (locked, unknown, an old bookmark) is its default.
+  const key = (RANGE_KEYS as readonly unknown[]).includes(given) && !ranges.includes(given as RangeKey) ? (given as RangeKey) : defaultRange(plan);
   const sample = !planIncludes(plan, "reporting");
-  return { membership, range: reportRange(key), locked, sample, upgrade: sample ? { slug, admin: isAdminRole(membership.role) } : null };
+  return { membership, range: reportRange(key), locked: { ranges, hint: reportingRangeNeeded(plan) }, sample, upgrade: sample ? { slug, admin: isAdminRole(membership.role) } : null };
 }
 
 // Made-up numbers in the reports' shapes, for the blurred pages: the same each time, rising and falling over the range's days.

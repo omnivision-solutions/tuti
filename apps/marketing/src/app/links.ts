@@ -1,7 +1,8 @@
 import type { PricingPlan } from "@tuti/ui/plan-line";
 
 /** A path in the app (apps/web): on this domain in production, the app's dev server in development (next.config.ts). */
-export const inApp = (path: string) => `${process.env.APP_LINKS}${path}`;
+/** A path in the app, on the app's address; a link that's already absolute (a `mailto:` CTA) as it is. */
+export const inApp = (path: string) => (path.startsWith("/") ? `${process.env.APP_LINKS}${path}` : path);
 
 export const SIGN_IN = inApp("/app/auth/sign-in");
 export const SIGN_UP = inApp("/app/auth/sign-up");
@@ -12,7 +13,7 @@ export const REPO_URL = "https://github.com/omnivision-solutions/tuti";
 export type Plans = {
   plans: PricingPlan[];
   enterprise: { features: string[]; cta: { label: string; href: string } };
-  yearlyNote: string;
+  yearlyNote: string | null;
   aiInEveryPlan: boolean;
 };
 

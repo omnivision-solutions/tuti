@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Prisma, prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
-import { isBadgePrice, log, planCredits, planOfPrice } from "@tuti/shared";
+import { isBadgePrice, log, planCredits, planDisplay, planOfPrice } from "@tuti/shared";
 
 import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 
@@ -131,7 +131,7 @@ export async function grantPlanCredits(invoiceId: string): Promise<void> {
     return;
   }
   try {
-    await grantCredits(projectId, "PLAN", credits, { expiresAt: at(line.period.end), note: `${paid.plan === "PRO" ? "Pro" : "Business"} plan`, stripeInvoiceId: invoice.id });
+    await grantCredits(projectId, "PLAN", credits, { expiresAt: at(line.period.end), note: `${planDisplay(paid.plan).name} plan`, stripeInvoiceId: invoice.id });
     log.info("A plan's AI credits given", { projectId, invoice: invoice.id, credits });
   } catch (error) {
     // Given already (Stripe delivered it again), or the project is gone.

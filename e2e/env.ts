@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 
 import { readCodeChangesSettings } from "../packages/shared/src/code-changes-settings";
+import { billingFile } from "../packages/testkit/src/billing";
 
 // Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e): each uses it and the next one.
 const PORT = Number(process.env.E2E_PORT || 3200);
@@ -62,12 +63,10 @@ export const serverEnv = {
   AI_CREDITS_PER_USAGE_DOLLAR: "",
   AI_CREDITS_TOPUP_EXPIRY_DAYS: "",
   // A self-hosted server: no plans (the cloud's server sells them, below), so every feature is on.
+  BILLING_CONFIG: "",
+  // What the billing file replaced, whatever a local .env still holds (left set without the file, it stops the server).
   PLANS: "",
-  AI_CREDITS_PRO: "",
-  AI_CREDITS_BUSINESS: "",
-  ARTICLE_LIMIT_FREE: "",
-  ARTICLE_LIMIT_PRO: "",
-  ARTICLE_LIMIT_BUSINESS: "",
+  ...Object.fromEntries(["PRO", "BUSINESS", "BADGE"].flatMap((plan) => [`STRIPE_PRICE_${plan}_MONTHLY`, `STRIPE_PRICE_${plan}_YEARLY`]).map((name) => [name, ""])),
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",
@@ -94,12 +93,12 @@ export const serverEnv = {
   LICENSE_SERVER_URL: APP_URL,
 };
 
-/** What the cloud's server changes: its address, plans sold (Stripe's prices are the fake's), with the default credits a month, and its own widget. */
+/** What the cloud's server changes: its address, plans sold (the tests' billing file: Free, Pro and Business at the Stripe fake's prices), and its own widget. */
 export const cloudEnv = {
   PORT: String(CLOUD_PORT),
   APP_URL: CLOUD_URL,
   PORTAL_URL_TEMPLATE: `http://{project}.localhost:${CLOUD_PORT}`,
-  PLANS: "on",
+  BILLING_CONFIG: billingFile(),
   // Tuti's own widget in its team app: the project app-widget.spec.ts makes.
   APP_WIDGET_PROJECT: APP_WIDGET_SLUG,
 };

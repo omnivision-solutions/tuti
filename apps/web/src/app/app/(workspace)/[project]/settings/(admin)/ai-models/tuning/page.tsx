@@ -31,7 +31,7 @@ export default async function CodeChangesTuningPage(props: PageProps<"/app/[proj
         notice={
           !tuning.available && (
             <PlanNotice feature="aiTuning" projectSlug={slug} admin>
-              {kept && "This project's values are kept but not used; back on Business, they're used again."}
+              {kept && "This project's values are kept but not used; on a plan with Advanced tuning, they're used again."}
             </PlanNotice>
           )
         }

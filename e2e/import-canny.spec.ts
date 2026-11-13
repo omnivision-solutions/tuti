@@ -81,7 +81,7 @@ test("on a plan with a board limit, the setup step names Canny in what happens t
   await owner.getByRole("checkbox", { name: /^Feedback/ }).check();
   await expect(
     owner.getByText(
-      "Projects on the free plan have up to 2 feedback boards: Canny's boards past that come across turned off, seen only by your team in the app until an upgrade lets you turn them on. Pro has up to 5, and Business any number.",
+      "Projects on the Free plan have up to 2 feedback boards: Canny's boards past that come across turned off, seen only by your team in the app until an upgrade lets you turn them on. Pro has up to 5, and Business any number.",
     ),
   ).toBeVisible();
 });

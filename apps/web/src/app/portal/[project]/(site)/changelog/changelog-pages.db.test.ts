@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { isValidElement, type ReactNode } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -258,7 +259,7 @@ test("the email box agrees with the reader's Account: the form signed out or not
   await prisma.changelogSubscriber.update({ where: { projectId_email: { projectId: project.id, email } }, data: { confirmedAt: new Date() } });
   expect(await emailBox()).toBe(`The changelog entries ${project.name} emails to subscribers go to ${email}. [Manage](/account)`);
   // The project's email paused (where projects are paused at all): it goes once they're resumed, as Account's switch stays on.
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
   expect(await emailBox()).toBe(
     `The changelog entries ${project.name} emails to subscribers go to ${email} once ${project.name}'s emails, paused for now, are resumed. [Manage](/account)`,

@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
@@ -134,7 +135,7 @@ describe("when a post ships", () => {
   });
 
   test("on a private portal of a project whose plan no longer has private portals, it's the team's only: nobody hears", async () => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     const reader = await verified("Reader");
     await prisma.portalReader.create({ data: { projectId: project.id, email: reader.email } });
     const ssoEmail = `e2e-${randomUUID()}@example.com`;

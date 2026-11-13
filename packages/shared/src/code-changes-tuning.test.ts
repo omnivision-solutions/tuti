@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { codeChangesSettings, readCodeChangesSettings, withCodeChangesSettings } from "./code-changes-settings";
@@ -46,11 +47,11 @@ test("values outside the server's range are clamped when used; ones that aren't 
 
 test("off Business the saved values are kept but not used; without plans every project tunes", () => {
   const saved = { "decide.rounds": 5 };
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   expect(tunedSettings(saved, "PRO", server()).settings.decide.rounds).toBe(12);
   expect(tunedSettings(saved, "FREE", server()).tuned).toEqual([]);
   expect(tunedSettings(saved, "BUSINESS", server()).settings.decide.rounds).toBe(5);
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   expect(tunedSettings(saved, "FREE", server()).settings.decide.rounds).toBe(5);
 });
 

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { FAKE_STRIPE_PRICES, startStripeFake, type FakeStripeEvent, type StripeFake } from "@tuti/testkit";
+import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
@@ -19,7 +19,7 @@ beforeAll(async () => {
 });
 afterAll(() => stripe.close());
 beforeEach(async () => {
-  for (const [name, value] of Object.entries({ ...stripe.env, PLANS: "on", APP_URL: "https://app.tuti.example" })) {
+  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billingFile(), APP_URL: "https://app.tuti.example" })) {
     vi.stubEnv(name, value);
   }
   stripe.declining = false;
@@ -64,6 +64,18 @@ test("a yearly plan gets the yearly add-on (a subscription's prices bill alike)"
   expect(items(subscription)).toEqual([FAKE_STRIPE_PRICES.STRIPE_PRICE_PRO_YEARLY.id, FAKE_STRIPE_PRICES.STRIPE_PRICE_BADGE_YEARLY.id]);
 });
 
+test("an add-on no longer sold yearly (sold: false) is still recognised on a yearly plan: it holds, and is removed from Stripe", async () => {
+  const subscription = await subscribe("year");
+  await badge(true);
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { badge!.year!.sold = false; }));
+  await deliver(stripe.update(subscription, {}));
+  expect(await call(getPlan, as(), {})).toMatchObject({ plan: "pro", badge: true });
+  expect(await badge(false)).toEqual({ on: false });
+  expect(items(subscription)).toEqual([FAKE_STRIPE_PRICES.STRIPE_PRICE_PRO_YEARLY.id]);
+  // And not added again that way.
+  await expect(badge(true)).rejects.toMatchObject({ status: 503 });
+});
+
 test("refused on the free plan, while a payment is failing, and when the card is declined; nothing changes", async () => {
   await expect(badge(true)).rejects.toMatchObject({ status: 409, code: "free_plan" });
   const subscription = await subscribe();
@@ -78,7 +90,7 @@ test("refused on the free plan, while a payment is failing, and when the card is
   expect(await shown()).toBe(true);
   // And not sold where its price isn't set.
   stripe.declining = false;
-  vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", "");
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { delete badge!.month; }));
   await expect(badge(true)).rejects.toMatchObject({ status: 503 });
 });
 
@@ -139,7 +151,7 @@ test("it ends with the plan: the badge is back, and can't be hidden again withou
 test("its price replaced in Stripe: an add-on bought at the older one still hides the badge, and can still be removed", async () => {
   const subscription = await subscribe();
   await badge(true);
-  vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", `price_new_badge,${stripe.env.STRIPE_PRICE_BADGE_MONTHLY}`);
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { badge!.month!.stripe.unshift("price_new_badge"); }));
   await deliver(stripe.update(subscription, {}));
   expect(await shown()).toBe(false);
   expect(await badge(false)).toEqual({ on: false });

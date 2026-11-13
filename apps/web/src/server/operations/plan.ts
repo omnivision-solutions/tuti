@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { articleLimit, badgePrice, isBadgePrice, log, planIncludes, planNeeded, type PlanFeature, planPrice, planSalesEnabled, plansEnabled } from "@tuti/shared";
+import { articleLimit, badgePrice, isBadgePrice, log, planDisplay, planIncludes, type PlanKey, planNeeded, type PlanFeature, planPrice, planSalesEnabled, plansEnabled, upgradeFor } from "@tuti/shared";
 import { z } from "zod";
 
 import { appUrl, portalUrl } from "@/lib/hosts";
@@ -22,13 +22,8 @@ export async function requirePlan(projectId: string, feature: PlanFeature, db: P
 }
 
 /** What a project past its plan's published articles is told: the way out, naming the first plan above with more room. */
-export function articlesFull(plan: "FREE" | "PRO" | "BUSINESS", limit: number): string {
-  const above = plan === "FREE" ? (["PRO", "BUSINESS"] as const) : plan === "PRO" ? (["BUSINESS"] as const) : [];
-  const roomier = above.find((next) => {
-    const room = articleLimit(next);
-    return room === null || room > limit;
-  });
-  const upgrade = roomier ? `, or upgrade to ${roomier === "PRO" ? "Pro" : "Business"}` : "";
+export function articlesFull(plan: PlanKey, limit: number): string {
+  const upgrade = upgradeFor(plan, articleLimit, "").replace(/^Upgrade/, ", or upgrade");
   return `Your plan publishes up to ${limit} ${limit === 1 ? "article" : "articles"}. Unpublish some${upgrade}.`;
 }
 
@@ -102,7 +97,7 @@ export const subscribePlan = defineOperation({
         price,
         metadata: { projectId },
         // "Tuti Pro for Acme (acme.tuti.so)": the portal address that stays, whatever domain it's on.
-        description: `Tuti ${input.plan === "pro" ? "Pro" : "Business"} for ${project.name} (${new URL(portalUrl(project.slug)).host})`,
+        description: `Tuti ${planDisplay(input.plan === "pro" ? "PRO" : "BUSINESS").name} for ${project.name} (${new URL(portalUrl(project.slug)).host})`,
         reference: projectId,
         customer: project.stripeCustomerId,
         email: buyer?.email ?? null,
@@ -147,7 +142,7 @@ export const managePlan = defineOperation({
 export const setBadgeAddOn = defineOperation({
   name: "plan.badge",
   summary:
-    'The add-on hiding "Powered by tuti" on the portal ($49 a month, on a paid plan): `on` adds it to the plan, charging what\'s left of the period at once, and hides the badge; `on: false` removes it (what\'s left of the period is credited to the next invoice) and shows the badge again. It ends with the plan. Adding is refused (409) on the free plan or while a payment is failing, and 402 if the card is declined; removing always works (on the free plan there\'s nothing to remove: `{ on: false }`)',
+    'The add-on hiding "Powered by tuti" on the portal (on a paid plan): `on` adds it to the plan, charging what\'s left of the period at once, and hides the badge; `on: false` removes it (what\'s left of the period is credited to the next invoice) and shows the badge again. It ends with the plan. Adding is refused (409) on the free plan or while a payment is failing, and 402 if the card is declined; removing always works (on the free plan there\'s nothing to remove: `{ on: false }`)',
   method: "POST",
   path: "/plan/badge",
   scope: "write",

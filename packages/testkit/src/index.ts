@@ -15,3 +15,4 @@ export * from "./canny-fake";
 export * from "./help-center-fake";
 export * from "./frill-fake";
 export * from "./nolt-fake";
+export * from "./billing";

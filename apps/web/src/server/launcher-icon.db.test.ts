@@ -1,7 +1,7 @@
 import { mediaKeys } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { billingFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
@@ -30,7 +30,7 @@ beforeEach(async () => {
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
   }
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   owner = await signUp("Owner");
   project = await createProject(owner);
 });
@@ -111,7 +111,7 @@ test("removing an image icon's image goes back to the chat bubble", async () => 
 });
 
 test("without plans (self-hosted), every project picks its icon", async () => {
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   expect(await update({ icon: "lightbulb" })).toMatchObject({ icon: "lightbulb" });
   expect(await served()).toEqual({ icon: "lightbulb", iconUrl: null });
 });

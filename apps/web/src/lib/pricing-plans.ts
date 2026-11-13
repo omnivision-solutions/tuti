@@ -1,8 +1,6 @@
-import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, freeCredits, historyDays, planCredits, planIncludes, topupsEnabled, type PaidPlan } from "@tuti/shared";
+import { articleLimit, articleVersionsKept, boardLimit, creditsEnabled, creditsPerUsageDollar, defaultPlanKey, freeCredits, historyDays, listedPlans, planCredits, planDisplay, type PlanFeature, planIncludes, type PlanKey, planTerms, reportingDays, teamLimit, topupsEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import type { PlanLine, PricingPlan } from "@tuti/ui/plan-line";
-
-import { PLAN_PRICES } from "./plans";
 
 const SALES_EMAIL = "hello@tuti.so";
 
@@ -23,7 +21,7 @@ export function about(credits: number, cost: number): number {
 const number = (value: number) => value.toLocaleString("en");
 
 /** "1,000 AI credits a month", opening what they buy on `plan`; nothing where AI isn't paid with credits. */
-function credits(plan: "FREE" | PaidPlan, count: number, per: string): PlanLine[] {
+function credits(plan: PlanKey, count: number, per: string): PlanLine[] {
   if (!creditsEnabled() || count <= 0) {
     return [];
   }
@@ -58,86 +56,100 @@ const AUTOPILOT: PlanLine = {
 };
 
 /** Autopilot, on the plans that include it. */
-const autopilot = (plan: "FREE" | PaidPlan) => (planIncludes(plan, "codeChanges") ? [AUTOPILOT] : []);
+const autopilot = (plan: PlanKey) => (planIncludes(plan, "codeChanges") ? [AUTOPILOT] : []);
 
-const boards = (plan: "FREE" | PaidPlan): PlanLine => {
+const boards = (plan: PlanKey): PlanLine => {
   const limit = boardLimit(plan);
   return { text: limit === null ? "Unlimited boards" : `Up to ${limit} boards` };
 };
 
-const articles = (plan: "FREE" | PaidPlan): PlanLine => {
+const articles = (plan: PlanKey): PlanLine => {
   const limit = articleLimit(plan);
   return { text: limit === null ? "Unlimited articles" : `Up to ${number(limit)} published articles` };
 };
 
 /** "7 days of inbox history": how far back closed conversations and AI conversations show (none without plans: all of it). */
-const history = (plan: "FREE" | PaidPlan): PlanLine[] => {
+const history = (plan: PlanKey): PlanLine[] => {
   const days = historyDays(plan);
   return days === null ? [] : [{ text: `${days} days of inbox history` }];
 };
 
-const versions = (plan: "FREE" | PaidPlan): PlanLine => {
+const versions = (plan: PlanKey): PlanLine => {
   const kept = articleVersionsKept(plan);
   return { text: kept === 1 ? "1 version kept per help article" : `${kept} versions kept per help article` };
 };
 
-/** tuti.so's plans as the pricing page shows them (and Settings → Billing compares them): server only, it reads the server's settings. */
+/** A plan's name and price as a card shows them: null for a plan not sold either way. */
+function shown(plan: PlanKey): Pick<PricingPlan, "name" | "price"> {
+  const { name, price } = planDisplay(plan);
+  return { name, price: price.month === null && price.year === null ? null : price };
+}
+
+const seats = (plan: PlanKey): PlanLine => {
+  const limit = teamLimit(plan);
+  return { text: limit === null ? "Unlimited team members" : `${limit} team ${limit === 1 ? "member" : "members"}` };
+};
+
+/** Reporting's line: "Reporting, up to a month", "…up to 90 days" or "…every range"; none on a plan without it. */
+const reporting = (plan: PlanKey): PlanLine[] => {
+  if (!planIncludes(plan, "reporting")) {
+    return [];
+  }
+  const days = reportingDays(plan);
+  return [{ text: days === null ? "Reporting, every range" : days === 31 ? "Reporting, up to a month" : `Reporting, up to ${days} days` }];
+};
+
+/** A feature's line where the plan includes it. Email from the team's domain only where the server has support email and Amazon SES (as Settings → Support offers it). */
+const feature = (plan: PlanKey, name: PlanFeature, text: string): PlanLine[] =>
+  planIncludes(plan, name) && (name !== "emailDomain" || (process.env.SUPPORT_EMAIL_DOMAIN?.trim() && ses())) ? [{ text }] : [];
+
+/**
+ * The plans the billing file lists, as the pricing page shows them (and Settings → Billing compares them), cheapest first:
+ * the first lists everything, each next one what it has more of ("Everything in Pro, plus:"). Server only: it reads the
+ * server's settings.
+ */
 export function pricingPlans(): PricingPlan[] {
-  return [
-    {
-      name: "Free",
-      price: null,
-      highlights: [...autopilot("FREE"), ...credits("FREE", freeCredits(), "to start")],
+  const plans = listedPlans();
+  return plans.map((plan, index) => {
+    const previous = plans[index - 1];
+    // Its lines that the plan before it doesn't have (all of them on the first).
+    const more = (lines: (plan: PlanKey) => PlanLine[]) => {
+      const own = lines(plan);
+      const before = previous ? lines(previous).map(({ text }) => text) : [];
+      return own.filter(({ text }) => !before.includes(text));
+    };
+    const { name, price } = shown(plan);
+    const { extras, featured } = planTerms(plan);
+    const isDefault = plan === defaultPlanKey();
+    return {
+      key: plan.toLowerCase(),
+      name,
+      price,
+      // A plan's credits come with its paid invoices: none on one sold by quote.
+      highlights: [...autopilot(plan), ...(isDefault ? credits(plan, freeCredits(), "to start") : price ? credits(plan, planCredits(plan), "a month") : [])],
+      ...(previous && { intro: `Everything in ${planDisplay(previous).name}, plus:` }),
       features: [
-        { text: "Unlimited end users" },
-        { text: "3 team members" },
-        { text: "Help center, roadmap and changelog" },
-        { text: "Unlimited feedback posts" },
-        boards("FREE"),
-        articles("FREE"),
-        ...history("FREE"),
-        versions("FREE"),
+        ...(previous ? [] : [{ text: "Unlimited end users" }]),
+        ...more((key) => [seats(key)]),
+        ...(previous ? [] : [{ text: "Help center, roadmap and changelog" }, { text: "Unlimited feedback posts" }]),
+        ...more((key) => [boards(key)]),
+        ...more((key) => [articles(key)]),
+        ...more(history),
+        ...more((key) => feature(key, "customDomain", "Your own domain")),
+        ...more((key) => feature(key, "emailDomain", "Email from your own domain")),
+        ...more((key) => [versions(key)]),
+        ...more(reporting),
+        ...more((key) => feature(key, "privatePortal", "A private help center, with reader groups")),
+        ...more((key) => feature(key, "sitePath", "Your help center under a path of your site")),
+        ...extras.map((text) => ({ text })),
       ],
-      cta: { label: "Start free", href: "/app/auth/sign-up" },
-    },
-    {
-      name: PLAN_PRICES.PRO.name,
-      price: PLAN_PRICES.PRO,
-      highlights: [...autopilot("PRO"), ...credits("PRO", planCredits("PRO"), "a month")],
-      intro: "Everything in Free, plus:",
-      features: [
-        { text: "Unlimited team members" },
-        boards("PRO"),
-        articles("PRO"),
-        ...history("PRO"),
-        { text: "Your own domain" },
-        // Offered where the server has support email and Amazon SES (as Settings → Support offers it: supportDomain, ses).
-        ...(process.env.SUPPORT_EMAIL_DOMAIN?.trim() && ses() ? [{ text: "Email from your own domain" }] : []),
-        versions("PRO"),
-        { text: "Reporting, up to a month" },
-      ],
-      cta: { label: "Start with Pro", href: "/app/auth/sign-up" },
-      featured: true,
-    },
-    {
-      name: PLAN_PRICES.BUSINESS.name,
-      price: PLAN_PRICES.BUSINESS,
-      highlights: [...autopilot("BUSINESS"), ...credits("BUSINESS", planCredits("BUSINESS"), "a month")],
-      intro: "Everything in Pro, plus:",
-      features: [
-        boards("BUSINESS"),
-        // Only where the operator gives Business a limit of its own (it has everything in Pro).
-        ...(articleLimit("BUSINESS") === articleLimit("PRO") ? [] : [articles("BUSINESS")]),
-        ...history("BUSINESS"),
-        versions("BUSINESS"),
-        { text: "Reporting, every range" },
-        { text: "A private help center, with reader groups" },
-        { text: "Your help center under a path of your site" },
-        { text: "Priority support" },
-      ],
-      cta: { label: "Start with Business", href: "/app/auth/sign-up" },
-    },
-  ];
+      // A plan without prices is free where it's the default, and otherwise sold by quote.
+      ...(price === null && !isDefault
+        ? { byQuote: true, cta: { label: "Contact us", href: `mailto:${SALES_EMAIL}?subject=${encodeURIComponent(`Tuti ${name}`)}` } }
+        : { cta: { label: price === null ? "Start free" : `Start with ${name}`, href: "/app/auth/sign-up" } }),
+      ...(featured && { featured }),
+    };
+  });
 }
 
 /** Enterprise, beside the plans: by quote. */

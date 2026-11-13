@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 
@@ -856,7 +857,7 @@ describe("docs", () => {
   });
 
   test("on Free, showing 2 versions, an edit's revisions still show and work past them: undone, only its sections come out", async () => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     try {
       const article = await sectioned();
       const one = await landArticleEdit(project.id, article.id, 43, rewrite("Light", "Pick Light or Dark in Settings."));
@@ -949,8 +950,7 @@ describe("docs", () => {
   test("an approved edit from before edits were revisions: Undo publishes the text readers saw before (plain text too), even past the plan's limit on published articles", async () => {
     const article = await sectioned();
     // A project past its plan's published articles (after a downgrade) still takes out what Autopilot put live.
-    vi.stubEnv("PLANS", "on");
-    vi.stubEnv("ARTICLE_LIMIT_FREE", "0");
+    vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 0; }));
     onTestFinished(() => {
       vi.unstubAllEnvs();
     });

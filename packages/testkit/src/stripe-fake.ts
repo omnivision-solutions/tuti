@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 export const FAKE_STRIPE_KEY = "sk_test_fake";
 export const FAKE_STRIPE_WEBHOOK_SECRET = "whsec_test_fake";
 
-/** The fake's prices for plans and the "Powered by tuti" add-on, by the env var the app reads each from, and how often each bills. */
+/** The fake's prices for plans and the "Powered by tuti" add-on (testBilling sells them), and how often each bills. */
 export const FAKE_STRIPE_PRICES = {
   STRIPE_PRICE_PRO_MONTHLY: { id: "price_fake_pro_monthly", interval: "month", cents: 3900 },
   STRIPE_PRICE_PRO_YEARLY: { id: "price_fake_pro_yearly", interval: "year", cents: 38400 },
@@ -90,7 +90,7 @@ export function stripeSignature(body: string, secret = FAKE_STRIPE_WEBHOOK_SECRE
 
 export type StripeFake = {
   url: string;
-  /** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_API_URL and the plans' STRIPE_PRICE_* for an app that uses this fake. */
+  /** STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET and STRIPE_API_URL for an app that uses this fake (its prices: testBilling). */
   env: Record<string, string>;
   /** Every Checkout Session created, in order. */
   sessions: FakeCheckoutSession[];
@@ -451,7 +451,6 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
       STRIPE_SECRET_KEY: FAKE_STRIPE_KEY,
       STRIPE_WEBHOOK_SECRET: FAKE_STRIPE_WEBHOOK_SECRET,
       STRIPE_API_URL: url,
-      ...Object.fromEntries(Object.entries(FAKE_STRIPE_PRICES).map(([name, price]) => [name, price.id])),
     },
     sessions,
     subscriptions,

@@ -1,6 +1,6 @@
 import { creditsEnabled, freeCredits, plansEnabled } from "@tuti/shared";
 
-import { YEARLY_NOTE } from "@/lib/plans";
+import { yearlyNote } from "@/lib/plans";
 import { ENTERPRISE, pricingPlans } from "@/lib/pricing-plans";
 
 /**
@@ -12,10 +12,11 @@ export function GET() {
   if (!plansEnabled()) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
+  const plans = pricingPlans();
   return Response.json({
-    plans: pricingPlans(),
+    plans,
     enterprise: ENTERPRISE,
-    yearlyNote: YEARLY_NOTE,
+    yearlyNote: yearlyNote(plans.flatMap(({ price }) => (price ? [price] : []))),
     // AI answers and Autopilot are in every plan where none has to buy AI credits, or Free starts with some.
     aiInEveryPlan: !creditsEnabled() || freeCredits() > 0,
   });

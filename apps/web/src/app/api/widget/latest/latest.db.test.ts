@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -47,7 +48,7 @@ test("a private portal's latest announcement isn't said to anyone who asks; only
 
 test("the widget learns how its launcher looks (name, colour with readable text, corner and icon; not the quick links), the project's colour scheme and whether the inbox is on", async () => {
   // Without plans, whatever the environment says: the icon is served on every plan then (launcher-icon.db.test.ts has the rest).
-  vi.stubEnv("PLANS", "");
+  vi.stubEnv("BILLING_CONFIG", "");
   const project = await createProject(await signUp());
   const ask = async () =>
     (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as object;
@@ -98,7 +99,7 @@ test("read from one of the team's sites, the widget counts as added (Home's Get 
 });
 
 test("the portal at its own address doesn't count as one of the team's sites either", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
@@ -112,7 +113,7 @@ test("the portal at its own address doesn't count as one of the team's sites eit
 });
 
 test("a portal under a path of the team's site: the site still counts (the widget may be on it)", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
@@ -129,7 +130,7 @@ test("a portal under a path of the team's site: the site still counts (the widge
 });
 
 test("the portal's own tag (from=portal) never counts, even under a path of the team's site", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });

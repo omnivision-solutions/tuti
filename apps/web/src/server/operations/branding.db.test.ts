@@ -1,7 +1,7 @@
 import { emailImageKey, imageKey, mediaKeys } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { billingFile, type S3Fake, startS3Fake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
@@ -333,7 +333,7 @@ test('"Powered by tuti" stays without a licence for the project on this installa
 });
 
 test('where plans are sold, hiding "Powered by tuti" takes the add-on, and the error says so', async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   await expect(update({ poweredBy: false })).rejects.toMatchObject({
     status: 400,
     message: 'Hiding "Powered by tuti" needs its add-on on this project\'s paid plan, in Billing',

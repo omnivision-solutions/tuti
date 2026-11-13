@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { startStripeFake, type FakeStripeEvent, type StripeFake } from "@tuti/testkit";
+import { billingFile, FAKE_STRIPE_PRICES, type FakeStripeEvent, startStripeFake, type StripeFake } from "@tuti/testkit";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import LicensePage from "@/app/app/(account-pages)/license/page";
@@ -26,7 +27,7 @@ beforeAll(async () => {
 });
 afterAll(() => stripe.close());
 beforeEach(() => {
-  for (const [name, value] of Object.entries({ ...stripe.env, LICENSE_PRIVATE_KEY: testLicensePrivateKey, APP_URL: "https://app.tuti.example" })) {
+  for (const [name, value] of Object.entries({ ...stripe.env, BILLING_CONFIG: billingFile(), LICENSE_PRIVATE_KEY: testLicensePrivateKey, APP_URL: "https://app.tuti.example" })) {
     vi.stubEnv(name, value);
   }
   ids = { installation: `inst-${randomUUID()}`, project: `proj-${randomUUID()}` };
@@ -79,7 +80,7 @@ const claim = (secret?: string) => refreshLicense({ ...ids, token: null, request
 test("bought with Stripe Checkout at the add-on's monthly price: once paid, the installation's renewals get keys", async () => {
   expect(await buy()).toBe(stripe.sessions.at(-1)!.url);
   const session = stripe.sessions.at(-1)!;
-  expect(session).toMatchObject({ mode: "subscription", price: stripe.env.STRIPE_PRICE_BADGE_MONTHLY, metadata: { licenseInstallation: ids.installation, licenseProject: ids.project } });
+  expect(session).toMatchObject({ mode: "subscription", price: FAKE_STRIPE_PRICES.STRIPE_PRICE_BADGE_MONTHLY.id, metadata: { licenseInstallation: ids.installation, licenseProject: ids.project } });
   expect(await claim()).toEqual({ error: "not_licensed" });
 
   await deliver(...stripe.pay(session.id));
@@ -94,12 +95,12 @@ test("bought with Stripe Checkout at the add-on's monthly price: once paid, the 
 test("or yearly, at the add-on's yearly price; without that price, a yearly one isn't sold", async () => {
   await buy("year");
   const session = stripe.sessions.at(-1)!;
-  expect(session).toMatchObject({ price: stripe.env.STRIPE_PRICE_BADGE_YEARLY, metadata: { licenseInstallation: ids.installation } });
+  expect(session).toMatchObject({ price: FAKE_STRIPE_PRICES.STRIPE_PRICE_BADGE_YEARLY.id, metadata: { licenseInstallation: ids.installation } });
   await deliver(...stripe.pay(session.id));
   expect(await license()).toMatchObject({ active: true, stripeSubscriptionId: session.subscription });
 
   ids.project = `proj-${randomUUID()}`;
-  vi.stubEnv("STRIPE_PRICE_BADGE_YEARLY", "");
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { delete badge!.year; }));
   const sessions = stripe.sessions.length;
   expect(await buy("year")).toBe(`https://app.tuti.example/app/license?installation=${ids.installation}&project=${ids.project}`);
   expect(stripe.sessions.length).toBe(sessions);
@@ -202,7 +203,7 @@ test("a link whose claim isn't one (not a hash, or cut short) is sent back to Tu
 });
 
 test("Tuti's cloud sells and renews no licence for itself: hiding the badge there is the add-on on a paid plan", async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   ids.installation = await installationId();
   const sessions = stripe.sessions.length;
   expect(await buy()).toBe(`https://app.tuti.example/app/license?installation=${ids.installation}&project=${ids.project}`);
@@ -242,11 +243,25 @@ test("at most 20 checkouts in any minute across everyone (the page is public): m
 });
 
 test("without Stripe, or for ids that aren't ones, nothing is sold: back to the page, which says to email", async () => {
-  vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", "");
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { delete badge!.month; }));
   const sessions = stripe.sessions.length;
   expect(await buy()).toContain("/app/license?");
-  vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", stripe.env.STRIPE_PRICE_BADGE_MONTHLY!);
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   ids.project = "not an id";
   expect(await buy()).toContain("/app/license?");
   expect(stripe.sessions.length).toBe(sessions);
+});
+
+test("the licence page says what a licence costs as sold, and names no price where none is set", async () => {
+  const text = async () =>
+    renderToStaticMarkup(
+      (await LicensePage({ params: Promise.resolve({}), searchParams: Promise.resolve({ ...ids }) } as PageProps<"/app/license">)) as React.ReactElement,
+    );
+  expect(await text()).toContain("portal, for $49 a month.");
+  vi.stubEnv("BILLING_CONFIG", billingFile(({ badge }) => { badge!.year!.perMonth = 39; delete badge!.month; }));
+  expect(await text()).toContain("portal, for $39 a month, billed yearly.");
+  vi.stubEnv("BILLING_CONFIG", "");
+  const page = await text();
+  expect(page).toContain("hides &quot;Powered by tuti&quot; on one project&#x27;s portal. It&#x27;s for");
+  expect(page).not.toContain("$0");
 });

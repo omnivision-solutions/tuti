@@ -1,4 +1,4 @@
-import { aiEnabled, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, planIncludes, withinModelCap } from "@tuti/shared";
+import { aiEnabled, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, planFor, planIncludes, withinModelCap } from "@tuti/shared";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -43,7 +43,7 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="flex items-center gap-2 font-medium">
                   Advanced tuning
-                  {!planIncludes(project.plan, "aiTuning") && <Badge variant="outline">Available on Business</Badge>}
+                  {!planIncludes(project.plan, "aiTuning") && <Badge variant="outline">{planFor("aiTuning") ? `Available on ${planFor("aiTuning")!.name}` : "Not on this plan"}</Badge>}
                 </span>
                 <span className="text-muted-foreground">How sure Autopilot must be, how much it looks up and thinks, for this project.</span>
               </span>

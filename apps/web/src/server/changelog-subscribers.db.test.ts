@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
@@ -186,7 +187,7 @@ describe("subscribing", () => {
       `Get ${project.name}'s updates by email? Once you confirm, the changelog entries ${project.name} emails to subscribers will go to ${kim}.`,
     );
     // The project's emails paused (with plans: pausing is the cloud's): they'd go once they're resumed.
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
     expect(await page({ confirm: link })).toContain(
       `Once you confirm, the changelog entries ${project.name} emails to subscribers will go to ${kim} when ${project.name}'s emails, paused for now, are resumed.`,
@@ -416,7 +417,7 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
     { reach: "opted-out", page: "You've turned off all of {name}'s emails, so its changelog isn't emailed to {email} either.", emailed: false, make: ({ userId }) => optOut(userId) },
   ];
   test.each(states)("$reach", async ({ reach, page: says, emailed, make }) => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     const ada = await signUp("Ada");
     const token = await confirmed(ada.email);
     await make({ token, email: ada.email, userId: ada.id });
@@ -428,7 +429,7 @@ describe("one rule (changelogReach): the sender and every page agree", () => {
   });
 
   test("the editor's counts are the sender's audience, counted in the database: paused (none), private, unconfirmed, opted out, already sent", async () => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     // Every query the counts make returns a row at most: no subscriber's row leaves the database to be counted.
     const queries = vi.spyOn(prisma, "$queryRaw");
     const count = async <T,>(counting: Promise<T>) => {
@@ -899,7 +900,7 @@ describe("publishing with Email subscribers", () => {
 describe("the project's email limits", () => {
   beforeEach(() => {
     vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email");
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
   });
 
   test("past a new project's daily cap the rest wait, still due, and the cron sends them once they may", async () => {
@@ -1073,7 +1074,7 @@ describe("the project's email limits", () => {
 test("a resume that drops a pause's emails while an entry's go out: nobody else is emailed", async () => {
   const kim = newAddress();
   await confirmed(kim);
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
   const number = await publishEntry("Dark mode");
   const entry = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, number } });
@@ -1200,7 +1201,7 @@ describe("the Account's changelog switch", () => {
   });
 
   test("an opt-out by another account at the same address wins too: the switch shows off, and turning it on is refused", async () => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     const email = newAddress();
     // Someone the project's SSO emails at an address, and an account of their own there, which turned the emails off.
     const sso = await ssoUser(email);
@@ -1291,7 +1292,7 @@ describe("the Account's changelog switch", () => {
   });
 
   test("the switch says what the sender does (changelogReach), at the address the project's emails go to (its SSO's)", async () => {
-    vi.stubEnv("PLANS", "on");
+    vi.stubEnv("BILLING_CONFIG", billingFile());
     const email = newAddress();
     const sso = await ssoUser(email);
     actAs(sso);

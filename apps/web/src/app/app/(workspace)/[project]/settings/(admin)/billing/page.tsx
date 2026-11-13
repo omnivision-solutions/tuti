@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
+import { badgeOffered, CREDIT_FEATURES, creditsEnabled, creditsPerTopupDollar, planDisplay, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
@@ -9,19 +9,13 @@ import { SettingBlock, SettingRow, SettingsCard, SettingsPane } from "@/componen
 import { UsageMonths } from "@/components/usage-months";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
-import { BADGE_PRICE, PLAN_PRICES, planPriceText } from "@/lib/plans";
+import { planPriceText } from "@/lib/plans";
 import { pricingPlans } from "@/lib/pricing-plans";
 import { credits } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
 import { TOPUP_DOLLARS } from "@/server/operations/credits";
 
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
-
-/** What each plan includes, as the pricing page lists it, for the comparison. */
-function planFeatures() {
-  const [FREE, PRO, BUSINESS] = pricingPlans();
-  return { FREE, PRO, BUSINESS };
-}
 
 const day = (date: Date) => date.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
@@ -43,6 +37,10 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   const searchParams = await props.searchParams;
   const paid = searchParams.paid === "1";
   const subscribed = searchParams.subscribed === "1";
+  const shown = planDisplay(plan.plan);
+  // The add-on as sold for a paid plan's billing (it bills alike); on the default plan, what it starts at. One that's on keeps
+  // its card where it's no longer sold (its price stays listed, `sold: false`), so it can still be removed.
+  const badge = badgeOffered(plan.plan, plan.planInterval);
   return (
     <SettingsPane title="Billing">
       {(paid || subscribed) && (
@@ -54,12 +52,13 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
       )}
       {plansEnabled() && (
         <SettingsCard
-          title={`${plan.plan === "FREE" ? "Free" : PLAN_PRICES[plan.plan].name} plan`}
+          title={`${shown.name} plan`}
           description={
             plan.plan === "FREE"
                 ? "Upgrade this project for more. Plans are per project: readers are always unlimited."
                 : [
-                    planPriceText(plan.plan, plan.planInterval === "year" ? "year" : "month"),
+                    // None for a plan the file sells no way (by quote): it's billed as agreed.
+                    shown.price[plan.planInterval === "year" ? "year" : "month"] !== null && planPriceText(shown.price, plan.planInterval === "year" ? "year" : "month"),
                     plan.planEndsAt ? `Ends on ${day(plan.planEndsAt)}` : plan.planPeriodEnd && `Renews on ${day(plan.planPeriodEnd)}`,
                   ]
                     .filter(Boolean)
@@ -75,33 +74,34 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             {plan.plan !== "FREE" ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
-              <PlanPicker projectSlug={slug} plans={planFeatures()} />
+              <PlanPicker projectSlug={slug} plans={pricingPlans()} current={plan.plan.toLowerCase()} />
             ) : (
               <p className="text-sm text-muted-foreground">Plans can&apos;t be bought here right now.</p>
             )}
           </SettingBlock>
         </SettingsCard>
       )}
-      {plansEnabled() && (
+      {plansEnabled() && (badge !== null || plan.badgeAddOn) && (
         <SettingsCard>
           <SettingRow
             label='Hide "Powered by tuti"'
             description={
               plan.badgeAddOn
-                ? `Hidden: $${BADGE_PRICE} a month on this project's plan. It ends with the plan.`
+                ? // What it's billed at may be an older price than the file's: no amount.
+                  "Hidden on this project's plan. It ends with the plan."
                 : plan.plan === "FREE"
-                  ? `Paid plans can hide the badge at the foot of the portal for $${BADGE_PRICE} a month.`
-                  : `The badge at the foot of the portal: hide it for $${BADGE_PRICE} a month, added to this project's plan.`
+                  ? `Paid plans can hide the badge at the foot of the portal for $${badge} a month.`
+                  : `The badge at the foot of the portal: hide it for $${badge} a month, added to this project's plan.`
             }
           >
-            {(plan.badgeAddOn || planSalesEnabled()) &&
+            {(plan.badgeAddOn || (planSalesEnabled() && badge !== null)) &&
               (plan.plan === "FREE" ? (
                 // To the plans above, monthly or yearly as picked there.
                 <a href="#plans" className={buttonVariants({ variant: "outline" })}>
                   Choose a plan
                 </a>
               ) : (
-                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} />
+                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} perMonth={badge ?? 0} />
               ))}
           </SettingRow>
         </SettingsCard>

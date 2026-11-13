@@ -1,3 +1,4 @@
+import { billingFile } from "@tuti/testkit";
 import { prisma } from "@tuti/db";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -14,7 +15,7 @@ let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
-  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("BILLING_CONFIG", billingFile());
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -49,7 +50,7 @@ test("Free publishes up to 50 articles: the 50th goes live, the 51st is refused 
 });
 
 test("past its limit (a downgrade), a project saves freely but publishes nothing until it unpublishes enough", async () => {
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "2");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 2; }));
   const [first, second, third] = [await draft("First"), await draft("Second"), await draft("Third")];
   await setPlan("PRO");
   for (const article of [first, second, third]) {
@@ -75,7 +76,7 @@ test("past its limit (a downgrade), a project saves freely but publishes nothing
 });
 
 test("two publishes at once can't both take the last place", async () => {
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   const [a, b] = [await draft("Alpha"), await draft("Bravo")];
   const results = await Promise.allSettled([call(publishArticle, team(), { slug: a.slug }), call(publishArticle, team(), { slug: b.slug })]);
   expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
@@ -90,25 +91,24 @@ test("Pro and Business publish without a limit, unless the operator sets one", a
   await call(publishArticle, team(), { slug: (await draft("On Business")).slug });
   expect(await published()).toBe(52);
 
-  vi.stubEnv("ARTICLE_LIMIT_BUSINESS", "52");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro, business }) => { pro.limits.articles = 52; business.limits.articles = 52; }));
   await expect(call(publishArticle, team(), { slug: (await draft("Over")).slug })).rejects.toMatchObject({
     status: 402,
     message: "Your plan publishes up to 52 articles. Unpublish some.",
   });
-  vi.stubEnv("ARTICLE_LIMIT_PRO", "10");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free, pro }) => { free.limits.articles = 10; pro.limits.articles = 10; }));
   await setPlan("PRO");
   await expect(call(publishArticle, team(), { slug: "over" })).rejects.toMatchObject({ message: "Your plan publishes up to 10 articles. Unpublish some, or upgrade to Business." });
 });
 
 test("without plans (self-hosted), there's no limit", async () => {
-  vi.stubEnv("PLANS", "");
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "0");
+  vi.stubEnv("BILLING_CONFIG", "");
   await call(publishArticle, team(), { slug: (await draft("Mine")).slug });
   expect(await published()).toBe(1);
 });
 
 test("sample articles are published only while the plan has room; the rest are drafts", async () => {
-  vi.stubEnv("ARTICLE_LIMIT_FREE", "1");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { free }) => { free.limits.articles = 1; }));
   await prisma.project.update({ where: { id: project.id }, data: { uses: ["docs"] } });
   await addSampleContent(project.id, owner.id);
   expect(await prisma.article.findMany({ where: { projectId: project.id, sample: true }, orderBy: { order: "asc" }, select: { publishedAt: true } })).toEqual([
@@ -119,9 +119,9 @@ test("sample articles are published only while the plan has room; the rest are d
 
 test("the refusal names the first plan above with more room, and none where no plan has more", () => {
   expect(articlesFull("FREE", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some, or upgrade to Pro.");
-  vi.stubEnv("ARTICLE_LIMIT_PRO", "50");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro }) => { pro.limits.articles = 50; }));
   expect(articlesFull("FREE", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some, or upgrade to Business.");
-  vi.stubEnv("ARTICLE_LIMIT_BUSINESS", "50");
+  vi.stubEnv("BILLING_CONFIG", billingFile((_, { pro, business }) => { pro.limits.articles = 50; business.limits.articles = 50; }));
   expect(articlesFull("FREE", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some.");
   expect(articlesFull("PRO", 50)).toBe("Your plan publishes up to 50 articles. Unpublish some.");
   expect(articlesFull("BUSINESS", 1)).toBe("Your plan publishes up to 1 article. Unpublish some.");
