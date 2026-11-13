@@ -385,7 +385,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
                       aria-label={`${other.name}, ${other._count.posts} ${other._count.posts === 1 ? "open idea" : "open ideas"}`}
                       className={cn(
                         "flex min-h-10 items-center gap-2 rounded-lg px-2.5 py-2 text-[0.9375rem] font-medium transition-colors",
-                        other.id === board.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                        other.id === board.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                       )}
                     >
                       <span className="min-w-0 flex-1 break-words">{other.name}</span>
