@@ -3,7 +3,7 @@
 #   docker build -f apps/worker/Dockerfile -t tuti-worker .
 # Not needed with JOBS_DRIVER=inline (jobs then run inside the web app).
 FROM mirror.gcr.io/library/node:22-alpine AS base
-RUN apk add --no-cache libc6-compat openssl
+RUN apk add --no-cache libc6-compat openssl && apk upgrade --no-cache zlib
 RUN corepack enable
 
 # Only the worker and the workspace packages it uses (no Next.js, no web app).
