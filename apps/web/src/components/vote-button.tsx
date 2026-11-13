@@ -17,7 +17,7 @@ const SHAPE = "h-auto w-12 flex-col gap-0 py-1.5";
  */
 const SHAPES = {
   box: "h-[3.625rem] w-[3.25rem] shrink-0 flex-col gap-0 rounded-xl text-[0.9375rem] font-bold tabular-nums [&_svg]:size-[1.125rem]",
-  compact: "h-[2.875rem] w-[2.625rem] shrink-0 flex-col gap-0 rounded-[0.625rem] text-sm font-bold tabular-nums [&_svg]:size-4",
+  compact: "h-[2.875rem] w-[2.625rem] shrink-0 flex-col gap-0 rounded-lg text-sm font-bold tabular-nums [&_svg]:size-4",
   chip: "h-9 shrink-0 gap-1 rounded-lg px-2.5 text-[0.9375rem] font-bold tabular-nums",
   upvote: "h-12 gap-2.5 rounded-xl px-5 text-base font-semibold tabular-nums",
 } as const;

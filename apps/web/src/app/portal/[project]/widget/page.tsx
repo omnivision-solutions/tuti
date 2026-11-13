@@ -295,7 +295,7 @@ async function Home({
               action={at("/widget")}
               role="search"
               aria-label="Help center"
-              className="flex items-center gap-2 rounded-[0.625rem] border border-input px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
+              className="flex items-center gap-2 rounded-lg border border-input px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
             >
               <input type="hidden" name="tab" value="docs" />
               <input
@@ -512,7 +512,7 @@ async function WhatsNew({ projectId, slug }: { projectId: string; slug: string }
         {entries.map((entry) => (
           <article key={entry.number} aria-labelledby={`entry-${entry.number}`} className="flex flex-col gap-3 border-b py-4 last:border-b-0">
             {entry.cover && (
-              <RichText doc={entry.cover} mediaUrls={media} className="overflow-hidden rounded-[0.625rem] [&_img]:aspect-[2/1] [&_img]:w-full [&_img]:object-cover" />
+              <RichText doc={entry.cover} mediaUrls={media} className="overflow-hidden rounded-lg [&_img]:aspect-[2/1] [&_img]:w-full [&_img]:object-cover" />
             )}
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
