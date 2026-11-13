@@ -108,14 +108,15 @@ export function BrandingSettings({
     uploading > 0,
   );
   const busy = (delta: number) => setUploading((count) => count + delta);
+  const themeId = useId();
 
   return (
     <form {...form} className="flex flex-col gap-6">
       <input type="hidden" name="part" value="look" />
       <CustomizeSection title="Theme" description="Light or dark, and your colour.">
         <Field>
-          <FieldLabel id="default-theme">Default theme</FieldLabel>
-          <div role="radiogroup" aria-labelledby="default-theme" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+          <FieldLabel id={`${themeId}-label`}>Default theme</FieldLabel>
+          <div role="radiogroup" aria-labelledby={`${themeId}-label`} aria-describedby={`${themeId}-description`} className="flex w-fit gap-1 rounded-lg bg-muted p-1">
             {SCHEMES.map(([value, name, Icon]) => (
               <label
                 key={value}
@@ -127,7 +128,7 @@ export function BrandingSettings({
               </label>
             ))}
           </div>
-          <FieldDescription>What readers see first.</FieldDescription>
+          <FieldDescription id={`${themeId}-description`}>What readers see first.</FieldDescription>
         </Field>
         {/* Sent off or on (see saveBranding). */}
         <input type="hidden" name="themeSwitch" value="" />
