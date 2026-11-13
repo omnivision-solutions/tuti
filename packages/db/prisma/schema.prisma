@@ -271,7 +271,8 @@ model Project {
   /// ("system": their device's), text beside the logo (empty: none, or the project's name without a
   /// logo), and where the logo goes (null: the portal's home).
   colorScheme           String       @default("system")
-  /// Whether readers get a light/dark switch in the portal's footer; off, every reader gets colorScheme.
+  /// Whether readers get a light/dark switch in the portal's footer; off, every reader gets colorScheme
+  /// (under a path of the team's site, a theme the site keeps stays).
   themeSwitch           Boolean      @default(true)
   /// Fonts for headings and for text (Customize → Branding → Typography), from the portal fonts
   /// (apps/web/src/lib/portal-fonts.ts); empty for the page's own.

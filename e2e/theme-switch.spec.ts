@@ -37,11 +37,18 @@ test("a reader picks dark mode in the portal's footer and keeps it; with the swi
   // The team turns the switch off, with light mode for everyone: the preview's footer loses it before it's saved.
   await owner.goto(`/app/${slug}/settings/branding`);
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
-  await expect(preview.getByRole("radiogroup", { name: "Theme" })).toBeVisible();
+  const switcher = preview.getByRole("radiogroup", { name: "Theme" });
+  // Once its page has run (until then none is picked).
+  await expect(switcher.getByRole("radio", { name: "System" })).toBeChecked();
+  // In the preview the switch only changes the page: nothing kept where the portal remembers the team member's own pick.
+  await switcher.getByRole("radio", { name: "Dark" }).locator("..").click();
+  await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
+  await expect(switcher.getByRole("radio", { name: "Dark" })).toBeChecked();
+  expect(await owner.frame({ name: "tuti-preview" })!.evaluate(() => localStorage.getItem("theme"))).toBeNull();
   const card = owner.locator("form").first();
   await card.getByRole("radiogroup", { name: "Colour scheme" }).getByText("Light", { exact: true }).click();
   await card.getByRole("switch", { name: "Let readers switch theme" }).uncheck();
-  await expect(preview.getByRole("radiogroup", { name: "Theme" })).toBeHidden();
+  await expect(switcher).toBeHidden();
   await checkpoint(owner, "branding-theme-switch-off");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Branding saved")).toBeVisible();
