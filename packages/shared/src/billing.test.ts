@@ -92,3 +92,13 @@ test("history is kept at least as long as the longest plan shows it", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile((config) => { config.historyKeptDays = 30; }));
   expect(() => billingConfig()).toThrow(/must be at least 90, the longest plan's history\n {2}→ at historyKeptDays/);
 });
+
+test("a trial's plan has every feature the default plan has", () => {
+  vi.stubEnv("BILLING_CONFIG", billingFile((config, { free }) => {
+    free.features.push("customDomain");
+    config.plans = config.plans.filter(({ key }) => key !== "pro").reverse();
+    config.trial = { plan: "business", days: 7, credits: 0, emails: null };
+    config.plans.find(({ key }) => key === "business")!.features = ["codeChanges"];
+  }));
+  expect(() => billingConfig()).toThrow(/lacks customDomain, which the default plan has\n {2}→ at trial\.plan/);
+});
