@@ -52,7 +52,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 | Token | Use for |
 | --- | --- |
 | `primary` | The one main action on a screen, votes you've cast, active tab, links that need emphasis |
-| `soft` / `soft-foreground` | Quiet green emphasis |
+| `soft` / `soft-foreground` | Quiet green emphasis (on the portal and the widget, the project's accent: Layout → Portals → Accent) |
 | `highlight` / `highlight-foreground` | Things that need the team's attention ("Possible duplicate") |
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
 | `muted-foreground` | Secondary text, meta lines, placeholders: 4.5:1 or more on the page, a card, the sidebar and a muted fill, in light and dark (`colours.test.ts`) |
@@ -387,6 +387,16 @@ the list picks none to approve at once.
     green, Open grey (`status-*` overridden), shown as `StatusLabel` (its icon and name in its colour: eye, calendar, a
     half-filled circle, a circled check) or `StatusPill` (the same on a light tint of it). People's initials are one
     neutral style (`PortalAvatar`; the `avatar-*` tokens are all `secondary` there), the team's soft green.
+  - **Accent.** "Green" on the portal means the project's accent (Settings → Branding), Tuti's green only when it has
+    none: `brandCss` (`lib/colors.ts`) sets `primary`, its text, the focus `ring` and the `soft` tint and its text (at
+    Tuti's own tints' lightness in each mode, in the accent's hue) on the portal's pages and the widget's panel. So the
+    accent is the letter mark, the one filled button, links, focus rings, selection, a vote cast, the open board, part or
+    article, the team's replies, the New tag, numbered steps, the widget's header and launcher (unless Settings → Widget
+    gives it a colour of its own), and the buttons and links of emails sent on the project's behalf. What keeps a
+    colour of its own, whatever the accent: statuses (Completed stays green: it says what happened), the changelog's
+    other tags, destructive red, the info blue, the unread orange, people's initials, and "Powered by tuti" (Tuti's own
+    mark). The portal never uses the app's own green tokens (`sidebar-active`, `series-*`, `chart-*`, `kind-*`), and
+    `e2e/accent-colour.spec.ts` checks every page type and the widget in light and dark for any green but those.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
     the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
     underlined on the header's bottom edge; Sign in an outline at the end; 64px tall (56px on phones). Its contents in

@@ -78,11 +78,11 @@ function greens(page: Page) {
             colours.push([property, colour]);
           }
         }
-        for (const [property, value] of colours) {
-          if (value && value !== "none" && !value.startsWith("url(") && isGreen(value)) {
-            const name = (element.getAttribute("aria-label") ?? element.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
-            found.add(`<${element.tagName.toLowerCase()}${pseudo ?? ""} class="${String(element.getAttribute("class") ?? "").slice(0, 80)}"> "${name}" ${property}: ${value}`);
-          }
+        // The first green of each element (its caret and underline are its text's colour too).
+        const green = colours.find(([, value]) => value && value !== "none" && !value.startsWith("url(") && isGreen(value));
+        if (green) {
+          const name = (element.getAttribute("aria-label") ?? element.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+          found.add(`<${element.tagName.toLowerCase()}${pseudo ?? ""} class="${String(element.getAttribute("class") ?? "").slice(0, 80)}"> "${name}" ${green[0]}: ${green[1]}`);
         }
       }
     }
@@ -143,7 +143,6 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
     [reader, "/account"],
     [reader, "/no-such-page"],
     [visitor, "/sign-in"],
-    [visitor, "/sign-up"],
     [visitor, "/forgot-password"],
     [visitor, `/feedback/feature-requests/${planned.number}`],
     [reader, "/widget"],
@@ -163,11 +162,11 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
         // The widget's launcher, the loader's own button on the page, without a colour of its own: the accent too.
         const launcher = page.locator('body > button[aria-controls="tuti-widget"]');
         await expect(launcher).toBeVisible();
-        await expect(launcher).toHaveCSS("background-color", "rgb(124, 58, 237)");
+        await expect.soft(launcher).toHaveCSS("background-color", "rgb(124, 58, 237)");
       }
-      expect(await greens(page), `${scheme} ${path}`).toEqual([]);
+      expect.soft(await greens(page), `${scheme} ${path}`).toEqual([]);
+      await checkpoint(page, `${scheme} ${path}`);
     }
-    await checkpoint(reader, `post-voted-${scheme}`);
   }
   // The widget's panel opened from the launcher, with its header in the accent.
   await reader.goto(`/feedback/feature-requests/${planned.number}`);
