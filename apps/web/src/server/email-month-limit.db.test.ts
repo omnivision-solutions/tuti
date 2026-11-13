@@ -179,16 +179,30 @@ test("a send that fails gives its slot back: the month counts what was sent", as
   expect(await emailsThisMonth(project.id)).toEqual({ emails: 1, limit: 5 });
 });
 
-test("a full project's email due now (its job never ran) is moved to next month by the safety net, never left behind", async () => {
+test("a full project's email due now (its job never ran) is moved to next month by the safety nets, never left behind; a paused one's isn't", async () => {
   const { project, team } = await setup();
   await votedPost(project);
   await prisma.projectEmailMonth.create({ data: { projectId: project.id, month: month(), emails: 1 } });
   const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
-  const comment = await prisma.comment.create({
-    data: { projectId: project.id, postId, authorId: team.actor.userId, body: "It's out.", votersEmailDueAt: new Date(Date.now() - 15 * 60_000) },
-  });
+  const late = new Date(Date.now() - 15 * 60_000);
+  const comment = await prisma.comment.create({ data: { projectId: project.id, postId, authorId: team.actor.userId, body: "It's out.", votersEmailDueAt: late } });
+  await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: late } });
+  const due = async () => [
+    (await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).votersEmailDueAt,
+    (await prisma.post.findUniqueOrThrow({ where: { id: postId } })).shippedEmailsDueAt,
+  ];
+
+  // Paused: left as it is, for the resume.
+  vi.stubEnv("APP_PORTAL_OWNER", "e2e-operator@example.com");
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" } });
   await handlers.resubmitReplyEmails({}, log);
-  expect((await prisma.comment.findUniqueOrThrow({ where: { id: comment.id } })).votersEmailDueAt).toEqual(nextMonth());
+  await handlers.resubmitShippedEmails({}, log);
+  expect(await due()).toEqual([late, late]);
+
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: null, emailPausedReason: null } });
+  await handlers.resubmitReplyEmails({}, log);
+  await handlers.resubmitShippedEmails({}, log);
+  expect(await due()).toEqual([nextMonth(), nextMonth()]);
 });
 
 test("resuming a paused project keeps the email the monthly limit holds for next month", async () => {

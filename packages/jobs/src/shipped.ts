@@ -248,7 +248,8 @@ export async function resubmitShippedEmails(_input: JobInput<"resubmitShippedEma
   const full = await monthCappedProjects();
   if (full.length > 0) {
     await prisma.post.updateMany({
-      where: { projectId: { in: full }, shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+      // Not a paused one's: what the pause holds, its resume lets go (or drops).
+      where: { projectId: { in: full }, project: { emailPausedAt: null }, shippedEmailsDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
       data: { shippedEmailsDueAt: nextMonth(new Date()) },
     });
   }

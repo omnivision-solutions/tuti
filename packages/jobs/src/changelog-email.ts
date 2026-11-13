@@ -350,7 +350,8 @@ export async function resubmitChangelogEmails(_input: JobInput<"resubmitChangelo
   const full = await monthCappedProjects();
   if (full.length > 0) {
     await prisma.changelogEntry.updateMany({
-      where: { projectId: { in: full }, subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+      // Not a paused one's: what the pause holds, its resume lets go (or drops).
+      where: { projectId: { in: full }, project: { emailPausedAt: null }, subscribersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
       data: { subscribersEmailDueAt: nextMonth(new Date()) },
     });
   }

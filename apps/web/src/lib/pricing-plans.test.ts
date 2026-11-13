@@ -68,10 +68,10 @@ test("each plan says how many days of inbox history it shows, as the server sets
 
 test("each plan lists how many emails a month it sends its users", () => {
   vi.stubEnv("BILLING_CONFIG", billingFile());
-  expect(["Free", "Pro", "Business"].map((plan) => lines(plan).find(({ text }) => text.includes("emails"))?.text)).toEqual([
+  expect(["Free", "Pro", "Business"].map((plan) => lines(plan).find(({ text }) => text.includes("email"))?.text)).toEqual([
     "1,000 emails a month to your users",
     "10,000 emails a month to your users",
-    "Unlimited emails to your users",
+    "No monthly email limit",
   ]);
 });
 

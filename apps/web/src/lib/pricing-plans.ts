@@ -77,7 +77,7 @@ const history = (plan: PlanKey): PlanLine[] => {
 /** "1,000 emails a month to your users": support replies, "it shipped" and changelog emails (emailsPerMonth). */
 const emails = (plan: PlanKey): PlanLine => {
   const limit = emailsPerMonth(plan);
-  return { text: limit === null ? "Unlimited emails to your users" : `${number(limit)} emails a month to your users` };
+  return { text: limit === null ? "No monthly email limit" : `${number(limit)} emails a month to your users` };
 };
 
 const versions = (plan: PlanKey): PlanLine => {

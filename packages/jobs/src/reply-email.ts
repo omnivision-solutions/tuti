@@ -212,7 +212,8 @@ export async function resubmitReplyEmails(_input: JobInput<"resubmitReplyEmails"
   const full = await monthCappedProjects();
   if (full.length > 0) {
     await prisma.comment.updateMany({
-      where: { projectId: { in: full }, votersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+      // Not a paused one's: what the pause holds, its resume lets go (or drops).
+      where: { projectId: { in: full }, project: { emailPausedAt: null }, votersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
       data: { votersEmailDueAt: nextMonth(new Date()) },
     });
   }

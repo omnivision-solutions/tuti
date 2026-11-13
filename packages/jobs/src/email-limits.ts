@@ -103,7 +103,9 @@ export async function monthlyLimitReached(projectId: string, now = new Date()): 
  * again, after an upgrade), now otherwise (tomorrow's cap, or a pause).
  */
 export async function dueAgain(projectId: string, now = new Date()): Promise<Date> {
-  return (await monthlyLimitReached(projectId, now)) ? nextMonth(now) : now;
+  // Paused meanwhile: due now, so the resume finds it (and drops it, as it does what a pause holds).
+  const paused = pausing() && (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
+  return !paused && (await monthlyLimitReached(projectId, now)) ? nextMonth(now) : now;
 }
 
 /** The projects whose plan's emails for this month are used up: their email to their users waits for next month. */
