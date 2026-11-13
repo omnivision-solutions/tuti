@@ -54,7 +54,7 @@ Never hard-code a colour in a component; add a token if one is missing.
 
 | Token | Use for |
 | --- | --- |
-| `primary` | The one main action on a screen, votes you've cast, active tab, links that need emphasis |
+| `primary` | The one main action on a screen, votes you've cast, active tab, links that need emphasis; the fill of the team's chat bubbles in the Inbox (with `primary-foreground` text at full strength) |
 | `soft` / `soft-foreground` | Quiet green emphasis (on the portal and the widget, the project's accent: Layout → Portals → Accent) |
 | `highlight` / `highlight-foreground` | Things that need the team's attention ("Possible duplicate") |
 | `unread` | A dot on what's new to the reader (the widget's Messages and What's new) |
