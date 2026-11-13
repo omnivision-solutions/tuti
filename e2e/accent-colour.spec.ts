@@ -181,6 +181,7 @@ test("a portal with its own accent colour shows no trace of Tuti's green: every 
   expect(await greens(reader)).toEqual([]);
   await checkpoint(reader, "phone-menu");
   await reader.setViewportSize({ width: 1280, height: 720 });
+  await reader.emulateMedia({ colorScheme: "dark" });
 
   // The widget's panel opened from the launcher, with its header in the accent.
   await reader.goto(`/feedback/feature-requests/${planned.number}`);
