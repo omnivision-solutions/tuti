@@ -23,7 +23,7 @@ export const colors = {
 
 /**
  * A project's accent (`Project.brandColor`, `#rrggbb`; null for Tuti's green) in the emails sent on its behalf: the
- * colour, or the text colour where it's too faint on the white card (under 3:1, as the portal's brandCss), with black
+ * colour, or the text colour where it's too faint on the white card (under 3:1, brandCss's threshold; the portal uses a darker shade there), with black
  * or white text on it; and for text in it (`link`: links at body size), the colour only where it reads as text (4.5:1).
  */
 export function accentColors(accent?: string | null): { accent: string; onAccent: string; link: string } {

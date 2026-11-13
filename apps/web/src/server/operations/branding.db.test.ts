@@ -457,5 +457,7 @@ test("the colour becomes the accent and its tint, with readable text on it; wher
   expect(brandCss("#172554")).toBe(`html:not(.dark){--primary:#172554;--primary-foreground:#ffffff;--ring:#172554}html.dark{--primary:#5b6586;--primary-foreground:#ffffff;--ring:#5b6586}${tints("#172554")}`);
   // A grey has no hue to keep: where it doesn't read (white on the light page, black on the dark one), the text colour.
   expect(brandCss("#ffffff")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#ffffff;--primary-foreground:#000000;--ring:#ffffff}${tints("#ffffff")}`);
+  // A pale tint the same: beige's readable shade is all but grey.
+  expect(brandCss("#f5f5dc")).toBe(`html:not(.dark){${theme}}html.dark{--primary:#f5f5dc;--primary-foreground:#000000;--ring:#f5f5dc}${tints("#f5f5dc")}`);
   expect(brandCss("#000000")).toBe(`html:not(.dark){--primary:#000000;--primary-foreground:#ffffff;--ring:#000000}html.dark{${theme}}${tints("#000000")}`);
 });
