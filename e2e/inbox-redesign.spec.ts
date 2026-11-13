@@ -285,6 +285,7 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   // A link in the team's colour shows its keyboard focus: an outline in the bubble's text colour, not primary on primary.
   const link = bubbles.nth(1).getByRole("link", { name: "https://docs.example.com/export" });
   await link.focus();
+  await expect(link).not.toHaveCSS("outline-style", "none");
   await expect(link).toHaveCSS("outline-color", await bubbles.nth(1).evaluate((bubble) => getComputedStyle(bubble).color));
   // A short one stays short.
   expect((await bubbles.last().boundingBox())!.width).toBeLessThan(120);
@@ -325,7 +326,11 @@ test("messages read as chat bubbles, a run from one sender under one name, and t
   });
   await expect(file).toHaveCSS("color", cardText);
   // Its focus outline is the ring's, seen on the card, not the bubble's text colour.
+  // From the keyboard (after the Send click, the browser would only show focus for keys).
+  await owner.keyboard.press("Shift");
   await file.focus();
+  // Focus shows (the browser draws an outline only for :focus-visible), so the colour below is the focused one.
+  await expect(file).not.toHaveCSS("outline-style", "none");
   await expect(file).not.toHaveCSS("outline-color", await file.locator("xpath=ancestor::*[contains(@class,'inbox-bubble')]").evaluate((bubble) => getComputedStyle(bubble).color));
 
   await owner.setViewportSize({ width: 390, height: 844 });
