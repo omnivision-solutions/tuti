@@ -185,7 +185,7 @@ describe("an article shown with a lock", () => {
       expect(page).not.toContain(text);
     }
     expect(await generateMetadata(params("endpoints") as never)).toEqual({
-      title: "Endpoints · Docs",
+      title: "Endpoints · Documentation",
       robots: { index: false },
       alternates: { canonical: expect.stringMatching(/\/docs\/endpoints$/) },
     });
@@ -298,7 +298,7 @@ test("a collection shown with a lock: its name with a lock and nothing in it, an
   for (const text of [SECRET, "Endpoints"]) {
     expect(page).not.toContain(text);
   }
-  expect(await generateMetadata(params("reference") as never)).toMatchObject({ title: "Reference · Docs", robots: { index: false } });
+  expect(await generateMetadata(params("reference") as never)).toMatchObject({ title: "Reference · Documentation", robots: { index: false } });
   // What's in it inherits the lock.
   expect(await docsPage(project.slug, "endpoints")).toMatchObject({ kind: "locked" });
 });

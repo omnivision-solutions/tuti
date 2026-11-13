@@ -20,9 +20,9 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
   const canonical = { alternates: { canonical: `${await portalAddress(project)}/docs/${slug}` } };
   if (page.kind === "tab") {
     if (page.tab.locked) {
-      return { title: `${page.tab.name} · Docs`, robots: { index: false }, ...canonical };
+      return { title: `${page.tab.name} · Documentation`, robots: { index: false }, ...canonical };
     }
-    return withPortalOpenGraph({ ...(page.landing.kind === "overview" ? { title: `${page.tab.name} · Docs` } : docsPageMetadata(page.landing)), ...canonical }, parent);
+    return withPortalOpenGraph({ ...(page.landing.kind === "overview" ? { title: `${page.tab.name} · Documentation` } : docsPageMetadata(page.landing)), ...canonical }, parent);
   }
   return withPortalOpenGraph({ ...docsPageMetadata(page), ...canonical }, parent);
 }

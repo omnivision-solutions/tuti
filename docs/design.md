@@ -427,7 +427,7 @@ the list picks none to approve at once.
     (`pills`) and the actions on the right (`actions`, the page's one filled primary last); on phones the actions
     beside the title (`phoneActions`: round icon buttons, a round + primary). No rule under it.
   - **Header.** The logo, or without one a square in the brand's colour with the name's first letter, then the name;
-    the four parts (Feedback, Roadmap, Changelog, Docs; `components/portal-nav.tsx`) in medium weight, the open one
+    the four parts (Feedback, Roadmap, Changelog, Documentation (at `/docs`); `components/portal-nav.tsx`) in medium weight, the open one
     underlined on the header's bottom edge; Sign in a secondary (grey fill) at the end; 64px tall (56px on phones). Its contents in
     the pages' container (max-w-6xl; 82rem on every docs page from 1280px, and on docs articles with sections below 1280px too).
     On phones the header is one line (mark and name, Sign in or the account, the

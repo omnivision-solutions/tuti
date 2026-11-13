@@ -40,7 +40,7 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   await expect(preview.getByText("Acme is private. Sign in to see it.")).toHaveCount(0);
   // With the header's parts, and on Docs its box to search and ask (the preview has no session on the portal).
   await owner.goto(`/app/${slug}/settings/docs-home`);
-  await expect(preview.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" })).toBeVisible();
+  await expect(preview.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Documentation" })).toBeVisible();
   await expect(preview.getByRole("button", { name: "Search or ask AI" })).toBeVisible();
 
   // A signed-out visitor gets the sign-in page, and comes back to where they were going afterwards.
