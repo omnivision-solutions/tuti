@@ -53,8 +53,20 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(sections.getByRole("link", { name: /Your votes/ })).toHaveAttribute("aria-current", "location");
   await expect(sections.getByRole("link", { name: "Profile" })).not.toHaveAttribute("aria-current");
   await expect(bo.getByRole("heading", { name: "Your votes" })).toBeInViewport();
+  // Hairlines between a list's rows only, none under the last.
+  const voteRows = bo.getByRole("region", { name: "Your votes" }).getByRole("listitem");
+  await expect(voteRows.first()).toHaveCSS("border-bottom-width", "1px");
+  await expect(voteRows.last()).toHaveCSS("border-bottom-width", "0px");
   await bo.mouse.wheel(0, -5000);
   await expect(sections.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  // Back to a section after leaving the page: the Account again (the section links are the router's), at that section.
+  await sections.getByRole("link", { name: /Your votes/ }).click();
+  await bo.getByRole("banner").getByRole("link", { name: "Roadmap" }).click();
+  await bo.waitForURL("**/roadmap");
+  await bo.goBack();
+  await expect(bo).toHaveURL(/\/account#votes$/);
+  await expect(bo.getByRole("heading", { name: "Your votes" })).toBeInViewport();
+  await expect(sections.getByRole("link", { name: /Your votes/ })).toHaveAttribute("aria-current", "location");
   await bo.getByRole("region", { name: "Your votes" }).getByRole("link", { name: "Dark mode" }).click();
   await expect(bo.getByRole("heading", { level: 1 })).toHaveText("Dark mode");
 
@@ -284,6 +296,21 @@ test("a portal's Account: email settings the emails follow, and the reader's pos
   await expect(noVotes.getByRole("link", { name: "Browse ideas" })).toHaveAttribute("href", /\/feedback$/);
   await expect(cy.getByRole("region", { name: "Your posts" })).toContainText("You haven't posted here yet.");
   await checkpoint(cy, "portal-account-unconfirmed");
+  // A page short enough to fit a tall window, which can't scroll: its first section is the current one, not the last.
+  const tall = await (await browser.newContext({ baseURL: portalUrl(slug), viewport: { width: 1280, height: 3000 }, storageState: await cy.context().storageState() })).newPage();
+  await tall.goto("/account");
+  expect(await tall.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
+  const tallList = tall.getByRole("navigation", { name: "Account sections" });
+  await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await expect(tallList.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
+  // Opened with a section's hash the browser didn't scroll to (it can't scroll here; a reload or Back that restores the
+  // page elsewhere is the same): the section the page shows, not the hash's.
+  // (A load of its own: from /account itself, it would only be a hash change, which marks the section asked for.)
+  await tall.goto("/roadmap");
+  await tall.goto("/account#votes");
+  await expect(tallList.getByRole("link", { name: "Profile" })).toHaveAttribute("aria-current", "location");
+  await expect(tallList.getByRole("link", { name: /Your votes/ })).not.toHaveAttribute("aria-current");
+  await tall.context().close();
   // Sign out on the page: a failed one, refused or never sent (offline), says so and stays, the button ready again; then
   // back on the portal's home, signed out.
   const signOut = cy.getByRole("button", { name: "Sign out" });

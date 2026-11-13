@@ -90,9 +90,10 @@ export default async function PortalAccountPage(props: PageProps<"/portal/[proje
         )}
       </div>
     ) : (
-      <ul className="flex flex-col">
+      // Hairlines only between rows.
+      <ul className="flex flex-col divide-y">
         {items.map((post) => (
-          <li key={post.id} className="flex items-center gap-3 border-b py-3">
+          <li key={post.id} className="flex items-center gap-3 py-3">
             {post.status === "COMPLETED" ? (
               <VoteCount count={post.voteCount} shape="chip" />
             ) : (

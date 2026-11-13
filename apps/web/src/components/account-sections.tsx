@@ -3,6 +3,7 @@
 import { SCROLLING_ROW, useScrollingRow } from "@tuti/ui/scrolling-row";
 import { cn } from "cn";
 import { ChevronUpIcon, LightbulbIcon, MailIcon, UserIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { pillClass } from "@/components/filter-pills";
@@ -21,28 +22,38 @@ export function AccountSections({ sections }: { sections: Section[] }) {
   const picked = useRef(false);
 
   useEffect(() => {
+    // Under the sticky header, with a little room: the line a section's top passes to be the current one.
+    const line = () => (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--portal-header-height")) || 64) + 32;
+    // At the end of a page that scrolls (one that can't is at its top): the last sections can't reach the line.
+    const atEnd = () => {
+      const { scrollHeight } = document.documentElement;
+      return scrollHeight > window.innerHeight + 2 && window.scrollY > 0 && window.innerHeight + window.scrollY >= scrollHeight - 2;
+    };
+    const top = (id: string) => document.getElementById(id)?.getBoundingClientRect().top;
     const follow = () => {
       if (picked.current) return;
-      // Under the sticky header, with a little room: the last section whose top has passed it.
-      const line = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--portal-header-height")) || 64) + 32;
-      const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
       let at = sections[0]!.id;
       for (const { id } of sections) {
-        const top = document.getElementById(id)?.getBoundingClientRect().top;
-        if (top !== undefined && (top <= line || atEnd)) at = id;
+        const y = top(id);
+        if (y !== undefined && (y <= line() || atEnd())) at = id;
       }
       setCurrent(at);
     };
+    const hashed = () => sections.find((section) => `#${section.id}` === window.location.hash)?.id;
     const fromHash = () => {
-      const id = sections.find((section) => `#${section.id}` === window.location.hash)?.id;
+      const id = hashed();
       if (id) {
         picked.current = true;
         setCurrent(id);
       }
     };
     const release = () => (picked.current = false);
-    fromHash();
-    if (!picked.current) follow();
+    // On load, the hash only where the browser took the page to it (a reload or Back can restore it elsewhere): its section
+    // at the line, or on screen at the page's end. Otherwise what the page shows.
+    const id = hashed();
+    const y = id && top(id);
+    if (id && y !== undefined && ((y >= -8 && y <= line() + 8) || (atEnd() && y < window.innerHeight))) fromHash();
+    else follow();
     window.addEventListener("scroll", follow, { passive: true });
     window.addEventListener("hashchange", fromHash);
     // The reader's own scrolling (the scrollbar's drag too), or the jump's end: the list follows the page again.
@@ -64,7 +75,7 @@ export function AccountSections({ sections }: { sections: Section[] }) {
     <>
       <nav ref={pills} aria-label="Account sections" className={cn("-mx-4 flex min-w-0 gap-1.5 px-4 md:hidden", SCROLLING_ROW)}>
         {sections.map((section) => (
-          <a
+          <Link
             key={section.id}
             href={`#${section.id}`}
             onClick={() => pick(section.id)}
@@ -75,14 +86,14 @@ export function AccountSections({ sections }: { sections: Section[] }) {
             {section.title}
             {section.count !== undefined && " "}
             {section.count !== undefined && <span className="text-muted-foreground tabular-nums">{section.count}</span>}
-          </a>
+          </Link>
         ))}
       </nav>
       <nav aria-label="Account sections" className="sticky top-[calc(var(--portal-header-height,4rem)+1.5rem)] hidden flex-col gap-0.5 self-start md:flex">
         {sections.map((section) => {
           const Icon = ICONS[section.id];
           return (
-            <a
+            <Link
               key={section.id}
               href={`#${section.id}`}
               onClick={() => pick(section.id)}
@@ -97,7 +108,7 @@ export function AccountSections({ sections }: { sections: Section[] }) {
               {/* A space for its name ("Your posts 2"); a flex row drops it from the layout. */}
               {section.count !== undefined && " "}
               {section.count !== undefined && <span className="ml-auto text-[0.8125rem] tabular-nums">{section.count}</span>}
-            </a>
+            </Link>
           );
         })}
       </nav>
