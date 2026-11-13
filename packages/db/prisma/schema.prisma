@@ -282,8 +282,7 @@ model Project {
   logoText              String       @default("")
   logoLink              String?
   /// More links (Customize → Navigation): up to 5 above the docs' tree (`[{ label, url }]`, https
-  /// only). The header's old "Contact us" columns (contactLabel, contactUrl) are still in the database,
-  /// unread: a later release drops them, once no running release has them in its schema.
+  /// only).
   sidebarLinks          Json         @default("[]")
   /// Tuti's licence key for this project on this installation (see server/license.ts). Without a
   /// valid one the footer says "Powered by tuti" whatever poweredBy says.
